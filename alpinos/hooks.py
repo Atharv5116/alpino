@@ -84,6 +84,10 @@ app_license = "mit"
 
 # before_install = "alpinos.install.before_install"
 # after_install = "alpinos.install.after_install"
+after_migrate = [
+	"alpinos.custom_fields.setup_custom_fields",
+	"alpinos.workflow_setup.execute"
+]
 
 # Uninstallation
 # ------------
@@ -137,13 +141,16 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Job Requisition": {
+		"before_save": "alpinos.job_requisition_automation.update_approval_fields",
+		"on_update": [
+			"alpinos.job_requisition_automation.create_job_opening_on_approval",
+			"alpinos.job_requisition_automation.publish_job_opening_on_live",
+			"alpinos.job_requisition_automation.sync_status_with_job_opening"
+		]
+	}
+}
 
 # Scheduled Tasks
 # ---------------
