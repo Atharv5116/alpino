@@ -85,7 +85,8 @@ app_license = "mit"
 # before_install = "alpinos.install.before_install"
 # after_install = "alpinos.install.after_install"
 after_migrate = [
-	"alpinos.system_settings_setup.execute",  # Enable guest file uploads for web forms
+	"alpinos.custom_fields.setup_custom_fields",
+	"alpinos.workflow_setup.execute"
 ]
 
 # Uninstallation
@@ -141,36 +142,14 @@ after_migrate = [
 # Hook on document methods and events
 
 doc_events = {
-
-    "Job Applicant": {
-        "before_insert": [
-            "alpinos.job_applicant_automation.generate_candidate_id",
-            "alpinos.job_applicant_automation.set_default_status",
-            "alpinos.job_applicant_automation.set_application_date",
-        ],
-        "validate": [
-            "alpinos.job_applicant_automation.validate_mandatory_fields",
-            "alpinos.job_applicant_automation.validate_resume_file_type",
-        ],
-        "before_save": [
-            "alpinos.job_applicant_automation.auto_populate_from_job_requisition",
-            "alpinos.job_applicant_automation.auto_populate_from_job_opening",
-            "alpinos.job_applicant_automation.validate_job_requisition_open",
-            "alpinos.job_applicant_automation.validate_job_opening_open",
-        ],
-        "after_insert": [
-            "alpinos.job_applicant_automation.process_web_form_submission",
-        ],
-    },
-
-    "Job Requisition": {
-        "before_save": "alpinos.job_requisition_automation.update_approval_fields",
-        "on_update": [
-            "alpinos.job_requisition_automation.create_job_opening_on_approval",
-            "alpinos.job_requisition_automation.publish_job_opening_on_live",
-            "alpinos.job_requisition_automation.sync_status_with_job_opening",
-        ],
-    },
+	"Job Requisition": {
+		"before_save": "alpinos.job_requisition_automation.update_approval_fields",
+		"on_update": [
+			"alpinos.job_requisition_automation.create_job_opening_on_approval",
+			"alpinos.job_requisition_automation.publish_job_opening_on_live",
+			"alpinos.job_requisition_automation.sync_status_with_job_opening"
+		]
+	}
 }
 
 # Scheduled Tasks
@@ -270,7 +249,3 @@ doc_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
-fixtures = [
-	"Custom Field",
-	"Property Setter",
-]

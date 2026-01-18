@@ -102,11 +102,14 @@ def execute():
 	
 	# 11. Hide any child table fields if they exist (except reference - keep it visible)
 	hide_field_completely("Job Applicant", "employment_history")
-	hide_field_completely("Job Applicant", "qualification")
+	
+	# Delete qualification field if it references non-existent Qualification DocType
+	delete_field_if_exists("Job Applicant", "qualification")
+	
 	# Reference table should be visible - don't hide it
 	
-	# 12. Hide Qualification section break
-	hide_field_completely("Job Applicant", "qualification_section")
+	# 12. Delete Qualification section break (references non-existent DocType)
+	delete_field_if_exists("Job Applicant", "qualification_section")
 	
 	# 13. Hide degree field (non-mandatory, hidden)
 	hide_field_completely("Job Applicant", "degree")
@@ -317,6 +320,19 @@ def update_field_property(doctype, fieldname, property_name, value):
 			frappe.db.commit()
 	except frappe.DoesNotExistError:
 		print(f"Field {fieldname} not found in {doctype}")
+
+
+def delete_field_if_exists(doctype, fieldname):
+	"""Delete a custom field if it exists (for fields referencing non-existent DocTypes)"""
+	try:
+		# Check if custom field exists
+		custom_field = frappe.db.exists("Custom Field", {"dt": doctype, "fieldname": fieldname})
+		if custom_field:
+			frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+			frappe.db.commit()
+			print(f"✅ Deleted field: {doctype}.{fieldname}")
+	except Exception as e:
+		print(f"⚠️  Could not delete field {doctype}.{fieldname}: {str(e)}")
 
 
 def hide_field_completely(doctype, fieldname):
