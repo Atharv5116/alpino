@@ -174,10 +174,10 @@ def setup_job_requisition_workflow():
 	workflow_name = "Job Requisition Approval Workflow"
 	doctype = "Job Requisition"
 	
-	# Delete existing workflow if any
+	# Check if workflow already exists - if so, skip creation
 	if frappe.db.exists("Workflow", workflow_name):
-		frappe.delete_doc("Workflow", workflow_name, force=1, ignore_permissions=True)
-		frappe.db.commit()
+		print(f"ℹ️  Workflow '{workflow_name}' already exists, skipping creation")
+		return
 	
 	# Define workflow states
 	states = [
