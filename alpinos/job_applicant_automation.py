@@ -15,12 +15,13 @@ import os
 def generate_candidate_id(doc, method=None):
 	"""
 	Set Candidate ID = Job Applicant ID (name)
+	Both will be in AHFPL0000 format
 	This runs before_save to set candidate_id to the document name
 	The document name is set by autoname in before_insert, so we can use it in before_save
 	"""
 	# Set candidate_id to the Job Applicant's name (ID) if not already set
+	# Both will be in AHFPL0000 format (e.g., AHFPL0001, AHFPL0002)
 	if not doc.candidate_id and doc.name:
-		# Set candidate_id to the Job Applicant's name (ID)
 		doc.candidate_id = doc.name
 
 

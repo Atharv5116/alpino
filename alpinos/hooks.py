@@ -43,7 +43,12 @@ app_license = "mit"
 # page_js = {"screening": "public/js/screening.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+# Note: Job Applicant, Interview, and Employee Onboarding are in HRMS module
+# All JavaScript functionality is handled via Client Scripts (see employee_onboarding_client_scripts.py)
+# No doctype_js needed - client scripts are the correct approach for doctypes in other modules
+# doctype_js = {
+# 	"Employee Onboarding": "doctype.employee_onboarding.employee_onboarding"
+# }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -86,6 +91,8 @@ app_license = "mit"
 # after_install = "alpinos.install.after_install"
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
+	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
+	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
 	"alpinos.workflow_setup.execute",
 	"alpinos.page_setup.create_screening_page"
 ]
@@ -160,29 +167,27 @@ doc_events = {
 	"Interview": {
 		"after_insert": "alpinos.job_applicant_automation.update_screening_status_on_interview_created",
 		"on_update": "alpinos.job_applicant_automation.update_screening_status_on_interview_status_change"
+	},
+	"Employee Onboarding": {
+		"validate": [
+			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields",
+			"alpinos.employee_onboarding_automation.populate_from_job_applicant"
+		],
+		"before_save": [
+			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
+			"alpinos.employee_onboarding_automation.handle_pre_onboarding_workflow"
+		]
 	}
 }
 
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"alpinos.tasks.all"
-# 	],
-# 	"daily": [
-# 		"alpinos.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"alpinos.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"alpinos.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"alpinos.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
+	],
+}
 
 # Testing
 # -------

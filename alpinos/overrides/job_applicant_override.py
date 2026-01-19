@@ -1,5 +1,5 @@
 """
-Override for Job Applicant to change autoname from email to CAND-#### format
+Override for Job Applicant to change autoname from email to AHFPL#### format
 """
 
 import frappe
@@ -8,10 +8,10 @@ from hrms.hr.doctype.job_applicant.job_applicant import JobApplicant
 
 
 class CustomJobApplicant(JobApplicant):
-	"""Custom Job Applicant class with CAND-#### naming"""
+	"""Custom Job Applicant class with AHFPL#### naming"""
 	
 	def autoname(self):
-		"""Generate name in CAND-#### format instead of email"""
-		# Use CAND-.##### format (CAND-0001, CAND-0002, etc.)
-		self.name = make_autoname("CAND-.#####", "Job Applicant")
+		"""Generate name in AHFPL#### format instead of email"""
+		# Use AHFPL.##### format (AHFPL0001, AHFPL0002, etc.)
+		self.name = make_autoname("AHFPL.#####", "Job Applicant")
 
