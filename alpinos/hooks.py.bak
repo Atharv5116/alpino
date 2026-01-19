@@ -40,7 +40,7 @@ app_license = "mit"
 # webform_include_css = {"doctype": "public/css/doctype.css"}
 
 # include js in page
-# page_js = {"screening": "public/js/screening.js"}
+# page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
@@ -85,10 +85,20 @@ app_license = "mit"
 # before_install = "alpinos.install.before_install"
 # after_install = "alpinos.install.after_install"
 after_migrate = [
+	"alpinos.child_table_setup.create_job_application_reference",  # Create Reference child table
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.workflow_setup.execute",
-	"alpinos.page_setup.create_screening_page"
+	"alpinos.web_form_setup.create_job_application_webform",
+	"alpinos.web_form_update.update_job_application_webform",
+	"alpinos.email_notification_setup.execute",
+	"alpinos.hr_views_setup.execute"
 ]
+
+# Alternative: Use complete setup (uncomment to use)
+# after_migrate = [
+# 	"alpinos.workflow_setup.execute",
+# 	"alpinos.job_applicant_complete_setup.execute_complete_setup"
+# ]
 
 # Uninstallation
 # ------------
@@ -134,15 +144,20 @@ after_migrate = [
 # ---------------
 # Override standard doctype classes
 
-override_doctype_class = {
-	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant"
-}
+# override_doctype_class = {
+# 	"ToDo": "custom_app.overrides.CustomToDo"
+# }
 
 # Document Events
 # ---------------
 # Hook on document methods and events
 
 doc_events = {
+	doc_events = {
+    "Job Applicant": {
+        "after_insert": "alpinos.job_applicant_automation.auto_submit_from_web_form"
+    }
+}
 	"Job Requisition": {
 		"before_save": "alpinos.job_requisition_automation.update_approval_fields",
 		"on_update": [
@@ -152,14 +167,32 @@ doc_events = {
 		]
 	},
 	"Job Applicant": {
-		"before_save": [
+		"before_insert": [
 			"alpinos.job_applicant_automation.generate_candidate_id",
-			"alpinos.job_applicant_automation.update_screening_status_automatically"
+			"alpinos.job_applicant_automation.set_default_status",
+			"alpinos.job_applicant_automation.set_application_date",
+			"alpinos.job_applicant_automation.handle_web_form_submission"
+		],
+		"before_save": [
+			"alpinos.job_applicant_automation.auto_populate_from_job_requisition",
+			"alpinos.job_applicant_automation.auto_populate_from_job_opening",
+			"alpinos.job_applicant_automation.validate_job_requisition_open",
+			"alpinos.job_applicant_automation.validate_job_opening_open",
+			"alpinos.job_applicant_automation.handle_web_form_submission"
+		],
+		"validate": [
+			"alpinos.job_applicant_automation.validate_mandatory_fields",
+			"alpinos.job_applicant_automation.validate_resume_file_type"
+		],
+		"after_insert": [
+			"alpinos.job_applicant_automation.process_web_form_submission"
+		],
+		"on_submit": [
+			"alpinos.job_applicant_automation.update_status_on_submit"
+		],
+		"after_submit": [
+			"alpinos.job_applicant_automation.update_status_after_submit"
 		]
-	},
-	"Interview": {
-		"after_insert": "alpinos.job_applicant_automation.update_screening_status_on_interview_created",
-		"on_update": "alpinos.job_applicant_automation.update_screening_status_on_interview_status_change"
 	}
 }
 
@@ -260,3 +293,7 @@ doc_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+fixtures = [
+	"Custom Field",
+	"Property Setter",
+]

@@ -14,34 +14,42 @@ import os
 
 def generate_candidate_id(doc, method=None):
 	"""
-	Generate Candidate ID in format: CAND-YYYY-#####
-	Only generate if candidate_id is empty
+	Set Candidate ID = Job Applicant ID (name)
+	This runs before_save to set candidate_id to the document name
+	The document name is set by autoname in before_insert, so we can use it in before_save
 	"""
-	if not doc.candidate_id:
-		# Get current year
-		year = getdate().strftime("%Y")
-		
-		# Get the last candidate ID for this year
-		last_id = frappe.db.sql("""
-			SELECT candidate_id 
-			FROM `tabJob Applicant`
-			WHERE candidate_id LIKE %s
-			ORDER BY candidate_id DESC
-			LIMIT 1
-		""", (f"CAND-{year}-%",), as_dict=True)
-		
-		if last_id and last_id[0].candidate_id:
-			# Extract the number part
-			try:
-				last_num = int(last_id[0].candidate_id.split("-")[-1])
-				new_num = last_num + 1
-			except (ValueError, IndexError):
-				new_num = 1
-		else:
-			new_num = 1
-		
-		# Format: CAND-YYYY-##### (5 digits)
-		doc.candidate_id = f"CAND-{year}-{new_num:05d}"
+	# Set candidate_id to the Job Applicant's name (ID) if not already set
+	if not doc.candidate_id and doc.name:
+		# Set candidate_id to the Job Applicant's name (ID)
+		doc.candidate_id = doc.name
+
+
+def update_screening_status_automatically(doc, method=None):
+	"""
+	Automatically update screening_status based on category changes and other triggers
+	Rules:
+	- Default (new applicant): "Pending Screening"
+	- Category White -> "Shortlisted"
+	- Category Black -> "Not Eligible"
+	- Category Hold -> "On Hold"
+	- Interview created -> "Screening Call Scheduled" (handled in Interview hook)
+	"""
+	# Only update if category is being changed
+	if doc.has_value_changed("candidate_category"):
+		if doc.candidate_category == "White":
+			doc.screening_status = "Shortlisted"
+		elif doc.candidate_category == "Black":
+			doc.screening_status = "Not Eligible"
+		elif doc.candidate_category == "Hold":
+			doc.screening_status = "On Hold"
+		elif not doc.candidate_category:
+			# Category removed, set back to default
+			if not doc.screening_status:
+				doc.screening_status = "Pending Screening"
+	
+	# Set default screening status for new applicants
+	if doc.is_new() and not doc.screening_status:
+		doc.screening_status = "Pending Screening"
 
 
 def validate_resume_file_type(doc, method=None):
@@ -433,4 +441,104 @@ def send_acknowledgement_emails(doc, method=None):
 	# Emails are sent via Notification records configured in Frappe
 	# This method can be used for custom email logic if needed
 	pass
+
+
+@frappe.whitelist()
+def ensure_call_round_interview_exists():
+	"""
+	Ensure "Call Round Interview" Interview Round exists
+	Creates it if it doesn't exist
+	Returns the Interview Round name
+	"""
+	round_name = "Call Round Interview"
+	
+	# Check if it already exists
+	if frappe.db.exists("Interview Round", round_name):
+		return round_name
+	
+	# Create the Interview Round
+	try:
+		interview_round = frappe.get_doc({
+			"doctype": "Interview Round",
+			"round_name": round_name,
+			"expected_average_rating": 0.0
+		})
+		
+		# Try to get a default skill or create a minimal skill set
+		# Since expected_skill_set is required, we need to add at least one skill
+		# First, try to find any existing skill
+		existing_skill = frappe.db.get_value("Skill", {"name": ("!=", "")}, "name")
+		
+		if not existing_skill:
+			# Create a default skill if none exists
+			try:
+				skill_doc = frappe.get_doc({
+					"doctype": "Skill",
+					"skill_name": "Communication"
+				})
+				skill_doc.insert(ignore_permissions=True)
+				existing_skill = skill_doc.name
+				frappe.db.commit()
+			except Exception:
+				# If skill creation fails, try to proceed without skill set
+				pass
+		
+		# Add skill to expected_skill_set if we have one
+		if existing_skill:
+			interview_round.append("expected_skill_set", {
+				"skill": existing_skill
+			})
+		
+		# Insert with ignore_permissions to bypass validation if needed
+		interview_round.flags.ignore_validate = True
+		interview_round.flags.ignore_mandatory = True
+		interview_round.insert(ignore_permissions=True)
+		frappe.db.commit()
+		
+		return round_name
+		
+	except Exception as e:
+		frappe.log_error(f"Error creating Call Round Interview: {str(e)}", "Create Interview Round Error")
+		# If creation fails, try to return the name anyway (might exist now)
+		if frappe.db.exists("Interview Round", round_name):
+			return round_name
+		raise frappe.ValidationError(_("Could not create Interview Round: {0}").format(str(e)))
+
+
+def update_screening_status_on_interview_created(doc, method=None):
+	"""
+	Update Job Applicant screening_status to "Interview Scheduled" when Interview is created
+	"""
+	if doc.job_applicant:
+		try:
+			frappe.db.set_value("Job Applicant", doc.job_applicant, "screening_status", "Interview Scheduled")
+			frappe.db.commit()
+		except Exception as e:
+			frappe.log_error(f"Error updating screening status: {str(e)}", "Update Screening Status Error")
+
+
+def update_screening_status_on_interview_status_change(doc, method=None):
+	"""
+	Update Job Applicant screening_status based on Interview status changes
+	Mapping:
+	- "Accepted" → "Accepted"
+	- "Rejected" → "Rejected"
+	- "Hold" → "On Hold"
+	- "Interview Scheduled" → "Interview Scheduled"
+	"""
+	if doc.job_applicant and doc.has_value_changed("status"):
+		try:
+			status_mapping = {
+				"Accepted": "Accepted",
+				"Rejected": "Rejected",
+				"Hold": "On Hold",
+				"Interview Scheduled": "Interview Scheduled"
+			}
+			
+			new_screening_status = status_mapping.get(doc.status)
+			if new_screening_status:
+				frappe.db.set_value("Job Applicant", doc.job_applicant, "screening_status", new_screening_status)
+				frappe.db.commit()
+		except Exception as e:
+			frappe.log_error(f"Error updating screening status: {str(e)}", "Update Screening Status Error")
 

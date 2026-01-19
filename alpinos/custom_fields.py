@@ -197,6 +197,34 @@ def setup_custom_fields():
 			insert_after="notice_period",
 			collapsible=1,
 		),
+		
+		# Screening Section Break
+		dict(
+			fieldname="screening_section",
+			label="Screening",
+			fieldtype="Section Break",
+			insert_after="applicant_rating",
+			collapsible=1,
+		),
+		
+		# Candidate Category - Select (White/Hold/Black)
+		dict(
+			fieldname="candidate_category",
+			label="Candidate Category",
+			fieldtype="Select",
+			options="\nWhite\nHold\nBlack",
+			insert_after="screening_section",
+		),
+		
+		# Screening Status - Select (Read-only, auto-updated)
+		dict(
+			fieldname="screening_status",
+			label="Screening Status",
+			fieldtype="Select",
+			options="\nPending Screening\nShortlisted\nScreening Call Scheduled\nOn Hold\nNot Eligible\nInterview Scheduled\nAccepted\nRejected\nHired",
+			insert_after="candidate_category",
+			read_only=1,
+		),
 	],
 	
 	# Delete qualification table field if it exists (references non-existent Qualification DocType)
