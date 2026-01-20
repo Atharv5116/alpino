@@ -7,8 +7,45 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
+def delete_policy_fields():
+	"""Delete existing policy fields to allow changing from Select to Link"""
+	policy_fields = [
+		"policy_assignment",
+		"leave_policy",
+		"document_policy",
+		"shift_policy",
+		"overtime_policy",
+		"holiday_policy",
+		"comp_off_policy",
+		"attendance_policy",
+		"wfh_policy",
+		"grace_policy",
+		"reimbursement_policy",
+		"geofencing_policy",
+		"other_policy",
+	]
+	
+	for fieldname in policy_fields:
+		try:
+			custom_field = frappe.db.get_value(
+				"Custom Field",
+				{"dt": "Employee Onboarding", "fieldname": fieldname},
+				"name"
+			)
+			if custom_field:
+				frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+				print(f"✅ Deleted field: {fieldname}")
+		except Exception as e:
+			print(f"⚠️  Could not delete field {fieldname}: {str(e)}")
+	
+	frappe.db.commit()
+
+
 def setup_employee_onboarding_custom_fields():
 	"""Create custom fields for Employee Onboarding"""
+	
+	# Delete existing policy fields first to allow changing from Select to Link
+	delete_policy_fields()
 	
 	custom_fields = {
 		"Employee Onboarding": [
@@ -719,49 +756,63 @@ def setup_employee_onboarding_custom_fields():
 			dict(
 				fieldname="policy_assignment",
 				label="Policy Assignment",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Policy Assignment"]]',
 				insert_after="policy_section",
 				reqd=1,
 			),
 			dict(
 				fieldname="leave_policy",
 				label="Leave Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Leave Policy"]]',
 				insert_after="policy_assignment",
 				reqd=1,
 			),
 			dict(
 				fieldname="document_policy",
 				label="Document Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Document Policy"]]',
 				insert_after="leave_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="shift_policy",
 				label="Shift Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Shift Policy"]]',
 				insert_after="document_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="overtime_policy",
 				label="Overtime Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Overtime Policy"]]',
 				insert_after="shift_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="holiday_policy",
 				label="Holiday Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Holiday Policy"]]',
 				insert_after="overtime_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="comp_off_policy",
 				label="Comp Off Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Comp Off Policy"]]',
 				insert_after="holiday_policy",
 				reqd=1,
 			),
@@ -773,42 +824,54 @@ def setup_employee_onboarding_custom_fields():
 			dict(
 				fieldname="attendance_policy",
 				label="Attendance Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Attendance Policy"]]',
 				insert_after="column_break_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="wfh_policy",
 				label="Work From Home (WFH) Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Work From Home (WFH) Policy"]]',
 				insert_after="attendance_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="grace_policy",
 				label="Grace Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Grace Policy"]]',
 				insert_after="wfh_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="reimbursement_policy",
 				label="Reimbursement Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Reimbursement Policy"]]',
 				insert_after="grace_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="geofencing_policy",
 				label="Geo-Fencing Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Geo-Fencing Policy"]]',
 				insert_after="reimbursement_policy",
 				reqd=1,
 			),
 			dict(
 				fieldname="other_policy",
 				label="Other Policy",
-				fieldtype="Select",
+				fieldtype="Link",
+				options="Policy",
+				link_filters='[["Policy", "policy_type", "=", "Other Policy"]]',
 				insert_after="geofencing_policy",
 				reqd=1,
 			),
