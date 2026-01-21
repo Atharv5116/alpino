@@ -89,6 +89,20 @@ app_license = "mit"
 
 # before_install = "alpinos.install.before_install"
 # after_install = "alpinos.install.after_install"
+
+# Fixtures
+# --------
+fixtures = [
+	{
+		"dt": "Custom Field",
+		"filters": [["module", "=", "Alpinos Development"]]
+	},
+	{
+		"dt": "Property Setter",
+		"filters": [["module", "=", "Alpinos Development"]]
+	}
+]
+
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
@@ -151,12 +165,19 @@ override_doctype_class = {
 
 doc_events = {
 	"Job Requisition": {
-		"before_save": "alpinos.job_requisition_automation.update_approval_fields",
+		"before_insert": "alpinos.job_requisition_automation.set_requested_by",
+		"before_save": [
+			"alpinos.job_requisition_automation.update_approval_fields",
+			"alpinos.job_requisition_automation.fetch_reporting_manager"
+		],
 		"on_update": [
-			"alpinos.job_requisition_automation.create_job_opening_on_approval",
-			"alpinos.job_requisition_automation.publish_job_opening_on_live",
+			"alpinos.job_requisition_automation.create_published_job_opening_on_live",
 			"alpinos.job_requisition_automation.sync_status_with_job_opening"
 		]
+	},
+	"Job Opening": {
+		"before_save": "alpinos.job_opening_automation.set_job_application_route",
+		"on_update": "alpinos.job_opening_automation.ensure_job_application_route"
 	},
 	"Job Applicant": {
 		"before_save": [
