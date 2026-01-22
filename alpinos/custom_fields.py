@@ -354,6 +354,95 @@ def setup_custom_fields():
 			read_only=1,
 		),
 	],
+	"Employee": [
+		# Welcome Formalities Section Break (below Company Details section)
+		dict(
+			fieldname="todo_checklist_section",
+			label="Welcome Formalities",
+			fieldtype="Section Break",
+			insert_after="grade",
+			collapsible=1,
+		),
+		
+		# Todo Checklist Checkbox Fields
+		dict(
+			fieldname="collect_documents",
+			label="Collect Documents",
+			fieldtype="Check",
+			insert_after="todo_checklist_section",
+			default=0,
+		),
+		dict(
+			fieldname="prepare_the_system",
+			label="Prepare the System",
+			fieldtype="Check",
+			insert_after="collect_documents",
+			default=0,
+		),
+		dict(
+			fieldname="welcome_kit",
+			label="Welcome Kit",
+			fieldtype="Check",
+			insert_after="prepare_the_system",
+			default=0,
+		),
+		dict(
+			fieldname="introduction_session_and_sops_allocation",
+			label="Introduction Session + SOPs Allocation",
+			fieldtype="Check",
+			insert_after="welcome_kit",
+			default=0,
+		),
+		dict(
+			fieldname="bond_letter",
+			label="Bond Letter",
+			fieldtype="Check",
+			insert_after="introduction_session_and_sops_allocation",
+			default=0,
+		),
+		dict(
+			fieldname="hrms_training",
+			label="HRMS Training",
+			fieldtype="Check",
+			insert_after="bond_letter",
+			default=0,
+		),
+		dict(
+			fieldname="culture_training",
+			label="Culture Training",
+			fieldtype="Check",
+			insert_after="hrms_training",
+			default=0,
+		),
+		dict(
+			fieldname="provide_credentials",
+			label="Provide Credentials",
+			fieldtype="Check",
+			insert_after="culture_training",
+			default=0,
+		),
+		dict(
+			fieldname="system_training",
+			label="System Training",
+			fieldtype="Check",
+			insert_after="provide_credentials",
+			default=0,
+		),
+		dict(
+			fieldname="product_training",
+			label="Product Training",
+			fieldtype="Check",
+			insert_after="system_training",
+			default=0,
+		),
+		dict(
+			fieldname="meeting_with_department_head",
+			label="Meeting with Department Head",
+			fieldtype="Check",
+			insert_after="product_training",
+			default=0,
+		),
+	],
 	
 	# Delete qualification table field if it exists (references non-existent Qualification DocType)
 	# This is handled separately to avoid validation errors
