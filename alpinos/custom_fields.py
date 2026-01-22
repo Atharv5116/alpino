@@ -45,7 +45,7 @@ def update_degree_field_position():
 def hide_status_field():
 	"""Hide status field in Job Applicant"""
 	try:
-		update_property_setter("Job Applicant", "status", "hidden", 1, "Check")
+		update_property_setter("Job Applicant", "status", "hidden", "1", "Check")
 		print("✅ Hidden status field in Job Applicant")
 	except Exception as e:
 		print(f"⚠️  Could not hide status field: {str(e)}")
@@ -86,62 +86,21 @@ def setup_custom_fields():
 	
 	custom_fields = {
 		"Job Requisition": [
-			# Location - Link to Branch (after department)
-			dict(
-				fieldname="location",
-				label="Location",
-				fieldtype="Link",
-				options="Branch",
-				insert_after="department",
-				reqd=1,
-			),
-			
-			# Min. Experience - Int (Years) (after no_of_positions)
-			dict(
-				fieldname="min_experience",
-				label="Min. Experience (Years)",
-				fieldtype="Int",
-				insert_after="no_of_positions",
-				reqd=1,
-			),
-			
-			# Vacancy Type - Select (after min_experience)
-			dict(
-				fieldname="vacancy_type",
-				label="Vacancy Type",
-				fieldtype="Select",
-				options="\nNew\nReplace",
-				insert_after="min_experience",
-				reqd=1,
-			),
-			
-			# Priority - Select (after vacancy_type)
-			dict(
-				fieldname="priority",
-				label="Priority",
-				fieldtype="Select",
-				options="\nUrgent\nHigh\nMedium\nLow",
-				insert_after="vacancy_type",
-				reqd=1,
-			),
-			
-			# CTC Upper Range - Currency (after expected_compensation)
-			dict(
-				fieldname="ctc_upper_range",
-				label="CTC Upper Range",
-				fieldtype="Currency",
-				options="Company:company:default_currency",
-				insert_after="expected_compensation",
-				reqd=1,
-			),
-			
-			# Section Break for Requisition Details
+			# Section Break for Requisition Details (only shown in Edit view)
 			dict(
 				fieldname="requisition_details_section",
 				label="Requisition Details",
 				fieldtype="Section Break",
-				insert_after="status",
+				insert_after="naming_series",
 				collapsible=1,
+				depends_on="eval:!doc.__islocal",  # Only show in Edit view (when saved)
+			),
+			
+			# Column Break for Status and Approval
+			dict(
+				fieldname="column_break_requisition",
+				fieldtype="Column Break",
+				insert_after="requisition_details_section",
 			),
 			
 			# Approved On - Datetime (Read-only, auto-set)
@@ -150,7 +109,7 @@ def setup_custom_fields():
 				label="Approved On",
 				fieldtype="Datetime",
 				read_only=1,
-				insert_after="requisition_details_section",
+				insert_after="column_break_requisition",
 			),
 			
 			# Approved By - Link to User (Read-only, auto-set)
@@ -163,29 +122,198 @@ def setup_custom_fields():
 				insert_after="approved_on",
 			),
 			
-			# Column Break
+			# Profile Details Section
 			dict(
-				fieldname="column_break_approval",
-				fieldtype="Column Break",
+				fieldname="profile_details_section",
+				label="Profile Details",
+				fieldtype="Section Break",
 				insert_after="approved_by",
+				collapsible=0,
 			),
 			
-			# Hiring Deadline - Date (in timelines section)
+			
+			# Location - Link to Branch (after additional_description)
+			dict(
+				fieldname="location",
+				label="Location",
+				fieldtype="Link",
+				options="Branch",
+				insert_after="no_of_positions",
+				reqd=1,
+			),
+			
+			# Hiring Deadline - Date
 			dict(
 				fieldname="hiring_deadline",
 				label="Hiring Deadline",
 				fieldtype="Date",
-				insert_after="expected_by",
+				insert_after="location",
 				reqd=1,
 			),
 			
-			# Additional Description - Text Area (after description)
+			# Min. Experience - Int (Years)
 			dict(
-				fieldname="additional_description",
-				label="Additional Description",
-				fieldtype="Text Editor",
-				insert_after="description",
+				fieldname="min_experience",
+				label="Min. Experience (Years)",
+				fieldtype="Int",
+				insert_after="hiring_deadline",
 				reqd=1,
+			),
+			
+			# Priority - Select
+			dict(
+				fieldname="priority",
+				label="Priority",
+				fieldtype="Select",
+				options="\nUrgent\nHigh\nMedium\nLow",
+				insert_after="min_experience",
+				reqd=1,
+			),
+			
+			# Vacancy Type - Select
+			dict(
+				fieldname="vacancy_type",
+				label="Vacancy Type",
+				fieldtype="Select",
+				options="\nNew\nReplace",
+				insert_after="priority",
+				reqd=1,
+			),
+			
+			# Employee Details Section (for replacement positions)
+			dict(
+				fieldname="employee_details_section",
+				label="Employee Details",
+				fieldtype="Section Break",
+				insert_after="vacancy_type",
+				collapsible=1,
+				depends_on='eval:doc.vacancy_type=="Replace"',
+			),
+			
+			# Linked Employee - Link to Employee (for replacement)
+			dict(
+				fieldname="linked_employee",
+				label="Linked Employee",
+				fieldtype="Link",
+				options="Employee",
+				insert_after="employee_details_section",
+				description="Select the employee being replaced (for replacement positions)",
+				ignore_user_permissions=1,
+			),
+			
+			# Column Break
+			dict(
+				fieldname="column_break_employee",
+				fieldtype="Column Break",
+				insert_after="linked_employee",
+			),
+			
+			# Reporting Manager - Link to Employee (fetched from linked employee)
+			dict(
+				fieldname="reporting_manager",
+				label="Reporting Manager",
+				fieldtype="Link",
+				options="Employee",
+				insert_after="column_break_employee",
+				read_only=1,
+				fetch_from="linked_employee.reports_to",
+				description="Auto-fetched from linked employee's reporting structure",
+				ignore_user_permissions=1,
+			),
+			
+			# Reporting Manager User - Link to User (hidden, for workflow)
+			dict(
+				fieldname="reporting_manager_user",
+				label="Reporting Manager User",
+				fieldtype="Link",
+				options="User",
+				insert_after="reporting_manager",
+				read_only=1,
+				hidden=1,
+				description="User ID of reporting manager (for workflow)",
+			),
+			
+			# Company Details Section
+			dict(
+				fieldname="company_details_section",
+				label="Company Details",
+				fieldtype="Section Break",
+				insert_after="reporting_manager",
+				collapsible=0,
+			),
+			
+			# Salary Details Section
+			dict(
+				fieldname="salary_details_section",
+				label="Salary Details",
+				fieldtype="Section Break",
+				insert_after="company_details_section",
+				collapsible=0,
+			),
+			
+			# CTC Upper Range - Currency (after salary section)
+			dict(
+				fieldname="ctc_upper_range",
+				label="CTC Upper Range / Monthly",
+				fieldtype="Currency",
+				options="Company:company:default_currency",
+				insert_after="salary_details_section",
+				reqd=1,
+			),
+			
+			# Requested By (in Timelines, after posting_date/Requested On)
+			dict(
+				fieldname="custom_requested_by",
+				label="Requested By",
+				fieldtype="Link",
+				options="User",
+				insert_after="posting_date",
+				read_only=1,
+				reqd=1,
+				default="user",
+			),
+			
+			# Column Break for Employee Info
+			dict(
+				fieldname="column_break_requestor",
+				fieldtype="Column Break",
+				insert_after="custom_requested_by",
+			),
+			
+			# Requested By Employee - Link to Employee (fetched from user)
+			dict(
+				fieldname="requested_by_employee",
+				label="Requested By Employee",
+				fieldtype="Link",
+				options="Employee",
+				insert_after="column_break_requestor",
+				read_only=1,
+				description="Employee record of the person requesting",
+				ignore_user_permissions=1,
+			),
+			
+			# Requestor's Reporting Manager - Link to Employee
+			dict(
+				fieldname="requestor_reporting_manager",
+				label="Requestor's Manager",
+				fieldtype="Link",
+				options="Employee",
+				insert_after="requested_by_employee",
+				read_only=1,
+				description="Reporting manager of the requesting employee",
+				ignore_user_permissions=1,
+			),
+			
+			# Requestor's Manager User - Link to User (hidden, for workflow)
+			dict(
+				fieldname="requestor_manager_user",
+				label="Requestor Manager User",
+				fieldtype="Link",
+				options="User",
+				insert_after="requestor_reporting_manager",
+				read_only=1,
+				hidden=1,
+				description="User ID of requestor's manager (for workflow)",
 			),
 		],
 	"Job Applicant": [
@@ -242,3 +370,5 @@ def setup_custom_fields():
 	
 	# Hide status field
 	hide_status_field()
+	
+	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")

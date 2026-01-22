@@ -143,23 +143,15 @@ def update_status_field_allow_on_submit():
 
 def setup_job_applicant_workflow():
 	"""Create workflow for Job Applicant application process"""
-
+	
 	workflow_name = "Job Application Workflow"
 	doctype = "Job Applicant"
-
-	# Check if workflow already exists and is properly configured
+	
+	# Delete existing workflow if any
 	if frappe.db.exists("Workflow", workflow_name):
-		existing_workflow = frappe.get_doc("Workflow", workflow_name)
-		# Check if it has the expected states and transitions
-		if len(existing_workflow.states) >= 5 and len(existing_workflow.transitions) >= 4:
-			print(f"ℹ️  Workflow '{workflow_name}' already exists and appears to be configured")
-			return existing_workflow.name
-
-		# If workflow exists but is incomplete, delete and recreate
-		print(f"⚠️  Existing workflow '{workflow_name}' appears incomplete, recreating...")
 		frappe.delete_doc("Workflow", workflow_name, force=1, ignore_permissions=True)
 		frappe.db.commit()
-
+	
 	# Define workflow states
 	states = [
 		{
@@ -204,7 +196,7 @@ def setup_job_applicant_workflow():
 		},
 		{
 			"state": "Archived",
-			"doc_status": "0",  # Saved (archived for future purpose)
+			"doc_status": "1",  # Submitted (archived but still submitted)
 			"update_field": "status",
 			"update_value": "Archived",
 			"is_optional_state": 0,
