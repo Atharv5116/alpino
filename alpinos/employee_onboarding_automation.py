@@ -697,3 +697,183 @@ def handle_pre_onboarding_workflow(doc, method=None):
 	if doc.date_of_joining_onboarding:
 		schedule_pre_onboarding_email(doc)
 
+
+def send_welcome_formalities_reminders():
+	"""
+	Scheduled job to send notifications to HR Manager:
+	1. 1 day before welcome formalities are due (reminder)
+	2. When TAT has passed and formality is still pending (overdue reminder)
+	Runs daily to check for employees with welcome formalities due tomorrow or overdue
+	"""
+	from frappe.desk.doctype.notification_log.notification_log import make_notification_logs
+	
+	# Field name to label mapping for welcome formalities
+	field_label_map = {
+		"collect_documents": "Collect Documents",
+		"prepare_the_system": "Prepare the System",
+		"welcome_kit": "Welcome Kit",
+		"introduction_session_and_sops_allocation": "Introduction Session + SOPs Allocation",
+		"bond_letter": "Bond Letter",
+		"hrms_training": "HRMS Training",
+		"culture_training": "Culture Training",
+		"provide_credentials": "Provide Credentials",
+		"system_training": "System Training",
+		"product_training": "Product Training",
+		"meeting_with_department_head": "Meeting with Department Head"
+	}
+	
+	# Get all welcome formalities configs
+	configs = frappe.get_all(
+		"Welcome Formalities Config",
+		fields=["field_name", "tat_days"]
+	)
+	
+	# Create a dictionary for quick lookup
+	tat_config = {config.field_name: config.tat_days for config in configs}
+	
+	# Get all active employees with date_of_joining
+	employees = frappe.get_all(
+		"Employee",
+		filters={
+			"status": "Active",
+			"date_of_joining": ["is", "set"]
+		},
+		fields=["name", "employee_name", "date_of_joining"]
+	)
+	
+	today = getdate(nowdate())
+	tomorrow = add_days(today, 1)
+	
+	# Get all HR Manager users
+	hr_managers = frappe.get_all(
+		"Has Role",
+		filters={"role": "HR Manager", "parenttype": "User"},
+		fields=["parent"]
+	)
+	hr_manager_users = [user.parent for user in hr_managers]
+	
+	if not hr_manager_users:
+		frappe.log_error("No HR Manager users found for welcome formalities reminders", "Welcome Formalities Reminder")
+		return
+	
+	notifications_sent = 0
+	overdue_notifications_sent = 0
+	
+	for employee_data in employees:
+		try:
+			employee = frappe.get_doc("Employee", employee_data.name)
+			date_of_joining = getdate(employee_data.date_of_joining)
+			
+			# Check each welcome formality checkbox
+			for field_name, label in field_label_map.items():
+				# Skip if checkbox is already checked
+				if employee.get(field_name):
+					continue
+				
+				# Get TAT for this field
+				tat_days = tat_config.get(field_name)
+				if not tat_days:
+					continue
+				
+				# Calculate due date (date_of_joining + TAT days)
+				due_date = add_days(date_of_joining, tat_days)
+				employee_name = employee_data.employee_name or employee_data.name
+				
+				# Check if due date is tomorrow (1 day before reminder)
+				if due_date == tomorrow:
+					# Check if "due tomorrow" notification has already been sent for this employee and formality
+					# Only send one notification per employee+formality combination
+					subject = f"Welcome Formality Due Tomorrow: {label}"
+					existing_tomorrow_notification = frappe.get_all(
+						"Notification Log",
+						filters={
+							"type": "Alert",
+							"document_type": "Employee",
+							"document_name": employee_data.name,
+							"subject": subject,
+							"for_user": ["in", hr_manager_users] if hr_manager_users else []
+						},
+						limit=1
+					)
+					
+					# Only send if notification doesn't already exist
+					if len(existing_tomorrow_notification) == 0:
+						# Send notification to all HR Managers
+						message = f"<p>The welcome formality <strong>{label}</strong> is due tomorrow for employee <strong>{employee_name}</strong> (Employee ID: {employee_data.name}).</p><p>Please ensure this task is completed on time.</p>"
+						
+						notification_doc = {
+							"type": "Alert",
+							"document_type": "Employee",
+							"document_name": employee_data.name,
+							"subject": subject,
+							"from_user": "Administrator",
+							"email_content": message,
+							"link": f"/app/employee/{employee_data.name}",
+						}
+						
+						make_notification_logs(notification_doc, hr_manager_users)
+						notifications_sent += 1
+						
+						frappe.log_error(
+							f"Reminder sent: {label} for {employee_name}",
+							"Welcome Formalities Reminder"
+						)
+				
+				# Check if due date has passed (overdue reminder)
+				elif due_date < today:
+					# Calculate days overdue
+					days_overdue = (today - due_date).days
+					
+					# Check if overdue notification has already been sent for this employee and formality
+					# Only send one overdue notification per employee+formality combination
+					subject = f"Welcome Formality Overdue: {label}"
+					existing_overdue_notification = frappe.get_all(
+						"Notification Log",
+						filters={
+							"type": "Alert",
+							"document_type": "Employee",
+							"document_name": employee_data.name,
+							"subject": subject,
+							"for_user": ["in", hr_manager_users] if hr_manager_users else []
+						},
+						limit=1
+					)
+					
+					# Only send if notification doesn't already exist
+					if len(existing_overdue_notification) == 0:
+						# Send overdue notification to all HR Managers
+						message = f"<p>The welcome formality <strong>{label}</strong> is <strong>overdue by {days_overdue} day(s)</strong> for employee <strong>{employee_name}</strong> (Employee ID: {employee_data.name}).</p><p>The TAT deadline was {due_date.strftime('%d-%m-%Y')}. Please complete this task immediately.</p>"
+						
+						notification_doc = {
+							"type": "Alert",
+							"document_type": "Employee",
+							"document_name": employee_data.name,
+							"subject": subject,
+							"from_user": "Administrator",
+							"email_content": message,
+							"link": f"/app/employee/{employee_data.name}",
+						}
+						
+						make_notification_logs(notification_doc, hr_manager_users)
+						overdue_notifications_sent += 1
+						
+						frappe.log_error(
+							f"Overdue reminder: {label} for {employee_name} ({days_overdue} days)",
+							"Welcome Formalities Overdue Reminder"
+						)
+		
+		except Exception as e:
+			frappe.log_error(
+				f"Error processing reminder for {employee_data.name}: {str(e)[:100]}",
+				"Welcome Formalities Reminder Error"
+			)
+	
+	total_notifications = notifications_sent + overdue_notifications_sent
+	if total_notifications > 0:
+		# Commit all notifications
+		frappe.db.commit()
+		frappe.log_error(
+			f"Reminders sent: {notifications_sent} upcoming, {overdue_notifications_sent} overdue (Total: {total_notifications})",
+			"Welcome Formalities Reminder Summary"
+		)
+
