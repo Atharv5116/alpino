@@ -6,4 +6,3 @@
 # Patches added in this section will be executed after doctypes are migrated
 alpinos.patches.v1_0.update_job_requisition_fields
 alpinos.patches.v1_0.setup_job_applicant_workflow
-alpinos.patches.v1_0.ensure_unique_id_field
