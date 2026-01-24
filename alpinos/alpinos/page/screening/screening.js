@@ -46,8 +46,7 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 					'applicant_name',
 					'resume_link',
 					'degree',
-					'upper_range',
-					'currency',
+					'employment_expected_ctc',
 					'candidate_category',
 					'screening_status'
 				],
@@ -100,9 +99,12 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			
 			// Expected CTC
 			var expectedCTC = '-';
-			if (applicant.upper_range) {
-				var currency = applicant.currency || '';
-				expectedCTC = currency + ' ' + format_currency(applicant.upper_range);
+			if (applicant.employment_expected_ctc) {
+				var ctcValue = parseFloat(applicant.employment_expected_ctc) || 0;
+				if (ctcValue > 0) {
+					// Format as currency (INR by default)
+					expectedCTC = 'INR ' + format_currency(ctcValue);
+				}
 			}
 			row.append('<td>' + expectedCTC + '</td>');
 			

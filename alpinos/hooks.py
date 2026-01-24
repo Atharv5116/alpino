@@ -90,6 +90,11 @@ app_license = "mit"
 # before_install = "alpinos.install.before_install"
 # after_install = "alpinos.install.after_install"
 
+# Boot Session Hook
+# ------------
+# Apply patches when session boots (ensures patch is active on every request)
+boot_session = "alpinos.overrides.interview_override.setup_interview_override"
+
 # Fixtures
 # --------
 fixtures = [
@@ -108,7 +113,8 @@ after_migrate = [
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
 	"alpinos.workflow_setup.execute",
-	"alpinos.page_setup.create_screening_page"
+	"alpinos.page_setup.create_screening_page",
+	"alpinos.overrides.interview_override.setup_interview_override"
 ]
 
 # Uninstallation
@@ -180,7 +186,9 @@ doc_events = {
 		"on_update": "alpinos.job_opening_automation.ensure_job_application_route"
 	},
 	"Job Applicant": {
+		"before_insert": "alpinos.job_applicant_automation.auto_populate_from_job_opening",
 		"before_save": [
+			"alpinos.job_applicant_automation.auto_populate_from_job_opening",
 			"alpinos.job_applicant_automation.generate_candidate_id",
 			"alpinos.job_applicant_automation.update_screening_status_automatically"
 		]

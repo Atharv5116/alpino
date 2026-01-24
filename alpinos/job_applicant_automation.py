@@ -420,18 +420,31 @@ def auto_populate_from_job_requisition(doc, method=None):
 
 def auto_populate_from_job_opening(doc, method=None):
 	"""
-	Auto-populate fields from Job Opening when selected via job_title
+	Auto-populate fields from Job Opening when selected via job_title or job_requisition
 	Note: job_requisition field now links directly to Job Opening (not Job Requisition)
+	This ensures job_requisition is always set when job_title is provided (from web form URL)
 	"""
-	# This is a fallback - if job_title is selected, sync with job_requisition field
+	# Map job_title to job_requisition if job_title is set but job_requisition is not
 	if doc.job_title and not doc.job_requisition:
 		# job_requisition field now directly links to Job Opening
 		doc.job_requisition = doc.job_title
-		
-		# Auto-populate designation
-		job_opening = frappe.get_doc("Job Opening", doc.job_title)
-		if not doc.designation and job_opening.designation:
-			doc.designation = job_opening.designation
+		frappe.logger().info(f"Auto-mapped job_title {doc.job_title} to job_requisition")
+	
+	# Also sync job_title if job_requisition is set but job_title is not
+	if doc.job_requisition and not doc.job_title:
+		doc.job_title = doc.job_requisition
+		frappe.logger().info(f"Auto-mapped job_requisition {doc.job_requisition} to job_title")
+	
+	# Auto-populate designation from Job Opening
+	if doc.job_requisition:
+		try:
+			job_opening = frappe.get_doc("Job Opening", doc.job_requisition)
+			if not doc.designation and job_opening.designation:
+				doc.designation = job_opening.designation
+		except frappe.DoesNotExistError:
+			frappe.logger().warning(f"Job Opening {doc.job_requisition} not found")
+		except Exception as e:
+			frappe.logger().error(f"Error fetching Job Opening {doc.job_requisition}: {str(e)}")
 
 
 def send_acknowledgement_emails(doc, method=None):
