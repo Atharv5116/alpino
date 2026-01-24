@@ -114,7 +114,8 @@ after_migrate = [
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
 	"alpinos.workflow_setup.execute",
 	"alpinos.page_setup.create_screening_page",
-	"alpinos.overrides.interview_override.setup_interview_override"
+	"alpinos.overrides.interview_override.setup_interview_override",
+	"alpinos.update_job_application_webform.update_web_form_script"
 ]
 
 # Uninstallation
@@ -214,8 +215,7 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
-		"alpinos.employee_onboarding_automation.send_welcome_formalities_reminders"
+		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
 	],
 }
 
