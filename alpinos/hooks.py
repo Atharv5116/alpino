@@ -214,7 +214,8 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
+		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
+		"alpinos.employee_onboarding_automation.send_welcome_formalities_reminders"
 	],
 }
 

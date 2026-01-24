@@ -98,6 +98,7 @@ def execute():
 			applicant.insert(ignore_permissions=True)
 			
 			# Set candidate_id = name (after insert, name is set)
+			# Both will be in AHFPL0000 format (e.g., AHFPL0001, AHFPL0002)
 			applicant.candidate_id = applicant.name
 			applicant.save(ignore_permissions=True)
 			

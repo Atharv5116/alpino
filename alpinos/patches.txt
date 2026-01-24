@@ -6,5 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 alpinos.patches.v1_0.update_job_requisition_fields
 alpinos.patches.v1_0.setup_job_applicant_workflow
-# alpinos.patches.v1_0.ensure_unique_id_field  # Removed: unique_id field was deleted, replaced with candidate_id
-# alpinos.patches.v1_0.fix_employee_onboarding_field_order  # Removed: references unique_id which was deleted
+alpinos.patches.v1_0.ensure_unique_id_field
