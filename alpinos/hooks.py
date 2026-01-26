@@ -113,9 +113,15 @@ after_migrate = [
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
 	"alpinos.workflow_setup.execute",
+<<<<<<< HEAD
 	"alpinos.page_setup.create_screening_page",
 	"alpinos.overrides.interview_override.setup_interview_override",
 	"alpinos.update_job_application_webform.update_web_form_script"
+=======
+	"alpinos.customize_expense_claim.execute",
+	"alpinos.page_setup.create_screening_page",
+	"alpinos.employee_expense_claim_button.execute"
+>>>>>>> 75ba49d (Reimbursement)
 ]
 
 # Uninstallation
@@ -163,7 +169,8 @@ after_migrate = [
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant"
+	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
+	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride"
 }
 
 # Document Events
@@ -218,6 +225,13 @@ scheduler_events = {
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
 	],
 }
+
+# Boot Info Extensions
+# --------------------
+
+extend_bootinfo = [
+	"alpinos.customize_expense_claim.extend_bootinfo"
+]
 
 # Testing
 # -------

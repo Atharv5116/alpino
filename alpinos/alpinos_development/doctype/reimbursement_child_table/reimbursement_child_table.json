@@ -1,0 +1,93 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-01-23 18:23:52.667181",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "expense_type",
+  "expense_date",
+  "amount_claimed",
+  "description",
+  "receipt",
+  "payment_type",
+  "payment_mode"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "expense_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Expense Type",
+   "options": "Travel\nFood\nBusiness\nFuel",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "expense_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Expense date",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "amount_claimed",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount Claimed",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Description ",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "receipt",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Receipt",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "payment_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Payment Type",
+   "options": "Inside Payroll\nOutside Payroll",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "payment_mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Payment Mode",
+   "options": "Cash\nBank\nUPI",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-01-24 10:44:08.333431",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Reimbursement child table",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
