@@ -77,12 +77,10 @@ def update_job_application_webform():
 		"employment_end_date",
 		"employment_reason_for_leaving",
 		"employment_notice_period",
-		# Qualification Section (same order as doctype)
-		"qualification_section",
-		"degree",
-		# Reference
-		"reference",
-	]
+	# Qualification Section (same order as doctype)
+	"qualification_section",
+	"degree",
+]
 	
 	# Create a dict of existing fields for quick lookup (extract data as dict)
 	# Exclude fields that should be hidden/removed
@@ -283,14 +281,14 @@ def get_field_config(fieldname):
 			"label": "Application Date",
 			"reqd": 1,
 		},
-		"job_requisition": {
-			"doctype": "Web Form Field",
-			"fieldname": "job_requisition",
-			"fieldtype": "Link",
-			"label": "Job Opening",
-			"options": "Job Opening",
-			"reqd": 1,
-		},
+	"job_requisition": {
+		"doctype": "Web Form Field",
+		"fieldname": "job_requisition",
+		"fieldtype": "Link",
+		"label": "Job Opening",
+		"options": "Job Opening",
+		"reqd": 1,
+	},
 		"source": {
 			"doctype": "Web Form Field",
 			"fieldname": "source",
@@ -316,18 +314,11 @@ def get_field_config(fieldname):
 		"expected_date_of_joining": {
 			"doctype": "Web Form Field",
 			"fieldname": "expected_date_of_joining",
-			"fieldtype": "Date",
-			"label": "Expected Date of Joining",
-			"reqd": 0,
-		},
-		"reference": {
-			"doctype": "Web Form Field",
-			"fieldname": "reference",
-			"fieldtype": "Table",
-			"label": "Reference (If Any)",
-			"options": "Job Application Reference",
-		},
-		"employment_company_name": {
+		"fieldtype": "Date",
+		"label": "Expected Date of Joining",
+		"reqd": 0,
+	},
+	"employment_company_name": {
 			"doctype": "Web Form Field",
 			"fieldname": "employment_company_name",
 			"fieldtype": "Data",

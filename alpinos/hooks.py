@@ -115,7 +115,8 @@ after_migrate = [
 	"alpinos.workflow_setup.execute",
 	"alpinos.page_setup.create_screening_page",
 	"alpinos.overrides.interview_override.setup_interview_override",
-	"alpinos.update_job_application_webform.update_web_form_script"
+	"alpinos.update_job_application_webform.update_web_form_script",
+	"alpinos.web_form_update.update_job_application_webform"
 ]
 
 # Uninstallation
@@ -173,6 +174,10 @@ override_doctype_class = {
 doc_events = {
 	"Job Requisition": {
 		"before_insert": "alpinos.job_requisition_automation.set_requested_by",
+		"validate": [
+			"alpinos.job_requisition_automation.validate_salary_range",
+			"alpinos.job_requisition_automation.validate_job_requisition"
+		],
 		"before_save": [
 			"alpinos.job_requisition_automation.update_approval_fields",
 			"alpinos.job_requisition_automation.fetch_reporting_manager"

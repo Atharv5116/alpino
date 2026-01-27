@@ -7,7 +7,7 @@ Automation scripts for Job Requisition
 
 import frappe
 from frappe import _
-from frappe.utils import now
+from frappe.utils import getdate, now
 
 
 def set_requested_by(doc, method=None):
@@ -66,6 +66,75 @@ def fetch_reporting_manager(doc, method=None):
 			user_id = frappe.db.get_value("Employee", linked_emp_manager, "user_id")
 			if user_id:
 				doc.reporting_manager_user = user_id
+
+
+def validate_salary_range(doc, method=None):
+	"""
+	Validate that CTC Lower Range (expected_compensation) is less than CTC Upper Range (ctc_upper_range).
+	"""
+	if doc.doctype != "Job Requisition":
+		return
+	lower = doc.get("expected_compensation")
+	upper = doc.get("ctc_upper_range")
+	if lower is not None and upper is not None and (lower or 0) >= (upper or 0):
+		frappe.throw(
+			_("CTC Lower Range / Monthly must be less than CTC Upper Range / Monthly."),
+			title=_("Invalid Salary Range"),
+		)
+
+
+def validate_job_requisition(doc, method=None):
+	"""
+	Validations 2-5 for Job Requisition:
+	- Number of positions > 0
+	- Hiring deadline >= today
+	- Min experience >= 0 (and <= 50)
+	- If Vacancy Type is Replace, Linked Employee is required
+	"""
+	if doc.doctype != "Job Requisition":
+		return
+
+	# 2. Number of positions must be greater than 0
+	no_of_positions = doc.get("no_of_positions")
+	if no_of_positions is not None and (no_of_positions or 0) <= 0:
+		frappe.throw(
+			_("Number of Positions must be greater than 0."),
+			title=_("Invalid Number of Positions"),
+		)
+
+	# 3. Hiring deadline must be today or in the future
+	hiring_deadline = doc.get("hiring_deadline")
+	if hiring_deadline:
+		if getdate(hiring_deadline) < getdate():
+			frappe.throw(
+				_("Hiring Deadline cannot be in the past."),
+				title=_("Invalid Hiring Deadline"),
+			)
+
+	# 4. Min experience must be >= 0 and <= 50 (reasonable cap)
+	min_exp = doc.get("min_experience")
+	if min_exp is not None:
+		try:
+			val = int(min_exp)
+			if val < 0:
+				frappe.throw(
+					_("Min. Experience (Years) cannot be negative."),
+					title=_("Invalid Min. Experience"),
+				)
+			if val > 50:
+				frappe.throw(
+					_("Min. Experience (Years) cannot exceed 50."),
+					title=_("Invalid Min. Experience"),
+				)
+		except (TypeError, ValueError):
+			pass  # allow doctype/UI to handle non-numeric
+
+	# 5. If Vacancy Type is Replace, Linked Employee is required
+	if doc.get("vacancy_type") == "Replace" and not doc.get("linked_employee"):
+		frappe.throw(
+			_("Linked Employee is required when Vacancy Type is Replace."),
+			title=_("Missing Linked Employee"),
+		)
 
 
 def update_approval_fields(doc, method=None):
