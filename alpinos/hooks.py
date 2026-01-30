@@ -195,7 +195,10 @@ doc_events = {
 		]
 	},
 	"Job Opening": {
-		"before_save": "alpinos.job_opening_automation.set_job_application_route",
+		"before_save": [
+			"alpinos.job_opening_automation.set_job_application_route",
+			"alpinos.job_opening_automation.set_source_urls"
+		],
 		"on_update": "alpinos.job_opening_automation.ensure_job_application_route"
 	},
 	"Job Applicant": {

@@ -24,10 +24,26 @@ def update_web_form_script():
 (function() {
     const urlParams = new URLSearchParams(window.location.search);
     const jobTitle = urlParams.get('job_title');
+    const sourceParam = urlParams.get('source');
     
-    if (!jobTitle) return;
+    if (!jobTitle && !sourceParam) return;
     
-    console.log('🔍 Found job_title in URL:', jobTitle);
+    const sourceMap = {
+        'linkedin': 'LinkedIn',
+        'indeed': 'Indeed',
+        'naukari.com': 'Naukari.com',
+        'naukari': 'Naukari.com',
+        'naukri.com': 'Naukri.com',
+        'naukri': 'Naukri.com'
+    };
+    const sourceValue = sourceParam ? (sourceMap[sourceParam.toLowerCase()] || sourceParam) : null;
+    
+    if (jobTitle) {
+        console.log('🔍 Found job_title in URL:', jobTitle);
+    }
+    if (sourceValue) {
+        console.log('🔍 Found source in URL:', sourceValue);
+    }
     
     // Simple DOM-based approach - find input by name
     function setFieldValue() {
@@ -614,6 +630,7 @@ $(document).ready(function() {
             }
         }
         
+<<<<<<< HEAD
         // If there are errors, show them and prevent submit
         if (errors.length > 0) {
             e.preventDefault();
@@ -624,6 +641,132 @@ $(document).ready(function() {
             });
             return false;
         }
+=======
+        waitForWebForm(function() {
+            function setJobRequisition() {
+                if (!frappe.web_form) return false;
+                
+                try {
+                    // CRITICAL: Set job_requisition (this is the required field)
+                    if (frappe.web_form.doc && jobTitle) {
+                        frappe.web_form.doc.job_requisition = jobTitle;
+                        console.log('✅ Set job_requisition in doc:', jobTitle);
+                    }
+                    
+                    // Also set job_title for compatibility
+                    if (frappe.web_form.doc && jobTitle) {
+                        frappe.web_form.doc.job_title = jobTitle;
+                    }
+                    
+                    if (frappe.web_form.doc && sourceValue) {
+                        frappe.web_form.doc.source = sourceValue;
+                    }
+                    
+                    // Set via web form API - job_requisition (the actual form field)
+                    if (frappe.web_form.set_value) {
+                        if (jobTitle) {
+                            frappe.web_form.set_value('job_requisition', jobTitle);
+                            frappe.web_form.set_value('job_title', jobTitle);
+                        }
+                        if (sourceValue) {
+                            frappe.web_form.set_value('source', sourceValue);
+                        }
+                    }
+                    
+                    // Set via field if available
+                    if (frappe.web_form.fields_dict) {
+                        // Set job_requisition field (the visible form field)
+                        if (frappe.web_form.fields_dict.job_requisition && jobTitle) {
+                            const field = frappe.web_form.fields_dict.job_requisition;
+                            if (field) {
+                                if (field.set_value) {
+                                    field.set_value(jobTitle);
+                                }
+                                if (field.$input) {
+                                    field.$input.val(jobTitle);
+                                    field.$input.trigger('change');
+                                }
+                            }
+                        }
+                        // Also set job_title if field exists
+                        if (frappe.web_form.fields_dict.job_title && jobTitle) {
+                            const field = frappe.web_form.fields_dict.job_title;
+                            if (field && field.set_value) {
+                                field.set_value(jobTitle);
+                            }
+                        }
+                        if (frappe.web_form.fields_dict.source && sourceValue) {
+                            const field = frappe.web_form.fields_dict.source;
+                            if (field) {
+                                if (field.set_value) {
+                                    field.set_value(sourceValue);
+                                }
+                                if (field.df) {
+                                    field.df.read_only = 1;
+                                }
+                                if (field.$input) {
+                                    field.$input.val(sourceValue);
+                                    field.$input.prop('disabled', true);
+                                    field.$input.trigger('change');
+                                }
+                                if (field.refresh) {
+                                    field.refresh();
+                                }
+                            }
+                        }
+                    }
+                    
+                    return true;
+                } catch (e) {
+                    console.error('❌ Error setting job_requisition:', e);
+                    return false;
+                }
+            }
+            
+            // Set immediately
+            setJobRequisition();
+            
+            // Retry a few times
+            let attempts = 0;
+            const retry = setInterval(function() {
+                attempts++;
+                if (setJobRequisition() || attempts >= 5) {
+                    clearInterval(retry);
+                }
+            }, 300);
+            
+            // CRITICAL: Ensure job_requisition before submit
+            $(document).on('submit', '.web-form', function(e) {
+                if (frappe.web_form && frappe.web_form.doc) {
+                    if (jobTitle) {
+                        frappe.web_form.doc.job_requisition = jobTitle;
+                        frappe.web_form.doc.job_title = jobTitle;
+                        console.log('✅ Set job_requisition before submit:', jobTitle);
+                    }
+                    if (sourceValue) {
+                        frappe.web_form.doc.source = sourceValue;
+                    }
+                }
+            });
+            
+            // Intercept save method safely
+            if (frappe.web_form && frappe.web_form.save) {
+                const originalSave = frappe.web_form.save.bind(frappe.web_form);
+                frappe.web_form.save = function() {
+                    if (this.doc) {
+                        if (jobTitle) {
+                            this.doc.job_requisition = jobTitle;
+                            this.doc.job_title = jobTitle;
+                        }
+                        if (sourceValue) {
+                            this.doc.source = sourceValue;
+                        }
+                    }
+                    return originalSave();
+                };
+            }
+        });
+>>>>>>> 7d11622 (Source urls)
     });
 });"""
 	
