@@ -4,4 +4,6 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
-alpinos.patches.v1_0.update_job_requisition_fields.execute
+alpinos.patches.v1_0.update_job_requisition_fields
+alpinos.patches.v1_0.setup_job_applicant_workflow
+alpinos.patches.create_attendance_widget

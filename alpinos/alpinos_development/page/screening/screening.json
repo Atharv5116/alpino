@@ -1,0 +1,20 @@
+{
+ "content": null,
+ "creation": "2026-01-27 22:41:19.083828",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "fa fa-filter",
+ "idx": 0,
+ "modified": "2026-01-27 22:41:19.083828",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "screening",
+ "owner": "Administrator",
+ "page_name": "screening",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Screening"
+}
