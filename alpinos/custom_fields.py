@@ -316,6 +316,32 @@ def setup_custom_fields():
 				description="User ID of requestor's manager (for workflow)",
 			),
 		],
+		"Job Opening": [
+			dict(
+				fieldname="source_linkedin",
+				label="Source LinkedIn URL",
+				fieldtype="Data",
+				options="URL",
+				read_only=1,
+				insert_after="job_application_route",
+			),
+			dict(
+				fieldname="source_indeed",
+				label="Source Indeed URL",
+				fieldtype="Data",
+				options="URL",
+				read_only=1,
+				insert_after="source_linkedin",
+			),
+			dict(
+				fieldname="source_naukari",
+				label="Source Naukari.com URL",
+				fieldtype="Data",
+				options="URL",
+				read_only=1,
+				insert_after="source_indeed",
+			),
+		],
 	"Job Applicant": [
 		# Qualification Section Break (after notice_period or last employment field)
 		dict(
@@ -449,7 +475,7 @@ def setup_custom_fields():
 	}
 	
 	create_custom_fields(custom_fields, update=True)
-	print("Custom fields created for Job Requisition and Job Applicant")
+	print("Custom fields created for Job Requisition, Job Opening, and Job Applicant")
 	
 	# Delete qualification table field if it exists (it references non-existent Qualification DocType)
 	delete_qualification_field()
