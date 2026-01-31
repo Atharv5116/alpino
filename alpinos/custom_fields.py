@@ -485,5 +485,9 @@ def setup_custom_fields():
 	
 	# Hide status field
 	hide_status_field()
+
+	# Make Interview Feedback skill assessment optional
+	update_property_setter("Interview Feedback", "skill_assessment", "reqd", "0", "Check")
+	print("✅ Made Interview Feedback skill assessment optional")
 	
 	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")

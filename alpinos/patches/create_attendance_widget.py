@@ -8,7 +8,7 @@ def execute():
     label = "Employee Check In / Out"
 
     html = """
-<div style="padding:24px; border:1px solid #cfe5db; border-radius:12px; width:50%; background:#eaf7f1; min-height:210px;">
+<div style="padding:24px; border:1px solid #cfe5db; border-radius:12px; width:49.5%; background:#eaf7f1; min-height:210px; transform:scale(0.99); transform-origin: top left;">
   <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
     <h4 style="margin:0; font-size:18px; color:#0f172a;">Attendance</h4>
     <span id="att-status" style="padding:4px 10px; border-radius:999px; font-weight:600; font-size:12px; border:1px solid #cbd5e1; background:#f1f5f9; color:#334155;">Loading</span>
@@ -47,9 +47,10 @@ loadStatus();
 function loadStatus(){
   frappe.call({
     method:"alpinos.attendance_widget.get_status",
+    silent: true,
     callback(r){
       if(r.exc){
-        showError(r.exc);
+        resetUI();
         return;
       }
       let status = r.message ? r.message.status : "NONE";
