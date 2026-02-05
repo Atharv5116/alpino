@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-02-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_upload",
+  "slack_export",
+  "workspace_name",
+  "section_status",
+  "status",
+  "summary"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_upload",
+   "fieldtype": "Section Break",
+   "label": "Slack Export"
+  },
+  {
+   "fieldname": "slack_export",
+   "fieldtype": "Attach",
+   "label": "Slack Export ZIP",
+   "reqd": 1
+  },
+  {
+   "default": "Slack",
+   "fieldname": "workspace_name",
+   "fieldtype": "Data",
+   "label": "Raven Workspace Name",
+   "description": "Workspace in Raven into which channels and messages will be imported."
+  },
+  {
+   "fieldname": "section_status",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "default": "Not Started",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Not Started\nRunning\nCompleted\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Long Text",
+   "label": "Summary / Log",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "make_attachments_public": 0,
+ "modified": "2026-02-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Slack To Raven Import",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "quick_entry": 0,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
+

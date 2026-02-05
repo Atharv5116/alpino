@@ -3,10 +3,7 @@ from frappe.utils import add_days, get_datetime, getdate, now_datetime
 
 
 def _get_employee_for_user(user):
-    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
-    if not employee:
-        frappe.throw("No Employee linked to this user.")
-    return employee
+    return frappe.db.get_value("Employee", {"user_id": user}, "name")
 
 
 def _get_today_range():
@@ -52,6 +49,8 @@ def _get_today_last_checkout(employee):
 @frappe.whitelist()
 def get_status():
     employee = _get_employee_for_user(frappe.session.user)
+    if not employee:
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
     today_in = _get_today_first_checkin(employee)
     if not today_in:
         return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
@@ -75,28 +74,38 @@ def get_status():
 
 
 @frappe.whitelist()
-def check_in():
+def check_in(latitude=None, longitude=None):
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check In.")
 
     employee = _get_employee_for_user(frappe.session.user)
+    if not employee:
+        frappe.throw("No Employee linked to this user.")
     today_last = _get_today_last_checkin(employee)
     if today_last:
         frappe.throw("You can only Check In once per day.")
 
-    doc = frappe.get_doc(
-        {"doctype": "Employee Checkin", "employee": employee, "log_type": "IN"}
-    )
+    values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "IN"}
+
+    # Pass optional geolocation data if provided
+    if latitude is not None:
+        values["latitude"] = latitude
+    if longitude is not None:
+        values["longitude"] = longitude
+
+    doc = frappe.get_doc(values)
     doc.insert()
     return {"status": "IN", "time": doc.time}
 
 
 @frappe.whitelist()
-def check_out():
+def check_out(latitude=None, longitude=None):
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check Out.")
 
     employee = _get_employee_for_user(frappe.session.user)
+    if not employee:
+        frappe.throw("No Employee linked to this user.")
     today_last = _get_today_last_checkin(employee)
     if not today_last or today_last[0]["log_type"] != "IN":
         frappe.throw("You must Check In today before Check Out.")
@@ -105,9 +114,15 @@ def check_out():
     if last_out:
         frappe.throw("You have already Checked Out today.")
 
-    doc = frappe.get_doc(
-        {"doctype": "Employee Checkin", "employee": employee, "log_type": "OUT"}
-    )
+    values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "OUT"}
+
+    # Pass optional geolocation data if provided
+    if latitude is not None:
+        values["latitude"] = latitude
+    if longitude is not None:
+        values["longitude"] = longitude
+
+    doc = frappe.get_doc(values)
     doc.insert()
     in_time = _get_today_first_checkin(employee)[0]["time"]
     elapsed_seconds = int((doc.time - in_time).total_seconds())
