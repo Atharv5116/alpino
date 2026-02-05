@@ -171,7 +171,8 @@ after_migrate = [
 
 override_doctype_class = {
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
-	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride"
+	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
+	"Interview": "alpinos.overrides.interview_override.CustomInterview"
 }
 
 # Document Events

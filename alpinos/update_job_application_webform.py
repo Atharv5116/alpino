@@ -475,11 +475,34 @@ $(document).ready(function() {
     });
     
     // Employment dates validation
+    $(document).on('change', 'input[data-fieldname="employment_start_date"]', function() {
+        const startDate = $(this).val();
+        const endDate = $('input[data-fieldname="employment_end_date"]').val();
+        
+        if (startDate && endDate && startDate === endDate) {
+            frappe.msgprint({
+                title: __('Invalid Date'),
+                message: __('Start Date and End Date cannot be the same'),
+                indicator: 'red'
+            });
+            $(this).val('');
+        }
+    });
+
     $(document).on('change', 'input[data-fieldname="employment_end_date"]', function() {
         const startDate = $('input[data-fieldname="employment_start_date"]').val();
         const endDate = $(this).val();
         
         if (startDate && endDate) {
+            if (startDate === endDate) {
+                frappe.msgprint({
+                    title: __('Invalid Date'),
+                    message: __('Start Date and End Date cannot be the same'),
+                    indicator: 'red'
+                });
+                $(this).val('');
+                return;
+            }
             const start = new Date(startDate);
             const end = new Date(endDate);
             
@@ -630,7 +653,6 @@ $(document).ready(function() {
             }
         }
         
-<<<<<<< HEAD
         // If there are errors, show them and prevent submit
         if (errors.length > 0) {
             e.preventDefault();
@@ -641,7 +663,6 @@ $(document).ready(function() {
             });
             return false;
         }
-=======
         waitForWebForm(function() {
             function setJobRequisition() {
                 if (!frappe.web_form) return false;
@@ -766,12 +787,17 @@ $(document).ready(function() {
                 };
             }
         });
->>>>>>> 7d11622 (Source urls)
     });
 });"""
 	
 	# Combine scripts
 	web_form.client_script = existing_script + new_script
+
+	# Standard Web Forms can only be saved in developer mode
+	if not frappe.conf.get("developer_mode"):
+		print("ℹ️  Skipped web form update (developer mode is off).")
+		return
+
 	web_form.save(ignore_permissions=True)
 	frappe.db.commit()
 	

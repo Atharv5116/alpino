@@ -1,0 +1,118 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-03 20:44:09.892102",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "policy_assignment",
+  "leave_policy",
+  "document_policy",
+  "shift_policy",
+  "overtime_policy",
+  "holiday_policy",
+  "comp_off_policy",
+  "attendance_policy",
+  "work_from_home_wfh_policy",
+  "grace_policy",
+  "reimbursement_policy",
+  "geo_fencing_policy",
+  "other_policy"
+ ],
+ "fields": [
+  {
+   "fieldname": "policy_assignment",
+   "fieldtype": "Link",
+   "label": "Policy Assignment",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "leave_policy",
+   "fieldtype": "Link",
+   "label": "Leave Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "document_policy",
+   "fieldtype": "Link",
+   "label": "Document Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "shift_policy",
+   "fieldtype": "Link",
+   "label": "Shift Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "overtime_policy",
+   "fieldtype": "Link",
+   "label": "Overtime Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "holiday_policy",
+   "fieldtype": "Link",
+   "label": "Holiday Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "comp_off_policy",
+   "fieldtype": "Link",
+   "label": "Comp Off Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "attendance_policy",
+   "fieldtype": "Link",
+   "label": "Attendance Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "work_from_home_wfh_policy",
+   "fieldtype": "Link",
+   "label": "Work From Home (WFH) Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "grace_policy",
+   "fieldtype": "Link",
+   "label": "Grace Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "reimbursement_policy",
+   "fieldtype": "Link",
+   "label": "Reimbursement Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "geo_fencing_policy",
+   "fieldtype": "Link",
+   "label": "Geo Fencing Policy",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "other_policy",
+   "fieldtype": "Link",
+   "label": "Other Policy",
+   "options": "Policy"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-03 20:48:31.935238",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Policy child",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
