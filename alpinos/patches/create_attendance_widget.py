@@ -33,6 +33,8 @@ const root = root_element;
 let emp = null;
 let startTime = null;
 let timer = null;
+let latitude = null;
+let longitude = null;
 
 const statusEl = root.querySelector("#att-status");
 const timerEl = root.querySelector("#att-timer");
@@ -75,19 +77,65 @@ function loadStatus(){
   });
 }
 
+function fetchLocation(callback) {
+  // Try to fetch browser geolocation similar to Employee Checkin "Fetch Location"
+  if (!navigator.geolocation) {
+    frappe.msgprint({
+      message: "Geolocation is not supported by your current browser",
+      title: "Geolocation Error",
+      indicator: "red"
+    });
+    if (callback) callback();
+    return;
+  }
+
+  frappe.dom.freeze("Fetching your geolocation...");
+
+  navigator.geolocation.getCurrentPosition(
+    function (position) {
+      latitude = position.coords.latitude;
+      longitude = position.coords.longitude;
+      frappe.dom.unfreeze();
+      if (callback) callback();
+    },
+    function (error) {
+      frappe.dom.unfreeze();
+
+      let msg = "Unable to retrieve your location";
+      if (error) {
+        msg += `<br><br>ERROR(${error.code}): ${error.message}`;
+      }
+
+      frappe.msgprint({
+        message: msg,
+        title: "Geolocation Error",
+        indicator: "red",
+      });
+
+      if (callback) callback();
+    }
+  );
+}
+
 function checkIn(){
   btn("btn-in", true);
-  frappe.call({
-    method:"alpinos.attendance_widget.check_in",
-    callback(r){
-      if(r.exc){
-        showError(r.exc);
-        btn("btn-in", false);
-        return;
+  fetchLocation(function () {
+    frappe.call({
+      method:"alpinos.attendance_widget.check_in",
+      args: {
+        latitude: latitude,
+        longitude: longitude,
+      },
+      callback(r){
+        if(r.exc){
+          showError(r.exc);
+          btn("btn-in", false);
+          return;
+        }
+        frappe.show_alert({message:"Checked In",indicator:"green"});
+        loadStatus();
       }
-      frappe.show_alert({message:"Checked In",indicator:"green"});
-      loadStatus();
-    }
+    });
   });
 }
 
@@ -95,6 +143,10 @@ function checkOut(){
   btn("btn-out", true);
   frappe.call({
     method:"alpinos.attendance_widget.check_out",
+    args: {
+      latitude: latitude,
+      longitude: longitude,
+    },
     callback(r){
       if(r.exc){
         showError(r.exc);
