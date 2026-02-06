@@ -165,6 +165,13 @@ after_migrate = [
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
 
+# Raven permissions (override from Alpinos, without touching raven app)
+# Ensures Raven can list channels/messages by membership (helps imports + visibility).
+permission_query_conditions = {
+	"Raven Channel": "alpinos.raven_permissions.raven_channel_query",
+	"Raven Message": "alpinos.raven_permissions.raven_message_query",
+}
+
 # DocType Class
 # ---------------
 # Override standard doctype classes

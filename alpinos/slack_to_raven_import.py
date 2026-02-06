@@ -2,6 +2,7 @@ import json
 import os
 import zipfile
 from datetime import datetime
+import hashlib
 from typing import Dict, List, Optional, Tuple
 
 import frappe
@@ -169,7 +170,12 @@ def import_slack_export(file_url: str, workspace_name: Optional[str] = None) -> 
 
 			# 4) Messages (text + system messages, threads, reactions)
 			message_counts, message_index = _import_messages(
-				zf, channels, channel_files, slack_channel_to_raven_channel, slack_user_to_raven_user
+				zf,
+				channels,
+				channel_files,
+				slack_channel_to_raven_channel,
+				slack_user_to_raven_user,
+				workspace.name,
 			)
 
 			# 5) Pins (after messages so we can resolve message IDs)
@@ -257,9 +263,33 @@ def _build_channel_files_index(zf: zipfile.ZipFile) -> Dict[str, List[str]]:
 	return index
 
 
+def _stable_hex_id(*parts: object) -> str:
+	"""Create a deterministic hex id for idempotent inserts."""
+	raw = "|".join("" if p is None else str(p) for p in parts)
+	return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _slack_message_name(raven_channel: str, slack_ts: str) -> str:
+	"""Deterministic Raven Message.name for a Slack message in a channel."""
+	return _stable_hex_id("slack_msg", raven_channel, slack_ts)
+
+
+def _slack_reaction_name(message_name: str, owner: str, reaction: str) -> str:
+	"""Deterministic Raven Message Reaction.name for a Slack reaction."""
+	return _stable_hex_id("slack_rx", message_name, owner, reaction)
+
+
 def _ensure_users_and_raven_users(users: List[dict]) -> Dict[str, str]:
 	"""
-	Ensure Frappe User + Raven User for each Slack user that has an email.
+	Ensure Frappe User + Raven User for each Slack user.
+
+	Previously we only handled users that had an email address in Slack, which
+	meant messages from users without email were silently skipped. To import the
+	full history we now:
+
+	  - Use the real email when available.
+	  - Otherwise create a disabled system user with a **synthetic** email
+	    derived from the Slack user ID (e.g. slack-U123@slack.local).
 
 	Returns:
 	    Mapping: slack_user_id -> raven_user_name (which equals Frappe User.name)
@@ -287,15 +317,19 @@ def _ensure_users_and_raven_users(users: List[dict]) -> Dict[str, str]:
 
 		profile = u.get("profile") or {}
 		email = profile.get("email")
-		if not email:
-			# Without email we can't reliably map to a system user – skip for now.
-			continue
 
-		real_name = profile.get("real_name") or profile.get("display_name") or email
-		first_name = profile.get("first_name") or real_name.split(" ")[0]
+		real_name = profile.get("real_name") or profile.get("display_name") or email or slack_id
+		first_name = profile.get("first_name") or (real_name.split(" ")[0] if real_name else slack_id)
 		last_name = profile.get("last_name") or ""
 
 		is_deleted = cint(u.get("deleted")) == 1
+
+		# If Slack user has no email, create a deterministic synthetic email so that
+		# we can still map all their messages to a Frappe User + Raven User.
+		synthetic_email = False
+		if not email:
+			email = f"slack-{slack_id}@slack.local"
+			synthetic_email = True
 
 		# 1) Ensure Frappe User
 		user_name = frappe.db.get_value("User", {"email": email}, "name")
@@ -307,9 +341,10 @@ def _ensure_users_and_raven_users(users: List[dict]) -> Dict[str, str]:
 					"first_name": first_name,
 					"last_name": last_name,
 					"full_name": real_name,
-					"username": u.get("name") or email.split("@")[0],
+					"username": u.get("name") or (email.split("@")[0] if email else slack_id),
 					"user_type": "System User",
-					"enabled": 0 if is_deleted else 1,
+					# Synthetic / deleted users are disabled so they can't log in.
+					"enabled": 0 if is_deleted or synthetic_email else 1,
 				}
 			)
 			# Ensure at least one role before insert to avoid "No Roles Specified" validation
@@ -503,6 +538,7 @@ def _import_messages(
 	channel_files: Dict[str, List[str]],
 	slack_channel_to_raven_channel: Dict[str, str],
 	slack_user_to_raven_user: Dict[str, str],
+	workspace_name: str,
 ) -> Tuple[Dict[str, int], Dict[Tuple[str, str], str]]:
 	"""
 	Import messages for each Slack channel into Raven Message.
@@ -519,23 +555,40 @@ def _import_messages(
 	replies_linked = 0
 	# (slack_channel_name, slack_ts) -> raven_message_name
 	message_index: Dict[Tuple[str, str], str] = {}
+	pending_replies: List[Tuple[str, str, str]] = []  # (message_name, slack_channel_name, thread_ts)
 
-	for ch in channels:
+	# Build a quick lookup so we can map a folder name -> channel metadata from channels.json
+	channel_lookup: Dict[str, dict] = {}
+	for c in channels:
+		if not isinstance(c, dict):
+			continue
+		if c.get("name"):
+			channel_lookup[c["name"]] = c
+		if c.get("id"):
+			channel_lookup[c["id"]] = c
+
+	# Iterate over actual folders found in the zip, and only process those that match a real channel
+	# name from channels.json. This avoids accidentally skipping channels due to any mismatch between
+	# channels.json and folder naming, and ignores non-channel folders (e.g. Canvas / FC:* entries).
+	for folder_name, files in channel_files.items():
+		ch = channel_lookup.get(folder_name)
+		if not ch:
+			continue
+
 		slack_name = ch.get("name")
 		if not slack_name:
 			continue
 
 		raven_channel = slack_channel_to_raven_channel.get(slack_name)
-		if not raven_channel:
-			# Channel was skipped (no mappable members), so skip messages too.
-			continue
+		if not raven_channel or not frappe.db.exists("Raven Channel", raven_channel):
+			# Create/reuse the channel and members if needed
+			channel_doc = _create_raven_channel_and_members(ch, workspace_name, slack_user_to_raven_user)
+			if not channel_doc:
+				continue
+			raven_channel = channel_doc.name
+			slack_channel_to_raven_channel[slack_name] = raven_channel
 
-		# Skip if channel no longer exists (e.g. deleted by hook) to avoid LinkValidationError
-		if not frappe.db.exists("Raven Channel", raven_channel):
-			skipped += 1
-			continue
-
-		message_files = sorted(channel_files.get(slack_name, []))
+		message_files = sorted(files or [])
 		for member_name in message_files:
 			try:
 				with zf.open(member_name) as f:
@@ -599,13 +652,13 @@ def _import_messages(
 				# Generate a unique name for the message. We avoid the Document.insert()
 				# API so that Raven's hooks (after_insert, publish events, AI, etc.)
 				# are not triggered during bulk import.
-				message_name = frappe.generate_hash(length=12)
+				message_name = _slack_message_name(raven_channel, slack_ts) if slack_ts else frappe.generate_hash(length=12)
 
 				is_reply = 1 if linked_message else 0
 
 				frappe.db.sql(
 					"""
-					INSERT INTO `tabRaven Message`
+					INSERT IGNORE INTO `tabRaven Message`
 					(`name`, `owner`, `creation`, `modified`, `modified_by`,
 					 `docstatus`, `idx`, `channel_id`, `message_type`,
 					 `text`, `json`, `is_reply`, `linked_message`)
@@ -629,7 +682,11 @@ def _import_messages(
 					),
 				)
 
-				imported += 1
+				# If the row already existed (re-run), rowcount will be 0. Still keep deterministic mapping.
+				if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount == 0:
+					skipped += 1
+				else:
+					imported += 1
 
 				# Record mapping for later (threads, pins, etc.)
 				if slack_ts:
@@ -638,6 +695,9 @@ def _import_messages(
 				# Track how many replies we successfully linked
 				if linked_message:
 					replies_linked += 1
+				elif thread_ts and thread_ts != slack_ts:
+					# Root may appear later; link in a second pass once root exists.
+					pending_replies.append((message_name, slack_name, thread_ts))
 
 				# Import reactions, if present
 				for reaction in m.get("reactions") or []:
@@ -649,38 +709,49 @@ def _import_messages(
 						if not reacting_raven_user:
 							continue
 
-						# Skip if this reaction already exists (idempotent for re-runs).
-						# The unique index is (message, owner, reaction_escaped).
-						if frappe.db.exists(
-							"Raven Message Reaction",
-							{
-								"message": message_name,
-								"owner": reacting_raven_user,
-								"reaction_escaped": reaction_name,
-							},
-						):
-							continue
-
-						rx_doc = frappe.get_doc(
-							{
-								"doctype": "Raven Message Reaction",
-								"message": message_name,
-								"channel_id": raven_channel,
-								"reaction": reaction_name,
-								"reaction_escaped": reaction_name,
-								"is_custom": 0,
-							}
+						rx_name = _slack_reaction_name(message_name, reacting_raven_user, reaction_name)
+						now_ts = now_datetime()
+						frappe.db.sql(
+							"""
+							INSERT IGNORE INTO `tabRaven Message Reaction`
+							(`name`, `owner`, `creation`, `modified`, `modified_by`, `docstatus`, `idx`,
+							 `reaction`, `reaction_escaped`, `message`, `channel_id`, `is_custom`)
+							VALUES (%s, %s, %s, %s, %s, 0, 0, %s, %s, %s, %s, 0)
+							""",
+							(
+								rx_name,
+								reacting_raven_user,
+								now_ts,
+								now_ts,
+								reacting_raven_user,
+								reaction_name,
+								reaction_name,
+								message_name,
+								raven_channel,
+							),
 						)
-						rx_doc.owner = reacting_raven_user
-						rx_doc.flags.ignore_permissions = True
-
-						try:
-							rx_doc.insert(ignore_permissions=True)
+						if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount:
 							reactions_imported += 1
-						except Exception:
-							# If we still hit the unique index (concurrent / legacy data),
-							# just ignore and continue.
-							frappe.db.rollback()
+
+	# Second pass: link replies whose roots were processed later (or already existed).
+	# Avoid writing invalid linked_message values (root must exist).
+	for msg_name, slack_channel_name, root_ts in pending_replies:
+		raven_channel = slack_channel_to_raven_channel.get(slack_channel_name)
+		if not raven_channel or not root_ts:
+			continue
+		root_name = message_index.get((slack_channel_name, root_ts)) or _slack_message_name(raven_channel, root_ts)
+		if not frappe.db.exists("Raven Message", root_name):
+			continue
+		frappe.db.sql(
+			"""
+			UPDATE `tabRaven Message`
+			SET linked_message = %s, is_reply = 1
+			WHERE name = %s AND (linked_message IS NULL OR linked_message = '')
+			""",
+			(root_name, msg_name),
+		)
+		if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount:
+			replies_linked += 1
 
 	return (
 		{
