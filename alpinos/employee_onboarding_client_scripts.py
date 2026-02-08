@@ -30,13 +30,7 @@ frappe.ui.form.on('Job Applicant', {
 								onboarding_doc.candidate_id = r.message.job_applicant;  // Link field to Job Applicant
 								onboarding_doc.boarding_status = 'Pre-Onboarding Initiated';
 								
-								// Ensure work experience fields are NOT auto-populated
-								// These must be entered manually
-								onboarding_doc.work_experience_company_name = '';
-								onboarding_doc.work_experience_designation = '';
-								onboarding_doc.work_experience_start_date = '';
-								onboarding_doc.work_experience_end_date = '';
-								onboarding_doc.work_experience_city = '';
+								// Work experience fields will be auto-populated by the client script
 								
 								frappe.set_route('Form', 'Employee Onboarding', onboarding_doc.name);
 								
@@ -88,13 +82,7 @@ frappe.ui.form.on('Interview', {
 								onboarding_doc.candidate_id = r.message.job_applicant;  // Link field to Job Applicant
 								onboarding_doc.boarding_status = 'Pre-Onboarding Initiated';
 								
-								// Ensure work experience fields are NOT auto-populated
-								// These must be entered manually
-								onboarding_doc.work_experience_company_name = '';
-								onboarding_doc.work_experience_designation = '';
-								onboarding_doc.work_experience_start_date = '';
-								onboarding_doc.work_experience_end_date = '';
-								onboarding_doc.work_experience_city = '';
+								// Work experience fields will be auto-populated by the client script
 								
 								frappe.set_route('Form', 'Employee Onboarding', onboarding_doc.name);
 								
@@ -170,16 +158,16 @@ frappe.ui.form.on('Employee Onboarding', {
 			
 			// Always trigger auto-population
 			auto_populate_from_job_applicant(frm);
-			
-			// Ensure work experience fields are NOT auto-populated when form is new
-			// Only clear them if form is new (created from button)
-			if (frm.is_new()) {
-				frm.set_value("work_experience_company_name", "");
-				frm.set_value("work_experience_designation", "");
-				frm.set_value("work_experience_start_date", "");
-				frm.set_value("work_experience_end_date", "");
-				frm.set_value("work_experience_city", "");
-			}
+		}
+		
+		// Add Create Employee button
+		if (!frm.is_new() && !frm.doc.employee) {
+			frm.add_custom_button(__('Create Employee'), function() {
+				frappe.model.open_mapped_doc({
+					method: 'alpinos.employee_onboarding_to_employee.make_employee_with_details',
+					frm: frm
+				});
+			}, __('Actions'));
 		}
 		
 		// Check if pre-onboarding interview was created and redirect
@@ -257,6 +245,37 @@ frappe.ui.form.on('Employee Onboarding', {
 			frm.set_value("employee", "");
 			frm.set_value("candidate_id", "");
 		}
+	},
+	
+	designation_company_profile: function(frm) {
+		// Auto-populate hidden standard 'designation' field (Link) when designation_company_profile changes
+		if (frm.doc.designation_company_profile && !frm.doc.designation) {
+			// Try to find matching Designation record using client-side API
+			frappe.db.get_value('Designation', frm.doc.designation_company_profile, 'name', (r) => {
+				if (r && r.name) {
+					frm.set_value("designation", r.name);
+				} else {
+					// If no exact match, try to find by name (case-insensitive)
+					// Use frappe.call with a server-side method for LIKE queries
+					frappe.call({
+						method: 'frappe.client.get_list',
+						args: {
+							doctype: 'Designation',
+							filters: {
+								name: ['like', '%' + frm.doc.designation_company_profile + '%']
+							},
+							fields: ['name'],
+							limit: 1
+						},
+						callback: function(r2) {
+							if (r2.message && r2.message.length > 0) {
+								frm.set_value("designation", r2.message[0].name);
+							}
+						}
+					});
+				}
+			});
+		}
 	}
 });
 
@@ -277,16 +296,35 @@ function auto_populate_from_job_applicant(frm) {
 			if (r.message) {
 				var job_applicant = r.message;
 				
-				// EXPLICITLY DO NOT populate work experience fields
-				// These fields must be entered manually by the user
-				// Do not auto-populate from job_applicant employment fields
-				// Only clear them if form is new (to prevent auto-population from button)
-				if (frm.is_new()) {
-					frm.set_value("work_experience_company_name", "");
-					frm.set_value("work_experience_designation", "");
-					frm.set_value("work_experience_start_date", "");
-					frm.set_value("work_experience_end_date", "");
-					frm.set_value("work_experience_city", "");
+				// Work Experience fields - Auto-populate from Job Applicant employment fields
+				// Only populate if fields are empty (don't overwrite user-entered data)
+				if (job_applicant.employment_company_name && !frm.doc.work_experience_company_name) {
+					frm.set_value("work_experience_company_name", job_applicant.employment_company_name);
+				}
+				
+				if (job_applicant.employment_designation && !frm.doc.work_experience_designation) {
+					frm.set_value("work_experience_designation", job_applicant.employment_designation);
+				}
+				
+				if (job_applicant.employment_start_date && !frm.doc.work_experience_start_date) {
+					frm.set_value("work_experience_start_date", job_applicant.employment_start_date);
+				}
+				
+				if (job_applicant.employment_end_date && !frm.doc.work_experience_end_date) {
+					frm.set_value("work_experience_end_date", job_applicant.employment_end_date);
+				}
+				
+				// City - try to get from employment_city or city_state
+				if (!frm.doc.work_experience_city) {
+					if (job_applicant.employment_city) {
+						frm.set_value("work_experience_city", job_applicant.employment_city);
+					} else if (job_applicant.city_state) {
+						// Extract city from city_state (format: "City/State")
+						var city_state_parts = job_applicant.city_state.split("/");
+						if (city_state_parts.length >= 1) {
+							frm.set_value("work_experience_city", city_state_parts[0].trim());
+						}
+					}
 				}
 				
 				// Full Name - split into first, middle, last
@@ -336,6 +374,36 @@ function auto_populate_from_job_applicant(frm) {
 				// Designation
 				if (job_applicant.designation) {
 					frm.set_value("onboarding_designation", job_applicant.designation);
+				}
+				
+				// Auto-populate hidden standard 'designation' field (Link) from designation_company_profile
+				// This ensures the hidden field is populated for Employee creation
+				if (frm.doc.designation_company_profile && !frm.doc.designation) {
+					// Try to find matching Designation record using client-side API
+					frappe.db.get_value('Designation', frm.doc.designation_company_profile, 'name', (r) => {
+						if (r && r.name) {
+							frm.set_value("designation", r.name);
+						} else {
+							// If no exact match, try to find by name (case-insensitive)
+							// Use frappe.call with a server-side method for LIKE queries
+							frappe.call({
+								method: 'frappe.client.get_list',
+								args: {
+									doctype: 'Designation',
+									filters: {
+										name: ['like', '%' + frm.doc.designation_company_profile + '%']
+									},
+									fields: ['name'],
+									limit: 1
+								},
+								callback: function(r2) {
+									if (r2.message && r2.message.length > 0) {
+										frm.set_value("designation", r2.message[0].name);
+									}
+								}
+							});
+						}
+					});
 				}
 				
 				// Get Job Opening data for Company, Location, Department

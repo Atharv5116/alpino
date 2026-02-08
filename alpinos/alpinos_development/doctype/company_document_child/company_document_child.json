@@ -8,7 +8,6 @@
  "field_order": [
   "offer_letter",
   "bond_letter",
-  "exit_letter",
   "status"
  ],
  "fields": [
@@ -23,12 +22,6 @@
    "fieldtype": "Attach",
    "in_list_view": 1,
    "label": "Bond Letter"
-  },
-  {
-   "fieldname": "exit_letter",
-   "fieldtype": "Attach",
-   "in_list_view": 1,
-   "label": "Exit Letter"
   },
   {
    "fieldname": "status",

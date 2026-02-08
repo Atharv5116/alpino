@@ -179,7 +179,8 @@ permission_query_conditions = {
 override_doctype_class = {
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
-	"Interview": "alpinos.overrides.interview_override.CustomInterview"
+	"Interview": "alpinos.overrides.interview_override.CustomInterview",
+	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding"
 }
 
 # Document Events
@@ -223,8 +224,9 @@ doc_events = {
 	},
 	"Employee Onboarding": {
 		"validate": [
+			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
 			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields",
-			"alpinos.employee_onboarding_automation.populate_from_job_applicant"
+			"alpinos.employee_onboarding_automation.validate_date_of_birth"
 		],
 		"before_save": [
 			"alpinos.employee_onboarding_automation.populate_from_job_applicant",

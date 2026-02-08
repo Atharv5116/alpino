@@ -103,46 +103,93 @@ def populate_from_job_applicant(doc, method=None):
 	if job_applicant.degree:
 		doc.degree = job_applicant.degree
 	
-	# Work Experience fields - NOT auto-filled, user will enter manually
-	# DO NOT populate these fields from job_applicant.employment_* fields
-	# These must be entered manually by the user
-	# Explicitly clear them if they match employment fields (were auto-populated)
+	# Work Experience fields - Auto-populate from Job Applicant employment fields
 	if hasattr(doc, 'work_experience_company_name'):
-		# Check if work experience was auto-populated from employment fields and clear them
-		should_clear = False
-		if hasattr(job_applicant, 'employment_company_name') and job_applicant.employment_company_name:
-			if doc.work_experience_company_name == job_applicant.employment_company_name:
-				should_clear = True
-		if hasattr(job_applicant, 'employment_designation') and job_applicant.employment_designation:
-			if doc.work_experience_designation == job_applicant.employment_designation:
-				should_clear = True
-		if hasattr(job_applicant, 'employment_start_date') and job_applicant.employment_start_date:
-			if doc.work_experience_start_date == job_applicant.employment_start_date:
-				should_clear = True
-		if hasattr(job_applicant, 'employment_end_date') and job_applicant.employment_end_date:
-			if doc.work_experience_end_date == job_applicant.employment_end_date:
-				should_clear = True
+		# Only populate if fields are empty (don't overwrite user-entered data)
+		if not doc.work_experience_company_name and hasattr(job_applicant, 'employment_company_name') and job_applicant.employment_company_name:
+			doc.work_experience_company_name = job_applicant.employment_company_name
 		
-		# Clear all work experience fields if any match (they were auto-populated)
-		if should_clear:
-			doc.work_experience_company_name = ""
-			doc.work_experience_designation = ""
-			doc.work_experience_start_date = None
-			doc.work_experience_end_date = None
-			doc.work_experience_city = ""
+		if not doc.work_experience_designation and hasattr(job_applicant, 'employment_designation') and job_applicant.employment_designation:
+			doc.work_experience_designation = job_applicant.employment_designation
+		
+		if not doc.work_experience_start_date and hasattr(job_applicant, 'employment_start_date') and job_applicant.employment_start_date:
+			doc.work_experience_start_date = job_applicant.employment_start_date
+		
+		if not doc.work_experience_end_date and hasattr(job_applicant, 'employment_end_date') and job_applicant.employment_end_date:
+			doc.work_experience_end_date = job_applicant.employment_end_date
+		
+		# City - try to get from employment_city or city_state
+		if not doc.work_experience_city:
+			if hasattr(job_applicant, 'employment_city') and job_applicant.employment_city:
+				doc.work_experience_city = job_applicant.employment_city
+			elif job_applicant.city_state:
+				# Extract city from city_state (format: "City/State")
+				city_state_parts = job_applicant.city_state.split("/")
+				if len(city_state_parts) >= 1:
+					doc.work_experience_city = city_state_parts[0].strip()
 	
 	# Notice Period
 	
 	# Designation - from Job Applicant
 	if job_applicant.designation:
 		doc.onboarding_designation = job_applicant.designation
+	
+	# Auto-populate hidden standard 'designation' field (Link) from designation_company_profile
+	# This ensures the hidden field is populated for Employee creation
+	# Only populate if designation_company_profile exists and designation is empty
+	# If designation_company_profile is empty, ensure designation is also empty (not causing validation errors)
+	if hasattr(doc, 'designation_company_profile') and doc.designation_company_profile:
+		# Try to find matching Designation record
+		# If designation_company_profile is a string, try to match it with Designation doctype
+		if not doc.designation:
+			try:
+				# Check if designation_company_profile matches a Designation name
+				designation_match = frappe.db.exists("Designation", doc.designation_company_profile)
+				if designation_match:
+					doc.designation = designation_match
+				else:
+					# If no exact match, try to find by name (case-insensitive)
+					designation_match = frappe.db.get_value("Designation", 
+						{"name": ["like", f"%{doc.designation_company_profile}%"]}, 
+						"name"
+					)
+					if designation_match:
+						doc.designation = designation_match
+			except Exception:
+				# If there's any error, just skip - don't break the save process
+				pass
+	else:
+		# If designation_company_profile is empty, ensure designation is also empty
+		# This prevents validation errors on unsaved documents
+		if hasattr(doc, 'designation') and doc.designation and not doc.designation_company_profile:
+			# Only clear if designation_company_profile is explicitly empty
+			# Don't clear if it's just not set yet (unsaved document)
+			pass
 
 
 def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	"""
 	Allow HR Manager role to save Employee Onboarding even if certain mandatory fields are not filled.
 	This function temporarily makes specified fields non-mandatory for HR Managers during validation.
+	Also ensures hidden designation field is non-mandatory for all users.
 	"""
+	# Ensure hidden designation field is always non-mandatory (for all users, not just HR Manager)
+	meta = get_meta("Employee Onboarding")
+	designation_field = meta.get_field("designation")
+	if designation_field and designation_field.reqd:
+		# Temporarily make it non-mandatory
+		if not hasattr(designation_field, '_original_reqd'):
+			designation_field._original_reqd = designation_field.reqd
+		designation_field.reqd = 0
+		# Also update in doc meta if it exists
+		if hasattr(doc, 'meta') and hasattr(doc.meta, 'fields'):
+			for doc_field in doc.meta.fields:
+				if doc_field.fieldname == "designation" and doc_field.reqd:
+					if not hasattr(doc_field, '_original_reqd'):
+						doc_field._original_reqd = doc_field.reqd
+					doc_field.reqd = 0
+					break
+	
 	# Check if current user has HR Manager role
 	user_roles = frappe.get_roles()
 	
@@ -193,7 +240,6 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 		# Company Documents
 		"offer_letter",
 		"bond_letter",
-		"exit_letter",
 	]
 	
 	# Set a flag to indicate HR Manager can skip these validations
@@ -228,8 +274,33 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	if not doc.date_of_joining_onboarding:
 		if doc.date_of_joining:
 			doc.date_of_joining_onboarding = doc.date_of_joining
-		elif job_applicant.expected_date_of_joining:
-			doc.date_of_joining_onboarding = job_applicant.expected_date_of_joining
+		elif hasattr(doc, 'job_applicant') and doc.job_applicant:
+			try:
+				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+				if job_applicant.expected_date_of_joining:
+					doc.date_of_joining_onboarding = job_applicant.expected_date_of_joining
+			except:
+				pass
+
+
+def validate_date_of_birth(doc, method=None):
+	"""
+	Validate that date_of_birth is at least 18 years old
+	"""
+	if not doc.date_of_birth:
+		return
+	
+	dob = getdate(doc.date_of_birth)
+	today = getdate(nowdate())
+	
+	# Calculate age
+	age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+	
+	if age < 18:
+		frappe.throw(
+			_("Date of Birth must be at least 18 years old. Current age: {0} years").format(age),
+			title=_("Invalid Date of Birth")
+		)
 
 
 @frappe.whitelist()
@@ -245,8 +316,7 @@ def create_employee_onboarding_from_job_applicant(job_applicant_name):
 	# Check if Employee Onboarding already exists for this Job Applicant
 	existing = frappe.db.exists("Employee Onboarding", {"job_applicant": job_applicant_name})
 	if existing:
-		frappe.msgprint(_("Employee Onboarding already exists for this Job Applicant"))
-		frappe.set_route("Form", "Employee Onboarding", existing)
+		# Return the existing document name - JavaScript callback will handle routing
 		return existing
 	
 	# Just return the job_applicant_name - JavaScript will handle opening the form
@@ -371,7 +441,6 @@ def check_all_required_fields_filled(doc):
 		# Company Documents
 		"offer_letter": "Offer Letter",
 		"bond_letter": "Bond Letter",
-		"exit_letter": "Exit Letter",
 	}
 	
 	missing_fields = []
