@@ -121,8 +121,8 @@ after_migrate = [
 	"alpinos.overrides.interview_override.setup_interview_override",
 	"alpinos.update_job_application_webform.update_web_form_script",
 	"alpinos.customize_expense_claim.execute",
-	"alpinos.page_setup.create_screening_page",
-	"alpinos.employee_expense_claim_button.execute"
+	"alpinos.employee_expense_claim_button.execute",
+	"alpinos.patches.create_hrms_email_templates.execute"
 ]
 
 # Uninstallation
@@ -254,9 +254,7 @@ scheduler_events = {
 }
 
 # Run email template setup on every migrate (idempotent: skips if template exists)
-after_migrate = [
-	"alpinos.patches.create_hrms_email_templates.execute"
-]
+# Note: This is now included in the after_migrate list above
 
 # Boot Info Extensions
 # --------------------
