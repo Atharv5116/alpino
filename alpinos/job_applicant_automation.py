@@ -274,7 +274,7 @@ def send_application_emails(doc):
 	This is called after status changes to New Application
 	"""
 	try:
-		# Get email templates
+		# Global default templates created via create_hrms_email_templates patch
 		candidate_template = "Job Application - Candidate Acknowledgement"
 		hr_template = "Job Application - HR Notification"
 		
@@ -303,10 +303,13 @@ def send_application_emails(doc):
 					message=formatted_email["message"],
 					reference_doctype="Job Applicant",
 					reference_name=doc.name,
-					now=True
+					now=True,
 				)
 			except Exception as e:
-				frappe.log_error(f"Failed to send candidate email: {str(e)}", "Job Applicant Email Error")
+				frappe.log_error(
+					f"Failed to send candidate email using template {candidate_template}: {str(e)}",
+					"Job Applicant Email Error",
+				)
 		
 		# Send email to HR
 		if frappe.db.exists("Email Template", hr_template):
@@ -349,12 +352,146 @@ def send_application_emails(doc):
 						message=formatted_email["message"],
 						reference_doctype="Job Applicant",
 						reference_name=doc.name,
-						now=True
+						now=True,
 					)
 				except Exception as e:
-					frappe.log_error(f"Failed to send HR email: {str(e)}", "Job Applicant Email Error")
+					frappe.log_error(
+						f"Failed to send HR email using template {hr_template}: {str(e)}",
+						"Job Applicant Email Error",
+					)
 	except Exception as e:
-		frappe.log_error(f"Error sending application emails: {str(e)}", "Job Applicant Email Error")
+		frappe.log_error(
+			f"Error preparing or sending application emails for Job Applicant {doc.name}: {str(e)}",
+			"Job Applicant Email Error",
+		)
+
+
+def send_interview_scheduled_emails(doc, method=None):
+	"""
+	Send emails to Candidate and HR/RM when Interview status becomes 'Interview Scheduled'.
+	"""
+	# Ensure we only act when status transitions to Interview Scheduled
+	if not (doc.has_value_changed("status") and doc.status == "Interview Scheduled"):
+		return
+	
+	if not doc.job_applicant:
+		return
+	
+	try:
+		applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+	except frappe.DoesNotExistError:
+		return
+	except Exception as e:
+		frappe.log_error(
+			f"Error loading Job Applicant {doc.job_applicant} for Interview {doc.name}: {str(e)}",
+			"Interview Email Error",
+		)
+		return
+	
+	# Global templates created via create_hrms_email_templates patch
+	candidate_template = "Interview Schedule Mail"
+	hr_template = "Interview Schedule - HR Notification"
+	
+	# Common context for templates (doc in Jinja)
+	email_doc = {
+		"doctype": "Interview",
+		"name": doc.name,
+		"applicant_name": applicant.applicant_name,
+		"candidate_name": applicant.applicant_name,
+		"candidate_id": applicant.candidate_id or applicant.name,
+		"email_id": applicant.email_id,
+		"job_title": applicant.job_title or applicant.job_requisition or "",
+		"job_requisition": applicant.job_requisition or "",
+		# Best-effort mapping of interview details
+		"interview_date": getattr(doc, "interview_date", None),
+		"interview_time": getattr(doc, "interview_time", None),
+		"interview_mode": getattr(doc, "interview_mode", None),
+		"interviewer_name": getattr(doc, "interviewer_name", None),
+		"location_or_link": getattr(doc, "location", None) or getattr(doc, "location_or_link", None),
+	}
+	
+	# 1) Candidate email
+	try:
+		if applicant.email_id and frappe.db.exists("Email Template", candidate_template):
+			email_template = frappe.get_doc("Email Template", candidate_template)
+			formatted = email_template.get_formatted_email({"doc": email_doc})
+			frappe.sendmail(
+				recipients=[applicant.email_id],
+				subject=formatted["subject"],
+				message=formatted["message"],
+				reference_doctype="Interview",
+				reference_name=doc.name,
+				now=True,
+			)
+	except Exception as e:
+		frappe.log_error(
+			f"Failed to send Interview Scheduled email to candidate for Interview {doc.name}: {str(e)}",
+			"Interview Email Error",
+		)
+	
+	# 2) HR + Reporting Manager email
+	try:
+		if not frappe.db.exists("Email Template", hr_template):
+			return
+		
+		# HR Manager users
+		hr_users = frappe.get_all(
+			"Has Role",
+			filters={"role": "HR Manager", "parenttype": "User"},
+			fields=["parent"],
+		)
+		recipients = []
+		for hr_user in hr_users:
+			email = frappe.db.get_value("User", hr_user.parent, "email")
+			if email:
+				recipients.append(email)
+		
+		# Attempt to add Reporting Manager user (from Job Requisition) if available
+		rm_email = None
+		try:
+			# applicant.job_requisition links to Job Opening in this setup
+			if applicant.job_requisition:
+				job_opening = frappe.db.get_value(
+					"Job Opening",
+					applicant.job_requisition,
+					"job_requisition",
+				)
+				if job_opening:
+					rm_user = frappe.db.get_value(
+						"Job Requisition",
+						job_opening,
+						"reporting_manager_user",
+					)
+					if rm_user:
+						rm_email = frappe.db.get_value("User", rm_user, "email")
+		except Exception:
+			# Optional enrichment; ignore errors
+			rm_email = None
+		
+		if rm_email:
+			recipients.append(rm_email)
+		
+		# Deduplicate
+		recipients = list({r for r in recipients if r})
+		
+		if not recipients:
+			return
+		
+		email_template = frappe.get_doc("Email Template", hr_template)
+		formatted = email_template.get_formatted_email({"doc": email_doc})
+		frappe.sendmail(
+			recipients=recipients,
+			subject=formatted["subject"],
+			message=formatted["message"],
+			reference_doctype="Interview",
+			reference_name=doc.name,
+			now=True,
+		)
+	except Exception as e:
+		frappe.log_error(
+			f"Failed to send Interview Scheduled email to HR/RM for Interview {doc.name}: {str(e)}",
+			"Interview Email Error",
+		)
 
 
 def set_application_date(doc, method=None):

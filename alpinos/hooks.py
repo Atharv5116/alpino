@@ -179,7 +179,8 @@ permission_query_conditions = {
 override_doctype_class = {
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
-	"Interview": "alpinos.overrides.interview_override.CustomInterview"
+	"Interview": "alpinos.overrides.interview_override.CustomInterview",
+	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding"
 }
 
 # Document Events
@@ -215,20 +216,30 @@ doc_events = {
 			"alpinos.job_applicant_automation.auto_populate_from_job_opening",
 			"alpinos.job_applicant_automation.generate_candidate_id",
 			"alpinos.job_applicant_automation.update_screening_status_automatically"
-		]
+		],
+		"after_insert": "alpinos.job_applicant_automation.process_web_form_submission"
 	},
 	"Interview": {
 		"after_insert": "alpinos.job_applicant_automation.update_screening_status_on_interview_created",
-		"on_update": "alpinos.job_applicant_automation.update_screening_status_on_interview_status_change"
+		"on_update": [
+			"alpinos.job_applicant_automation.update_screening_status_on_interview_status_change",
+			"alpinos.job_applicant_automation.send_interview_scheduled_emails",
+		]
 	},
 	"Employee Onboarding": {
+		"before_validate": [
+			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields"
+		],
 		"validate": [
-			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields",
-			"alpinos.employee_onboarding_automation.populate_from_job_applicant"
+			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
+			"alpinos.employee_onboarding_automation.validate_date_of_birth"
 		],
 		"before_save": [
 			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
 			"alpinos.employee_onboarding_automation.handle_pre_onboarding_workflow"
+		],
+		"after_insert": [
+			"alpinos.employee_onboarding_automation.send_onboarding_created_email"
 		]
 	}
 }
@@ -241,6 +252,11 @@ scheduler_events = {
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
 	],
 }
+
+# Run email template setup on every migrate (idempotent: skips if template exists)
+after_migrate = [
+	"alpinos.patches.create_hrms_email_templates.execute"
+]
 
 # Boot Info Extensions
 # --------------------

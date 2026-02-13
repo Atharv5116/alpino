@@ -490,4 +490,320 @@ def setup_custom_fields():
 	update_property_setter("Interview Feedback", "skill_assessment", "reqd", "0", "Check")
 	print("✅ Made Interview Feedback skill assessment optional")
 	
+	# Delete exit_letter custom field from Employee if it exists
+	delete_exit_letter_field()
+	
+	# Delete individual work experience fields (keep only experience child table)
+	delete_employee_work_experience_individual_fields()
+	
+	# Ensure work experience section and experience child table exist (restore if deleted)
+	ensure_work_experience_fields()
+	
+	# Delete qualification fields from Employee (keep only qualification_child table)
+	delete_employee_qualification_fields()
+	
+	# Delete address fields from Employee
+	delete_employee_address_fields()
+	
+	# Update bank_account_type and increment_cycle to Data fields
+	update_employee_fields_to_data()
+	
 	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")
+
+
+def delete_exit_letter_field():
+	"""Delete exit_letter custom field from Employee if it exists and ensure it's hidden"""
+	try:
+		# First, try to delete custom field if it exists
+		custom_field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Employee", "fieldname": "exit_letter"},
+			"name"
+		)
+		if custom_field:
+			frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Deleted exit_letter custom field from Employee")
+		
+		# Ensure property setters are applied (hide and make non-mandatory)
+		update_property_setter("Employee", "exit_letter", "hidden", "1", "Check")
+		update_property_setter("Employee", "exit_letter", "reqd", "0", "Check")
+		print("✅ Applied property setters to hide exit_letter field in Employee")
+	except Exception as e:
+		print(f"⚠️  Could not delete/hide exit_letter field: {str(e)}")
+
+
+
+def delete_employee_work_experience_individual_fields():
+	"""Delete individual work experience fields from Employee doctype, keeping only experience child table"""
+	fields_to_delete = [
+		"company_name",
+		"start_date",
+		"end_date",
+		"work_experience_designation",
+		"city"
+	]
+	
+	try:
+		for fieldname in fields_to_delete:
+			# Delete custom field if it exists
+			custom_field = frappe.db.get_value(
+				"Custom Field",
+				{"dt": "Employee", "fieldname": fieldname},
+				"name"
+			)
+			if custom_field:
+				frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+				frappe.db.commit()
+				print(f"✅ Deleted {fieldname} custom field from Employee")
+			
+			# Also delete property setters for this field
+			property_setters = frappe.get_all(
+				"Property Setter",
+				filters={
+					"doc_type": "Employee",
+					"field_name": fieldname
+				},
+				pluck="name"
+			)
+			for ps_name in property_setters:
+				frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+				print(f"✅ Deleted property setter: {ps_name} for {fieldname}")
+		
+		# Remove from field order if they exist
+		field_order_ps = frappe.db.get_value(
+			"Property Setter",
+			{"doc_type": "Employee", "property": "field_order", "doctype_or_field": "DocType"},
+			"name"
+		)
+		if field_order_ps:
+			ps = frappe.get_doc("Property Setter", field_order_ps)
+			import json
+			field_order = json.loads(ps.value) if isinstance(ps.value, str) else ps.value
+			removed_any = False
+			for fieldname in fields_to_delete:
+				if fieldname in field_order:
+					field_order.remove(fieldname)
+					removed_any = True
+					print(f"✅ Removed {fieldname} from field_order")
+			
+			if removed_any:
+				ps.value = json.dumps(field_order)
+				ps.save(ignore_permissions=True)
+				frappe.db.commit()
+		
+		frappe.db.commit()
+		print("✅ Deleted individual work experience fields from Employee doctype (kept experience child table)")
+	except Exception as e:
+		print(f"⚠️  Could not delete work experience individual fields: {str(e)}")
+
+
+def ensure_work_experience_fields():
+	"""Ensure work experience section and experience child table exist in Employee doctype (no individual fields)"""
+	try:
+		# Check if work_experience_section exists
+		work_exp_section = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Employee", "fieldname": "work_experience_section"},
+			"name"
+		)
+		
+		if not work_exp_section:
+			# Create work_experience_section if it doesn't exist
+			work_exp_section_doc = frappe.get_doc({
+				"doctype": "Custom Field",
+				"dt": "Employee",
+				"fieldname": "work_experience_section",
+				"fieldtype": "Section Break",
+				"label": "Work Experience Section",
+				"insert_after": "qualification_child",
+				"collapsible": 1,
+				"is_system_generated": 1
+			})
+			work_exp_section_doc.insert(ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Created work_experience_section in Employee doctype")
+		
+		# Only create the experience child table, not individual fields
+		experience_exists = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Employee", "fieldname": "experience"},
+			"name"
+		)
+		
+		if not experience_exists:
+			experience_doc = frappe.get_doc({
+				"doctype": "Custom Field",
+				"dt": "Employee",
+				"fieldname": "experience",
+				"fieldtype": "Table",
+				"label": "Experience",
+				"options": "Experience",
+				"insert_after": "work_experience_section",
+				"is_system_generated": 1
+			})
+			experience_doc.insert(ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Created experience child table in Employee doctype")
+		
+		print("✅ Work experience section and experience child table verified/restored")
+	except Exception as e:
+		print(f"⚠️  Could not ensure work experience fields: {str(e)}")
+
+
+def delete_employee_qualification_fields():
+	"""Delete qualification fields from Employee doctype, keeping only qualification_child table"""
+	fields_to_delete = [
+		"degree",
+		"grade",
+		"university",
+		"graduation_year",
+		"degree_certificate_upload"
+	]
+	
+	try:
+		for fieldname in fields_to_delete:
+			# Delete custom field if it exists
+			custom_field = frappe.db.get_value(
+				"Custom Field",
+				{"dt": "Employee", "fieldname": fieldname},
+				"name"
+			)
+			if custom_field:
+				frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+				frappe.db.commit()
+				print(f"✅ Deleted {fieldname} custom field from Employee")
+			
+			# Also delete property setters for this field
+			property_setters = frappe.get_all(
+				"Property Setter",
+				filters={
+					"doc_type": "Employee",
+					"field_name": fieldname
+				},
+				pluck="name"
+			)
+			for ps_name in property_setters:
+				frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+				print(f"✅ Deleted property setter: {ps_name} for {fieldname}")
+		
+		# Remove from field order if they exist
+		field_order_ps = frappe.db.get_value(
+			"Property Setter",
+			{"doc_type": "Employee", "property": "field_order", "doctype_or_field": "DocType"},
+			"name"
+		)
+		if field_order_ps:
+			ps = frappe.get_doc("Property Setter", field_order_ps)
+			import json
+			field_order = json.loads(ps.value) if isinstance(ps.value, str) else ps.value
+			removed_any = False
+			for fieldname in fields_to_delete:
+				if fieldname in field_order:
+					field_order.remove(fieldname)
+					removed_any = True
+					print(f"✅ Removed {fieldname} from field_order")
+			
+			if removed_any:
+				ps.value = json.dumps(field_order)
+				ps.save(ignore_permissions=True)
+				frappe.db.commit()
+		
+		frappe.db.commit()
+		print("✅ Deleted qualification fields from Employee doctype (kept qualification_child table)")
+	except Exception as e:
+		print(f"⚠️  Could not delete qualification fields: {str(e)}")
+
+
+def delete_employee_address_fields():
+	"""Delete address fields from Employee doctype"""
+	fields_to_delete = [
+		"city_state_combined",
+		"pincode",
+		"address_line_2",
+		"address_line_1"
+	]
+	
+	try:
+		for fieldname in fields_to_delete:
+			# Delete custom field if it exists
+			custom_field = frappe.db.get_value(
+				"Custom Field",
+				{"dt": "Employee", "fieldname": fieldname},
+				"name"
+			)
+			if custom_field:
+				frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+				frappe.db.commit()
+				print(f"✅ Deleted {fieldname} custom field from Employee")
+			
+			# Also delete property setters for this field
+			property_setters = frappe.get_all(
+				"Property Setter",
+				filters={
+					"doc_type": "Employee",
+					"field_name": fieldname
+				},
+				pluck="name"
+			)
+			for ps_name in property_setters:
+				frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+				print(f"✅ Deleted property setter: {ps_name} for {fieldname}")
+		
+		# Remove from field order if they exist
+		field_order_ps = frappe.db.get_value(
+			"Property Setter",
+			{"doc_type": "Employee", "property": "field_order", "doctype_or_field": "DocType"},
+			"name"
+		)
+		if field_order_ps:
+			ps = frappe.get_doc("Property Setter", field_order_ps)
+			import json
+			field_order = json.loads(ps.value) if isinstance(ps.value, str) else ps.value
+			removed_any = False
+			for fieldname in fields_to_delete:
+				if fieldname in field_order:
+					field_order.remove(fieldname)
+					removed_any = True
+					print(f"✅ Removed {fieldname} from field_order")
+			
+			if removed_any:
+				ps.value = json.dumps(field_order)
+				ps.save(ignore_permissions=True)
+				frappe.db.commit()
+		
+		frappe.db.commit()
+		print("✅ Deleted address fields from Employee doctype")
+	except Exception as e:
+		print(f"⚠️  Could not delete address fields: {str(e)}")
+
+
+def update_employee_fields_to_data():
+	"""Update bank_account_type and increment_cycle fields to Data type in Employee doctype"""
+	fields_to_update = ["bank_account_type", "increment_cycle"]
+	
+	try:
+		for fieldname in fields_to_update:
+			# Update custom field if it exists
+			custom_field = frappe.db.get_value(
+				"Custom Field",
+				{"dt": "Employee", "fieldname": fieldname},
+				"name"
+			)
+			if custom_field:
+				cf = frappe.get_doc("Custom Field", custom_field)
+				cf.fieldtype = "Data"
+				cf.options = None
+				cf.save(ignore_permissions=True)
+				frappe.db.commit()
+				print(f"✅ Updated {fieldname} to Data field in Employee")
+			
+			# Update property setters to ensure fieldtype is Data
+			update_property_setter("Employee", fieldname, "fieldtype", "Data", "Select")
+			update_property_setter("Employee", fieldname, "options", None, "Text")
+			print(f"✅ Updated property setters for {fieldname} in Employee")
+		
+		frappe.db.commit()
+		print("✅ Updated bank_account_type and increment_cycle to Data fields in Employee doctype")
+	except Exception as e:
+		print(f"⚠️  Could not update fields to Data type: {str(e)}")
