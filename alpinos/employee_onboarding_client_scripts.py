@@ -129,6 +129,19 @@ frappe.ui.form.on('Interview', {
 	
 	# Client Script for Employee Onboarding
 	employee_onboarding_script = """
+// Allow first save of Employee Onboarding without client-side mandatory checks
+if (!frappe.ui.form._employee_onboarding_check_mandatory_patched) {
+	frappe.ui.form._employee_onboarding_check_mandatory_patched = true;
+	const original_check_mandatory = frappe.ui.form.check_mandatory;
+	frappe.ui.form.check_mandatory = function (frm) {
+		if (frm && frm.doctype === 'Employee Onboarding' && frm.is_new()) {
+			// Skip mandatory check on very first save; backend still runs its own logic
+			return true;
+		}
+		return original_check_mandatory(frm);
+	};
+}
+
 frappe.ui.form.on('Employee Onboarding', {
 	setup: function(frm) {
 		// Remove status filter - show all job applicants
@@ -147,8 +160,19 @@ frappe.ui.form.on('Employee Onboarding', {
 			};
 		});
 	},
-	
+
 	refresh: function(frm) {
+		// Ensure status / boarding_status fields are visible
+		try {
+			frm.set_df_property('status', 'hidden', 0);
+		} catch (e) {
+			// ignore if status not present as a visible field
+		}
+		try {
+			frm.set_df_property('boarding_status', 'hidden', 0);
+		} catch (e) {
+			// ignore if boarding_status is not defined
+		}
 		// Auto-populate fields when form loads if job_applicant is set
 		if (frm.doc.job_applicant) {
 			// Set candidate_id to job_applicant (Link field)
