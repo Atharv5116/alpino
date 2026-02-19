@@ -669,8 +669,8 @@ def send_pre_onboarding_email(doc, applicant_email):
 			now=True,
 		)
 		
-		# Update status to "Document Pending"
-		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Document Pending", update_modified=False)
+		# Update status to "Documents Pending" (must match field options exactly)
+		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Documents Pending", update_modified=False)
 		frappe.db.commit()
 		
 		frappe.log_error(f"Pre-onboarding email sent to {applicant_email} for Employee Onboarding {doc.name}", "Pre-Onboarding Email")

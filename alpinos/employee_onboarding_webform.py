@@ -6,6 +6,7 @@ Processes webform submissions and updates the Employee Onboarding record
 import frappe
 from frappe import _
 from frappe.utils import now
+import json
 
 
 def process_webform_submission(doc, method=None):
@@ -13,24 +14,24 @@ def process_webform_submission(doc, method=None):
 	Process webform submission for Employee Onboarding Details
 	This function is called when the webform is submitted
 	"""
-	# Check if this is from the employee onboarding webform
-	is_webform = False
-	
-	# Method 1: Check web_form_name attribute
-	if hasattr(doc, 'web_form_name') and doc.web_form_name == 'employee-onboarding-details':
-		is_webform = True
-	
-	# Method 2: Check frappe flags
-	if not is_webform and hasattr(frappe.flags, 'in_web_form') and frappe.flags.in_web_form:
-		# Check if employee_onboarding_name is set (indicates it's our webform)
-		if doc.get('employee_onboarding_name'):
-			is_webform = True
-	
-	if not is_webform:
+	# Only run this handler for web form submissions
+	if not (hasattr(frappe.flags, "in_web_form") and frappe.flags.in_web_form):
 		return
-	
-	# Get the Employee Onboarding name from the hidden field
-	employee_onboarding_name = doc.get('employee_onboarding_name')
+
+	# Resolve target Employee Onboarding from multiple sources.
+	# `name` is reserved by Frappe; use `onboarding` as primary param.
+	employee_onboarding_name = (
+		doc.get("employee_onboarding_name")
+		or frappe.form_dict.get("onboarding")
+	)
+
+	# Fallback: parse posted web form payload
+	if not employee_onboarding_name and frappe.form_dict.get("data"):
+		try:
+			payload = json.loads(frappe.form_dict.get("data"))
+			employee_onboarding_name = payload.get("employee_onboarding_name") or payload.get("onboarding")
+		except Exception:
+			pass
 	
 	if not employee_onboarding_name:
 		frappe.throw(_("Employee Onboarding reference is missing. Please use the link provided in your email."))
@@ -125,9 +126,16 @@ def process_webform_submission(doc, method=None):
 	# Mark webform as submitted
 	onboarding_doc.webform_submitted = 1
 	onboarding_doc.webform_submitted_on = now()
+
+	# Backward compatibility: older logic wrote "Document Pending" (singular),
+	# but valid option is "Documents Pending".
+	if onboarding_doc.get("boarding_status") == "Document Pending":
+		onboarding_doc.boarding_status = "Documents Pending"
 	
 	# Save the Employee Onboarding document
 	try:
+		# Webform updates only a subset of fields; avoid failing due unrelated mandatory HR fields.
+		onboarding_doc.flags.ignore_mandatory = True
 		onboarding_doc.save(ignore_permissions=True)
 		frappe.db.commit()
 		
@@ -153,7 +161,10 @@ def process_webform_submission(doc, method=None):
 		except:
 			pass
 		
-		frappe.log_error(f"Error updating Employee Onboarding from webform: {str(e)}", "Employee Onboarding Webform Error")
+		frappe.log_error(
+			f"Error updating Employee Onboarding from webform: {str(e)}\n\n{frappe.get_traceback()}",
+			"Employee Onboarding Webform Error",
+		)
 		frappe.throw(_("An error occurred while saving your details. Please try again or contact HR."))
 
 
