@@ -99,6 +99,41 @@ def check_in(latitude=None, longitude=None):
 
 
 @frappe.whitelist()
+def get_today_wfh_request():
+	employee = _get_employee_for_user(frappe.session.user)
+	if not employee:
+		return None
+	today = getdate(now_datetime())
+	result = frappe.db.get_value(
+		"Work From Home Request",
+		{"employee": employee, "date": today, "status": ["in", ["Draft", "Approved"]]},
+		["name", "status"],
+		as_dict=True,
+	)
+	if not result:
+		return None
+	tasks = frappe.get_all(
+		"Work From Home Task",
+		filters={"parent": result.name},
+		fields=["task_name", "status"],
+		order_by="idx asc",
+	)
+	result["tasks"] = tasks
+	return result
+
+
+@frappe.whitelist()
+def save_wfh_tasks(wfh_request, tasks):
+	tasks = frappe.parse_json(tasks)
+	doc = frappe.get_doc("Work From Home Request", wfh_request)
+	doc.tasks = []
+	for t in tasks:
+		doc.append("tasks", {"task_name": t.get("task_name"), "status": t.get("status")})
+	doc.save(ignore_permissions=True)
+	return True
+
+
+@frappe.whitelist()
 def check_out(latitude=None, longitude=None):
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check Out.")

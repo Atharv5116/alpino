@@ -143,26 +143,157 @@ function checkOut(){
   btn("btn-out", true);
   fetchLocation(function () {
     frappe.call({
-      method:"alpinos.attendance_widget.check_out",
-      args: {
-        latitude: latitude,
-        longitude: longitude,
-      },
-      callback(r){
-        if(r.exc){
-          showError(r.exc);
-          btn("btn-out", false);
-          return;
+      method: "alpinos.attendance_widget.get_today_wfh_request",
+      silent: true,
+      callback(r) {
+        if (r.message) {
+          showWFHTaskDialog(
+            r.message,
+            function(tasks) {
+              frappe.call({
+                method: "alpinos.attendance_widget.save_wfh_tasks",
+                args: { wfh_request: r.message.name, tasks: JSON.stringify(tasks) },
+                callback(sr) {
+                  if (sr.exc) {
+                    frappe.msgprint("Could not save tasks. Please try again.");
+                    btn("btn-out", false);
+                    return;
+                  }
+                  doCheckOut();
+                }
+              });
+            },
+            function() {
+              btn("btn-out", false);
+            }
+          );
+        } else {
+          doCheckOut();
         }
-        frappe.show_alert({message:"Checked Out",indicator:"red"});
-        stopTimer();
-        setStatusBadge("Checked Out", "out");
-        btn("btn-in",true);
-        btn("btn-out",true);
-        setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
       }
     });
   });
+}
+
+function doCheckOut() {
+  frappe.call({
+    method:"alpinos.attendance_widget.check_out",
+    args: {
+      latitude: latitude,
+      longitude: longitude,
+    },
+    callback(r){
+      if(r.exc){
+        showError(r.exc);
+        btn("btn-out", false);
+        return;
+      }
+      frappe.show_alert({message:"Checked Out",indicator:"red"});
+      stopTimer();
+      setStatusBadge("Checked Out", "out");
+      btn("btn-in",true);
+      btn("btn-out",true);
+      setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
+    }
+  });
+}
+
+function showWFHTaskDialog(wfhData, onConfirm, onCancel) {
+  const statusOptions = `
+    <option value="">Select...</option>
+    <option value="Completed">Completed</option>
+    <option value="In Progress">In Progress</option>
+    <option value="Pending">Pending</option>
+  `;
+
+  const d = new frappe.ui.Dialog({
+    title: "Work From Home \u2013 Daily Task Update",
+    primary_action_label: "Save & Check Out",
+    primary_action() {
+      const rows = d.$body.find(".wfh-task-row");
+      const tasks = [];
+      let valid = true;
+      rows.each(function() {
+        const taskName = $(this).find(".wfh-task-name").val().trim();
+        const status   = $(this).find(".wfh-task-status").val();
+        if (!taskName && !status) return;
+        if (!taskName) {
+          frappe.msgprint("Task Name is required for all rows.");
+          valid = false;
+          return false;
+        }
+        if (!status) {
+          frappe.msgprint("Status is required for all rows.");
+          valid = false;
+          return false;
+        }
+        tasks.push({ task_name: taskName, status: status });
+      });
+      if (!valid) return;
+      if (!tasks.length) {
+        frappe.msgprint("Please add at least one task before checking out.");
+        return;
+      }
+      d.hide();
+      onConfirm(tasks);
+    },
+    secondary_action_label: "Cancel",
+    secondary_action() {
+      d.hide();
+      onCancel();
+    }
+  });
+
+  d.$body.html(`
+    <p style="color:#64748b;margin-bottom:14px;font-size:13px;">
+      You have a Work From Home request for today. Please update your task details before checking out.
+    </p>
+    <table class="table table-bordered table-condensed" style="margin-bottom:8px;">
+      <thead style="background:#f8fafc;">
+        <tr>
+          <th style="width:55%">Task Name <span style="color:red">*</span></th>
+          <th style="width:35%">Status <span style="color:red">*</span></th>
+          <th style="width:10%"></th>
+        </tr>
+      </thead>
+      <tbody class="wfh-task-body"></tbody>
+    </table>
+    <button class="btn btn-xs btn-default wfh-add-row" style="margin-top:4px;">+ Add Row</button>
+  `);
+
+  function addRow(taskName, status) {
+    const $row = $(`
+      <tr class="wfh-task-row">
+        <td><input type="text" class="form-control input-xs wfh-task-name" placeholder="Enter task name"></td>
+        <td>
+          <select class="form-control input-xs wfh-task-status">${statusOptions}</select>
+        </td>
+        <td style="text-align:center;vertical-align:middle;">
+          <button class="btn btn-xs btn-danger wfh-remove-row" title="Remove">\xd7</button>
+        </td>
+      </tr>
+    `);
+    if (taskName) $row.find(".wfh-task-name").val(taskName);
+    if (status)   $row.find(".wfh-task-status").val(status);
+    d.$body.find(".wfh-task-body").append($row);
+  }
+
+  if (wfhData.tasks && wfhData.tasks.length) {
+    wfhData.tasks.forEach(t => addRow(t.task_name, t.status));
+  } else {
+    addRow();
+  }
+
+  d.$body.on("click", ".wfh-remove-row", function() {
+    $(this).closest("tr").remove();
+    if (!d.$body.find(".wfh-task-row").length) addRow();
+  });
+
+  d.$body.on("click", ".wfh-add-row", function() {
+    addRow();
+  });
+
+  d.show();
 }
 
 function startTimer(t){
