@@ -164,6 +164,7 @@ def get_webform_url(employee_onboarding_name):
 	from frappe.utils import get_url
 	
 	base_url = get_url()
-	webform_url = f"{base_url}/webform/employee-onboarding-details?name={employee_onboarding_name}"
+	# Use /new directly so query param is preserved (base route may redirect to /new)
+	webform_url = f"{base_url}/employee-onboarding-details/new?name={employee_onboarding_name}"
 	return webform_url
 
