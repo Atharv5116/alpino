@@ -642,6 +642,10 @@ def send_pre_onboarding_email(doc, applicant_email):
 			return
 
 		onboarding_link = get_url(f"/app/employee-onboarding/{doc.name}")
+		
+		# Generate webform link with Employee Onboarding name
+		from alpinos.employee_onboarding_webform import get_webform_url
+		webform_link = get_webform_url(doc.name)
 
 		email_doc = {
 			"doctype": "Employee Onboarding",
@@ -650,6 +654,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 			"company": getattr(doc, "company", "") or "",
 			"date_of_joining_onboarding": getattr(doc, "date_of_joining_onboarding", "") or "",
 			"onboarding_link": onboarding_link,
+			"webform_link": webform_link,
 		}
 
 		tmpl = frappe.get_doc("Email Template", template_name)

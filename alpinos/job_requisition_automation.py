@@ -14,8 +14,25 @@ def set_requested_by(doc, method=None):
 	"""
 	Auto-populate custom_requested_by field and fetch requestor's employee record
 	"""
-	if not doc.custom_requested_by:
-		doc.custom_requested_by = frappe.session.user
+	if doc.doctype != "Job Requisition":
+		return
+	
+	# Set custom_requested_by if not already set or if it's set to invalid value "user"
+	if not doc.custom_requested_by or doc.custom_requested_by == "user":
+		# Only set if we have a valid session user
+		if frappe.session.user and frappe.session.user != "Guest":
+			doc.custom_requested_by = frappe.session.user
+		else:
+			# If no valid user, skip to avoid errors
+			return
+	
+	# Validate that the user exists (skip if it's the literal string "user")
+	if doc.custom_requested_by and doc.custom_requested_by != "user":
+		if not frappe.db.exists("User", doc.custom_requested_by):
+			frappe.throw(
+				_("Could not find Requested By: {0}").format(doc.custom_requested_by),
+				title=_("Invalid User")
+			)
 	
 	# Fetch the employee record of the requestor
 	if doc.custom_requested_by and not doc.requested_by_employee:
@@ -66,6 +83,82 @@ def fetch_reporting_manager(doc, method=None):
 			user_id = frappe.db.get_value("Employee", linked_emp_manager, "user_id")
 			if user_id:
 				doc.reporting_manager_user = user_id
+
+
+def fetch_designation_details(doc, method=None):
+	"""
+	Fetch description and skills from Designation when designation is selected.
+	- Fetches description from Designation (if empty or if designation changed)
+	- Fetches skills from Designation and populates the skills child table
+	"""
+	if doc.doctype != "Job Requisition":
+		return
+	
+	if not doc.designation:
+		return
+	
+	try:
+		# Get the Designation document - reload to ensure child tables are loaded
+		designation = frappe.get_doc("Designation", doc.designation)
+		
+		# Check if designation changed (for existing documents)
+		designation_changed = doc.has_value_changed("designation") if not doc.is_new() else True
+		
+		# Fetch description if empty or if designation changed
+		if not doc.description or designation_changed:
+			if designation.description:
+				doc.description = designation.description
+		
+		# Fetch skills from Designation
+		# Check if skills field exists on Job Requisition
+		if not hasattr(doc, "skills"):
+			# Skills field doesn't exist yet, skip (field may not be created yet)
+			return
+		
+		# Initialize skills as empty list if None
+		if doc.skills is None:
+			doc.skills = []
+		
+		# Get current skills count
+		current_skills_count = len(doc.skills) if doc.skills else 0
+		
+		# Only populate if skills table is empty or if designation changed
+		if current_skills_count == 0 or designation_changed:
+			# Clear existing skills if designation changed
+			if designation_changed and current_skills_count > 0:
+				doc.skills = []
+			
+			# Add skills from Designation
+			# Check if designation has skills attribute and it's not empty
+			if hasattr(designation, "skills"):
+				designation_skills = designation.get("skills", [])
+				if designation_skills:
+					skills_added = 0
+					for skill_row in designation_skills:
+						skill_value = skill_row.get("skill") if isinstance(skill_row, dict) else getattr(skill_row, "skill", None)
+						if skill_value:  # Only add if skill is not empty
+							doc.append("skills", {
+								"skill": skill_value
+							})
+							skills_added += 1
+					
+					# Log for debugging
+					if skills_added > 0:
+						frappe.logger().info(
+							f"Added {skills_added} skills from Designation {doc.designation} to Job Requisition {doc.name if not doc.is_new() else 'NEW'}"
+						)
+		
+	except frappe.DoesNotExistError:
+		# Designation doesn't exist, skip
+		frappe.log_error(
+			f"Designation {doc.designation} not found for Job Requisition {doc.name}",
+			"Job Requisition Automation - Designation Not Found"
+		)
+	except Exception as e:
+		frappe.log_error(
+			f"Error fetching designation details for Job Requisition {doc.name}: {str(e)}",
+			"Job Requisition Automation"
+		)
 
 
 def validate_salary_range(doc, method=None):
@@ -264,3 +357,79 @@ def sync_status_with_job_opening(doc, method=None):
 					f"Error syncing status for Job Opening {job_opening}: {str(e)}",
 					"Job Requisition Automation"
 				)
+
+
+def create_job_requisition_client_script():
+	"""Create client script to fetch skills from Designation when designation changes and set custom_requested_by"""
+	
+	script = """
+frappe.ui.form.on('Job Requisition', {
+	onload: function(frm) {
+		// Set custom_requested_by field immediately on form load if empty or set to "user"
+		if ((!frm.doc.custom_requested_by || frm.doc.custom_requested_by === 'user') && frappe.session.user && frappe.session.user !== 'Guest') {
+			frm.set_value('custom_requested_by', frappe.session.user);
+		}
+	},
+	
+	refresh: function(frm) {
+		// Also set on refresh if still empty or invalid
+		if ((!frm.doc.custom_requested_by || frm.doc.custom_requested_by === 'user') && frappe.session.user && frappe.session.user !== 'Guest') {
+			frm.set_value('custom_requested_by', frappe.session.user);
+		}
+	},
+	
+	designation: function(frm) {
+		if (frm.doc.designation) {
+			// Clear existing skills first
+			frm.clear_table('skills');
+			
+			// Fetch designation and populate skills
+			frappe.db.get_doc('Designation', frm.doc.designation).then(function(designation) {
+				if (designation.skills && designation.skills.length > 0) {
+					designation.skills.forEach(function(designation_skill) {
+						if (designation_skill.skill) {
+							var row = frm.add_child('skills');
+							row.skill = designation_skill.skill;
+						}
+					});
+					frm.refresh_field('skills');
+				}
+			}).catch(function(error) {
+				console.error('Error fetching designation skills:', error);
+			});
+		} else {
+			// Clear skills if designation is cleared
+			frm.clear_table('skills');
+			frm.refresh_field('skills');
+		}
+	}
+});
+"""
+	
+	try:
+		script_name = "Job Requisition - Fetch Skills from Designation"
+		if frappe.db.exists("Client Script", script_name):
+			client_script = frappe.get_doc("Client Script", script_name)
+			client_script.script = script
+			client_script.enabled = 1
+			client_script.save(ignore_permissions=True)
+			frappe.db.commit()
+			print(f"✅ Updated client script: {script_name}")
+		else:
+			client_script = frappe.get_doc({
+				"doctype": "Client Script",
+				"name": script_name,
+				"dt": "Job Requisition",
+				"view": "Form",
+				"enabled": 1,
+				"script": script
+			})
+			client_script.insert(ignore_permissions=True)
+			frappe.db.commit()
+			print(f"✅ Created client script: {script_name}")
+	except Exception as e:
+		frappe.log_error(
+			f"Error creating client script for Job Requisition: {str(e)}",
+			"Job Requisition Client Script Error"
+		)
+		print(f"⚠️  Could not create client script: {str(e)}")

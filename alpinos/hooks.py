@@ -122,7 +122,9 @@ after_migrate = [
 	"alpinos.update_job_application_webform.update_web_form_script",
 	"alpinos.customize_expense_claim.execute",
 	"alpinos.employee_expense_claim_button.execute",
-	"alpinos.patches.create_hrms_email_templates.execute"
+	"alpinos.patches.create_hrms_email_templates.execute",
+	"alpinos.job_requisition_automation.create_job_requisition_client_script",
+	"alpinos.work_from_home_request_automation.create_work_from_home_client_script"
 ]
 
 # Uninstallation
@@ -180,7 +182,8 @@ override_doctype_class = {
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
 	"Interview": "alpinos.overrides.interview_override.CustomInterview",
-	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding"
+	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding",
+	"Job Opening": "alpinos.overrides.job_opening_override.CustomJobOpening"
 }
 
 # Document Events
@@ -191,6 +194,8 @@ doc_events = {
 	"Job Requisition": {
 		"before_insert": "alpinos.job_requisition_automation.set_requested_by",
 		"validate": [
+			"alpinos.job_requisition_automation.set_requested_by",
+			"alpinos.job_requisition_automation.fetch_designation_details",
 			"alpinos.job_requisition_automation.validate_salary_range",
 			"alpinos.job_requisition_automation.validate_job_requisition"
 		],
@@ -239,8 +244,14 @@ doc_events = {
 			"alpinos.employee_onboarding_automation.handle_pre_onboarding_workflow"
 		],
 		"after_insert": [
-			"alpinos.employee_onboarding_automation.send_onboarding_created_email"
+			"alpinos.employee_onboarding_automation.send_onboarding_created_email",
+			"alpinos.employee_onboarding_webform.process_webform_submission"
 		]
+	},
+	"Work From Home Request": {
+		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
 	}
 }
 
