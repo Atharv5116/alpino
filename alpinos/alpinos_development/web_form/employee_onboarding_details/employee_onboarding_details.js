@@ -1,7 +1,8 @@
 frappe.ready(function() {
-	// Get the name parameter from URL
+	// Get the onboarding parameter from URL.
+	// Note: do not use `name` because Frappe reserves it for doc edit/view.
 	const urlParams = new URLSearchParams(window.location.search);
-	const employeeOnboardingName = urlParams.get('name');
+	const employeeOnboardingName = urlParams.get('onboarding');
 	
 	if (employeeOnboardingName) {
 		// Set the hidden field value

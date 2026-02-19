@@ -159,12 +159,13 @@ def process_webform_submission(doc, method=None):
 
 def get_webform_url(employee_onboarding_name):
 	"""
-	Generate webform URL with Employee Onboarding name parameter
+	Generate webform URL with Employee Onboarding parameter.
+	Use `onboarding` (not `name`) because Frappe reserves `name` for edit/view modes.
 	"""
 	from frappe.utils import get_url
 	
 	base_url = get_url()
 	# Use /new directly so query param is preserved (base route may redirect to /new)
-	webform_url = f"{base_url}/employee-onboarding-details/new?name={employee_onboarding_name}"
+	webform_url = f"{base_url}/employee-onboarding-details/new?onboarding={employee_onboarding_name}"
 	return webform_url
 
