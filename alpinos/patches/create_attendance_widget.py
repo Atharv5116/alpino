@@ -160,77 +160,9 @@ function checkOut(){
         btn("btn-in",true);
         btn("btn-out",true);
         setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
-        
-        // Show task dialog if there's a WFH request
-        if(r.message && r.message.show_task_dialog && r.message.wfh_request){
-          showWFHTaskDialog(r.message.wfh_request);
-        }
       }
     });
   });
-}
-
-function showWFHTaskDialog(wfhRequestName){
-  let dialog = new frappe.ui.Dialog({
-    title: "Work From Home - Task Details",
-    fields: [
-      {
-        fieldtype: "HTML",
-        options: "<p>Please enter the tasks you completed today:</p>"
-      },
-      {
-        fieldtype: "Table",
-        fieldname: "tasks",
-        label: "Tasks",
-        options: "Work From Home Task",
-        cannot_add_rows: false,
-        cannot_delete_rows: false
-      }
-    ],
-    primary_action_label: "Save",
-    primary_action: function(values){
-      if(!values.tasks || values.tasks.length === 0){
-        frappe.msgprint({
-          message: "Please add at least one task",
-          indicator: "orange",
-          title: "No Tasks"
-        });
-        return;
-      }
-      
-      frappe.call({
-        method: "alpinos.work_from_home_request_automation.save_wfh_tasks",
-        args: {
-          wfh_request_name: wfhRequestName,
-          tasks: values.tasks
-        },
-        callback: function(r){
-          if(r.exc){
-            frappe.msgprint({
-              message: r.exc,
-              indicator: "red",
-              title: "Error"
-            });
-            return;
-          }
-          dialog.hide();
-          frappe.show_alert({
-            message: "Tasks saved successfully",
-            indicator: "green"
-          });
-        }
-      });
-    }
-  });
-  
-  dialog.show();
-  
-  // Add one empty row by default
-  setTimeout(function(){
-    if(dialog.fields_dict.tasks && dialog.fields_dict.tasks.grid){
-      dialog.fields_dict.tasks.grid.add_new_row();
-    }
-  }, 100);
 }
 
 function startTimer(t){
