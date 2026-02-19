@@ -33,22 +33,7 @@ def _create_email_template(name, data):
 
 def _get_templates():
 	return {
-		"Interview Schedule Mail": {
-			"subject": "Interview scheduled – {{ doc.job_title }} at {{ doc.company_name }}",
-			"response_html": _interview_schedule_body(),
-		},
-		"Confirmation Mail": {
-			"subject": "Your candidature confirmed – {{ doc.job_title }} at {{ doc.company_name }}",
-			"response_html": _confirmation_mail_body(),
-		},
-		"Pre Onboarding Mail": {
-			"subject": "Pre-joining: Complete your onboarding before {{ doc.joining_date }} – {{ doc.company_name }}",
-			"response_html": _pre_onboarding_mail_body(),
-		},
-		"Salary Slip": {
-			"subject": "Salary slip for {{ doc.month_year }} – {{ doc.company_name }}",
-			"response_html": _salary_slip_body(),
-		},
+		# Job Application (already used)
 		"Job Application - Candidate Acknowledgement": {
 			"subject": "Application received – {{ doc.job_title or doc.job_requisition }}",
 			"response_html": _job_application_candidate_body(),
@@ -57,22 +42,23 @@ def _get_templates():
 			"subject": "New job application – {{ doc.applicant_name }} ({{ doc.candidate_id or doc.name }})",
 			"response_html": _job_application_hr_body(),
 		},
-		# SRS requirements not in HRMS spec doc
-		"Job Applicant - Rejection": {
-			"subject": "Update on your application – {{ doc.job_title or doc.job_requisition }}",
-			"response_html": _job_applicant_rejection_body(),
+		# Interview scheduling (already used)
+		"Interview Schedule Mail": {
+			"subject": "Interview scheduled – {{ doc.job_title }} at {{ doc.company_name }}",
+			"response_html": _interview_schedule_body(),
 		},
-		"Employee Onboarding - Complete Profile": {
-			"subject": "Complete your profile – {{ doc.company_name }}",
-			"response_html": _complete_profile_body(),
+		"Interview Schedule - HR Notification": {
+			"subject": "Interview scheduled – {{ doc.applicant_name }} for {{ doc.job_title }}",
+			"response_html": _interview_schedule_hr_body(),
 		},
-		"Probation - Near Completion": {
-			"subject": "Probation ending soon – {{ doc.employee_name }}",
-			"response_html": _probation_near_completion_body(),
+		# Onboarding (new)
+		"Onboarding - Job Confirmation": {
+			"subject": "Job confirmation – {{ doc.full_name_display }} joining {{ doc.company }}",
+			"response_html": _onboarding_job_confirmation_body(),
 		},
-		"Probation - Complete": {
-			"subject": "Probation completed – {{ doc.employee_name }}",
-			"response_html": _probation_complete_body(),
+		"Onboarding - Document Reminder": {
+			"subject": "Pre-Onboarding: document upload reminder – joining on {{ doc.date_of_joining_onboarding }}",
+			"response_html": _onboarding_document_reminder_body(),
 		},
 	}
 
@@ -98,6 +84,18 @@ def _interview_schedule_body():
 {{ doc.hr_name }}<br/>
 {{ doc.hr_designation }}<br/>
 {{ doc.company_name }}</p>"""
+
+
+def _interview_schedule_hr_body():
+	return """<p>A new interview has been scheduled.</p>
+<p><strong>Candidate:</strong> {{ doc.applicant_name or doc.candidate_name }}<br/>
+<strong>Candidate ID:</strong> {{ doc.candidate_id or "" }}<br/>
+<strong>Position:</strong> {{ doc.job_title or "" }}<br/>
+<strong>Date:</strong> {{ doc.interview_date or "" }}<br/>
+<strong>Time:</strong> {{ doc.interview_time or "" }}<br/>
+<strong>Mode:</strong> {{ doc.interview_mode or "" }}</p>
+<p>Please review the interview details in the system.</p>
+<p>Best regards,<br/>System</p>"""
 
 
 def _confirmation_mail_body():
@@ -218,3 +216,28 @@ def _probation_complete_body():
 <p>The probation period for <strong>{{ doc.employee_name }}</strong> ({{ doc.employee_id }}) has been completed on {{ doc.probation_end_date }}.</p>
 <p>Please ensure confirmation and related formalities are completed.</p>
 <p>Best regards,<br/>HR Team<br/>{{ doc.company_name }}</p>"""
+
+
+def _onboarding_job_confirmation_body():
+	return """<p>Hello {{ doc.full_name_display }},</p>
+<p>Congratulations and welcome to {{ doc.company }}!</p>
+<p>Your job has been confirmed and your onboarding process has been initiated.</p>
+<p><strong>Joining Details:</strong></p>
+<ul>
+<li>Date of Joining: {{ doc.date_of_joining_onboarding }}</li>
+<li>Location: {{ doc.location or '-' }}</li>
+<li>Department: {{ doc.department or '-' }}</li>
+<li>Reporting Manager: {{ doc.reporting_manager or '-' }}</li>
+</ul>
+<p>Our HR team will share further details and tasks to complete before your joining date.</p>
+<p>Best regards,<br/>HR Team<br/>{{ doc.company }}</p>"""
+
+
+def _onboarding_document_reminder_body():
+	return """<p>Hello {{ doc.full_name_display }},</p>
+<p>This is a reminder to complete your pre-onboarding documents before your Date of Joining: {{ doc.date_of_joining_onboarding }}.</p>
+<p>Please review and update your details and upload the required documents using the link below:</p>
+<p><a href="{{ doc.onboarding_link }}" style="background:#2490ef;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Open Your Onboarding Form</a></p>
+<p>If the button does not work, copy and paste this URL into your browser:</p>
+<p>{{ doc.onboarding_link }}</p>
+<p>Best regards,<br/>HR Team<br/>{{ doc.company }}</p>"""

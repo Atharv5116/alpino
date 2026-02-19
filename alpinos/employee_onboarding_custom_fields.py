@@ -41,11 +41,251 @@ def delete_policy_fields():
 	frappe.db.commit()
 
 
+def delete_column_break_reset_qualification():
+	"""Delete column_break_reset_qualification field from Employee Onboarding"""
+	try:
+		# Delete custom field if it exists
+		custom_field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Employee Onboarding", "fieldname": "column_break_reset_qualification"},
+			"name"
+		)
+		if custom_field:
+			frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Deleted column_break_reset_qualification custom field from Employee Onboarding")
+		
+		# Also delete property setters for this field
+		property_setters = frappe.get_all(
+			"Property Setter",
+			filters={
+				"doc_type": "Employee Onboarding",
+				"field_name": "column_break_reset_qualification"
+			},
+			pluck="name"
+		)
+		for ps_name in property_setters:
+			frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+			print(f"✅ Deleted property setter: {ps_name}")
+		
+		# Remove from field order if it exists
+		field_order_ps = frappe.db.get_value(
+			"Property Setter",
+			{"doc_type": "Employee Onboarding", "property": "field_order", "doctype_or_field": "DocType"},
+			"name"
+		)
+		if field_order_ps:
+			ps = frappe.get_doc("Property Setter", field_order_ps)
+			import json
+			field_order = json.loads(ps.value) if isinstance(ps.value, str) else ps.value
+			if "column_break_reset_qualification" in field_order:
+				field_order.remove("column_break_reset_qualification")
+				ps.value = json.dumps(field_order)
+				ps.save(ignore_permissions=True)
+				frappe.db.commit()
+				print("✅ Removed column_break_reset_qualification from field_order")
+		
+		frappe.db.commit()
+	except Exception as e:
+		print(f"⚠️  Could not delete column_break_reset_qualification: {str(e)}")
+
+
+def delete_work_experience_fields():
+	"""Delete work_experience_start_date, work_experience_end_date, and column_break_work_experience fields from Employee Onboarding"""
+	fields_to_delete = [
+		"work_experience_start_date",
+		"work_experience_end_date",
+		"column_break_work_experience"
+	]
+	
+	try:
+		for fieldname in fields_to_delete:
+			# Delete custom field if it exists
+			custom_field = frappe.db.get_value(
+				"Custom Field",
+				{"dt": "Employee Onboarding", "fieldname": fieldname},
+				"name"
+			)
+			if custom_field:
+				frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+				frappe.db.commit()
+				print(f"✅ Deleted {fieldname} custom field from Employee Onboarding")
+			
+			# Also delete property setters for this field
+			property_setters = frappe.get_all(
+				"Property Setter",
+				filters={
+					"doc_type": "Employee Onboarding",
+					"field_name": fieldname
+				},
+				pluck="name"
+			)
+			for ps_name in property_setters:
+				frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+				print(f"✅ Deleted property setter: {ps_name} for {fieldname}")
+		
+		# Remove from field order if they exist
+		field_order_ps = frappe.db.get_value(
+			"Property Setter",
+			{"doc_type": "Employee Onboarding", "property": "field_order", "doctype_or_field": "DocType"},
+			"name"
+		)
+		if field_order_ps:
+			ps = frappe.get_doc("Property Setter", field_order_ps)
+			import json
+			field_order = json.loads(ps.value) if isinstance(ps.value, str) else ps.value
+			removed_any = False
+			for fieldname in fields_to_delete:
+				if fieldname in field_order:
+					field_order.remove(fieldname)
+					removed_any = True
+					print(f"✅ Removed {fieldname} from field_order")
+			
+			if removed_any:
+				ps.value = json.dumps(field_order)
+				ps.save(ignore_permissions=True)
+				frappe.db.commit()
+		
+		frappe.db.commit()
+	except Exception as e:
+		print(f"⚠️  Could not delete work experience fields: {str(e)}")
+
+
+def delete_qualification_fields():
+	"""Delete grade, degree_certificate_upload, and column_break_qualification fields from Employee Onboarding"""
+	fields_to_delete = [
+		"grade",
+		"degree_certificate_upload",
+		"column_break_qualification"
+	]
+	
+	try:
+		for fieldname in fields_to_delete:
+			# Delete custom field if it exists
+			custom_field = frappe.db.get_value(
+				"Custom Field",
+				{"dt": "Employee Onboarding", "fieldname": fieldname},
+				"name"
+			)
+			if custom_field:
+				frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+				frappe.db.commit()
+				print(f"✅ Deleted {fieldname} custom field from Employee Onboarding")
+			
+			# Also delete property setters for this field
+			property_setters = frappe.get_all(
+				"Property Setter",
+				filters={
+					"doc_type": "Employee Onboarding",
+					"field_name": fieldname
+				},
+				pluck="name"
+			)
+			for ps_name in property_setters:
+				frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+				print(f"✅ Deleted property setter: {ps_name} for {fieldname}")
+		
+		# Remove from field order if they exist
+		field_order_ps = frappe.db.get_value(
+			"Property Setter",
+			{"doc_type": "Employee Onboarding", "property": "field_order", "doctype_or_field": "DocType"},
+			"name"
+		)
+		if field_order_ps:
+			ps = frappe.get_doc("Property Setter", field_order_ps)
+			import json
+			field_order = json.loads(ps.value) if isinstance(ps.value, str) else ps.value
+			removed_any = False
+			for fieldname in fields_to_delete:
+				if fieldname in field_order:
+					field_order.remove(fieldname)
+					removed_any = True
+					print(f"✅ Removed {fieldname} from field_order")
+			
+			if removed_any:
+				ps.value = json.dumps(field_order)
+				ps.save(ignore_permissions=True)
+				frappe.db.commit()
+		
+		frappe.db.commit()
+	except Exception as e:
+		print(f"⚠️  Could not delete qualification fields: {str(e)}")
+
+
+def delete_exit_letter_field():
+	"""Delete exit_letter field from Employee Onboarding and make it non-mandatory"""
+	fieldname = "exit_letter"
+	
+	try:
+		# Delete custom field if it exists
+		custom_field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Employee Onboarding", "fieldname": fieldname},
+			"name"
+		)
+		if custom_field:
+			frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+			frappe.db.commit()
+			print(f"✅ Deleted {fieldname} custom field from Employee Onboarding")
+		
+		# Also delete property setters for this field
+		property_setters = frappe.get_all(
+			"Property Setter",
+			filters={
+				"doc_type": "Employee Onboarding",
+				"field_name": fieldname
+			},
+			pluck="name"
+		)
+		for ps_name in property_setters:
+			frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+			print(f"✅ Deleted property setter: {ps_name} for {fieldname}")
+		
+		# Ensure it's non-mandatory (in case it's a standard field)
+		from alpinos.custom_fields import update_property_setter
+		update_property_setter("Employee Onboarding", fieldname, "reqd", "0", "Check")
+		update_property_setter("Employee Onboarding", fieldname, "hidden", "1", "Check")
+		print(f"✅ Made {fieldname} non-mandatory and hidden in Employee Onboarding")
+		
+		# Remove from field order if it exists
+		field_order_ps = frappe.db.get_value(
+			"Property Setter",
+			{"doc_type": "Employee Onboarding", "property": "field_order", "doctype_or_field": "DocType"},
+			"name"
+		)
+		if field_order_ps:
+			ps = frappe.get_doc("Property Setter", field_order_ps)
+			import json
+			field_order = json.loads(ps.value) if isinstance(ps.value, str) else ps.value
+			if fieldname in field_order:
+				field_order.remove(fieldname)
+				ps.value = json.dumps(field_order)
+				ps.save(ignore_permissions=True)
+				frappe.db.commit()
+				print(f"✅ Removed {fieldname} from field_order")
+		
+		frappe.db.commit()
+	except Exception as e:
+		print(f"⚠️  Could not delete {fieldname} field: {str(e)}")
+
+
 def setup_employee_onboarding_custom_fields():
 	"""Create custom fields for Employee Onboarding"""
 	
 	# Delete existing policy fields first to allow changing from Select to Link
 	delete_policy_fields()
+	
+	# Delete column_break_reset_qualification field
+	delete_column_break_reset_qualification()
+	
+	# Delete work experience fields
+	delete_work_experience_fields()
+	
+	# Delete qualification fields
+	delete_qualification_fields()
+	
+	# Delete exit_letter field
+	delete_exit_letter_field()
 	
 	custom_fields = {
 		"Employee Onboarding": [
@@ -60,19 +300,13 @@ def setup_employee_onboarding_custom_fields():
 				collapsible=1,
 				hidden=0,  # Show Company Details section with 2 columns
 			),
-			# Note: company field (standard field) is positioned after company_details_section via property setter (left column)
-			# Only 2 columns: column_break_7 (standard) and column_break_company_unique_id
-			dict(
-				fieldname="column_break_company_unique_id",
-				fieldtype="Column Break",
-				insert_after="company_details_section",
-			),
+			# Note: company field (standard field) is positioned after company_details_section via property setter
 			dict(
 				fieldname="candidate_id",
 				label="Unique id",
 				fieldtype="Link",
 				options="Job Applicant",
-				insert_after="column_break_company_unique_id",
+				insert_after="company",
 				read_only=1,
 				reqd=0,  # Not mandatory since it's auto-filled
 				hidden=0,
@@ -234,44 +468,55 @@ def setup_employee_onboarding_custom_fields():
 			# ============================================
 			dict(
 				fieldname="address_details_section",
-				label="Address Details",
+				label="Address",
 				fieldtype="Section Break",
 				insert_after="passport_size_photo",
 				collapsible=1,
 			),
 			dict(
-				fieldname="address_line_1",
-				label="Address Line 1",
-				fieldtype="Data",
+				fieldname="current_address",
+				label="Current Address",
+				fieldtype="Small Text",
 				insert_after="address_details_section",
-				reqd=1,
+				reqd=0,
 			),
 			dict(
-				fieldname="address_line_2",
-				label="Address Line 2",
-				fieldtype="Data",
-				insert_after="address_line_1",
-				reqd=1,
-			),
-			dict(
-				fieldname="pincode",
-				label="Pincode",
-				fieldtype="Data",
-				insert_after="address_line_2",
-				reqd=1,
-			),
-			dict(
-				fieldname="city_state_combined",
-				label="City / State",
-				fieldtype="Data",
-				insert_after="pincode",
-				read_only=1,
-				fetch_from="job_applicant.city_state",
+				fieldname="current_accommodation_type",
+				label="Current Address Is",
+				fieldtype="Select",
+				options="\nRented\nOwned",
+				insert_after="current_address",
+				reqd=0,
 			),
 			dict(
 				fieldname="column_break_address",
 				fieldtype="Column Break",
-				insert_after="city_state_combined",
+				insert_after="current_accommodation_type",
+			),
+			dict(
+				fieldname="permanent_address",
+				label="Permanent Address",
+				fieldtype="Small Text",
+				insert_after="column_break_address",
+				reqd=0,
+			),
+			dict(
+				fieldname="permanent_accommodation_type",
+				label="Permanent Address Is",
+				fieldtype="Select",
+				options="\nRented\nOwned",
+				insert_after="permanent_address",
+				reqd=0,
+			),
+			# Keep city_state_combined hidden for automation purposes
+			dict(
+				fieldname="city_state_combined",
+				label="City / State",
+				fieldtype="Data",
+				insert_after="permanent_accommodation_type",
+				read_only=1,
+				hidden=1,
+				fetch_from="job_applicant.city_state",
 			),
 			
 			# ============================================
@@ -281,7 +526,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="qualification_details_section",
 				label="Qualification Details",
 				fieldtype="Section Break",
-				insert_after="column_break_address",
+				insert_after="permanent_accommodation_type",
 				collapsible=1,
 			),
 			dict(
@@ -298,32 +543,24 @@ def setup_employee_onboarding_custom_fields():
 				label="University",
 				fieldtype="Data",
 				insert_after="degree",
-				reqd=1,
+				reqd=0,
+				hidden=1,
+			),
+			dict(
+				fieldname="qualification_child",
+				label="Qualification Child",
+				fieldtype="Table",
+				options="Qualification Child",
+				insert_after="university",
+				reqd=0,
 			),
 			dict(
 				fieldname="graduation_year",
 				label="Graduation Year",
 				fieldtype="Data",
-				insert_after="university",
-				reqd=1,
-			),
-			dict(
-				fieldname="column_break_qualification",
-				fieldtype="Column Break",
-				insert_after="graduation_year",
-			),
-			dict(
-				fieldname="grade",
-				label="Grade",
-				fieldtype="Data",
-				insert_after="column_break_qualification",
-				reqd=1,
-			),
-			dict(
-				fieldname="degree_certificate_upload",
-				label="Degree Certificate Upload",
-				fieldtype="Attach",
-				insert_after="grade",
+				insert_after="qualification_child",
+				reqd=0,
+				hidden=1,
 			),
 			
 			# ============================================
@@ -333,15 +570,24 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="work_experience_section",
 				label="Work Experience",
 				fieldtype="Section Break",
-				insert_after="column_break_qualification",
+				insert_after="qualification_child",
 				collapsible=1,
+			),
+			dict(
+				fieldname="experience",
+				label="Experience",
+				fieldtype="Table",
+				options="Experience",
+				insert_after="work_experience_section",
+				reqd=0,
 			),
 			dict(
 				fieldname="work_experience_company_name",
 				label="Company Name",
 				fieldtype="Data",
-				insert_after="work_experience_section",
-				reqd=1,
+				insert_after="experience",
+				reqd=0,
+				hidden=1,
 				read_only=0,  # User must be able to enter manually
 				# User must enter manually - NOT auto-filled, NO fetch_from
 			),
@@ -350,7 +596,8 @@ def setup_employee_onboarding_custom_fields():
 				label="Designation",
 				fieldtype="Data",
 				insert_after="work_experience_company_name",
-				reqd=1,
+				reqd=0,
+				hidden=1,
 				read_only=0,  # User must be able to enter manually
 				# User must enter manually - NOT auto-filled, NO fetch_from
 			),
@@ -359,21 +606,18 @@ def setup_employee_onboarding_custom_fields():
 				label="City",
 				fieldtype="Data",
 				insert_after="work_experience_designation",
-				reqd=1,
+				reqd=0,
+				hidden=1,
 				read_only=0,  # User must be able to enter manually
 				# Editable by Employee
-			),
-			dict(
-				fieldname="column_break_work_experience",
-				fieldtype="Column Break",
-				insert_after="work_experience_city",
 			),
 			dict(
 				fieldname="work_experience_start_date",
 				label="Start Date",
 				fieldtype="Date",
-				insert_after="column_break_work_experience",
-				reqd=1,
+				insert_after="work_experience_city",
+				reqd=0,
+				hidden=1,
 				read_only=0,  # User must be able to enter manually
 				# User must enter manually - NOT auto-filled, NO fetch_from
 			),
@@ -382,7 +626,8 @@ def setup_employee_onboarding_custom_fields():
 				label="End Date",
 				fieldtype="Date",
 				insert_after="work_experience_start_date",
-				reqd=1,
+				reqd=0,
+				hidden=1,
 				read_only=0,  # User must be able to enter manually
 				# User must enter manually - NOT auto-filled, NO fetch_from
 			),
@@ -394,7 +639,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="bank_details_section",
 				label="Bank Details",
 				fieldtype="Section Break",
-				insert_after="column_break_work_experience",
+				insert_after="work_experience_end_date",
 				collapsible=1,
 			),
 			dict(
@@ -621,14 +866,14 @@ def setup_employee_onboarding_custom_fields():
 				label="Resign Date",
 				fieldtype="Date",
 				insert_after="onboarding_designation",
-				reqd=1,
+				reqd=0,
 			),
 			dict(
 				fieldname="last_working_date",
 				label="Last Working Date",
 				fieldtype="Date",
 				insert_after="resign_date",
-				reqd=1,
+				reqd=0,
 			),
 			dict(
 				fieldname="employment_status",
@@ -928,13 +1173,6 @@ def setup_employee_onboarding_custom_fields():
 				label="Bond Letter",
 				fieldtype="Attach",
 				insert_after="offer_letter",
-				reqd=1,
-			),
-			dict(
-				fieldname="exit_letter",
-				label="Exit Letter",
-				fieldtype="Attach",
-				insert_after="bond_letter",
 				reqd=1,
 			),
 		]
