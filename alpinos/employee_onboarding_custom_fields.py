@@ -816,6 +816,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="location",
 				label="Location",
 				fieldtype="Select",
+				options="\nHead Office",
 				insert_after="designation_company_profile",  # Will be after department via field_order
 				reqd=1,
 				read_only=0,  # Editable select field
@@ -905,6 +906,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="salary_template",
 				label="Salary Template",
 				fieldtype="Select",
+				options="\nNA",
 				insert_after="ctc_monthly",
 				reqd=1,
 			),
@@ -1135,6 +1137,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="roles",
 				label="Roles",
 				fieldtype="Select",
+				options="\nNA",
 				insert_after="access_level_section",
 				reqd=1,
 			),
@@ -1147,6 +1150,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="rights",
 				label="Rights",
 				fieldtype="Select",
+				options="\nNA",
 				insert_after="column_break_access",
 				reqd=1,
 			),
