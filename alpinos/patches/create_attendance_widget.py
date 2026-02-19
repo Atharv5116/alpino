@@ -141,30 +141,32 @@ function checkIn(){
 
 function checkOut(){
   btn("btn-out", true);
-  frappe.call({
-    method:"alpinos.attendance_widget.check_out",
-    args: {
-      latitude: latitude,
-      longitude: longitude,
-    },
-    callback(r){
-      if(r.exc){
-        showError(r.exc);
-        btn("btn-out", false);
-        return;
+  fetchLocation(function () {
+    frappe.call({
+      method:"alpinos.attendance_widget.check_out",
+      args: {
+        latitude: latitude,
+        longitude: longitude,
+      },
+      callback(r){
+        if(r.exc){
+          showError(r.exc);
+          btn("btn-out", false);
+          return;
+        }
+        frappe.show_alert({message:"Checked Out",indicator:"red"});
+        stopTimer();
+        setStatusBadge("Checked Out", "out");
+        btn("btn-in",true);
+        btn("btn-out",true);
+        setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
+        
+        // Show task dialog if there's a WFH request
+        if(r.message && r.message.show_task_dialog && r.message.wfh_request){
+          showWFHTaskDialog(r.message.wfh_request);
+        }
       }
-      frappe.show_alert({message:"Checked Out",indicator:"red"});
-      stopTimer();
-      setStatusBadge("Checked Out", "out");
-      btn("btn-in",true);
-      btn("btn-out",true);
-      setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
-      
-      // Show task dialog if there's a WFH request
-      if(r.message && r.message.show_task_dialog && r.message.wfh_request){
-        showWFHTaskDialog(r.message.wfh_request);
-      }
-    }
+    });
   });
 }
 
