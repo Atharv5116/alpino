@@ -5,8 +5,9 @@ def get_context(context):
 	Get context for webform
 	Extract employee_onboarding_name from URL parameter and set it in context
 	"""
-	# Get the name parameter from URL
-	employee_onboarding_name = frappe.form_dict.get('name')
+	# Get the onboarding parameter from URL.
+	# Note: do not use `name` because Frappe reserves it for doc edit/view.
+	employee_onboarding_name = frappe.form_dict.get('onboarding')
 	
 	if employee_onboarding_name:
 		context.employee_onboarding_name = employee_onboarding_name
