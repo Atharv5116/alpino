@@ -236,8 +236,10 @@ def _onboarding_job_confirmation_body():
 def _onboarding_document_reminder_body():
 	return """<p>Hello {{ doc.full_name_display }},</p>
 <p>This is a reminder to complete your pre-onboarding documents before your Date of Joining: {{ doc.date_of_joining_onboarding }}.</p>
-<p>Please review and update your details and upload the required documents using the link below:</p>
-<p><a href="{{ doc.onboarding_link }}" style="background:#2490ef;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Open Your Onboarding Form</a></p>
+<p>Please fill in your onboarding details using the webform link below. This will help us prepare everything for your joining.</p>
+<p><a href="{{ doc.webform_link }}" style="background:#2490ef;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Complete Your Onboarding Details</a></p>
 <p>If the button does not work, copy and paste this URL into your browser:</p>
-<p>{{ doc.onboarding_link }}</p>
+<p>{{ doc.webform_link }}</p>
+<p>You can also review and update your details in the onboarding portal:</p>
+<p><a href="{{ doc.onboarding_link }}" style="background:#2490ef;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Open Your Onboarding Form</a></p>
 <p>Best regards,<br/>HR Team<br/>{{ doc.company }}</p>"""

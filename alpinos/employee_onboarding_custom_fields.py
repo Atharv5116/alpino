@@ -1175,6 +1175,34 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="offer_letter",
 				reqd=1,
 			),
+			
+			# ============================================
+			# SECTION: Webform Tracking
+			# ============================================
+			dict(
+				fieldname="webform_tracking_section",
+				label="Webform Tracking",
+				fieldtype="Section Break",
+				insert_after="bond_letter",
+				collapsible=1,
+				hidden=1,  # Hidden from users, for internal tracking
+			),
+			dict(
+				fieldname="webform_submitted",
+				label="Webform Submitted",
+				fieldtype="Check",
+				insert_after="webform_tracking_section",
+				reqd=0,
+				hidden=1,
+			),
+			dict(
+				fieldname="webform_submitted_on",
+				label="Webform Submitted On",
+				fieldtype="Datetime",
+				insert_after="webform_submitted",
+				reqd=0,
+				hidden=1,
+			),
 		]
 	}
 	

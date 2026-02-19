@@ -126,5 +126,24 @@ def check_out(latitude=None, longitude=None):
     doc.insert()
     in_time = _get_today_first_checkin(employee)[0]["time"]
     elapsed_seconds = int((doc.time - in_time).total_seconds())
-    return {"status": "OUT", "time": doc.time, "elapsed_seconds": max(elapsed_seconds, 0)}
+    
+    # Check if there's a Work From Home Request for today (Approved or Draft)
+    today = getdate(now_datetime())
+    wfh_request = frappe.db.get_value(
+        "Work From Home Request",
+        {
+            "employee": employee,
+            "date": today,
+            "status": ["in", ["Draft", "Approved"]]
+        },
+        "name"
+    )
+    
+    return {
+        "status": "OUT", 
+        "time": doc.time, 
+        "elapsed_seconds": max(elapsed_seconds, 0),
+        "wfh_request": wfh_request,
+        "show_task_dialog": bool(wfh_request)
+    }
 
