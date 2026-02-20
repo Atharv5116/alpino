@@ -21,6 +21,28 @@ def _delete_temp_onboarding(temp_name, target_name=None):
 	frappe.delete_doc("Employee Onboarding", temp_name, force=1, ignore_permissions=True)
 
 
+def prepare_webform_temp_onboarding(doc, method=None):
+	"""
+	Prepare temporary webform-created Employee Onboarding docs so they don't fail
+	HRMS duplicate validation before our after_insert copy handler runs.
+	"""
+	web_form_name = frappe.form_dict.get("web_form") or getattr(doc, "web_form_name", None)
+	is_webform_submission = (
+		bool(getattr(frappe.flags, "in_web_form", False))
+		or web_form_name == "employee-onboarding-details"
+		or bool(doc.get("employee_onboarding_name"))
+		or bool(frappe.form_dict.get("onboarding"))
+	)
+	if not is_webform_submission:
+		return
+
+	# Temp capture docs should bypass only duplicate onboarding check from HRMS.
+	# This check can fail for webform temp docs (especially when job_applicant is empty/None)
+	# before our after_insert copy logic runs.
+	if hasattr(doc, "validate_duplicate_employee_onboarding"):
+		doc.validate_duplicate_employee_onboarding = lambda *args, **kwargs: None
+
+
 def process_webform_submission(doc, method=None):
 	"""
 	Process webform submission for Employee Onboarding Details
