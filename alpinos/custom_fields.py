@@ -146,7 +146,7 @@ def setup_custom_fields():
 				fieldtype="Section Break",
 				insert_after="naming_series",
 				collapsible=1,
-				depends_on="eval:!doc.__islocal",  # Only show in Edit view (when saved)
+				# Always visible (new + saved docs)
 			),
 			
 			# Column Break for Status and Approval
@@ -156,22 +156,22 @@ def setup_custom_fields():
 				insert_after="requisition_details_section",
 			),
 			
-			# Approved On - Datetime (Read-only, auto-set)
+			# Approved On - Datetime (auto-set, but editable if needed)
 			dict(
 				fieldname="approved_on",
 				label="Approved On",
 				fieldtype="Datetime",
-				read_only=1,
+				read_only=0,
 				insert_after="column_break_requisition",
 			),
 			
-			# Approved By - Link to User (Read-only, auto-set)
+			# Approved By - Link to User (auto-set, but editable if needed)
 			dict(
 				fieldname="approved_by",
 				label="Approved By",
 				fieldtype="Link",
 				options="User",
-				read_only=1,
+				read_only=0,
 				insert_after="approved_on",
 			),
 			
