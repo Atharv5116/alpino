@@ -174,6 +174,11 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	- On subsequent saves: allow HR Manager role to skip specific fields (as per SRS).
 	Also ensures hidden designation field is non-mandatory for all users.
 	"""
+	# Normalize legacy status value before field validation runs.
+	# "Document Pending" is invalid for current options; valid value is "Documents Pending".
+	if getattr(doc, "boarding_status", None) == "Document Pending":
+		doc.boarding_status = "Documents Pending"
+
 	# 1) First save: completely bypass mandatory checks using Frappe's built-in flag.
 	# This lets HR create an onboarding shell with minimal data and complete details later.
 	if hasattr(doc, "is_new") and doc.is_new():
@@ -641,11 +646,10 @@ def send_pre_onboarding_email(doc, applicant_email):
 		if not frappe.db.exists("Email Template", template_name):
 			return
 
-		onboarding_link = get_url(f"/app/employee-onboarding/{doc.name}")
-		
 		# Generate webform link with Employee Onboarding name
 		from alpinos.employee_onboarding_webform import get_webform_url
 		webform_link = get_webform_url(doc.name)
+		desk_onboarding_link = get_url(f"/app/employee-onboarding/{doc.name}")
 
 		email_doc = {
 			"doctype": "Employee Onboarding",
@@ -653,8 +657,10 @@ def send_pre_onboarding_email(doc, applicant_email):
 			"full_name_display": getattr(doc, "full_name_display", "") or "Employee",
 			"company": getattr(doc, "company", "") or "",
 			"date_of_joining_onboarding": getattr(doc, "date_of_joining_onboarding", "") or "",
-			"onboarding_link": onboarding_link,
+			# Keep onboarding_link mapped to webform for backward compatibility with older templates.
+			"onboarding_link": webform_link,
 			"webform_link": webform_link,
+			"desk_onboarding_link": desk_onboarding_link,
 		}
 
 		tmpl = frappe.get_doc("Email Template", template_name)
@@ -669,7 +675,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 			now=True,
 		)
 		
-		# Update status to "Documents Pending" (must match field options exactly)
+		# Update status to "Documents Pending" (must match allowed select options)
 		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Documents Pending", update_modified=False)
 		frappe.db.commit()
 		
