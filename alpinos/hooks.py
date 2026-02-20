@@ -226,7 +226,8 @@ doc_events = {
 	},
 	"Employee Onboarding": {
 		"before_validate": [
-			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields"
+			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields",
+			"alpinos.employee_onboarding_webform.prepare_webform_temp_onboarding",
 		],
 		"validate": [
 			"alpinos.employee_onboarding_automation.populate_from_job_applicant",

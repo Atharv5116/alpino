@@ -9,13 +9,58 @@ from frappe.utils import now
 import json
 
 
+def _delete_temp_onboarding(temp_name, target_name=None):
+	"""Best-effort cleanup of temporary onboarding doc created by webform insert."""
+	if not temp_name:
+		return
+	# Safety: never delete the actual target onboarding.
+	if target_name and temp_name == target_name:
+		return
+	if not frappe.db.exists("Employee Onboarding", temp_name):
+		return
+	frappe.delete_doc("Employee Onboarding", temp_name, force=1, ignore_permissions=True)
+
+
+def prepare_webform_temp_onboarding(doc, method=None):
+	"""
+	Prepare temporary webform-created Employee Onboarding docs so they don't fail
+	HRMS duplicate validation before our after_insert copy handler runs.
+	"""
+	web_form_name = frappe.form_dict.get("web_form") or getattr(doc, "web_form_name", None)
+	is_webform_submission = (
+		bool(getattr(frappe.flags, "in_web_form", False))
+		or web_form_name == "employee-onboarding-details"
+		or bool(doc.get("employee_onboarding_name"))
+		or bool(frappe.form_dict.get("onboarding"))
+	)
+	if not is_webform_submission:
+		return
+
+	# Temp capture docs should bypass only duplicate onboarding check from HRMS.
+	# This check can fail for webform temp docs (especially when job_applicant is empty/None)
+	# before our after_insert copy logic runs.
+	if hasattr(doc, "validate_duplicate_employee_onboarding"):
+		doc.validate_duplicate_employee_onboarding = lambda *args, **kwargs: None
+
+
 def process_webform_submission(doc, method=None):
 	"""
 	Process webform submission for Employee Onboarding Details
 	This function is called when the webform is submitted
 	"""
-	# Only run this handler for web form submissions
-	if not (hasattr(frappe.flags, "in_web_form") and frappe.flags.in_web_form):
+	# Detect web form submission robustly.
+	# `frappe.flags.in_web_form` is not always reliable in all event contexts.
+	web_form_name = (
+		frappe.form_dict.get("web_form")
+		or getattr(doc, "web_form_name", None)
+	)
+	is_webform_submission = (
+		bool(getattr(frappe.flags, "in_web_form", False))
+		or web_form_name == "employee-onboarding-details"
+		or bool(doc.get("employee_onboarding_name"))
+		or bool(frappe.form_dict.get("onboarding"))
+	)
+	if not is_webform_submission:
 		return
 
 	# Resolve target Employee Onboarding from multiple sources.
@@ -35,6 +80,10 @@ def process_webform_submission(doc, method=None):
 	
 	if not employee_onboarding_name:
 		frappe.throw(_("Employee Onboarding reference is missing. Please use the link provided in your email."))
+
+	# If somehow the temp doc itself is the target, nothing to copy/cleanup.
+	if doc.name == employee_onboarding_name:
+		return
 	
 	# Validate that Employee Onboarding exists
 	if not frappe.db.exists("Employee Onboarding", employee_onboarding_name):
@@ -42,12 +91,13 @@ def process_webform_submission(doc, method=None):
 	
 	# Get the Employee Onboarding document
 	onboarding_doc = frappe.get_doc("Employee Onboarding", employee_onboarding_name)
+	temp_doc_name = doc.name
 	
 	# Check if webform has already been submitted
 	if onboarding_doc.get('webform_submitted'):
 		# Delete the temporary document that was just created
 		try:
-			frappe.delete_doc("Employee Onboarding", doc.name, force=1, ignore_permissions=True)
+			_delete_temp_onboarding(temp_doc_name, employee_onboarding_name)
 			frappe.db.commit()
 		except:
 			pass
@@ -139,14 +189,27 @@ def process_webform_submission(doc, method=None):
 		onboarding_doc.save(ignore_permissions=True)
 		frappe.db.commit()
 		
-		# Delete the temporary document that was created by the webform
-		# This document was only used to capture the form data
+		# Delete temp document created by webform insert.
+		# Also schedule an after-commit retry to avoid leftovers.
 		try:
-			frappe.delete_doc("Employee Onboarding", doc.name, force=1, ignore_permissions=True)
+			_delete_temp_onboarding(temp_doc_name, employee_onboarding_name)
 			frappe.db.commit()
 		except Exception as del_error:
-			# Log but don't fail if deletion fails
-			frappe.log_error(f"Error deleting temporary Employee Onboarding document {doc.name}: {str(del_error)}", "Employee Onboarding Webform Cleanup")
+			frappe.log_error(
+				f"Immediate cleanup failed for temporary Employee Onboarding {temp_doc_name}: {str(del_error)}",
+				"Employee Onboarding Webform Cleanup",
+			)
+		finally:
+			def _retry_cleanup():
+				try:
+					_delete_temp_onboarding(temp_doc_name, employee_onboarding_name)
+					frappe.db.commit()
+				except Exception as retry_error:
+					frappe.log_error(
+						f"After-commit cleanup failed for temporary Employee Onboarding {temp_doc_name}: {str(retry_error)}",
+						"Employee Onboarding Webform Cleanup",
+					)
+			frappe.db.after_commit.add(_retry_cleanup)
 		
 		# Set a flag to indicate successful processing
 		frappe.local.response.message = {
@@ -156,7 +219,7 @@ def process_webform_submission(doc, method=None):
 	except Exception as e:
 		# Delete the temporary document even on error
 		try:
-			frappe.delete_doc("Employee Onboarding", doc.name, force=1, ignore_permissions=True)
+			_delete_temp_onboarding(temp_doc_name, employee_onboarding_name)
 			frappe.db.commit()
 		except:
 			pass
