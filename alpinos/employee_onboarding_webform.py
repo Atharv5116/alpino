@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.utils import now
 import json
+from urllib.parse import parse_qs, urlparse
 
 
 def _delete_temp_onboarding(temp_name, target_name=None):
@@ -54,11 +55,15 @@ def process_webform_submission(doc, method=None):
 		frappe.form_dict.get("web_form")
 		or getattr(doc, "web_form_name", None)
 	)
+	referer = ""
+	if getattr(frappe.local, "request", None):
+		referer = frappe.local.request.headers.get("Referer", "") or ""
 	is_webform_submission = (
 		bool(getattr(frappe.flags, "in_web_form", False))
 		or web_form_name == "employee-onboarding-details"
 		or bool(doc.get("employee_onboarding_name"))
 		or bool(frappe.form_dict.get("onboarding"))
+		or "employee-onboarding-details" in referer
 	)
 	if not is_webform_submission:
 		return
@@ -75,6 +80,16 @@ def process_webform_submission(doc, method=None):
 		try:
 			payload = json.loads(frappe.form_dict.get("data"))
 			employee_onboarding_name = payload.get("employee_onboarding_name") or payload.get("onboarding")
+		except Exception:
+			pass
+
+	# Fallback: parse onboarding from browser Referer query params.
+	# This helps when submit API call does not carry page query params forward.
+	if not employee_onboarding_name and referer:
+		try:
+			parsed = urlparse(referer)
+			params = parse_qs(parsed.query or "")
+			employee_onboarding_name = (params.get("onboarding") or [None])[0]
 		except Exception:
 			pass
 	

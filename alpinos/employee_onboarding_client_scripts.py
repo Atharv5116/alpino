@@ -57,6 +57,30 @@ frappe.ui.form.on('Job Applicant', {
 				});
 			}, __('Actions'));
 		}
+	},
+
+	// Auto-fill Applied Position immediately when Job Opening changes
+	job_requisition: function(frm) {
+		if (!frm.doc.job_requisition) return;
+		frappe.db.get_value('Job Opening', frm.doc.job_requisition, 'designation')
+			.then((r) => {
+				const designation = r && r.message ? r.message.designation : null;
+				if (designation) {
+					frm.set_value('applied_position', designation);
+					// Keep designation in sync as well, if present on the form
+					if (frm.doc.designation !== undefined) {
+						frm.set_value('designation', designation);
+					}
+				}
+			})
+			.catch(() => {});
+	},
+
+	// If job_title is used to carry Job Opening in some flows, sync from it too
+	job_title: function(frm) {
+		if (!frm.doc.job_title || frm.doc.job_requisition) return;
+		frm.set_value('job_requisition', frm.doc.job_title);
+		frm.trigger('job_requisition');
 	}
 });
 """

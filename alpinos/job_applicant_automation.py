@@ -559,7 +559,8 @@ def auto_populate_from_job_opening(doc, method=None):
 	"""
 	Auto-populate fields from Job Opening when selected via job_title or job_requisition
 	Note: job_requisition field now links directly to Job Opening (not Job Requisition)
-	This ensures job_requisition is always set when job_title is provided (from web form URL)
+	This ensures job_requisition is always set when job_title is provided (from web form URL),
+	and keeps applied_position in sync with Job Opening designation.
 	"""
 	# Map job_title to job_requisition if job_title is set but job_requisition is not
 	if doc.job_title and not doc.job_requisition:
@@ -578,6 +579,10 @@ def auto_populate_from_job_opening(doc, method=None):
 			job_opening = frappe.get_doc("Job Opening", doc.job_requisition)
 			if not doc.designation and job_opening.designation:
 				doc.designation = job_opening.designation
+			# Keep applied_position synced from Job Opening designation.
+			# applied_position is used in some reports/legacy UI even though job_requisition is primary.
+			if job_opening.designation and doc.meta.has_field("applied_position"):
+				doc.set("applied_position", job_opening.designation)
 		except frappe.DoesNotExistError:
 			frappe.logger().warning(f"Job Opening {doc.job_requisition} not found")
 		except Exception as e:
