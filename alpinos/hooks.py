@@ -124,7 +124,9 @@ after_migrate = [
 	"alpinos.employee_expense_claim_button.execute",
 	"alpinos.patches.create_hrms_email_templates.execute",
 	"alpinos.job_requisition_automation.create_job_requisition_client_script",
-	"alpinos.work_from_home_request_automation.create_work_from_home_client_script"
+	"alpinos.work_from_home_request_automation.create_work_from_home_client_script",
+	"alpinos.attendance_request_automation.create_attendance_request_client_script",
+	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields"
 ]
 
 # Uninstallation
@@ -183,7 +185,8 @@ override_doctype_class = {
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
 	"Interview": "alpinos.overrides.interview_override.CustomInterview",
 	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding",
-	"Job Opening": "alpinos.overrides.job_opening_override.CustomJobOpening"
+	"Job Opening": "alpinos.overrides.job_opening_override.CustomJobOpening",
+	"Attendance Request": "alpinos.overrides.attendance_request_override.CustomAttendanceRequest"
 }
 
 # Document Events
@@ -253,6 +256,10 @@ doc_events = {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
+	},
+	"Attendance": {
+		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
+		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
 	}
 }
 

@@ -13,8 +13,9 @@ def execute():
 	templates = _get_templates()
 	for name, data in templates.items():
 		if frappe.db.exists("Email Template", name):
-			continue
-		_create_email_template(name, data)
+			_update_email_template(name, data)
+		else:
+			_create_email_template(name, data)
 	frappe.db.commit()
 
 
@@ -29,6 +30,14 @@ def _create_email_template(name, data):
 		}
 	)
 	doc.insert(ignore_permissions=True)
+
+
+def _update_email_template(name, data):
+	doc = frappe.get_doc("Email Template", name)
+	doc.subject = data["subject"]
+	doc.use_html = 1
+	doc.response_html = data["response_html"]
+	doc.save(ignore_permissions=True)
 
 
 def _get_templates():
@@ -60,34 +69,42 @@ def _get_templates():
 			"subject": "Pre-Onboarding: document upload reminder – joining on {{ doc.date_of_joining_onboarding }}",
 			"response_html": _onboarding_document_reminder_body(),
 		},
+		# Job Confirmation (from spec doc)
+		"Job Confirmation Mail": {
+			"subject": "Job confirmation – {{ doc.candidate_name }} joining {{ doc.company_name }}",
+			"response_html": _confirmation_mail_body(),
+		},
 	}
 
 
 def _interview_schedule_body():
-	return """<p>Hello {{ doc.candidate_name }},</p>
-<p>Thank you for your interest in the {{ doc.job_title }} position at {{ doc.company_name }}.</p>
+	return _with_alpino_layout("""<p>Hello {{ doc.get('candidate_name') or doc.get('applicant_name') or 'Candidate' }},</p>
+<p>Thank you for your interest in the {{ doc.get('job_title') or doc.get('job_requisition') or '-' }} position at {{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}.</p>
 <p>We are pleased to inform you that your profile has been shortlisted, and we would like to schedule an interview with you. Kindly find the interview details below:</p>
 <p><strong>Interview Details:</strong></p>
 <ul>
-<li>Position: {{ doc.job_title }}</li>
-<li>Date: {{ doc.interview_day }}, {{ doc.interview_date }}</li>
-<li>Time: {{ doc.interview_time }} ({{ doc.time_zone }})</li>
-<li>Location: {{ doc.location_or_link }}</li>
-<li>Interview Mode: {{ doc.interview_mode }}</li>
-<li>Contact Person: {{ doc.interviewer_name }}</li>
-<li>Contact Number: {{ doc.contact_phone }}</li>
-<li>Email: {{ doc.contact_email }}</li>
+<li><strong>Position:</strong> {{ doc.get('job_title') or doc.get('job_requisition') or '-' }}</li>
+<li><strong>Date:</strong> {{ doc.get('interview_day') or '' }}{{ ', ' if doc.get('interview_day') and doc.get('interview_date') else '' }}{{ doc.get('interview_date') or '-' }}</li>
+<li><strong>Time:</strong> {{ doc.get('interview_time') or '-' }}{% if doc.get('time_zone') %} ({{ doc.get('time_zone') }}){% endif %}</li>
+<li><strong>Location:</strong> {{ doc.get('location_or_link') or '-' }}</li>
+<li><strong>Interview Mode:</strong> {{ doc.get('interview_mode') or '-' }}</li>
+</ul>
+<p><strong>Contact Person:</strong></p>
+<ul>
+<li><strong>Name:</strong> {{ doc.get('interviewer_name') or doc.get('hr_name') or 'HR Team' }}</li>
+<li><strong>Contact Number:</strong> {{ doc.get('contact_phone') or '-' }}</li>
+<li><strong>Email:</strong> {{ doc.get('contact_email') or doc.get('hr_email') or '-' }}</li>
 </ul>
 <p>Kindly confirm your availability by replying to this email. If you are unable to attend at the scheduled time, kindly let us know so we can explore alternative arrangements.</p>
 <p>We look forward to meeting you and discussing your experience in more detail.</p>
 <p>Best regards,<br/>
-{{ doc.hr_name }}<br/>
-{{ doc.hr_designation }}<br/>
-{{ doc.company_name }}</p>"""
+{{ doc.get('hr_name') or 'HR Team' }}<br/>
+{{ doc.get('hr_designation') or '' }}<br/>
+{{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}</p>""")
 
 
 def _interview_schedule_hr_body():
-	return """<p>A new interview has been scheduled.</p>
+	return _with_alpino_layout("""<p>A new interview has been scheduled.</p>
 <p><strong>Candidate:</strong> {{ doc.applicant_name or doc.candidate_name }}<br/>
 <strong>Candidate ID:</strong> {{ doc.candidate_id or "" }}<br/>
 <strong>Position:</strong> {{ doc.job_title or "" }}<br/>
@@ -95,30 +112,30 @@ def _interview_schedule_hr_body():
 <strong>Time:</strong> {{ doc.interview_time or "" }}<br/>
 <strong>Mode:</strong> {{ doc.interview_mode or "" }}</p>
 <p>Please review the interview details in the system.</p>
-<p>Best regards,<br/>System</p>"""
+<p>Best regards,<br/>System</p>""")
 
 
 def _confirmation_mail_body():
-	return """<p>Hello {{ doc.candidate_name }},</p>
-<p>We are pleased to inform you that your candidature for the position of {{ doc.job_title }} at {{ doc.company_name }} has been confirmed.</p>
-<p>We are delighted to confirm your selection and welcome you to join our organization. Your date of joining is scheduled as follows:</p>
+	return _with_alpino_layout("""<p>Hello {{ doc.get('candidate_name') or doc.get('applicant_name') or 'Candidate' }},</p>
+<p>We are pleased to inform you that your candidature for the position of {{ doc.get('job_title') or doc.get('job_requisition') or '-' }} at {{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }} has been confirmed.</p>
+<p>We are delighted to confirm your selection and welcome you to join our organization. Your <strong>date of joining</strong> is scheduled as follows:</p>
 <p><strong>Joining Details:</strong></p>
 <ul>
-<li>Position: {{ doc.job_title }}</li>
-<li>Department: {{ doc.department_name }}</li>
-<li>Date of Joining: {{ doc.joining_date }}</li>
-<li>Reporting Location: {{ doc.reporting_location }}</li>
-<li>Reporting To: {{ doc.reporting_to_name }}</li>
-<li>Reporting Time: {{ doc.reporting_time }}</li>
+<li>Position: {{ doc.get('job_title') or doc.get('job_requisition') or '-' }}</li>
+<li>Department: {{ doc.get('department_name') or doc.get('department') or '-' }}</li>
+<li>Date of Joining: {{ doc.get('joining_date') or doc.get('date_of_joining') or '-' }}</li>
+<li>Reporting Location: {{ doc.get('reporting_location') or doc.get('location') or doc.get('office_location') or doc.get('branch_name') or '-' }}</li>
+<li>Reporting To: {{ doc.get('reporting_to_name') or doc.get('reporting_manager') or doc.get('manager_name') or doc.get('hr_name') or 'HR Team' }}</li>
+<li>Reporting Time: {{ doc.get('reporting_time') or doc.get('time') or '-' }}</li>
 </ul>
-<p>Kindly note that your formal offer letter, along with detailed compensation, will be shared with you prior to your joining date.</p>
+<p>Kindly note that your <strong>formal offer letter</strong>, along with <strong>detailed compensation</strong>, will be shared with you <strong>prior to your joining date</strong>.</p>
 <p>We are excited about the opportunity to work with you and look forward to your valuable contribution to our team. Should you have any questions in the meantime, kindly feel free to reach out to us.</p>
 <p>Once again, congratulations on your selection, and welcome aboard!</p>
 <p>Warm regards,<br/>
-{{ doc.hr_name }}<br/>
-{{ doc.hr_designation }}<br/>
-{{ doc.company_name }}<br/>
-{{ doc.hr_email }} | {{ doc.hr_phone }}</p>"""
+{{ doc.get('hr_name') or 'HR Team' }}<br/>
+{{ doc.get('hr_designation') or doc.get('designation') or '' }}<br/>
+{{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}<br/>
+{{ doc.get('hr_email') or doc.get('hr_email_address') or '' }}{% if (doc.get('hr_email') or doc.get('hr_email_address')) and (doc.get('hr_phone') or doc.get('hr_phone_number')) %} | {% endif %}{{ doc.get('hr_phone') or doc.get('hr_phone_number') or '' }}</p>""")
 
 
 def _pre_onboarding_mail_body():
@@ -169,22 +186,23 @@ def _salary_slip_body():
 
 
 def _job_application_candidate_body():
-	return """<p>Hello {{ doc.applicant_name }},</p>
-<p>Thank you for applying for the position at our company.</p>
-<p>We have received your application (Candidate ID: {{ doc.candidate_id or doc.name }}) for {{ doc.job_title or doc.job_requisition }}. Our HR team will review your profile and get in touch with you if your qualifications match our requirements.</p>
-<p>Best regards,<br/>HR Team</p>"""
+	return _with_alpino_layout("""<p>Hello {{ doc.get('applicant_name') or 'Candidate' }},</p>
+<p>Thank you for applying for the position at {{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}.</p>
+<p>We have received your application (Candidate ID: <strong>{{ doc.get('candidate_id') or doc.get('name') or '-' }}</strong>) for <strong>{{ doc.get('job_title') or doc.get('job_requisition') or 'the position' }}</strong>. Our HR team will review your profile and get in touch with you if your qualifications match our requirements.</p>
+<p>We appreciate your interest in joining our team and will keep you updated on the status of your application.</p>
+<p>Best regards,<br/>HR Team<br/>{{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}</p>""")
 
 
 def _job_application_hr_body():
-	return """<p>A new job application has been submitted.</p>
-<p><strong>Candidate:</strong> {{ doc.applicant_name }}<br/>
-<strong>Candidate ID:</strong> {{ doc.candidate_id or doc.name }}<br/>
-<strong>Email:</strong> {{ doc.email_id }}<br/>
-<strong>Phone:</strong> {{ doc.phone_number or '-' }}<br/>
-<strong>Position:</strong> {{ doc.job_title or doc.job_requisition }}<br/>
-<strong>Application Date:</strong> {{ doc.application_date or doc.creation }}</p>
+	return _with_alpino_layout("""<p>A new job application has been submitted.</p>
+<p><strong>Candidate:</strong> {{ doc.get('applicant_name') or '-' }}<br/>
+<strong>Candidate ID:</strong> {{ doc.get('candidate_id') or doc.get('name') or '-' }}<br/>
+<strong>Email:</strong> {{ doc.get('email_id') or '-' }}<br/>
+<strong>Phone:</strong> {{ doc.get('phone_number') or '-' }}<br/>
+<strong>Position:</strong> {{ doc.get('job_title') or doc.get('job_requisition') or '-' }}<br/>
+<strong>Application Date:</strong> {{ doc.get('application_date') or doc.get('creation') or '-' }}</p>
 <p>Please review the application in the system.</p>
-<p>Best regards,<br/>System</p>"""
+<p>Best regards,<br/>System</p>""")
 
 
 def _job_applicant_rejection_body():
@@ -219,27 +237,86 @@ def _probation_complete_body():
 
 
 def _onboarding_job_confirmation_body():
-	return """<p>Hello {{ doc.full_name_display }},</p>
-<p>Congratulations and welcome to {{ doc.company }}!</p>
-<p>Your job has been confirmed and your onboarding process has been initiated.</p>
+	return _with_alpino_layout("""<p>Hello {{ doc.get('candidate_name') or doc.get('full_name_display') or doc.get('applicant_name') or 'Candidate' }},</p>
+<p>We are pleased to inform you that your candidature for the position of {{ doc.get('job_title') or doc.get('designation') or '-' }} at {{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }} has been confirmed.</p>
+<p>We are delighted to confirm your selection and welcome you to join our organization. Your <strong>date of joining</strong> is scheduled as follows:</p>
 <p><strong>Joining Details:</strong></p>
 <ul>
-<li>Date of Joining: {{ doc.date_of_joining_onboarding }}</li>
-<li>Location: {{ doc.location or '-' }}</li>
-<li>Department: {{ doc.department or '-' }}</li>
-<li>Reporting Manager: {{ doc.reporting_manager or '-' }}</li>
+<li>Position: {{ doc.get('job_title') or doc.get('designation') or '-' }}</li>
+<li>Department: {{ doc.get('department_name') or doc.get('department') or '-' }}</li>
+<li>Date of Joining: {{ doc.get('joining_date') or doc.get('date_of_joining') or doc.get('date_of_joining_onboarding') or '-' }}</li>
+<li>Reporting Location: {{ doc.get('reporting_location') or doc.get('location') or doc.get('office_location') or doc.get('branch_name') or '-' }}</li>
+<li>Reporting To: {{ doc.get('reporting_to_name') or doc.get('reporting_manager') or doc.get('manager_name') or doc.get('hr_name') or 'HR Team' }}</li>
+<li>Reporting Time: {{ doc.get('reporting_time') or doc.get('time') or '-' }}</li>
 </ul>
-<p>Our HR team will share further details and tasks to complete before your joining date.</p>
-<p>Best regards,<br/>HR Team<br/>{{ doc.company }}</p>"""
+<p>Kindly note that your <strong>formal offer letter</strong>, along with <strong>detailed compensation</strong>, will be shared with you <strong>prior to your joining date</strong>.</p>
+<p>We are excited about the opportunity to work with you and look forward to your valuable contribution to our team. Should you have any questions in the meantime, kindly feel free to reach out to us.</p>
+<p>Once again, congratulations on your selection, and welcome aboard!</p>
+<p>Warm regards,<br/>
+{{ doc.get('hr_name') or 'HR Team' }}<br/>
+{{ doc.get('hr_designation') or doc.get('designation') or '' }}<br/>
+{{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}<br/>
+{{ doc.get('hr_email') or doc.get('hr_email_address') or '' }}{% if (doc.get('hr_email') or doc.get('hr_email_address')) and (doc.get('hr_phone') or doc.get('hr_phone_number')) %} | {% endif %}{{ doc.get('hr_phone') or doc.get('hr_phone_number') or '' }}</p>""")
 
 
 def _onboarding_document_reminder_body():
-	return """<p>Hello {{ doc.full_name_display }},</p>
-<p>This is a reminder to complete your pre-onboarding documents before your Date of Joining: {{ doc.date_of_joining_onboarding }}.</p>
-<p>Please fill in your onboarding details using the webform link below. This will help us prepare everything for your joining.</p>
-<p><a href="{{ doc.webform_link }}" style="background:#2490ef;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Complete Your Onboarding Details</a></p>
-<p>If the button does not work, copy and paste this URL into your browser:</p>
-<p>{{ doc.webform_link }}</p>
-<p>You can also review and update your details in the onboarding portal:</p>
-<p><a href="{{ doc.onboarding_link }}" style="background:#2490ef;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Open Your Onboarding Form</a></p>
-<p>Best regards,<br/>HR Team<br/>{{ doc.company }}</p>"""
+	return _with_alpino_layout("""<p>Hello {{ doc.get('candidate_name') or doc.get('full_name_display') or 'Candidate' }},</p>
+<p>Congratulations once again on your selection for the position of <strong>{{ doc.get('job_title') or doc.get('designation') or '-' }}</strong> at <strong>{{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}</strong>.</p>
+<p>The purpose of this email is to guide you through your <strong>pre-joining process</strong> via our <strong>onboarding portal</strong>. This process includes creating your login credentials, completing your profile details, and uploading the required documents.</p>
+<p><strong>• Action Required</strong></p>
+<p>Kindly click the button below to access the onboarding portal:</p>
+<p style="text-align:center;margin:24px 0;"><a href="{{ doc.get('webform_link') or doc.get('onboarding_link') or '#' }}" style="background:#15803d;color:#ffffff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:600;display:inline-block;">Complete Your Joining Process</a></p>
+<p><strong>Steps to follow:</strong></p>
+<ol style="margin:16px 0;padding-left:24px;">
+<li>Click the link above and create your password.</li>
+<li>Log in to the portal using your registered email ID.</li>
+<li>Complete all pending profile details.</li>
+<li>Upload the required documents listed below.</li>
+<li>Submit the information for HR verification.</li>
+</ol>
+<p><strong>Documents Required</strong></p>
+<p>Kindly keep the following documents ready for upload (scanned copies / clear photos):</p>
+<ul style="margin:16px 0;padding-left:24px;">
+<li>Aadhar Card</li>
+<li>PAN Card</li>
+<li>School Leaving Certificate</li>
+<li>Last Marksheet with Degree Certificate</li>
+<li>Experience/Relieving Letter of all previous employers</li>
+<li>Bank Cheque photo</li>
+<li>Passport Size Photo</li>
+<li>Last 3 Months Salary Slips</li>
+<li>Last 3 Months Bank Statement</li>
+<li>Offer Letter/Appointment Letter of the previous employer</li>
+</ul>
+<p>Kindly ensure that all details are accurate and documents are clearly readable. This will help us complete the onboarding process smoothly before your date of joining: <strong>{{ doc.get('joining_date') or doc.get('date_of_joining_onboarding') or '-' }}</strong>.</p>
+<p>If you face any issues while accessing the portal or uploading documents, kindly contact us at <strong>{{ doc.get('hr_email') or doc.get('hr_email_address') or '' }}</strong>{% if doc.get('hr_email') or doc.get('hr_email_address') %} or {% endif %}<strong>{{ doc.get('hr_phone') or doc.get('hr_phone_number') or '' }}</strong>.</p>
+<p>We look forward to welcoming you to <strong>{{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}</strong>.</p>
+<p>Warm regards,<br/>
+<strong>{{ doc.get('hr_name') or 'HR Team' }}</strong><br/>
+<strong>{{ doc.get('hr_designation') or '' }}</strong><br/>
+<strong>{{ doc.get('company_name') or doc.get('company') or 'Alpino Health Foods' }}</strong><br/>
+{{ doc.get('hr_email') or doc.get('hr_email_address') or '' }}{% if (doc.get('hr_email') or doc.get('hr_email_address')) and (doc.get('hr_phone') or doc.get('hr_phone_number')) %} | {% endif %}{{ doc.get('hr_phone') or doc.get('hr_phone_number') or '' }}</p>""")
+
+
+def _with_alpino_layout(content_html):
+	# Default Alpino logo URL
+	alpino_logo_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR0cfjJi3U8tgoX4Jk3zp07AXjRNveFA-jxLA&s"
+	
+	return f"""<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.6;">
+<div style="text-align:center;background:#15803d;padding:16px 12px;border-radius:8px 8px 0 0;">
+{{% set logo_url = doc.get('company_logo') or '{alpino_logo_url}' %}}
+<img src="{{{{ logo_url }}}}" alt="Alpino" style="max-height:72px;max-width:260px;height:auto;" />
+</div>
+<div style="padding:18px 16px;background:#ffffff;border:1px solid #e5e7eb;border-top:0;">
+{content_html}
+</div>
+<div style="padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 8px 8px;font-size:13px;color:#374151;">
+<p style="margin:0 0 8px 0;"><strong>Website:</strong> <a href="https://alpino.store/" target="_blank">https://alpino.store/</a></p>
+<p style="margin:0 0 8px 0;"><strong>Address:</strong> Alpino Health Foods, Bungalow No.7, Napoleon Estate, Near VR Mall, Udhana-Magdalla Road, New Magdalla, Dumas, Surat, Gujarat - 395007, India</p>
+<p style="margin:0;"><strong>Social:</strong>
+<a href="https://www.linkedin.com/company/alpinohealthfoods/" target="_blank">LinkedIn</a> |
+<a href="https://www.instagram.com/alpinohealthfoods" target="_blank">Instagram</a> |
+<a href="https://www.facebook.com/alpinohealthfoods" target="_blank">Facebook</a>
+</p>
+</div>
+</div>"""

@@ -600,6 +600,12 @@ def setup_custom_fields():
 	# Update bank_account_type and increment_cycle to Data fields
 	update_employee_fields_to_data()
 	
+	# Update employment_type to Select field with new options
+	update_employment_type_to_select()
+	
+	# Update category field options in Employee
+	update_employee_category_options()
+	
 	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")
 
 
@@ -899,3 +905,91 @@ def update_employee_fields_to_data():
 		print("✅ Updated bank_account_type and increment_cycle to Data fields in Employee doctype")
 	except Exception as e:
 		print(f"⚠️  Could not update fields to Data type: {str(e)}")
+
+
+def update_employment_type_to_select():
+	"""Update employment_type field in Employee from Link to Select with new options"""
+	try:
+		# Delete existing custom field if it exists (to allow changing from Link to Select)
+		custom_field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Employee", "fieldname": "employment_type"},
+			"name"
+		)
+		if custom_field:
+			frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Deleted existing employment_type Link field")
+		
+		# Create new Select field
+		from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+		custom_fields = {
+			"Employee": [
+				dict(
+					fieldname="employment_type",
+					label="Employment Type",
+					fieldtype="Select",
+					options="\nProbation\nFull-Time\nPart-Time\nIntern\nFreelancer\nContract",
+					insert_after="department",
+					ignore_user_permissions=1,
+				),
+			]
+		}
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Created employment_type as Select field in Employee")
+		
+		# Update property setters to ensure fieldtype is Select
+		update_property_setter("Employee", "employment_type", "fieldtype", "Select", "Select")
+		update_property_setter("Employee", "employment_type", "options", "\nProbation\nFull-Time\nPart-Time\nIntern\nFreelancer\nContract", "Text")
+		print("✅ Updated property setters for employment_type in Employee")
+		
+		frappe.db.commit()
+		print("✅ Updated employment_type to Select field with new options in Employee doctype")
+	except Exception as e:
+		print(f"⚠️  Could not update employment_type field: {str(e)}")
+		frappe.log_error(f"Error updating employment_type: {str(e)}\nTraceback: {frappe.get_traceback()}", "Update Employment Type")
+
+
+def update_employee_category_options():
+	"""Update category field options in Employee doctype"""
+	try:
+		# Update custom field if it exists
+		custom_field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Employee", "fieldname": "category"},
+			"name"
+		)
+		if custom_field:
+			cf = frappe.get_doc("Custom Field", custom_field)
+			cf.options = "\nProbation\nFull-Time\nPart-Time\nIntern\nFreelancer\nContract"
+			cf.save(ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Updated category field options in Employee")
+		else:
+			# Create the field if it doesn't exist
+			from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+			custom_fields = {
+				"Employee": [
+					dict(
+						fieldname="category",
+						label="Category",
+						fieldtype="Select",
+						options="\nProbation\nFull-Time\nPart-Time\nIntern\nFreelancer\nContract",
+						insert_after="company_mobile_number",
+					),
+				]
+			}
+			create_custom_fields(custom_fields, update=True)
+			frappe.db.commit()
+			print("✅ Created category field with options in Employee")
+		
+		# Update property setters to ensure options are set
+		update_property_setter("Employee", "category", "options", "\nProbation\nFull-Time\nPart-Time\nIntern\nFreelancer\nContract", "Text")
+		print("✅ Updated property setters for category in Employee")
+		
+		frappe.db.commit()
+		print("✅ Updated category field options in Employee doctype")
+	except Exception as e:
+		print(f"⚠️  Could not update category field: {str(e)}")
+		frappe.log_error(f"Error updating category: {str(e)}\nTraceback: {frappe.get_traceback()}", "Update Category")

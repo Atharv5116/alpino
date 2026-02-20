@@ -392,6 +392,136 @@ def send_interview_scheduled_emails(doc, method=None):
 	candidate_template = "Interview Schedule Mail"
 	hr_template = "Interview Schedule - HR Notification"
 	
+	company = (
+		frappe.defaults.get_user_default("Company")
+		or frappe.db.get_single_value("Global Defaults", "default_company")
+		or ""
+	)
+	
+	# Fetch HR Manager details (name, phone, email)
+	hr_name = "HR Team"
+	hr_email = ""
+	hr_phone = ""
+	try:
+		# Get all HR Manager role users
+		hr_users = frappe.get_all(
+			"Has Role",
+			filters={"role": "HR Manager", "parenttype": "User"},
+			fields=["parent"],
+		)
+		# Get first HR Manager's full details
+		for hr_user in hr_users:
+			user_details = frappe.db.get_value(
+				"User",
+				hr_user.parent,
+				["full_name", "email", "phone", "enabled"],
+				as_dict=True
+			)
+			if user_details and user_details.enabled:
+				hr_name = user_details.full_name or hr_user.parent or "HR Team"
+				hr_email = user_details.email or ""
+				hr_phone = user_details.phone or ""
+				break
+	except Exception:
+		# Fallback to session user if HR Manager lookup fails
+		hr_name = frappe.session.user_fullname or "HR Team"
+		hr_email = frappe.session.user if frappe.session.user and "@" in frappe.session.user else ""
+
+	# Fetch Job Opening details to get designation
+	job_opening_designation = ""
+	job_opening_location = ""
+	job_opening_name = doc.job_opening or applicant.job_requisition or applicant.job_title or ""
+	if job_opening_name:
+		try:
+			job_opening = frappe.get_doc("Job Opening", job_opening_name)
+			job_opening_designation = job_opening.designation or ""
+			job_opening_location = getattr(job_opening, "location", "") or ""
+		except Exception:
+			pass
+
+	# Format interview date and day
+	interview_date = None
+	interview_day = None
+	if hasattr(doc, "scheduled_on") and doc.scheduled_on:
+		interview_date = frappe.utils.formatdate(doc.scheduled_on, "dd-MMM-yyyy")
+		interview_day = frappe.utils.formatdate(doc.scheduled_on, "EEEE")
+
+	# Format interview time from from_time and to_time
+	interview_time = None
+	if hasattr(doc, "from_time") and doc.from_time:
+		from_time_str = str(doc.from_time)[:5]  # Format as HH:mm
+		if hasattr(doc, "to_time") and doc.to_time:
+			to_time_str = str(doc.to_time)[:5]  # Format as HH:mm
+			interview_time = f"{from_time_str} - {to_time_str}"
+		else:
+			interview_time = from_time_str
+
+	# Get interviewer details from interview_details table
+	interviewer_name = None
+	interviewer_phone = None
+	interviewer_email = None
+	if hasattr(doc, "interview_details") and doc.interview_details:
+		for detail in doc.interview_details:
+			if detail.interviewer:
+				interviewer_user = frappe.db.get_value("User", detail.interviewer, ["full_name", "phone", "email"], as_dict=True)
+				if interviewer_user:
+					if not interviewer_name:
+						interviewer_name = interviewer_user.full_name or detail.interviewer
+					if not interviewer_phone and interviewer_user.phone:
+						interviewer_phone = interviewer_user.phone
+					if not interviewer_email and interviewer_user.email:
+						interviewer_email = interviewer_user.email
+				else:
+					if not interviewer_name:
+						interviewer_name = detail.interviewer
+
+	# Get time zone (default to IST if not specified)
+	time_zone = getattr(doc, "time_zone", None) or "IST"
+
+	# Get interview mode - check custom field first, then infer from location
+	interview_mode = getattr(doc, "interview_mode", None)
+	if not interview_mode:
+		# Infer from location: if location is a URL/meeting link, it's Online
+		location_check = (
+			getattr(doc, "location", None) 
+			or getattr(doc, "location_or_link", None)
+			or job_opening_location
+		)
+		if location_check and any(link in str(location_check).lower() for link in ["http", "meet.", "zoom", "teams", "google", "meeting"]):
+			interview_mode = "Online"
+		else:
+			interview_mode = "In-person"
+
+	# Get location (from Interview, Job Opening, Branch, or Company)
+	location_or_link = (
+		getattr(doc, "location", None) 
+		or getattr(doc, "location_or_link", None)
+		or job_opening_location
+	)
+	
+	# If location is a Branch link, get Branch address
+	if location_or_link and not location_or_link.startswith("http"):
+		try:
+			if frappe.db.exists("Branch", location_or_link):
+				branch_address = frappe.db.get_value("Branch", location_or_link, "address")
+				if branch_address:
+					location_or_link = branch_address
+		except Exception:
+			pass
+	
+	# Fallback to company address if no location found
+	if not location_or_link and company:
+		try:
+			company_address = frappe.db.get_value("Company", company, "address_line_1")
+			if company_address:
+				location_or_link = company_address
+		except Exception:
+			pass
+
+	# Get contact details (from Interview custom fields, interviewer, or HR)
+	contact_phone = getattr(doc, "contact_phone", None) or interviewer_phone or hr_phone or ""
+	contact_email = getattr(doc, "contact_email", None) or interviewer_email or hr_email or ""
+
 	# Common context for templates (doc in Jinja)
 	email_doc = {
 		"doctype": "Interview",
@@ -400,14 +530,25 @@ def send_interview_scheduled_emails(doc, method=None):
 		"candidate_name": applicant.applicant_name,
 		"candidate_id": applicant.candidate_id or applicant.name,
 		"email_id": applicant.email_id,
-		"job_title": applicant.job_title or applicant.job_requisition or "",
+		# Use designation from Job Opening instead of Job Opening ID
+		"job_title": job_opening_designation or applicant.job_title or applicant.job_requisition or "",
 		"job_requisition": applicant.job_requisition or "",
-		# Best-effort mapping of interview details
-		"interview_date": getattr(doc, "interview_date", None),
-		"interview_time": getattr(doc, "interview_time", None),
-		"interview_mode": getattr(doc, "interview_mode", None),
-		"interviewer_name": getattr(doc, "interviewer_name", None),
-		"location_or_link": getattr(doc, "location", None) or getattr(doc, "location_or_link", None),
+		"company": company,
+		"company_name": company,
+		"company_logo": frappe.db.get_value("Company", company, "company_logo") if company else "",
+		"hr_name": hr_name,
+		"hr_designation": "HR Team",
+		"hr_email": hr_email,
+		# Interview details from Interview document
+		"interview_date": interview_date,
+		"interview_day": interview_day,
+		"interview_time": interview_time,
+		"time_zone": time_zone,
+		"interview_mode": interview_mode,
+		"interviewer_name": interviewer_name or hr_name,
+		"location_or_link": location_or_link,
+		"contact_phone": contact_phone,
+		"contact_email": contact_email,
 	}
 	
 	# 1) Candidate email

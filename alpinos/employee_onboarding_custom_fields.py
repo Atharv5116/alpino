@@ -849,7 +849,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="category",
 				label="Category",
 				fieldtype="Select",
-				options="\nRegular\nContract\nIntern",
+				options="\nProbation\nFull-Time\nPart-Time\nIntern\nFreelancer\nContract",
 				insert_after="hod",
 				reqd=1,
 			),
