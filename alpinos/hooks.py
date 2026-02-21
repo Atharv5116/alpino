@@ -111,6 +111,9 @@ fixtures = [
 	}
 ]
 
+patches = [
+	"alpinos.patches.create_attendance_widget"
+]
 
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
@@ -123,6 +126,10 @@ after_migrate = [
 	"alpinos.customize_expense_claim.execute",
 	"alpinos.employee_expense_claim_button.execute",
 	"alpinos.patches.create_hrms_email_templates.execute",
+	"alpinos.job_requisition_automation.create_job_requisition_client_script",
+	"alpinos.work_from_home_request_automation.create_work_from_home_client_script",
+	"alpinos.attendance_request_automation.create_attendance_request_client_script",
+	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.patches.create_attendance_widget.execute",
 ]
 
@@ -182,6 +189,8 @@ override_doctype_class = {
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
 	"Interview": "alpinos.overrides.interview_override.CustomInterview",
 	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding",
+	"Job Opening": "alpinos.overrides.job_opening_override.CustomJobOpening",
+	"Attendance Request": "alpinos.overrides.attendance_request_override.CustomAttendanceRequest",
 	"Employee Checkin": "alpinos.overrides.employee_checkin_override.CustomEmployeeCheckin",
 }
 
@@ -193,6 +202,8 @@ doc_events = {
 	"Job Requisition": {
 		"before_insert": "alpinos.job_requisition_automation.set_requested_by",
 		"validate": [
+			"alpinos.job_requisition_automation.set_requested_by",
+			"alpinos.job_requisition_automation.fetch_designation_details",
 			"alpinos.job_requisition_automation.validate_salary_range",
 			"alpinos.job_requisition_automation.validate_job_requisition"
 		],
@@ -242,8 +253,18 @@ doc_events = {
 			"alpinos.employee_onboarding_automation.handle_pre_onboarding_workflow"
 		],
 		"after_insert": [
-			"alpinos.employee_onboarding_automation.send_onboarding_created_email"
+			"alpinos.employee_onboarding_automation.send_onboarding_created_email",
+			"alpinos.employee_onboarding_webform.process_webform_submission"
 		]
+	},
+	"Work From Home Request": {
+		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
+	},
+	"Attendance": {
+		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
+		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
 	}
 }
 
@@ -255,7 +276,6 @@ scheduler_events = {
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
 	],
 }
-
 
 # Boot Info Extensions
 # --------------------
@@ -333,10 +353,9 @@ extend_bootinfo = [
 # 	"alpinos.auth.validate"
 # ]
 
-# Automatically update python controller files with type annotations for this app.
+# Automatically update python controller files with type annotations in this app.
 # export_python_type_annotations = True
 
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
