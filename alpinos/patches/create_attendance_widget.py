@@ -175,27 +175,63 @@ function checkOut(){
   });
 }
 
-function doCheckOut() {
+function doCheckOut(checkoutReason) {
+  const args = { latitude: latitude, longitude: longitude };
+  if (checkoutReason) args.checkout_reason = checkoutReason;
   frappe.call({
-    method:"alpinos.attendance_widget.check_out",
-    args: {
-      latitude: latitude,
-      longitude: longitude,
-    },
-    callback(r){
-      if(r.exc){
+    method: "alpinos.attendance_widget.check_out",
+    args: args,
+    callback(r) {
+      if (r.exc) {
+        const msg = (typeof r.exc === "string" ? r.exc : (r.exc && r.exc.message) || "");
+        let parsed;
+        try { parsed = JSON.parse(r.exc); } catch (e) { parsed = {}; }
+        const errMsg = (parsed.message || msg || "").toLowerCase();
+        if (errMsg.indexOf("provide a reason") !== -1 || errMsg.indexOf("outside the office location") !== -1) {
+          showCheckoutReasonDialog(function(reason) { doCheckOut(reason); });
+          btn("btn-out", false);
+          return;
+        }
         showError(r.exc);
         btn("btn-out", false);
         return;
       }
-      frappe.show_alert({message:"Checked Out",indicator:"red"});
+      frappe.show_alert({ message: "Checked Out", indicator: "red" });
       stopTimer();
       setStatusBadge("Checked Out", "out");
-      btn("btn-in",true);
-      btn("btn-out",true);
+      btn("btn-in", true);
+      btn("btn-out", true);
       setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
     }
   });
+}
+
+function showCheckoutReasonDialog(onConfirm) {
+  const d = new frappe.ui.Dialog({
+    title: "Reason for Check Out (Outside Office)",
+    primary_action_label: "Check Out",
+    primary_action() {
+      const reason = (d.$body.find(".checkout-reason-input").val() || "").trim();
+      if (!reason) {
+        frappe.msgprint("Please enter a reason for checking out from outside the office location.");
+        return;
+      }
+      d.hide();
+      onConfirm(reason);
+    },
+    secondary_action_label: "Cancel",
+    secondary_action() {
+      d.hide();
+      btn("btn-out", false);
+    }
+  });
+  d.$body.html(`
+    <p style="color:#64748b;margin-bottom:12px;font-size:13px;">
+      You are checking out from outside the office location. Please provide a reason (e.g. client visit, travel, WFH).
+    </p>
+    <textarea class="form-control checkout-reason-input" rows="3" placeholder="Enter reason..."></textarea>
+  `);
+  d.show();
 }
 
 function showWFHTaskDialog(wfhData, onConfirm, onCancel) {

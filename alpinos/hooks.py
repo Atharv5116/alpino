@@ -93,7 +93,10 @@ app_license = "mit"
 # Boot Session Hook
 # ------------
 # Apply patches when session boots (ensures patch is active on every request)
-boot_session = "alpinos.overrides.interview_override.setup_interview_override"
+boot_session = [
+	"alpinos.overrides.interview_override.setup_interview_override",
+	"alpinos.overrides.employee_checkin_override.patch_mark_attendance_and_link_log",
+]
 
 # Fixtures
 # --------
@@ -120,10 +123,6 @@ after_migrate = [
 	"alpinos.customize_expense_claim.execute",
 	"alpinos.employee_expense_claim_button.execute",
 	"alpinos.patches.create_hrms_email_templates.execute",
-	"alpinos.job_requisition_automation.create_job_requisition_client_script",
-	"alpinos.work_from_home_request_automation.create_work_from_home_client_script",
-	"alpinos.attendance_request_automation.create_attendance_request_client_script",
-	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields"
 	"alpinos.patches.create_attendance_widget.execute",
 ]
 
@@ -183,9 +182,7 @@ override_doctype_class = {
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
 	"Interview": "alpinos.overrides.interview_override.CustomInterview",
 	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding",
-	"Job Opening": "alpinos.overrides.job_opening_override.CustomJobOpening",
-	"Attendance Request": "alpinos.overrides.attendance_request_override.CustomAttendanceRequest"
-
+	"Employee Checkin": "alpinos.overrides.employee_checkin_override.CustomEmployeeCheckin",
 }
 
 # Document Events
@@ -247,17 +244,6 @@ doc_events = {
 		"after_insert": [
 			"alpinos.employee_onboarding_automation.send_onboarding_created_email"
 		]
-
-	},
-	"Work From Home Request": {
-		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
-		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
-		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
-	},
-	"Attendance": {
-		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
-		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
-
 	}
 }
 

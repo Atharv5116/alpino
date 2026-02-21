@@ -134,7 +134,7 @@ def save_wfh_tasks(wfh_request, tasks):
 
 
 @frappe.whitelist()
-def check_out(latitude=None, longitude=None):
+def check_out(latitude=None, longitude=None, checkout_reason=None):
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check Out.")
 
@@ -156,6 +156,8 @@ def check_out(latitude=None, longitude=None):
         values["latitude"] = latitude
     if longitude is not None:
         values["longitude"] = longitude
+    if checkout_reason is not None and str(checkout_reason).strip():
+        values["checkout_reason"] = str(checkout_reason).strip()
 
     doc = frappe.get_doc(values)
     doc.insert()
