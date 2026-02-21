@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import add_days, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, flt, get_datetime, getdate, now_datetime
 
 
 def _get_employee_for_user(user):
@@ -87,11 +87,11 @@ def check_in(latitude=None, longitude=None):
 
     values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "IN"}
 
-    # Pass optional geolocation data if provided
+    # Pass optional geolocation data if provided (coerce to float to avoid str/float TypeError in distance calc)
     if latitude is not None:
-        values["latitude"] = latitude
+        values["latitude"] = flt(latitude)
     if longitude is not None:
-        values["longitude"] = longitude
+        values["longitude"] = flt(longitude)
 
     doc = frappe.get_doc(values)
     doc.insert()
@@ -151,11 +151,11 @@ def check_out(latitude=None, longitude=None, checkout_reason=None):
 
     values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "OUT"}
 
-    # Pass optional geolocation data if provided
+    # Pass optional geolocation data if provided (coerce to float to avoid str/float TypeError in distance calc)
     if latitude is not None:
-        values["latitude"] = latitude
+        values["latitude"] = flt(latitude)
     if longitude is not None:
-        values["longitude"] = longitude
+        values["longitude"] = flt(longitude)
     if checkout_reason is not None and str(checkout_reason).strip():
         values["checkout_reason"] = str(checkout_reason).strip()
 

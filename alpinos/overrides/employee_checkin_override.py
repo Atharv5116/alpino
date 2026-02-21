@@ -12,7 +12,7 @@ from hrms.hr.doctype.employee_checkin.employee_checkin import (
 	CheckinRadiusExceededError,
 )
 from hrms.hr.utils import get_distance_between_coordinates
-from frappe.utils import get_datetime, getdate
+from frappe.utils import flt, get_datetime, getdate
 
 _patch_applied = False
 
@@ -102,11 +102,17 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		checkin_radius, latitude, longitude = frappe.db.get_value(
 			"Shift Location", assignment_locations[0], ["checkin_radius", "latitude", "longitude"]
 		)
+		checkin_radius = flt(checkin_radius)
 		if not checkin_radius or checkin_radius <= 0:
 			return
 
+		# Coerce all coordinates to float to avoid TypeError in distance calculation
+		lat_office = flt(latitude)
+		long_office = flt(longitude)
+		lat_checkin = flt(self.latitude)
+		long_checkin = flt(self.longitude)
 		distance = get_distance_between_coordinates(
-			latitude, longitude, self.latitude, self.longitude
+			lat_office, long_office, lat_checkin, long_checkin
 		)
 		if distance <= checkin_radius:
 			return
