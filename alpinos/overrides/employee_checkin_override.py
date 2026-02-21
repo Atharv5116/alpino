@@ -152,8 +152,8 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			)
 
 
-def patch_mark_attendance_and_link_log():
-	"""Public hook for boot_session: ensure patch is applied."""
+def patch_mark_attendance_and_link_log(bootinfo=None):
+	"""Public hook for boot_session: ensure patch is applied. Frappe calls boot hooks with bootinfo."""
 	_apply_checkout_reason_patch()
 
 
