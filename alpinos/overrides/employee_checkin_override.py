@@ -25,30 +25,9 @@ def _apply_checkout_reason_patch():
 	import hrms.hr.doctype.employee_checkin.employee_checkin as ec_module
 	_original = ec_module.mark_attendance_and_link_log
 
-	def _mark_attendance_and_link_log(
-		logs,
-		attendance_status,
-		attendance_date,
-		working_hours=None,
-		late_entry=False,
-		early_exit=False,
-		in_time=None,
-		out_time=None,
-		shift=None,
-		overtime_type=None,
-	):
-		attendance = _original(
-			logs=logs,
-			attendance_status=attendance_status,
-			attendance_date=attendance_date,
-			working_hours=working_hours,
-			late_entry=late_entry,
-			early_exit=early_exit,
-			in_time=in_time,
-			out_time=out_time,
-			shift=shift,
-			overtime_type=overtime_type,
-		)
+	def _mark_attendance_and_link_log(*args, **kwargs):
+		attendance = _original(*args, **kwargs)
+		logs = kwargs.get("logs") or (args[0] if args else None)
 		if attendance and logs:
 			last_out = None
 			for log in logs:
