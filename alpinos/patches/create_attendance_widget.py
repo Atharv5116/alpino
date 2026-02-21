@@ -197,15 +197,7 @@ function doCheckOut(checkoutReason) {
     silent: true,
     callback(r) {
       if (r.exc) {
-        const errMsg = getExcMessage(r.exc);
-        if (errMsg.indexOf("provide a reason") !== -1 || errMsg.indexOf("outside the office location") !== -1) {
-          frappe.hide_msgprint();
-          showCheckoutReasonDialog(function(reason) { doCheckOut(reason); });
-          btn("btn-out", false);
-          return;
-        }
-        showError(r.exc);
-        btn("btn-out", false);
+        handleCheckoutError(r);
         return;
       }
       frappe.show_alert({ message: "Checked Out", indicator: "red" });
@@ -214,8 +206,24 @@ function doCheckOut(checkoutReason) {
       btn("btn-in", true);
       btn("btn-out", true);
       setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
+    },
+    error(r) {
+      handleCheckoutError(r);
     }
   });
+}
+
+function handleCheckoutError(r) {
+  if (!r) { btn("btn-out", false); return; }
+  const errMsg = getExcMessage(r.exc);
+  if (errMsg.indexOf("provide a reason") !== -1 || errMsg.indexOf("outside the office location") !== -1) {
+    frappe.hide_msgprint();
+    showCheckoutReasonDialog(function(reason) { doCheckOut(reason); });
+    btn("btn-out", false);
+    return;
+  }
+  showError(r.exc);
+  btn("btn-out", false);
 }
 
 function showCheckoutReasonDialog(onConfirm) {
