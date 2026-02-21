@@ -175,19 +175,31 @@ function checkOut(){
   });
 }
 
+function getExcMessage(exc) {
+  if (!exc) return "";
+  let parsed = exc;
+  if (typeof exc === "string") {
+    try { parsed = JSON.parse(exc); } catch (e) { return (exc || "").toLowerCase(); }
+  }
+  if (Array.isArray(parsed)) {
+    const last = parsed[parsed.length - 1];
+    return (typeof last === "string" ? last : (last && last.message) || "").toLowerCase();
+  }
+  return ((parsed && parsed.message) || String(parsed)).toLowerCase();
+}
+
 function doCheckOut(checkoutReason) {
   const args = { latitude: latitude, longitude: longitude };
   if (checkoutReason) args.checkout_reason = checkoutReason;
   frappe.call({
     method: "alpinos.attendance_widget.check_out",
     args: args,
+    silent: true,
     callback(r) {
       if (r.exc) {
-        const msg = (typeof r.exc === "string" ? r.exc : (r.exc && r.exc.message) || "");
-        let parsed;
-        try { parsed = JSON.parse(r.exc); } catch (e) { parsed = {}; }
-        const errMsg = (parsed.message || msg || "").toLowerCase();
+        const errMsg = getExcMessage(r.exc);
         if (errMsg.indexOf("provide a reason") !== -1 || errMsg.indexOf("outside the office location") !== -1) {
+          frappe.hide_msgprint();
           showCheckoutReasonDialog(function(reason) { doCheckOut(reason); });
           btn("btn-out", false);
           return;
