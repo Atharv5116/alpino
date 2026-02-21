@@ -69,6 +69,18 @@ def _apply_checkout_reason_patch():
 
 
 class CustomEmployeeCheckin(EmployeeCheckin):
+	def _require_checkout_reason_if_outside(self):
+		"""Require checkout_reason for OUT when we cannot confirm employee is at office."""
+		reason = (self.get("checkout_reason") or "").strip()
+		if not reason:
+			frappe.throw(
+				_(
+					"You are checking out from outside the office location. "
+					"Please provide a reason for checking out."
+				),
+				exc=CheckinRadiusExceededError,
+			)
+
 	def validate_distance_from_shift_location(self):
 		if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
 			return
@@ -76,12 +88,15 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		# Check-in: require lat/long (HRMS default message)
 		if not (self.latitude or self.longitude):
 			if self.log_type == "OUT":
-				# Allow checkout without location; no reason required
+				# Cannot verify location; require reason when checking out
+				self._require_checkout_reason_if_outside()
 				return
 			frappe.throw(_("Latitude and longitude values are required for checking in."))
 
 		# Resolve shift for this time (fetch_shift already ran in validate)
 		if not self.shift:
+			if self.log_type == "OUT":
+				self._require_checkout_reason_if_outside()
 			return
 		assignment_locations = frappe.get_all(
 			"Shift Assignment",
@@ -97,6 +112,8 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			pluck="shift_location",
 		)
 		if not assignment_locations:
+			if self.log_type == "OUT":
+				self._require_checkout_reason_if_outside()
 			return
 
 		checkin_radius, latitude, longitude = frappe.db.get_value(
@@ -104,6 +121,8 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		)
 		checkin_radius = flt(checkin_radius)
 		if not checkin_radius or checkin_radius <= 0:
+			if self.log_type == "OUT":
+				self._require_checkout_reason_if_outside()
 			return
 
 		# Coerce all coordinates to float to avoid TypeError in distance calculation
@@ -141,15 +160,7 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			)
 
 		# OUT: require reason when checking out from outside office
-		reason = (self.get("checkout_reason") or "").strip()
-		if not reason:
-			frappe.throw(
-				_(
-					"You are checking out from outside the office location. "
-					"Please provide a reason for checking out."
-				),
-				exc=CheckinRadiusExceededError,
-			)
+		self._require_checkout_reason_if_outside()
 
 
 def patch_mark_attendance_and_link_log(bootinfo=None):
