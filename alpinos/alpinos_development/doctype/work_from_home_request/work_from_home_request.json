@@ -34,7 +34,8 @@
    "fieldname": "leave_approver",
    "fieldtype": "Link",
    "label": "Leave Approver",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "status",
@@ -52,7 +53,8 @@
    "fieldname": "tasks",
    "fieldtype": "Table",
    "label": "Tasks",
-   "options": "Work From Home Task"
+   "options": "Work From Home Task",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

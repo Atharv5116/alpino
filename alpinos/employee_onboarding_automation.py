@@ -651,16 +651,87 @@ def send_pre_onboarding_email(doc, applicant_email):
 		webform_link = get_webform_url(doc.name)
 		desk_onboarding_link = get_url(f"/app/employee-onboarding/{doc.name}")
 
+		# Get company name
+		company = getattr(doc, "company", "") or ""
+		company_name = company
+		if company:
+			company_name = frappe.db.get_value("Company", company, "company_name") or company
+
+		# Fetch HR Manager details (name, phone, email, designation)
+		hr_name = "HR Team"
+		hr_email = ""
+		hr_phone = ""
+		hr_designation = ""
+		try:
+			hr_users = frappe.get_all(
+				"Has Role",
+				filters={"role": "HR Manager", "parenttype": "User"},
+				fields=["parent"],
+			)
+			for hr_user in hr_users:
+				user_details = frappe.db.get_value(
+					"User",
+					hr_user.parent,
+					["full_name", "email", "phone", "enabled"],
+					as_dict=True
+				)
+				if user_details and user_details.enabled:
+					hr_name = user_details.full_name or hr_user.parent or "HR Team"
+					hr_email = user_details.email or ""
+					hr_phone = user_details.phone or ""
+					# Attempt to get HR Manager's designation from Employee doctype
+					employee_designation = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation")
+					hr_designation = employee_designation or "HR Team"
+					break
+		except Exception:
+			hr_name = frappe.session.user_fullname or "HR Team"
+			hr_email = frappe.session.user if frappe.session.user and "@" in frappe.session.user else ""
+			hr_phone = ""
+			hr_designation = "HR Team"
+
+		# Get candidate/applicant name from Job Applicant if available
+		candidate_name = getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or "Candidate"
+		job_title = getattr(doc, "designation", "") or ""
+		if getattr(doc, "job_applicant", None):
+			try:
+				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+				candidate_name = job_applicant.applicant_name or candidate_name
+				job_title = job_applicant.job_title or job_applicant.job_requisition or ""
+				if job_applicant.job_requisition:
+					job_opening_designation = frappe.db.get_value("Job Opening", job_applicant.job_requisition, "designation")
+					job_title = job_opening_designation or job_title
+			except Exception:
+				pass
+
+		# Format joining date
+		joining_date = ""
+		if getattr(doc, "date_of_joining_onboarding", None):
+			try:
+				joining_date = frappe.utils.formatdate(doc.date_of_joining_onboarding, "dd-MMM-yyyy")
+			except Exception:
+				joining_date = str(doc.date_of_joining_onboarding)
+
 		email_doc = {
 			"doctype": "Employee Onboarding",
 			"name": doc.name,
-			"full_name_display": getattr(doc, "full_name_display", "") or "Employee",
-			"company": getattr(doc, "company", "") or "",
+			"full_name_display": candidate_name,
+			"candidate_name": candidate_name,
+			"company": company,
+			"company_name": company_name,
 			"date_of_joining_onboarding": getattr(doc, "date_of_joining_onboarding", "") or "",
+			"joining_date": joining_date,
+			"job_title": job_title,
+			"designation": job_title,
 			# Keep onboarding_link mapped to webform for backward compatibility with older templates.
 			"onboarding_link": webform_link,
 			"webform_link": webform_link,
 			"desk_onboarding_link": desk_onboarding_link,
+			"hr_name": hr_name,
+			"hr_designation": hr_designation,
+			"hr_email": hr_email,
+			"hr_email_address": hr_email,
+			"hr_phone": hr_phone,
+			"hr_phone_number": hr_phone,
 		}
 
 		tmpl = frappe.get_doc("Email Template", template_name)
@@ -750,15 +821,101 @@ def send_onboarding_created_email(doc, method=None):
 		if not applicant_email:
 			return
 
+		# Get company name
+		company = getattr(doc, "company", "") or ""
+		company_name = company
+		if company:
+			company_name = frappe.db.get_value("Company", company, "company_name") or company
+
+		# Fetch HR Manager details (name, phone, email)
+		hr_name = "HR Team"
+		hr_email = ""
+		hr_phone = ""
+		hr_designation = ""
+		try:
+			# Get all HR Manager role users
+			hr_users = frappe.get_all(
+				"Has Role",
+				filters={"role": "HR Manager", "parenttype": "User"},
+				fields=["parent"],
+			)
+			# Get first HR Manager's full details
+			for hr_user in hr_users:
+				user_details = frappe.db.get_value(
+					"User",
+					hr_user.parent,
+					["full_name", "email", "phone", "enabled"],
+					as_dict=True
+				)
+				if user_details and user_details.enabled:
+					hr_name = user_details.full_name or hr_user.parent or "HR Team"
+					hr_email = user_details.email or ""
+					hr_phone = user_details.phone or ""
+					# Try to get designation from Employee record if exists
+					employee = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation")
+					if employee:
+						hr_designation = frappe.db.get_value("Employee", employee, "designation") or ""
+					break
+		except Exception:
+			pass
+
+		# Get candidate/applicant name from Job Applicant if available
+		candidate_name = getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or ""
+		applicant_name = ""
+		job_title = getattr(doc, "designation", "") or ""
+		if getattr(doc, "job_applicant", None):
+			try:
+				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+				applicant_name = getattr(job_applicant, "applicant_name", "") or ""
+				if not candidate_name:
+					candidate_name = applicant_name
+				# Get job title from Job Applicant's job_requisition -> Job Opening
+				if not job_title and getattr(job_applicant, "job_requisition", None):
+					job_opening_designation = frappe.db.get_value("Job Opening", job_applicant.job_requisition, "designation")
+					if job_opening_designation:
+						job_title = job_opening_designation
+			except Exception:
+				pass
+
+		# Get reporting manager name if it's a link
+		reporting_to_name = getattr(doc, "reporting_manager", "") or ""
+		if reporting_to_name:
+			try:
+				# Check if it's an Employee link
+				if frappe.db.exists("Employee", reporting_to_name):
+					reporting_to_name = frappe.db.get_value("Employee", reporting_to_name, "employee_name") or reporting_to_name
+				# Check if it's a User link
+				elif frappe.db.exists("User", reporting_to_name):
+					reporting_to_name = frappe.db.get_value("User", reporting_to_name, "full_name") or reporting_to_name
+			except Exception:
+				pass
+
 		email_doc = {
 			"doctype": "Employee Onboarding",
 			"name": doc.name,
-			"full_name_display": getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or "",
-			"company": getattr(doc, "company", "") or "",
+			"candidate_name": candidate_name,
+			"applicant_name": applicant_name,
+			"full_name_display": candidate_name,
+			"company": company,
+			"company_name": company_name,
+			"job_title": job_title,
+			"designation": job_title,
+			"joining_date": getattr(doc, "date_of_joining_onboarding", "") or "",
+			"date_of_joining": getattr(doc, "date_of_joining_onboarding", "") or "",
 			"date_of_joining_onboarding": getattr(doc, "date_of_joining_onboarding", "") or "",
-			"location": getattr(doc, "location", "") or "",
 			"department": getattr(doc, "department", "") or "",
+			"department_name": getattr(doc, "department", "") or "",
+			"location": getattr(doc, "location", "") or "",
+			"reporting_location": getattr(doc, "location", "") or "",
 			"reporting_manager": getattr(doc, "reporting_manager", "") or "",
+			"reporting_to_name": reporting_to_name,
+			"reporting_time": "",  # Not typically stored in Employee Onboarding
+			"hr_name": hr_name,
+			"hr_email": hr_email,
+			"hr_email_address": hr_email,
+			"hr_phone": hr_phone,
+			"hr_phone_number": hr_phone,
+			"hr_designation": hr_designation,
 		}
 
 		tmpl = frappe.get_doc("Email Template", template_name)
