@@ -120,6 +120,7 @@ after_migrate = [
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
 	"alpinos.workflow_setup.execute",
+	"alpinos.patches.v1_0.setup_job_applicant_workflow.execute",
 	"alpinos.page_setup.create_screening_page",
 	"alpinos.overrides.interview_override.setup_interview_override",
 	"alpinos.update_job_application_webform.update_web_form_script",
