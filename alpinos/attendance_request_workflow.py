@@ -19,11 +19,11 @@ def get_permission_query_conditions(user=None, doctype=None):
 
 	roles = frappe.get_roles(user)
 
-	# HR Manager (and HR User) see only "Send for Approval" requests in the list
+	# HR Manager (and HR User) see "Send for Approval" (pending) and "Submit" (submitted) requests
 	if "System Manager" in roles:
 		return None  # System Manager sees all
 	if "HR Manager" in roles or "HR User" in roles:
-		return "`tabAttendance Request`.status = 'Send for Approval'"
+		return "`tabAttendance Request`.status in ('Send for Approval', 'Submit')"
 
 	return None
 
