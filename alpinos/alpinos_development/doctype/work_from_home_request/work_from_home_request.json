@@ -7,6 +7,8 @@
  "field_order": [
   "employee",
   "date",
+  "to_date",
+  "half_day",
   "reason",
   "leave_approver",
   "status",
@@ -23,7 +25,18 @@
   {
    "fieldname": "date",
    "fieldtype": "Date",
-   "label": "Date"
+   "label": "From Date"
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "To Date"
+  },
+  {
+   "fieldname": "half_day",
+   "fieldtype": "Check",
+   "label": "Half Day",
+   "default": 0
   },
   {
    "fieldname": "reason",

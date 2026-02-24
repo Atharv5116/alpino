@@ -8,15 +8,43 @@ from frappe.custom.doctype.property_setter.property_setter import make_property_
 
 
 def setup_attendance_request_custom_fields():
-	"""Update reason field options and add custom fields to Attendance"""
+	"""Update reason field options and add custom fields to Attendance and Attendance Request"""
 	
 	# Update reason field options in Attendance Request
 	update_attendance_request_reason_options()
+	
+	# Add workflow status field to Attendance Request (for Draft -> Send for Approval -> Submit workflow)
+	add_attendance_request_workflow_status_field()
 	
 	# Add custom fields to Attendance doctype
 	add_attendance_custom_fields()
 	
 	print("✅ Attendance Request and Attendance custom fields setup completed")
+
+
+def add_attendance_request_workflow_status_field():
+	"""Add status field to Attendance Request for workflow (Draft, Send for Approval, Submit)"""
+	custom_fields = {
+		"Attendance Request": [
+			dict(
+				fieldname="status",
+				label="Status",
+				fieldtype="Select",
+				options="Draft\nSend for Approval\nSubmit",
+				default="Draft",
+				insert_after="explanation",
+				read_only=1,
+				allow_on_submit=1,
+			),
+		]
+	}
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added workflow status field to Attendance Request")
+	except Exception as e:
+		print(f"⚠️  Could not add Attendance Request status field: {str(e)}")
+		frappe.log_error(str(e), "Attendance Request Workflow Status Field")
 
 
 def update_attendance_request_reason_options():
