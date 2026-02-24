@@ -451,12 +451,14 @@ def setup_custom_fields():
 		),
 		
 		# Candidate Category - Select (White/Hold/Black)
+		# allow_on_submit=1 so screening page can update category on submitted applicants
 		dict(
 			fieldname="candidate_category",
 			label="Candidate Category",
 			fieldtype="Select",
 			options="\nWhite\nHold\nBlack",
 			insert_after="screening_section",
+			allow_on_submit=1,
 		),
 		
 		# Screening Status - Select (Read-only, auto-updated)
