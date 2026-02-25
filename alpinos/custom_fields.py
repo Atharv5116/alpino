@@ -568,6 +568,15 @@ def setup_custom_fields():
 			insert_after="geolocation",
 			description="Required when checking out from outside the office geo-fence.",
 		),
+		dict(
+			fieldname="from_attendance_request",
+			label="From Attendance Request",
+			fieldtype="Check",
+			insert_after="checkout_reason",
+			default=0,
+			hidden=1,
+			description="Set when check-in/check-out is created from Attendance Request; skips location validation.",
+		),
 	],
 	"Attendance": [
 		dict(

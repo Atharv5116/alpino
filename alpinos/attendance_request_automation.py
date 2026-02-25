@@ -183,6 +183,7 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 					indicator="orange"
 				)
 		
+		checkin_doc.from_attendance_request = 1
 		checkin_doc.time = get_datetime(time)
 		checkin_doc.save(ignore_permissions=True)
 		
@@ -196,6 +197,7 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 		checkin_doc.employee = employee
 		checkin_doc.log_type = log_type
 		checkin_doc.time = get_datetime(time)
+		checkin_doc.from_attendance_request = 1
 		checkin_doc.insert(ignore_permissions=True)
 		
 		# Update Attendance in_time and out_time after checkin creation
