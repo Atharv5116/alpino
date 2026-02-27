@@ -112,7 +112,8 @@ fixtures = [
 ]
 
 patches = [
-	"alpinos.patches.create_attendance_widget"
+	"alpinos.patches.create_attendance_widget",
+	"alpinos.patches.v1_0.delete_unused_employee_bank_fields",
 ]
 
 after_migrate = [
