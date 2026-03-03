@@ -200,7 +200,7 @@ function doCheckOut(checkoutReason) {
         handleCheckoutError(r);
         return;
       }
-      frappe.show_alert({ message: "Checked Out", indicator: "red" });
+      frappe.show_alert({ message: "Checked Out", indicator: "green" });
       stopTimer();
       setStatusBadge("Checked Out", "out");
       btn("btn-in", true);

@@ -75,11 +75,10 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 				return
 			frappe.throw(_("Latitude and longitude values are required for checking in."))
 
-		# Resolve shift for this time (fetch_shift already ran in validate)
+		# No shift assignment for this time: skip location validation (still store lat/long)
 		if not self.shift:
-			if self.log_type == "OUT":
-				self._require_checkout_reason_if_outside()
 			return
+		# Shift assignment has no Shift Location: skip location validation (still store lat/long)
 		assignment_locations = frappe.get_all(
 			"Shift Assignment",
 			filters={
@@ -94,8 +93,6 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			pluck="shift_location",
 		)
 		if not assignment_locations:
-			if self.log_type == "OUT":
-				self._require_checkout_reason_if_outside()
 			return
 
 		checkin_radius, latitude, longitude = frappe.db.get_value(
