@@ -140,39 +140,48 @@ function checkIn(){
 }
 
 function checkOut(){
-  btn("btn-out", true);
-  fetchLocation(function () {
-    frappe.call({
-      method: "alpinos.attendance_widget.get_today_wfh_request",
-      silent: true,
-      callback(r) {
-        if (r.message) {
-          showWFHTaskDialog(
-            r.message,
-            function(tasks) {
-              frappe.call({
-                method: "alpinos.attendance_widget.save_wfh_tasks",
-                args: { wfh_request: r.message.name, tasks: JSON.stringify(tasks) },
-                callback(sr) {
-                  if (sr.exc) {
-                    frappe.msgprint("Could not save tasks. Please try again.");
-                    btn("btn-out", false);
-                    return;
-                  }
-                  doCheckOut();
+  frappe.confirm(
+    "Are you sure you want to check out?",
+    function () {
+      btn("btn-out", true);
+      fetchLocation(function () {
+        frappe.call({
+          method: "alpinos.attendance_widget.get_today_wfh_request",
+          silent: true,
+          callback(r) {
+            if (r.message) {
+              showWFHTaskDialog(
+                r.message,
+                function(tasks) {
+                  frappe.call({
+                    method: "alpinos.attendance_widget.save_wfh_tasks",
+                    args: { wfh_request: r.message.name, tasks: JSON.stringify(tasks) },
+                    callback(sr) {
+                      if (sr.exc) {
+                        frappe.msgprint("Could not save tasks. Please try again.");
+                        btn("btn-out", false);
+                        return;
+                      }
+                      doCheckOut();
+                    }
+                  });
+                },
+                function() {
+                  btn("btn-out", false);
                 }
-              });
-            },
-            function() {
-              btn("btn-out", false);
+              );
+            } else {
+              doCheckOut();
             }
-          );
-        } else {
-          doCheckOut();
-        }
-      }
-    });
-  });
+          }
+        });
+      });
+    },
+    function () {
+      // user cancelled
+      btn("btn-out", false);
+    }
+  );
 }
 
 function getExcMessage(exc) {
