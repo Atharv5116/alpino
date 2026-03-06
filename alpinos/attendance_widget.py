@@ -55,10 +55,30 @@ def get_status():
     employee = _get_employee_for_user(frappe.session.user)
     if not employee:
         return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+    today_in = _get_today_first_checkin(employee)
+    if not today_in:
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+
+    in_time = today_in[0]["time"]
+    last = _get_today_last_checkin(employee)
+    last_out = _get_today_last_checkout(employee)
+
+    if last and last[0]["log_type"] == "IN":
+        return {"status": "IN", "last_time": in_time, "elapsed_seconds": None}
+
+    if last_out:
+        elapsed_seconds = int((last_out[0]["time"] - in_time).total_seconds())
+        return {
+            "status": "OUT",
+            "last_time": last_out[0]["time"],
+            "elapsed_seconds": max(elapsed_seconds, 0),
+        }
+
+    return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
 
 
 @frappe.whitelist()
-def get_monthly_attendance(year: int | None = None, month: int | None = None):
+def get_monthly_attendance(year=None, month=None):
 	"""Return monthly attendance summary for the logged-in employee.
 
 	Response format:
@@ -84,8 +104,15 @@ def get_monthly_attendance(year: int | None = None, month: int | None = None):
 		frappe.throw("No Employee linked to this user.")
 
 	today = getdate(now_datetime())
-	year = year or today.year
-	month = month or today.month
+	try:
+		year = int(year) if year not in (None, "") else today.year
+		month = int(month) if month not in (None, "") else today.month
+	except (TypeError, ValueError):
+		year, month = today.year, today.month
+
+	# Validate to avoid "day is out of range for month"
+	year = max(2000, min(2100, year))
+	month = max(1, min(12, month))
 
 	# Compute first and last day of the month
 	start_date = getdate(f"{year}-{month:02d}-01")
