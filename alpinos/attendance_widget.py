@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Optional
 
 import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate, now_datetime
@@ -78,7 +81,7 @@ def get_status():
 
 
 @frappe.whitelist()
-def get_monthly_attendance(year=None, month=None):
+def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = None):
 	"""Return monthly attendance summary for the logged-in employee.
 
 	Response format:
@@ -112,7 +115,14 @@ def get_monthly_attendance(year=None, month=None):
 
 	# Validate to avoid "day is out of range for month"
 	year = max(2000, min(2100, year))
-	month = max(1, min(12, month))
+	# Clamp month to valid range (frontend or API might send 0 or 13)
+	if month < 1:
+		month += 12
+		year -= 1
+	if month > 12:
+		year += (month - 1) // 12
+		month = ((month - 1) % 12) + 1
+	year = max(2000, min(2100, year))  # Re-clamp year after month rollover
 
 	# Compute first and last day of the month
 	start_date = getdate(f"{year}-{month:02d}-01")

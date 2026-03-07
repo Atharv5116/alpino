@@ -11,6 +11,15 @@ def _format_day_label(d):
 	return d.strftime("%a") + " " + str(d.day)
 
 
+def _date_in_year(d, year):
+	"""Return the same month/day in the given year. Handles Feb 29 in non-leap years (use Feb 28)."""
+	try:
+		return d.replace(year=year)
+	except ValueError:
+		# e.g. Feb 29 in a non-leap year
+		return d.replace(month=2, day=28, year=year)
+
+
 @frappe.whitelist()
 def get_upcoming_birthdays_and_anniversaries(days=30):
 	"""Return upcoming birthdays and work anniversaries for active employees."""
@@ -35,10 +44,10 @@ def get_upcoming_birthdays_and_anniversaries(days=30):
 		if dob:
 			dob = getdate(dob)
 			next_bday_year = today.year
-			this_year = dob.replace(year=today.year)
+			this_year = _date_in_year(dob, today.year)
 			if this_year < today:
 				next_bday_year += 1
-			next_bday = dob.replace(year=next_bday_year)
+			next_bday = _date_in_year(dob, next_bday_year)
 			if today <= next_bday <= end_date:
 				birthdays.append({
 					"employee_name": emp.get("employee_name"),
@@ -52,10 +61,10 @@ def get_upcoming_birthdays_and_anniversaries(days=30):
 			doj = getdate(doj)
 			if doj <= today:
 				next_anniv_year = today.year
-				this_year_anniv = doj.replace(year=today.year)
+				this_year_anniv = _date_in_year(doj, today.year)
 				if this_year_anniv < today:
 					next_anniv_year += 1
-				next_anniv = doj.replace(year=next_anniv_year)
+				next_anniv = _date_in_year(doj, next_anniv_year)
 				if today <= next_anniv <= end_date:
 					years = max(next_anniv_year - doj.year, 1)
 					anniversaries.append({
