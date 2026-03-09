@@ -110,8 +110,6 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			# Check if status needs to change
 			if doc.status != status:
 				needs_update = True
-				if was_submitted:
-					doc.cancel()
 				doc.status = status
 			
 			# Always update attendance_request
@@ -119,11 +117,18 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				needs_update = True
 				doc.attendance_request = self.name
 			
-			# If anything changed, save and resubmit if needed
+			# If anything changed, update it safely without canceling
 			if needs_update:
-				doc.save(ignore_permissions=True)
-				if was_submitted and doc.docstatus == 0:
-					doc.submit()
+				if was_submitted:
+					# Force database update to prevent triggering destructive cancel
+					frappe.db.set_value("Attendance", doc.name, {
+						"status": doc.status,
+						"attendance_request": doc.attendance_request
+					})
+					frappe.db.commit()
+				else:
+					doc.save(ignore_permissions=True)
+					
 				frappe.msgprint(
 					_("Attendance updated for {0}").format(
 						frappe.bold(frappe.utils.formatdate(date))
