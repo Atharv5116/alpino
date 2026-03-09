@@ -559,32 +559,7 @@ def create_attendance_request_client_script():
 	script = """
 frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
-		// 1. Intercept the standard warning function early
-		// We define it directly on the form object to ensure it takes precedence over the HRM script
-		frm.show_attendance_warnings = function() {
-			if (!frm.is_new() && frm.doc.docstatus === 0) {
-				frm.call("get_attendance_warnings").then((r) => {
-					if (r.message && r.message.length) {
-						// Selective removal instead of reset()
-						if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
-							frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
-						}
-						
-						const html = `
-							<div class="attendance-warnings-wrapper">
-								${frappe.render_template("attendance_warnings", {
-									warnings: r.message || [],
-								})}
-							</div>
-						`;
-						frm.dashboard.add_section(html, __("Attendance Warnings"));
-						frm.dashboard.show();
-					}
-				});
-			}
-		};
-
-		// 2. Load check-in data
+		// Show check-in/check-out data after save
 		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
 			if (frm._loading_checkin_data) return;
 			frm._loading_checkin_data = true;
@@ -592,6 +567,38 @@ frappe.ui.form.on('Attendance Request', {
 		}
 	}
 });
+
+function setup_dashboard_observer(frm) {
+	// Prevents multiple observers
+	if (frm._dashboard_observer) {
+		frm._dashboard_observer.disconnect();
+	}
+	
+	if (!frm.dashboard || !frm.dashboard.wrapper) return;
+	
+	// Create observer to watch for the exact moment the dashboard is cleared by standard HRM script
+	frm._dashboard_observer = new MutationObserver((mutations) => {
+		for (let mutation of mutations) {
+			if (mutation.type === 'childList') {
+				// If the HRM script clears the dashboard, our check-in section will be missing
+				if (frm._checkin_html && frm.dashboard.wrapper.find('.checkin-data-section').length === 0) {
+					// Disconnect temporarily so we don't trigger our own observer
+					frm._dashboard_observer.disconnect();
+					
+					// Add our section back immediately
+					frm.dashboard.add_section(frm._checkin_html, __('Check-in/Check-out Details'));
+					frm.dashboard.show();
+					setTimeout(() => attach_checkin_handlers(frm), 50);
+					
+					// Reconnect observer
+					setup_dashboard_observer(frm);
+				}
+			}
+		}
+	});
+	
+	frm._dashboard_observer.observe(frm.dashboard.wrapper[0], { childList: true, subtree: true });
+}
 
 function show_checkin_data(frm) {
 	frappe.call({
@@ -604,7 +611,6 @@ function show_checkin_data(frm) {
 		callback: function(r) {
 			frm._loading_checkin_data = false;
 			if (r.message) {
-				// Store data on frm for persistence/re-rendering if needed
 				frm._checkin_data = r.message;
 				render_checkin_table(frm, r.message);
 			}
@@ -676,7 +682,9 @@ function render_checkin_table(frm, data) {
 	
 	html += `</tbody></table></div></div>`;
 	
-	// Ensure dashboard section exists or remove previous one
+	// Store HTML and Data globally for persistence
+	frm._checkin_html = html;
+	
 	if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
 		const existing = frm.dashboard.wrapper.find('.checkin-data-section');
 		if (existing.length) {
@@ -684,12 +692,13 @@ function render_checkin_table(frm, data) {
 		}
 	}
 	
-	// Add section and ensure it's visible
 	frm.dashboard.add_section(html, __('Check-in/Check-out Details'));
 	frm.dashboard.show();
 	
-	// Re-attach handlers
-	setTimeout(() => attach_checkin_handlers(frm), 100);
+	setTimeout(() => {
+		attach_checkin_handlers(frm);
+		setup_dashboard_observer(frm);
+	}, 100);
 }
 
 function attach_checkin_handlers(frm) {
@@ -781,29 +790,6 @@ function format_datetime(s) {
 function format_date(s) {
 	if (!s) return '-';
 	return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function format_datetime(datetime_str) {
-	if (!datetime_str) return '-';
-	const dt = new Date(datetime_str);
-	return dt.toLocaleString('en-US', {
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit',
-		hour: '2-digit',
-		minute: '2-digit',
-		hour12: true
-	});
-}
-
-function format_date(date_str) {
-	if (!date_str) return '-';
-	const d = new Date(date_str);
-	return d.toLocaleDateString('en-US', {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric'
-	});
 }
 """
 	
