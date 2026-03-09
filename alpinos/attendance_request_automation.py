@@ -180,6 +180,9 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 		checkin_doc.time = get_datetime(time)
 		if attendance_name and not checkin_doc.attendance:
 			checkin_doc.attendance = attendance_name
+		
+		# Bypass the "Cannot Modify Time" validation in core ERPNext checkin
+		checkin_doc.flags.ignore_validate = True
 		checkin_doc.save(ignore_permissions=True)
 		
 		# Update Attendance in_time and out_time after checkin update
