@@ -558,8 +558,31 @@ def create_attendance_request_client_script():
 	
 	script = """
 frappe.ui.form.on('Attendance Request', {
+	onload: function(frm) {
+		// Monkey-patch frm.dashboard.reset to always preserve our check-in section
+		frm._patch_dashboard = function() {
+			if (!frm.dashboard) return;
+			if (!frm._dashboard_reset_patched) {
+				const original_reset = frm.dashboard.reset.bind(frm.dashboard);
+				frm.dashboard.reset = function() {
+					// 1. Let the system clear the dashboard
+					original_reset();
+					
+					// 2. Immediately put our check-in table back before they draw their warnings
+					if (frm._checkin_html) {
+						frm.dashboard.add_section(frm._checkin_html, __('Check-in/Check-out Details'));
+						setTimeout(() => attach_checkin_handlers(frm), 50);
+					}
+				};
+				frm._dashboard_reset_patched = true;
+			}
+		};
+	},
 	refresh: function(frm) {
-		// Show check-in/check-out data after save
+		// Ensure the patch is active
+		if (frm._patch_dashboard) frm._patch_dashboard();
+
+		// Fetch and build the check-in table initially
 		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
 			if (frm._loading_checkin_data) return;
 			frm._loading_checkin_data = true;
@@ -567,38 +590,6 @@ frappe.ui.form.on('Attendance Request', {
 		}
 	}
 });
-
-function setup_dashboard_observer(frm) {
-	// Prevents multiple observers
-	if (frm._dashboard_observer) {
-		frm._dashboard_observer.disconnect();
-	}
-	
-	if (!frm.dashboard || !frm.dashboard.wrapper) return;
-	
-	// Create observer to watch for the exact moment the dashboard is cleared by standard HRM script
-	frm._dashboard_observer = new MutationObserver((mutations) => {
-		for (let mutation of mutations) {
-			if (mutation.type === 'childList') {
-				// If the HRM script clears the dashboard, our check-in section will be missing
-				if (frm._checkin_html && frm.dashboard.wrapper.find('.checkin-data-section').length === 0) {
-					// Disconnect temporarily so we don't trigger our own observer
-					frm._dashboard_observer.disconnect();
-					
-					// Add our section back immediately
-					frm.dashboard.add_section(frm._checkin_html, __('Check-in/Check-out Details'));
-					frm.dashboard.show();
-					setTimeout(() => attach_checkin_handlers(frm), 50);
-					
-					// Reconnect observer
-					setup_dashboard_observer(frm);
-				}
-			}
-		}
-	});
-	
-	frm._dashboard_observer.observe(frm.dashboard.wrapper[0], { childList: true, subtree: true });
-}
 
 function show_checkin_data(frm) {
 	frappe.call({
