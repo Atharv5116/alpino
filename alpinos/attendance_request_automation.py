@@ -571,14 +571,33 @@ frappe.ui.form.on('Attendance Request', {
 			// Clear flag if conditions not met
 			frm._loading_checkin_data = false;
 		}
+	},
+
+	// Override standard HRM show_attendance_warnings to prevent it from resetting the dashboard
+	// This allows both warnings and our check-in details to coexist
+	show_attendance_warnings(frm) {
+		if (!frm.is_new() && frm.doc.docstatus === 0) {
+			frm.call("get_attendance_warnings").then((r) => {
+				if (r.message?.length) {
+					// Selectively remove existing warnings section to avoid duplication
+					frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
+					
+					const html = `
+						<div class="attendance-warnings-wrapper">
+							${frappe.render_template("attendance_warnings", {
+								warnings: r.message || [],
+							})}
+						</div>
+					`;
+					frm.dashboard.add_section(html, __("Attendance Warnings"));
+					frm.dashboard.show();
+				}
+			});
+		}
 	}
 });
 
 function show_checkin_data(frm) {
-	// Clear existing dashboard completely
-	frm.dashboard.clear_headline();
-	frm.dashboard.reset();
-	
 	// Fetch check-in/check-out data
 	frappe.call({
 		method: 'alpinos.attendance_request_automation.get_checkin_data_for_dates',
@@ -639,16 +658,6 @@ function render_checkin_table(frm, data) {
 		const checkOutTime = checkOut ? format_datetime(checkOut.time) : '-';
 		const attendanceStatus = attendance ? attendance.status : '-';
 		
-		// Map attendance status to reason for display
-		let currentReason = '';
-		if (attendance) {
-			if (attendance.status === 'Present') {
-				currentReason = 'On Duty';
-			} else if (attendance.status === 'Work From Home') {
-				currentReason = 'Work From Home';
-			}
-		}
-		
 		// Status badge color
 		let statusBadgeClass = 'badge-secondary';
 		if (attendance) {
@@ -700,10 +709,10 @@ function render_checkin_table(frm, data) {
 		</div>
 	`;
 	
-	// Reset dashboard first to avoid duplicates
-	frm.dashboard.reset();
+	// Selectively remove only the check-in section to avoid duplicates without clearing other sections
+	frm.dashboard.wrapper.find('.checkin-data-section').closest('.section-container').remove();
 	
-	// Add to dashboard (only once)
+	// Add to dashboard
 	frm.dashboard.add_section(html, __('Check-in/Check-out Details'));
 	frm.dashboard.show();
 	
@@ -859,39 +868,18 @@ function update_attendance_status(frm, date) {
 	const reasonSelect = $(`.attendance-reason-select[data-date="${date}"]`);
 	const reason = reasonSelect.val();
 	
-	// Enhanced debugging
-	console.log('=== UPDATE ATTENDANCE STATUS DEBUG ===');
-	console.log('Date:', date);
-	console.log('Selected reason from dropdown:', reason);
-	console.log('Dropdown element:', reasonSelect);
-	console.log('All options:', reasonSelect.find('option').map(function() { return $(this).val() + ':' + $(this).text(); }).get());
-	console.log('Current form reason:', frm.doc.reason);
-	console.log('Employee:', frm.doc.employee);
-	console.log('Attendance Request:', frm.doc.name);
-	
 	if (!reason) {
 		frappe.msgprint(__('Please select a reason'));
 		return;
 	}
 	
-	// Debug logging
-	console.log('Updating reason field from action:', {
-		date: date,
-		reason: reason,
-		employee: frm.doc.employee,
-		attendance_request: frm.doc.name,
-		current_form_reason: frm.doc.reason
-	});
-	
 	// Update attendance based on the action value (reason from dropdown)
-	// The update_attendance_status function will update BOTH the reason field AND the attendance
-	// based on the action value - we don't need to update reason field separately
 	frappe.call({
 		method: 'alpinos.attendance_request_automation.update_attendance_status',
 		args: {
 			employee: frm.doc.employee,
 			date: date,
-			reason: reason,  // This is the action value from dropdown
+			reason: reason,
 			attendance_request: frm.doc.name
 		},
 		callback: function(r) {
