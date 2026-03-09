@@ -176,19 +176,22 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 		# Update existing checkin
 		checkin_doc = frappe.get_doc("Employee Checkin", checkin_name)
 		
-		checkin_doc.from_attendance_request = 1
-		checkin_doc.time = get_datetime(time)
-		if attendance_name and not checkin_doc.attendance:
-			checkin_doc.attendance = attendance_name
+		updates = {
+			"time": get_datetime(time),
+			"from_attendance_request": 1
+		}
 		
-		# Bypass the "Cannot Modify Time" validation in core ERPNext checkin
-		checkin_doc.flags.ignore_validate = True
-		checkin_doc.save(ignore_permissions=True)
+		if attendance_name and not checkin_doc.attendance:
+			updates["attendance"] = attendance_name
+		
+		# Completely bypass the "Cannot Modify Time" validation using db_set
+		frappe.db.set_value("Employee Checkin", checkin_name, updates)
+		frappe.db.commit()
 		
 		# Update Attendance in_time and out_time after checkin update
 		update_attendance_times(employee, date)
 		
-		return {"name": checkin_doc.name, "time": str(checkin_doc.time)}
+		return {"name": checkin_name, "time": str(updates["time"])}
 	else:
 		# Create new checkin
 		checkin_doc = frappe.new_doc("Employee Checkin")
