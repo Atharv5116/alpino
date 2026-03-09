@@ -558,63 +558,46 @@ def create_attendance_request_client_script():
 	
 	script = """
 frappe.ui.form.on('Attendance Request', {
-	setup: function(frm) {
-		// Suppress standard HRM attendance warnings which destroy the dashboard via reset()
-		if (!frm._patched_call) {
-			const original_call = frm.call.bind(frm);
-			frm.call = function(...args) {
-				let method = "";
-				if (typeof args[0] === "string") method = args[0];
-				else if (args[0] && args[0].method) method = args[0].method;
-				
-				if (method === "get_attendance_warnings") {
-					// Trick standard script into thinking there are no warnings, so it does nothing
-					return Promise.resolve({message: []});
-				}
-				return original_call(...args);
+	onload: function(frm) {
+		// Prevent the standard script from resetting the dashboard
+		if (!frm._patched_reset) {
+			const original_reset = frm.dashboard.reset.bind(frm.dashboard);
+			frm.dashboard.reset = function() {
+				// Don't do anything here, let our script manage the dashboard layout
 			};
-			frm._patched_call = true;
+			frm._patched_reset = true;
 		}
 	},
 	refresh: function(frm) {
-		// Remove any lingering sections from previous documents (prevents duplicates)
+		// Clean up old elements to avoid duplicates on navigation
 		if (frm.dashboard && frm.dashboard.wrapper) {
 			frm.dashboard.wrapper.find('.checkin-data-section').closest('.section-container').remove();
 			frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
 		}
 
 		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
-			// 1. Fetch and build check-in data
+			
+			// 1. Fetch check-in data
 			show_checkin_data(frm);
 			
-			// 2. Safely fetch and build attendance warnings (manual re-implementation)
+			// 2. Fetch warnings using the standard frm.call mechanism
 			if (frm.doc.docstatus === 0) {
-				frappe.call({
-					method: "hrms.hr.doctype.attendance_request.attendance_request.get_attendance_warnings",
-					args: {
-						employee: frm.doc.employee,
-						from_date: frm.doc.from_date,
-						to_date: frm.doc.to_date,
-						half_day: frm.doc.half_day || 0,
-						half_day_date: frm.doc.half_day_date
-					},
-					callback: function(r) {
-						if (r.message && r.message.length > 0) {
-							// Ensure no duplicates
-							if (frm.dashboard && frm.dashboard.wrapper) {
-								frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
-							}
-							
-							const html = `
-								<div class="attendance-warnings-wrapper">
-									${frappe.render_template("attendance_warnings", {
-										warnings: r.message,
-									})}
-								</div>
-							`;
-							frm.dashboard.add_section(html, __("Attendance Warnings"));
-							frm.dashboard.show();
+				frm.call("get_attendance_warnings").then((r) => {
+					if (r.message && r.message.length > 0) {
+						// Clean just in case
+						if (frm.dashboard && frm.dashboard.wrapper) {
+							frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
 						}
+						
+						const html = `
+							<div class="attendance-warnings-wrapper">
+								${frappe.render_template("attendance_warnings", {
+									warnings: r.message,
+								})}
+							</div>
+						`;
+						frm.dashboard.add_section(html, __("Attendance Warnings"));
+						frm.dashboard.show();
 					}
 				});
 			}
