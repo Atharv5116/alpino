@@ -559,13 +559,13 @@ def create_attendance_request_client_script():
 	script = """
 frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
-		// 1. Force override the standard HRM warning function to stop it from resetting the dashboard
-		// This intercept the trigger call from the HRM script
+		// 1. Intercept the standard warning function early
+		// We define it directly on the form object to ensure it takes precedence over the HRM script
 		frm.show_attendance_warnings = function() {
 			if (!frm.is_new() && frm.doc.docstatus === 0) {
 				frm.call("get_attendance_warnings").then((r) => {
 					if (r.message && r.message.length) {
-						// Selectively remove existing warnings section to avoid duplication
+						// Selective removal instead of reset()
 						if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
 							frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
 						}
@@ -584,21 +584,16 @@ frappe.ui.form.on('Attendance Request', {
 			}
 		};
 
-		// 2. Show check-in/check-out data after save
+		// 2. Load check-in data
 		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
-			if (frm._loading_checkin_data) {
-				return;
-			}
+			if (frm._loading_checkin_data) return;
 			frm._loading_checkin_data = true;
 			show_checkin_data(frm);
-		} else {
-			frm._loading_checkin_data = false;
 		}
 	}
 });
 
 function show_checkin_data(frm) {
-	// Fetch check-in/check-out data
 	frappe.call({
 		method: 'alpinos.attendance_request_automation.get_checkin_data_for_dates',
 		args: {
@@ -609,29 +604,21 @@ function show_checkin_data(frm) {
 		callback: function(r) {
 			frm._loading_checkin_data = false;
 			if (r.message) {
+				// Store data on frm for persistence/re-rendering if needed
+				frm._checkin_data = r.message;
 				render_checkin_table(frm, r.message);
 			}
 		},
-		error: function(r) {
+		error: function() {
 			frm._loading_checkin_data = false;
-			frappe.msgprint({
-				title: __('Error'),
-				message: r.message || __('Failed to fetch check-in/check-out data'),
-				indicator: 'red'
-			});
 		}
 	});
 }
 
 function render_checkin_table(frm, data) {
-	// Sort dates
 	const dates = Object.keys(data).sort();
+	if (dates.length === 0) return;
 	
-	if (dates.length === 0) {
-		return;
-	}
-	
-	// Create HTML table
 	let html = `
 		<div class="checkin-data-section" style="margin-top: 20px;">
 			<div class="table-responsive">
@@ -653,12 +640,10 @@ function render_checkin_table(frm, data) {
 		const checkOut = dateData.check_out;
 		const attendance = dateData.attendance;
 		
-		// Format times
 		const checkInTime = checkIn ? format_datetime(checkIn.time) : '-';
 		const checkOutTime = checkOut ? format_datetime(checkOut.time) : '-';
 		const attendanceStatus = attendance ? attendance.status : '-';
 		
-		// Status badge color
 		let statusBadgeClass = 'badge-secondary';
 		if (attendance) {
 			if (attendance.status === 'Present') statusBadgeClass = 'badge-success';
@@ -670,74 +655,49 @@ function render_checkin_table(frm, data) {
 		html += `
 			<tr data-date="${date}">
 				<td>${format_date(date)}</td>
-				<td>
+				<td class="text-center">
 					${checkIn ? 
-						`<span class="checkin-time" data-checkin-name="${checkIn.name}">${checkInTime}</span>
-						<button class="btn btn-xs btn-link edit-checkin" data-type="IN" data-checkin-name="${checkIn.name}" data-date="${date}" title="Edit">
-							<i class="fa fa-edit"></i>
-						</button>` :
-						`<button class="btn btn-xs btn-primary add-checkin" data-type="IN" data-date="${date}">
-							<i class="fa fa-plus"></i> Add
-						</button>`
+						`<span class="checkin-time">${checkInTime}</span>
+						<button class="btn btn-xs btn-link edit-checkin" data-type="IN" data-checkin-name="${checkIn.name}" data-date="${date}"><i class="fa fa-edit"></i></button>` :
+						`<button class="btn btn-xs btn-primary add-checkin" data-type="IN" data-date="${date}"><i class="fa fa-plus"></i> Add</button>`
 					}
 				</td>
-				<td>
+				<td class="text-center">
 					${checkOut ? 
-						`<span class="checkout-time" data-checkout-name="${checkOut.name}">${checkOutTime}</span>
-						<button class="btn btn-xs btn-link edit-checkin" data-type="OUT" data-checkin-name="${checkOut.name}" data-date="${date}" title="Edit">
-							<i class="fa fa-edit"></i>
-						</button>` :
-						`<button class="btn btn-xs btn-primary add-checkin" data-type="OUT" data-date="${date}">
-							<i class="fa fa-plus"></i> Add
-						</button>`
+						`<span class="checkout-time">${checkOutTime}</span>
+						<button class="btn btn-xs btn-link edit-checkin" data-type="OUT" data-checkin-name="${checkOut.name}" data-date="${date}"><i class="fa fa-edit"></i></button>` :
+						`<button class="btn btn-xs btn-primary add-checkin" data-type="OUT" data-date="${date}"><i class="fa fa-plus"></i> Add</button>`
 					}
 				</td>
-				<td>
-					${attendance ? 
-						`<span class="badge ${statusBadgeClass}">${attendanceStatus}</span>` :
-						`<span class="badge badge-secondary">-</span>`
-					}
-				</td>
+				<td>${attendance ? `<span class="badge ${statusBadgeClass}">${attendanceStatus}</span>` : `<span class="badge badge-secondary">-</span>`}</td>
 			</tr>
 		`;
 	});
 	
-	html += `
-					</tbody>
-				</table>
-			</div>
-		</div>
-	`;
+	html += `</tbody></table></div></div>`;
 	
-	// Selectively remove only the check-in section to avoid duplicates
+	// Ensure dashboard section exists or remove previous one
 	if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
-		frm.dashboard.wrapper.find('.checkin-data-section').closest('.section-container').remove();
+		const existing = frm.dashboard.wrapper.find('.checkin-data-section');
+		if (existing.length) {
+			existing.closest('.section-container').remove();
+		}
 	}
 	
-	// Add to dashboard
+	// Add section and ensure it's visible
 	frm.dashboard.add_section(html, __('Check-in/Check-out Details'));
 	frm.dashboard.show();
 	
-	// Attach event handlers after a short delay to ensure DOM is ready
-	setTimeout(function() {
-		attach_checkin_handlers(frm);
-	}, 100);
+	// Re-attach handlers
+	setTimeout(() => attach_checkin_handlers(frm), 100);
 }
 
 function attach_checkin_handlers(frm) {
-	// Add check-in/check-out handlers
 	$('.add-checkin').off('click').on('click', function() {
-		const logType = $(this).data('type');
-		const date = $(this).data('date');
-		add_checkin(frm, date, logType);
+		add_checkin(frm, $(this).data('date'), $(this).data('type'));
 	});
-	
-	// Edit check-in/check-out handlers
 	$('.edit-checkin').off('click').on('click', function() {
-		const logType = $(this).data('type');
-		const checkinName = $(this).data('checkin-name');
-		const date = $(this).data('date');
-		edit_checkin(frm, date, logType, checkinName);
+		edit_checkin(frm, $(this).data('date'), $(this).data('type'), $(this).data('checkin-name'));
 	});
 }
 
@@ -745,167 +705,82 @@ function add_checkin(frm, date, logType) {
 	const dialog = new frappe.ui.Dialog({
 		title: __('Add Check-' + (logType === 'IN' ? 'in' : 'out')),
 		fields: [
-			{
-				label: __('Date'),
-				fieldname: 'date',
-				fieldtype: 'Date',
-				default: date,
-				read_only: 1
-			},
-			{
-				label: __('Time'),
-				fieldname: 'time',
-				fieldtype: 'Datetime',
-				default: date + ' ' + (logType === 'IN' ? '09:00:00' : '18:00:00'),
-				reqd: 1
-			}
+			{label: __('Date'), fieldname: 'date', fieldtype: 'Date', default: date, read_only: 1},
+			{label: __('Time'), fieldname: 'time', fieldtype: 'Datetime', default: date + ' ' + (logType === 'IN' ? '09:00:00' : '18:00:00'), reqd: 1}
 		],
 		primary_action_label: __('Save'),
 		primary_action: function() {
-			const values = dialog.get_values();
-			if (!values.time) {
-				frappe.msgprint(__('Time is required'));
-				return;
-			}
-			
+			const v = dialog.get_values();
+			if (!v.time) return;
 			frappe.call({
 				method: 'alpinos.attendance_request_automation.create_or_update_checkin',
-				args: {
-					employee: frm.doc.employee,
-					date: values.date,
-					log_type: logType,
-					time: values.time
-				},
+				args: { employee: frm.doc.employee, date: v.date, log_type: logType, time: v.time },
 				callback: function(r) {
 					if (r.message) {
-						frappe.show_alert({
-							message: __('Check-' + (logType === 'IN' ? 'in' : 'out') + ' added successfully'),
-							indicator: 'green'
-						});
+						frappe.show_alert({message: __('Saved'), indicator: 'green'});
 						dialog.hide();
 						show_checkin_data(frm);
 					}
-				},
-				error: function(r) {
-					frappe.msgprint({
-						title: __('Error'),
-						message: r.message || __('Failed to add check-' + (logType === 'IN' ? 'in' : 'out')),
-						indicator: 'red'
-					});
 				}
 			});
 		}
 	});
-	
 	dialog.show();
 }
 
 function edit_checkin(frm, date, logType, checkinName) {
-	// Get current time
-	frappe.db.get_value('Employee Checkin', checkinName, 'time')
-		.then(function(r) {
-			if (!r.message) return;
-			
-			const dialog = new frappe.ui.Dialog({
-				title: __('Edit Check-' + (logType === 'IN' ? 'in' : 'out')),
-				fields: [
-					{
-						label: __('Date'),
-						fieldname: 'date',
-						fieldtype: 'Date',
-						default: date,
-						read_only: 1
-					},
-					{
-						label: __('Time'),
-						fieldname: 'time',
-						fieldtype: 'Datetime',
-						default: r.message.time,
-						reqd: 1
-					}
-				],
-				primary_action_label: __('Update'),
-				primary_action: function() {
-					const values = dialog.get_values();
-					if (!values.time) {
-						frappe.msgprint(__('Time is required'));
-						return;
-					}
-					
-					frappe.call({
-						method: 'alpinos.attendance_request_automation.create_or_update_checkin',
-						args: {
-							employee: frm.doc.employee,
-							date: values.date,
-							log_type: logType,
-							time: values.time,
-							checkin_name: checkinName
-						},
-						callback: function(r) {
-							if (r.message) {
-								frappe.show_alert({
-									message: __('Check-' + (logType === 'IN' ? 'in' : 'out') + ' updated successfully'),
-									indicator: 'green'
-								});
-								dialog.hide();
-								show_checkin_data(frm);
-							}
-						},
-						error: function(r) {
-							frappe.msgprint({
-								title: __('Error'),
-								message: r.message || __('Failed to update check-' + (logType === 'IN' ? 'in' : 'out')),
-								indicator: 'red'
-							});
+	frappe.db.get_value('Employee Checkin', checkinName, 'time').then(r => {
+		if (!r.message) return;
+		const dialog = new frappe.ui.Dialog({
+			title: __('Edit Check-' + (logType === 'IN' ? 'in' : 'out')),
+			fields: [
+				{label: __('Date'), fieldname: 'date', fieldtype: 'Date', default: date, read_only: 1},
+				{label: __('Time'), fieldname: 'time', fieldtype: 'Datetime', default: r.message.time, reqd: 1}
+			],
+			primary_action_label: __('Update'),
+			primary_action: function() {
+				const v = dialog.get_values();
+				frappe.call({
+					method: 'alpinos.attendance_request_automation.create_or_update_checkin',
+					args: { employee: frm.doc.employee, date: v.date, log_type: logType, time: v.time, checkin_name: checkinName },
+					callback: function(r) {
+						if (r.message) {
+							frappe.show_alert({message: __('Updated'), indicator: 'green'});
+							dialog.hide();
+							show_checkin_data(frm);
 						}
-					});
-				}
-			});
-			
-			dialog.show();
+					}
+				});
+			}
 		});
+		dialog.show();
+	});
 }
 
 function update_attendance_status(frm, date) {
-	const reasonSelect = $(`.attendance-reason-select[data-date="${date}"]`);
-	const reason = reasonSelect.val();
-	
-	if (!reason) {
-		frappe.msgprint(__('Please select a reason'));
-		return;
-	}
-	
-	// Update attendance based on the action value (reason from dropdown)
+	const reason = $(`.attendance-reason-select[data-date="${date}"]`).val();
+	if (!reason) return;
 	frappe.call({
 		method: 'alpinos.attendance_request_automation.update_attendance_status',
-		args: {
-			employee: frm.doc.employee,
-			date: date,
-			reason: reason,
-			attendance_request: frm.doc.name
-		},
+		args: { employee: frm.doc.employee, date: date, reason: reason, attendance_request: frm.doc.name },
 		callback: function(r) {
 			if (r.message) {
-				// Update the form's reason field to reflect the change
 				frm.set_value('reason', reason);
-				
-				frappe.show_alert({
-					message: __('Attendance updated successfully'),
-					indicator: 'green'
-				});
-				// Refresh the check-in data display
+				frappe.show_alert({message: __('Updated'), indicator: 'green'});
 				show_checkin_data(frm);
 			}
-		},
-		error: function(r) {
-			console.error('Error updating attendance:', r);
-			frappe.msgprint({
-				title: __('Error'),
-				message: __('Failed to update attendance: ') + (r.message || 'Unknown error'),
-				indicator: 'red'
-			});
 		}
 	});
+}
+
+function format_datetime(s) {
+	if (!s) return '-';
+	return new Date(s).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function format_date(s) {
+	if (!s) return '-';
+	return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function format_datetime(datetime_str) {
