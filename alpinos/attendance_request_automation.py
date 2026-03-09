@@ -168,23 +168,18 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 			if in_time >= checkout_time:
 				frappe.throw(_("Check-in time must be before check-out time"))
 	
+	# Get Attendance record for this date to link the checkin
+	attendance = get_attendance_for_date(employee, date)
+	attendance_name = attendance.get("name") if attendance else None
+
 	if checkin_name:
 		# Update existing checkin
 		checkin_doc = frappe.get_doc("Employee Checkin", checkin_name)
 		
-		# Check if attendance is linked - allow editing as per user requirement
-		# But warn if attendance is submitted
-		if checkin_doc.attendance:
-			attendance_doc = frappe.get_doc("Attendance", checkin_doc.attendance)
-			if attendance_doc.docstatus == 1:
-				frappe.msgprint(
-					_("Warning: This checkin is linked to a submitted Attendance record. "
-					  "The attendance may need to be updated manually."),
-					indicator="orange"
-				)
-		
 		checkin_doc.from_attendance_request = 1
 		checkin_doc.time = get_datetime(time)
+		if attendance_name and not checkin_doc.attendance:
+			checkin_doc.attendance = attendance_name
 		checkin_doc.save(ignore_permissions=True)
 		
 		# Update Attendance in_time and out_time after checkin update
@@ -198,6 +193,8 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 		checkin_doc.log_type = log_type
 		checkin_doc.time = get_datetime(time)
 		checkin_doc.from_attendance_request = 1
+		if attendance_name:
+			checkin_doc.attendance = attendance_name
 		checkin_doc.insert(ignore_permissions=True)
 		
 		# Update Attendance in_time and out_time after checkin creation
@@ -260,29 +257,43 @@ def update_attendance_times(employee, date):
 	out_time = out_checkins[0].time if out_checkins else None
 	
 	# Only update if values have changed
-	if attendance_doc.in_time != in_time or attendance_doc.out_time != out_time:
-		# If attendance is submitted, cancel first, update, then submit
-		if attendance_doc.docstatus == 1:
-			attendance_doc.cancel()
-		
-		attendance_doc.in_time = in_time
-		attendance_doc.out_time = out_time
-		
+	needs_update = attendance_doc.in_time != in_time or attendance_doc.out_time != out_time
+	status_changed = False
+	new_status = attendance_doc.status
+
+	# Automatically mark as Present if they were Absent but now have both punches
+	if in_time and out_time and attendance_doc.status == "Absent":
+		new_status = "Present"
+		needs_update = True
+		status_changed = True
+
+	if needs_update:
 		# Calculate working hours if both times are present
+		working_hours = attendance_doc.working_hours
 		if in_time and out_time:
 			time_diff = out_time - in_time
-			working_hours = time_diff.total_seconds() / 3600
-			attendance_doc.working_hours = round(working_hours, 2)
-		
-		# Sync attendance_request_reason using core function
-		sync_attendance_request_reason(attendance_doc)
-		
-		attendance_doc.save(ignore_permissions=True)
-		
-		# Resubmit if it was submitted
-		was_submitted = attendance.get("docstatus") == 1
-		if was_submitted:
-			attendance_doc.submit()
+			working_hours = round(time_diff.total_seconds() / 3600, 2)
+			if attendance_doc.working_hours != working_hours:
+				needs_update = True
+
+		# If it's a drafted document, we can just save it
+		if attendance_doc.docstatus == 0:
+			attendance_doc.in_time = in_time
+			attendance_doc.out_time = out_time
+			attendance_doc.working_hours = working_hours
+			if status_changed:
+				attendance_doc.status = new_status
+			sync_attendance_request_reason(attendance_doc)
+			attendance_doc.save(ignore_permissions=True)
+		# If submitted, forcefully update the database to avoid destructive canceling and unlinking
+		elif attendance_doc.docstatus == 1:
+			frappe.db.set_value("Attendance", attendance_doc.name, {
+				"in_time": in_time,
+				"out_time": out_time,
+				"working_hours": working_hours,
+				"status": new_status
+			})
+			frappe.db.commit()
 
 
 @frappe.whitelist()
