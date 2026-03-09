@@ -174,24 +174,33 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 
 	if checkin_name:
 		# Update existing checkin
-		checkin_doc = frappe.get_doc("Employee Checkin", checkin_name)
+		new_time = get_datetime(time)
 		
-		updates = {
-			"time": get_datetime(time),
-			"from_attendance_request": 1
-		}
-		
-		if attendance_name and not checkin_doc.attendance:
-			updates["attendance"] = attendance_name
-		
-		# Completely bypass the "Cannot Modify Time" validation using db_set
-		frappe.db.set_value("Employee Checkin", checkin_name, updates)
+		if attendance_name:
+			frappe.db.sql(
+				"""
+				UPDATE `tabEmployee Checkin` 
+				SET time = %s, from_attendance_request = 1, attendance = COALESCE(NULLIF(attendance, ''), %s)
+				WHERE name = %s
+				""", 
+				(new_time, attendance_name, checkin_name)
+			)
+		else:
+			frappe.db.sql(
+				"""
+				UPDATE `tabEmployee Checkin` 
+				SET time = %s, from_attendance_request = 1
+				WHERE name = %s
+				""", 
+				(new_time, checkin_name)
+			)
+			
 		frappe.db.commit()
 		
 		# Update Attendance in_time and out_time after checkin update
 		update_attendance_times(employee, date)
 		
-		return {"name": checkin_name, "time": str(updates["time"])}
+		return {"name": checkin_name, "time": str(new_time)}
 	else:
 		# Create new checkin
 		checkin_doc = frappe.new_doc("Employee Checkin")
