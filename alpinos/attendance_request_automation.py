@@ -559,40 +559,40 @@ def create_attendance_request_client_script():
 	script = """
 frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
-		// Show check-in/check-out data after save (not for new documents)
+		// 1. Force override the standard HRM warning function to stop it from resetting the dashboard
+		// This intercept the trigger call from the HRM script
+		frm.show_attendance_warnings = function() {
+			if (!frm.is_new() && frm.doc.docstatus === 0) {
+				frm.call("get_attendance_warnings").then((r) => {
+					if (r.message && r.message.length) {
+						// Selectively remove existing warnings section to avoid duplication
+						if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
+							frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
+						}
+						
+						const html = `
+							<div class="attendance-warnings-wrapper">
+								${frappe.render_template("attendance_warnings", {
+									warnings: r.message || [],
+								})}
+							</div>
+						`;
+						frm.dashboard.add_section(html, __("Attendance Warnings"));
+						frm.dashboard.show();
+					}
+				});
+			}
+		};
+
+		// 2. Show check-in/check-out data after save
 		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
-			// Prevent multiple simultaneous calls
 			if (frm._loading_checkin_data) {
 				return;
 			}
 			frm._loading_checkin_data = true;
 			show_checkin_data(frm);
 		} else {
-			// Clear flag if conditions not met
 			frm._loading_checkin_data = false;
-		}
-	},
-
-	// Override standard HRM show_attendance_warnings to prevent it from resetting the dashboard
-	// This allows both warnings and our check-in details to coexist
-	show_attendance_warnings(frm) {
-		if (!frm.is_new() && frm.doc.docstatus === 0) {
-			frm.call("get_attendance_warnings").then((r) => {
-				if (r.message?.length) {
-					// Selectively remove existing warnings section to avoid duplication
-					frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
-					
-					const html = `
-						<div class="attendance-warnings-wrapper">
-							${frappe.render_template("attendance_warnings", {
-								warnings: r.message || [],
-							})}
-						</div>
-					`;
-					frm.dashboard.add_section(html, __("Attendance Warnings"));
-					frm.dashboard.show();
-				}
-			});
 		}
 	}
 });
@@ -709,8 +709,10 @@ function render_checkin_table(frm, data) {
 		</div>
 	`;
 	
-	// Selectively remove only the check-in section to avoid duplicates without clearing other sections
-	frm.dashboard.wrapper.find('.checkin-data-section').closest('.section-container').remove();
+	// Selectively remove only the check-in section to avoid duplicates
+	if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
+		frm.dashboard.wrapper.find('.checkin-data-section').closest('.section-container').remove();
+	}
 	
 	// Add to dashboard
 	frm.dashboard.add_section(html, __('Check-in/Check-out Details'));
