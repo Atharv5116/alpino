@@ -558,50 +558,18 @@ def create_attendance_request_client_script():
 	
 	script = """
 frappe.ui.form.on('Attendance Request', {
-	onload: function(frm) {
-		// Prevent the standard script from resetting the dashboard
-		if (!frm._patched_reset) {
-			const original_reset = frm.dashboard.reset.bind(frm.dashboard);
-			frm.dashboard.reset = function() {
-				// Don't do anything here, let our script manage the dashboard layout
-			};
-			frm._patched_reset = true;
-		}
-	},
 	refresh: function(frm) {
-		// Clean up old elements to avoid duplicates on navigation
-		if (frm.dashboard && frm.dashboard.wrapper) {
-			frm.dashboard.wrapper.find('.checkin-data-section').closest('.section-container').remove();
-			frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
+		// Clean up stale checkin sections (persisted from previously viewed docs)
+		if (frm.dashboard && frm.dashboard.parent) {
+			frm.dashboard.parent.find('.checkin-dashboard-section').remove();
 		}
 
 		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
-			
-			// 1. Fetch check-in data
 			show_checkin_data(frm);
-			
-			// 2. Fetch warnings using the standard frm.call mechanism
-			if (frm.doc.docstatus === 0) {
-				frm.call("get_attendance_warnings").then((r) => {
-					if (r.message && r.message.length > 0) {
-						// Clean just in case
-						if (frm.dashboard && frm.dashboard.wrapper) {
-							frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
-						}
-						
-						const html = `
-							<div class="attendance-warnings-wrapper">
-								${frappe.render_template("attendance_warnings", {
-									warnings: r.message,
-								})}
-							</div>
-						`;
-						frm.dashboard.add_section(html, __("Attendance Warnings"));
-						frm.dashboard.show();
-					}
-				});
-			}
 		}
+	},
+	show_attendance_warnings: function() {
+		// Suppress the standard HRMS attendance warnings section
 	}
 });
 
@@ -682,14 +650,12 @@ function render_checkin_table(frm, data) {
 	
 	html += `</tbody></table></div></div>`;
 	
-	if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
-		const existing = frm.dashboard.wrapper.find('.checkin-data-section');
-		if (existing.length) {
-			existing.closest('.section-container').remove();
-		}
+	// Remove any existing checkin section before adding new one
+	if (frm.dashboard && frm.dashboard.parent) {
+		frm.dashboard.parent.find('.checkin-dashboard-section').remove();
 	}
 	
-	frm.dashboard.add_section(html, __('Check-in/Check-out Details'));
+	frm.dashboard.add_section(html, __('Check-in/Check-out Details'), 'checkin-dashboard-section');
 	frm.dashboard.show();
 	
 	setTimeout(() => attach_checkin_handlers(frm), 100);
