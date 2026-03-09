@@ -558,35 +558,66 @@ def create_attendance_request_client_script():
 	
 	script = """
 frappe.ui.form.on('Attendance Request', {
-	onload: function(frm) {
-		// Monkey-patch frm.dashboard.reset to always preserve our check-in section
-		frm._patch_dashboard = function() {
-			if (!frm.dashboard) return;
-			if (!frm._dashboard_reset_patched) {
-				const original_reset = frm.dashboard.reset.bind(frm.dashboard);
-				frm.dashboard.reset = function() {
-					// 1. Let the system clear the dashboard
-					original_reset();
-					
-					// 2. Immediately put our check-in table back before they draw their warnings
-					if (frm._checkin_html) {
-						frm.dashboard.add_section(frm._checkin_html, __('Check-in/Check-out Details'));
-						setTimeout(() => attach_checkin_handlers(frm), 50);
-					}
-				};
-				frm._dashboard_reset_patched = true;
-			}
-		};
+	setup: function(frm) {
+		// Suppress standard HRM attendance warnings which destroy the dashboard via reset()
+		if (!frm._patched_call) {
+			const original_call = frm.call.bind(frm);
+			frm.call = function(...args) {
+				let method = "";
+				if (typeof args[0] === "string") method = args[0];
+				else if (args[0] && args[0].method) method = args[0].method;
+				
+				if (method === "get_attendance_warnings") {
+					// Trick standard script into thinking there are no warnings, so it does nothing
+					return Promise.resolve({message: []});
+				}
+				return original_call(...args);
+			};
+			frm._patched_call = true;
+		}
 	},
 	refresh: function(frm) {
-		// Ensure the patch is active
-		if (frm._patch_dashboard) frm._patch_dashboard();
+		// Remove any lingering sections from previous documents (prevents duplicates)
+		if (frm.dashboard && frm.dashboard.wrapper) {
+			frm.dashboard.wrapper.find('.checkin-data-section').closest('.section-container').remove();
+			frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
+		}
 
-		// Fetch and build the check-in table initially
 		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
-			if (frm._loading_checkin_data) return;
-			frm._loading_checkin_data = true;
+			// 1. Fetch and build check-in data
 			show_checkin_data(frm);
+			
+			// 2. Safely fetch and build attendance warnings (manual re-implementation)
+			if (frm.doc.docstatus === 0) {
+				frappe.call({
+					method: "hrms.hr.doctype.attendance_request.attendance_request.get_attendance_warnings",
+					args: {
+						employee: frm.doc.employee,
+						from_date: frm.doc.from_date,
+						to_date: frm.doc.to_date,
+						half_day: frm.doc.half_day || 0,
+						half_day_date: frm.doc.half_day_date
+					},
+					callback: function(r) {
+						if (r.message && r.message.length > 0) {
+							// Ensure no duplicates
+							if (frm.dashboard && frm.dashboard.wrapper) {
+								frm.dashboard.wrapper.find('.attendance-warnings-wrapper').closest('.section-container').remove();
+							}
+							
+							const html = `
+								<div class="attendance-warnings-wrapper">
+									${frappe.render_template("attendance_warnings", {
+										warnings: r.message,
+									})}
+								</div>
+							`;
+							frm.dashboard.add_section(html, __("Attendance Warnings"));
+							frm.dashboard.show();
+						}
+					}
+				});
+			}
 		}
 	}
 });
@@ -600,14 +631,9 @@ function show_checkin_data(frm) {
 			to_date: frm.doc.to_date
 		},
 		callback: function(r) {
-			frm._loading_checkin_data = false;
 			if (r.message) {
-				frm._checkin_data = r.message;
 				render_checkin_table(frm, r.message);
 			}
-		},
-		error: function() {
-			frm._loading_checkin_data = false;
 		}
 	});
 }
@@ -673,9 +699,6 @@ function render_checkin_table(frm, data) {
 	
 	html += `</tbody></table></div></div>`;
 	
-	// Store HTML and Data globally for persistence
-	frm._checkin_html = html;
-	
 	if (frm.dashboard.wrapper && frm.dashboard.wrapper.find) {
 		const existing = frm.dashboard.wrapper.find('.checkin-data-section');
 		if (existing.length) {
@@ -686,10 +709,7 @@ function render_checkin_table(frm, data) {
 	frm.dashboard.add_section(html, __('Check-in/Check-out Details'));
 	frm.dashboard.show();
 	
-	setTimeout(() => {
-		attach_checkin_handlers(frm);
-		setup_dashboard_observer(frm);
-	}, 100);
+	setTimeout(() => attach_checkin_handlers(frm), 100);
 }
 
 function attach_checkin_handlers(frm) {
