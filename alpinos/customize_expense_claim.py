@@ -1000,6 +1000,15 @@ def update_expense_claim_approval_status_options():
 			"Check"
 		)
 		print("✅ Set approval_status allow_on_submit for workflow transitions after submit")
+		# Approval status is controlled by workflow; make it read-only in the form
+		update_property_setter(
+			"Expense Claim",
+			"approval_status",
+			"read_only",
+			"1",
+			"Check"
+		)
+		print("✅ Set approval_status read_only (workflow-controlled)")
 	except Exception as e:
 		frappe.log_error(f"Error updating approval_status options: {str(e)}", "Approval Status Options Error")
 		print(f"⚠️  Could not update approval_status options: {str(e)}")

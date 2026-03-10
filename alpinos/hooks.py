@@ -257,6 +257,7 @@ doc_events = {
 		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
 	},
 	"Attendance": {
+		"validate": "alpinos.attendance_request_automation.fill_absent_times_from_shift",
 		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
 		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
 	}

@@ -93,6 +93,30 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			out_time = out_log.time if out_log else None
 			if in_time and out_time:
 				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
+
+		# When we have logs but in_time/out_time are still None (e.g. status Absent from shift calc), use first IN / last OUT
+		if logs and (in_time is None or out_time is None):
+			in_log = next((l for l in logs if l.log_type == "IN"), None)
+			out_log_list = [l for l in logs if l.log_type == "OUT"]
+			out_log = out_log_list[-1] if out_log_list else None
+			if in_time is None and in_log:
+				in_time = in_log.time
+			if out_time is None and out_log:
+				out_time = out_log.time
+			if in_time and out_time and working_hours is None:
+				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
+
+		# For Absent (or existing doc already Absent e.g. from workflow): set in_time/out_time from shift when missing so they are visible
+		attendance_is_absent = status == "Absent" or (doc and getattr(doc, "status", None) == "Absent")
+		shift_for_times = self.shift or (doc and getattr(doc, "shift", None))
+		if attendance_is_absent and (in_time is None or out_time is None) and shift_for_times:
+			shift_doc = frappe.get_doc("Shift Type", shift_for_times)
+			if in_time is None:
+				in_time = get_datetime(f"{date} {shift_doc.start_time}")
+			if out_time is None:
+				out_time = get_datetime(f"{date} {shift_doc.end_time}")
+			if working_hours is None and in_time and out_time:
+				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
 		
 		if doc:
 			was_submitted = doc.docstatus == 1
