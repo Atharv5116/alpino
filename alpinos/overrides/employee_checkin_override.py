@@ -48,6 +48,11 @@ def _apply_checkout_reason_patch():
 
 
 class CustomEmployeeCheckin(EmployeeCheckin):
+	def validate_time_change(self):
+		# Entirely bypass the core ERPNext warning about modifying time on linked checkins!
+		# Our custom Attendance module handles syncing values gracefully.
+		pass
+
 	def _require_checkout_reason_if_outside(self):
 		"""Require checkout_reason for OUT when we cannot confirm employee is at office."""
 		reason = (self.get("checkout_reason") or "").strip()

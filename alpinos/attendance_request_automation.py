@@ -407,17 +407,19 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 		
 		# Allow updating even if submitted (as per user requirement)
 		if attendance_doc.docstatus == 1:
-			# If submitted, we need to cancel first, update, then submit
 			old_status = attendance_doc.status
-			attendance_doc.cancel()
-			attendance_doc.status = attendance_status
+			
+			updates = {"status": attendance_status}
 			if attendance_request:
-				attendance_doc.attendance_request = attendance_request
-			attendance_doc.save(ignore_permissions=True)
-			# Sync attendance_request_reason before submit
+				updates["attendance_request"] = attendance_request
+				
+			# Use db_set to bypass cancel and save restrictions
+			frappe.db.set_value("Attendance", attendance_doc.name, updates)
+			frappe.db.commit()
+			
+			# Sync attendance_request_reason directly
 			sync_attendance_request_reason(attendance_doc)
-			attendance_doc.submit()
-			# after_submit hook will also call sync_attendance_request_reason
+			
 			frappe.msgprint(
 				_("Attendance status updated from {0} to {1}").format(
 					frappe.bold(old_status), frappe.bold(attendance_status)
