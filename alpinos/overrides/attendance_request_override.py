@@ -61,7 +61,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				"skip_auto_attendance": 0
 			},
 			order_by="time asc",
-			fields=["name", "time", "log_type", "shift_start", "shift_end", "overtime_type"]
+			fields=["name", "time", "log_type", "shift_start", "shift_end"]
 		)
 		
 		in_time = out_time = working_hours = None
