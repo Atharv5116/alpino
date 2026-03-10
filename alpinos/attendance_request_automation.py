@@ -273,14 +273,6 @@ def update_attendance_times(employee, date):
 	
 	# Only update if values have changed
 	needs_update = attendance_doc.in_time != in_time or attendance_doc.out_time != out_time
-	status_changed = False
-	new_status = attendance_doc.status
-
-	# Automatically mark as Present if they were Absent but now have both punches
-	if in_time and out_time and attendance_doc.status == "Absent":
-		new_status = "Present"
-		needs_update = True
-		status_changed = True
 
 	if needs_update:
 		# Calculate working hours if both times are present
@@ -296,8 +288,6 @@ def update_attendance_times(employee, date):
 			attendance_doc.in_time = in_time
 			attendance_doc.out_time = out_time
 			attendance_doc.working_hours = working_hours
-			if status_changed:
-				attendance_doc.status = new_status
 			sync_attendance_request_reason(attendance_doc)
 			attendance_doc.save(ignore_permissions=True)
 		# If submitted, forcefully update the database to avoid destructive canceling and unlinking
@@ -305,8 +295,7 @@ def update_attendance_times(employee, date):
 			frappe.db.set_value("Attendance", attendance_doc.name, {
 				"in_time": in_time,
 				"out_time": out_time,
-				"working_hours": working_hours,
-				"status": new_status
+				"working_hours": working_hours
 			})
 			frappe.db.commit()
 
@@ -407,28 +396,24 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 		
 		# Allow updating even if submitted (as per user requirement)
 		if attendance_doc.docstatus == 1:
-			old_status = attendance_doc.status
-			
-			updates = {"status": attendance_status}
+			updates = {}
 			if attendance_request:
 				updates["attendance_request"] = attendance_request
-				
-			# Use db_set to bypass cancel and save restrictions
-			frappe.db.set_value("Attendance", attendance_doc.name, updates)
-			frappe.db.commit()
+			
+			if updates:
+				# Use db_set to bypass cancel and save restrictions
+				frappe.db.set_value("Attendance", attendance_doc.name, updates)
+				frappe.db.commit()
 			
 			# Sync attendance_request_reason directly
 			sync_attendance_request_reason(attendance_doc)
 			
 			frappe.msgprint(
-				_("Attendance status updated from {0} to {1}").format(
-					frappe.bold(old_status), frappe.bold(attendance_status)
-				),
+				_("Attendance Request updated successfully"),
 				indicator="green"
 			)
 		else:
-			# Draft attendance - just update
-			attendance_doc.status = attendance_status
+			# Draft attendance - just update link if needed
 			if attendance_request:
 				attendance_doc.attendance_request = attendance_request
 			# Sync attendance_request_reason using core function
