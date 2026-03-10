@@ -1588,44 +1588,41 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 		workflow_name = get_workflow_name("Expense Claim")
 		if workflow_name:
 			workflow = frappe.get_doc("Workflow", workflow_name)
-			if workflow.is_active and workflow.override_status and workflow.workflow_state_field == "status":
-				# Workflow is managing status, don't override it
-				# Get valid workflow states (use state field, not update_value)
+			if workflow.is_active:
 				valid_states = [state.state for state in workflow.states]
-				
-				# If current status is a valid workflow state (and not just "Draft" matching docstatus),
-				# it means workflow set it, so don't override
-				if self.status and self.status in valid_states:
-					# Special workflow states that should never be overridden
-					workflow_managed_states = ["Pending RM Approval", "Approved by RM", "Rejected", "Submitted to Payroll", "Paid"]
-					if self.status in workflow_managed_states:
-						# This is definitely a workflow-managed state, don't override
-						return
-					
-					# For "Draft", only override if it matches docstatus (normal case)
-					# If status is "Draft" but docstatus suggests something else, workflow might have set it
-					docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
-					if self.status != docstatus_based_status:
-						# Status doesn't match docstatus, workflow must have set it
-						return
-				
-				# Only set initial status if document is new or status is empty/invalid
-				# This should only happen for new documents
-				if not self.status or (self.status not in valid_states and self.status in ["Draft", "Submitted", "Cancelled"]):
-					# Set initial status based on docstatus only
-					docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
-					status = docstatus_based_status
-					# Make sure it's a valid workflow state
+
+				# When workflow uses approval_status: sync status from approval_status
+				# (status field options are restricted to workflow states; standard "Submitted" would fail validation)
+				if workflow.workflow_state_field == "approval_status":
+					status = self.approval_status or "Draft"
 					if status not in valid_states:
-						status = "Draft"  # Default to Draft if not in workflow states
+						status = "Draft"
 					if update:
 						self.db_set("status", status)
 					else:
 						self.status = status
-				return
+					return
+
+				# When workflow uses status field and override_status
+				if workflow.override_status and workflow.workflow_state_field == "status":
+					if self.status and self.status in valid_states:
+						workflow_managed_states = ["Pending RM Approval", "Approved by RM", "Rejected", "Submitted to Payroll", "Paid"]
+						if self.status in workflow_managed_states:
+							return
+						docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
+						if self.status != docstatus_based_status:
+							return
+
+					if not self.status or (self.status not in valid_states and self.status in ["Draft", "Submitted", "Cancelled"]):
+						docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
+						status = docstatus_based_status if docstatus_based_status in valid_states else "Draft"
+						if update:
+							self.db_set("status", status)
+						else:
+							self.status = status
+					return
 		
 		# If no workflow or workflow not overriding, use original logic
-		# Call parent's set_status method
 		super().set_status(update)
 	
 	def validate(self):
@@ -1634,12 +1631,17 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 		workflow_name = get_workflow_name("Expense Claim")
 		if workflow_name:
 			workflow = frappe.get_doc("Workflow", workflow_name)
-			if workflow.is_active and workflow.override_status and workflow.workflow_state_field == "status":
-				# Skip calling set_status in validate - workflow will manage it
-				# Call other validations from parent
+			if workflow.is_active and (
+				workflow.workflow_state_field == "approval_status"
+				or (workflow.override_status and workflow.workflow_state_field == "status")
+			):
+				# Sync status from approval_status when workflow uses approval_status
+				if workflow.workflow_state_field == "approval_status":
+					valid_states = [state.state for state in workflow.states]
+					self.status = (self.approval_status or "Draft") if (self.approval_status or "Draft") in valid_states else "Draft"
+				# Run validations (skip parent's set_status to avoid "Submitted")
 				validate_active_employee = frappe.get_attr("hrms.hr.utils.validate_active_employee")
 				set_employee_name = frappe.get_attr("hrms.hr.utils.set_employee_name")
-				
 				validate_active_employee(self)
 				set_employee_name(self)
 				self.validate_sanctioned_amount()
@@ -1648,14 +1650,11 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 				self.set_expense_account(validate=True)
 				self.set_default_accounting_dimension()
 				self.calculate_taxes()
-				# Skip self.set_status() - workflow manages it
 				self.validate_company_and_department()
 				if self.task and not self.project:
 					self.project = frappe.db.get_value("Task", self.task, "project")
-				
 				return
 		
-		# If no workflow, use original validate
 		super().validate()
 	
 	def on_submit(self):

@@ -336,7 +336,7 @@ def get_today_wfh_request():
 	today = getdate(now_datetime())
 	result = frappe.db.get_value(
 		"Work From Home Request",
-		{"employee": employee, "date": today, "status": ["in", ["Draft", "Approved"]]},
+		{"employee": employee, "date": today, "status": ["in", ["Draft", "Approved", "Live"]]},
 		["name", "status"],
 		as_dict=True,
 	)
@@ -401,7 +401,7 @@ def check_out(latitude=None, longitude=None, checkout_reason=None):
         {
             "employee": employee,
             "date": today,
-            "status": ["in", ["Draft", "Approved"]]
+            "status": ["in", ["Draft", "Approved", "Live"]]
         },
         "name"
     )

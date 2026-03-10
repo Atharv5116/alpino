@@ -129,7 +129,7 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 				{
 					"employee": self.employee,
 					"date": checkin_date,
-					"status": ["in", ["Draft", "Approved"]],
+					"status": ["in", ["Draft", "Approved", "Live"]],
 				},
 			)
 			if wfh_exists:

@@ -55,7 +55,7 @@
    "fieldtype": "Select",
    "hidden": 1,
    "label": "Status",
-   "options": "Draft\nPending Reporting Manager Approval\nPending HOD Approval\nPending HR Approval\nLive\nRejected\nReturned to Requestor\nOn Hold"
+   "options": "Draft\nPending Reporting Manager Approval\nPending HOD Approval\nPending HR Approval\nApproved\nLive\nRejected\nReturned to Requestor\nOn Hold"
   },
   {
    "fieldname": "tasks_section",
