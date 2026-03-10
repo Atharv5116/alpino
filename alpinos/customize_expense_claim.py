@@ -991,6 +991,15 @@ def update_expense_claim_approval_status_options():
 			"Text"
 		)
 		print("✅ Updated approval_status field options to match workflow states")
+		# Allow workflow to update approval_status after submit (e.g. Submitted to Payroll -> Paid)
+		update_property_setter(
+			"Expense Claim",
+			"approval_status",
+			"allow_on_submit",
+			"1",
+			"Check"
+		)
+		print("✅ Set approval_status allow_on_submit for workflow transitions after submit")
 	except Exception as e:
 		frappe.log_error(f"Error updating approval_status options: {str(e)}", "Approval Status Options Error")
 		print(f"⚠️  Could not update approval_status options: {str(e)}")

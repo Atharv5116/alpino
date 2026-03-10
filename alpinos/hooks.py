@@ -132,7 +132,6 @@ after_migrate = [
 	"alpinos.work_from_home_request_automation.create_work_from_home_client_script",
 	"alpinos.attendance_request_automation.create_attendance_request_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
-	"alpinos.attendance_request_workflow.execute",
 	"alpinos.patches.create_attendance_widget.execute",
 ]
 
@@ -168,9 +167,7 @@ after_migrate = [
 # -----------
 # Permissions evaluated in scripted ways
 
-permission_query_conditions = {
-	"Attendance Request": "alpinos.attendance_request_workflow.get_permission_query_conditions",
-}
+permission_query_conditions = {}
 
 # Raven permissions (override from Alpinos, without touching raven app)
 # Ensures Raven can list channels/messages by membership (helps imports + visibility).
