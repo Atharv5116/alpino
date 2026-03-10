@@ -45,121 +45,97 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		return "Present"
 	
 	def create_or_update_attendance(self, date: str):
-		"""
-		Override to populate custom fields in Attendance when created/updated from Attendance Request
-		"""
-		# #region agent log
-		import json
-		explanation_preview = (getattr(self, 'explanation', '') or '')[:30]
-		log_data = {
-			"id": f"log_override_start_{frappe.utils.now_datetime().timestamp()}",
-			"timestamp": int(frappe.utils.now_datetime().timestamp() * 1000),
-			"location": "attendance_request_override.py:47",
-			"message": "create_or_update_attendance override called",
-			"data": {
-				"attendance_request": self.name,
-				"date": date,
-				"explanation": getattr(self, 'explanation', None),
-				"explanation_preview": explanation_preview,
-				"explanation_length": len(getattr(self, 'explanation', '') or ''),
-				"runId": "initial_debug",
-				"hypothesisId": "K"
-			}
-		}
-		try:
-			with open('/home/hetvi/frappe-bench/.cursor/debug.log', 'a') as f:
-				f.write(json.dumps(log_data) + '\n')
-		except:
-			pass
-		# #endregion
-		
-		# Log that override is being called (short message)
-		frappe.log_error(
-			f"Override called: {self.name}, date: {date}, exp: {explanation_preview}",
-			"AR Override"
-		)
-		
 		doc = self.get_attendance_doc(date)
 		status = self.get_attendance_status(date)
 		
+		from frappe.utils import get_datetime
+		date_start = get_datetime(f"{date} 00:00:00")
+		date_end = get_datetime(f"{date} 23:59:59")
+		
+		# Fetch check-in logs for calculation
+		logs = frappe.get_all(
+			"Employee Checkin",
+			filters={
+				"employee": self.employee,
+				"time": ["between", [date_start, date_end]],
+				"skip_auto_attendance": 0
+			},
+			order_by="time asc",
+			fields=["name", "time", "log_type", "shift_start", "shift_end", "overtime_type"]
+		)
+		
+		in_time = out_time = working_hours = None
+		late_entry = early_exit = False
+		
+		# Use Shift Type to calculate bounds if applicable
+		if self.shift:
+			shift_doc = frappe.get_doc("Shift Type", self.shift)
+			if logs:
+				# ensure logs have shift boundaries for hr calculation
+				for log in logs:
+					if not log.shift_start:
+						log.shift_start = get_datetime(f"{date} {shift_doc.start_time}")
+					if not log.shift_end:
+						log.shift_end = get_datetime(f"{date} {shift_doc.end_time}")
+				
+				# Auto-calculate based on HRMS config (Absent, Half Day, Present bounds)
+				calc_status, working_hours, late_entry, early_exit, in_time, out_time = shift_doc.get_attendance(logs)
+				
+				# Only allow the calculated status to override if reason isn't forcing WFH or Half Day
+				if self.reason != "Work From Home" and not (self.half_day and frappe.utils.date_diff(frappe.utils.getdate(self.half_day_date), frappe.utils.getdate(date)) == 0):
+					status = calc_status
+		else:
+			# Fallback if no shift
+			in_log = next((l for l in logs if l.log_type == "IN"), None)
+			out_log = [l for l in logs if l.log_type == "OUT"]
+			out_log = out_log[-1] if out_log else None
+			in_time = in_log.time if in_log else None
+			out_time = out_log.time if out_log else None
+			if in_time and out_time:
+				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
+		
 		if doc:
-			# #region agent log
-			log_data = {
-				"id": f"log_override_existing_{frappe.utils.now_datetime().timestamp()}",
-				"timestamp": int(frappe.utils.now_datetime().timestamp() * 1000),
-				"location": "attendance_request_override.py:61",
-				"message": "create_or_update_attendance: updating existing attendance",
-				"data": {
-					"attendance_name": doc.name,
-					"attendance_request": getattr(doc, 'attendance_request', None),
-					"runId": "initial_debug",
-					"hypothesisId": "L"
-				}
-			}
-			try:
-				with open('/home/hetvi/frappe-bench/.cursor/debug.log', 'a') as f:
-					f.write(json.dumps(log_data) + '\n')
-			except:
-				pass
-			# #endregion
-			
-			# Update existing attendance
 			was_submitted = doc.docstatus == 1
 			needs_update = False
+			updates = {}
 			
-			# Check if status needs to change
 			if doc.status != status:
-				needs_update = True
 				doc.status = status
-			
-			# Always update attendance_request
-			if doc.attendance_request != self.name:
+				updates["status"] = status
 				needs_update = True
+			if doc.attendance_request != self.name:
 				doc.attendance_request = self.name
-			
-			# If anything changed, update it safely without canceling
+				updates["attendance_request"] = self.name
+				needs_update = True
+			if doc.in_time != in_time:
+				doc.in_time = in_time
+				updates["in_time"] = in_time
+				needs_update = True
+			if doc.out_time != out_time:
+				doc.out_time = out_time
+				updates["out_time"] = out_time
+				needs_update = True
+			if doc.working_hours != working_hours:
+				doc.working_hours = working_hours
+				updates["working_hours"] = working_hours
+				needs_update = True
+				
 			if needs_update:
 				if was_submitted:
-					# Force database update to prevent triggering destructive cancel
-					frappe.db.set_value("Attendance", doc.name, {
-						"status": doc.status,
-						"attendance_request": doc.attendance_request
-					})
+					# db_set injects directly into db safely
+					frappe.db.set_value("Attendance", doc.name, updates)
 					frappe.db.commit()
 				else:
 					doc.save(ignore_permissions=True)
 					
 				frappe.msgprint(
-					_("Attendance updated for {0}").format(
-						frappe.bold(frappe.utils.formatdate(date))
-					),
+					_("Attendance updated for {0}").format(frappe.bold(frappe.utils.formatdate(date))),
 					title=_("Attendance Updated"),
 				)
 			
-			# Sync attendance_request_reason using core function (works for both draft and submitted)
 			sync_attendance_request_reason(doc)
 		else:
-			# #region agent log
-			log_data = {
-				"id": f"log_override_new_{frappe.utils.now_datetime().timestamp()}",
-				"timestamp": int(frappe.utils.now_datetime().timestamp() * 1000),
-				"location": "attendance_request_override.py:93",
-				"message": "create_or_update_attendance: creating new attendance",
-				"data": {
-					"attendance_request": self.name,
-					"explanation": getattr(self, 'explanation', None),
-					"runId": "initial_debug",
-					"hypothesisId": "M"
-				}
-			}
-			try:
-				with open('/home/hetvi/frappe-bench/.cursor/debug.log', 'a') as f:
-					f.write(json.dumps(log_data) + '\n')
-			except:
-				pass
-			# #endregion
-			
-			# Create new attendance
+			# Create new attendance document
 			doc = frappe.new_doc("Attendance")
 			doc.employee = self.employee
 			doc.attendance_date = date
@@ -167,51 +143,19 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			doc.company = self.company
 			doc.attendance_request = self.name
 			doc.status = status
+			doc.in_time = in_time
+			doc.out_time = out_time
+			doc.working_hours = working_hours
+			doc.late_entry = late_entry
+			doc.early_exit = early_exit
 			doc.half_day_status = "Absent" if status == "Half Day" else None
 			
-			# #region agent log
-			log_data = {
-				"id": f"log_override_before_insert_{frappe.utils.now_datetime().timestamp()}",
-				"timestamp": int(frappe.utils.now_datetime().timestamp() * 1000),
-				"location": "attendance_request_override.py:103",
-				"message": "create_or_update_attendance: before insert",
-				"data": {
-					"attendance_request": doc.attendance_request,
-					"explanation_in_request": getattr(self, 'explanation', None),
-					"runId": "initial_debug",
-					"hypothesisId": "N"
-				}
-			}
-			try:
-				with open('/home/hetvi/frappe-bench/.cursor/debug.log', 'a') as f:
-					f.write(json.dumps(log_data) + '\n')
-			except:
-				pass
-			# #endregion
-			
 			doc.insert(ignore_permissions=True)
-			# after_insert hook will call sync_attendance_request_reason
-			
-			# #region agent log
-			log_data = {
-				"id": f"log_override_after_insert_{frappe.utils.now_datetime().timestamp()}",
-				"timestamp": int(frappe.utils.now_datetime().timestamp() * 1000),
-				"location": "attendance_request_override.py:106",
-				"message": "create_or_update_attendance: after insert",
-				"data": {
-					"attendance_name": doc.name,
-					"attendance_request": doc.attendance_request,
-					"runId": "initial_debug",
-					"hypothesisId": "O"
-				}
-			}
-			try:
-				with open('/home/hetvi/frappe-bench/.cursor/debug.log', 'a') as f:
-					f.write(json.dumps(log_data) + '\n')
-			except:
-				pass
-			# #endregion
-			
 			doc.submit()
-			# after_submit hook will call sync_attendance_request_reason
+			
+			# Ensure Employee Checkins are linked securely to the newly created Attendance doc!
+			if logs:
+				log_names = [l.name for l in logs]
+				frappe.db.sql("UPDATE `tabEmployee Checkin` SET attendance = %s WHERE name IN %s", (doc.name, tuple(log_names)))
+				frappe.db.commit()
 
