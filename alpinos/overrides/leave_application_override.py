@@ -15,11 +15,6 @@ class CustomLeaveApplication(HRMSLeaveApplication):
 	"""Allow submitting Leave Application when status is Open (e.g. Send for Approval)."""
 
 	def on_submit(self):
-		if self.status == "Cancelled":
-			frappe.throw(
-				_("Only Leave Applications with status 'Approved' and 'Rejected' can be submitted")
-			)
-
 		self.validate_back_dated_application()
 		self.update_attendance()
 		# Self-approval check only when finalising approved leave, not when submitting for approval (Open)
