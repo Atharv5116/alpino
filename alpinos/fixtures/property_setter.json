@@ -4142,5 +4142,53 @@
   "property_type": "Data",
   "row_name": null,
   "value": "Draft"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Leave Application",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "status",
+  "is_system_generated": 1,
+  "modified": "2026-03-10 15:54:45.251799",
+  "module": "Alpinos Development",
+  "name": "Leave Application-status-allow_on_submit",
+  "property": "allow_on_submit",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Attendance Request",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "status",
+  "is_system_generated": 1,
+  "modified": "2026-03-10 15:54:45.417225",
+  "module": "Alpinos Development",
+  "name": "Attendance Request-status-allow_on_submit",
+  "property": "allow_on_submit",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Expense Claim",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "status",
+  "is_system_generated": 1,
+  "modified": "2026-03-10 15:54:45.428793",
+  "module": "Alpinos Development",
+  "name": "Expense Claim-status-allow_on_submit",
+  "property": "allow_on_submit",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
  }
 ]
