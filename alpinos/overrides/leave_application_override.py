@@ -30,7 +30,10 @@ class CustomLeaveApplication(HRMSLeaveApplication):
 			self.notify_employee()
 
 		self.create_leave_ledger_entry()
-		leave_allocation = self.get_leave_allocation()
+		
+		alloc_from, alloc_to = self.get_allocation_based_on_application_dates()
+		leave_allocation = alloc_to or alloc_from
+		
 		if not leave_allocation:
 			return
 		to_date = leave_allocation.get("to_date")
