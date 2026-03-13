@@ -839,14 +839,27 @@ def create_employee_checkin_client_script():
     """Create client script to add Sync eSSL Logs button to Employee Checkin list"""
     script = """
 frappe.listview_settings['Employee Checkin'] = {
-refresh: function(listview) {
-ner_button(__('Sync eSSL Logs'), function() {
-os.attendance_request_automation.sync_logs_now',
-ction(r) {
-c complete: ') + r.message.total_synced + __(' logs synced.'),
-dicator: 'green'
-ot frappe.db.exists("Client Script", {"dt": "Employee Checkin", "name": "Employee Checkin Sync Button"}):
-        cs = frappe.new_doc("Client Script", {
+	refresh: function(listview) {
+		listview.page.add_inner_button(__('Sync eSSL Logs'), function() {
+			frappe.call({
+				method: 'alpinos.attendance_request_automation.sync_logs_now',
+				callback: function(r) {
+					if (r.message && r.message.status === 'success') {
+						frappe.show_alert({
+							message: __('Sync complete: ') + r.message.total_synced + __(' logs synced.'),
+							indicator: 'green'
+						});
+						listview.refresh();
+					}
+				}
+			});
+		});
+	}
+};
+"""
+    if not frappe.db.exists("Client Script", {"dt": "Employee Checkin", "name": "Employee Checkin Sync Button"}):
+        cs = frappe.get_doc({
+            "doctype": "Client Script",
             "name": "Employee Checkin Sync Button",
             "dt": "Employee Checkin",
             "script": script,
