@@ -420,6 +420,13 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 			sync_attendance_request_reason(attendance_doc)
 			attendance_doc.save(ignore_permissions=True)
 		
+		# Ensure in_time / out_time are in sync with check-ins after status/link changes
+		try:
+			update_attendance_times(employee, date)
+		except Exception:
+			# Avoid breaking the user flow if time sync fails; errors are logged separately
+			frappe.log_error(frappe.get_traceback(), "Update Attendance Times (existing)")
+		
 		return {
 			"name": attendance_doc.name,
 			"status": attendance_doc.status,
@@ -449,6 +456,12 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 		
 		attendance_doc.submit()
 		# after_submit hook will call sync_attendance_request_reason
+		
+		# Sync in_time / out_time from check-ins (if any) for newly created attendance
+		try:
+			update_attendance_times(employee, date)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Update Attendance Times (new)")
 		
 		return {
 			"name": attendance_doc.name,
@@ -816,3 +829,32 @@ function format_date(s) {
 		frappe.log_error(f"Error creating Attendance Request client script: {str(e)}", "Client Script Creation Error")
 		print(f"⚠️  Could not create Attendance Request client script: {str(e)}")
 
+
+@frappe.whitelist()
+def sync_logs_now():
+    from alpinos.essl_sync import sync_essl_logs
+    return sync_essl_logs()
+
+def create_employee_checkin_client_script():
+    """Create client script to add Sync eSSL Logs button to Employee Checkin list"""
+    script = """
+frappe.listview_settings['Employee Checkin'] = {
+refresh: function(listview) {
+ner_button(__('Sync eSSL Logs'), function() {
+os.attendance_request_automation.sync_logs_now',
+ction(r) {
+c complete: ') + r.message.total_synced + __(' logs synced.'),
+dicator: 'green'
+ot frappe.db.exists("Client Script", {"dt": "Employee Checkin", "name": "Employee Checkin Sync Button"}):
+        cs = frappe.new_doc("Client Script", {
+            "name": "Employee Checkin Sync Button",
+            "dt": "Employee Checkin",
+            "script": script,
+            "enabled": 1,
+            "view": "List"
+        })
+        cs.insert(ignore_permissions=True)
+    else:
+        frappe.db.set_value("Client Script", "Employee Checkin Sync Button", "script", script)
+    
+    frappe.db.commit()

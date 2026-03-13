@@ -131,6 +131,7 @@ after_migrate = [
 	"alpinos.job_requisition_automation.create_job_requisition_client_script",
 	"alpinos.work_from_home_request_automation.create_work_from_home_client_script",
 	"alpinos.attendance_request_automation.create_attendance_request_client_script",
+	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.patches.create_attendance_widget.execute",
 ]
@@ -270,6 +271,12 @@ scheduler_events = {
 	"daily": [
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
 	],
+	"cron": {
+		"*/30 * * * *": [
+			"alpinos.essl_sync.sync_essl_logs",
+			"alpinos.attendance_scheduler.process_auto_attendance_periodic"
+		]
+	}
 }
 
 # Boot Info Extensions
