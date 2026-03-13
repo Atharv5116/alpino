@@ -840,21 +840,23 @@ def create_employee_checkin_client_script():
     script = """
 frappe.listview_settings['Employee Checkin'] = {
     refresh: function(listview) {
-        // Add Sync Button
-        listview.page.add_inner_button(__('Sync eSSL Logs'), function() {
-            frappe.call({
-                method: 'alpinos.attendance_request_automation.sync_logs_now',
-                callback: function(r) {
-                    if (r.message && r.message.status === 'success') {
-                        frappe.show_alert({
-                            message: __('Sync complete: ') + r.message.total_synced + __(' logs synced.'),
-                            indicator: 'green'
-                        });
-                        listview.refresh();
+        // Add Sync Button for System Managers only
+        if (frappe.user_roles.includes('System Manager') || frappe.session.user === 'Administrator') {
+            listview.page.add_inner_button(__('Sync eSSL Logs'), function() {
+                frappe.call({
+                    method: 'alpinos.attendance_request_automation.sync_logs_now',
+                    callback: function(r) {
+                        if (r.message && r.message.status === 'success') {
+                            frappe.show_alert({
+                                message: __('Sync complete: ') + r.message.total_synced + __(' logs synced.'),
+                                indicator: 'green'
+                            });
+                            listview.refresh();
+                        }
                     }
-                }
+                });
             });
-        });
+        }
 
         // Hide 'Add Employee Checkin' button for non-admins
         if (frappe.session.user !== 'Administrator') {
