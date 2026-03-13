@@ -116,22 +116,15 @@ def process_logs(response_text, serial_number):
 
 def create_employee_checkin(device_id, timestamp_str, device_name):
     try:
-        # Mapping logic:
-        # 1. Search by attendance_device_id
-        # 2. Search by employee_number
-        # 3. Search by name (with pattern matching for IDs)
-        
         employee = frappe.db.get_value("Employee", {"attendance_device_id": device_id}, "name")
         
         if not employee:
             employee = frappe.db.get_value("Employee", {"employee_number": device_id}, "name")
             
         if not employee:
-            # 3. Direct match with Employee Name (DocName)
             employee = frappe.db.get_value("Employee", {"name": device_id}, "name")
 
         if not employee:
-            # 4. Try matching numeric ID to common patterns (e.g., 2 -> EMP-00002)
             try:
                 numeric_id = int(device_id)
                 patterns = [
@@ -149,8 +142,6 @@ def create_employee_checkin(device_id, timestamp_str, device_name):
                 pass
         
         if not employee:
-            # Log missing mapping only once per device_id in a session handled by cache? 
-            # For now just skip
             return False
             
         try:
@@ -163,7 +154,6 @@ def create_employee_checkin(device_id, timestamp_str, device_name):
             return False
             
         # Determine log_type (Alternating IN/OUT day-wise)
-        # Count logs for this employee on the same date already in DB
         log_date = timestamp.date()
         date_start = f"{log_date} 00:00:00"
         date_end = f"{log_date} 23:59:59"
@@ -174,8 +164,6 @@ def create_employee_checkin(device_id, timestamp_str, device_name):
             "docstatus": ["!=", 2]
         })
         
-        # Even count means this is the 1st, 3rd, 5th... log (IN)
-        # Odd count means this is the 2nd, 4th, 6th... log (OUT)
         log_type = "IN" if existing_logs_count % 2 == 0 else "OUT"
             
         checkin = frappe.new_doc("Employee Checkin")
@@ -183,14 +171,24 @@ def create_employee_checkin(device_id, timestamp_str, device_name):
         checkin.time = timestamp
         checkin.log_type = log_type
         checkin.device_id = device_name
-        # Add a remark so user knows it came from eSSL sync
+        
+        # Fetch Shift for the employee
+        try:
+            from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
+            shift_details = get_employee_shift(employee, timestamp, consider_default_shift=True)
+            if shift_details:
+                checkin.shift = shift_details.get("shift_type")
+        except Exception:
+            pass
+            
+        # Fetch Warehouse Location coordinates
+        warehouse_location = frappe.db.get_value("Shift Location", "Warehouse", ["latitude", "longitude"], as_dict=True)
+        if warehouse_location:
+            checkin.latitude = warehouse_location.latitude
+            checkin.longitude = warehouse_location.longitude
         
         checkin.insert(ignore_permissions=True)
-        # We don't commit here for performance; let the caller or batch handle it if needed
-        # But for new_doc, insert usually does DB write. 
-        # Actually commit is needed if we want it to be permanent immediately.
         frappe.db.commit()
         return True
     except Exception as e:
-        # Individual fail is fine
         return False

@@ -836,31 +836,59 @@ def sync_logs_now():
     return sync_essl_logs()
 
 def create_employee_checkin_client_script():
-    """Create client script to add Sync eSSL Logs button to Employee Checkin list"""
+    """Create client script to add Sync eSSL Logs button and hide manual Add buttons"""
     script = """
 frappe.listview_settings['Employee Checkin'] = {
-	refresh: function(listview) {
-		listview.page.add_inner_button(__('Sync eSSL Logs'), function() {
-			frappe.call({
-				method: 'alpinos.attendance_request_automation.sync_logs_now',
-				callback: function(r) {
-					if (r.message && r.message.status === 'success') {
-						frappe.show_alert({
-							message: __('Sync complete: ') + r.message.total_synced + __(' logs synced.'),
-							indicator: 'green'
-						});
-						listview.refresh();
-					}
-				}
-			});
-		});
-	}
+    refresh: function(listview) {
+        // Add Sync Button
+        listview.page.add_inner_button(__('Sync eSSL Logs'), function() {
+            frappe.call({
+                method: 'alpinos.attendance_request_automation.sync_logs_now',
+                callback: function(r) {
+                    if (r.message && r.message.status === 'success') {
+                        frappe.show_alert({
+                            message: __('Sync complete: ') + r.message.total_synced + __(' logs synced.'),
+                            indicator: 'green'
+                        });
+                        listview.refresh();
+                    }
+                }
+            });
+        });
+
+        // Hide 'Add Employee Checkin' button for non-admins
+        if (frappe.session.user !== 'Administrator') {
+            listview.page.clear_primary_action();
+        }
+    }
 };
+
+frappe.ui.form.on('Employee Checkin', {
+    refresh: function(frm) {
+        // Hide 'New' button and disable manual entry for non-admins
+        if (frappe.session.user !== 'Administrator') {
+            frm.disable_save();
+            if (frm.is_new()) {
+                frappe.msgprint(__('Manual creation is restricted. Please use the Attendance Request page.'));
+            }
+        }
+    }
+});
 """
-    if not frappe.db.exists("Client Script", {"dt": "Employee Checkin", "name": "Employee Checkin Sync Button"}):
+    # Use a descriptive name for the script
+    script_name = "Employee Checkin - Restrictions and Sync"
+    
+    # Check if old name exists and rename it or just use it
+    old_script_name = "Employee Checkin Sync Button"
+    if frappe.db.exists("Client Script", old_script_name):
+        frappe.db.set_value("Client Script", old_script_name, {
+            "name": script_name,
+            "script": script
+        })
+    elif not frappe.db.exists("Client Script", script_name):
         cs = frappe.get_doc({
             "doctype": "Client Script",
-            "name": "Employee Checkin Sync Button",
+            "name": script_name,
             "dt": "Employee Checkin",
             "script": script,
             "enabled": 1,
@@ -868,6 +896,6 @@ frappe.listview_settings['Employee Checkin'] = {
         })
         cs.insert(ignore_permissions=True)
     else:
-        frappe.db.set_value("Client Script", "Employee Checkin Sync Button", "script", script)
+        frappe.db.set_value("Client Script", script_name, "script", script)
     
     frappe.db.commit()

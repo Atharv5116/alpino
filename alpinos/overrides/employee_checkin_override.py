@@ -53,6 +53,23 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		# Our custom Attendance module handles syncing values gracefully.
 		pass
 
+	def before_insert(self):
+		"""
+		Restrict manual creation of check-ins.
+		Only allow if:
+		1. User is Administrator
+		2. It comes from the Attendance Request dashboard (from_attendance_request)
+		3. It comes from Biometric Device (device_id)
+		"""
+		if frappe.session.user == "Administrator":
+			return
+
+		if not self.get("from_attendance_request") and not self.get("device_id"):
+			frappe.throw(
+				_("Manual creation of Employee Checkin is restricted. Please use the Attendance Request page to manage your check-ins."),
+				title=_("Restriction Active")
+			)
+
 	def _require_checkout_reason_if_outside(self):
 		"""Require checkout_reason for OUT when we cannot confirm employee is at office."""
 		reason = (self.get("checkout_reason") or "").strip()
