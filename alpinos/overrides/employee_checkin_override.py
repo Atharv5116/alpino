@@ -60,11 +60,24 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		1. User is Administrator
 		2. It comes from the Attendance Request dashboard (from_attendance_request)
 		3. It comes from Biometric Device (device_id)
+		4. It comes from the Home Dashboard widget (usually has geolocation or specific API path)
 		"""
 		if frappe.session.user == "Administrator":
 			return
 
-		if not self.get("from_attendance_request") and not self.get("device_id"):
+		# Check for flags and attributes
+		from_automation = self.get("from_attendance_request") or self.get("device_id")
+		
+		# Check for geolocation (Widget/Mobile usually provides this)
+		has_geo = flt(self.latitude) != 0 or flt(self.longitude) != 0
+
+		# Check if request is coming from the standard HRMS dashboard method
+		is_widget_call = False
+		if frappe.request and frappe.request.path:
+			if "add_log_based_on_employee_field" in frappe.request.path:
+				is_widget_call = True
+
+		if not from_automation and not has_geo and not is_widget_call:
 			frappe.throw(
 				_("Manual creation of Employee Checkin is restricted. Please use the Attendance Request page to manage your check-ins."),
 				title=_("Restriction Active")

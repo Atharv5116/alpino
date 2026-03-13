@@ -16,6 +16,9 @@ def setup_attendance_request_custom_fields():
 	# Add custom fields to Attendance doctype
 	add_attendance_custom_fields()
 	
+	# Add custom fields to Employee Checkin
+	add_employee_checkin_custom_fields()
+	
 	print("✅ Attendance Request and Attendance custom fields setup completed")
 
 
@@ -76,3 +79,26 @@ def add_attendance_custom_fields():
 		print(f"⚠️  Could not add custom fields to Attendance: {str(e)}")
 		frappe.log_error(f"Error adding Attendance custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Attendance Custom Fields")
 
+def add_employee_checkin_custom_fields():
+	"""Add custom fields to Employee Checkin doctype"""
+	custom_fields = {
+		"Employee Checkin": [
+			dict(
+				fieldname="from_attendance_request",
+				label="From Attendance Request",
+				fieldtype="Check",
+				insert_after="time",
+				read_only=1,
+				hidden=1,
+				default=0
+			),
+		]
+	}
+	
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added custom fields to Employee Checkin doctype")
+	except Exception as e:
+		print(f"⚠️  Could not add custom fields to Employee Checkin: {str(e)}")
+		frappe.log_error(f"Error adding Employee Checkin custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Employee Checkin Custom Fields")
