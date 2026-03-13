@@ -66,8 +66,8 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			)
 
 	def validate_distance_from_shift_location(self):
-		# Skip all location/geo validations when check-in/check-out is from Attendance Request
-		if self.get("from_attendance_request"):
+		# Skip all location/geo validations when check-in/check-out is from Attendance Request or Biometric Device
+		if self.get("from_attendance_request") or self.get("device_id"):
 			return
 		if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
 			return
