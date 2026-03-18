@@ -187,6 +187,7 @@ override_doctype_class = {
 	"Attendance Request": "alpinos.overrides.attendance_request_override.CustomAttendanceRequest",
 	"Employee Checkin": "alpinos.overrides.employee_checkin_override.CustomEmployeeCheckin",
 	"Leave Application": "alpinos.overrides.leave_application_override.CustomLeaveApplication",
+	"Shift Request": "alpinos.overrides.shift_request_override.CustomShiftRequest",
 }
 
 # Document Events
