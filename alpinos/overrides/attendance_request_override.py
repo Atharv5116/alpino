@@ -30,6 +30,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			reason_to_status = {
 				"Work From Home": "Work From Home",
 				"Office": "Present",
+				"On Duty": "Present",
 				"Other": "Present"
 			}
 			

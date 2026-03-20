@@ -31,6 +31,17 @@ def _get_today_last_checkin(employee):
     )
 
 
+def _get_today_first_log(employee):
+    start, end = _get_today_range()
+    return frappe.get_all(
+        "Employee Checkin",
+        filters={"employee": employee, "time": ["between", [start, end]]},
+        fields=["name", "log_type", "time"],
+        order_by="time asc",
+        limit=1,
+    )
+
+
 def _get_today_first_checkin(employee):
     start, end = _get_today_range()
     return frappe.get_all(
@@ -38,6 +49,17 @@ def _get_today_first_checkin(employee):
         filters={"employee": employee, "log_type": "IN", "time": ["between", [start, end]]},
         fields=["name", "log_type", "time"],
         order_by="time asc",
+        limit=1,
+    )
+
+
+def _get_previous_last_checkin(employee):
+    start, _end = _get_today_range()
+    return frappe.get_all(
+        "Employee Checkin",
+        filters={"employee": employee, "time": ["<", start]},
+        fields=["name", "log_type", "time"],
+        order_by="time desc",
         limit=1,
     )
 
@@ -57,17 +79,36 @@ def _get_today_last_checkout(employee):
 def get_status():
     employee = _get_employee_for_user(frappe.session.user)
     if not employee:
-        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, "next_action": "IN"}
+
+    first_log_today = _get_today_first_log(employee)
+    # If day has no logs yet, always force first action as IN
+    # even if previous day ended with missing checkout.
+    if not first_log_today:
+        previous_last = _get_previous_last_checkin(employee)
+        return {
+            "status": "NONE",
+            "last_time": None,
+            "elapsed_seconds": 0,
+            "next_action": "IN",
+            "previous_day_open": bool(previous_last and previous_last[0]["log_type"] == "IN"),
+        }
+
+    # Guard against inconsistent historical data where first log of day is OUT:
+    # UI should still force IN first.
+    if first_log_today[0]["log_type"] != "IN":
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, "next_action": "IN"}
+
     today_in = _get_today_first_checkin(employee)
     if not today_in:
-        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, "next_action": "IN"}
 
     in_time = today_in[0]["time"]
     last = _get_today_last_checkin(employee)
     last_out = _get_today_last_checkout(employee)
 
     if last and last[0]["log_type"] == "IN":
-        return {"status": "IN", "last_time": in_time, "elapsed_seconds": None}
+        return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, "next_action": "OUT"}
 
     if last_out:
         elapsed_seconds = int((last_out[0]["time"] - in_time).total_seconds())
@@ -75,9 +116,10 @@ def get_status():
             "status": "OUT",
             "last_time": last_out[0]["time"],
             "elapsed_seconds": max(elapsed_seconds, 0),
+            "next_action": "IN",
         }
 
-    return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+    return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, "next_action": "IN"}
 
 
 @frappe.whitelist()
@@ -371,6 +413,11 @@ def check_out(latitude=None, longitude=None, checkout_reason=None):
     employee = _get_employee_for_user(frappe.session.user)
     if not employee:
         frappe.throw("No Employee linked to this user.")
+
+    first_log_today = _get_today_first_log(employee)
+    if not first_log_today or first_log_today[0]["log_type"] != "IN":
+        frappe.throw("First log for today must be Check In.")
+
     today_last = _get_today_last_checkin(employee)
     if not today_last or today_last[0]["log_type"] != "IN":
         frappe.throw("You must Check In today before Check Out.")

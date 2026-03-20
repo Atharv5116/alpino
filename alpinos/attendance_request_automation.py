@@ -118,13 +118,35 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 	
 	if log_type not in ["IN", "OUT"]:
 		frappe.throw(_("Log type must be IN or OUT"))
+
+	request_date = getdate(date)
+	today = getdate()
+
+	# Block backdated logs from this dialog.
+	if request_date < today:
+		frappe.throw(
+			_("You cannot add or update check-in/check-out for previous dates from this dialog.")
+		)
+
+	date_start = get_datetime(f"{date} 00:00:00")
+	date_end = get_datetime(f"{date} 23:59:59")
+
+	day_logs = frappe.get_all(
+		"Employee Checkin",
+		filters={
+			"employee": employee,
+			"time": ["between", [date_start, date_end]],
+		},
+		fields=["name", "log_type", "time"],
+		order_by="time asc",
+	)
+
+	if not day_logs and log_type == "OUT":
+		frappe.throw(_("First log for the day must be Check In."))
 	
 	# Validate check-in before check-out if both exist
 	if log_type == "OUT":
 		# Get check-in for the same date
-		date_start = get_datetime(f"{date} 00:00:00")
-		date_end = get_datetime(f"{date} 23:59:59")
-		
 		checkin_records = frappe.get_all(
 			"Employee Checkin",
 			filters={
@@ -136,6 +158,9 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 			order_by="time asc",
 			limit=1
 		)
+
+		if not checkin_records:
+			frappe.throw(_("You must Check In first before Check Out."))
 		
 		if checkin_records:
 			checkin_time = get_datetime(checkin_records[0].time)
@@ -146,9 +171,6 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 	# Validate check-out before check-in if updating check-in
 	if log_type == "IN" and checkin_name:
 		# Get check-out for the same date
-		date_start = get_datetime(f"{date} 00:00:00")
-		date_end = get_datetime(f"{date} 23:59:59")
-		
 		checkout_records = frappe.get_all(
 			"Employee Checkin",
 			filters={
@@ -309,7 +331,7 @@ def update_reason_field(attendance_request, reason):
 	if not attendance_request or not reason:
 		frappe.throw(_("Attendance Request and reason are required"))
 	
-	valid_reasons = ["Work From Home", "Office", "Other"]
+	valid_reasons = ["Work From Home", "Office", "On Duty", "Other"]
 	if reason not in valid_reasons:
 		frappe.throw(_("Reason must be one of: {0}").format(", ".join(valid_reasons)))
 	
@@ -348,11 +370,12 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 	reason_to_status_map = {
 		"Work From Home": "Work From Home",
 		"Office": "Present",
+		"On Duty": "Present",
 		"Other": "Present"
 	}
 	
 	if reason not in reason_to_status_map:
-		frappe.throw(_("Reason must be one of: Work From Home, Office, Other"))
+		frappe.throw(_("Reason must be one of: Work From Home, Office, On Duty, Other"))
 	
 	attendance_status = reason_to_status_map[reason]
 	

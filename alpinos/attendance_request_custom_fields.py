@@ -30,7 +30,7 @@ def update_attendance_request_reason_options():
 			doctype="Attendance Request",
 			fieldname="reason",
 			property="options",
-			value="Work From Home\nOffice\nOther",
+			value="Work From Home\nOffice\nOn Duty\nOther",
 			property_type="Text"
 		)
 		frappe.db.commit()
