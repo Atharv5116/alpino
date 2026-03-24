@@ -55,36 +55,24 @@ function loadStatus(){
         resetUI();
         return;
       }
-      const data = r.message || {};
-      const status = data.status || "NONE";
-      const nextAction = data.next_action || "IN";
-
-      if(status === "IN"){
-        setStatusBadge("Checked In", "in");
-        btn("btn-in",true);
-        btn("btn-out",false);
-        if(data.last_time){
-          startTimer(new Date(data.last_time));
+      let status = r.message ? r.message.status : "NONE";
+  if(status === "IN"){
+    setStatusBadge("Checked In", "in");
+    btn("btn-in",true);
+    btn("btn-out",false);
+        if(r.message && r.message.last_time){
+          startTimer(new Date(r.message.last_time));
         }
         return;
       }
-
-      if(status === "OUT"){
-        setStatusBadge("Checked Out", "out");
-        btn("btn-in",true);
-        btn("btn-out",true);
-        setPausedTimer(data.elapsed_seconds || 0);
-      } else {
-        const isPreviousDayOpen = !!data.previous_day_open;
-        const noneLabel = isPreviousDayOpen ? "Previous day missed checkout. Check In for today." : "Not Checked In";
-        resetUI(noneLabel);
+  if(status === "OUT"){
+    setStatusBadge("Checked Out", "out");
+    btn("btn-in",true);
+    btn("btn-out",true);
+        setPausedTimer(r.message ? r.message.elapsed_seconds : 0);
+        return;
       }
-
-      // Hard guard from backend state: next day must begin with IN.
-      if(nextAction === "IN"){
-        btn("btn-in",false);
-        btn("btn-out",true);
-      }
+  resetUI();
     }
   });
 }
@@ -386,7 +374,7 @@ function stopTimer(){ if(timer){ clearInterval(timer); } }
 function setPausedTimer(seconds){
   timerEl.innerText = formatDuration(seconds * 1000);
 }
-function resetUI(labelText){ setStatusBadge(labelText || "Not Checked In", "none"); btn("btn-in",false); btn("btn-out",true); timerEl.innerText="00:00:00"; }
+function resetUI(){ setStatusBadge("Not Checked In", "none"); btn("btn-in",false); btn("btn-out",true); timerEl.innerText="00:00:00"; }
 function btn(id,dis){
   let el = root.querySelector("#"+id);
   el.disabled = dis;

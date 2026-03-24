@@ -46,3 +46,23 @@ class CustomLeaveApplication(HRMSLeaveApplication):
 			create_leave_ledger_entry(self, args)
 
 		self.reload()
+
+	def on_update_after_submit(self):
+		"""
+		Ensure leave ledger exists when a submitted Leave Application is later approved
+		via workflow (Open -> Approved).
+		"""
+		# Only consume leaves for approved applications.
+		if self.status != "Approved":
+			return
+
+		has_ledger = frappe.db.exists(
+			"Leave Ledger Entry",
+			{
+				"transaction_type": "Leave Application",
+				"transaction_name": self.name,
+				"docstatus": 1,
+			},
+		)
+		if not has_ledger:
+			self.create_leave_ledger_entry(submit=True)
