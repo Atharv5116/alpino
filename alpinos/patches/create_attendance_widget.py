@@ -118,6 +118,11 @@ function fetchLocation(callback) {
 }
 
 function checkIn(){
+  frappe.call({
+    method:"alpinos.attendance_widget.log_frontend_action",
+    args: { action: "WIDGET_CHECKIN_CLICK", log_type: "IN", details: "User clicked Check In button on Attendance widget." },
+    silent: true
+  });
   btn("btn-in", true);
   fetchLocation(function () {
     frappe.call({
@@ -140,6 +145,11 @@ function checkIn(){
 }
 
 function checkOut(){
+  frappe.call({
+    method:"alpinos.attendance_widget.log_frontend_action",
+    args: { action: "WIDGET_CHECKOUT_CLICK", log_type: "OUT", details: "User clicked Check Out button on Attendance widget before any confirm dialogs." },
+    silent: true
+  });
   frappe.confirm(
     "Are you sure you want to check out?",
     function () {

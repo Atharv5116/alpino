@@ -229,14 +229,15 @@ frappe.ui.form.on('Expense Claim', {
 	},
 
 	employee: function(frm) {
-		// Auto-fill Expense Approver based on employee.reports_to.user_id (if field exists)
 		if (!frm.fields_dict.expense_approver) {
 			return;
 		}
 
 		if (frm.doc.employee) {
-			frappe.db.get_value('Employee', frm.doc.employee, 'reports_to', function(data) {
-				if (data && data.reports_to) {
+			frappe.db.get_value('Employee', frm.doc.employee, ['expense_approver', 'reports_to'], function(data) {
+				if (data && data.expense_approver) {
+					frm.set_value('expense_approver', data.expense_approver);
+				} else if (data && data.reports_to) {
 					frappe.db.get_value('Employee', data.reports_to, 'user_id', function(manager) {
 						frm.set_value('expense_approver', (manager && manager.user_id) ? manager.user_id : '');
 					});
@@ -288,6 +289,7 @@ frappe.ui.form.on('Expense Claim', {
 	},
 	
 	reimbursement_remove: function(frm, cdt, cdn) {
+		calculate_reimbursement_total(frm);
 		setTimeout(function() {
 			toggle_reimbursement_add_row(frm);
 		}, 100);
@@ -304,6 +306,11 @@ frappe.ui.form.on('Reimbursement child table', {
 		}, 300);
 	},
 	
+	amount_claimed: function(frm, cdt, cdn) {
+		calculate_reimbursement_total(frm);
+	},
+
+	
 	payment_type: function(frm, cdt, cdn) {
 		// Toggle payment_mode required state based on payment_type
 		toggle_payment_mode_required(frm, cdt, cdn);
@@ -316,6 +323,17 @@ frappe.ui.form.on('Reimbursement child table', {
 		}, 100);
 	}
 });
+
+function calculate_reimbursement_total(frm) {
+	let total = 0;
+	if (frm.doc.reimbursement && frm.doc.reimbursement.length > 0) {
+		frm.doc.reimbursement.forEach(function(row) {
+			total += (row.amount_claimed || 0);
+		});
+	}
+	frm.set_value("total_claimed_amount", total);
+	frm.set_value("grand_total", total);
+}
 
 function setup_reimbursement_add_row_control(frm) {
 	var grid_field = frm.get_field('reimbursement');
@@ -1662,6 +1680,7 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 				set_employee_name = frappe.get_attr("hrms.hr.utils.set_employee_name")
 				validate_active_employee(self)
 				set_employee_name(self)
+				self.calculate_total_amount()
 				self.validate_sanctioned_amount()
 				self.calculate_total_amount()
 				self.validate_advances()
@@ -1674,6 +1693,23 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 				return
 		
 		super().validate()
+	
+	def calculate_total_amount(self):
+		"""Overridden to calculate total from 'reimbursement' instead of 'expenses'"""
+		from frappe.utils import flt
+		
+		# First call super to handle standard fields initially
+		super().calculate_total_amount()
+		
+		# Then override with our custom reimbursement table
+		self.total_claimed_amount = 0
+		
+		if self.get("reimbursement"):
+			for d in self.get("reimbursement"):
+				self.total_claimed_amount += flt(d.amount_claimed)
+		
+		# Set grand total
+		self.grand_total = self.total_claimed_amount
 	
 	def on_submit(self):
 		"""Override on_submit to handle workflow status"""

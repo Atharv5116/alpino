@@ -92,6 +92,15 @@ def add_employee_checkin_custom_fields():
 				hidden=1,
 				default=0
 			),
+			dict(
+				fieldname="is_manual",
+				label="Is Manual",
+				fieldtype="Check",
+				insert_after="from_attendance_request",
+				read_only=1,
+				hidden=1,
+				default=0
+			),
 		]
 	}
 	

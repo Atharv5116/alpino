@@ -113,6 +113,26 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 		time: Datetime string (YYYY-MM-DD HH:MM:SS)
 		checkin_name: Optional existing checkin name to update
 	"""
+	
+	try:
+		request_ip = getattr(frappe.request, "remote_addr", "") if getattr(frappe, "request", None) else ""
+		request_path = getattr(frappe.request, "path", "") if getattr(frappe, "request", None) else ""
+		btn_log = f"Action: Dialog Button Clicked (create_or_update_checkin API)\nUser: {frappe.session.user}\n"
+		btn_log += f"Employee: {employee}\nDate: {date}\nLog Type: {log_type}\nTime: {time}\n"
+		btn_log += f"Existing Checkin ID: {checkin_name or 'NEW'}\nIP: {request_ip}\nPath: {request_path}"
+		frappe.get_doc({
+			"doctype": "Employee Checkin Log",
+			"employee": employee,
+			"user": frappe.session.user,
+			"action": "API_DIALOG_CLICK",
+			"log_type": log_type,
+			"details": btn_log,
+			"ip_address": request_ip,
+			"request_path": request_path
+		}).insert(ignore_permissions=True)
+	except Exception:
+		pass
+		
 	if not employee or not date or not log_type or not time:
 		frappe.throw(_("Employee, date, log_type, and time are required"))
 	

@@ -414,3 +414,19 @@ def check_out(latitude=None, longitude=None, checkout_reason=None):
         "show_task_dialog": bool(wfh_request)
     }
 
+@frappe.whitelist()
+def log_frontend_action(action, log_type=None, details=None):
+    employee = _get_employee_for_user(frappe.session.user)
+    try:
+        frappe.get_doc({
+            "doctype": "Employee Checkin Log",
+            "employee": employee,
+            "user": frappe.session.user,
+            "action": action,
+            "log_type": log_type,
+            "details": details,
+            "ip_address": getattr(frappe.request, "remote_addr", ""),
+            "request_path": getattr(frappe.request, "path", "")
+        }).insert(ignore_permissions=True)
+    except Exception:
+        pass

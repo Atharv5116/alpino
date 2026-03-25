@@ -62,8 +62,11 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		3. It comes from Biometric Device (device_id)
 		4. It comes from the Home Dashboard widget (usually has geolocation or specific API path)
 		"""
-		if frappe.session.user == "Administrator":
-			return
+		request_path = ""
+		request_ip = ""
+		if getattr(frappe, "request", None):
+			request_path = getattr(frappe.request, "path", "")
+			request_ip = getattr(frappe.request, "remote_addr", "")
 
 		# Check for flags and attributes
 		from_automation = self.get("from_attendance_request") or self.get("device_id")
@@ -73,16 +76,70 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 
 		# Check if request is coming from the standard HRMS dashboard method
 		is_widget_call = False
-		if frappe.request and frappe.request.path:
-			if "add_log_based_on_employee_field" in frappe.request.path:
-				is_widget_call = True
+		if "add_log_based_on_employee_field" in request_path:
+			is_widget_call = True
 
+		is_manual_ui = False
 		if not from_automation and not has_geo and not is_widget_call:
-			frappe.throw(
-				_("Manual creation of Employee Checkin is restricted. Please use the Attendance Request page to manage your check-ins."),
-				title=_("Restriction Active")
-			)
+			if frappe.session.user == "Administrator":
+				is_manual_ui = True
+				self.is_manual = 1
+			else:
+				frappe.throw(
+					_("Manual creation of Employee Checkin is restricted. Please use the Attendance Request page to manage your check-ins."),
+					title=_("Restriction Active")
+				)
 
+		# Action Logging
+		try:
+			log_details = f"Action: CREATED\nUser: {frappe.session.user}\nEmployee: {self.employee}\n"
+			log_details += f"Time: {self.time}\nLog Type: {self.log_type}\n"
+			log_details += f"Is Manual UI: {is_manual_ui}\n"
+			log_details += f"From Request/Dialog: {bool(self.get('from_attendance_request'))}\n"
+			log_details += f"Device ID: {self.get('device_id') or 'None'}\n"
+			log_details += f"Has Geo: {has_geo} (Lat: {self.get('latitude')}, Lon: {self.get('longitude')})\n"
+			log_details += f"Is Widget Call: {is_widget_call}\n"
+			log_details += f"IP: {request_ip}\nPath: {request_path}"
+			frappe.get_doc({
+				"doctype": "Employee Checkin Log",
+				"employee": self.employee,
+				"user": frappe.session.user,
+				"action": "CREATED",
+				"log_type": self.log_type,
+				"details": log_details,
+				"ip_address": request_ip,
+				"request_path": request_path
+			}).insert(ignore_permissions=True)
+		except Exception:
+			pass
+			
+	def on_update(self):
+		if self.is_new():
+			return
+		request_path = ""
+		request_ip = ""
+		if getattr(frappe, "request", None):
+			request_path = getattr(frappe.request, "path", "")
+			request_ip = getattr(frappe.request, "remote_addr", "")
+			
+		try:
+			log_details = f"Action: UPDATED\nUser: {frappe.session.user}\nEmployee: {self.employee}\n"
+			log_details += f"Time: {self.time}\nLog Type: {self.log_type}\n"
+			log_details += f"Is Manual: {self.get('is_manual', 0)}\n"
+			log_details += f"From Request/Dialog: {bool(self.get('from_attendance_request'))}\n"
+			log_details += f"IP: {request_ip}\nPath: {request_path}"
+			frappe.get_doc({
+				"doctype": "Employee Checkin Log",
+				"employee": self.employee,
+				"user": frappe.session.user,
+				"action": "UPDATED",
+				"log_type": self.log_type,
+				"details": log_details,
+				"ip_address": request_ip,
+				"request_path": request_path
+			}).insert(ignore_permissions=True)
+		except Exception:
+			pass
 	def _require_checkout_reason_if_outside(self):
 		"""Require checkout_reason for OUT when we cannot confirm employee is at office."""
 		reason = (self.get("checkout_reason") or "").strip()
