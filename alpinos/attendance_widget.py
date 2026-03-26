@@ -104,7 +104,7 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 	"""
 	employee = _get_employee_for_user(frappe.session.user)
 	if not employee:
-		frappe.throw("No Employee linked to this user.")
+		return {"days": {}}
 
 	today = getdate(now_datetime())
 	try:
