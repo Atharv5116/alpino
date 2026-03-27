@@ -922,3 +922,33 @@ frappe.ui.form.on('Employee Checkin', {
         frappe.db.set_value("Client Script", script_name, "script", script)
     
     frappe.db.commit()
+
+
+def validate_saturday_attendance_threshold(doc, method):
+	"""
+	Check if Attendance is on a Saturday, and override status based on `saturday_working_hours_threshold`.
+	If finished required hours, mark Present, else Absent.
+	"""
+	if doc.docstatus != 0:
+		return
+		
+	# Do not override approved Leaves or Holidays
+	if doc.status in ["On Leave", "Holiday"]:
+		return
+		
+	# 0 is Monday, 5 is Saturday
+	from frappe.utils import getdate, flt
+	if getdate(doc.attendance_date).weekday() != 5:
+		return
+		
+	if not doc.shift:
+		return
+		
+	threshold = frappe.db.get_value("Shift Type", doc.shift, "saturday_working_hours_threshold")
+	
+	threshold = flt(threshold)
+	if threshold > 0:
+		if flt(doc.working_hours) >= threshold:
+			doc.status = "Present"
+		else:
+			doc.status = "Absent"

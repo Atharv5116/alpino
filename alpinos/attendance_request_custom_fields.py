@@ -19,6 +19,9 @@ def setup_attendance_request_custom_fields():
 	# Add custom fields to Employee Checkin
 	add_employee_checkin_custom_fields()
 	
+	# Add custom fields to Shift Type
+	add_shift_type_custom_fields()
+	
 	print("✅ Attendance Request and Attendance custom fields setup completed")
 
 
@@ -111,3 +114,25 @@ def add_employee_checkin_custom_fields():
 	except Exception as e:
 		print(f"⚠️  Could not add custom fields to Employee Checkin: {str(e)}")
 		frappe.log_error(f"Error adding Employee Checkin custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Employee Checkin Custom Fields")
+
+def add_shift_type_custom_fields():
+	"""Add custom fields to Shift Type doctype"""
+	custom_fields = {
+		"Shift Type": [
+			dict(
+				fieldname="saturday_working_hours_threshold",
+				label="Saturday Working Hours Threshold for Present",
+				fieldtype="Float",
+				insert_after="working_hours_threshold_for_half_day",
+				description="Minimum working hours required on Saturday to be marked as Present. If hours are less, Employee will be marked Absent."
+			),
+		]
+	}
+	
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added custom fields to Shift Type doctype")
+	except Exception as e:
+		print(f"⚠️  Could not add custom fields to Shift Type: {str(e)}")
+		frappe.log_error(f"Error adding Shift Type custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Shift Type Custom Fields")
