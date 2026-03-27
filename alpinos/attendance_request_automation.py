@@ -929,7 +929,7 @@ def validate_saturday_attendance_threshold(doc, method):
 	Check if Attendance is on a Saturday, and override status based on `saturday_working_hours_threshold`.
 	If finished required hours, mark Present, else Absent.
 	"""
-	if doc.docstatus != 0:
+	if doc.docstatus == 2:
 		return
 		
 	# Do not override approved Leaves or Holidays
