@@ -6,6 +6,10 @@ from frappe import _
 from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_day, cint, flt, formatdate, format_time
 from datetime import datetime, timedelta
 import calendar
+from alpinos.alpinos_development.report.attendance_summary.attendance_summary_helpers import (
+	get_location_details,
+	calculate_attendance_stats
+)
 
 
 def execute(filters=None):
@@ -47,11 +51,186 @@ def get_columns(from_date, to_date):
 			"frozen": 1
 		},
 		{
+			"label": _("Employee Status"),
+			"fieldname": "status",
+			"fieldtype": "Data",
+			"width": 120
+		},
+		{
+			"label": _("Joining Date"),
+			"fieldname": "date_of_joining",
+			"fieldtype": "Date",
+			"width": 110
+		},
+		{
+			"label": _("Aging"),
+			"fieldname": "aging",
+			"fieldtype": "Int",
+			"width": 80
+		},
+		{
+			"label": _("Location"),
+			"fieldname": "location",
+			"fieldtype": "Data",
+			"width": 150
+		},
+		{
+			"label": _("Location State"),
+			"fieldname": "location_state",
+			"fieldtype": "Data",
+			"width": 120
+		},
+		{
+			"label": _("Location Country"),
+			"fieldname": "location_country",
+			"fieldtype": "Data",
+			"width": 120
+		},
+		{
+			"label": _("Department"),
+			"fieldname": "department",
+			"fieldtype": "Link",
+			"options": "Department",
+			"width": 150
+		},
+		{
+			"label": _("Zone"),
+			"fieldname": "zone",
+			"fieldtype": "Data",
+			"width": 100
+		},
+		{
+			"label": _("Category"),
+			"fieldname": "category",
+			"fieldtype": "Data",
+			"width": 120
+		},
+		{
+			"label": _("Location Billing Type"),
+			"fieldname": "location_billing_type",
+			"fieldtype": "Data",
+			"width": 150
+		},
+		{
+			"label": _("Location Start Date"),
+			"fieldname": "location_start_date",
+			"fieldtype": "Date",
+			"width": 130
+		},
+		{
+			"label": _("Location Closing Date"),
+			"fieldname": "location_closing_date",
+			"fieldtype": "Date",
+			"width": 140
+		},
+		{
 			"label": _("Company"),
 			"fieldname": "company",
 			"fieldtype": "Link",
 			"options": "Company",
 			"width": 150
+		},
+		{
+			"label": _("Paid Days"),
+			"fieldname": "paid_days",
+			"fieldtype": "Float",
+			"width": 90
+		},
+		{
+			"label": _("Working Days"),
+			"fieldname": "working_days",
+			"fieldtype": "Float",
+			"width": 110
+		},
+		{
+			"label": _("Clock-In Days"),
+			"fieldname": "clock_in_days",
+			"fieldtype": "Int",
+			"width": 110
+		},
+		{
+			"label": _("Absent Days"),
+			"fieldname": "absent_days",
+			"fieldtype": "Int",
+			"width": 100
+		},
+		{
+			"label": _("Shift Not Started"),
+			"fieldname": "shift_not_started",
+			"fieldtype": "Int",
+			"width": 130
+		},
+		{
+			"label": _("Holiday"),
+			"fieldname": "holiday",
+			"fieldtype": "Int",
+			"width": 80
+		},
+		{
+			"label": _("Weekend"),
+			"fieldname": "weekend",
+			"fieldtype": "Int",
+			"width": 90
+		},
+		{
+			"label": _("Paid Leave"),
+			"fieldname": "paid_leave",
+			"fieldtype": "Float",
+			"width": 100
+		},
+		{
+			"label": _("Unpaid Leave"),
+			"fieldname": "unpaid_leave",
+			"fieldtype": "Float",
+			"width": 110
+		},
+		{
+			"label": _("Paid Hourly Leave"),
+			"fieldname": "paid_hourly_leave",
+			"fieldtype": "Float",
+			"width": 140
+		},
+		{
+			"label": _("Unpaid Hourly Leave"),
+			"fieldname": "unpaid_hourly_leave",
+			"fieldtype": "Float",
+			"width": 150
+		},
+		{
+			"label": _("OD/WFH Count"),
+			"fieldname": "od_wfh_count",
+			"fieldtype": "Int",
+			"width": 120
+		},
+		{
+			"label": _("Missing Attendance"),
+			"fieldname": "missing_attendance",
+			"fieldtype": "Int",
+			"width": 140
+		},
+		{
+			"label": _("Penalty Count"),
+			"fieldname": "penalty_count",
+			"fieldtype": "Int",
+			"width": 110
+		},
+		{
+			"label": _("Average Working Hours"),
+			"fieldname": "avg_working_hours",
+			"fieldtype": "Float",
+			"width": 150
+		},
+		{
+			"label": _("Sub Location"),
+			"fieldname": "sub_location",
+			"fieldtype": "Data",
+			"width": 120
+		},
+		{
+			"label": _("Sub Department"),
+			"fieldname": "sub_department",
+			"fieldtype": "Data",
+			"width": 130
 		}
 	]
 	
@@ -112,7 +291,15 @@ def get_employees(filters):
 		SELECT 
 			name as employee,
 			employee_name,
-			company
+			status,
+			date_of_joining,
+			department,
+			company,
+			custom_location as location,
+			custom_zone as zone,
+			custom_category as category,
+			custom_sub_location as sub_location,
+			custom_sub_department as sub_department
 		FROM `tabEmployee`
 		WHERE {where_clause}
 		ORDER BY employee_name
@@ -128,7 +315,29 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	# Employee basic details
 	row.employee = emp.employee
 	row.employee_name = emp.employee_name
+	row.status = emp.status
+	row.date_of_joining = emp.date_of_joining
+	row.department = emp.department
 	row.company = emp.company
+	row.location = emp.location
+	row.zone = emp.zone
+	row.category = emp.category
+	row.sub_location = emp.sub_location
+	row.sub_department = emp.sub_department
+	
+	# Calculate aging
+	if emp.date_of_joining:
+		row.aging = date_diff(to_date, emp.date_of_joining)
+	else:
+		row.aging = 0
+	
+	# Get location details
+	location_details = get_location_details(emp.location)
+	row.location_state = location_details.get("state")
+	row.location_country = location_details.get("country")
+	row.location_billing_type = location_details.get("billing_type")
+	row.location_start_date = location_details.get("start_date")
+	row.location_closing_date = location_details.get("closing_date")
 	
 	# Get all attendance records for the month
 	attendance_map = get_attendance_map(emp.employee, from_date, to_date)
@@ -138,6 +347,26 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	
 	# Get leave applications
 	leave_map = get_leave_map(emp.employee, from_date, to_date)
+	
+	# Initialize statistics
+	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, from_date, to_date, emp.employee)
+	
+	# Populate summary fields
+	row.paid_days = stats["paid_days"]
+	row.working_days = stats["working_days"]
+	row.clock_in_days = stats["clock_in_days"]
+	row.absent_days = stats["absent_days"]
+	row.shift_not_started = stats["shift_not_started"]
+	row.holiday = stats["holiday"]
+	row.weekend = stats["weekend"]
+	row.paid_leave = stats["paid_leave"]
+	row.unpaid_leave = stats["unpaid_leave"]
+	row.paid_hourly_leave = stats["paid_hourly_leave"]
+	row.unpaid_hourly_leave = stats["unpaid_hourly_leave"]
+	row.od_wfh_count = stats["od_wfh_count"]
+	row.missing_attendance = stats["missing_attendance"]
+	row.penalty_count = stats["penalty_count"]
+	row.avg_working_hours = stats["avg_working_hours"]
 	
 	# Loop through each day of the month
 	current_date = getdate(from_date)
@@ -271,6 +500,12 @@ def format_attendance_info(att_info):
 	shift = att_info.get("shift", "")
 	late_entry = att_info.get("late_entry", 0)
 	early_exit = att_info.get("early_exit", 0)
+	
+	# For absent status, clear in_time, out_time, and working_hours
+	if status == "Absent":
+		in_time = None
+		out_time = None
+		working_hours = 0
 	
 	# Format times
 	in_time_str = format_time(in_time) if in_time else "-"
