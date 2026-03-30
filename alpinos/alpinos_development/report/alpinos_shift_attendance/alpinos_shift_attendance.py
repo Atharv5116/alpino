@@ -218,11 +218,13 @@ def get_query(filters):
 	checkin = frappe.qb.DocType("Employee Checkin")
 	shift_type = frappe.qb.DocType("Shift Type")
 
+	# LEFT JOINs so attendance records without linked checkins (e.g. from Attendance Request)
+	# still appear in the report; shift_start/shift_end will simply be NULL for those rows.
 	query = (
 		frappe.qb.from_(attendance)
-		.inner_join(checkin)
+		.left_join(checkin)
 		.on(checkin.attendance == attendance.name)
-		.inner_join(shift_type)
+		.left_join(shift_type)
 		.on(attendance.shift == shift_type.name)
 		.select(
 			attendance.name,
@@ -258,19 +260,19 @@ def get_query(filters):
 			query = query.where(attendance.attendance_date <= filters.to_date)
 		elif filter_key == "consider_grace_period":
 			continue
-		elif filter_key == "late_entry" and not filters.get("consider_grace_period"):
+		elif filter_key == "late_entry" and filters.get("late_entry") and not filters.get("consider_grace_period"):
 			query = query.where(
 				(attendance.in_time.isnotnull())
 				& (checkin.shift_start.isnotnull())
 				& (attendance.in_time > checkin.shift_start)
 			)
-		elif filter_key == "early_exit" and not filters.get("consider_grace_period"):
+		elif filter_key == "early_exit" and filters.get("early_exit") and not filters.get("consider_grace_period"):
 			query = query.where(
 				(attendance.out_time.isnotnull())
 				& (checkin.shift_end.isnotnull())
 				& (attendance.out_time < checkin.shift_end)
 			)
-		else:
+		elif filter_key not in ("late_entry", "early_exit"):
 			query = query.where(attendance[filter_key] == filters[filter_key])
 
 	return query
