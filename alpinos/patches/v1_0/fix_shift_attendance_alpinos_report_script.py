@@ -19,10 +19,10 @@ def execute():
 		return
 
 	# Wrapper kept intentionally small; it imports and delegates to our module implementation.
-	# (Imports are allowed in Frappe script reports' RestrictedPython environment.)
+	# NOTE: RestrictedPython blocks names starting with "_", so we cannot use _execute as alias.
 	report_script = """def execute(filters=None):
-\tfrom alpinos.alpinos_development.report.shift_attendance_alpinos.shift_attendance_alpinos import execute as _execute
-\treturn _execute(filters)
+\timport alpinos.alpinos_development.report.shift_attendance_alpinos.shift_attendance_alpinos as rpt
+\treturn rpt.execute(filters)
 """
 	# Use db_set to avoid triggering any additional validations.
 	frappe.db.set_value("Report", report_name, "report_script", report_script, update_modified=True)
