@@ -7,7 +7,6 @@ from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_d
 from datetime import datetime, timedelta
 import calendar
 from alpinos.alpinos_development.report.attendance_summary.attendance_summary_helpers import (
-	get_location_details,
 	calculate_attendance_stats
 )
 
@@ -69,59 +68,11 @@ def get_columns(from_date, to_date):
 			"width": 80
 		},
 		{
-			"label": _("Location"),
-			"fieldname": "location",
-			"fieldtype": "Data",
-			"width": 150
-		},
-		{
-			"label": _("Location State"),
-			"fieldname": "location_state",
-			"fieldtype": "Data",
-			"width": 120
-		},
-		{
-			"label": _("Location Country"),
-			"fieldname": "location_country",
-			"fieldtype": "Data",
-			"width": 120
-		},
-		{
 			"label": _("Department"),
 			"fieldname": "department",
 			"fieldtype": "Link",
 			"options": "Department",
 			"width": 150
-		},
-		{
-			"label": _("Zone"),
-			"fieldname": "zone",
-			"fieldtype": "Data",
-			"width": 100
-		},
-		{
-			"label": _("Category"),
-			"fieldname": "category",
-			"fieldtype": "Data",
-			"width": 120
-		},
-		{
-			"label": _("Location Billing Type"),
-			"fieldname": "location_billing_type",
-			"fieldtype": "Data",
-			"width": 150
-		},
-		{
-			"label": _("Location Start Date"),
-			"fieldname": "location_start_date",
-			"fieldtype": "Date",
-			"width": 130
-		},
-		{
-			"label": _("Location Closing Date"),
-			"fieldname": "location_closing_date",
-			"fieldtype": "Date",
-			"width": 140
 		},
 		{
 			"label": _("Company"),
@@ -220,18 +171,6 @@ def get_columns(from_date, to_date):
 			"fieldtype": "Float",
 			"width": 150
 		},
-		{
-			"label": _("Sub Location"),
-			"fieldname": "sub_location",
-			"fieldtype": "Data",
-			"width": 120
-		},
-		{
-			"label": _("Sub Department"),
-			"fieldname": "sub_department",
-			"fieldtype": "Data",
-			"width": 130
-		}
 	]
 	
 	# Add dynamic date columns
@@ -294,12 +233,7 @@ def get_employees(filters):
 			status,
 			date_of_joining,
 			department,
-			company,
-			custom_location as location,
-			custom_zone as zone,
-			custom_category as category,
-			custom_sub_location as sub_location,
-			custom_sub_department as sub_department
+			company
 		FROM `tabEmployee`
 		WHERE {where_clause}
 		ORDER BY employee_name
@@ -319,25 +253,12 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.date_of_joining = emp.date_of_joining
 	row.department = emp.department
 	row.company = emp.company
-	row.location = emp.location
-	row.zone = emp.zone
-	row.category = emp.category
-	row.sub_location = emp.sub_location
-	row.sub_department = emp.sub_department
 	
 	# Calculate aging
 	if emp.date_of_joining:
 		row.aging = date_diff(to_date, emp.date_of_joining)
 	else:
 		row.aging = 0
-	
-	# Get location details
-	location_details = get_location_details(emp.location)
-	row.location_state = location_details.get("state")
-	row.location_country = location_details.get("country")
-	row.location_billing_type = location_details.get("billing_type")
-	row.location_start_date = location_details.get("start_date")
-	row.location_closing_date = location_details.get("closing_date")
 	
 	# Get all attendance records for the month
 	attendance_map = get_attendance_map(emp.employee, from_date, to_date)
