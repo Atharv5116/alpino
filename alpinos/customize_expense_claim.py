@@ -1759,23 +1759,25 @@ def execute():
 		# Update approval_status field options to match workflow requirements
 		update_expense_claim_approval_status_options()
 		
+		# DISABLED: Automatic workflow creation
+		# Workflow should be created manually if needed
 		# Step 1: Create Workflow State master records FIRST (required for workflow validation)
-		create_expense_claim_workflow_states()
+		# create_expense_claim_workflow_states()
 		
 		# Step 2: Verify all states exist (fail fast if any are missing)
-		verify_expense_claim_workflow_states_exist()
+		# verify_expense_claim_workflow_states_exist()
 		
 		# Step 3: Create Workflow Action Master records (required for transitions)
-		create_expense_claim_workflow_actions()
+		# create_expense_claim_workflow_actions()
 		
 		# Step 4: Clear cache to ensure updated field options are loaded
-		frappe.clear_cache()
+		# frappe.clear_cache()
 		
 		# Step 5: Create workflow (now all prerequisites are met)
-		setup_expense_claim_workflow()
+		# setup_expense_claim_workflow()
 		
 		# Step 6: Clear cache after workflow creation
-		frappe.clear_cache()
+		# frappe.clear_cache()
 		
 		# Add status field visibility script
 		add_status_field_visibility_script()
