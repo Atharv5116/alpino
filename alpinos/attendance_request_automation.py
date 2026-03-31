@@ -102,7 +102,7 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 
 
 @frappe.whitelist()
-def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
+def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, attendance_request=None):
 	"""
 	Create new Employee Checkin or update existing one.
 	
@@ -112,19 +112,59 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 		log_type: "IN" or "OUT"
 		time: Datetime string (YYYY-MM-DD HH:MM:SS)
 		checkin_name: Optional existing checkin name to update
+		attendance_request: Optional Attendance Request reference
 	"""
+	
+	# SECURITY: Validate that the checkin date is not in the future
+	checkin_datetime = get_datetime(time)
+	current_datetime = get_datetime()
+	
+	if checkin_datetime > current_datetime:
+		frappe.throw(
+			_("Cannot create check-in records for future dates. Check-in time: {0}, Current time: {1}").format(
+				checkin_datetime, current_datetime
+			),
+			title=_("Future Date Not Allowed")
+		)
+	
+	# SECURITY: Validate that the checkin date is not more than 30 days in the past
+	# (unless user is Administrator)
+	if frappe.session.user != "Administrator":
+		days_diff = date_diff(current_datetime, checkin_datetime)
+		if days_diff > 30:
+			frappe.throw(
+				_("Cannot create check-in records more than 30 days in the past. Please contact HR for assistance."),
+				title=_("Date Too Old")
+			)
 	
 	try:
 		request_ip = getattr(frappe.request, "remote_addr", "") if getattr(frappe, "request", None) else ""
 		request_path = getattr(frappe.request, "path", "") if getattr(frappe, "request", None) else ""
-		btn_log = f"Action: Dialog Button Clicked (create_or_update_checkin API)\nUser: {frappe.session.user}\n"
-		btn_log += f"Employee: {employee}\nDate: {date}\nLog Type: {log_type}\nTime: {time}\n"
-		btn_log += f"Existing Checkin ID: {checkin_name or 'NEW'}\nIP: {request_ip}\nPath: {request_path}"
+		
+		# Use the attendance_request parameter, or try to find it from the attendance record
+		attendance_request_ref = attendance_request
+		if not attendance_request_ref and attendance_name:
+			attendance_request_ref = frappe.db.get_value('Attendance', attendance_name, 'attendance_request')
+		
+		btn_log = f"SOURCE: Attendance Request Dialog\n"
+		btn_log += f"CHECKIN TIME: {time}\n"
+		btn_log += f"TYPE: {log_type}\n"
+		btn_log += f"CREATED BY: {frappe.session.user}\n"
+		if attendance_request_ref:
+			btn_log += f"ATTENDANCE REQUEST: {attendance_request_ref}\n"
+		btn_log += f"REQUEST DATE: {date}\n"
+		btn_log += f"ACTION: {'Update Existing' if checkin_name else 'Create New'}\n"
+		if checkin_name:
+			btn_log += f"CHECKIN ID: {checkin_name}\n"
+		btn_log += f"\n--- Technical Details ---\n"
+		btn_log += f"IP Address: {request_ip}\n"
+		btn_log += f"Request Path: {request_path}"
+		
 		frappe.get_doc({
 			"doctype": "Employee Checkin Log",
 			"employee": employee,
 			"user": frappe.session.user,
-			"action": "API_DIALOG_CLICK",
+			"action": "Attendance Request",
 			"log_type": log_type,
 			"details": btn_log,
 			"ip_address": request_ip,
@@ -133,61 +173,6 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None):
 	except Exception:
 		pass
 		
-	if not employee or not date or not log_type or not time:
-		frappe.throw(_("Employee, date, log_type, and time are required"))
-	
-	if log_type not in ["IN", "OUT"]:
-		frappe.throw(_("Log type must be IN or OUT"))
-	
-	# Validate check-in before check-out if both exist
-	if log_type == "OUT":
-		# Get check-in for the same date
-		date_start = get_datetime(f"{date} 00:00:00")
-		date_end = get_datetime(f"{date} 23:59:59")
-		
-		checkin_records = frappe.get_all(
-			"Employee Checkin",
-			filters={
-				"employee": employee,
-				"time": ["between", [date_start, date_end]],
-				"log_type": "IN"
-			},
-			fields=["name", "time"],
-			order_by="time asc",
-			limit=1
-		)
-		
-		if checkin_records:
-			checkin_time = get_datetime(checkin_records[0].time)
-			out_time = get_datetime(time)
-			if out_time <= checkin_time:
-				frappe.throw(_("Check-out time must be after check-in time"))
-	
-	# Validate check-out before check-in if updating check-in
-	if log_type == "IN" and checkin_name:
-		# Get check-out for the same date
-		date_start = get_datetime(f"{date} 00:00:00")
-		date_end = get_datetime(f"{date} 23:59:59")
-		
-		checkout_records = frappe.get_all(
-			"Employee Checkin",
-			filters={
-				"employee": employee,
-				"time": ["between", [date_start, date_end]],
-				"log_type": "OUT",
-				"name": ["!=", checkin_name]
-			},
-			fields=["name", "time"],
-			order_by="time asc",
-			limit=1
-		)
-		
-		if checkout_records:
-			checkout_time = get_datetime(checkout_records[0].time)
-			in_time = get_datetime(time)
-			if in_time >= checkout_time:
-				frappe.throw(_("Check-in time must be before check-out time"))
-	
 	# Get Attendance record for this date to link the checkin
 	attendance = get_attendance_for_date(employee, date)
 	attendance_name = attendance.get("name") if attendance else None
@@ -755,9 +740,39 @@ function add_checkin(frm, date, logType) {
 		primary_action: function() {
 			const v = dialog.get_values();
 			if (!v.time) return;
+			
+			// CLIENT-SIDE VALIDATION: Prevent future dates
+			const selectedTime = new Date(v.time);
+			const currentTime = new Date();
+			if (selectedTime > currentTime) {
+				frappe.msgprint({
+					title: __('Future Date Not Allowed'),
+					message: __('Cannot create check-in records for future dates. Selected time: {0}, Current time: {1}', [v.time, currentTime.toISOString()]),
+					indicator: 'red'
+				});
+				return;
+			}
+			
+			// CLIENT-SIDE VALIDATION: Ensure date matches the attendance request date
+			const selectedDate = v.time.split(' ')[0];
+			if (selectedDate !== date) {
+				frappe.msgprint({
+					title: __('Invalid Date'),
+					message: __('Check-in date must match the attendance request date: {0}', [date]),
+					indicator: 'red'
+				});
+				return;
+			}
+			
 			frappe.call({
 				method: 'alpinos.attendance_request_automation.create_or_update_checkin',
-				args: { employee: frm.doc.employee, date: v.date, log_type: logType, time: v.time },
+				args: { 
+					employee: frm.doc.employee, 
+					date: v.date, 
+					log_type: logType, 
+					time: v.time,
+					attendance_request: frm.doc.name
+				},
 				callback: function(r) {
 					if (r.message) {
 						frappe.show_alert({message: __('Saved'), indicator: 'green'});
@@ -783,9 +798,40 @@ function edit_checkin(frm, date, logType, checkinName) {
 			primary_action_label: __('Update'),
 			primary_action: function() {
 				const v = dialog.get_values();
+				
+				// CLIENT-SIDE VALIDATION: Prevent future dates
+				const selectedTime = new Date(v.time);
+				const currentTime = new Date();
+				if (selectedTime > currentTime) {
+					frappe.msgprint({
+						title: __('Future Date Not Allowed'),
+						message: __('Cannot create check-in records for future dates. Selected time: {0}, Current time: {1}', [v.time, currentTime.toISOString()]),
+						indicator: 'red'
+					});
+					return;
+				}
+				
+				// CLIENT-SIDE VALIDATION: Ensure date matches the attendance request date
+				const selectedDate = v.time.split(' ')[0];
+				if (selectedDate !== date) {
+					frappe.msgprint({
+						title: __('Invalid Date'),
+						message: __('Check-in date must match the attendance request date: {0}', [date]),
+						indicator: 'red'
+					});
+					return;
+				}
+				
 				frappe.call({
 					method: 'alpinos.attendance_request_automation.create_or_update_checkin',
-					args: { employee: frm.doc.employee, date: v.date, log_type: logType, time: v.time, checkin_name: checkinName },
+					args: { 
+						employee: frm.doc.employee, 
+						date: v.date, 
+						log_type: logType, 
+						time: v.time, 
+						checkin_name: checkinName,
+						attendance_request: frm.doc.name
+					},
 					callback: function(r) {
 						if (r.message) {
 							frappe.show_alert({message: __('Updated'), indicator: 'green'});

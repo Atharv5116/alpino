@@ -62,6 +62,22 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		3. It comes from Biometric Device (device_id)
 		4. It comes from the Home Dashboard widget (usually has geolocation or specific API path)
 		"""
+		# SECURITY: Validate that the checkin time is not in the future
+		# This prevents backdoor creation of future-dated checkins
+		from frappe.utils import now_datetime
+		checkin_time = get_datetime(self.time)
+		current_time = now_datetime()
+		
+		if checkin_time > current_time:
+			# Allow Administrator to create future checkins (for testing/debugging)
+			if frappe.session.user != "Administrator":
+				frappe.throw(
+					_("Cannot create check-in records for future dates. Check-in time: {0}, Current time: {1}").format(
+						checkin_time, current_time
+					),
+					title=_("Future Date Not Allowed")
+				)
+		
 		request_path = ""
 		request_ip = ""
 		if getattr(frappe, "request", None):
@@ -90,21 +106,52 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 					title=_("Restriction Active")
 				)
 
-		# Action Logging
+		# Action Logging - User-friendly format
 		try:
-			log_details = f"Action: CREATED\nUser: {frappe.session.user}\nEmployee: {self.employee}\n"
-			log_details += f"Time: {self.time}\nLog Type: {self.log_type}\n"
-			log_details += f"Is Manual UI: {is_manual_ui}\n"
-			log_details += f"From Request/Dialog: {bool(self.get('from_attendance_request'))}\n"
-			log_details += f"Device ID: {self.get('device_id') or 'None'}\n"
-			log_details += f"Has Geo: {has_geo} (Lat: {self.get('latitude')}, Lon: {self.get('longitude')})\n"
-			log_details += f"Is Widget Call: {is_widget_call}\n"
-			log_details += f"IP: {request_ip}\nPath: {request_path}"
+			# Determine source in clear language
+			if self.get('device_id'):
+				source = f"Biometric Device ({self.get('device_id')})"
+				source_type = "Biometric Sync"
+			elif self.get('from_attendance_request'):
+				source = "Attendance Request Dialog"
+				source_type = "Attendance Request"
+			elif is_widget_call or has_geo:
+				source = "Home Dashboard Widget (Employee Self Check-in)"
+				source_type = "Dashboard Widget"
+			elif is_manual_ui:
+				source = "Manual Entry by Administrator"
+				source_type = "Manual"
+			else:
+				source = "Unknown Source"
+				source_type = "Unknown"
+			
+			# Create user-friendly log message
+			log_details = f"SOURCE: {source}\n"
+			log_details += f"CHECKIN TIME: {self.time}\n"
+			log_details += f"TYPE: {self.log_type}\n"
+			log_details += f"CREATED BY: {frappe.session.user}\n"
+			
+			# Add attendance request reference if available
+			if self.get('attendance'):
+				att_doc = frappe.db.get_value('Attendance', self.get('attendance'), 
+					['attendance_request', 'attendance_date'], as_dict=True)
+				if att_doc and att_doc.attendance_request:
+					log_details += f"ATTENDANCE REQUEST: {att_doc.attendance_request}\n"
+					log_details += f"REQUEST DATE: {att_doc.attendance_date}\n"
+			
+			# Add location info if from widget
+			if has_geo:
+				log_details += f"LOCATION: Lat {self.get('latitude')}, Lon {self.get('longitude')}\n"
+			
+			log_details += f"\n--- Technical Details ---\n"
+			log_details += f"IP Address: {request_ip}\n"
+			log_details += f"Request Path: {request_path}"
+			
 			frappe.get_doc({
 				"doctype": "Employee Checkin Log",
 				"employee": self.employee,
 				"user": frappe.session.user,
-				"action": "CREATED",
+				"action": source_type,
 				"log_type": self.log_type,
 				"details": log_details,
 				"ip_address": request_ip,
