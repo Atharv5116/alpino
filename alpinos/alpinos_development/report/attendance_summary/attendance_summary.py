@@ -425,15 +425,18 @@ def get_wfh_map(employee, from_date, to_date):
 			current = getdate(wfh.from_date)
 			end = getdate(wfh.to_date)
 			is_half_day = wfh.get('half_day', 0)
+			first_day = True
 			
 			while current <= end:
 				# Only include dates within the report's date range
 				if current >= getdate(from_date) and current <= getdate(to_date):
 					date_str = current.strftime("%Y-%m-%d")
+					# Half day only applies to the first day of the WFH request
 					wfh_map[date_str] = {
 						"type": "Work From Home",
-						"half_day": is_half_day
+						"half_day": is_half_day if first_day else 0
 					}
+					first_day = False
 				current = add_days(current, 1)
 		
 		return wfh_map
