@@ -408,15 +408,15 @@ def get_wfh_map(employee, from_date, to_date):
 	"""Get all Work From Home Requests for the employee in the date range"""
 	try:
 		# Query WFH requests that overlap with the report date range
-		# A WFH request overlaps if: wfh.from_date <= to_date AND wfh.to_date >= from_date
+		# Field names: date (from_date), to_date, half_day
 		wfh_requests = frappe.db.sql("""
-			SELECT from_date, to_date
+			SELECT date as from_date, to_date, half_day
 			FROM `tabWork From Home Request`
 			WHERE employee = %s
 				AND status = 'Approved'
-				AND from_date <= %s
+				AND date <= %s
 				AND to_date >= %s
-			ORDER BY from_date
+			ORDER BY date
 		""", (employee, to_date, from_date), as_dict=True)
 		
 		wfh_map = {}
@@ -424,12 +424,16 @@ def get_wfh_map(employee, from_date, to_date):
 			# Expand the date range into individual dates
 			current = getdate(wfh.from_date)
 			end = getdate(wfh.to_date)
+			is_half_day = wfh.get('half_day', 0)
 			
 			while current <= end:
 				# Only include dates within the report's date range
 				if current >= getdate(from_date) and current <= getdate(to_date):
 					date_str = current.strftime("%Y-%m-%d")
-					wfh_map[date_str] = {"type": "Work From Home"}
+					wfh_map[date_str] = {
+						"type": "Work From Home",
+						"half_day": is_half_day
+					}
 				current = add_days(current, 1)
 		
 		return wfh_map

@@ -136,7 +136,12 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 	for date_str, wfh_info in wfh_map.items():
 		# Only count if not already counted in attendance (to avoid double counting)
 		if date_str not in attendance_map or attendance_map[date_str].get("status") != "Work From Home":
-			stats.od_wfh_count += 1
+			# Check if it's a half day WFH
+			is_half_day = wfh_info.get("half_day", 0)
+			if is_half_day:
+				stats.od_wfh_count += 0.5
+			else:
+				stats.od_wfh_count += 1
 	
 	# Calculate weekend count
 	current_date = getdate(from_date)
