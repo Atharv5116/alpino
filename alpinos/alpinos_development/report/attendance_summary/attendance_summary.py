@@ -269,8 +269,11 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	# Get leave applications
 	leave_map = get_leave_map(emp.employee, from_date, to_date)
 	
+	# Get Work From Home Requests
+	wfh_map = get_wfh_map(emp.employee, from_date, to_date)
+	
 	# Initialize statistics
-	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, from_date, to_date, emp.employee)
+	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, to_date, emp.employee)
 	
 	# Populate summary fields
 	row.paid_days = stats["paid_days"]
@@ -398,6 +401,40 @@ def get_leave_map(employee, from_date, to_date):
 		
 		return leave_map
 	except:
+		return {}
+
+
+def get_wfh_map(employee, from_date, to_date):
+	"""Get all Work From Home Requests for the employee in the date range"""
+	try:
+		# Query WFH requests that overlap with the report date range
+		# A WFH request overlaps if: wfh.from_date <= to_date AND wfh.to_date >= from_date
+		wfh_requests = frappe.db.sql("""
+			SELECT from_date, to_date
+			FROM `tabWork From Home Request`
+			WHERE employee = %s
+				AND status = 'Approved'
+				AND from_date <= %s
+				AND to_date >= %s
+			ORDER BY from_date
+		""", (employee, to_date, from_date), as_dict=True)
+		
+		wfh_map = {}
+		for wfh in wfh_requests:
+			# Expand the date range into individual dates
+			current = getdate(wfh.from_date)
+			end = getdate(wfh.to_date)
+			
+			while current <= end:
+				# Only include dates within the report's date range
+				if current >= getdate(from_date) and current <= getdate(to_date):
+					date_str = current.strftime("%Y-%m-%d")
+					wfh_map[date_str] = {"type": "Work From Home"}
+				current = add_days(current, 1)
+		
+		return wfh_map
+	except Exception as e:
+		frappe.log_error(f"Error getting WFH map: {str(e)}", "WFH Map Error")
 		return {}
 
 

@@ -29,15 +29,26 @@ def update_attendance_request_reason_options():
 	"""Update reason field options in Attendance Request"""
 	try:
 		# Update the reason field options using property setter
+		# First option becomes the default
 		make_property_setter(
 			doctype="Attendance Request",
 			fieldname="reason",
 			property="options",
-			value="Work From Home\nOffice\nOn Duty\nOther",
+			value="On Duty\nWork From Home\nOffice\nOther",
 			property_type="Text"
 		)
+		
+		# Set default value to "On Duty"
+		make_property_setter(
+			doctype="Attendance Request",
+			fieldname="reason",
+			property="default",
+			value="On Duty",
+			property_type="Text"
+		)
+		
 		frappe.db.commit()
-		print("✅ Updated reason field options in Attendance Request")
+		print("✅ Updated reason field options in Attendance Request (default: On Duty)")
 	except Exception as e:
 		print(f"⚠️  Could not update reason field options: {str(e)}")
 		frappe.log_error(f"Error updating reason options: {str(e)}\nTraceback: {frappe.get_traceback()}", "Update Reason Options")

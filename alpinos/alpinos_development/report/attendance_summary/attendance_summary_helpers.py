@@ -33,7 +33,7 @@ def get_location_details(location):
 	return {}
 
 
-def calculate_attendance_stats(attendance_map, holiday_map, leave_map, from_date, to_date, employee):
+def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, to_date, employee):
 	"""Calculate attendance statistics for the month"""
 	stats = frappe._dict({
 		"paid_days": 0,
@@ -131,6 +131,12 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, from_date
 				else:
 					stats.paid_leave += 1
 					stats.paid_days += 1
+	
+	# Count Work From Home Requests from wfh_map
+	for date_str, wfh_info in wfh_map.items():
+		# Only count if not already counted in attendance (to avoid double counting)
+		if date_str not in attendance_map or attendance_map[date_str].get("status") != "Work From Home":
+			stats.od_wfh_count += 1
 	
 	# Calculate weekend count
 	current_date = getdate(from_date)
