@@ -140,8 +140,12 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			is_half_day = wfh_info.get("half_day", 0)
 			if is_half_day:
 				stats.od_wfh_count += 0.5
+				frappe.log_error(f"WFH Count: {employee} - {date_str} - Half Day - Count: 0.5", "WFH Debug")
 			else:
 				stats.od_wfh_count += 1
+				frappe.log_error(f"WFH Count: {employee} - {date_str} - Full Day - Count: 1", "WFH Debug")
+		else:
+			frappe.log_error(f"WFH Skip: {employee} - {date_str} - Already in attendance", "WFH Debug")
 	
 	# Calculate weekend count
 	current_date = getdate(from_date)
