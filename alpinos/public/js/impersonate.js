@@ -7,16 +7,25 @@ frappe.provide('alpinos.impersonate');
 
 alpinos.impersonate = {
 	init: function() {
-		// Check if user has Impersonate role
-		if (!frappe.user.has_role('Impersonate')) {
-			return;
-		}
-		
-		// Check impersonation status on page load
-		this.check_status();
-		
-		// Add impersonate button to navbar
-		this.add_navbar_button();
+		// Wait for user roles to be loaded
+		frappe.after_ajax(() => {
+			// Check if user has Impersonate role
+			// Use frappe.user_roles array which is more reliable
+			const has_impersonate_role = frappe.user_roles && frappe.user_roles.includes('Impersonate');
+			
+			if (!has_impersonate_role) {
+				console.log('Impersonate: User does not have Impersonate role');
+				return;
+			}
+			
+			console.log('Impersonate: User has Impersonate role, initializing...');
+			
+			// Check impersonation status on page load
+			this.check_status();
+			
+			// Add impersonate button to navbar
+			this.add_navbar_button();
+		});
 	},
 	
 	check_status: function() {
@@ -35,27 +44,49 @@ alpinos.impersonate = {
 		const navbar = $('.navbar-right');
 		
 		// Check if button already exists
-		if ($('#impersonate-btn').length > 0) {
+		if ($('#impersonate-menu-item').length > 0) {
+			console.log('Impersonate: Menu item already exists');
 			return;
 		}
 		
 		// Add impersonate menu item to user dropdown
-		setTimeout(() => {
+		// Use multiple attempts to ensure DOM is ready
+		let attempts = 0;
+		const max_attempts = 10;
+		
+		const add_menu_item = () => {
+			attempts++;
 			const user_menu = $('#toolbar-user');
+			
 			if (user_menu.length > 0) {
 				const dropdown = user_menu.find('.dropdown-menu');
 				if (dropdown.length > 0) {
-					dropdown.prepend(`
-						<li>
-							<a id="impersonate-menu-item" href="#" onclick="alpinos.impersonate.show_dialog(); return false;">
-								<i class="fa fa-user-secret"></i> ${__('Impersonate User')}
-							</a>
-						</li>
-						<li class="divider"></li>
-					`);
+					// Check again if already added
+					if ($('#impersonate-menu-item').length === 0) {
+						dropdown.prepend(`
+							<li>
+								<a id="impersonate-menu-item" href="#" onclick="alpinos.impersonate.show_dialog(); return false;">
+									<i class="fa fa-user-secret"></i> ${__('Impersonate User')}
+								</a>
+							</li>
+							<li class="divider"></li>
+						`);
+						console.log('Impersonate: Menu item added successfully');
+					}
+					return;
 				}
 			}
-		}, 1000);
+			
+			// Retry if not found and haven't exceeded max attempts
+			if (attempts < max_attempts) {
+				setTimeout(add_menu_item, 500);
+			} else {
+				console.log('Impersonate: Could not find user menu after', max_attempts, 'attempts');
+			}
+		};
+		
+		// Start trying to add menu item
+		setTimeout(add_menu_item, 500);
 	},
 	
 	show_dialog: function() {
