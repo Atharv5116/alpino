@@ -1,31 +1,73 @@
 /**
  * User Impersonation UI
- * Adds impersonation controls to the navbar
+ * Adds impersonation controls to the navbar using Frappe's built-in approach
  */
 
 frappe.provide('alpinos.impersonate');
 
 alpinos.impersonate = {
 	init: function() {
-		// Wait for user roles to be loaded
+		// Check if user has Impersonate role
+		const has_impersonate_role = frappe.user_roles && frappe.user_roles.includes('Impersonate');
+		
+		if (!has_impersonate_role) {
+			return;
+		}
+		
+		// Check impersonation status on page load
+		this.check_status();
+		
+		// Add impersonate option to toolbar
+		this.setup_toolbar();
+	},
+	
+	setup_toolbar: function() {
+		// Wait for toolbar to be ready
 		frappe.after_ajax(() => {
-			// Check if user has Impersonate role
-			// Use frappe.user_roles array which is more reliable
-			const has_impersonate_role = frappe.user_roles && frappe.user_roles.includes('Impersonate');
-			
-			if (!has_impersonate_role) {
-				console.log('Impersonate: User does not have Impersonate role');
-				return;
+			if (frappe.ui.toolbar && frappe.ui.toolbar.setup_session_defaults) {
+				// Hook into the session defaults setup to add our menu item
+				const original_setup = frappe.ui.toolbar.setup_session_defaults;
+				frappe.ui.toolbar.setup_session_defaults = function() {
+					original_setup.call(this);
+					alpinos.impersonate.add_to_user_menu();
+				};
+				
+				// If already setup, add directly
+				if ($('.navbar').length > 0) {
+					this.add_to_user_menu();
+				}
 			}
-			
-			console.log('Impersonate: User has Impersonate role, initializing...');
-			
-			// Check impersonation status on page load
-			this.check_status();
-			
-			// Add impersonate button to navbar
-			this.add_navbar_button();
 		});
+	},
+	
+	add_to_user_menu: function() {
+		// Check if already added
+		if ($('#impersonate-user-link').length > 0) {
+			return;
+		}
+		
+		// Find the user dropdown - look for the one with "My Settings" or "Log out"
+		const user_dropdown = $('.dropdown-menu:contains("My Settings"), .dropdown-menu:contains("Log out")').first();
+		
+		if (user_dropdown.length > 0) {
+			// Add the menu item at the top
+			const menu_item = $(`
+				<li>
+					<a id="impersonate-user-link" class="dropdown-item" href="#">
+						<svg class="icon icon-sm"><use href="#icon-shuffle"></use></svg>
+						<span class="menu-item-label">${__('Switch to User')}</span>
+					</a>
+				</li>
+			`);
+			
+			menu_item.find('a').on('click', (e) => {
+				e.preventDefault();
+				alpinos.impersonate.show_dialog();
+			});
+			
+			user_dropdown.prepend(menu_item);
+			console.log('Impersonate: Menu item added');
+		}
 	},
 	
 	check_status: function() {
@@ -39,83 +81,13 @@ alpinos.impersonate = {
 		});
 	},
 	
-	add_navbar_button: function() {
-		// Add to navbar dropdown
-		const navbar = $('.navbar-right');
-		
-		// Check if button already exists
-		if ($('#impersonate-menu-item').length > 0) {
-			console.log('Impersonate: Menu item already exists');
-			return;
-		}
-		
-		// Add impersonate menu item to user dropdown
-		// Use multiple attempts to ensure DOM is ready
-		let attempts = 0;
-		const max_attempts = 10;
-		
-		const add_menu_item = () => {
-			attempts++;
-			const user_menu = $('#toolbar-user');
-			
-			if (user_menu.length > 0) {
-				const dropdown = user_menu.find('.dropdown-menu');
-				if (dropdown.length > 0) {
-					// Check again if already added
-					if ($('#impersonate-menu-item').length === 0) {
-						dropdown.prepend(`
-							<li>
-								<a id="impersonate-menu-item" href="#" onclick="alpinos.impersonate.show_dialog(); return false;">
-									<i class="fa fa-user-secret"></i> ${__('Impersonate User')}
-								</a>
-							</li>
-							<li class="divider"></li>
-						`);
-						console.log('Impersonate: Menu item added successfully');
-					}
-					return;
-				}
-			}
-			
-			// Retry if not found and haven't exceeded max attempts
-			if (attempts < max_attempts) {
-				setTimeout(add_menu_item, 500);
-			} else {
-				console.log('Impersonate: Could not find user menu after', max_attempts, 'attempts');
-			}
-		};
-		
-		// Start trying to add menu item
-		setTimeout(add_menu_item, 500);
-	},
-	
 	show_dialog: function() {
-		// Get list of users
-		frappe.call({
-			method: 'alpinos.impersonate.get_users_for_impersonation',
-			callback: (r) => {
-				if (r.message) {
-					this.create_impersonate_dialog(r.message);
-				}
-			}
-		});
-	},
-	
-	create_impersonate_dialog: function(users) {
 		const d = new frappe.ui.Dialog({
-			title: __('Impersonate User'),
+			title: __('Switch to User'),
 			fields: [
 				{
-					fieldtype: 'HTML',
-					options: `
-						<div class="alert alert-warning">
-							<strong>${__('Warning:')}</strong> ${__('You are about to impersonate another user. All actions will be performed as that user.')}
-						</div>
-					`
-				},
-				{
-					fieldname: 'target_user',
-					label: __('Select User to Impersonate'),
+					fieldname: 'user',
+					label: __('User'),
 					fieldtype: 'Link',
 					options: 'User',
 					reqd: 1,
@@ -129,9 +101,9 @@ alpinos.impersonate = {
 					}
 				}
 			],
-			primary_action_label: __('Start Impersonation'),
+			primary_action_label: __('Switch'),
 			primary_action: (values) => {
-				this.start_impersonation(values.target_user);
+				this.start_impersonation(values.user);
 				d.hide();
 			}
 		});

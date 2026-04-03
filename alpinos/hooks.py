@@ -26,7 +26,7 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/alpinos/css/alpinos.css"
-app_include_js = "/assets/alpinos/js/impersonate.js"
+# app_include_js = "/assets/alpinos/js/alpinos.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/alpinos/css/alpinos.css"
@@ -46,9 +46,9 @@ app_include_js = "/assets/alpinos/js/impersonate.js"
 # Note: Job Applicant, Interview, and Employee Onboarding are in HRMS module
 # All JavaScript functionality is handled via Client Scripts (see employee_onboarding_client_scripts.py)
 # No doctype_js needed - client scripts are the correct approach for doctypes in other modules
-# doctype_js = {
-# 	"Employee Onboarding": "doctype.employee_onboarding.employee_onboarding"
-# }
+doctype_js = {
+	"User": "public/js/user_override.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -190,6 +190,7 @@ override_doctype_class = {
 	"Employee Checkin": "alpinos.overrides.employee_checkin_override.CustomEmployeeCheckin",
 	"Leave Application": "alpinos.overrides.leave_application_override.CustomLeaveApplication",
 	"Shift Request": "alpinos.overrides.shift_request_override.CustomShiftRequest",
+	"User": "alpinos.overrides.user_override.CustomUser",
 }
 
 # Document Events
