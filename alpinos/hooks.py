@@ -263,7 +263,6 @@ doc_events = {
 	},
 	"Attendance": {
 		"validate": [
-			"alpinos.attendance_request_automation.fill_absent_times_from_shift",
 			"alpinos.attendance_request_automation.validate_saturday_attendance_threshold"
 		],
 		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",

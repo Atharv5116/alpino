@@ -567,34 +567,6 @@ def sync_attendance_request_reason(attendance_doc):
 			"Sync Attendance Request Reason Error"
 		)
 
-
-def fill_absent_times_from_shift(doc, method=None):
-	"""
-	When Attendance status is Absent and in_time/out_time are missing but doc has shift
-	(or linked attendance_request with shift), set times from shift so they are visible like Present/WFH.
-	"""
-	if doc.status != "Absent":
-		return
-	if doc.in_time and doc.out_time:
-		return
-	shift_name = doc.get("shift")
-	if not shift_name and doc.get("attendance_request"):
-		shift_name = frappe.db.get_value("Attendance Request", doc.attendance_request, "shift")
-	if not shift_name:
-		return
-	from frappe.utils import get_datetime
-	shift_doc = frappe.get_cached_doc("Shift Type", shift_name)
-	date_str = str(doc.attendance_date) if doc.attendance_date else ""
-	if not date_str:
-		return
-	if not doc.in_time:
-		doc.in_time = get_datetime(f"{date_str} {shift_doc.start_time}")
-	if not doc.out_time:
-		doc.out_time = get_datetime(f"{date_str} {shift_doc.end_time}")
-	if doc.working_hours is None and doc.in_time and doc.out_time:
-		doc.working_hours = round((doc.out_time - doc.in_time).total_seconds() / 3600.0, 2)
-
-
 def populate_attendance_reason_after_insert(doc, method=None):
 	"""
 	Hook: Called after Attendance is inserted.
@@ -994,7 +966,10 @@ def validate_saturday_attendance_threshold(doc, method):
 	
 	threshold = flt(threshold)
 	if threshold > 0:
-		if flt(doc.working_hours) >= threshold:
-			doc.status = "Present"
-		else:
-			doc.status = "Absent"
+		# Only apply Saturday override if working_hours is actually set (has checkins)
+		# If working_hours is 0/None, let HRMS auto-attendance handle it (will be Absent)
+		if flt(doc.working_hours) > 0:
+			if flt(doc.working_hours) >= threshold:
+				doc.status = "Present"
+			else:
+				doc.status = "Absent"
