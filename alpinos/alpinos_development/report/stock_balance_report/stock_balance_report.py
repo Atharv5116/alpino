@@ -14,14 +14,16 @@ def execute(filters=None):
 	if not filters:
 		filters = {}
 	
-	# Prepare filters for core report
-	core_filters = {
+	# Prepare filters for core report (frappe._dict for attribute access)
+	core_filters = frappe._dict({
 		"company": filters.get("company"),
 		"from_date": filters.get("from_date") or getdate(),
 		"to_date": filters.get("date") or getdate(),
-		"warehouse": filters.get("warehouse"),
+		"warehouse": [filters.get("warehouse")] if filters.get("warehouse") else None,
 		"item_code": [filters.get("item_code")] if filters.get("item_code") else None,
-	}
+		"valuation_field_type": "Currency",
+		"include_zero_stock_items": 0,
+	})
 	
 	# Run core stock balance report
 	core_report = StockBalanceReport(core_filters)
