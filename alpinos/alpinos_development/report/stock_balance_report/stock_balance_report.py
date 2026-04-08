@@ -4,12 +4,33 @@
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate
-from frappe.query_builder.functions import Sum
+
+# Import core ERPNext Stock Balance Report
+from erpnext.stock.report.stock_balance.stock_balance import StockBalanceReport
 
 
 def execute(filters=None):
+	"""Execute the stock balance report using core ERPNext logic with custom columns"""
+	if not filters:
+		filters = {}
+	
+	# Prepare filters for core report
+	core_filters = {
+		"company": filters.get("company"),
+		"from_date": filters.get("from_date") or getdate(),
+		"to_date": filters.get("date") or getdate(),
+		"warehouse": filters.get("warehouse"),
+		"item_code": [filters.get("item_code")] if filters.get("item_code") else None,
+	}
+	
+	# Run core stock balance report
+	core_report = StockBalanceReport(core_filters)
+	core_columns, core_data = core_report.run()
+	
+	# Transform to our custom format
 	columns = get_columns()
-	data = get_data(filters)
+	data = transform_data(core_data, filters.get("date") or getdate())
+	
 	return columns, data
 
 
@@ -94,166 +115,43 @@ def get_columns():
 	]
 
 
-def get_data(filters):
-	"""Fetch stock balance data based on filters"""
-	if not filters:
-		filters = {}
-	
-	from frappe.utils import add_days
-	
-	date = filters.get("date") or getdate()
-	from_date = filters.get("from_date") or add_days(date, -30)  # Default to 1 month back
-	company = filters.get("company")
-	warehouse = filters.get("warehouse")
-	item_code = filters.get("item_code")
-	
-	# Build item-warehouse map
-	iwb_map = get_item_warehouse_balance(from_date, date, company, warehouse, item_code)
-	
-	# Get reserved quantities
-	reserved_qty_map = get_reserved_qty(date, company, warehouse, item_code)
-	
-	# Process data
+def transform_data(core_data, report_date):
+	"""Transform core stock balance data to our custom format"""
 	result = []
-	for key, data in iwb_map.items():
-		company_name, item, wh = key
-		reserved_qty = reserved_qty_map.get((item, wh), 0.0)
-		closing_qty = flt(data.get("bal_qty", 0))
-		available_qty = closing_qty - reserved_qty
-		
-		# Skip if no stock
-		if closing_qty == 0:
+	
+	# Get MRP for all items
+	item_codes = list(set([row.get("item_code") for row in core_data if row.get("item_code")]))
+	mrp_map = {}
+	
+	if item_codes:
+		mrp_data = frappe.get_all(
+			"Item",
+			filters={"name": ["in", item_codes]},
+			fields=["name", "standard_rate"]
+		)
+		mrp_map = {row.name: row.standard_rate for row in mrp_data}
+	
+	for row in core_data:
+		# Skip if no balance
+		if not row.get("bal_qty"):
 			continue
 		
+		bal_qty = flt(row.get("bal_qty", 0))
+		reserved_stock = flt(row.get("reserved_stock", 0))
+		available_qty = bal_qty - reserved_stock
+		
 		result.append({
-			"date": date,
-			"company": company_name,
-			"warehouse": wh,
-			"item_code": item,
-			"item_name": data.get("item_name"),
-			"opening_qty": flt(data.get("opening_qty", 0), 0),  # No decimal places
-			"reserved_qty": flt(reserved_qty, 0),
+			"date": report_date,
+			"company": row.get("company"),
+			"warehouse": row.get("warehouse"),
+			"item_code": row.get("item_code"),
+			"item_name": row.get("item_name"),
+			"opening_qty": flt(row.get("opening_qty", 0), 0),  # No decimal places
+			"reserved_qty": flt(reserved_stock, 0),
 			"available_qty": flt(available_qty, 0),
-			"total_stock": flt(closing_qty, 0),
-			"mrp": flt(data.get("mrp", 0), 2),
-			"stock_value": flt(data.get("out_val", 0), 2)
+			"total_stock": flt(bal_qty, 0),
+			"mrp": flt(mrp_map.get(row.get("item_code"), 0), 2),
+			"stock_value": flt(row.get("out_val", 0), 2)
 		})
 	
 	return result
-
-
-def get_item_warehouse_balance(from_date, to_date, company=None, warehouse=None, item_code=None):
-	"""Calculate item-warehouse balance similar to ERPNext Stock Balance"""
-	# Convert to date objects for comparison
-	from_date = getdate(from_date)
-	to_date = getdate(to_date)
-	
-	conditions = ["sle.docstatus < 2", "sle.is_cancelled = 0"]
-	values = {"from_date": from_date, "to_date": to_date}
-	
-	if company:
-		conditions.append("sle.company = %(company)s")
-		values["company"] = company
-	
-	if warehouse:
-		conditions.append("sle.warehouse = %(warehouse)s")
-		values["warehouse"] = warehouse
-	
-	if item_code:
-		conditions.append("sle.item_code = %(item_code)s")
-		values["item_code"] = item_code
-	
-	where_clause = " AND ".join(conditions)
-	
-	# Get all stock ledger entries
-	sle_data = frappe.db.sql(f"""
-		SELECT
-			sle.company,
-			sle.item_code,
-			sle.warehouse,
-			sle.posting_date,
-			sle.actual_qty,
-			sle.stock_value_difference,
-			item.item_name,
-			item.standard_rate as mrp
-		FROM `tabStock Ledger Entry` sle
-		INNER JOIN `tabItem` item ON sle.item_code = item.name
-		WHERE {where_clause}
-		AND sle.posting_date <= %(to_date)s
-		ORDER BY sle.posting_date, sle.posting_time, sle.creation
-	""", values, as_dict=1)
-	
-	iwb_map = {}
-	
-	for row in sle_data:
-		key = (row.company, row.item_code, row.warehouse)
-		
-		if key not in iwb_map:
-			iwb_map[key] = {
-				"opening_qty": 0.0,
-				"in_qty": 0.0,
-				"out_qty": 0.0,
-				"bal_qty": 0.0,
-				"out_val": 0.0,
-				"item_name": row.item_name,
-				"mrp": row.mrp
-			}
-		
-		qty_dict = iwb_map[key]
-		
-		# Calculate opening (before from_date)
-		if row.posting_date < from_date:
-			qty_dict["opening_qty"] += flt(row.actual_qty)
-			qty_dict["bal_qty"] += flt(row.actual_qty)
-		# Calculate movements (from from_date to to_date)
-		elif row.posting_date >= from_date and row.posting_date <= to_date:
-			if flt(row.actual_qty) > 0:
-				qty_dict["in_qty"] += flt(row.actual_qty)
-			else:
-				qty_dict["out_qty"] += abs(flt(row.actual_qty))
-				# Stock value for outward transactions
-				qty_dict["out_val"] += abs(flt(row.stock_value_difference))
-			
-			qty_dict["bal_qty"] += flt(row.actual_qty)
-	
-	return iwb_map
-
-
-def get_reserved_qty(date, company=None, warehouse=None, item_code=None):
-	"""Get reserved stock quantities from Stock Reservation Entry"""
-	conditions = ["sre.docstatus = 1", "sre.status != 'Cancelled'"]
-	values = {"date": date}
-	
-	if company:
-		conditions.append("sre.company = %(company)s")
-		values["company"] = company
-	
-	if warehouse:
-		conditions.append("sre.warehouse = %(warehouse)s")
-		values["warehouse"] = warehouse
-	
-	if item_code:
-		conditions.append("sre.item_code = %(item_code)s")
-		values["item_code"] = item_code
-	
-	where_clause = " AND ".join(conditions)
-	
-	query = f"""
-		SELECT
-			sre.item_code,
-			sre.warehouse,
-			SUM(sre.reserved_qty - sre.delivered_qty) as reserved_qty
-		FROM `tabStock Reservation Entry` sre
-		WHERE {where_clause}
-		AND sre.reservation_based_on = 'Stock Reservation Entry'
-		GROUP BY sre.item_code, sre.warehouse
-	"""
-	
-	reserved_data = frappe.db.sql(query, values, as_dict=1)
-	
-	reserved_map = {}
-	for row in reserved_data:
-		key = (row.item_code, row.warehouse)
-		reserved_map[key] = flt(row.reserved_qty)
-	
-	return reserved_map
