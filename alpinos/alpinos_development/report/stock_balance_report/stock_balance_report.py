@@ -121,18 +121,6 @@ def transform_data(core_data, report_date):
 	"""Transform core stock balance data to our custom format"""
 	result = []
 	
-	# Get MRP for all items
-	item_codes = list(set([row.get("item_code") for row in core_data if row.get("item_code")]))
-	mrp_map = {}
-	
-	if item_codes:
-		mrp_data = frappe.get_all(
-			"Item",
-			filters={"name": ["in", item_codes]},
-			fields=["name", "standard_rate"]
-		)
-		mrp_map = {row.name: row.standard_rate for row in mrp_data}
-	
 	for row in core_data:
 		# Skip if no balance
 		if not row.get("bal_qty"):
@@ -152,7 +140,7 @@ def transform_data(core_data, report_date):
 			"reserved_qty": flt(reserved_stock, 0),
 			"available_qty": flt(available_qty, 0),
 			"total_stock": flt(bal_qty, 0),
-			"mrp": flt(mrp_map.get(row.get("item_code"), 0), 2),
+			"mrp": flt(row.get("val_rate", 0), 2),
 			"stock_value": flt(row.get("out_val", 0), 2)
 		})
 	
