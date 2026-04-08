@@ -144,6 +144,10 @@ def get_data(filters):
 
 def get_item_warehouse_balance(from_date, to_date, company=None, warehouse=None, item_code=None):
 	"""Calculate item-warehouse balance similar to ERPNext Stock Balance"""
+	# Convert to date objects for comparison
+	from_date = getdate(from_date)
+	to_date = getdate(to_date)
+	
 	conditions = ["sle.docstatus < 2", "sle.is_cancelled = 0"]
 	values = {"from_date": from_date, "to_date": to_date}
 	
