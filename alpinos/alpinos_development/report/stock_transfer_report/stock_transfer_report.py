@@ -128,7 +128,7 @@ def get_data(filters):
 			sed.s_warehouse as from_warehouse,
 			sed.t_warehouse as to_warehouse,
 			sed.qty as transferred_qty,
-			item.standard_rate as mrp,
+			sed.valuation_rate as mrp,
 			sed.amount as transfer_value
 		FROM `tabStock Entry` se
 		INNER JOIN `tabStock Entry Detail` sed ON se.name = sed.parent
