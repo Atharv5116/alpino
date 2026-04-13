@@ -18,8 +18,8 @@ from frappe.oauth import OAuthWebRequestValidator
 
 def get_oauth_server_with_extended_token_expiry():
 	"""
-	Override Frappe's get_oauth_server to use extended token expiry.
-	This is called via override_whitelisted_methods in hooks.py
+	Replacement function for frappe.integrations.oauth2.get_oauth_server
+	with extended token expiry for Raven mobile app.
 	"""
 	if not getattr(frappe.local, "oauth_server", None):
 		oauth_validator = OAuthWebRequestValidator()
@@ -32,3 +32,16 @@ def get_oauth_server_with_extended_token_expiry():
 		)
 	
 	return frappe.local.oauth_server
+
+
+def patch_oauth_server():
+	"""
+	Monkey-patch the get_oauth_server function to use extended token expiry.
+	This is called on every request via before_request hook.
+	Lightweight check ensures minimal overhead.
+	"""
+	import frappe.integrations.oauth2
+	
+	# Only patch if not already patched (avoids redundant work on each request)
+	if frappe.integrations.oauth2.get_oauth_server is not get_oauth_server_with_extended_token_expiry:
+		frappe.integrations.oauth2.get_oauth_server = get_oauth_server_with_extended_token_expiry

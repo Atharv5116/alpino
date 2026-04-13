@@ -300,11 +300,9 @@ extend_bootinfo = [
 # Overriding Methods
 # ------------------------------
 #
-# Override OAuth server to extend token expiry for Raven mobile app
-# This prevents authentication errors after 1 hour
-override_whitelisted_methods = {
-	"frappe.integrations.oauth2.get_oauth_server": "alpinos.overrides.oauth_override.get_oauth_server_with_extended_token_expiry"
-}
+# override_whitelisted_methods = {
+# 	"frappe.desk.doctype.event.event.get_events": "alpinos.event.get_events"
+# }
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -324,7 +322,8 @@ override_whitelisted_methods = {
 
 # Request Events
 # ----------------
-# before_request = ["alpinos.utils.before_request"]
+# Monkey-patch OAuth server on every request to extend token expiry for Raven mobile app
+before_request = ["alpinos.overrides.oauth_override.patch_oauth_server"]
 # after_request = ["alpinos.utils.after_request"]
 
 # Job Events
