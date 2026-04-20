@@ -51,30 +51,42 @@ def setup_sales_order_custom_fields():
 		"Sales Order": [
 			# Order Type (already exists as standard field, we override its options via Property Setter)
 			# Cash Discount in totals section
+			# Cash Discount section (visible in Totals area)
+			dict(
+				fieldname="custom_cash_discount_section",
+				label="Cash Discount",
+				fieldtype="Section Break",
+				insert_after="grand_total",
+			),
 			dict(
 				fieldname="custom_cash_discount",
 				label="Cash Discount (%)",
 				fieldtype="Percent",
-				insert_after="additional_discount_percentage",
+				insert_after="custom_cash_discount_section",
 				default="0",
 				description="Cash discount percentage applied on the order",
+			),
+			dict(
+				fieldname="custom_cash_discount_col",
+				fieldtype="Column Break",
+				insert_after="custom_cash_discount",
 			),
 			dict(
 				fieldname="custom_cash_discount_amount",
 				label="Cash Discount Amount",
 				fieldtype="Currency",
-				insert_after="custom_cash_discount",
+				insert_after="custom_cash_discount_col",
 				read_only=1,
 				description="Auto-calculated cash discount amount",
 			),
 
-			# Other Details Section
+			# Other Details Section (after packing_list on Details tab)
 			dict(
 				fieldname="custom_other_details_section",
 				label="Other Details",
 				fieldtype="Section Break",
-				insert_after="terms",
-				collapsible=1,
+				insert_after="packing_list",
+				collapsible=0,
 			),
 			dict(
 				fieldname="custom_marketing_freebies",
@@ -190,7 +202,7 @@ def _setup_property_setters():
 			"doc_type": "Sales Order",
 			"field_name": "order_type",
 			"property": "options",
-			"value": "\nGT\nMT\nGYM & NUTRITION\nHoReCa\nSales\nMaintenance\nShopping Cart",
+			"value": "\nGT\nMT\nGYM & NUTRITION\nHoReCa",
 			"property_type": "Text",
 		},
 		# Make order_type mandatory

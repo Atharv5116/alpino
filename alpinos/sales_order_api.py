@@ -33,3 +33,65 @@ def get_box_conversion_factor(item_code):
 		"conversion_factor"
 	)
 	return flt(conversion_factor) if conversion_factor else None
+
+
+@frappe.whitelist()
+def create_sales_order(customer, order_type, company, items, cash_discount=0,
+                       delivery_date=None, freebies=None, scheme_items=None,
+                       additional_units_damage=0):
+	"""Create a Sales Order from the custom entry page"""
+	import json
+
+	if isinstance(items, str):
+		items = json.loads(items)
+	if isinstance(freebies, str):
+		freebies = json.loads(freebies)
+	if isinstance(scheme_items, str):
+		scheme_items = json.loads(scheme_items)
+
+	so = frappe.new_doc("Sales Order")
+	so.customer = customer
+	so.order_type = order_type
+	so.company = company
+	so.delivery_date = delivery_date
+	so.custom_cash_discount = flt(cash_discount)
+
+	for item in items:
+		so.append("items", {
+			"item_code": item.get("item_code"),
+			"qty": flt(item.get("qty")),
+			"rate": flt(item.get("rate")),
+			"delivery_date": item.get("delivery_date") or delivery_date,
+			"custom_box": flt(item.get("custom_box")),
+			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
+			"custom_flat_discount": flt(item.get("custom_flat_discount")),
+			"custom_offer": item.get("custom_offer") or "",
+			"custom_additional_discount": flt(item.get("custom_additional_discount")),
+			"custom_item_tax": flt(item.get("custom_item_tax")),
+		})
+
+	# Marketing Freebies
+	if freebies:
+		for freebie in freebies:
+			so.append("custom_marketing_freebies", {
+				"item_code": freebie.get("item_code"),
+				"qty": flt(freebie.get("qty")),
+				"remarks": freebie.get("remarks") or "",
+			})
+
+	# Scheme Items
+	if scheme_items:
+		so.custom_additional_units_damage = 1
+		for scheme in scheme_items:
+			so.append("custom_scheme_item_table", {
+				"item_code": scheme.get("item_code"),
+				"qty": flt(scheme.get("qty")),
+				"scheme": scheme.get("scheme") or "",
+			})
+	else:
+		so.custom_additional_units_damage = int(additional_units_damage)
+
+	so.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	return so.name
