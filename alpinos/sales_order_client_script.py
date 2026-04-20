@@ -30,58 +30,39 @@ frappe.ui.form.on('Sales Order', {
 frappe.ui.form.on('Sales Order Item', {
     item_code: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-        if (row.item_code && frm.doc.customer) {
-            // Fetch MRP from Customer Item MRP table
-            frappe.call({
-                method: 'frappe.client.get_list',
-                args: {
-                    doctype: 'Customer Item MRP',
-                    filters: {
-                        parent: frm.doc.customer,
-                        parenttype: 'Customer',
-                        item_code: row.item_code
-                    },
-                    fields: ['mrp'],
-                    limit_page_length: 1
-                },
-                callback: function(r) {
-                    if (r.message && r.message.length > 0) {
-                        frappe.model.set_value(cdt, cdn, 'custom_customer_mrp', r.message[0].mrp);
-                    }
-                }
-            });
+        if (!row.item_code) return;
 
-            // Fetch Box conversion factor from Item UOM table
+        // Fetch MRP from Customer Item MRP table
+        if (frm.doc.customer) {
             frappe.call({
-                method: 'frappe.client.get_list',
-                args: {
-                    doctype: 'UOM Conversion Detail',
-                    filters: {
-                        parent: row.item_code,
-                        parenttype: 'Item',
-                        uom: 'Box'
-                    },
-                    fields: ['conversion_factor'],
-                    limit_page_length: 1
-                },
+                method: 'alpinos.sales_order_api.get_customer_item_mrp',
+                args: { customer: frm.doc.customer, item_code: row.item_code },
                 callback: function(r) {
-                    if (r.message && r.message.length > 0) {
-                        // Store conversion factor for later use
-                        row._box_conversion_factor = r.message[0].conversion_factor;
-                        // If qty is set, calculate boxes
-                        if (row.qty) {
-                            let boxes = row.qty / r.message[0].conversion_factor;
-                            frappe.model.set_value(cdt, cdn, 'custom_box', flt(boxes, 2));
-                        }
+                    if (r.message) {
+                        frappe.model.set_value(cdt, cdn, 'custom_customer_mrp', r.message);
                     }
                 }
             });
         }
+
+        // Fetch Box conversion factor
+        frappe.call({
+            method: 'alpinos.sales_order_api.get_box_conversion_factor',
+            args: { item_code: row.item_code },
+            callback: function(r) {
+                if (r.message) {
+                    row._box_conversion_factor = r.message;
+                    if (row.qty) {
+                        let boxes = row.qty / r.message;
+                        frappe.model.set_value(cdt, cdn, 'custom_box', flt(boxes, 2));
+                    }
+                }
+            }
+        });
     },
 
     qty: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-        // Auto-calculate boxes from qty
         if (row.item_code && row.qty) {
             get_box_conversion(row.item_code, function(conversion_factor) {
                 if (conversion_factor) {
@@ -94,7 +75,6 @@ frappe.ui.form.on('Sales Order Item', {
 
     custom_box: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-        // Auto-calculate qty from boxes
         if (row.item_code && row.custom_box) {
             get_box_conversion(row.item_code, function(conversion_factor) {
                 if (conversion_factor) {
@@ -120,23 +100,10 @@ frappe.ui.form.on('Sales Order Item', {
 
 function get_box_conversion(item_code, callback) {
     frappe.call({
-        method: 'frappe.client.get_list',
-        args: {
-            doctype: 'UOM Conversion Detail',
-            filters: {
-                parent: item_code,
-                parenttype: 'Item',
-                uom: 'Box'
-            },
-            fields: ['conversion_factor'],
-            limit_page_length: 1
-        },
+        method: 'alpinos.sales_order_api.get_box_conversion_factor',
+        args: { item_code: item_code },
         callback: function(r) {
-            if (r.message && r.message.length > 0) {
-                callback(r.message[0].conversion_factor);
-            } else {
-                callback(null);
-            }
+            callback(r.message || null);
         }
     });
 }
@@ -148,7 +115,6 @@ function calculate_item_values(frm, cdt, cdn) {
     let additional_discount = flt(row.custom_additional_discount);
 
     if (mrp > 0) {
-        // Rate = MRP - Flat Discount - Additional Discount
         let effective_rate = mrp - flat_discount - additional_discount;
         if (effective_rate < 0) effective_rate = 0;
         frappe.model.set_value(cdt, cdn, 'rate', effective_rate);

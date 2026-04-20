@@ -202,6 +202,15 @@ def _setup_property_setters():
 			"value": "1",
 			"property_type": "Check",
 		},
+		# Make item_name (SKU No.) visible in grid
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order Item",
+			"field_name": "item_name",
+			"property": "in_list_view",
+			"value": "1",
+			"property_type": "Check",
+		},
 	]
 
 	for ps_data in property_setters:
