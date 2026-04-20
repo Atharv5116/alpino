@@ -6,6 +6,21 @@ from frappe import _
 from frappe.utils import add_days, date_diff, get_datetime, getdate
 
 
+def set_reporting_person(doc, method=None):
+	if not doc or not getattr(doc, "employee", None):
+		return
+	if not getattr(doc, "meta", None) or not doc.meta.has_field("reporting_person"):
+		return
+
+	reports_to_emp = frappe.db.get_value("Employee", doc.employee, "reports_to")
+	if not reports_to_emp:
+		doc.reporting_person = None
+		return
+
+	manager_user = frappe.db.get_value("Employee", reports_to_emp, "user_id")
+	doc.reporting_person = manager_user or None
+
+
 @frappe.whitelist()
 def get_checkin_data_for_dates(employee, from_date, to_date):
 	"""

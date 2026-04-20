@@ -12,6 +12,9 @@ def setup_attendance_request_custom_fields():
 	
 	# Update reason field options in Attendance Request
 	update_attendance_request_reason_options()
+
+	# Add custom fields to Attendance Request doctype
+	add_attendance_request_custom_fields()
 	
 	# Add custom fields to Attendance doctype
 	add_attendance_custom_fields()
@@ -23,6 +26,34 @@ def setup_attendance_request_custom_fields():
 	add_shift_type_custom_fields()
 	
 	print("✅ Attendance Request and Attendance custom fields setup completed")
+
+
+def add_attendance_request_custom_fields():
+	"""Add custom fields to Attendance Request doctype"""
+	custom_fields = {
+		"Attendance Request": [
+			dict(
+				fieldname="reporting_person",
+				label="Reporting Person",
+				fieldtype="Link",
+				options="User",
+				insert_after="company",
+				read_only=1,
+				allow_on_submit=1,
+			),
+		]
+	}
+
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added custom fields to Attendance Request doctype")
+	except Exception as e:
+		print(f"⚠️  Could not add custom fields to Attendance Request: {str(e)}")
+		frappe.log_error(
+			f"Error adding Attendance Request custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}",
+			"Add Attendance Request Custom Fields",
+		)
 
 
 def update_attendance_request_reason_options():

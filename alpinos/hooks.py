@@ -136,6 +136,8 @@ after_migrate = [
 	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.patches.create_attendance_widget.execute",
+	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
+	"alpinos.sales_order_client_script.create_sales_order_client_script",
 ]
 
 # Uninstallation
@@ -260,6 +262,9 @@ doc_events = {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
+	},
+	"Attendance Request": {
+		"validate": "alpinos.attendance_request_automation.set_reporting_person"
 	},
 	"Attendance": {
 		"validate": [
