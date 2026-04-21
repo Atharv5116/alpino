@@ -82,31 +82,25 @@ class SalesOrderEntry {
 	}
 
 	_make_item_link_field(parent, fieldname) {
-		// Item link field that shows item_name prominently in search results
 		let field = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Link',
 				options: 'Item',
-				fieldname: fieldname,
-				get_query: function() {
-					return {
-						filters: { disabled: 0 },
-						fields: ['item_code', 'item_name', 'item_group']
-					};
-				}
+				fieldname: fieldname
 			},
 			parent: parent,
 			render_input: true,
 			only_input: true
 		});
 		if (field.$input) {
-			field.$input.css('min-width', '120px');
-			// Override the format for awesomplete results to show item_name prominently
-			field.awesomplete && (field.awesomplete.data = function(item) {
-				return {
-					label: item.label || item.value,
-					value: item.value
-				};
+			field.$input.css('min-width', '140px');
+		}
+		// Widen the dropdown so item_name description is fully visible
+		if (field.awesomplete) {
+			$(field.awesomplete.ul).css({
+				'min-width': '320px',
+				'max-height': '300px',
+				'overflow-y': 'auto'
 			});
 		}
 		return field;
