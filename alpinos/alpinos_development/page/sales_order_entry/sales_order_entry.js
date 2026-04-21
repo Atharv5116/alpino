@@ -95,14 +95,7 @@ class SalesOrderEntry {
 		if (field.$input) {
 			field.$input.css('min-width', '140px');
 		}
-		// Widen the dropdown so item_name description is fully visible
-		if (field.awesomplete) {
-			$(field.awesomplete.ul).css({
-				'min-width': '320px',
-				'max-height': '300px',
-				'overflow-y': 'auto'
-			});
-		}
+		// Dropdown styling handled via CSS in template
 		return field;
 	}
 

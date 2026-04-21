@@ -1,3 +1,24 @@
+<style>
+.sales-order-entry .awesomplete > ul {
+	z-index: 9999 !important;
+	position: fixed !important;
+	min-width: 320px;
+	max-height: 300px;
+	overflow-y: auto;
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d5db);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.sales-order-entry .awesomplete > ul > li {
+	padding: 8px 12px;
+	cursor: pointer;
+}
+.sales-order-entry .awesomplete > ul > li:hover,
+.sales-order-entry .awesomplete > ul > li[aria-selected="true"] {
+	background: var(--bg-color, #f5f5f5);
+}
+</style>
 <div class="sales-order-entry" style="max-width: 1200px; margin: 0 auto; padding: 15px;">
 
 	<!-- Header Fields -->
@@ -13,7 +34,7 @@
 	<!-- Items Table -->
 	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
 		<h5 style="margin-bottom: 15px; font-weight: 600;">Items</h5>
-		<div style="overflow-x: auto;">
+		<div style="overflow: visible;">
 			<table class="table table-bordered items-table" style="font-size: 13px;">
 				<thead style="background: var(--bg-color);">
 					<tr>
