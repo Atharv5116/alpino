@@ -132,13 +132,13 @@ def setup_sales_order_custom_fields():
 				insert_after="price_list_rate",
 				description="MRP from Customer master. Editable.",
 			),
-			# Flat Discount (after discount_amount)
+			# Flat Discount % (after discount_amount)
 			dict(
 				fieldname="custom_flat_discount",
-				label="Flat Discount",
-				fieldtype="Currency",
+				label="Flat Discount %",
+				fieldtype="Percent",
 				insert_after="discount_amount",
-				description="Flat discount amount. If set, rate is calculated as MRP - Flat Discount.",
+				description="Flat discount percentage. If set, rate is calculated as MRP - (MRP * Flat Discount % / 100).",
 			),
 			# Offer
 			dict(

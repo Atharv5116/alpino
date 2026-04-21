@@ -194,9 +194,9 @@ class SalesOrderEntry {
 		});
 		row_data._mrp_field = mrp_field;
 
-		// Flat Discount
+		// Flat Discount %
 		let flat_disc_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Currency', fieldname: `flat_discount_${idx}` },
+			df: { fieldtype: 'Float', fieldname: `flat_discount_${idx}`, description: '%' },
 			parent: $row.find('.item-flat-discount'),
 			render_input: true,
 			only_input: true
@@ -328,7 +328,8 @@ class SalesOrderEntry {
 
 	calc_row_amount(idx, $row) {
 		let item = this.items[idx];
-		let rate = flt(item.mrp) - flt(item.flat_discount) - flt(item.additional_discount);
+		let flat_disc_amt = flt(item.mrp) * flt(item.flat_discount) / 100;
+		let rate = flt(item.mrp) - flat_disc_amt - flt(item.additional_discount);
 		if (rate < 0) rate = 0;
 		item.rate = rate;
 		item.amount = flt(rate * flt(item.qty)) + flt(item.tax);
