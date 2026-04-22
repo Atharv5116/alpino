@@ -265,6 +265,14 @@ def _setup_opportunity_property_setters():
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Opportunity Item",
+			field_name="item_name",
+			property="in_list_view",
+			value="1",
+			property_type="Check",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Opportunity Item",
 			field_name="qty",
 			property="label",
 			value="Quantity (Units)",

@@ -7,10 +7,6 @@ import frappe
 
 QUOTATION_CLIENT_SCRIPT = """
 frappe.ui.form.on('Quotation', {
-    refresh: function(frm) {
-        recalculate_quotation_totals(frm);
-    },
-
     custom_cash_discount: function(frm) {
         recalculate_quotation_totals(frm);
     },
@@ -39,6 +35,14 @@ frappe.ui.form.on('Quotation Item', {
         }
         if (sku_name) {
             frappe.model.set_value(cdt, cdn, 'item_name', sku_name);
+        }
+        if (sku_code) {
+            frappe.db.get_value('Item', sku_code, 'item_name')
+                .then((r) => {
+                    if (r && r.message && r.message.item_name) {
+                        frappe.model.set_value(cdt, cdn, 'item_name', r.message.item_name);
+                    }
+                });
         }
 
         if (frm.doc.party_name && sku_code) {
@@ -120,7 +124,7 @@ function update_boxes_from_qty(cdt, cdn) {
 
     get_conversion_factor(row.item_code, function(factor) {
         if (!factor) return;
-        frappe.model.set_value(cdt, cdn, 'custom_boxes', cint(row.qty / factor));
+        frappe.model.set_value(cdt, cdn, 'custom_boxes', flt(row.qty / factor, 0));
     });
 }
 

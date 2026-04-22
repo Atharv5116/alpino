@@ -11,10 +11,6 @@ import frappe
 
 OPPORTUNITY_CLIENT_SCRIPT = """
 frappe.ui.form.on('Opportunity', {
-    refresh: function(frm) {
-        recalculate_opportunity_totals(frm);
-    },
-
     custom_cash_discount: function(frm) {
         recalculate_opportunity_totals(frm);
     }
@@ -34,6 +30,14 @@ frappe.ui.form.on('Opportunity Item', {
         }
         if (sku_name) {
             frappe.model.set_value(cdt, cdn, 'item_name', sku_name);
+        }
+        if (sku_code) {
+            frappe.db.get_value('Item', sku_code, 'item_name')
+                .then((r) => {
+                    if (r && r.message && r.message.item_name) {
+                        frappe.model.set_value(cdt, cdn, 'item_name', r.message.item_name);
+                    }
+                });
         }
 
         if (frm.doc.party_name && sku_code) {
