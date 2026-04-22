@@ -97,6 +97,14 @@ def _setup_stock_entry_property_setters():
 			value="Quantity",
 			property_type="Data",
 		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Stock Entry Detail",
+			field_name="retain_sample",
+			property="fetch_from",
+			value="item_code.custom_retain_sample",
+			property_type="Data",
+		),
 	]
 
 	for ps_data in property_setters:

@@ -32,6 +32,13 @@ def setup_item_custom_fields():
 				fieldtype="Color",
 				insert_after="brand",
 			),
+			dict(
+				fieldname="custom_retain_sample",
+				label="Retain Sample",
+				fieldtype="Check",
+				insert_after="has_expiry_date",
+				default=0,
+			),
 		]
 	}
 
