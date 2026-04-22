@@ -1,0 +1,197 @@
+"""
+Client Script for Opportunity custom flow:
+- SKU dropdown driven row setup
+- Qty <-> Boxes conversion
+- Item discount/tax amount handling
+- Header totals calculation
+"""
+
+import frappe
+
+
+OPPORTUNITY_CLIENT_SCRIPT = """
+frappe.ui.form.on('Opportunity', {
+    refresh: function(frm) {
+        recalculate_opportunity_totals(frm);
+    },
+
+    custom_cash_discount: function(frm) {
+        recalculate_opportunity_totals(frm);
+    }
+});
+
+frappe.ui.form.on('Opportunity Item', {
+    custom_sku_with_name: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row.custom_sku_with_name) return;
+
+        const parts = row.custom_sku_with_name.split(' - ');
+        const sku_code = parts[0] || '';
+        const sku_name = parts.slice(1).join(' - ') || '';
+
+        if (sku_code) {
+            frappe.model.set_value(cdt, cdn, 'item_code', sku_code);
+        }
+        if (sku_name) {
+            frappe.model.set_value(cdt, cdn, 'item_name', sku_name);
+        }
+
+        if (frm.doc.party_name && sku_code) {
+            frappe.call({
+                method: 'alpinos.sales_order_api.get_customer_item_mrp',
+                args: {
+                    customer: frm.doc.party_name,
+                    item_code: sku_code
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        frappe.model.set_value(cdt, cdn, 'custom_mrp', flt(r.message));
+                    }
+                }
+            });
+        }
+    },
+
+    qty: function(frm, cdt, cdn) {
+        update_boxes_from_qty(frm, cdt, cdn);
+        recalculate_row_values(frm, cdt, cdn);
+    },
+
+    custom_boxes: function(frm, cdt, cdn) {
+        update_qty_from_boxes(frm, cdt, cdn);
+        recalculate_row_values(frm, cdt, cdn);
+    },
+
+    custom_mrp: function(frm, cdt, cdn) {
+        recalculate_row_values(frm, cdt, cdn);
+    },
+
+    custom_flat_discount: function(frm, cdt, cdn) {
+        recalculate_row_values(frm, cdt, cdn);
+    },
+
+    custom_additional_discount: function(frm, cdt, cdn) {
+        recalculate_row_values(frm, cdt, cdn);
+    },
+
+    custom_item_tax: function(frm, cdt, cdn) {
+        recalculate_row_values(frm, cdt, cdn);
+    },
+
+    items_remove: function(frm) {
+        recalculate_opportunity_totals(frm);
+    }
+});
+
+function get_conversion_factor(item_code, callback) {
+    if (!item_code) {
+        callback(null);
+        return;
+    }
+    frappe.call({
+        method: 'alpinos.sales_order_api.get_box_conversion_factor',
+        args: { item_code: item_code },
+        callback: function(r) {
+            callback(r.message || null);
+        }
+    });
+}
+
+function update_boxes_from_qty(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    if (!row.item_code || !row.qty) return;
+
+    get_conversion_factor(row.item_code, function(factor) {
+        if (!factor) return;
+        frappe.model.set_value(cdt, cdn, 'custom_boxes', flt(row.qty / factor, 2));
+    });
+}
+
+function update_qty_from_boxes(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    if (!row.item_code || !row.custom_boxes) return;
+
+    get_conversion_factor(row.item_code, function(factor) {
+        if (!factor) return;
+        frappe.model.set_value(cdt, cdn, 'qty', flt(row.custom_boxes * factor, 2));
+    });
+}
+
+function recalculate_row_values(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    const qty = flt(row.qty);
+    const mrp = flt(row.custom_mrp);
+    const flat_discount_pct = flt(row.custom_flat_discount);
+    const additional_discount = flt(row.custom_additional_discount);
+
+    const gross_amount = qty * mrp;
+    const flat_discount_amount = gross_amount * flat_discount_pct / 100.0;
+    let net_amount = gross_amount - flat_discount_amount - additional_discount;
+    if (net_amount < 0) net_amount = 0;
+
+    frappe.model.set_value(cdt, cdn, 'rate', qty ? flt(net_amount / qty, 2) : 0);
+    frappe.model.set_value(cdt, cdn, 'amount', flt(net_amount, 2));
+    frappe.model.set_value(cdt, cdn, 'base_amount', flt(net_amount, 2));
+
+    recalculate_opportunity_totals(frm);
+}
+
+function recalculate_opportunity_totals(frm) {
+    const rows = frm.doc.items || [];
+    let sub_total = 0.0;
+    let over_discount_total = 0.0;
+    let additional_discount_total = 0.0;
+    let gst_total = 0.0;
+
+    rows.forEach((row) => {
+        const qty = flt(row.qty);
+        const mrp = flt(row.custom_mrp);
+        const flat_discount_pct = flt(row.custom_flat_discount);
+        const additional_discount = flt(row.custom_additional_discount);
+        const item_tax = flt(row.custom_item_tax);
+
+        const gross = qty * mrp;
+        sub_total += gross;
+        over_discount_total += gross * flat_discount_pct / 100.0;
+        additional_discount_total += additional_discount;
+        gst_total += item_tax;
+    });
+
+    const cash_discount_pct = flt(frm.doc.custom_cash_discount);
+    const pre_cash_total = sub_total - over_discount_total - additional_discount_total + gst_total;
+    const cash_discount_amount = pre_cash_total > 0 ? pre_cash_total * cash_discount_pct / 100.0 : 0;
+    const final_total = pre_cash_total - cash_discount_amount;
+
+    frm.set_value('custom_over_discount', flt(over_discount_total, 2));
+    frm.set_value('custom_additional_discount_total', flt(additional_discount_total, 2));
+    frm.set_value('custom_gst_total', flt(gst_total, 2));
+    frm.set_value('total', flt(final_total, 2));
+    frm.set_value('opportunity_amount', flt(final_total, 2));
+}
+"""
+
+
+def create_opportunity_client_script():
+	"""Create or update client script for Opportunity"""
+	script_name = "Opportunity - Alpinos Customization"
+	existing = frappe.db.exists("Client Script", {"name": script_name})
+
+	if existing:
+		doc = frappe.get_doc("Client Script", existing)
+		doc.script = OPPORTUNITY_CLIENT_SCRIPT
+		doc.enabled = 1
+		doc.save(ignore_permissions=True)
+	else:
+		doc = frappe.get_doc(
+			{
+				"doctype": "Client Script",
+				"name": script_name,
+				"dt": "Opportunity",
+				"enabled": 1,
+				"module": "Alpinos Development",
+				"script": OPPORTUNITY_CLIENT_SCRIPT,
+			}
+		)
+		doc.insert(ignore_permissions=True)
+
+	frappe.db.commit()

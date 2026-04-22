@@ -137,7 +137,13 @@ after_migrate = [
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.patches.create_attendance_widget.execute",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
+	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
+	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
+	"alpinos.item_custom_fields.setup_item_custom_fields",
+	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
 	"alpinos.sales_order_client_script.create_sales_order_client_script",
+	"alpinos.opportunity_client_script.create_opportunity_client_script",
+	"alpinos.quotation_client_script.create_quotation_client_script",
 ]
 
 # Uninstallation
