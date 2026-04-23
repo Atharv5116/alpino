@@ -1,6 +1,6 @@
 """
 Client Script for Opportunity custom flow:
-- SKU dropdown driven row setup
+- SKU (Item) link driven row setup
 - Qty <-> Boxes conversion
 - Item discount/tax amount handling
 - Header totals calculation
@@ -17,35 +17,23 @@ frappe.ui.form.on('Opportunity', {
 });
 
 frappe.ui.form.on('Opportunity Item', {
-    custom_sku_with_name: function(frm, cdt, cdn) {
+    item_code: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
-        if (!row.custom_sku_with_name) return;
+        if (!row.item_code) return;
 
-        const parts = row.custom_sku_with_name.split(' - ');
-        const sku_code = parts[0] || '';
-        const sku_name = parts.slice(1).join(' - ') || '';
+        frappe.db.get_value('Item', row.item_code, 'item_name')
+            .then((r) => {
+                if (r && r.message && r.message.item_name) {
+                    frappe.model.set_value(cdt, cdn, 'item_name', r.message.item_name);
+                }
+            });
 
-        if (sku_code) {
-            frappe.model.set_value(cdt, cdn, 'item_code', sku_code);
-        }
-        if (sku_name) {
-            frappe.model.set_value(cdt, cdn, 'item_name', sku_name);
-        }
-        if (sku_code) {
-            frappe.db.get_value('Item', sku_code, 'item_name')
-                .then((r) => {
-                    if (r && r.message && r.message.item_name) {
-                        frappe.model.set_value(cdt, cdn, 'item_name', r.message.item_name);
-                    }
-                });
-        }
-
-        if (frm.doc.party_name && sku_code) {
+        if (frm.doc.party_name) {
             frappe.call({
                 method: 'alpinos.sales_order_api.get_customer_item_mrp',
                 args: {
                     customer: frm.doc.party_name,
-                    item_code: sku_code
+                    item_code: row.item_code
                 },
                 callback: function(r) {
                     if (r.message) {

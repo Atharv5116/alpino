@@ -8,25 +8,20 @@ Quotation customization for Alpinos.
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
-from alpinos.opportunity_custom_fields import SKU_OPTIONS
-
 
 def setup_quotation_custom_fields():
+	_delete_obsolete_quotation_custom_fields()
+	# Apply property setters before creating/updating custom fields, otherwise doctype
+	# validation can fail (e.g. Quotation.order_type default still being ERPNext's "Sales").
+	_setup_quotation_property_setters()
+
 	custom_fields = {
 		"Quotation": [
-			dict(
-				fieldname="custom_order_type",
-				label="Order Type",
-				fieldtype="Select",
-				options="\nGT\nMT\nGYM & NUTRITION\nHoReCa",
-				insert_after="party_name",
-				reqd=1,
-			),
 			dict(
 				fieldname="custom_order_no",
 				label="Order No.",
 				fieldtype="Data",
-				insert_after="custom_order_type",
+				insert_after="order_type",
 				read_only=1,
 				fetch_from="name",
 			),
@@ -158,15 +153,6 @@ def setup_quotation_custom_fields():
 		],
 		"Quotation Item": [
 			dict(
-				fieldname="custom_sku_with_name",
-				label="SKU",
-				fieldtype="Select",
-				options=SKU_OPTIONS,
-				insert_after="item_code",
-				reqd=1,
-				in_list_view=1,
-			),
-			dict(
 				fieldname="custom_boxes",
 				label="Boxes",
 				fieldtype="Int",
@@ -235,7 +221,6 @@ def setup_quotation_custom_fields():
 	}
 
 	create_custom_fields(custom_fields, update=True)
-	_setup_quotation_property_setters()
 	frappe.clear_cache(doctype="Quotation")
 	frappe.clear_cache(doctype="Quotation Item")
 
@@ -273,6 +258,15 @@ def _setup_quotation_property_setters():
 			property="reqd",
 			value="1",
 			property_type="Check",
+		),
+		# Clear ERPNext's default ("Sales") because it won't exist after we override options.
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Quotation",
+			field_name="order_type",
+			property="default",
+			value="",
+			property_type="Text",
 		),
 		dict(
 			doctype_or_field="DocField",
@@ -326,3 +320,15 @@ def _setup_quotation_property_setters():
 			frappe.get_doc({"doctype": "Property Setter", **ps_data}).insert(ignore_permissions=True)
 
 	frappe.db.commit()
+
+
+def _delete_obsolete_quotation_custom_fields():
+	"""Drop legacy fields that duplicated standard behaviour (safe if missing)."""
+	obsolete = [
+		("Quotation", "custom_order_type"),
+		("Quotation Item", "custom_sku_with_name"),
+	]
+	for doctype, fieldname in obsolete:
+		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
+		if name:
+			frappe.db.delete("Custom Field", {"name": name})
