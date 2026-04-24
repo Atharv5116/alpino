@@ -154,7 +154,7 @@ def _setup_opportunity_property_setters():
 			doc_type="Opportunity",
 			field_name="opportunity_from",
 			property="options",
-			value="\nOffline Buyer Master",
+			value="\nCustomer\nOffline Buyer Master",
 			property_type="Text",
 		),
 		dict(
@@ -162,7 +162,7 @@ def _setup_opportunity_property_setters():
 			doc_type="Opportunity",
 			field_name="opportunity_from",
 			property="default",
-			value="Offline Buyer Master",
+			value="Customer",
 			property_type="Text",
 		),
 		dict(

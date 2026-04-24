@@ -13,6 +13,27 @@ frappe.ui.form.on('Stock Entry', {
         if (frm.is_new() && !frm.doc.custom_entry_by) {
             frm.set_value('custom_entry_by', frappe.session.user);
         }
+        apply_material_transfer_rules(frm);
+    },
+
+    refresh: function(frm) {
+        apply_material_transfer_rules(frm);
+    },
+
+    stock_entry_type: function(frm) {
+        apply_material_transfer_rules(frm);
+    },
+
+    from_warehouse: function(frm) {
+        sync_item_warehouses_from_header(frm);
+    },
+
+    to_warehouse: function(frm) {
+        sync_item_warehouses_from_header(frm);
+    },
+
+    items_add: function(frm) {
+        sync_item_warehouses_from_header(frm);
     }
 });
 
@@ -63,6 +84,42 @@ function get_conversion_factor(item_code, callback) {
         args: { item_code: item_code },
         callback: function(r) {
             callback(r.message || null);
+        }
+    });
+}
+
+function is_material_transfer(frm) {
+    return frm.doc.stock_entry_type === 'Material Transfer';
+}
+
+function apply_material_transfer_rules(frm) {
+    const mt = is_material_transfer(frm);
+
+    // Header fields must be mandatory for Material Transfer only.
+    frm.toggle_reqd('from_warehouse', mt);
+    frm.toggle_reqd('to_warehouse', mt);
+
+    // Hide item-level source/target warehouses and force header-driven values.
+    if (frm.fields_dict.items && frm.fields_dict.items.grid) {
+        frm.fields_dict.items.grid.update_docfield_property('s_warehouse', 'hidden', mt ? 1 : 0);
+        frm.fields_dict.items.grid.update_docfield_property('t_warehouse', 'hidden', mt ? 1 : 0);
+        frm.refresh_field('items');
+    }
+
+    if (mt) {
+        sync_item_warehouses_from_header(frm);
+    }
+}
+
+function sync_item_warehouses_from_header(frm) {
+    if (!is_material_transfer(frm)) return;
+
+    (frm.doc.items || []).forEach((row) => {
+        if (frm.doc.from_warehouse && row.s_warehouse !== frm.doc.from_warehouse) {
+            frappe.model.set_value(row.doctype, row.name, 's_warehouse', frm.doc.from_warehouse);
+        }
+        if (frm.doc.to_warehouse && row.t_warehouse !== frm.doc.to_warehouse) {
+            frappe.model.set_value(row.doctype, row.name, 't_warehouse', frm.doc.to_warehouse);
         }
     });
 }

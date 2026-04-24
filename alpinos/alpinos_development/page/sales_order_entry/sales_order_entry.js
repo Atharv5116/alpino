@@ -82,7 +82,7 @@ class SalesOrderEntry {
 		});
 
 		const get_customer_address_query = () => ({
-			query: "erpnext.controllers.queries.address_query",
+			query: "frappe.contacts.doctype.address.address.address_query",
 			filters: {
 				link_doctype: "Customer",
 				link_name: me.customer_field.get_value()
