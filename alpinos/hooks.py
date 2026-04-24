@@ -143,6 +143,7 @@ after_migrate = [
 	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
 	"alpinos.sales_order_client_script.create_sales_order_client_script",
 	"alpinos.opportunity_client_script.create_opportunity_client_script",
+	"alpinos.stock_entry_client_script.create_stock_entry_client_script",
 	"alpinos.quotation_client_script.create_quotation_client_script",
 ]
 

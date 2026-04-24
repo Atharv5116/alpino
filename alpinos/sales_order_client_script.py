@@ -123,14 +123,15 @@ function calculate_item_values(frm, cdt, cdn) {
     let mrp = flt(row.custom_customer_mrp);
     let qty = flt(row.qty);
     let flat_discount = flt(row.custom_flat_discount);
-    let additional_discount = flt(row.custom_additional_discount);
+    let additional_discount_pct = flt(row.custom_additional_discount);
 
     if (mrp > 0 && qty > 0) {
         // Apply additional discount after flat discount is applied on line amount.
         let gross_amount = mrp * qty;
         let flat_discount_amount = gross_amount * flat_discount / 100;
         let after_flat = gross_amount - flat_discount_amount;
-        let net_amount = after_flat - additional_discount;
+        let additional_discount_amount = after_flat * additional_discount_pct / 100;
+        let net_amount = after_flat - additional_discount_amount;
         if (net_amount < 0) net_amount = 0;
         let effective_rate = net_amount / qty;
         frappe.model.set_value(cdt, cdn, 'rate', flt(effective_rate, 2));

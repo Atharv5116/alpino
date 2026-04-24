@@ -31,6 +31,8 @@
   "shipping_section",
   "shipping_same_as_profile",
   "shipping_address",
+  "shipping_state",
+  "shipping_city",
   "margin_section",
   "margins",
   "other_section",
@@ -133,13 +135,13 @@
   },
   {
    "fieldname": "state",
-   "fieldtype": "Data",
+   "fieldtype": "Autocomplete",
    "label": "State",
    "reqd": 1
   },
   {
    "fieldname": "city",
-   "fieldtype": "Data",
+   "fieldtype": "Autocomplete",
    "label": "City",
    "reqd": 1
   },
@@ -187,6 +189,16 @@
    "fieldname": "shipping_address",
    "fieldtype": "Data",
    "label": "Shipping Address"
+  },
+  {
+   "fieldname": "shipping_state",
+   "fieldtype": "Autocomplete",
+   "label": "Shipping State"
+  },
+  {
+   "fieldname": "shipping_city",
+   "fieldtype": "Autocomplete",
+   "label": "Shipping City"
   },
   {
    "fieldname": "margin_section",

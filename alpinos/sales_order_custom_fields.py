@@ -158,9 +158,10 @@ def setup_sales_order_custom_fields():
 			# Additional Discount
 			dict(
 				fieldname="custom_additional_discount",
-				label="Additional Discount",
-				fieldtype="Currency",
+				label="Additional Discount %",
+				fieldtype="Percent",
 				insert_after="custom_offer",
+				description="Additional discount percentage applied after flat discount.",
 			),
 			# Tax
 			dict(

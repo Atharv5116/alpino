@@ -11,6 +11,12 @@ import frappe
 
 OPPORTUNITY_CLIENT_SCRIPT = """
 frappe.ui.form.on('Opportunity', {
+    onload: function(frm) {
+        if (frm.is_new() && !frm.doc.opportunity_owner) {
+            frm.set_value('opportunity_owner', frappe.session.user);
+        }
+    },
+
     custom_cash_discount: function(frm) {
         recalculate_opportunity_totals(frm);
     }

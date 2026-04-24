@@ -11,6 +11,23 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 def setup_stock_entry_custom_fields():
 	custom_fields = {
+		"Stock Entry": [
+			dict(
+				fieldname="custom_warehouse_section",
+				label="Warehouse",
+				fieldtype="Section Break",
+				insert_after="stock_entry_type",
+			),
+			dict(
+				fieldname="custom_entry_by",
+				label="Entry By",
+				fieldtype="Link",
+				options="User",
+				insert_after="remarks",
+				read_only=1,
+				default="frappe.session.user",
+			),
+		],
 		"Stock Entry Detail": [
 			dict(
 				fieldname="custom_box",
@@ -38,6 +55,18 @@ def setup_stock_entry_custom_fields():
 				fieldtype="Currency",
 				insert_after="custom_usp",
 			),
+			dict(
+				fieldname="custom_mfg_date",
+				label="MFG Date",
+				fieldtype="Date",
+				insert_after="batch_no",
+			),
+			dict(
+				fieldname="custom_exp_date",
+				label="EXP Date",
+				fieldtype="Date",
+				insert_after="custom_mfg_date",
+			),
 		]
 	}
 
@@ -62,7 +91,15 @@ def _setup_stock_entry_property_setters():
 			doc_type="Stock Entry",
 			field_name="from_warehouse",
 			property="label",
-			value="Source Warehouse",
+			value="Default Warehouse",
+			property_type="Data",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Stock Entry",
+			field_name="from_warehouse",
+			property="insert_after",
+			value="custom_warehouse_section",
 			property_type="Data",
 		),
 		dict(
@@ -71,6 +108,14 @@ def _setup_stock_entry_property_setters():
 			field_name="to_warehouse",
 			property="label",
 			value="Target Warehouse",
+			property_type="Data",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Stock Entry",
+			field_name="to_warehouse",
+			property="insert_after",
+			value="from_warehouse",
 			property_type="Data",
 		),
 		dict(

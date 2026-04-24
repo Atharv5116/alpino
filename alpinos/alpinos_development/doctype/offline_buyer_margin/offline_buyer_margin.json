@@ -5,6 +5,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "item_group",
   "sku",
   "product_name",
   "margin_percent"
@@ -12,12 +13,19 @@
  "fields": [
   {
    "columns": 4,
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group"
+  },
+  {
+   "columns": 4,
    "fieldname": "sku",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "SKU",
-   "options": "Item",
-   "reqd": 1
+   "options": "Item"
   },
   {
    "columns": 4,
