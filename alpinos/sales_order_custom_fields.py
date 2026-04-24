@@ -116,6 +116,14 @@ def setup_sales_order_custom_fields():
 		# SALES ORDER ITEM: Additional fields
 		# ============================================================
 		"Sales Order Item": [
+			dict(
+				fieldname="custom_product_image",
+				label="Product Image",
+				fieldtype="Attach Image",
+				insert_after="idx",
+				fetch_from="item_code.image",
+				read_only=1,
+			),
 			# Box field (after qty)
 			dict(
 				fieldname="custom_box",
@@ -193,7 +201,25 @@ def _setup_property_setters():
 			"doc_type": "Sales Order Item",
 			"field_name": "item_name",
 			"property": "label",
-			"value": "SKU No.",
+			"value": "SKU Name",
+			"property_type": "Data",
+		},
+		# Show item table as "Order Items" in Sales Order form
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "items",
+			"property": "label",
+			"value": "Order Items",
+			"property_type": "Data",
+		},
+		# Rename order_type label to Customer Type
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "order_type",
+			"property": "label",
+			"value": "Customer Type",
 			"property_type": "Data",
 		},
 		# Update Sales Order order_type options
@@ -211,6 +237,42 @@ def _setup_property_setters():
 			"doc_type": "Sales Order",
 			"field_name": "order_type",
 			"property": "reqd",
+			"value": "1",
+			"property_type": "Check",
+		},
+		# Remove ERPNext default "Sales" because options are overridden.
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "order_type",
+			"property": "default",
+			"value": "",
+			"property_type": "Text",
+		},
+		# Hide Company on standard Sales Order form.
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "company",
+			"property": "hidden",
+			"value": "1",
+			"property_type": "Check",
+		},
+		# Hide Total Quantity on standard Sales Order form.
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "total_qty",
+			"property": "hidden",
+			"value": "1",
+			"property_type": "Check",
+		},
+		# Hide custom tax column in Sales Order Item form grid.
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order Item",
+			"field_name": "custom_item_tax",
+			"property": "hidden",
 			"value": "1",
 			"property_type": "Check",
 		},

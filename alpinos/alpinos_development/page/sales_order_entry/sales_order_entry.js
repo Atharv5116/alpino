@@ -58,7 +58,7 @@ class SalesOrderEntry {
 		this.customer_field.$input.on('awesomplete-selectcomplete', fetch_order_type);
 
 		this.order_type_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Select', options: '\nGT\nMT\nGYM & NUTRITION\nHoReCa', label: 'Order Type', fieldname: 'order_type', reqd: 1 },
+			df: { fieldtype: 'Select', options: '\nGT\nMT\nGYM & NUTRITION\nHoReCa', label: 'Customer Type', fieldname: 'order_type', reqd: 1 },
 			parent: header.find('.field-order-type'),
 			render_input: true
 		});
@@ -69,12 +69,27 @@ class SalesOrderEntry {
 			render_input: true
 		});
 
-		this.company_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Link', options: 'Company', label: 'Company', fieldname: 'company', reqd: 1, default: frappe.defaults.get_user_default('company') },
-			parent: header.find('.field-company'),
+		this.billing_address_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Link', options: 'Address', label: 'Billing Address', fieldname: 'billing_address' },
+			parent: header.find('.field-billing-address'),
 			render_input: true
 		});
-		this.company_field.set_value(frappe.defaults.get_user_default('company'));
+
+		this.shipping_address_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Link', options: 'Address', label: 'Shipping Address', fieldname: 'shipping_address' },
+			parent: header.find('.field-shipping-address'),
+			render_input: true
+		});
+
+		const get_customer_address_query = () => ({
+			query: "erpnext.controllers.queries.address_query",
+			filters: {
+				link_doctype: "Customer",
+				link_name: me.customer_field.get_value()
+			}
+		});
+		this.billing_address_field.get_query = get_customer_address_query;
+		this.shipping_address_field.get_query = get_customer_address_query;
 	}
 
 	make_item_table() {
@@ -101,13 +116,14 @@ class SalesOrderEntry {
 
 	add_item_row(data) {
 		let idx = this.items.length;
-		let row_data = data || { item_code: '', item_name: '', qty: 0, box: 0, mrp: 0, flat_discount: 0, offer: '', additional_discount: 0, tax: 0, amount: 0 };
+		let row_data = data || { item_code: '', item_name: '', item_image: '', qty: 0, box: 0, mrp: 0, flat_discount: 0, offer: '', additional_discount: 0, amount: 0 };
 		this.items.push(row_data);
 
 		let $tbody = this.wrapper.find('.items-table tbody');
 		let $row = $(`
 			<tr data-idx="${idx}">
 				<td class="text-center" style="vertical-align: middle;">${idx + 1}</td>
+				<td class="item-image text-center" style="vertical-align: middle;"><img class="item-image-preview" src="" style="max-height: 36px; max-width: 70px; display: none;" /></td>
 				<td class="item-sku"></td>
 				<td class="item-name"><span class="item-name-text text-muted" style="font-size: 12px;">-</span></td>
 				<td class="item-qty"></td>
@@ -116,7 +132,6 @@ class SalesOrderEntry {
 				<td class="item-flat-discount"></td>
 				<td class="item-offer"></td>
 				<td class="item-additional-discount"></td>
-				<td class="item-tax"></td>
 				<td class="item-amount text-right font-weight-bold" style="vertical-align: middle;">0.00</td>
 				<td class="text-center" style="vertical-align: middle;"><button class="btn btn-xs btn-danger remove-row"><i class="fa fa-trash"></i></button></td>
 			</tr>
@@ -235,20 +250,6 @@ class SalesOrderEntry {
 		});
 		row_data._add_disc_field = add_disc_field;
 
-		// Tax
-		let tax_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Currency', fieldname: `tax_${idx}` },
-			parent: $row.find('.item-tax'),
-			render_input: true,
-			only_input: true
-		});
-		tax_field.$input && tax_field.$input.css('width', '80px');
-		tax_field.$input.on('change', function() {
-			me.items[idx].tax = flt(tax_field.get_value());
-			me.calc_row_amount(idx, $row);
-		});
-		row_data._tax_field = tax_field;
-
 		// Set values if data was passed
 		if (data && data.item_code) {
 			sku_field.set_value(data.item_code);
@@ -258,9 +259,14 @@ class SalesOrderEntry {
 			if (data.flat_discount) flat_disc_field.set_value(data.flat_discount);
 			if (data.offer) offer_field.set_value(data.offer);
 			if (data.additional_discount) add_disc_field.set_value(data.additional_discount);
-			if (data.tax) tax_field.set_value(data.tax);
 			if (data.item_name) {
 				$row.find('.item-name-text').text(data.item_name).removeClass('text-muted');
+			}
+			if (data.item_image) {
+				this._set_row_image($row, data.item_image);
+			}
+			if (data.amount) {
+				$row.find('.item-amount').text(format_currency(data.amount));
 			}
 		}
 	}
@@ -269,11 +275,15 @@ class SalesOrderEntry {
 		let me = this;
 		let customer = this.customer_field.get_value();
 
-		// Fetch item name
-		frappe.db.get_value('Item', item_code, 'item_name', function(r) {
-			if (r && r.item_name) {
-				me.items[idx].item_name = r.item_name;
-				$row.find('.item-name-text').text(r.item_name).removeClass('text-muted');
+		// Fetch item name + image
+		frappe.db.get_value('Item', item_code, ['item_name', 'image'], function(r) {
+			if (r) {
+				if (r.item_name) {
+					me.items[idx].item_name = r.item_name;
+					$row.find('.item-name-text').text(r.item_name).removeClass('text-muted');
+				}
+				me.items[idx].item_image = r.image || '';
+				me._set_row_image($row, r.image || '');
 			}
 		});
 
@@ -312,8 +322,10 @@ class SalesOrderEntry {
 		let item = this.items[idx];
 		let cf = this._box_cache[item.item_code];
 		if (cf) {
-			item.box = flt(item.qty / cf, 2);
+			item.box = Math.ceil(flt(item.qty) / flt(cf));
+			item.qty = flt(item.box * cf, 2);
 			item._box_field.set_value(item.box);
+			item._qty_field.set_value(item.qty);
 		}
 	}
 
@@ -321,20 +333,33 @@ class SalesOrderEntry {
 		let item = this.items[idx];
 		let cf = this._box_cache[item.item_code];
 		if (cf) {
+			item.box = Math.ceil(flt(item.box));
 			item.qty = flt(item.box * cf, 2);
+			item._box_field.set_value(item.box);
 			item._qty_field.set_value(item.qty);
 		}
 	}
 
 	calc_row_amount(idx, $row) {
 		let item = this.items[idx];
-		let flat_disc_amt = flt(item.mrp) * flt(item.flat_discount) / 100;
-		let rate = flt(item.mrp) - flat_disc_amt - flt(item.additional_discount);
-		if (rate < 0) rate = 0;
-		item.rate = rate;
-		item.amount = flt(rate * flt(item.qty)) + flt(item.tax);
+		let qty = flt(item.qty);
+		let gross = flt(item.mrp) * qty;
+		let flat_disc_amt = gross * flt(item.flat_discount) / 100;
+		let after_flat = gross - flat_disc_amt;
+		item.amount = after_flat - flt(item.additional_discount);
+		if (item.amount < 0) item.amount = 0;
+		item.rate = qty ? flt(item.amount / qty, 2) : 0;
 		$row.find('.item-amount').text(format_currency(item.amount));
 		this.calc_totals();
+	}
+
+	_set_row_image($row, image_url) {
+		const $img = $row.find('.item-image-preview');
+		if (image_url) {
+			$img.attr('src', image_url).show();
+		} else {
+			$img.hide();
+		}
 	}
 
 	calc_totals() {
@@ -431,9 +456,9 @@ class SalesOrderEntry {
 		});
 	}
 
-	add_freebie_row() {
+	add_freebie_row(data) {
 		let idx = this.freebies.length;
-		let row_data = { item_code: '', item_name: '', qty: 0, remarks: '' };
+		let row_data = data || { item_code: '', item_name: '', qty: 0, remarks: '' };
 		this.freebies.push(row_data);
 
 		let $tbody = this.wrapper.find('.freebies-table tbody');
@@ -481,11 +506,20 @@ class SalesOrderEntry {
 			only_input: true
 		});
 		remarks_field.$input.on('change', function() { me.freebies[idx].remarks = remarks_field.get_value(); });
+
+		if (data && data.item_code) {
+			item_field.set_value(data.item_code);
+			if (data.qty) qty_field.set_value(data.qty);
+			if (data.remarks) remarks_field.set_value(data.remarks);
+			if (data.item_name) {
+				$row.find('.freebie-name span').text(data.item_name).removeClass('text-muted');
+			}
+		}
 	}
 
-	add_scheme_row() {
+	add_scheme_row(data) {
 		let idx = this.scheme_items.length;
-		let row_data = { item_code: '', item_name: '', qty: 0, scheme: '' };
+		let row_data = data || { item_code: '', item_name: '', qty: 0, scheme: '', previous_order_id: '' };
 		this.scheme_items.push(row_data);
 
 		let $tbody = this.wrapper.find('.scheme-table tbody');
@@ -495,6 +529,7 @@ class SalesOrderEntry {
 				<td class="scheme-name"><span class="text-muted">-</span></td>
 				<td class="scheme-qty"></td>
 				<td class="scheme-scheme"></td>
+				<td class="scheme-prev-order"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-scheme"><i class="fa fa-trash"></i></button></td>
 			</tr>
 		`);
@@ -533,6 +568,24 @@ class SalesOrderEntry {
 			only_input: true
 		});
 		scheme_field.$input.on('change', function() { me.scheme_items[idx].scheme = scheme_field.get_value(); });
+
+		let prev_order_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: `prev_order_${idx}` },
+			parent: $row.find('.scheme-prev-order'),
+			render_input: true,
+			only_input: true
+		});
+		prev_order_field.$input.on('change', function() { me.scheme_items[idx].previous_order_id = prev_order_field.get_value(); });
+
+		if (data && data.item_code) {
+			item_field.set_value(data.item_code);
+			if (data.qty) qty_field.set_value(data.qty);
+			if (data.scheme) scheme_field.set_value(data.scheme);
+			if (data.previous_order_id) prev_order_field.set_value(data.previous_order_id);
+			if (data.item_name) {
+				$row.find('.scheme-name span').text(data.item_name).removeClass('text-muted');
+			}
+		}
 	}
 
 	redraw_items_table() {
@@ -547,26 +600,26 @@ class SalesOrderEntry {
 		this.wrapper.find('.freebies-table tbody').empty();
 		let old = this.freebies.slice();
 		this.freebies = [];
-		old.forEach(f => this.add_freebie_row());
+		old.forEach(f => this.add_freebie_row(f));
 	}
 
 	redraw_scheme_table() {
 		this.wrapper.find('.scheme-table tbody').empty();
 		let old = this.scheme_items.slice();
 		this.scheme_items = [];
-		old.forEach(s => this.add_scheme_row());
+		old.forEach(s => this.add_scheme_row(s));
 	}
 
 	create_sales_order() {
 		let me = this;
 		let customer = this.customer_field.get_value();
 		let order_type = this.order_type_field.get_value();
-		let company = this.company_field.get_value();
 		let delivery_date = this.delivery_date_field.get_value();
+		let billing_address = this.billing_address_field.get_value();
+		let shipping_address = this.shipping_address_field.get_value();
 
 		if (!customer) return frappe.throw('Please select a Customer');
-		if (!order_type) return frappe.throw('Please select Order Type');
-		if (!company) return frappe.throw('Please select Company');
+		if (!order_type) return frappe.throw('Please select Customer Type');
 
 		let valid_items = this.items.filter(i => i.item_code && flt(i.qty) > 0);
 		if (!valid_items.length) return frappe.throw('Please add at least one item');
@@ -580,8 +633,7 @@ class SalesOrderEntry {
 			custom_customer_mrp: item.mrp,
 			custom_flat_discount: item.flat_discount,
 			custom_offer: item.offer,
-			custom_additional_discount: item.additional_discount,
-			custom_item_tax: item.tax
+			custom_additional_discount: item.additional_discount
 		}));
 
 		let freebies = this.freebies.filter(f => f.item_code).map(f => ({
@@ -593,7 +645,8 @@ class SalesOrderEntry {
 		let scheme_items = this.scheme_items.filter(s => s.item_code).map(s => ({
 			item_code: s.item_code,
 			qty: s.qty,
-			scheme: s.scheme
+			scheme: s.scheme,
+			previous_order_id: s.previous_order_id
 		}));
 
 		frappe.call({
@@ -601,25 +654,26 @@ class SalesOrderEntry {
 			args: {
 				customer: customer,
 				order_type: order_type,
-				company: company,
+				company: frappe.defaults.get_user_default('company'),
 				delivery_date: delivery_date,
+				billing_address: billing_address,
+				shipping_address: shipping_address,
 				items: items,
 				cash_discount: flt(me.cash_discount_field.get_value()),
 				freebies: freebies,
 				scheme_items: scheme_items,
-				additional_units_damage: me.additional_units_damage_field.get_value() ? 1 : 0
+				additional_units_damage: me.additional_units_damage_field.get_value() ? 1 : 0,
+				submit_now: 1
 			},
 			freeze: true,
 			freeze_message: 'Creating Sales Order...',
 			callback: function(r) {
-				if (r.message) {
+				if (r.message && r.message.name) {
 					frappe.show_alert({
-						message: `Sales Order <b>${r.message}</b> created successfully!`,
+						message: `Sales Order <b>${r.message.name}</b> created successfully!`,
 						indicator: 'green'
 					}, 5);
-					// Stay on this page, clear form and refresh the list
-					me.clear_form();
-					me.load_recent_orders();
+					frappe.set_route('Form', 'Sales Order', r.message.name);
 				}
 			}
 		});
@@ -701,6 +755,8 @@ class SalesOrderEntry {
 		this.customer_field.set_value('');
 		this.order_type_field.set_value('');
 		this.delivery_date_field.set_value('');
+		this.billing_address_field && this.billing_address_field.set_value('');
+		this.shipping_address_field && this.shipping_address_field.set_value('');
 		this.items = [];
 		this.freebies = [];
 		this.scheme_items = [];

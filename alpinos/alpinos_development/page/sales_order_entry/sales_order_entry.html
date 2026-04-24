@@ -44,30 +44,33 @@
 	<!-- Header Fields -->
 	<div class="so-header" style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
 		<div class="row">
-			<div class="col-md-3 field-customer"></div>
-			<div class="col-md-3 field-order-type"></div>
-			<div class="col-md-3 field-delivery-date"></div>
-			<div class="col-md-3 field-company"></div>
+			<div class="col-md-4 field-customer"></div>
+			<div class="col-md-4 field-order-type"></div>
+			<div class="col-md-4 field-delivery-date"></div>
+		</div>
+		<div class="row" style="margin-top: 12px;">
+			<div class="col-md-6 field-billing-address"></div>
+			<div class="col-md-6 field-shipping-address"></div>
 		</div>
 	</div>
 
 	<!-- Items Table -->
 	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
-		<h5 style="margin-bottom: 15px; font-weight: 600;">Items</h5>
+		<h5 style="margin-bottom: 15px; font-weight: 600;">Order Items</h5>
 		<div style="overflow: visible;">
 			<table class="table table-bordered items-table" style="font-size: 13px;">
 				<thead style="background: var(--bg-color);">
 					<tr>
 						<th style="width: 40px;">#</th>
+						<th style="width: 90px;">Product Image</th>
 						<th style="min-width: 140px;">SKU</th>
-						<th style="min-width: 120px;">SKU No.</th>
+						<th style="min-width: 120px;">SKU Name</th>
 						<th style="width: 80px;">Qty</th>
 						<th style="width: 80px;">Box</th>
 						<th style="width: 100px;">MRP</th>
 						<th style="width: 90px;">Flat Disc. %</th>
 						<th style="width: 90px;">Offer</th>
 						<th style="width: 90px;">Add. Disc.</th>
-						<th style="width: 90px;">Tax</th>
 						<th style="width: 100px;">Amount</th>
 						<th style="width: 40px;"></th>
 					</tr>
@@ -82,15 +85,6 @@
 
 	<!-- Other Details Section -->
 	<div class="other-details-section" style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
-		<div class="row">
-			<div class="col-md-6">
-				<h5 style="margin-bottom: 15px; font-weight: 600;">Cash Discount</h5>
-				<div class="field-cash-discount"></div>
-			</div>
-			<div class="col-md-6">
-				<div class="field-additional-units-damage" style="margin-top: 30px;"></div>
-			</div>
-		</div>
 
 		<!-- Marketing Freebies -->
 		<div style="margin-top: 20px;">
@@ -112,16 +106,21 @@
 			</button>
 		</div>
 
+		<div style="margin-top: 20px;">
+			<div class="field-additional-units-damage"></div>
+		</div>
+
 		<!-- Scheme Items (conditional) -->
 		<div class="scheme-items-section" style="margin-top: 20px; display: none;">
-			<h5 style="margin-bottom: 10px; font-weight: 600;">Scheme Items</h5>
+			<h5 style="margin-bottom: 10px; font-weight: 600;">Additional Units - Damage Items</h5>
 			<table class="table table-bordered scheme-table" style="font-size: 13px;">
 				<thead style="background: var(--bg-color);">
 					<tr>
 						<th style="min-width: 140px;">SKU</th>
-						<th>SKU No.</th>
+						<th>SKU Name</th>
 						<th style="width: 80px;">Qty</th>
 						<th>Scheme</th>
+						<th>Previous Order No / ID</th>
 						<th style="width: 40px;"></th>
 					</tr>
 				</thead>
@@ -130,6 +129,11 @@
 			<button class="btn btn-sm btn-light btn-add-scheme">
 				<i class="fa fa-plus"></i> Add Scheme Item
 			</button>
+		</div>
+
+		<div style="margin-top: 20px;">
+			<h5 style="margin-bottom: 15px; font-weight: 600;">Cash Discount</h5>
+			<div class="field-cash-discount"></div>
 		</div>
 	</div>
 

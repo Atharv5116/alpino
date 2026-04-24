@@ -72,7 +72,8 @@ def setup_quotation_custom_fields():
 				label="Advance Amount",
 				fieldtype="Currency",
 				insert_after="custom_payment_mode",
-				reqd=1,
+				depends_on='eval:doc.custom_payment_mode=="Partial"',
+				mandatory_depends_on='eval:doc.custom_payment_mode=="Partial"',
 			),
 			dict(
 				fieldname="custom_attachment_proof",

@@ -7,6 +7,7 @@
  "field_order": [
   "item_code",
   "item_name",
+  "previous_order_id",
   "column_break_1",
   "qty",
   "box",
@@ -29,8 +30,14 @@
    "fieldname": "item_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "SKU No.",
+   "label": "SKU Name",
    "read_only": 1
+  },
+  {
+   "fieldname": "previous_order_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Previous Order No / ID"
   },
   {
    "fieldname": "column_break_1",

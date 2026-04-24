@@ -7,6 +7,10 @@ import frappe
 
 QUOTATION_CLIENT_SCRIPT = """
 frappe.ui.form.on('Quotation', {
+    onload: function(frm) {
+        toggle_partial_payment_fields(frm);
+    },
+
     custom_cash_discount: function(frm) {
         recalculate_quotation_totals(frm);
     },
@@ -16,8 +20,7 @@ frappe.ui.form.on('Quotation', {
     },
 
     custom_payment_mode: function(frm) {
-        frm.toggle_display('custom_attachment_proof', frm.doc.custom_payment_mode === 'Partial');
-        frm.toggle_reqd('custom_attachment_proof', frm.doc.custom_payment_mode === 'Partial');
+        toggle_partial_payment_fields(frm);
     }
 });
 
@@ -214,6 +217,14 @@ function recalculate_quotation_totals(frm) {
     frm.set_value('custom_remaining_amount', flt(remaining, 2));
     frm.set_value('total', flt(final_total, 2));
     frm.set_value('grand_total', flt(final_total, 2));
+}
+
+function toggle_partial_payment_fields(frm) {
+    const is_partial = frm.doc.custom_payment_mode === 'Partial';
+    frm.toggle_display('custom_advance_amount', is_partial);
+    frm.toggle_reqd('custom_advance_amount', is_partial);
+    frm.toggle_display('custom_attachment_proof', is_partial);
+    frm.toggle_reqd('custom_attachment_proof', is_partial);
 }
 """
 

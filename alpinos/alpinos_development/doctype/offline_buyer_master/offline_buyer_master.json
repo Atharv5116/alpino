@@ -181,7 +181,7 @@
    "default": "0",
    "fieldname": "shipping_same_as_profile",
    "fieldtype": "Check",
-   "label": "Shipping Same as Profile"
+   "label": "Shipping Same as Primary"
   },
   {
    "fieldname": "shipping_address",
