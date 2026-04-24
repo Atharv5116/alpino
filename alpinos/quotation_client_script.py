@@ -9,6 +9,7 @@ QUOTATION_CLIENT_SCRIPT = """
 frappe.ui.form.on('Quotation', {
     onload: function(frm) {
         toggle_partial_payment_fields(frm);
+        enforce_percentage_discounts(frm);
     },
 
     custom_cash_discount: function(frm) {
@@ -145,17 +146,13 @@ function recalculate_row_values(frm, cdt, cdn) {
         flat_discount_amount = flat_discount_input;
     }
 
-    const offer_amount = flt(row.custom_offer);
+    const offer_amount = gross * flt(row.custom_offer) / 100.0;
     const after_offer = gross - flat_discount_amount - offer_amount;
 
-    const additional_type = row.custom_additional_discount_type || 'Amount';
+    const additional_type = 'Percentage';
     const additional_input = flt(row.custom_additional_discount);
     let additional_amount = 0;
-    if (additional_type === 'Percentage') {
-        additional_amount = after_offer * additional_input / 100.0;
-    } else {
-        additional_amount = additional_input;
-    }
+    additional_amount = after_offer * additional_input / 100.0;
 
     let taxable = after_offer - additional_amount;
     if (taxable < 0) taxable = 0;
@@ -191,13 +188,11 @@ function recalculate_quotation_totals(frm) {
             over_discount += flat_input;
         }
 
-        const after_offer = gross - ((row.custom_discount_type || 'Percentage') === 'Percentage' ? (gross * flat_input / 100.0) : flat_input) - flt(row.custom_offer);
+        const offer_pct = flt(row.custom_offer);
+        const offer_amt = gross * offer_pct / 100.0;
+        const after_offer = gross - ((row.custom_discount_type || 'Percentage') === 'Percentage' ? (gross * flat_input / 100.0) : flat_input) - offer_amt;
         const add_input = flt(row.custom_additional_discount);
-        if ((row.custom_additional_discount_type || 'Amount') === 'Percentage') {
-            additional_discount += after_offer * add_input / 100.0;
-        } else {
-            additional_discount += add_input;
-        }
+        additional_discount += after_offer * add_input / 100.0;
 
         gst += flt(row.custom_item_tax);
     });
@@ -225,6 +220,15 @@ function toggle_partial_payment_fields(frm) {
     frm.toggle_reqd('custom_advance_amount', is_partial);
     frm.toggle_display('custom_attachment_proof', is_partial);
     frm.toggle_reqd('custom_attachment_proof', is_partial);
+}
+
+function enforce_percentage_discounts(frm) {
+    (frm.doc.items || []).forEach((row) => {
+        if (row.custom_additional_discount_type !== 'Percentage') {
+            frappe.model.set_value(row.doctype, row.name, 'custom_additional_discount_type', 'Percentage');
+        }
+    });
+    frm.set_df_property('custom_additional_discount_type', 'read_only', 1);
 }
 """
 

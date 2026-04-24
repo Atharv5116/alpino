@@ -151,7 +151,7 @@ def setup_sales_order_custom_fields():
 			# Offer
 			dict(
 				fieldname="custom_offer",
-				label="Offer",
+				label="Offer %",
 				fieldtype="Data",
 				insert_after="custom_flat_discount",
 			),

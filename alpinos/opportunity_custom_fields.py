@@ -113,13 +113,13 @@ def setup_opportunity_custom_fields():
 			),
 			dict(
 				fieldname="custom_offer",
-				label="Offer",
+				label="Offer %",
 				fieldtype="Data",
 				insert_after="custom_flat_discount",
 			),
 			dict(
 				fieldname="custom_additional_discount",
-				label="Additional Discount",
+				label="Additional Discount %",
 				fieldtype="Currency",
 				insert_after="custom_offer",
 			),
@@ -153,8 +153,16 @@ def _setup_opportunity_property_setters():
 			doctype_or_field="DocField",
 			doc_type="Opportunity",
 			field_name="opportunity_from",
+			property="options",
+			value="\nOffline Buyer Master",
+			property_type="Text",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Opportunity",
+			field_name="opportunity_from",
 			property="default",
-			value="Customer",
+			value="Offline Buyer Master",
 			property_type="Text",
 		),
 		dict(

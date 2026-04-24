@@ -225,7 +225,7 @@ class SalesOrderEntry {
 
 		// Offer
 		let offer_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Data', fieldname: `offer_${idx}` },
+			df: { fieldtype: 'Float', fieldname: `offer_${idx}`, description: '%' },
 			parent: $row.find('.item-offer'),
 			render_input: true,
 			only_input: true
@@ -346,8 +346,10 @@ class SalesOrderEntry {
 		let gross = flt(item.mrp) * qty;
 		let flat_disc_amt = gross * flt(item.flat_discount) / 100;
 		let after_flat = gross - flat_disc_amt;
-		let additional_disc_amt = after_flat * flt(item.additional_discount) / 100;
-		item.amount = after_flat - additional_disc_amt;
+		let offer_amt = after_flat * flt(item.offer) / 100;
+		let after_offer = after_flat - offer_amt;
+		let additional_disc_amt = after_offer * flt(item.additional_discount) / 100;
+		item.amount = after_offer - additional_disc_amt;
 		if (item.amount < 0) item.amount = 0;
 		item.rate = qty ? flt(item.amount / qty, 2) : 0;
 		$row.find('.item-amount').text(format_currency(item.amount));

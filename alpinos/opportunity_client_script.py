@@ -120,11 +120,16 @@ function recalculate_row_values(frm, cdt, cdn) {
     const qty = flt(row.qty);
     const mrp = flt(row.custom_mrp);
     const flat_discount_pct = flt(row.custom_flat_discount);
-    const additional_discount = flt(row.custom_additional_discount);
+    const offer_pct = flt(row.custom_offer);
+    const additional_discount_pct = flt(row.custom_additional_discount);
 
     const gross_amount = qty * mrp;
     const flat_discount_amount = gross_amount * flat_discount_pct / 100.0;
-    let net_amount = gross_amount - flat_discount_amount - additional_discount;
+    const after_flat = gross_amount - flat_discount_amount;
+    const offer_amount = after_flat * offer_pct / 100.0;
+    const after_offer = after_flat - offer_amount;
+    const additional_discount_amount = after_offer * additional_discount_pct / 100.0;
+    let net_amount = after_offer - additional_discount_amount;
     if (net_amount < 0) net_amount = 0;
 
     frappe.model.set_value(cdt, cdn, 'rate', qty ? flt(net_amount / qty, 2) : 0);
@@ -145,10 +150,15 @@ function recalculate_opportunity_totals(frm) {
         const qty = flt(row.qty);
         const mrp = flt(row.custom_mrp);
         const flat_discount_pct = flt(row.custom_flat_discount);
-        const additional_discount = flt(row.custom_additional_discount);
+        const offer_pct = flt(row.custom_offer);
+        const additional_discount_pct = flt(row.custom_additional_discount);
         const item_tax = flt(row.custom_item_tax);
 
         const gross = qty * mrp;
+        const after_flat = gross - (gross * flat_discount_pct / 100.0);
+        const offer_amount = after_flat * offer_pct / 100.0;
+        const after_offer = after_flat - offer_amount;
+        const additional_discount = after_offer * additional_discount_pct / 100.0;
         sub_total += gross;
         over_discount_total += gross * flat_discount_pct / 100.0;
         additional_discount_total += additional_discount;

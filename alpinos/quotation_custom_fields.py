@@ -185,7 +185,7 @@ def setup_quotation_custom_fields():
 			),
 			dict(
 				fieldname="custom_offer",
-				label="Offer",
+				label="Offer %",
 				fieldtype="Float",
 				insert_after="custom_flat_discount",
 			),
@@ -195,7 +195,7 @@ def setup_quotation_custom_fields():
 				fieldtype="Select",
 				options="\nPercentage\nAmount",
 				insert_after="custom_offer",
-				default="Amount",
+				default="Percentage",
 				reqd=1,
 			),
 			dict(
@@ -300,6 +300,14 @@ def _setup_quotation_property_setters():
 			property="label",
 			value="Quantity (Units)",
 			property_type="Data",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Quotation Item",
+			field_name="custom_additional_discount_type",
+			property="hidden",
+			value="1",
+			property_type="Check",
 		),
 	]
 

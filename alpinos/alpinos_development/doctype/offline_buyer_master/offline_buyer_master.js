@@ -1,7 +1,7 @@
 frappe.ui.form.on("Offline Buyer Master", {
 	refresh(frm) {
 		toggle_tax_fields(frm);
-		set_city_state_options(frm);
+		set_city_state_queries(frm);
 		toggle_shipping_editability(frm);
 	},
 
@@ -57,46 +57,13 @@ function copy_shipping_address(frm) {
 	toggle_shipping_editability(frm);
 }
 
-function set_city_state_options(frm) {
-	const state_options = [
-		"Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-		"Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-		"Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
-		"Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana",
-		"Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi", "Chandigarh",
-		"Dadra and Nagar Haveli and Daman and Diu", "Jammu and Kashmir", "Ladakh",
-		"Lakshadweep", "Puducherry", "Andaman and Nicobar Islands"
-	];
-
-	const city_seed = [
-		"Ahmedabad", "Bengaluru", "Chennai", "Delhi", "Hyderabad", "Jaipur",
-		"Kolkata", "Lucknow", "Mumbai", "Nagpur", "Pune", "Surat"
-	];
-
-	frappe.call({
-		method: "frappe.client.get_list",
-		args: {
-			doctype: "Offline Buyer Master",
-			fields: ["city", "state", "shipping_city", "shipping_state"],
-			limit_page_length: 1000,
-		},
-		callback(r) {
-			const rows = r.message || [];
-			const city_set = new Set(city_seed);
-			const state_set = new Set(state_options);
-
-			rows.forEach((d) => {
-				[d.city, d.shipping_city].forEach((c) => c && city_set.add(c));
-				[d.state, d.shipping_state].forEach((s) => s && state_set.add(s));
-			});
-
-			const city_list = Array.from(city_set).sort().join("\n");
-			const state_list = Array.from(state_set).sort().join("\n");
-
-			["city", "shipping_city"].forEach((f) => frm.set_df_property(f, "options", city_list));
-			["state", "shipping_state"].forEach((f) => frm.set_df_property(f, "options", state_list));
-		},
-	});
+function set_city_state_queries(frm) {
+	frm.set_query("city", () => ({
+		filters: { state: frm.doc.state || "" }
+	}));
+	frm.set_query("shipping_city", () => ({
+		filters: { state: frm.doc.shipping_state || frm.doc.state || "" }
+	}));
 }
 
 function toggle_shipping_editability(frm) {
@@ -138,6 +105,45 @@ frappe.ui.form.on("Offline Buyer Margin", {
 				frappe.model.clear_doc(cdt, cdn);
 				frm.refresh_field("margins");
 			},
+		});
+	},
+
+	sku(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (!row.sku) return;
+
+		frappe.db.get_value("Item", row.sku, ["has_variants", "item_name"], (r) => {
+			if (!r) return;
+			const margin = row.margin_percent || 0;
+			const existing = new Set((frm.doc.margins || []).map((d) => d.sku).filter(Boolean));
+
+			if (r.has_variants) {
+				frappe.call({
+					method: "frappe.client.get_list",
+					args: {
+						doctype: "Item",
+						fields: ["name", "item_name"],
+						filters: { variant_of: row.sku, disabled: 0 },
+						limit_page_length: 1000,
+					},
+					callback(resp) {
+						(resp.message || []).forEach((it) => {
+							if (existing.has(it.name)) return;
+							const child = frm.add_child("margins");
+							child.sku = it.name;
+							child.product_name = it.item_name || "";
+							child.margin_percent = margin;
+						});
+						frappe.model.clear_doc(cdt, cdn);
+						frm.refresh_field("margins");
+					},
+				});
+				return;
+			}
+
+			if (!row.product_name) {
+				frappe.model.set_value(cdt, cdn, "product_name", r.item_name || "");
+			}
 		});
 	},
 });

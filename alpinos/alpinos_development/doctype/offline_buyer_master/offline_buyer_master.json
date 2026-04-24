@@ -135,14 +135,16 @@
   },
   {
    "fieldname": "state",
-   "fieldtype": "Autocomplete",
+   "fieldtype": "Link",
    "label": "State",
+   "options": "State",
    "reqd": 1
   },
   {
    "fieldname": "city",
-   "fieldtype": "Autocomplete",
+   "fieldtype": "Link",
    "label": "City",
+   "options": "City",
    "reqd": 1
   },
   {
@@ -192,13 +194,15 @@
   },
   {
    "fieldname": "shipping_state",
-   "fieldtype": "Autocomplete",
-   "label": "Shipping State"
+   "fieldtype": "Link",
+   "label": "Shipping State",
+   "options": "State"
   },
   {
    "fieldname": "shipping_city",
-   "fieldtype": "Autocomplete",
-   "label": "Shipping City"
+   "fieldtype": "Link",
+   "label": "Shipping City",
+   "options": "City"
   },
   {
    "fieldname": "margin_section",
