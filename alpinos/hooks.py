@@ -247,6 +247,9 @@ doc_events = {
 			"alpinos.job_applicant_automation.send_interview_scheduled_emails",
 		]
 	},
+	"Quotation": {
+		"validate": "alpinos.quotation_validate.validate_partial_payment_fields",
+	},
 	"Employee Onboarding": {
 		"before_validate": [
 			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields",

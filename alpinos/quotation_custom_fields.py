@@ -72,6 +72,7 @@ def setup_quotation_custom_fields():
 				label="Advance Amount",
 				fieldtype="Currency",
 				insert_after="custom_payment_mode",
+				reqd=0,
 				depends_on='eval:doc.custom_payment_mode=="Partial"',
 				mandatory_depends_on='eval:doc.custom_payment_mode=="Partial"',
 			),
@@ -80,6 +81,7 @@ def setup_quotation_custom_fields():
 				label="Attachment (Proof)",
 				fieldtype="Attach",
 				insert_after="custom_advance_amount",
+				reqd=0,
 				depends_on='eval:doc.custom_payment_mode=="Partial"',
 				mandatory_depends_on='eval:doc.custom_payment_mode=="Partial"',
 			),
@@ -222,6 +224,7 @@ def setup_quotation_custom_fields():
 	}
 
 	create_custom_fields(custom_fields, update=True)
+	_ensure_quotation_partial_payment_fields_not_always_mandatory()
 	frappe.clear_cache(doctype="Quotation")
 	frappe.clear_cache(doctype="Quotation Item")
 
@@ -329,6 +332,16 @@ def _setup_quotation_property_setters():
 			frappe.get_doc({"doctype": "Property Setter", **ps_data}).insert(ignore_permissions=True)
 
 	frappe.db.commit()
+
+
+def _ensure_quotation_partial_payment_fields_not_always_mandatory():
+	"""mandatory_depends_on is client-side; server only sees Custom Field reqd — keep it 0."""
+	for fieldname in ("custom_advance_amount", "custom_attachment_proof"):
+		name = frappe.db.get_value("Custom Field", {"dt": "Quotation", "fieldname": fieldname}, "name")
+		if not name:
+			continue
+		if frappe.db.get_value("Custom Field", name, "reqd"):
+			frappe.db.set_value("Custom Field", name, "reqd", 0)
 
 
 def _delete_obsolete_quotation_custom_fields():
