@@ -12,6 +12,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 def setup_opportunity_custom_fields():
 	_delete_obsolete_opportunity_custom_fields()
+	_cleanup_opportunity_from_property_setters()
 
 	custom_fields = {
 		"Opportunity": [
@@ -138,10 +139,20 @@ def setup_opportunity_custom_fields():
 	frappe.clear_cache(doctype="Opportunity Item")
 
 
-def _setup_opportunity_property_setters():
-	has_offline_buyer_master = bool(frappe.db.exists("DocType", "Offline Buyer Master"))
-	opportunity_from_options = "\nCustomer\nOffline Buyer Master" if has_offline_buyer_master else "\nCustomer"
+def _cleanup_opportunity_from_property_setters():
+	"""Remove bad overrides: opportunity_from is Link -> DocType; options must stay 'DocType'."""
+	for prop in ("options", "default"):
+		frappe.db.delete(
+			"Property Setter",
+			{
+				"doc_type": "Opportunity",
+				"field_name": "opportunity_from",
+				"property": prop,
+			},
+		)
 
+
+def _setup_opportunity_property_setters():
 	property_setters = [
 		# Existing fields adjusted via property setter
 		dict(
@@ -151,22 +162,6 @@ def _setup_opportunity_property_setters():
 			property="label",
 			value="Customer",
 			property_type="Data",
-		),
-		dict(
-			doctype_or_field="DocField",
-			doc_type="Opportunity",
-			field_name="opportunity_from",
-			property="options",
-			value=opportunity_from_options,
-			property_type="Text",
-		),
-		dict(
-			doctype_or_field="DocField",
-			doc_type="Opportunity",
-			field_name="opportunity_from",
-			property="default",
-			value="Customer",
-			property_type="Text",
 		),
 		dict(
 			doctype_or_field="DocField",

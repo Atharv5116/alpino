@@ -11,6 +11,18 @@ import frappe
 
 OPPORTUNITY_CLIENT_SCRIPT = """
 frappe.ui.form.on('Opportunity', {
+    setup: function(frm) {
+        // opportunity_from is Link -> DocType (not Select). Options must remain "DocType" in meta.
+        // Restrict picker to standard party types plus Offline Buyer Master (same pattern as erpnext opportunity.js).
+        frm.set_query('opportunity_from', function () {
+            return {
+                filters: {
+                    name: ['in', ['Customer', 'Lead', 'Prospect', 'Offline Buyer Master']],
+                },
+            };
+        });
+    },
+
     onload: function(frm) {
         if (frm.is_new() && !frm.doc.opportunity_owner) {
             frm.set_value('opportunity_owner', frappe.session.user);
