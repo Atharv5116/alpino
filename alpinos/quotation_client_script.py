@@ -46,7 +46,9 @@ frappe.ui.form.on('Quotation Item', {
                 },
                 callback: function(r) {
                     if (r.message) {
-                        frappe.model.set_value(cdt, cdn, 'custom_mrp', flt(r.message));
+                        locals[cdt][cdn].custom_mrp = flt(r.message);
+                        frm.refresh_field('items');
+                        recalculate_row_values(frm, cdt, cdn);
                     }
                 }
             });
@@ -160,11 +162,17 @@ function recalculate_row_values(frm, cdt, cdn) {
     const tax_percent = flt(row.custom_item_tax_percent);
     const tax_amount = taxable * tax_percent / 100.0;
 
-    frappe.model.set_value(cdt, cdn, 'custom_item_tax', flt(tax_amount, 2));
-    frappe.model.set_value(cdt, cdn, 'rate', qty ? flt(taxable / qty, 2) : 0);
-    frappe.model.set_value(cdt, cdn, 'amount', flt(taxable, 2));
-    frappe.model.set_value(cdt, cdn, 'base_amount', flt(taxable, 2));
+    const new_rate = qty ? flt(taxable / qty, 2) : 0;
 
+    // Write directly to locals to avoid triggering ERPNext's async rate→calculate chain
+    // which can race-condition and reset amount to 0 using stale values.
+    row.custom_item_tax = flt(tax_amount, 2);
+    row.rate = new_rate;
+    row.amount = flt(taxable, 2);
+    row.base_rate = new_rate;
+    row.base_amount = flt(taxable, 2);
+
+    frm.refresh_field('items');
     recalculate_quotation_totals(frm);
 }
 

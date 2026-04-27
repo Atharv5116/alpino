@@ -55,7 +55,9 @@ frappe.ui.form.on('Opportunity Item', {
                 },
                 callback: function(r) {
                     if (r.message) {
-                        frappe.model.set_value(cdt, cdn, 'custom_mrp', flt(r.message));
+                        locals[cdt][cdn].custom_mrp = flt(r.message);
+                        frm.refresh_field('items');
+                        recalculate_row_values(frm, cdt, cdn);
                     }
                 }
             });
@@ -77,10 +79,6 @@ frappe.ui.form.on('Opportunity Item', {
     },
 
     custom_flat_discount: function(frm, cdt, cdn) {
-        recalculate_row_values(frm, cdt, cdn);
-    },
-
-    custom_offer: function(frm, cdt, cdn) {
         recalculate_row_values(frm, cdt, cdn);
     },
 
@@ -148,10 +146,16 @@ function recalculate_row_values(frm, cdt, cdn) {
     let net_amount = after_offer - additional_discount_amount;
     if (net_amount < 0) net_amount = 0;
 
-    frappe.model.set_value(cdt, cdn, 'rate', qty ? flt(net_amount / qty, 2) : 0);
-    frappe.model.set_value(cdt, cdn, 'amount', flt(net_amount, 2));
-    frappe.model.set_value(cdt, cdn, 'base_amount', flt(net_amount, 2));
+    const new_rate = qty ? flt(net_amount / qty, 2) : 0;
 
+    // Write directly to locals to avoid triggering ERPNext's async rate→calculate chain
+    // which can race-condition and reset amount to 0 using stale values.
+    row.rate = new_rate;
+    row.amount = flt(net_amount, 2);
+    row.base_rate = new_rate;
+    row.base_amount = flt(net_amount, 2);
+
+    frm.refresh_field('items');
     recalculate_opportunity_totals(frm);
 }
 

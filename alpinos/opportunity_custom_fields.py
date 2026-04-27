@@ -121,7 +121,7 @@ def setup_opportunity_custom_fields():
 			dict(
 				fieldname="custom_additional_discount",
 				label="Additional Discount %",
-				fieldtype="Float",
+				fieldtype="Currency",
 				insert_after="custom_offer",
 			),
 			dict(
