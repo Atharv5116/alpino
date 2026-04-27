@@ -25,7 +25,6 @@ def setup_stock_entry_custom_fields():
 				options="User",
 				insert_after="remarks",
 				read_only=1,
-				default="frappe.session.user",
 			),
 		],
 		"Stock Entry Detail": [

@@ -250,6 +250,9 @@ doc_events = {
 	"Quotation": {
 		"validate": "alpinos.quotation_validate.validate_partial_payment_fields",
 	},
+	"Stock Entry": {
+		"before_insert": "alpinos.stock_entry_hooks.set_entry_by",
+	},
 	"Employee Onboarding": {
 		"before_validate": [
 			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields",
