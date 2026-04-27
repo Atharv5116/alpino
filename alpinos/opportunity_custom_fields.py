@@ -139,6 +139,9 @@ def setup_opportunity_custom_fields():
 
 
 def _setup_opportunity_property_setters():
+	has_offline_buyer_master = bool(frappe.db.exists("DocType", "Offline Buyer Master"))
+	opportunity_from_options = "\nCustomer\nOffline Buyer Master" if has_offline_buyer_master else "\nCustomer"
+
 	property_setters = [
 		# Existing fields adjusted via property setter
 		dict(
@@ -154,7 +157,7 @@ def _setup_opportunity_property_setters():
 			doc_type="Opportunity",
 			field_name="opportunity_from",
 			property="options",
-			value="\nCustomer\nOffline Buyer Master",
+			value=opportunity_from_options,
 			property_type="Text",
 		),
 		dict(

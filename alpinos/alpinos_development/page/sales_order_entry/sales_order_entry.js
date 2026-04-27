@@ -17,6 +17,7 @@ class SalesOrderEntry {
 		this.items = [];
 		this.freebies = [];
 		this.scheme_items = [];
+		this.additional_units_items = [];
 		this._box_cache = {};
 		this.setup();
 	}
@@ -399,7 +400,7 @@ class SalesOrderEntry {
 		});
 		this.additional_units_damage_field.$input.on('change', () => {
 			let checked = this.additional_units_damage_field.get_value();
-			this.wrapper.find('.scheme-items-section').toggle(!!checked);
+			this.wrapper.find('.additional-units-section').toggle(!!checked);
 		});
 	}
 
@@ -456,6 +457,18 @@ class SalesOrderEntry {
 			let idx = $(this).closest('tr').data('idx');
 			me.scheme_items.splice(idx, 1);
 			me.redraw_scheme_table();
+		});
+
+		// Add Additional Units Row
+		this.wrapper.find('.btn-add-additional-units').on('click', function() {
+			me.add_additional_units_row();
+		});
+
+		// Remove Additional Units
+		this.wrapper.on('click', '.remove-additional-unit', function() {
+			let idx = $(this).closest('tr').data('idx');
+			me.additional_units_items.splice(idx, 1);
+			me.redraw_additional_units_table();
 		});
 	}
 
@@ -522,7 +535,7 @@ class SalesOrderEntry {
 
 	add_scheme_row(data) {
 		let idx = this.scheme_items.length;
-		let row_data = data || { item_code: '', item_name: '', qty: 0, scheme: '', previous_order_id: '' };
+		let row_data = data || { item_code: '', item_name: '', qty: 0, scheme: '' };
 		this.scheme_items.push(row_data);
 
 		let $tbody = this.wrapper.find('.scheme-table tbody');
@@ -532,7 +545,6 @@ class SalesOrderEntry {
 				<td class="scheme-name"><span class="text-muted">-</span></td>
 				<td class="scheme-qty"></td>
 				<td class="scheme-scheme"></td>
-				<td class="scheme-prev-order"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-scheme"><i class="fa fa-trash"></i></button></td>
 			</tr>
 		`);
@@ -572,13 +584,75 @@ class SalesOrderEntry {
 		});
 		scheme_field.$input.on('change', function() { me.scheme_items[idx].scheme = scheme_field.get_value(); });
 
-		let prev_order_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Data', fieldname: `prev_order_${idx}` },
-			parent: $row.find('.scheme-prev-order'),
+		if (data && data.item_code) {
+			item_field.set_value(data.item_code);
+			if (data.qty) qty_field.set_value(data.qty);
+			if (data.scheme) scheme_field.set_value(data.scheme);
+			if (data.item_name) {
+				$row.find('.scheme-name span').text(data.item_name).removeClass('text-muted');
+			}
+		}
+	}
+
+	add_additional_units_row(data) {
+		let idx = this.additional_units_items.length;
+		let row_data = data || { item_code: '', item_name: '', qty: 0, scheme: '', previous_order_id: '' };
+		this.additional_units_items.push(row_data);
+
+		let $tbody = this.wrapper.find('.additional-units-table tbody');
+		let $row = $(`
+			<tr data-idx="${idx}">
+				<td class="au-item"></td>
+				<td class="au-name"><span class="text-muted">-</span></td>
+				<td class="au-qty"></td>
+				<td class="au-scheme"></td>
+				<td class="au-prev-order"></td>
+				<td class="text-center"><button class="btn btn-xs btn-danger remove-additional-unit"><i class="fa fa-trash"></i></button></td>
+			</tr>
+		`);
+		$tbody.append($row);
+		let me = this;
+
+		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`);
+		item_field.$input.on('change', function() {
+			setTimeout(() => {
+				let val = item_field.get_value();
+				me.additional_units_items[idx].item_code = val;
+				if (val) {
+					frappe.db.get_value('Item', val, 'item_name', function(r) {
+						if (r) {
+							me.additional_units_items[idx].item_name = r.item_name;
+							$row.find('.au-name span').text(r.item_name).removeClass('text-muted');
+						}
+					});
+				}
+			}, 200);
+		});
+
+		let qty_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Float', fieldname: `au_qty_${idx}` },
+			parent: $row.find('.au-qty'),
 			render_input: true,
 			only_input: true
 		});
-		prev_order_field.$input.on('change', function() { me.scheme_items[idx].previous_order_id = prev_order_field.get_value(); });
+		qty_field.$input && qty_field.$input.css('width', '70px');
+		qty_field.$input.on('change', function() { me.additional_units_items[idx].qty = flt(qty_field.get_value()); });
+
+		let scheme_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: `au_scheme_${idx}` },
+			parent: $row.find('.au-scheme'),
+			render_input: true,
+			only_input: true
+		});
+		scheme_field.$input.on('change', function() { me.additional_units_items[idx].scheme = scheme_field.get_value(); });
+
+		let prev_order_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: `au_prev_order_${idx}` },
+			parent: $row.find('.au-prev-order'),
+			render_input: true,
+			only_input: true
+		});
+		prev_order_field.$input.on('change', function() { me.additional_units_items[idx].previous_order_id = prev_order_field.get_value(); });
 
 		if (data && data.item_code) {
 			item_field.set_value(data.item_code);
@@ -586,7 +660,7 @@ class SalesOrderEntry {
 			if (data.scheme) scheme_field.set_value(data.scheme);
 			if (data.previous_order_id) prev_order_field.set_value(data.previous_order_id);
 			if (data.item_name) {
-				$row.find('.scheme-name span').text(data.item_name).removeClass('text-muted');
+				$row.find('.au-name span').text(data.item_name).removeClass('text-muted');
 			}
 		}
 	}
@@ -611,6 +685,13 @@ class SalesOrderEntry {
 		let old = this.scheme_items.slice();
 		this.scheme_items = [];
 		old.forEach(s => this.add_scheme_row(s));
+	}
+
+	redraw_additional_units_table() {
+		this.wrapper.find('.additional-units-table tbody').empty();
+		let old = this.additional_units_items.slice();
+		this.additional_units_items = [];
+		old.forEach(s => this.add_additional_units_row(s));
 	}
 
 	create_sales_order() {
@@ -648,6 +729,12 @@ class SalesOrderEntry {
 		let scheme_items = this.scheme_items.filter(s => s.item_code).map(s => ({
 			item_code: s.item_code,
 			qty: s.qty,
+			scheme: s.scheme
+		}));
+
+		let additional_units_items = this.additional_units_items.filter(s => s.item_code).map(s => ({
+			item_code: s.item_code,
+			qty: s.qty,
 			scheme: s.scheme,
 			previous_order_id: s.previous_order_id
 		}));
@@ -665,6 +752,7 @@ class SalesOrderEntry {
 				cash_discount: flt(me.cash_discount_field.get_value()),
 				freebies: freebies,
 				scheme_items: scheme_items,
+				additional_units_items: additional_units_items,
 				additional_units_damage: me.additional_units_damage_field.get_value() ? 1 : 0,
 				submit_now: 1
 			},
@@ -763,9 +851,11 @@ class SalesOrderEntry {
 		this.items = [];
 		this.freebies = [];
 		this.scheme_items = [];
+		this.additional_units_items = [];
 		this.wrapper.find('.items-table tbody').empty();
 		this.wrapper.find('.freebies-table tbody').empty();
 		this.wrapper.find('.scheme-table tbody').empty();
+		this.wrapper.find('.additional-units-table tbody').empty();
 		this.add_item_row();
 		this.calc_totals();
 	}

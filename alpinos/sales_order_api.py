@@ -39,6 +39,7 @@ def get_box_conversion_factor(item_code):
 @frappe.whitelist()
 def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        delivery_date=None, freebies=None, scheme_items=None,
+                       additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        submit_now=1):
 	"""Create a Sales Order from the custom entry page"""
@@ -50,6 +51,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		freebies = json.loads(freebies)
 	if isinstance(scheme_items, str):
 		scheme_items = json.loads(scheme_items)
+	if isinstance(additional_units_items, str):
+		additional_units_items = json.loads(additional_units_items)
 
 	so = frappe.new_doc("Sales Order")
 	so.customer = customer
@@ -97,16 +100,23 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 
 	# Scheme Items
 	if scheme_items:
-		so.custom_additional_units_damage = 1
 		for scheme in scheme_items:
 			so.append("custom_scheme_item_table", {
 				"item_code": scheme.get("item_code"),
 				"qty": flt(scheme.get("qty")),
 				"scheme": scheme.get("scheme") or "",
-				"previous_order_id": scheme.get("previous_order_id") or "",
 			})
-	else:
-		so.custom_additional_units_damage = int(additional_units_damage)
+
+	# Additional Units - Damage items
+	so.custom_additional_units_damage = int(additional_units_damage)
+	if additional_units_damage and additional_units_items:
+		for row in additional_units_items:
+			so.append("custom_scheme_item_table", {
+				"item_code": row.get("item_code"),
+				"qty": flt(row.get("qty")),
+				"scheme": row.get("scheme") or "",
+				"previous_order_id": row.get("previous_order_id") or "",
+			})
 
 	so.insert(ignore_permissions=True)
 	if int(submit_now):
