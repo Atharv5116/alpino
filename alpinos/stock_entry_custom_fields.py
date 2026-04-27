@@ -25,6 +25,7 @@ def setup_stock_entry_custom_fields():
 				options="User",
 				insert_after="remarks",
 				read_only=1,
+				default="",
 			),
 		],
 		"Stock Entry Detail": [
@@ -70,9 +71,20 @@ def setup_stock_entry_custom_fields():
 	}
 
 	create_custom_fields(custom_fields, update=True)
+	_clear_entry_by_default()
 	_setup_stock_entry_property_setters()
 	frappe.clear_cache(doctype="Stock Entry")
 	frappe.clear_cache(doctype="Stock Entry Detail")
+
+
+def _clear_entry_by_default():
+	"""Ensure custom_entry_by has no default — 'frappe.session.user' is a JS expression, invalid as a DB default."""
+	frappe.db.set_value(
+		"Custom Field",
+		{"dt": "Stock Entry", "fieldname": "custom_entry_by"},
+		"default",
+		"",
+	)
 
 
 def _setup_stock_entry_property_setters():
