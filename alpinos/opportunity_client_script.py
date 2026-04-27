@@ -65,6 +65,12 @@ frappe.ui.form.on('Opportunity Item', {
     },
 
     qty: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        const int_qty = Math.round(flt(row.qty));
+        if (row.qty !== int_qty) {
+            frappe.model.set_value(cdt, cdn, 'qty', int_qty);
+            return;
+        }
         update_boxes_from_qty(frm, cdt, cdn);
         recalculate_row_values(frm, cdt, cdn);
     },
@@ -133,6 +139,13 @@ function recalculate_row_values(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
     const qty = flt(row.qty);
     const mrp = flt(row.custom_mrp);
+
+    // If MRP is not set yet, leave rate/amount untouched so user can still enter manually.
+    if (!mrp) {
+        recalculate_opportunity_totals(frm);
+        return;
+    }
+
     const flat_discount_pct = flt(row.custom_flat_discount);
     const offer_pct = flt(row.custom_offer);
     const additional_discount_pct = flt(row.custom_additional_discount);

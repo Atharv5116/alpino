@@ -56,6 +56,12 @@ frappe.ui.form.on('Quotation Item', {
     },
 
     qty: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        const int_qty = Math.round(flt(row.qty));
+        if (row.qty !== int_qty) {
+            frappe.model.set_value(cdt, cdn, 'qty', int_qty);
+            return;
+        }
         update_boxes_from_qty(cdt, cdn);
         recalculate_row_values(frm, cdt, cdn);
     },
@@ -136,6 +142,12 @@ function recalculate_row_values(frm, cdt, cdn) {
     const row = locals[cdt][cdn];
     const qty = flt(row.qty);
     const mrp = flt(row.custom_mrp);
+
+    // If MRP is not set yet, leave rate/amount untouched so user can still enter manually.
+    if (!mrp) {
+        recalculate_quotation_totals(frm);
+        return;
+    }
 
     const gross = qty * mrp;
 

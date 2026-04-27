@@ -69,7 +69,7 @@ def setup_opportunity_custom_fields():
 				label="Cash Discount (%)",
 				fieldtype="Percent",
 				insert_after="total",
-				default="0.5",
+				default="0",
 			),
 			dict(
 				fieldname="custom_over_discount",
@@ -121,7 +121,7 @@ def setup_opportunity_custom_fields():
 			dict(
 				fieldname="custom_additional_discount",
 				label="Additional Discount %",
-				fieldtype="Currency",
+				fieldtype="Percent",
 				insert_after="custom_offer",
 			),
 			dict(
@@ -134,6 +134,7 @@ def setup_opportunity_custom_fields():
 	}
 
 	create_custom_fields(custom_fields, update=True)
+	_clear_opportunity_stale_defaults()
 	_setup_opportunity_property_setters()
 	frappe.clear_cache(doctype="Opportunity")
 	frappe.clear_cache(doctype="Opportunity Item")
@@ -150,6 +151,16 @@ def _cleanup_opportunity_from_property_setters():
 				"property": prop,
 			},
 		)
+
+
+def _clear_opportunity_stale_defaults():
+	"""Clear defaults that used to have wrong values."""
+	frappe.db.set_value(
+		"Custom Field",
+		{"dt": "Opportunity", "fieldname": "custom_cash_discount"},
+		"default",
+		"0",
+	)
 
 
 def _setup_opportunity_property_setters():
@@ -250,6 +261,22 @@ def _setup_opportunity_property_setters():
 			property="label",
 			value="Quantity (Units)",
 			property_type="Data",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Opportunity Item",
+			field_name="qty",
+			property="precision",
+			value="0",
+			property_type="Select",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Opportunity Item",
+			field_name="qty",
+			property="non_negative",
+			value="1",
+			property_type="Check",
 		),
 	]
 
