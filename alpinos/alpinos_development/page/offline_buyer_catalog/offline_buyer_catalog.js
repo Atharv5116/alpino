@@ -1,11 +1,11 @@
-frappe.pages['offline-buyer-items'].on_page_load = function (wrapper) {
+frappe.pages['offline-buyer-catalog'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: 'Offline Buyer Items',
 		single_column: true
 	});
 
-	$(frappe.render_template('offline_buyer_items', {})).appendTo(page.main);
+	$(frappe.render_template('offline_buyer_catalog', {})).appendTo(page.main);
 	window.obi_page = new OfflineBuyerItemsPage(page);
 };
 
