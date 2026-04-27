@@ -80,6 +80,10 @@ frappe.ui.form.on('Opportunity Item', {
         recalculate_row_values(frm, cdt, cdn);
     },
 
+    custom_offer: function(frm, cdt, cdn) {
+        recalculate_row_values(frm, cdt, cdn);
+    },
+
     custom_additional_discount: function(frm, cdt, cdn) {
         recalculate_row_values(frm, cdt, cdn);
     },
