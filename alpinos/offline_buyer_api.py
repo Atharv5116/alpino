@@ -1,19 +1,39 @@
-"""Python API for the Offline Buyer Items page."""
+"""Python API for the Offline Buyer Catalog page."""
 
 import json
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import flt, now_datetime
 
 
 @frappe.whitelist()
-def get_buyer_items():
-	"""Return every active sales item merged with current data from the
-	'Offline Buyer Items' Single DocType.
+def get_all_records():
+	"""Return all Offline Buyer Items records for the list view."""
+	records = frappe.db.sql(
+		"""
+		SELECT
+			obi.name,
+			obi.title,
+			obi.buyer,
+			obi.modified,
+			COUNT(obil.name) AS item_count
+		FROM `tabOffline Buyer Items` obi
+		LEFT JOIN `tabOffline Buyer Item` obil ON obil.parent = obi.name
+		GROUP BY obi.name
+		ORDER BY obi.modified DESC
+		""",
+		as_dict=True,
+	)
+	return records
+
+
+@frappe.whitelist()
+def get_buyer_items(record_name):
+	"""Return every active sales item merged with saved data from a specific record.
 
 	Each row: item_code, item_name, item_group, mrp, margin_percent, selling_rate, selected
 	"""
-	# All active, saleable items
+	# All active, saleable items from Item master
 	items = frappe.get_all(
 		"Item",
 		filters={"disabled": 0, "is_sales_item": 1},
@@ -21,15 +41,13 @@ def get_buyer_items():
 		order_by="item_group, item_name",
 	)
 
-	# Load saved data from Single DocType (keyed by item_code)
+	# Load saved rows from the specific record (keyed by item_code)
 	saved: dict = {}
-	try:
-		doc = frappe.get_single("Offline Buyer Items")
+	if frappe.db.exists("Offline Buyer Items", record_name):
+		doc = frappe.get_doc("Offline Buyer Items", record_name)
 		for row in doc.get("items") or []:
 			if row.item_code:
 				saved[row.item_code] = row
-	except Exception:
-		pass
 
 	result = []
 	for item in items:
@@ -54,15 +72,15 @@ def get_buyer_items():
 
 
 @frappe.whitelist()
-def save_buyer_items(items):
-	"""Save the selected items to the 'Offline Buyer Items' Single DocType.
-
-	Only selected rows are persisted; everything else is cleared.
-	"""
+def save_buyer_items(record_name, items):
+	"""Save selected items back to the specified Offline Buyer Items record."""
 	if isinstance(items, str):
 		items = json.loads(items)
 
-	doc = frappe.get_single("Offline Buyer Items")
+	if not frappe.db.exists("Offline Buyer Items", record_name):
+		frappe.throw(f"Record {record_name} not found")
+
+	doc = frappe.get_doc("Offline Buyer Items", record_name)
 	doc.set("items", [])
 
 	for item in items:
@@ -87,3 +105,17 @@ def save_buyer_items(items):
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"saved": len(doc.items)}
+
+
+@frappe.whitelist()
+def create_record(title, buyer=None, description=None):
+	"""Create a new Offline Buyer Items record and return its name."""
+	doc = frappe.new_doc("Offline Buyer Items")
+	doc.title = title
+	if buyer:
+		doc.buyer = buyer
+	if description:
+		doc.description = description
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.name

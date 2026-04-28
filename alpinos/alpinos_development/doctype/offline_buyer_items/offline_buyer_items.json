@@ -1,12 +1,49 @@
 {
  "actions": [],
+ "allow_rename": 1,
+ "autoname": "OBI-.YYYY.-.#####",
  "creation": "2026-04-27 12:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "title",
+  "buyer",
+  "col_break",
+  "description",
+  "items_section",
   "items"
  ],
  "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "buyer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Buyer (Offline Buyer Master)",
+   "options": "Offline Buyer Master"
+  },
+  {
+   "fieldname": "col_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
   {
    "fieldname": "items",
    "fieldtype": "Table",
@@ -14,9 +51,8 @@
    "options": "Offline Buyer Item"
   }
  ],
- "issingle": 1,
  "links": [],
- "modified": "2026-04-27 12:00:00.000000",
+ "modified": "2026-04-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Offline Buyer Items",
@@ -36,6 +72,7 @@
   },
   {
    "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,

@@ -78,25 +78,28 @@
   },
   {
    "depends_on": "eval:doc.gst_type=='Registered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Registered Business'",
    "fieldname": "gst_no",
    "fieldtype": "Data",
-   "label": "GST No",
-   "options": "Data"
+   "label": "GST No"
   },
   {
    "depends_on": "eval:doc.gst_type=='Registered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Registered Business'",
    "fieldname": "gst_certificate",
    "fieldtype": "Attach",
    "label": "GST Certificate"
   },
   {
    "depends_on": "eval:doc.gst_type=='Unregistered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Unregistered Business'",
    "fieldname": "pan_no",
    "fieldtype": "Data",
    "label": "PAN No"
   },
   {
    "depends_on": "eval:doc.gst_type=='Unregistered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Unregistered Business'",
    "fieldname": "pan_attachment",
    "fieldtype": "Attach",
    "label": "PAN Attachment"
@@ -150,7 +153,8 @@
   {
    "fieldname": "area",
    "fieldtype": "Data",
-   "label": "Area"
+   "label": "Area",
+   "reqd": 1
   },
   {
    "fieldname": "sub_area",
@@ -229,7 +233,8 @@
   {
    "fieldname": "contact_person",
    "fieldtype": "Data",
-   "label": "Contact Person"
+   "label": "Contact Person",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
