@@ -5,6 +5,19 @@ import json
 import frappe
 from frappe.utils import flt, now_datetime
 
+ALLOWED_OFFLINE_BUYER_ITEM_GROUPS = [
+	"Super Vital",
+	"SuperOne",
+	"Vinegar",
+	"Peanut Crackers",
+	"Cornflakes",
+	"Protein",
+	"Peanut Butter",
+	"Oats",
+	"Muesli",
+	"Bar",
+]
+
 
 @frappe.whitelist()
 def get_all_records():
@@ -119,3 +132,46 @@ def create_record(title, buyer=None, description=None):
 	doc.insert(ignore_permissions=True)
 	frappe.db.commit()
 	return doc.name
+
+
+@frappe.whitelist()
+def get_allowed_item_groups():
+	"""Return the fixed list of item groups allowed in Offline Buyer Margin."""
+	return ALLOWED_OFFLINE_BUYER_ITEM_GROUPS
+
+
+@frappe.whitelist()
+def get_variant_items_for_group(item_group):
+	"""Return variant items for selected group and all descendant groups."""
+	if not item_group:
+		return []
+
+	if item_group not in ALLOWED_OFFLINE_BUYER_ITEM_GROUPS:
+		frappe.throw(f"Item Group '{item_group}' is not allowed for Offline Buyer Margin")
+
+	root = frappe.db.get_value("Item Group", item_group, ["lft", "rgt"], as_dict=True)
+	if not root:
+		return []
+
+	group_names = frappe.get_all(
+		"Item Group",
+		filters={
+			"lft": [">=", root.lft],
+			"rgt": ["<=", root.rgt],
+		},
+		pluck="name",
+	)
+	if not group_names:
+		return []
+
+	return frappe.get_all(
+		"Item",
+		filters={
+			"disabled": 0,
+			"variant_of": ["!=", ""],
+			"item_group": ["in", group_names],
+		},
+		fields=["name", "item_name", "item_group", "variant_of"],
+		order_by="item_group asc, item_name asc",
+		limit_page_length=2000,
+	)

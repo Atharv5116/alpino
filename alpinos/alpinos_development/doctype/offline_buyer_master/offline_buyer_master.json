@@ -61,7 +61,7 @@
    "fieldname": "customer_type",
    "fieldtype": "Select",
    "label": "Customer Type",
-   "options": "\nSuperstockist\nDistributor",
+   "options": "\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS",
    "reqd": 1
   },
   {

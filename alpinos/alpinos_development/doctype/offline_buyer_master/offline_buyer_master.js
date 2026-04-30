@@ -2,6 +2,7 @@ frappe.ui.form.on("Offline Buyer Master", {
 	refresh(frm) {
 		toggle_tax_fields(frm);
 		set_city_state_queries(frm);
+		set_margin_queries(frm);
 		toggle_shipping_editability(frm);
 	},
 
@@ -73,18 +74,44 @@ function toggle_shipping_editability(frm) {
 	});
 }
 
+function set_margin_queries(frm) {
+	const allowed_groups = [
+		"Super Vital",
+		"SuperOne",
+		"Vinegar",
+		"Peanut Crackers",
+		"Cornflakes",
+		"Protein",
+		"Peanut Butter",
+		"Oats",
+		"Muesli",
+		"Bar",
+	];
+
+	frm.set_query("item_group", "margins", () => ({
+		filters: {
+			name: ["in", allowed_groups],
+		},
+	}));
+
+	// Only variants should be selectable in SKU.
+	frm.set_query("sku", "margins", () => ({
+		filters: {
+			disabled: 0,
+			variant_of: ["!=", ""],
+		},
+	}));
+}
+
 frappe.ui.form.on("Offline Buyer Margin", {
 	item_group(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
 		if (!row.item_group) return;
 
 		frappe.call({
-			method: "frappe.client.get_list",
+			method: "alpinos.offline_buyer_api.get_variant_items_for_group",
 			args: {
-				doctype: "Item",
-				fields: ["name", "item_name"],
-				filters: { item_group: row.item_group, disabled: 0, has_variants: 0 },
-				limit_page_length: 1000,
+				item_group: row.item_group,
 			},
 			callback(r) {
 				const items = r.message || [];
@@ -112,32 +139,12 @@ frappe.ui.form.on("Offline Buyer Margin", {
 		const row = locals[cdt][cdn];
 		if (!row.sku) return;
 
-		frappe.db.get_value("Item", row.sku, ["has_variants", "item_name"], (r) => {
+		frappe.db.get_value("Item", row.sku, ["variant_of", "item_name"], (r) => {
 			if (!r) return;
-			const margin = row.margin_percent || 0;
-			const existing = new Set((frm.doc.margins || []).map((d) => d.sku).filter(Boolean));
-
-			if (r.has_variants) {
-				frappe.call({
-					method: "frappe.client.get_list",
-					args: {
-						doctype: "Item",
-						fields: ["name", "item_name"],
-						filters: { variant_of: row.sku, disabled: 0 },
-						limit_page_length: 1000,
-					},
-					callback(resp) {
-						(resp.message || []).forEach((it) => {
-							if (existing.has(it.name)) return;
-							const child = frm.add_child("margins");
-							child.sku = it.name;
-							child.product_name = it.item_name || "";
-							child.margin_percent = margin;
-						});
-						frappe.model.clear_doc(cdt, cdn);
-						frm.refresh_field("margins");
-					},
-				});
+			if (!r.variant_of) {
+				frappe.msgprint("Only variant items are allowed in SKU.");
+				frappe.model.set_value(cdt, cdn, "sku", "");
+				frappe.model.set_value(cdt, cdn, "product_name", "");
 				return;
 			}
 
