@@ -49,8 +49,12 @@ def get_buyer_items(record_name):
 	# All active, saleable items from Item master
 	items = frappe.get_all(
 		"Item",
-		filters={"disabled": 0, "is_sales_item": 1},
-		fields=["name", "item_name", "item_group", "standard_rate"],
+		filters={
+			"disabled": 0,
+			"is_sales_item": 1,
+			"variant_of": ["!=", ""],
+		},
+		fields=["name", "item_name", "item_group", "standard_rate", "variant_of"],
 		order_by="item_group, item_name",
 	)
 
