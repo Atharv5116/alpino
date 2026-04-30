@@ -141,10 +141,12 @@ after_migrate = [
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
 	"alpinos.item_custom_fields.setup_item_custom_fields",
 	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
+	"alpinos.pick_list_custom_fields.setup_pick_list_custom_fields",
 	"alpinos.sales_order_client_script.create_sales_order_client_script",
 	"alpinos.opportunity_client_script.create_opportunity_client_script",
 	"alpinos.stock_entry_client_script.create_stock_entry_client_script",
 	"alpinos.quotation_client_script.create_quotation_client_script",
+	"alpinos.pick_list_client_script.create_pick_list_client_script",
 ]
 
 # Uninstallation
@@ -252,6 +254,9 @@ doc_events = {
 	},
 	"Stock Entry": {
 		"before_insert": "alpinos.stock_entry_hooks.set_entry_by",
+	},
+	"Pick List": {
+		"validate": "alpinos.pick_list_hooks.validate_pick_list",
 	},
 	"Employee Onboarding": {
 		"before_validate": [
