@@ -5,6 +5,37 @@ import json
 import frappe
 from frappe.utils import flt, now_datetime
 
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def obm_customer_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Offline Buyer Master → Customer: only customers not already linked to another master (current doc's customer allowed)."""
+	doctype = "Customer"
+	txt = txt or ""
+	if isinstance(filters, str):
+		filters = frappe.parse_json(filters)
+	filters = filters or {}
+	obm_name = (filters.get("obm_name") or "").strip()
+
+	return frappe.db.sql(
+		"""
+		SELECT c.name, c.customer_name
+		FROM `tabCustomer` c
+		WHERE IFNULL(c.disabled, 0) = 0
+			AND (c.name LIKE %(txt)s OR IFNULL(c.customer_name, '') LIKE %(txt)s)
+			AND (
+				NOT EXISTS (
+					SELECT 1 FROM `tabOffline Buyer Master` m
+					WHERE m.customer = c.name
+						AND (%(obm)s = '' OR m.name != %(obm)s)
+				)
+			)
+		ORDER BY c.name ASC
+		LIMIT %(page_len)s OFFSET %(start)s
+		""",
+		{"txt": f"%{txt}%", "obm": obm_name, "start": int(start), "page_len": int(page_len)},
+	)
+
+
 ALLOWED_OFFLINE_BUYER_ITEM_GROUPS = [
 	"Super Vital",
 	"SuperOne",
@@ -28,12 +59,14 @@ def get_all_records():
 			obi.name,
 			obi.title,
 			obi.buyer,
+			IFNULL(bcust.customer_name, '') AS buyer_customer_name,
 			obi.modified,
 			(
 				SELECT COUNT(obil.name)
 				FROM `tabOffline Buyer Item` obil
 				WHERE obil.parent = obi.name
 			) AS item_count,
+			obm.name AS offline_buyer_master,
 			obm.site_name,
 			obm.customer,
 			obm.customer_business_name,
@@ -42,7 +75,8 @@ def get_all_records():
 			obm.payment_term_days,
 			obm.party_owner
 		FROM `tabOffline Buyer Items` obi
-		LEFT JOIN `tabOffline Buyer Master` obm ON obm.name = obi.buyer
+		LEFT JOIN `tabCustomer` bcust ON bcust.name = obi.buyer
+		LEFT JOIN `tabOffline Buyer Master` obm ON obm.customer = obi.buyer
 		ORDER BY obi.modified DESC
 		""",
 		as_dict=True,

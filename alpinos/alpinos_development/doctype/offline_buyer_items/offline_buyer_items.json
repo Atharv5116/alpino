@@ -27,8 +27,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Buyer (Offline Buyer Master)",
-   "options": "Offline Buyer Master"
+   "label": "Customer",
+   "options": "Customer"
   },
   {
    "fieldname": "col_break",

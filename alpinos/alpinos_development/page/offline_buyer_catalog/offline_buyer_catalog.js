@@ -61,8 +61,15 @@ class OfflineBuyerCatalogPage {
 		}
 
 		records.forEach((rec) => {
+			let buyer_label = '';
+			if (rec.buyer) {
+				const nm = (rec.buyer_customer_name || '').trim();
+				buyer_label = nm
+					? `${frappe.utils.escape_html(nm)} (${frappe.utils.escape_html(rec.buyer)})`
+					: frappe.utils.escape_html(rec.buyer);
+			}
 			const buyer_cell = rec.buyer
-				? `<span style="color:#444;">${frappe.utils.escape_html(rec.buyer)}</span>`
+				? `<span style="color:#444;">${buyer_label}</span>`
 				: `<span style="color:#ccc;">—</span>`;
 			const site_cell = rec.site_name
 				? `<span>${frappe.utils.escape_html(rec.site_name)}</span>`
@@ -111,6 +118,8 @@ class OfflineBuyerCatalogPage {
 				(r.name   || '').toLowerCase().includes(q) ||
 				(r.title  || '').toLowerCase().includes(q) ||
 				(r.buyer  || '').toLowerCase().includes(q) ||
+				(r.buyer_customer_name || '').toLowerCase().includes(q) ||
+				(r.offline_buyer_master || '').toLowerCase().includes(q) ||
 				(r.site_name || '').toLowerCase().includes(q) ||
 				(r.customer || '').toLowerCase().includes(q) ||
 				(r.customer_business_name || '').toLowerCase().includes(q) ||
@@ -128,10 +137,13 @@ class OfflineBuyerCatalogPage {
 			fields: [
 				{ label: 'Title', fieldname: 'title', fieldtype: 'Data', reqd: 1 },
 				{
-					label: 'Buyer (Offline Buyer Master)',
+					label: 'Customer',
 					fieldname: 'buyer',
 					fieldtype: 'Link',
-					options: 'Offline Buyer Master'
+					options: 'Customer',
+					get_query: () => ({
+						query: 'alpinos.sales_order_offline_buyer.catalog_customer_query',
+					}),
 				},
 				{ label: 'Description', fieldname: 'description', fieldtype: 'Small Text' },
 			],
@@ -197,16 +209,19 @@ class OfflineBuyerCatalogPage {
 		$('.obi-detail-record-name').text(`${rec.title || rec.name}  (${rec.name})`);
 		const buyer_bits = [];
 		if (rec.buyer) {
-			buyer_bits.push(`Offline Buyer Master: ${rec.buyer}`);
+			const nm = (rec.buyer_customer_name || '').trim();
+			buyer_bits.push(
+				nm ? `Customer: ${nm} (${rec.buyer})` : `Customer: ${rec.buyer}`
+			);
+		}
+		if (rec.offline_buyer_master) {
+			buyer_bits.push(`Offline Buyer Master: ${rec.offline_buyer_master}`);
 		}
 		if (rec.customer_business_name) {
 			buyer_bits.push(`Business: ${rec.customer_business_name}`);
 		}
 		if (rec.site_name) {
 			buyer_bits.push(`Site: ${rec.site_name}`);
-		}
-		if (rec.customer) {
-			buyer_bits.push(`Customer: ${rec.customer}`);
 		}
 		if (rec.customer_type) {
 			buyer_bits.push(`Customer type: ${rec.customer_type}`);

@@ -7,6 +7,10 @@ frappe.ui.form.on("Offline Buyer Master", {
 		frm.set_query("party_owner", () => ({
 			query: "alpinos.offline_buyer_api.party_owner_user_query",
 		}));
+		frm.set_query("customer", () => ({
+			query: "alpinos.offline_buyer_api.obm_customer_query",
+			filters: { obm_name: frm.doc.name || "" },
+		}));
 	},
 
 	payment_term(frm) {

@@ -6,13 +6,9 @@ from frappe import _
 from frappe.utils import flt
 
 
-@frappe.whitelist()
-@frappe.validate_and_sanitize_search_inputs
-def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Limit Sales Order Customer link to customers that have an Offline Buyer Master."""
-	doctype = "Customer"
+def _customers_with_offline_buyer_master_query(txt, start, page_len):
+	"""Customers that have a row in Offline Buyer Master (same pool for Sales Order + Catalog)."""
 	txt = txt or ""
-
 	return frappe.db.sql(
 		"""
 		SELECT c.name, c.customer_name
@@ -25,6 +21,20 @@ def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filte
 		""",
 		{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
 	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Limit Sales Order Customer link to customers that have an Offline Buyer Master."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def catalog_customer_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Same customer list as Sales Order — only customers linked in Offline Buyer Master."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len)
 
 
 @frappe.whitelist()
