@@ -21,7 +21,7 @@ ALLOWED_OFFLINE_BUYER_ITEM_GROUPS = [
 
 @frappe.whitelist()
 def get_all_records():
-	"""Return all Offline Buyer Items records for the list view."""
+	"""Return all Offline Buyer Items records for the list view (incl. Offline Buyer Master context)."""
 	records = frappe.db.sql(
 		"""
 		SELECT
@@ -29,10 +29,20 @@ def get_all_records():
 			obi.title,
 			obi.buyer,
 			obi.modified,
-			COUNT(obil.name) AS item_count
+			(
+				SELECT COUNT(obil.name)
+				FROM `tabOffline Buyer Item` obil
+				WHERE obil.parent = obi.name
+			) AS item_count,
+			obm.site_name,
+			obm.customer,
+			obm.customer_business_name,
+			obm.customer_type,
+			obm.payment_term,
+			obm.payment_term_days,
+			obm.party_owner
 		FROM `tabOffline Buyer Items` obi
-		LEFT JOIN `tabOffline Buyer Item` obil ON obil.parent = obi.name
-		GROUP BY obi.name
+		LEFT JOIN `tabOffline Buyer Master` obm ON obm.name = obi.buyer
 		ORDER BY obi.modified DESC
 		""",
 		as_dict=True,
@@ -242,4 +252,46 @@ def get_variant_items_for_group(item_group):
 		fields=["name", "item_name", "item_group", "variant_of"],
 		order_by="item_group asc, item_name asc",
 		limit_page_length=2000,
+	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Party Owner: only enabled Users tied to Sales Person (via Employee), or Sales roles as fallback."""
+	doctype = "User"
+	txt = txt or ""
+
+	if frappe.db.exists("DocType", "Sales Person") and frappe.db.exists("DocType", "Employee"):
+		rows = frappe.db.sql(
+			"""
+			SELECT DISTINCT u.name, u.full_name
+			FROM `tabUser` u
+			INNER JOIN `tabEmployee` e ON e.user_id = u.name AND IFNULL(e.status, 'Active') = 'Active'
+			INNER JOIN `tabSales Person` sp ON sp.employee = e.name
+				AND IFNULL(sp.enabled, 1) = 1
+				AND IFNULL(sp.is_group, 0) = 0
+			WHERE IFNULL(u.enabled, 0) = 1
+				AND IFNULL(u.user_type, 'System User') = 'System User'
+				AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+			ORDER BY u.full_name ASC
+			LIMIT %(page_len)s OFFSET %(start)s
+			""",
+			{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
+		)
+		if rows:
+			return rows
+
+	return frappe.db.sql(
+		"""
+		SELECT DISTINCT u.name, u.full_name
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` hr ON hr.parent = u.name AND hr.parenttype = 'User'
+		WHERE hr.role IN ('Sales User', 'Sales Manager')
+			AND IFNULL(u.enabled, 0) = 1
+			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+		ORDER BY u.full_name ASC
+		LIMIT %(page_len)s OFFSET %(start)s
+		""",
+		{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
 	)

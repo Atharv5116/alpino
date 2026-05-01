@@ -5,6 +5,10 @@ app_description = "All the custom development for Alpinos"
 app_email = "hetvipatel2302@gmail.com"
 app_license = "mit"
 
+doctype_js = {
+	"Sales Order": "public/js/sales_order_offline_buyer.js",
+}
+
 # Only list callables that exist under alpinos/ (missing modules break bench migrate).
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
@@ -54,6 +58,12 @@ doc_events = {
 	},
 	"Pick List": {
 		"validate": "alpinos.pick_list_hooks.validate_pick_list",
+	},
+	"Sales Order": {
+		"validate": [
+			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
+			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
+		],
 	},
 }
 

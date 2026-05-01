@@ -588,10 +588,39 @@ def setup_custom_fields():
 			description="Reason provided when employee checked out from outside office location (from Employee Checkin).",
 		),
 	],
+	"Sales Order": [
+		dict(
+			fieldname="custom_offline_buyer_section",
+			label="Offline Buyer",
+			fieldtype="Section Break",
+			insert_after="customer",
+			collapsible=1,
+		),
+		dict(
+			fieldname="custom_offline_buyer_master",
+			label="Offline Buyer Master",
+			fieldtype="Link",
+			options="Offline Buyer Master",
+			insert_after="custom_offline_buyer_section",
+			read_only=1,
+			allow_on_submit=1,
+		),
+		dict(
+			fieldname="custom_offline_buyer_customer_type",
+			label="Customer Type (Offline Buyer)",
+			fieldtype="Data",
+			insert_after="custom_offline_buyer_master",
+			read_only=1,
+			allow_on_submit=1,
+		),
+	],
 	# Delete qualification table field if it exists (references non-existent Qualification DocType)
 	# This is handled separately to avoid validation errors
 	}
-	
+
+	if not frappe.db.exists("DocType", "Offline Buyer Master"):
+		custom_fields.pop("Sales Order", None)
+
 	create_custom_fields(custom_fields, update=True)
 	print("Custom fields created for Job Requisition, Job Opening, and Job Applicant")
 	

@@ -8,6 +8,8 @@
  "field_order": [
   "profile_section",
   "customer_business_name",
+  "site_name",
+  "customer",
   "customer_id",
   "customer_type",
   "gst_type",
@@ -17,6 +19,11 @@
   "pan_no",
   "pan_attachment",
   "level",
+  "payment_terms_section",
+  "payment_term",
+  "column_break_payment_terms",
+  "payment_term_days",
+  "party_owner",
   "address_section",
   "address",
   "pincode",
@@ -49,6 +56,19 @@
    "fieldname": "customer_business_name",
    "fieldtype": "Data",
    "label": "Customer (Business Name)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "label": "Site Name"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer",
    "reqd": 1
   },
   {
@@ -110,6 +130,38 @@
    "label": "Level",
    "options": "\nSuperstockist\nDistributor",
    "reqd": 1
+  },
+  {
+   "fieldname": "payment_terms_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Terms"
+  },
+  {
+   "default": "Advance",
+   "fieldname": "payment_term",
+   "fieldtype": "Select",
+   "label": "Payment Term",
+   "options": "\nAdvance\nCredit\nPartial",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_payment_terms",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.payment_term=='Credit' || doc.payment_term=='Partial'",
+   "fieldname": "payment_term_days",
+   "fieldtype": "Int",
+   "label": "Days",
+   "mandatory_depends_on": "eval:doc.payment_term=='Credit' || doc.payment_term=='Partial'",
+   "non_negative": 1
+  },
+  {
+   "description": "Users linked to an enabled Sales Person (via Employee). Optional.",
+   "fieldname": "party_owner",
+   "fieldtype": "Link",
+   "label": "Party Owner",
+   "options": "User"
   },
   {
    "fieldname": "address_section",

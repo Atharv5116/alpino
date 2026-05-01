@@ -32,19 +32,22 @@ class OfflineBuyerCatalogPage {
 		this._dirty = false;
 
 		this._bind_events();
-		this._load_records();
+		this._load_records(null);
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
 	   LIST VIEW
 	══════════════════════════════════════════════════════════════════════════ */
 
-	_load_records() {
+	_load_records(done) {
 		frappe.call({
 			method: 'alpinos.offline_buyer_api.get_all_records',
 			callback: (r) => {
 				this._all_records = r.message || [];
 				this._render_records_table(this._all_records);
+				if (typeof done === 'function') {
+					done();
+				}
 			}
 		});
 	}
@@ -53,22 +56,45 @@ class OfflineBuyerCatalogPage {
 		const tbody = $('.obi-records-tbody').empty();
 
 		if (!records.length) {
-			tbody.append('<tr><td colspan="5" class="obi-empty-state">No records found. Click "+ New" to create one.</td></tr>');
+			tbody.append('<tr><td colspan="10" class="obi-empty-state">No records found. Click "+ New" to create one.</td></tr>');
 			return;
 		}
 
 		records.forEach((rec) => {
 			const buyer_cell = rec.buyer
-				? `<span style="color:#444;">${rec.buyer}</span>`
+				? `<span style="color:#444;">${frappe.utils.escape_html(rec.buyer)}</span>`
+				: `<span style="color:#ccc;">—</span>`;
+			const site_cell = rec.site_name
+				? `<span>${frappe.utils.escape_html(rec.site_name)}</span>`
+				: `<span style="color:#ccc;">—</span>`;
+			const ctype_cell = rec.customer_type
+				? `<span>${frappe.utils.escape_html(rec.customer_type)}</span>`
+				: `<span style="color:#ccc;">—</span>`;
+			const pay_term = rec.payment_term
+				? frappe.utils.escape_html(rec.payment_term)
+				: `<span style="color:#ccc;">—</span>`;
+			const pay_days =
+				rec.payment_term === 'Credit' || rec.payment_term === 'Partial'
+					? (rec.payment_term_days != null && rec.payment_term_days !== ''
+						? frappe.utils.escape_html(String(rec.payment_term_days))
+						: `<span style="color:#ccc;">—</span>`)
+					: `<span style="color:#aaa;">—</span>`;
+			const party = rec.party_owner
+				? `<span>${frappe.utils.escape_html(rec.party_owner)}</span>`
 				: `<span style="color:#ccc;">—</span>`;
 			const modified = rec.modified
 				? frappe.datetime.prettyDate(rec.modified)
 				: '—';
 			tbody.append(`
-<tr data-record="${rec.name}">
-  <td class="obi-record-name">${rec.name}</td>
-  <td>${rec.title || ''}</td>
+<tr data-record="${frappe.utils.escape_html(rec.name)}">
+  <td class="obi-record-name">${frappe.utils.escape_html(rec.name)}</td>
+  <td>${frappe.utils.escape_html(rec.title || '')}</td>
   <td>${buyer_cell}</td>
+  <td>${site_cell}</td>
+  <td>${ctype_cell}</td>
+  <td>${pay_term}</td>
+  <td style="text-align:center;">${pay_days}</td>
+  <td>${party}</td>
   <td style="text-align:center;">
     <span class="obi-badge">${rec.item_count || 0} items</span>
   </td>
@@ -84,7 +110,14 @@ class OfflineBuyerCatalogPage {
 			: this._all_records.filter(r =>
 				(r.name   || '').toLowerCase().includes(q) ||
 				(r.title  || '').toLowerCase().includes(q) ||
-				(r.buyer  || '').toLowerCase().includes(q)
+				(r.buyer  || '').toLowerCase().includes(q) ||
+				(r.site_name || '').toLowerCase().includes(q) ||
+				(r.customer || '').toLowerCase().includes(q) ||
+				(r.customer_business_name || '').toLowerCase().includes(q) ||
+				(r.customer_type || '').toLowerCase().includes(q) ||
+				(r.payment_term || '').toLowerCase().includes(q) ||
+				String(r.payment_term_days ?? '').toLowerCase().includes(q) ||
+				(r.party_owner || '').toLowerCase().includes(q)
 			);
 		this._render_records_table(filtered);
 	}
@@ -115,9 +148,17 @@ class OfflineBuyerCatalogPage {
 						d.hide();
 						if (!r.exc) {
 							frappe.show_alert({ message: `Created: ${r.message}`, indicator: 'green' });
-							this._load_records();
-							// open the newly created record straight away
-							this._open_record({ name: r.message, title: values.title, buyer: values.buyer || '' });
+							const newName = r.message;
+							this._load_records(() => {
+								const full = this._all_records.find((row) => row.name === newName);
+								this._open_record(
+									full || {
+										name: newName,
+										title: values.title,
+										buyer: values.buyer || '',
+									}
+								);
+							});
 						}
 					}
 				});
@@ -154,7 +195,33 @@ class OfflineBuyerCatalogPage {
 
 		// update breadcrumb
 		$('.obi-detail-record-name').text(`${rec.title || rec.name}  (${rec.name})`);
-		$('.obi-detail-buyer').text(rec.buyer ? `Buyer: ${rec.buyer}` : '');
+		const buyer_bits = [];
+		if (rec.buyer) {
+			buyer_bits.push(`Offline Buyer Master: ${rec.buyer}`);
+		}
+		if (rec.customer_business_name) {
+			buyer_bits.push(`Business: ${rec.customer_business_name}`);
+		}
+		if (rec.site_name) {
+			buyer_bits.push(`Site: ${rec.site_name}`);
+		}
+		if (rec.customer) {
+			buyer_bits.push(`Customer: ${rec.customer}`);
+		}
+		if (rec.customer_type) {
+			buyer_bits.push(`Customer type: ${rec.customer_type}`);
+		}
+		if (rec.payment_term) {
+			let pay = `Payment: ${rec.payment_term}`;
+			if ((rec.payment_term === 'Credit' || rec.payment_term === 'Partial') && rec.payment_term_days != null && rec.payment_term_days !== '') {
+				pay += ` (${rec.payment_term_days} days)`;
+			}
+			buyer_bits.push(pay);
+		}
+		if (rec.party_owner) {
+			buyer_bits.push(`Party owner: ${rec.party_owner}`);
+		}
+		$('.obi-detail-buyer').html(buyer_bits.length ? buyer_bits.map((b) => frappe.utils.escape_html(b)).join(' · ') : '');
 
 		// reset items state
 		this.all_rows = [];

@@ -4,6 +4,16 @@ frappe.ui.form.on("Offline Buyer Master", {
 		set_city_state_queries(frm);
 		set_margin_queries(frm);
 		toggle_shipping_editability(frm);
+		frm.set_query("party_owner", () => ({
+			query: "alpinos.offline_buyer_api.party_owner_user_query",
+		}));
+	},
+
+	payment_term(frm) {
+		if (frm.doc.payment_term === "Advance") {
+			frm.set_value("payment_term_days", null);
+		}
+		frm.refresh_field("payment_term_days");
 	},
 
 	gst_type(frm) {

@@ -75,7 +75,7 @@
       <h4 class="obi-list-title">Offline Buyer Items</h4>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="text" class="form-control obi-list-search"
-               placeholder="Search by title or buyer…" />
+               placeholder="Search title, buyer, site, customer type, payment term…" />
         <button class="btn btn-sm btn-primary obi-btn-new">+ New</button>
       </div>
     </div>
@@ -87,12 +87,17 @@
             <th>Name</th>
             <th>Title</th>
             <th>Buyer</th>
+            <th>Site Name</th>
+            <th>Customer Type</th>
+            <th>Payment Term</th>
+            <th>Days</th>
+            <th>Party Owner</th>
             <th style="text-align:center;">Items</th>
             <th>Last Modified</th>
           </tr>
         </thead>
         <tbody class="obi-records-tbody">
-          <tr><td colspan="5" class="obi-empty-state">Loading…</td></tr>
+          <tr><td colspan="10" class="obi-empty-state">Loading…</td></tr>
         </tbody>
       </table>
     </div>
