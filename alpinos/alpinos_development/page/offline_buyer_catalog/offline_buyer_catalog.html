@@ -72,7 +72,12 @@
   <div class="obi-list-view">
 
     <div class="obi-list-toolbar">
-      <h4 class="obi-list-title">Offline Buyer Items</h4>
+      <div>
+        <h4 class="obi-list-title" style="margin:0;">Offline Buyer Items</h4>
+        <p class="text-muted" style="margin:4px 0 0;font-size:12px;max-width:720px;">
+          New records: choose a <strong>Customer</strong> that already has an Offline Buyer Master (same list as Sales Order). Item grid uses that master's SKUs and margin % (aligned with Sales Order Entry).
+        </p>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="text" class="form-control obi-list-search"
                placeholder="Search title, customer, OBM, site, customer type, payment term…" />
@@ -126,6 +131,9 @@
     </div>
 
     <!-- filters -->
+    <p class="text-muted" style="margin:0 0 8px;font-size:12px;">
+      SKUs and default margin % / rates follow the <strong>Offline Buyer Master</strong> for this customer (plus rows already saved here).
+    </p>
     <div class="obi-filters">
       <input type="text" class="form-control obi-search"
              placeholder="Search by Item Code or Name…" />

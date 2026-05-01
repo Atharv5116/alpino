@@ -86,11 +86,14 @@ def get_all_records():
 
 @frappe.whitelist()
 def get_buyer_items(record_name):
-	"""Return every active sales item merged with saved data from a specific record.
+	"""Return active variant items for the catalog grid, merged with saved rows and Offline Buyer Master margins.
 
-	Each row: item_code, item_name, item_group, mrp, margin_percent, selling_rate, selected
+	When this catalog's **buyer** (Customer) has an Offline Buyer Master with margin rows, the page only lists
+	SKUs that appear on that master (plus any SKUs already saved on this catalog). Default **margin %** and
+	**MRP** match the master (and Sales Order Entry): MRP from Item ``standard_rate``, margin from
+	``Offline Buyer Margin``; saved child rows still win if present.
 	"""
-	# All active, saleable items from Item master
+	# All active, saleable variant items from Item master
 	items = frappe.get_all(
 		"Item",
 		filters={
@@ -102,19 +105,42 @@ def get_buyer_items(record_name):
 		order_by="item_group, item_name",
 	)
 
-	# Load saved rows from the specific record (keyed by item_code)
 	saved: dict = {}
+	buyer = None
 	if frappe.db.exists("Offline Buyer Items", record_name):
 		doc = frappe.get_doc("Offline Buyer Items", record_name)
+		buyer = doc.buyer
 		for row in doc.get("items") or []:
 			if row.item_code:
 				saved[row.item_code] = row
 
+	obm_margin_by_sku: dict = {}
+	if buyer:
+		obm_name = frappe.db.get_value("Offline Buyer Master", {"customer": buyer}, "name")
+		if obm_name:
+			for r in frappe.get_all(
+				"Offline Buyer Margin",
+				filters={"parent": obm_name, "parenttype": "Offline Buyer Master"},
+				fields=["sku", "margin_percent"],
+			):
+				if r.sku:
+					obm_margin_by_sku[r.sku] = flt(r.margin_percent)
+
+	# Restrict grid to master SKUs (+ saved lines) when the master defines at least one margin row
+	allowed_skus = None
+	if obm_margin_by_sku:
+		allowed_skus = set(obm_margin_by_sku.keys()) | set(saved.keys())
+
 	result = []
 	for item in items:
+		if allowed_skus is not None and item.name not in allowed_skus:
+			continue
 		row = saved.get(item.name)
 		mrp = flt(row.mrp if row else item.standard_rate)
-		margin_pct = flt(row.margin_percent if row else 0)
+		if row:
+			margin_pct = flt(row.margin_percent)
+		else:
+			margin_pct = flt(obm_margin_by_sku.get(item.name, 0))
 		selling_rate = flt(mrp * (1 - margin_pct / 100), 2) if mrp else 0
 
 		result.append(
