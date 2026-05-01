@@ -6,12 +6,14 @@ frappe.ui.form.on('Pick List', {
 	onload(frm) {
 		set_defaults(frm);
 		sync_order_information(frm);
+		sync_all_pick_list_batch_dates(frm);
 	},
 
 	refresh(frm) {
 		set_defaults(frm);
 		sync_order_information(frm);
 		recalculate_pick_list_totals(frm);
+		sync_all_pick_list_batch_dates(frm);
 	},
 
 	locations_add(frm) {
@@ -78,6 +80,25 @@ function sync_order_information(frm) {
 			}
 		});
 	}
+}
+
+/** Rows from "Get Item Locations" often have batch_no without firing batch_no; fill read-only MFG/Expiry from Batch. */
+function sync_all_pick_list_batch_dates(frm) {
+	const rows = frm.doc.locations || [];
+	const jobs = rows
+		.filter((row) => row.batch_no && (!row.custom_mfg_date || !row.custom_expiry_date))
+		.map((row) =>
+			frappe.db.get_value('Batch', row.batch_no, ['manufacturing_date', 'expiry_date']).then((r) => {
+				const d = r.message || {};
+				if (d.manufacturing_date) {
+					frappe.model.set_value(row.doctype, row.name, 'custom_mfg_date', d.manufacturing_date);
+				}
+				if (d.expiry_date) {
+					frappe.model.set_value(row.doctype, row.name, 'custom_expiry_date', d.expiry_date);
+				}
+			})
+		);
+	return Promise.all(jobs);
 }
 
 function recalculate_pick_list_row(frm, cdt, cdn) {
