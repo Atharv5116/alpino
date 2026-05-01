@@ -1,5 +1,6 @@
 import frappe
 
+
 PICK_LIST_CLIENT_SCRIPT = """
 frappe.ui.form.on('Pick List', {
 	onload(frm) {
@@ -11,7 +12,6 @@ frappe.ui.form.on('Pick List', {
 		set_defaults(frm);
 		sync_order_information(frm);
 		recalculate_pick_list_totals(frm);
-		refresh_batch_dates_for_all_rows(frm);
 	},
 
 	locations_add(frm) {
@@ -24,10 +24,6 @@ frappe.ui.form.on('Pick List Item', {
 		recalculate_pick_list_row(frm, cdt, cdn);
 	},
 
-	picked_qty(frm, cdt, cdn) {
-		recalculate_pick_list_row(frm, cdt, cdn);
-	},
-
 	custom_sample_quantity(frm, cdt, cdn) {
 		recalculate_pick_list_row(frm, cdt, cdn);
 	},
@@ -37,12 +33,17 @@ frappe.ui.form.on('Pick List Item', {
 	},
 
 	batch_no(frm, cdt, cdn) {
-		apply_batch_dates_to_row(frm, cdt, cdn);
-	},
-
-	serial_and_batch_bundle(frm, cdt, cdn) {
-		// Batch is often stored only on the bundle (use_serial_batch_fields = 0).
-		apply_batch_dates_to_row(frm, cdt, cdn);
+		const row = locals[cdt][cdn];
+		if (!row.batch_no) {
+			frappe.model.set_value(cdt, cdn, 'custom_mfg_date', null);
+			frappe.model.set_value(cdt, cdn, 'custom_expiry_date', null);
+			return;
+		}
+		frappe.db.get_value('Batch', row.batch_no, ['manufacturing_date', 'expiry_date']).then((r) => {
+			const d = r.message || {};
+			frappe.model.set_value(cdt, cdn, 'custom_mfg_date', d.manufacturing_date || null);
+			frappe.model.set_value(cdt, cdn, 'custom_expiry_date', d.expiry_date || null);
+		});
 	},
 
 	item_code(frm, cdt, cdn) {
@@ -63,36 +64,6 @@ function set_defaults(frm) {
 	}
 }
 
-function refresh_batch_dates_for_all_rows(frm) {
-	(frm.doc.locations || []).forEach((row) => {
-		if (row.batch_no || row.serial_and_batch_bundle) {
-			apply_batch_dates_to_row(frm, row.doctype, row.name);
-		}
-	});
-}
-
-function apply_batch_dates_to_row(frm, cdt, cdn) {
-	const row = locals[cdt][cdn];
-	if (!row) return;
-	if (!row.batch_no && !row.serial_and_batch_bundle) {
-		frappe.model.set_value(cdt, cdn, 'custom_mfg_date', null);
-		frappe.model.set_value(cdt, cdn, 'custom_expiry_date', null);
-		return;
-	}
-	frappe.call({
-		method: 'alpinos.pick_list_api.resolve_batch_dates_for_row',
-		args: {
-			batch_no: row.batch_no || '',
-			serial_and_batch_bundle: row.serial_and_batch_bundle || ''
-		},
-		callback(r) {
-			const d = r.message || {};
-			frappe.model.set_value(cdt, cdn, 'custom_mfg_date', d.manufacturing_date || null);
-			frappe.model.set_value(cdt, cdn, 'custom_expiry_date', d.expiry_date || null);
-		}
-	});
-}
-
 function sync_order_information(frm) {
 	const rows = frm.doc.locations || [];
 	const first_so = (rows.find(r => r.sales_order) || {}).sales_order;
@@ -109,15 +80,11 @@ function sync_order_information(frm) {
 	}
 }
 
-function row_qty(row) {
-	return flt(row.picked_qty || row.qty);
-}
-
 function recalculate_pick_list_row(frm, cdt, cdn) {
 	const row = locals[cdt][cdn];
 	if (!row) return;
 
-	const qty = row_qty(row);
+	const qty = flt(row.qty);
 	const sample_qty = flt(row.custom_sample_quantity);
 
 	if (!row.item_code) {
@@ -128,7 +95,7 @@ function recalculate_pick_list_row(frm, cdt, cdn) {
 	}
 
 	frappe.call({
-		method: 'alpinos.pick_list_api.get_box_conversion_factor',
+		method: 'alpinos.sales_order_api.get_box_conversion_factor',
 		args: { item_code: row.item_code },
 		callback: function(r) {
 			const factor = flt(r.message) || 1;
@@ -156,7 +123,7 @@ function recalculate_pick_list_totals(frm) {
 		sample_box += row_sample_box;
 		sample_weight += row_sample_box * row_weight_per_box;
 		gross_weight += (row_box + row_sample_box) * row_weight_per_box;
-		total_unit += row_qty(row) + flt(row.custom_sample_quantity);
+		total_unit += flt(row.qty) + flt(row.custom_sample_quantity);
 	});
 
 	frm.set_value('custom_actual_box', actual_box);
@@ -181,7 +148,7 @@ def create_pick_list_client_script():
 		doc.enabled = 1
 		doc.save(ignore_permissions=True)
 	else:
-		frappe.get_doc(
+		doc = frappe.get_doc(
 			{
 				"doctype": "Client Script",
 				"name": script_name,
@@ -190,6 +157,7 @@ def create_pick_list_client_script():
 				"module": "Alpinos Development",
 				"script": PICK_LIST_CLIENT_SCRIPT,
 			}
-		).insert(ignore_permissions=True)
+		)
+		doc.insert(ignore_permissions=True)
 
 	frappe.db.commit()

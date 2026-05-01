@@ -1,11 +1,8 @@
-"""Pick List + Pick List Item custom fields (Alpinos)."""
-
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
-def setup_pick_list_alpinos_fields():
-	"""Create/update Pick List custom fields. Safe to run on every migrate."""
+def setup_pick_list_custom_fields():
 	custom_fields = {
 		"Pick List": [
 			dict(
@@ -114,6 +111,7 @@ def setup_pick_list_alpinos_fields():
 				insert_after="qty",
 				read_only=1,
 				default="0",
+				reqd=1,
 			),
 			dict(
 				fieldname="custom_sample_quantity",
@@ -143,8 +141,7 @@ def setup_pick_list_alpinos_fields():
 				fieldtype="Date",
 				insert_after="batch_no",
 				read_only=1,
-				reqd=0,
-				mandatory_depends_on="eval:doc.batch_no || doc.serial_and_batch_bundle",
+				reqd=1,
 			),
 			dict(
 				fieldname="custom_expiry_date",
@@ -152,45 +149,64 @@ def setup_pick_list_alpinos_fields():
 				fieldtype="Date",
 				insert_after="custom_mfg_date",
 				read_only=1,
-				reqd=0,
-				mandatory_depends_on="eval:doc.batch_no || doc.serial_and_batch_bundle",
+				reqd=1,
 			),
 		],
 	}
 
 	create_custom_fields(custom_fields, update=True)
-
-	_remove_batch_no_always_required_setter()
-	_ensure_pick_list_item_date_fields_conditional()
-
+	_setup_pick_list_property_setters()
 	frappe.db.commit()
 
-	from alpinos.pick_list_client_script import create_pick_list_client_script
 
-	create_pick_list_client_script()
-
-
-def _ensure_pick_list_item_date_fields_conditional():
-	"""Existing DB rows may still have reqd=1; force conditional mandatory."""
-	for fn in ("custom_mfg_date", "custom_expiry_date"):
-		cf_name = frappe.db.get_value("Custom Field", {"dt": "Pick List Item", "fieldname": fn}, "name")
-		if not cf_name:
-			continue
-		cf = frappe.get_doc("Custom Field", cf_name)
-		cf.reqd = 0
-		cf.mandatory_depends_on = "eval:doc.batch_no || doc.serial_and_batch_bundle"
-		cf.save(ignore_permissions=True)
-
-
-def _remove_batch_no_always_required_setter():
-	"""Batch is not always applicable; drop global reqd on batch_no if we added it."""
-	for ps_name in frappe.get_all(
-		"Property Setter",
-		filters={
+def _setup_pick_list_property_setters():
+	property_setters = [
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Pick List Item",
+			"field_name": "item_code",
+			"property": "label",
+			"value": "SKU",
+			"property_type": "Data",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Pick List Item",
+			"field_name": "item_name",
+			"property": "label",
+			"value": "SKU No.",
+			"property_type": "Data",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Pick List Item",
+			"field_name": "qty",
+			"property": "label",
+			"value": "Quantity",
+			"property_type": "Data",
+		},
+		{
+			"doctype_or_field": "DocField",
 			"doc_type": "Pick List Item",
 			"field_name": "batch_no",
 			"property": "reqd",
+			"value": "1",
+			"property_type": "Check",
 		},
-		pluck="name",
-	):
-		frappe.delete_doc("Property Setter", ps_name, force=1, ignore_permissions=True)
+	]
+
+	for ps_data in property_setters:
+		existing = frappe.db.exists(
+			"Property Setter",
+			{
+				"doc_type": ps_data["doc_type"],
+				"field_name": ps_data["field_name"],
+				"property": ps_data["property"],
+			},
+		)
+		if existing:
+			ps = frappe.get_doc("Property Setter", existing)
+			ps.value = ps_data["value"]
+			ps.save(ignore_permissions=True)
+		else:
+			frappe.get_doc({"doctype": "Property Setter", **ps_data}).insert(ignore_permissions=True)

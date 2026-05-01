@@ -1,0 +1,12 @@
+[pre_model_sync]
+# Patches added in this section will be executed before doctypes are migrated
+# Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+
+[post_model_sync]
+# Patches added in this section will be executed after doctypes are migrated
+alpinos.patches.v1_0.update_job_requisition_fields
+alpinos.patches.v1_0.setup_job_applicant_workflow
+alpinos.patches.create_attendance_widget
+alpinos.patches.create_hrms_email_templates
+alpinos.patches.v1_0.fix_shift_attendance_alpinos_report_script
+alpinos.patches.v1_0.fix_shift_attendance_alpinos_report_script_v2
