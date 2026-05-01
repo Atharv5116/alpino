@@ -27,6 +27,8 @@ class OfflineBuyerCatalogPage {
 		this._current_record = null;   // { name, title, buyer }
 		this.all_rows    = [];         // full item list
 		this.visible_rows = [];
+		/** @type {Record<string, string[]>} parent item group name -> all group names in its subtree */
+		this._parent_descendants = {};
 		this._dirty = false;
 
 		this._bind_events();
@@ -160,7 +162,8 @@ class OfflineBuyerCatalogPage {
 		this._dirty = false;
 		this._update_dirty_badge();
 		$('.obi-search').val('');
-		$('.obi-group-filter').val('');
+		$('.obi-parent-group-filter').val('');
+		this._parent_descendants = {};
 		$('.obi-bulk-mrp, .obi-bulk-margin').val('');
 
 		this._load_items();
@@ -179,8 +182,7 @@ class OfflineBuyerCatalogPage {
 				this.all_rows = r.message || [];
 				this._dirty = false;
 				this._update_dirty_badge();
-				this._build_group_filter();
-				this._apply_filters();
+				this._load_parent_group_filter();
 				this._set_status('');
 			}
 		});
@@ -190,21 +192,47 @@ class OfflineBuyerCatalogPage {
 	   DETAIL VIEW – FILTER & RENDER
 	══════════════════════════════════════════════════════════════════════════ */
 
-	_build_group_filter() {
-		const groups = [...new Set(this.all_rows.map(r => r.item_group).filter(Boolean))].sort();
-		const sel = $('.obi-group-filter').empty().append('<option value="">All Item Groups</option>');
-		groups.forEach(g => sel.append(`<option value="${g}">${g}</option>`));
+	_load_parent_group_filter() {
+		const groups = [...new Set(this.all_rows.map(r => r.item_group).filter(Boolean))];
+		const sel = $('.obi-parent-group-filter').empty();
+		sel.append($('<option>').val('').text('All parent item groups'));
+
+		if (!groups.length) {
+			this._parent_descendants = {};
+			this._apply_filters();
+			return;
+		}
+
+		frappe.call({
+			method: 'alpinos.offline_buyer_api.get_parent_group_filter_data',
+			args: { item_groups: JSON.stringify(groups) },
+			callback: (r) => {
+				const data = r.message || {};
+				this._parent_descendants = data.descendants_map || {};
+				const parents = data.parents || [];
+				parents.forEach((p) => {
+					sel.append($('<option>').val(p).text(p));
+				});
+				this._apply_filters();
+			},
+			error: () => {
+				this._parent_descendants = {};
+				this._apply_filters();
+			},
+		});
 	}
 
 	_apply_filters() {
 		const q   = ($('.obi-search').val() || '').toLowerCase();
-		const grp = $('.obi-group-filter').val();
+		const parent = $('.obi-parent-group-filter').val();
+		const inSubtree = parent ? (this._parent_descendants[parent] || []) : null;
 
 		this.visible_rows = this.all_rows.filter(r => {
-			const matchText  = !q   || (r.item_code || '').toLowerCase().includes(q)
-			                        || (r.item_name  || '').toLowerCase().includes(q);
-			const matchGroup = !grp || r.item_group === grp;
-			return matchText && matchGroup;
+			const matchText = !q || (r.item_code || '').toLowerCase().includes(q)
+				|| (r.item_name || '').toLowerCase().includes(q);
+			const ig = r.item_group || '';
+			const matchParent = !parent || (inSubtree && inSubtree.includes(ig));
+			return matchText && matchParent;
 		});
 		this._render_table();
 	}
@@ -284,7 +312,7 @@ class OfflineBuyerCatalogPage {
 
 		// search & group filter
 		$(document).on('input',  '.obi-search',      () => this._apply_filters());
-		$(document).on('change', '.obi-group-filter', () => this._apply_filters());
+		$(document).on('change', '.obi-parent-group-filter', () => this._apply_filters());
 
 		// row checkbox
 		$(document).on('change', '.obi-row-chk', (e) => {

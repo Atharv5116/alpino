@@ -43,7 +43,7 @@
 /* ── items section (shared detail) ──────────────────────────── */
 .obi-filters { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; align-items:center; }
 .obi-search { flex:1; min-width:180px; }
-.obi-group-filter { flex:0 0 200px; }
+    .obi-parent-group-filter { flex:0 0 220px; }
 .obi-filter-counts { font-size:12px; color:#888; white-space:nowrap; }
 .obi-bulk-bar { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:13px;
   background:#f8f9fa; border:1px solid #e2e8f0; border-radius:4px; padding:6px 10px; }
@@ -124,8 +124,8 @@
     <div class="obi-filters">
       <input type="text" class="form-control obi-search"
              placeholder="Search by Item Code or Name…" />
-      <select class="form-control obi-group-filter">
-        <option value="">All Item Groups</option>
+      <select class="form-control obi-parent-group-filter" title="Filter by parent group; includes all child item groups">
+        <option value="">All parent item groups</option>
       </select>
       <div class="obi-filter-counts">
         <span class="obi-total-count"></span>

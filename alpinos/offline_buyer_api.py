@@ -139,6 +139,70 @@ def create_record(title, buyer=None, description=None):
 
 
 @frappe.whitelist()
+def get_parent_group_filter_data(item_groups):
+	"""For catalog rows, return parent Item Groups and each parent's subtree (all descendant group names).
+
+	Used by Offline Buyer Catalog: filter by Parent Item Group so items in any child group match.
+	"""
+	if isinstance(item_groups, str):
+		item_groups = json.loads(item_groups)
+	item_groups = list({g for g in item_groups if g})
+	if not item_groups:
+		return {"parents": [], "descendants_map": {}}
+
+	leaf_rows = frappe.db.sql(
+		"""
+		SELECT name, lft, rgt FROM `tabItem Group`
+		WHERE name IN %s
+		""",
+		(item_groups,),
+		as_dict=True,
+	)
+	if not leaf_rows:
+		return {"parents": [], "descendants_map": {}}
+
+	meta = frappe.get_meta("Item Group")
+	has_is_group = meta.has_field("is_group")
+
+	ancestors = set()
+	for row in leaf_rows:
+		if has_is_group:
+			names = frappe.db.sql(
+				"""
+				SELECT name FROM `tabItem Group`
+				WHERE lft <= %(lft)s AND rgt >= %(rgt)s AND IFNULL(`is_group`, 0) = 1
+				""",
+				{"lft": row.lft, "rgt": row.rgt},
+				pluck="name",
+			)
+		else:
+			names = frappe.db.sql(
+				"""
+				SELECT ig.name FROM `tabItem Group` ig
+				INNER JOIN `tabItem Group` leaf ON leaf.name = %(leaf)s
+				WHERE ig.lft <= leaf.lft AND ig.rgt >= leaf.rgt AND ig.name != leaf.name
+				""",
+				{"leaf": row.name},
+				pluck="name",
+			)
+		ancestors.update(names)
+
+	parents = sorted(ancestors)
+	descendants_map = {}
+	for name in parents:
+		root = frappe.db.get_value("Item Group", name, ["lft", "rgt"], as_dict=True)
+		if not root:
+			continue
+		descendants_map[name] = frappe.get_all(
+			"Item Group",
+			filters={"lft": [">=", root.lft], "rgt": ["<=", root.rgt]},
+			pluck="name",
+		)
+
+	return {"parents": parents, "descendants_map": descendants_map}
+
+
+@frappe.whitelist()
 def get_allowed_item_groups():
 	"""Return the fixed list of item groups allowed in Offline Buyer Margin."""
 	return ALLOWED_OFFLINE_BUYER_ITEM_GROUPS
