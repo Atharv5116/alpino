@@ -1,0 +1,24 @@
+{
+ "content": null,
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "fa fa-book",
+ "idx": 0,
+ "module": "Alpinos Development",
+ "name": "offline-buyer-catalog",
+ "page_name": "offline-buyer-catalog",
+ "roles": [
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "standard": "Yes",
+ "system_page": 0,
+ "title": "Offline Buyer Items"
+}
