@@ -155,8 +155,18 @@ def setup_pick_list_custom_fields():
 	}
 
 	create_custom_fields(custom_fields, update=True)
+	_force_pick_list_item_mfg_expiry_not_mandatory()
 	_setup_pick_list_property_setters()
+	frappe.clear_cache(doctype="Pick List")
 	frappe.db.commit()
+
+
+def _force_pick_list_item_mfg_expiry_not_mandatory():
+	"""Ensure MFG/Expiry are not client-mandatory: values come from Batch; reqd caused false 'Missing Fields'."""
+	for fieldname in ("custom_mfg_date", "custom_expiry_date"):
+		cf_name = frappe.db.get_value("Custom Field", {"dt": "Pick List Item", "fieldname": fieldname}, "name")
+		if cf_name:
+			frappe.db.set_value("Custom Field", cf_name, "reqd", 0, update_modified=False)
 
 
 def _setup_pick_list_property_setters():
@@ -191,6 +201,23 @@ def _setup_pick_list_property_setters():
 			"field_name": "batch_no",
 			"property": "reqd",
 			"value": "1",
+			"property_type": "Check",
+		},
+		# Override any stale Custom Field / DB state: these are filled from Batch, not typed by user.
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Pick List Item",
+			"field_name": "custom_mfg_date",
+			"property": "reqd",
+			"value": "0",
+			"property_type": "Check",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Pick List Item",
+			"field_name": "custom_expiry_date",
+			"property": "reqd",
+			"value": "0",
 			"property_type": "Check",
 		},
 	]
