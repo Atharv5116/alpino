@@ -1,5 +1,6 @@
+import frappe
 from frappe.model.document import Document
 
 
-class OfflineBuyerMargin(Document):
+class AlpinosDNDispatchTo(Document):
 	pass

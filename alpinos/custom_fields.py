@@ -628,6 +628,13 @@ def setup_custom_fields():
 	
 	# Update bank_account_type and increment_cycle to Data fields
 	update_employee_fields_to_data()
+
+	try:
+		from alpinos.delivery_note_custom_fields import setup_delivery_note_alpinos
+
+		setup_delivery_note_alpinos()
+	except Exception as e:
+		print(f"⚠️  Delivery Note (Alpinos) setup skipped: {str(e)}")
 	
 	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")
 
