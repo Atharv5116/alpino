@@ -1,0 +1,289 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "OBM-.YYYY.-.#####",
+ "creation": "2026-03-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "profile_section",
+  "customer_business_name",
+  "customer_id",
+  "customer_type",
+  "gst_type",
+  "gst_section",
+  "gst_no",
+  "gst_certificate",
+  "pan_no",
+  "pan_attachment",
+  "level",
+  "address_section",
+  "address",
+  "pincode",
+  "country",
+  "state",
+  "city",
+  "area",
+  "sub_area",
+  "contact_section",
+  "email",
+  "contact_no",
+  "shipping_section",
+  "shipping_same_as_profile",
+  "shipping_address",
+  "shipping_state",
+  "shipping_city",
+  "margin_section",
+  "margins",
+  "other_section",
+  "alternate_no",
+  "contact_person"
+ ],
+ "fields": [
+  {
+   "fieldname": "profile_section",
+   "fieldtype": "Section Break",
+   "label": "Profile"
+  },
+  {
+   "fieldname": "customer_business_name",
+   "fieldtype": "Data",
+   "label": "Customer (Business Name)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer_id",
+   "fieldtype": "Data",
+   "label": "Customer ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "customer_type",
+   "fieldtype": "Select",
+   "label": "Customer Type",
+   "options": "\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS",
+   "reqd": 1
+  },
+  {
+   "fieldname": "gst_type",
+   "fieldtype": "Select",
+   "label": "GST Type",
+   "options": "\nOverseas\nRegistered Business\nUnregistered Business",
+   "reqd": 1
+  },
+  {
+   "fieldname": "gst_section",
+   "fieldtype": "Section Break",
+   "label": "GST"
+  },
+  {
+   "depends_on": "eval:doc.gst_type=='Registered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Registered Business'",
+   "fieldname": "gst_no",
+   "fieldtype": "Data",
+   "label": "GST No"
+  },
+  {
+   "depends_on": "eval:doc.gst_type=='Registered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Registered Business'",
+   "fieldname": "gst_certificate",
+   "fieldtype": "Attach",
+   "label": "GST Certificate"
+  },
+  {
+   "depends_on": "eval:doc.gst_type=='Unregistered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Unregistered Business'",
+   "fieldname": "pan_no",
+   "fieldtype": "Data",
+   "label": "PAN No"
+  },
+  {
+   "depends_on": "eval:doc.gst_type=='Unregistered Business'",
+   "mandatory_depends_on": "eval:doc.gst_type=='Unregistered Business'",
+   "fieldname": "pan_attachment",
+   "fieldtype": "Attach",
+   "label": "PAN Attachment"
+  },
+  {
+   "fieldname": "level",
+   "fieldtype": "Select",
+   "label": "Level",
+   "options": "\nSuperstockist\nDistributor",
+   "reqd": 1
+  },
+  {
+   "fieldname": "address_section",
+   "fieldtype": "Section Break",
+   "label": "Address"
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Data",
+   "label": "Address",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pincode",
+   "fieldtype": "Data",
+   "label": "Pincode",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "label": "Country",
+   "options": "Country",
+   "reqd": 1
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Link",
+   "label": "State",
+   "options": "State",
+   "reqd": 1
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Link",
+   "label": "City",
+   "options": "City",
+   "reqd": 1
+  },
+  {
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "label": "Area",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sub_area",
+   "fieldtype": "Data",
+   "label": "Sub Area"
+  },
+  {
+   "fieldname": "contact_section",
+   "fieldtype": "Section Break",
+   "label": "Contact"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "fieldname": "contact_no",
+   "fieldtype": "Data",
+   "label": "Contact No",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "shipping_section",
+   "fieldtype": "Section Break",
+   "label": "Shipping"
+  },
+  {
+   "default": "0",
+   "fieldname": "shipping_same_as_profile",
+   "fieldtype": "Check",
+   "label": "Shipping Same as Primary"
+  },
+  {
+   "fieldname": "shipping_address",
+   "fieldtype": "Data",
+   "label": "Shipping Address"
+  },
+  {
+   "fieldname": "shipping_state",
+   "fieldtype": "Link",
+   "label": "Shipping State",
+   "options": "State"
+  },
+  {
+   "fieldname": "shipping_city",
+   "fieldtype": "Link",
+   "label": "Shipping City",
+   "options": "City"
+  },
+  {
+   "fieldname": "margin_section",
+   "fieldtype": "Section Break",
+   "label": "Margin"
+  },
+  {
+   "fieldname": "margins",
+   "fieldtype": "Table",
+   "label": "Margins",
+   "options": "Offline Buyer Margin"
+  },
+  {
+   "fieldname": "other_section",
+   "fieldtype": "Section Break",
+   "label": "Other"
+  },
+  {
+   "fieldname": "alternate_no",
+   "fieldtype": "Data",
+   "label": "Alternate No",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "contact_person",
+   "fieldtype": "Data",
+   "label": "Contact Person",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Offline Buyer Master",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "customer_business_name"
+}

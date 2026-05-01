@@ -1,0 +1,171 @@
+<style>
+/* ── shared ─────────────────────────────────────────────────── */
+.obi-wrap { padding: 16px; }
+
+/* ── list view ──────────────────────────────────────────────── */
+.obi-list-view {}
+.obi-list-toolbar { display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+.obi-list-title { margin:0; font-size:16px; font-weight:600; }
+.obi-list-search { max-width:320px; }
+.obi-records-table { width:100%; border-collapse:collapse; }
+.obi-records-table thead th {
+  background:#f8f9fa; font-size:12px; font-weight:600;
+  padding:8px 10px; border-bottom:2px solid #dee2e6;
+  text-align:left; white-space:nowrap;
+}
+.obi-records-table tbody tr { cursor:pointer; transition:background 0.1s; }
+.obi-records-table tbody tr:hover td { background:#f0f4ff; }
+.obi-records-table tbody td {
+  padding:8px 10px; font-size:13px;
+  border-bottom:1px solid #f0f0f0; vertical-align:middle;
+}
+.obi-record-name { font-weight:600; color:var(--primary); }
+.obi-badge { display:inline-block; font-size:11px; padding:1px 7px;
+  border-radius:10px; background:#e8f5e9; color:#2e7d32; font-weight:500; }
+.obi-empty-state { text-align:center; padding:60px 20px; color:#aaa; font-size:14px; }
+
+/* ── detail view ─────────────────────────────────────────────── */
+.obi-detail-view { display:none; }
+.obi-detail-header { display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+.obi-breadcrumb { display:flex; align-items:center; gap:8px; }
+.obi-back-btn { background:none; border:none; color:var(--primary);
+  font-size:13px; cursor:pointer; padding:0; display:flex; align-items:center; gap:4px; }
+.obi-back-btn:hover { text-decoration:underline; }
+.obi-breadcrumb-sep { color:#bbb; }
+.obi-detail-record-name { font-size:15px; font-weight:600; }
+.obi-detail-buyer { font-size:12px; color:#888; margin-top:1px; }
+.obi-detail-actions { display:flex; gap:6px; align-items:center; }
+.obi-dirty-badge { display:none; font-size:11px; background:#fff3cd; color:#856404;
+  border:1px solid #ffc107; border-radius:3px; padding:1px 6px; }
+
+/* ── items section (shared detail) ──────────────────────────── */
+.obi-filters { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; align-items:center; }
+.obi-search { flex:1; min-width:180px; }
+.obi-group-filter { flex:0 0 200px; }
+.obi-filter-counts { font-size:12px; color:#888; white-space:nowrap; }
+.obi-bulk-bar { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:13px;
+  background:#f8f9fa; border:1px solid #e2e8f0; border-radius:4px; padding:6px 10px; }
+.obi-bulk-bar .form-control { width:110px; }
+.obi-table-wrap { overflow-x:auto; max-height:calc(100vh - 320px); overflow-y:auto;
+  border:1px solid #e0e0e0; border-radius:4px; }
+.obi-table { margin:0; width:100%; }
+.obi-table thead th { position:sticky; top:0; background:#fff; z-index:2;
+  font-size:12px; white-space:nowrap; border-bottom:2px solid #dee2e6 !important; }
+.obi-table tbody tr:hover td { background:#f0f4ff; }
+.obi-table tr.obi-selected td { background:#f0fff4; }
+.obi-table .form-control { padding:2px 6px; height:26px; font-size:12px; }
+.col-chk  { width:32px; text-align:center; }
+.col-no   { width:40px; text-align:right; color:#aaa; font-size:11px; }
+.col-code { width:140px; font-family:monospace; font-size:12px; }
+.col-name { min-width:200px; }
+.col-group{ width:150px; font-size:12px; color:#666; }
+.col-mrp,.col-margin,.col-rate { width:130px; }
+.obi-footer { margin-top:8px; min-height:20px; display:flex; align-items:center; gap:12px; }
+.obi-status { font-size:12px; color:#888; }
+</style>
+
+<div class="obi-wrap">
+
+  <!-- ═══════════════ LIST VIEW ═══════════════ -->
+  <div class="obi-list-view">
+
+    <div class="obi-list-toolbar">
+      <h4 class="obi-list-title">Offline Buyer Items</h4>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="text" class="form-control obi-list-search"
+               placeholder="Search by title or buyer…" />
+        <button class="btn btn-sm btn-primary obi-btn-new">+ New</button>
+      </div>
+    </div>
+
+    <div class="obi-list-table-wrap" style="overflow-x:auto;border:1px solid #e0e0e0;border-radius:4px;">
+      <table class="obi-records-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Title</th>
+            <th>Buyer</th>
+            <th style="text-align:center;">Items</th>
+            <th>Last Modified</th>
+          </tr>
+        </thead>
+        <tbody class="obi-records-tbody">
+          <tr><td colspan="5" class="obi-empty-state">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /list view -->
+
+  <!-- ═══════════════ DETAIL VIEW ═══════════════ -->
+  <div class="obi-detail-view">
+
+    <!-- breadcrumb + actions -->
+    <div class="obi-detail-header">
+      <div class="obi-breadcrumb">
+        <button class="obi-back-btn">← Back to List</button>
+        <span class="obi-breadcrumb-sep">/</span>
+        <div>
+          <div class="obi-detail-record-name"></div>
+          <div class="obi-detail-buyer"></div>
+        </div>
+      </div>
+      <div class="obi-detail-actions">
+        <span class="obi-dirty-badge">Unsaved changes</span>
+        <button class="btn btn-sm btn-default obi-btn-select-all">Select All</button>
+        <button class="btn btn-sm btn-default obi-btn-deselect-all">Deselect All</button>
+        <button class="btn btn-sm btn-primary obi-btn-save">Save</button>
+      </div>
+    </div>
+
+    <!-- filters -->
+    <div class="obi-filters">
+      <input type="text" class="form-control obi-search"
+             placeholder="Search by Item Code or Name…" />
+      <select class="form-control obi-group-filter">
+        <option value="">All Item Groups</option>
+      </select>
+      <div class="obi-filter-counts">
+        <span class="obi-total-count"></span>
+        &nbsp;|&nbsp; selected: <span class="obi-selected-count">0</span>
+      </div>
+    </div>
+
+    <!-- bulk apply -->
+    <div class="obi-bulk-bar">
+      <span>Apply to selected →</span>
+      <input type="number" class="form-control obi-bulk-mrp"    placeholder="MRP"      min="0" step="0.01" />
+      <input type="number" class="form-control obi-bulk-margin" placeholder="Margin %" min="0" max="100" step="0.01" />
+      <button class="btn btn-xs btn-default obi-btn-apply-bulk">Apply</button>
+    </div>
+
+    <!-- items table -->
+    <div class="obi-table-wrap">
+      <table class="obi-table table table-bordered table-condensed">
+        <thead>
+          <tr>
+            <th class="col-chk">
+              <input type="checkbox" class="obi-chk-all" title="Select / deselect all visible" />
+            </th>
+            <th class="col-no">No.</th>
+            <th class="col-code">Item Code</th>
+            <th class="col-name">Item Name</th>
+            <th class="col-group">Item Group</th>
+            <th class="col-mrp">MRP (₹)</th>
+            <th class="col-margin">Margin %</th>
+            <th class="col-rate">Selling Rate (₹)</th>
+          </tr>
+        </thead>
+        <tbody class="obi-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="obi-footer">
+      <span class="obi-status text-muted"></span>
+    </div>
+
+  </div><!-- /detail view -->
+
+</div><!-- /obi-wrap -->
