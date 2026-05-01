@@ -10,4 +10,4 @@ alpinos.patches.create_attendance_widget
 alpinos.patches.create_hrms_email_templates
 alpinos.patches.v1_0.fix_shift_attendance_alpinos_report_script
 alpinos.patches.v1_0.fix_shift_attendance_alpinos_report_script_v2
-alpinos.patches.v1_0.relax_pick_list_mfg_expiry_mandatory
+alpinos.patches.v1_0.fix_pick_list_mfg_expiry_not_mandatory
