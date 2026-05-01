@@ -5,14 +5,11 @@ app_description = "All the custom development for Alpinos"
 app_email = "hetvipatel2302@gmail.com"
 app_license = "mit"
 
+# Only list callables that exist under alpinos/ (missing modules break bench migrate).
 after_migrate = [
-	"alpinos.child_table_setup.create_job_application_reference",
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.workflow_setup.execute",
-	"alpinos.web_form_setup.create_job_application_webform",
-	"alpinos.web_form_update.update_job_application_webform",
-	"alpinos.email_notification_setup.execute",
-	"alpinos.hr_views_setup.execute",
+	"alpinos.web_form_update.execute",
 ]
 
 doc_events = {
