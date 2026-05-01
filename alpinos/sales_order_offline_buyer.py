@@ -38,38 +38,6 @@ def catalog_customer_query(doctype, txt, searchfield, start, page_len, filters):
 
 
 @frappe.whitelist()
-@frappe.validate_and_sanitize_search_inputs
-def offline_buyer_master_item_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Item link for Sales Order Entry: only SKUs that have a margin row on the customer's Offline Buyer Master."""
-	doctype = "Item"
-	txt = txt or ""
-	if isinstance(filters, str):
-		filters = frappe.parse_json(filters)
-	filters = filters or {}
-	customer = (filters.get("customer") or "").strip()
-	if not customer:
-		return []
-
-	obm = frappe.db.get_value("Offline Buyer Master", {"customer": customer}, "name")
-	if not obm:
-		return []
-
-	return frappe.db.sql(
-		"""
-		SELECT i.name, i.item_name
-		FROM `tabItem` i
-		INNER JOIN `tabOffline Buyer Margin` m
-			ON m.sku = i.name AND m.parent = %(obm)s AND m.parenttype = 'Offline Buyer Master'
-		WHERE IFNULL(i.disabled, 0) = 0
-			AND (i.name LIKE %(txt)s OR IFNULL(i.item_name, '') LIKE %(txt)s)
-		ORDER BY i.name ASC
-		LIMIT %(page_len)s OFFSET %(start)s
-		""",
-		{"txt": f"%{txt}%", "obm": obm, "start": int(start), "page_len": int(page_len)},
-	)
-
-
-@frappe.whitelist()
 def get_offline_buyer_item_rate(customer, item_code):
 	"""Return selling rate from Offline Buyer Master margins (same formula as offline buyer catalog)."""
 	if not customer or not item_code:

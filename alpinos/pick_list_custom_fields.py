@@ -141,7 +141,7 @@ def setup_pick_list_custom_fields():
 				fieldtype="Date",
 				insert_after="batch_no",
 				read_only=1,
-				reqd=1,
+				reqd=0,
 			),
 			dict(
 				fieldname="custom_expiry_date",
@@ -149,7 +149,7 @@ def setup_pick_list_custom_fields():
 				fieldtype="Date",
 				insert_after="custom_mfg_date",
 				read_only=1,
-				reqd=1,
+				reqd=0,
 			),
 		],
 	}

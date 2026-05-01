@@ -106,7 +106,7 @@ class SalesOrderEntry {
 		this.add_item_row();
 	}
 
-	_make_item_link_field(parent, fieldname, restrict_to_offline_buyer_items) {
+	_make_item_link_field(parent, fieldname, variantsOnly) {
 		let field = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Link',
@@ -117,10 +117,14 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		if (restrict_to_offline_buyer_items !== false) {
+		// Main order lines: all saleable variants (no customer filter on SKU). Other tables: any item.
+		if (variantsOnly) {
 			field.get_query = () => ({
-				query: 'alpinos.sales_order_offline_buyer.offline_buyer_master_item_query',
-				filters: { customer: this.customer_field.get_value() || '' },
+				filters: {
+					disabled: 0,
+					is_sales_item: 1,
+					variant_of: ['!=', ''],
+				},
 			});
 		}
 		if (field.$input) {
@@ -157,7 +161,7 @@ class SalesOrderEntry {
 		let me = this;
 
 		// SKU field with improved search
-		let sku_field = this._make_item_link_field($row.find('.item-sku'), `item_code_${idx}`);
+		let sku_field = this._make_item_link_field($row.find('.item-sku'), `item_code_${idx}`, true);
 		sku_field.$input.on('change', function() {
 			setTimeout(() => {
 				let val = sku_field.get_value();
@@ -303,7 +307,41 @@ class SalesOrderEntry {
 			}
 		});
 
-		// MRP + margin from Offline Buyer Master (same formula as catalog: rate = MRP × (1 − margin%/100))
+		// Pricing: if this SKU is on Offline Buyer Master for the customer → MRP + margin from master.
+		// Otherwise → Customer Item MRP, else Item standard rate (user can edit row discounts).
+		const apply_obm_pricing = (msg) => {
+			me.items[idx].mrp = flt(msg.mrp);
+			me.items[idx]._mrp_field.set_value(msg.mrp);
+			const m = flt(msg.margin_percent || 0);
+			me.items[idx].flat_discount = m;
+			me.items[idx]._flat_disc_field.set_value(m > 0 ? m : '');
+			me.items[idx].offer = '';
+			me.items[idx]._offer_field.set_value('');
+			me.items[idx].additional_discount = 0;
+			me.items[idx]._add_disc_field.set_value('');
+			me.calc_row_amount(idx, $row);
+		};
+		const clear_extra_discounts_and_recalc = () => {
+			me.items[idx].offer = '';
+			me.items[idx]._offer_field.set_value('');
+			me.items[idx].additional_discount = 0;
+			me.items[idx]._add_disc_field.set_value('');
+			me.calc_row_amount(idx, $row);
+		};
+		const apply_mrp_only = (mrp_val) => {
+			const m = flt(mrp_val);
+			if (m > 0) {
+				me.items[idx].mrp = m;
+				me.items[idx]._mrp_field.set_value(m);
+			} else {
+				me.items[idx].mrp = 0;
+				me.items[idx]._mrp_field.set_value('');
+			}
+			me.items[idx].flat_discount = 0;
+			me.items[idx]._flat_disc_field.set_value('');
+			clear_extra_discounts_and_recalc();
+		};
+
 		if (customer) {
 			frappe.call({
 				method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_item_rate',
@@ -311,24 +349,27 @@ class SalesOrderEntry {
 				callback: function(r) {
 					const msg = r.message;
 					if (msg && typeof msg.mrp === 'number' && msg.mrp > 0) {
-						me.items[idx].mrp = flt(msg.mrp);
-						me.items[idx]._mrp_field.set_value(msg.mrp);
-						// Map OBM margin % to flat discount % so row amount matches master pricing
-						const m = flt(msg.margin_percent || 0);
-						me.items[idx].flat_discount = m;
-						me.items[idx]._flat_disc_field.set_value(m > 0 ? m : '');
-						me.items[idx].offer = '';
-						me.items[idx]._offer_field.set_value('');
-						me.items[idx].additional_discount = 0;
-						me.items[idx]._add_disc_field.set_value('');
-						me.calc_row_amount(idx, $row);
-					} else {
-						frappe.show_alert({
-							message: __('No margin / MRP found for this SKU on Offline Buyer Master for this customer. Add the SKU and margin on the master.'),
-							indicator: 'orange',
-						}, 5);
+						apply_obm_pricing(msg);
+						return;
 					}
+					frappe.call({
+						method: 'alpinos.sales_order_api.get_customer_item_mrp',
+						args: { customer: customer, item_code: item_code },
+						callback: function(r2) {
+							if (r2.message) {
+								apply_mrp_only(r2.message);
+								return;
+							}
+							frappe.db.get_value('Item', item_code, 'standard_rate', function(ir) {
+								apply_mrp_only(ir && ir.standard_rate);
+							});
+						},
+					});
 				},
+			});
+		} else {
+			frappe.db.get_value('Item', item_code, 'standard_rate', function(ir) {
+				apply_mrp_only(ir && ir.standard_rate);
 			});
 		}
 
@@ -519,7 +560,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`, false);
+		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`);
 		item_field.$input.on('change', function() {
 			setTimeout(() => {
 				let val = item_field.get_value();
@@ -580,7 +621,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`, false);
+		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`);
 		item_field.$input.on('change', function() {
 			setTimeout(() => {
 				let val = item_field.get_value();
@@ -642,7 +683,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`, false);
+		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`);
 		item_field.$input.on('change', function() {
 			setTimeout(() => {
 				let val = item_field.get_value();
