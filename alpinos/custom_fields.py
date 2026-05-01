@@ -635,7 +635,7 @@ def setup_custom_fields():
 		setup_delivery_note_alpinos()
 	except Exception as e:
 		print(f"⚠️  Delivery Note (Alpinos) setup skipped: {str(e)}")
-	
+
 	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")
 
 

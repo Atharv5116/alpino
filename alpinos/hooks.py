@@ -8,6 +8,7 @@ app_license = "mit"
 # Only list callables that exist under alpinos/ (missing modules break bench migrate).
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
+	"alpinos.pick_list_custom_fields.setup_pick_list_alpinos_fields",
 	"alpinos.workflow_setup.execute",
 	"alpinos.web_form_update.execute",
 ]
@@ -50,6 +51,9 @@ doc_events = {
 	},
 	"Delivery Note": {
 		"validate": "alpinos.delivery_note_hooks.validate_delivery_note",
+	},
+	"Pick List": {
+		"validate": "alpinos.pick_list_hooks.validate_pick_list",
 	},
 }
 
