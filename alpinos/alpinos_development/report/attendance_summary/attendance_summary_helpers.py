@@ -70,12 +70,25 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		elif status == "Absent":
 			stats.absent_days += 1
 		elif status == "Half Day":
+			# One half worked / clocked in; other half may be leave (leave_type on attendance).
 			stats.paid_days += 0.5
 			stats.working_days += 0.5
 			stats.clock_in_days += 1
 			if att.get("working_hours"):
 				total_working_hours += flt(att.get("working_hours"))
 				working_days_count += 1
+			# leave_map skips dates that already have attendance, so count leave here (same as full "On Leave").
+			if att.get("leave_type"):
+				try:
+					is_lwp = frappe.get_cached_value("Leave Type", att.get("leave_type"), "is_lwp")
+					if is_lwp:
+						stats.unpaid_leave += 0.5
+					else:
+						stats.paid_leave += 0.5
+						stats.paid_days += 0.5
+				except Exception:
+					stats.paid_leave += 0.5
+					stats.paid_days += 0.5
 		elif status == "On Leave":
 			# Check if paid or unpaid leave
 			if att.get("leave_type"):
