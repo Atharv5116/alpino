@@ -136,20 +136,20 @@ class OfflineBuyerCatalogPage {
 
 	_show_new_dialog() {
 		const d = new frappe.ui.Dialog({
-			title: 'New Offline Buyer Items Record',
+			title: 'New Catalog — Select Offline Buyer',
 			fields: [
 				{ label: 'Title', fieldname: 'title', fieldtype: 'Data', reqd: 1 },
 				{
-					label: 'Offline Buyer Master',
+					label: 'Offline Buyer',
 					fieldname: 'offline_buyer_master',
 					fieldtype: 'Link',
 					options: 'Offline Buyer Master',
 					reqd: 1,
-					description: 'Customer is created on the master from the business name; this links the catalog to that master.',
+					description: '← Search by business name. If the buyer doesn\'t exist yet, <a href="/app/offline-buyer-master/new-offline-buyer-master-1" target="_blank">create an Offline Buyer Master first</a>.',
 				},
 				{ label: 'Description', fieldname: 'description', fieldtype: 'Small Text' },
 			],
-			primary_action_label: 'Create',
+			primary_action_label: 'Create Catalog',
 			primary_action: (values) => {
 				const obm = values.offline_buyer_master || '';
 				if (!obm) return;

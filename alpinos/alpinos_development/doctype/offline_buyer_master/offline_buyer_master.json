@@ -6,6 +6,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "title_field": "customer_business_name",
+ "show_title_field_in_link": 1,
  "field_order": [
   "profile_section",
   "customer_business_name",
