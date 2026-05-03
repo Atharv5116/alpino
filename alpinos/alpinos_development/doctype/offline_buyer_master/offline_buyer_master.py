@@ -96,6 +96,15 @@ class OfflineBuyerMaster(Document):
 		if not self.customer_id:
 			self.customer_id = self.name
 
+	def after_insert(self):
+		# read_only fields can be omitted from the INSERT query in some Frappe versions.
+		# Force the customer link into DB now that the row exists.
+		if self.customer:
+			frappe.db.set_value(
+				"Offline Buyer Master", self.name, "customer", self.customer, update_modified=False
+			)
+			frappe.db.commit()
+
 	def _migrate_legacy_address_if_empty(self):
 		if self.get("addresses"):
 			return

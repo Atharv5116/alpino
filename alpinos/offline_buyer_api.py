@@ -175,8 +175,14 @@ def create_record(title, buyer=None, offline_buyer_master=None, description=None
 	if offline_buyer_master:
 		cust = frappe.db.get_value("Offline Buyer Master", offline_buyer_master, "customer")
 		if not cust:
+			# Customer not yet linked — auto-save OBM to trigger customer creation
+			obm_doc = frappe.get_doc("Offline Buyer Master", offline_buyer_master)
+			obm_doc.save(ignore_permissions=True)
+			frappe.db.commit()
+			cust = obm_doc.customer
+		if not cust:
 			frappe.throw(
-				_("Offline Buyer Master {0} has no linked Customer yet. Save the master once to create the customer.").format(
+				_("Could not auto-create a Customer for Offline Buyer Master {0}. Please open the record and save it manually.").format(
 					frappe.bold(offline_buyer_master)
 				)
 			)
@@ -472,5 +478,9 @@ def quick_create_offline_buyer(
 		},
 	)
 	obm.insert(ignore_permissions=True)
+	# Ensure the customer link is persisted — read_only fields can be skipped by some
+	# Frappe internals during insert, so we force an explicit db_set after insert.
+	if obm.customer:
+		frappe.db.set_value("Offline Buyer Master", obm.name, "customer", obm.customer, update_modified=False)
 	frappe.db.commit()
 	return obm.name
