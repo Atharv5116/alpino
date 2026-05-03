@@ -337,11 +337,59 @@ def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
 		SELECT DISTINCT u.name, u.full_name
 		FROM `tabUser` u
 		INNER JOIN `tabHas Role` hr ON hr.parent = u.name AND hr.parenttype = 'User'
-		WHERE hr.role IN ('Sales User', 'Sales Manager')
-			AND IFNULL(u.enabled, 0) = 1
-			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
-		ORDER BY u.full_name ASC
-		LIMIT %(page_len)s OFFSET %(start)s
-		""",
-		{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
+	WHERE hr.role IN ('Sales User', 'Sales Manager')
+		AND IFNULL(u.enabled, 0) = 1
+		AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+	ORDER BY u.full_name ASC
+	LIMIT %(page_len)s OFFSET %(start)s
+	""",
+	{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
+)
+
+
+@frappe.whitelist()
+def quick_create_offline_buyer(
+	business_name,
+	customer_type,
+	gst_type,
+	payment_term,
+	email,
+	contact_no,
+	contact_person,
+	address_line,
+	pincode,
+	country,
+	state,
+	city,
+	area,
+	site_name=None,
+):
+	"""Create a minimal Offline Buyer Master from the Catalog quick-create dialog.
+
+	Returns the new OBM name so the caller can pre-fill the catalog form.
+	"""
+	obm = frappe.new_doc("Offline Buyer Master")
+	obm.customer_business_name = (business_name or "").strip()
+	obm.site_name = (site_name or "").strip()
+	obm.customer_type = customer_type
+	obm.gst_type = gst_type
+	obm.payment_term = payment_term
+	obm.email = email
+	obm.contact_no = contact_no
+	obm.contact_person = contact_person
+
+	obm.append(
+		"addresses",
+		{
+			"is_primary": 1,
+			"address_line": address_line,
+			"pincode": pincode,
+			"country": country,
+			"state": state,
+			"city": city,
+			"area": area,
+		},
 	)
+	obm.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return obm.name

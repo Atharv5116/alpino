@@ -135,84 +135,189 @@ class OfflineBuyerCatalogPage {
 	}
 
 	_show_new_dialog() {
+		const me = this;
+
+		// ── helper: do the actual catalog creation (duplicate-check then insert) ──
+		const do_create_catalog = (d, obm, title, description) => {
+			frappe.db.get_value('Offline Buyer Master', obm, 'customer', (r) => {
+				const cust = r && r.message && r.message.customer;
+				if (!cust) {
+					frappe.msgprint(
+						__('The Offline Buyer Master has no linked Customer yet. Please save it first.'),
+						__('Offline Buyer Catalog')
+					);
+					return;
+				}
+				frappe.call({
+					method: 'frappe.client.get_list',
+					args: {
+						doctype: 'Offline Buyer Items',
+						filters: [['buyer', '=', cust]],
+						fields: ['name'],
+						limit_page_length: 1,
+					},
+					callback: (chk) => {
+						const hits = chk.message || [];
+						if (hits.length && hits[0].name) {
+							frappe.msgprint({
+								title: __('Duplicate catalog'),
+								message: __('A catalog already exists for this offline buyer ({0}).', [
+									frappe.utils.escape_html(hits[0].name),
+								]),
+								indicator: 'red',
+							});
+							return;
+						}
+						frappe.call({
+							method: 'alpinos.offline_buyer_api.create_record',
+							args: { title, offline_buyer_master: obm, description: description || '' },
+							callback: (rc) => {
+								d.hide();
+								if (!rc.exc) {
+									frappe.show_alert({ message: `Created: ${rc.message}`, indicator: 'green' });
+									const newName = rc.message;
+									me._load_records(() => {
+										const full = me._all_records.find((row) => row.name === newName);
+										me._open_record(full || { name: newName, title, offline_buyer_master: obm });
+									});
+								}
+							}
+						});
+					},
+				});
+			});
+		};
+
+		// ── quick-create buyer sub-dialog ─────────────────────────────────────
+		const show_create_buyer_dialog = (catalog_title, catalog_desc) => {
+			const bd = new frappe.ui.Dialog({
+				title: 'Create New Offline Buyer',
+				fields: [
+					{ label: 'Business Name', fieldname: 'business_name', fieldtype: 'Data', reqd: 1 },
+					{ label: 'Site Name / Trade Name', fieldname: 'site_name', fieldtype: 'Data' },
+					{
+						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Select',
+						options: '\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS',
+						reqd: 1,
+					},
+					{
+						label: 'GST Type', fieldname: 'gst_type', fieldtype: 'Select',
+						options: '\nOverseas\nRegistered Business\nUnregistered Business',
+						reqd: 1,
+					},
+					{
+						label: 'Payment Term', fieldname: 'payment_term', fieldtype: 'Select',
+						options: '\nAdvance\nCredit\nPartial', default: 'Advance', reqd: 1,
+					},
+					{ fieldtype: 'Section Break', label: 'Contact' },
+					{ label: 'Email', fieldname: 'email', fieldtype: 'Data', options: 'Email', reqd: 1 },
+					{ label: 'Contact No', fieldname: 'contact_no', fieldtype: 'Data', options: 'Phone', reqd: 1 },
+					{ label: 'Contact Person', fieldname: 'contact_person', fieldtype: 'Data', reqd: 1 },
+					{ fieldtype: 'Section Break', label: 'Primary Address' },
+					{ label: 'Address Line', fieldname: 'address_line', fieldtype: 'Data', reqd: 1 },
+					{ label: 'Country', fieldname: 'country', fieldtype: 'Link', options: 'Country', reqd: 1, default: 'India' },
+					{ label: 'State', fieldname: 'state', fieldtype: 'Link', options: 'State', reqd: 1 },
+					{ label: 'City', fieldname: 'city', fieldtype: 'Link', options: 'City', reqd: 1 },
+					{ label: 'Area', fieldname: 'area', fieldtype: 'Data', reqd: 1 },
+					{ label: 'Pincode', fieldname: 'pincode', fieldtype: 'Data', reqd: 1 },
+				],
+				primary_action_label: 'Create Buyer & Catalog',
+				primary_action: (v) => {
+					bd.hide();
+					frappe.call({
+						method: 'alpinos.offline_buyer_api.quick_create_offline_buyer',
+						args: {
+							business_name: v.business_name,
+							site_name: v.site_name || '',
+							customer_type: v.customer_type,
+							gst_type: v.gst_type,
+							payment_term: v.payment_term,
+							email: v.email,
+							contact_no: v.contact_no,
+							contact_person: v.contact_person,
+							address_line: v.address_line,
+							pincode: v.pincode,
+							country: v.country,
+							state: v.state,
+							city: v.city,
+							area: v.area,
+						},
+						freeze: true,
+						freeze_message: __('Creating offline buyer...'),
+						callback: (r) => {
+							if (r.exc || !r.message) return;
+							const obm_name = r.message;
+							frappe.show_alert({ message: __('Buyer created: {0}', [v.business_name]), indicator: 'green' });
+
+							// Now create the catalog for the newly created buyer
+							do_create_catalog(
+								{ hide: () => {} },  // already hidden
+								obm_name,
+								catalog_title || v.business_name,
+								catalog_desc || ''
+							);
+						},
+					});
+				},
+			});
+
+			// State → City dependency
+			bd.fields_dict.state && bd.fields_dict.state.$input.on('change awesomplete-selectcomplete', function () {
+				const st = bd.get_value('state');
+				if (bd.fields_dict.city) {
+					bd.fields_dict.city.df.get_query = () => ({ filters: { state: st || '' } });
+					bd.set_value('city', '');
+				}
+			});
+
+			bd.show();
+		};
+
+		// ── main catalog creation dialog ──────────────────────────────────────
 		const d = new frappe.ui.Dialog({
-			title: 'New Catalog — Select Offline Buyer',
+			title: 'New Catalog',
 			fields: [
-				{ label: 'Title', fieldname: 'title', fieldtype: 'Data', reqd: 1 },
+				{ label: 'Catalog Title', fieldname: 'title', fieldtype: 'Data', reqd: 1 },
+				{ fieldtype: 'Section Break', label: 'Buyer' },
 				{
-					label: 'Offline Buyer',
+					label: 'Select Existing Buyer',
 					fieldname: 'offline_buyer_master',
 					fieldtype: 'Link',
 					options: 'Offline Buyer Master',
-					reqd: 1,
-					description: '← Search by business name. If the buyer doesn\'t exist yet, <a href="/app/offline-buyer-master/new-offline-buyer-master-1" target="_blank">create an Offline Buyer Master first</a>.',
+					description: 'Search by business name to pick an existing offline buyer.',
 				},
+				{
+					fieldtype: 'HTML',
+					fieldname: 'or_divider',
+					options: '<div style="text-align:center;color:var(--text-muted);margin:6px 0;font-size:12px;">— or —</div>',
+				},
+				{
+					fieldtype: 'Button',
+					fieldname: 'btn_new_buyer',
+					label: 'Create New Buyer',
+				},
+				{ fieldtype: 'Section Break', label: '' },
 				{ label: 'Description', fieldname: 'description', fieldtype: 'Small Text' },
 			],
 			primary_action_label: 'Create Catalog',
 			primary_action: (values) => {
 				const obm = values.offline_buyer_master || '';
-				if (!obm) return;
-				frappe.db.get_value('Offline Buyer Master', obm, 'customer', (r) => {
-					const cust = r && r.message && r.message.customer;
-					if (!cust) {
-						frappe.msgprint(
-							__('Save the Offline Buyer Master once so a Customer exists before creating a catalog.'),
-							__('Offline Buyer Catalog')
-						);
-						return;
-					}
-					frappe.call({
-						method: 'frappe.client.get_list',
-						args: {
-							doctype: 'Offline Buyer Items',
-							filters: [['buyer', '=', cust]],
-							fields: ['name'],
-							limit_page_length: 1,
-						},
-						callback: (chk) => {
-							const hits = chk.message || [];
-							if (hits.length && hits[0].name) {
-								const existing = hits[0].name;
-								frappe.msgprint({
-									title: __('Duplicate catalog'),
-									message: __('A catalog already exists for this offline buyer ({0}).', [
-										frappe.utils.escape_html(existing),
-									]),
-									indicator: 'red',
-								});
-								return;
-							}
-							frappe.call({
-								method: 'alpinos.offline_buyer_api.create_record',
-								args: {
-									title: values.title,
-									offline_buyer_master: obm,
-									description: values.description || ''
-								},
-								callback: (rc) => {
-									d.hide();
-									if (!rc.exc) {
-										frappe.show_alert({ message: `Created: ${rc.message}`, indicator: 'green' });
-										const newName = rc.message;
-										this._load_records(() => {
-											const full = this._all_records.find((row) => row.name === newName);
-											this._open_record(
-												full || {
-													name: newName,
-													title: values.title,
-													offline_buyer_master: obm,
-												}
-											);
-										});
-									}
-								}
-							});
-						},
-					});
-				});
-			}
+				if (!obm) {
+					frappe.msgprint(__('Please select an existing buyer or click "Create New Buyer".'));
+					return;
+				}
+				do_create_catalog(d, obm, values.title, values.description);
+			},
 		});
+
+		// Wire up the "Create New Buyer" button inside the dialog
+		d.fields_dict.btn_new_buyer && d.fields_dict.btn_new_buyer.$input.on('click', () => {
+			const catalog_title = d.get_value('title');
+			const catalog_desc = d.get_value('description');
+			d.hide();
+			show_create_buyer_dialog(catalog_title, catalog_desc);
+		});
+
 		d.show();
 	}
 
