@@ -201,6 +201,11 @@ class OfflineBuyerCatalogPage {
 						reqd: 1,
 					},
 					{
+						label: 'Level', fieldname: 'level', fieldtype: 'Select',
+						options: '\nSuperstockist\nDistributor',
+						reqd: 1,
+					},
+					{
 						label: 'GST Type', fieldname: 'gst_type', fieldtype: 'Select',
 						options: '\nOverseas\nRegistered Business\nUnregistered Business',
 						reqd: 1,
@@ -230,6 +235,7 @@ class OfflineBuyerCatalogPage {
 							business_name: v.business_name,
 							site_name: v.site_name || '',
 							customer_type: v.customer_type,
+							level: v.level,
 							gst_type: v.gst_type,
 							payment_term: v.payment_term,
 							email: v.email,
@@ -812,6 +818,11 @@ class OfflineBuyerCatalogPage {
 					reqd: 1, default: obm.customer_type,
 				},
 				{
+					label: 'Level', fieldname: 'level', fieldtype: 'Select',
+					options: '\nSuperstockist\nDistributor',
+					reqd: 1, default: obm.level,
+				},
+				{
 					label: 'GST Type', fieldname: 'gst_type', fieldtype: 'Select',
 					options: '\nOverseas\nRegistered Business\nUnregistered Business',
 					reqd: 1, default: obm.gst_type,
@@ -862,6 +873,7 @@ class OfflineBuyerCatalogPage {
 					customer_business_name: values.customer_business_name,
 					site_name: values.site_name || '',
 					customer_type: values.customer_type,
+					level: values.level || '',
 					gst_type: values.gst_type,
 					gst_no: values.gst_no || '',
 					pan_no: values.pan_no || '',

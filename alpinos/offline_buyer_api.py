@@ -396,7 +396,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 	doc = frappe.get_doc("Offline Buyer Master", obm_name)
 
 	editable = [
-		"customer_business_name", "site_name", "customer_type", "gst_type",
+		"customer_business_name", "site_name", "customer_type", "level", "gst_type",
 		"gst_no", "pan_no", "payment_term", "payment_term_days",
 		"email", "contact_no", "alternate_no", "contact_person",
 		"shipping_same_as_profile",
@@ -442,6 +442,7 @@ def quick_create_offline_buyer(
 	city,
 	area,
 	site_name=None,
+	level=None,
 ):
 	"""Create a minimal Offline Buyer Master from the Catalog quick-create dialog.
 
@@ -451,6 +452,7 @@ def quick_create_offline_buyer(
 	obm.customer_business_name = (business_name or "").strip()
 	obm.site_name = (site_name or "").strip()
 	obm.customer_type = customer_type
+	obm.level = level or ""
 	obm.gst_type = gst_type
 	obm.payment_term = payment_term
 	obm.email = email
