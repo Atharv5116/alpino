@@ -35,7 +35,17 @@ def get_opportunity_obm_party_data(offline_buyer_master):
 		["customer", "customer_business_name", "customer_type"],
 		as_dict=True,
 	)
-	return row or {}
+	if not row:
+		return {}
+
+	# Prefer the Customer's custom_order_type (matches Quotation order_type options like GT/MT).
+	# Fall back to OBM customer_type only if the customer has no value set.
+	if row.get("customer"):
+		cust_order_type = frappe.db.get_value("Customer", row["customer"], "custom_order_type")
+		if cust_order_type:
+			row["customer_type"] = cust_order_type
+
+	return row
 
 
 @frappe.whitelist()
