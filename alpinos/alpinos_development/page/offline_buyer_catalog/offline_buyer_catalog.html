@@ -64,6 +64,18 @@
 .col-mrp,.col-margin,.col-rate { width:130px; }
 .obi-footer { margin-top:8px; min-height:20px; display:flex; align-items:center; gap:12px; }
 .obi-status { font-size:12px; color:#888; }
+
+/* ── edit-buyer dialog address table ─────────────────────────── */
+.obi-addr-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+.obi-addr-table th { background:#f8f9fa; padding:5px 6px; border-bottom:2px solid #dee2e6;
+  font-weight:600; white-space:nowrap; text-align:left; }
+.obi-addr-table td { padding:4px 4px; border-bottom:1px solid #f0f0f0; vertical-align:top; }
+.obi-addr-table input[type=text] { width:100%; font-size:12px; padding:2px 4px;
+  border:1px solid #d1d5db; border-radius:3px; }
+.obi-addr-table input[type=checkbox] { width:16px; height:16px; cursor:pointer; }
+.obi-addr-row-del { background:none; border:none; color:#dc3545; cursor:pointer;
+  font-size:14px; padding:0 4px; }
+.obi-addr-row-del:hover { color:#a71d2a; }
 </style>
 
 <div class="obi-wrap">
@@ -124,6 +136,7 @@
       </div>
       <div class="obi-detail-actions">
         <span class="obi-dirty-badge">Unsaved changes</span>
+        <button class="btn btn-sm btn-default obi-btn-edit-buyer">✏ Edit Buyer Info</button>
         <button class="btn btn-sm btn-default obi-btn-select-all">Select All</button>
         <button class="btn btn-sm btn-default obi-btn-deselect-all">Deselect All</button>
         <button class="btn btn-sm btn-primary obi-btn-save">Save</button>

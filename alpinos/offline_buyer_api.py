@@ -348,6 +348,85 @@ def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
 
 
 @frappe.whitelist()
+def get_offline_buyer_master_details(obm_name):
+	"""Return all editable fields of an Offline Buyer Master for the catalog edit dialog."""
+	doc = frappe.get_doc("Offline Buyer Master", obm_name)
+	return {
+		"customer_business_name": doc.customer_business_name,
+		"site_name": doc.site_name or "",
+		"customer_type": doc.customer_type or "",
+		"gst_type": doc.gst_type or "",
+		"gst_no": doc.gst_no or "",
+		"pan_no": doc.pan_no or "",
+		"payment_term": doc.payment_term or "",
+		"payment_term_days": doc.payment_term_days,
+		"email": doc.email or "",
+		"contact_no": doc.contact_no or "",
+		"alternate_no": doc.alternate_no or "",
+		"contact_person": doc.contact_person or "",
+		"shipping_same_as_profile": int(doc.shipping_same_as_profile or 0),
+		"addresses": [
+			{
+				"address_label": r.get("address_label") or "",
+				"address_line": r.address_line or "",
+				"pincode": r.pincode or "",
+				"country": r.country or "",
+				"state": r.state or "",
+				"city": r.city or "",
+				"area": r.area or "",
+				"sub_area": r.get("sub_area") or "",
+				"is_primary": int(r.get("is_primary") or 0),
+				"is_shipping": int(r.get("is_shipping") or 0),
+			}
+			for r in (doc.addresses or [])
+		],
+	}
+
+
+@frappe.whitelist()
+def update_offline_buyer_master(obm_name, updates, addresses):
+	"""Save scalar fields and the full addresses child table for an Offline Buyer Master."""
+	import json as _json
+
+	if isinstance(updates, str):
+		updates = _json.loads(updates)
+	if isinstance(addresses, str):
+		addresses = _json.loads(addresses)
+
+	doc = frappe.get_doc("Offline Buyer Master", obm_name)
+
+	editable = [
+		"customer_business_name", "site_name", "customer_type", "gst_type",
+		"gst_no", "pan_no", "payment_term", "payment_term_days",
+		"email", "contact_no", "alternate_no", "contact_person",
+		"shipping_same_as_profile",
+	]
+	for f in editable:
+		if f in updates:
+			doc.set(f, updates[f])
+
+	# Replace entire addresses child table
+	doc.addresses = []
+	for addr in addresses:
+		doc.append("addresses", {
+			"address_label": addr.get("address_label") or "",
+			"address_line": addr.get("address_line") or "",
+			"pincode": addr.get("pincode") or "",
+			"country": addr.get("country") or "",
+			"state": addr.get("state") or "",
+			"city": addr.get("city") or "",
+			"area": addr.get("area") or "",
+			"sub_area": addr.get("sub_area") or "",
+			"is_primary": int(addr.get("is_primary") or 0),
+			"is_shipping": int(addr.get("is_shipping") or 0),
+		})
+
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.customer_business_name
+
+
+@frappe.whitelist()
 def quick_create_offline_buyer(
 	business_name,
 	customer_type,

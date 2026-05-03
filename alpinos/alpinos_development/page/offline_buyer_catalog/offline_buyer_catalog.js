@@ -657,6 +657,259 @@ class OfflineBuyerCatalogPage {
 
 		// Save
 		$(document).on('click', '.obi-btn-save', () => this._save());
+
+		// Edit Buyer Info
+		$(document).on('click', '.obi-btn-edit-buyer', () => {
+			if (this._current_record) this._show_edit_buyer_dialog(this._current_record);
+		});
+	}
+
+	/* ═══════════════════════════════════════════════════════════════════════
+	   EDIT BUYER DIALOG
+	══════════════════════════════════════════════════════════════════════════ */
+
+	_show_edit_buyer_dialog(rec) {
+		const me = this;
+		const obm_name = rec.offline_buyer_master;
+		if (!obm_name) {
+			frappe.msgprint(__('No Offline Buyer Master linked to this catalog.'));
+			return;
+		}
+
+		frappe.call({
+			method: 'alpinos.offline_buyer_api.get_offline_buyer_master_details',
+			args: { obm_name },
+			freeze: true,
+			freeze_message: __('Loading buyer details…'),
+			callback(r) {
+				if (!r.message) return;
+				me._render_edit_buyer_dialog(rec, obm_name, r.message);
+			},
+		});
+	}
+
+	_render_edit_buyer_dialog(rec, obm_name, obm) {
+		const me = this;
+
+		// ── address row tracker ────────────────────────────────────────────────
+		// Each entry: { address_label, address_line, pincode, country, state, city,
+		//               area, sub_area, is_primary, is_shipping, $el }
+		const addr_rows = [];
+
+		const render_addr_table = ($host) => {
+			$host.html(`
+				<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+					<strong style="font-size:13px;">Addresses</strong>
+					<button class="btn btn-xs btn-default obi-add-addr-row">+ Add Address</button>
+				</div>
+				<table class="obi-addr-table">
+					<thead>
+						<tr>
+							<th style="width:90px;">Label</th>
+							<th style="min-width:160px;">Address Line *</th>
+							<th style="width:75px;">Pincode</th>
+							<th style="width:100px;">Country *</th>
+							<th style="width:100px;">State *</th>
+							<th style="width:100px;">City *</th>
+							<th style="width:80px;">Area *</th>
+							<th style="width:70px;">Sub Area</th>
+							<th style="width:50px;text-align:center;">Primary</th>
+							<th style="width:55px;text-align:center;">Shipping</th>
+							<th style="width:30px;"></th>
+						</tr>
+					</thead>
+					<tbody class="obi-addr-tbody"></tbody>
+				</table>
+			`);
+
+			$host.on('click', '.obi-add-addr-row', () => {
+				add_addr_row({});
+			});
+
+			// Primary radio behaviour: only one primary at a time
+			$host.on('change', '.obi-chk-primary', function () {
+				if ($(this).is(':checked')) {
+					$host.find('.obi-chk-primary').not(this).prop('checked', false);
+				}
+			});
+		};
+
+		const add_addr_row = (data) => {
+			const idx = addr_rows.length;
+			const row = {
+				address_label: data.address_label || '',
+				address_line: data.address_line || '',
+				pincode: data.pincode || '',
+				country: data.country || 'India',
+				state: data.state || '',
+				city: data.city || '',
+				area: data.area || '',
+				sub_area: data.sub_area || '',
+				is_primary: data.is_primary ? 1 : 0,
+				is_shipping: data.is_shipping ? 1 : 0,
+			};
+			addr_rows.push(row);
+
+			const $tr = $(`
+				<tr data-addr-idx="${idx}">
+					<td><input type="text" class="addr-label" value="${frappe.utils.escape_html(row.address_label)}" placeholder="e.g. Warehouse" /></td>
+					<td><input type="text" class="addr-line" value="${frappe.utils.escape_html(row.address_line)}" placeholder="Street / Building" /></td>
+					<td><input type="text" class="addr-pincode" value="${frappe.utils.escape_html(row.pincode)}" placeholder="400001" style="width:70px;" /></td>
+					<td><input type="text" class="addr-country" value="${frappe.utils.escape_html(row.country)}" placeholder="India" /></td>
+					<td><input type="text" class="addr-state" value="${frappe.utils.escape_html(row.state)}" placeholder="Maharashtra" /></td>
+					<td><input type="text" class="addr-city" value="${frappe.utils.escape_html(row.city)}" placeholder="Pune" /></td>
+					<td><input type="text" class="addr-area" value="${frappe.utils.escape_html(row.area)}" placeholder="Shivaji Nagar" /></td>
+					<td><input type="text" class="addr-sub-area" value="${frappe.utils.escape_html(row.sub_area)}" placeholder="" /></td>
+					<td style="text-align:center;"><input type="checkbox" class="obi-chk-primary" ${row.is_primary ? 'checked' : ''} /></td>
+					<td style="text-align:center;"><input type="checkbox" class="obi-chk-shipping" ${row.is_shipping ? 'checked' : ''} /></td>
+					<td style="text-align:center;"><button class="obi-addr-row-del" title="Remove row">✕</button></td>
+				</tr>
+			`);
+
+			$tr.on('click', '.obi-addr-row-del', () => {
+				addr_rows.splice(idx, 1);
+				$tr.remove();
+				// re-index remaining rows
+				$('.obi-addr-tbody tr').each((i, el) => $(el).data('addr-idx', i));
+			});
+
+			$('.obi-addr-tbody').append($tr);
+		};
+
+		const collect_addresses = () => {
+			const result = [];
+			$('.obi-addr-tbody tr').each((_, tr) => {
+				const $tr = $(tr);
+				result.push({
+					address_label: $tr.find('.addr-label').val().trim(),
+					address_line: $tr.find('.addr-line').val().trim(),
+					pincode: $tr.find('.addr-pincode').val().trim(),
+					country: $tr.find('.addr-country').val().trim(),
+					state: $tr.find('.addr-state').val().trim(),
+					city: $tr.find('.addr-city').val().trim(),
+					area: $tr.find('.addr-area').val().trim(),
+					sub_area: $tr.find('.addr-sub-area').val().trim(),
+					is_primary: $tr.find('.obi-chk-primary').is(':checked') ? 1 : 0,
+					is_shipping: $tr.find('.obi-chk-shipping').is(':checked') ? 1 : 0,
+				});
+			});
+			return result;
+		};
+
+		// ── dialog ────────────────────────────────────────────────────────────
+		const d = new frappe.ui.Dialog({
+			title: `Edit Buyer — ${obm.customer_business_name || obm_name}`,
+			size: 'extra-large',
+			fields: [
+				// Business info
+				{ fieldtype: 'Section Break', label: 'Business Information' },
+				{ label: 'Business Name', fieldname: 'customer_business_name', fieldtype: 'Data', reqd: 1, default: obm.customer_business_name },
+				{ label: 'Site / Trade Name', fieldname: 'site_name', fieldtype: 'Data', default: obm.site_name },
+				{ fieldtype: 'Column Break' },
+				{
+					label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Select',
+					options: '\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS',
+					reqd: 1, default: obm.customer_type,
+				},
+				{
+					label: 'GST Type', fieldname: 'gst_type', fieldtype: 'Select',
+					options: '\nOverseas\nRegistered Business\nUnregistered Business',
+					reqd: 1, default: obm.gst_type,
+				},
+				{ label: 'GST No', fieldname: 'gst_no', fieldtype: 'Data', default: obm.gst_no,
+				  depends_on: 'eval:doc.gst_type=="Registered Business"' },
+				{ label: 'PAN No', fieldname: 'pan_no', fieldtype: 'Data', default: obm.pan_no,
+				  depends_on: 'eval:doc.gst_type=="Unregistered Business"' },
+				// Payment
+				{ fieldtype: 'Section Break', label: 'Payment Terms' },
+				{
+					label: 'Payment Term', fieldname: 'payment_term', fieldtype: 'Select',
+					options: '\nAdvance\nCredit\nPartial', reqd: 1, default: obm.payment_term,
+				},
+				{ fieldtype: 'Column Break' },
+				{ label: 'Credit Days', fieldname: 'payment_term_days', fieldtype: 'Int',
+				  default: obm.payment_term_days,
+				  depends_on: 'eval:doc.payment_term=="Credit"||doc.payment_term=="Partial"' },
+				// Contact
+				{ fieldtype: 'Section Break', label: 'Contact' },
+				{ label: 'Email', fieldname: 'email', fieldtype: 'Data', options: 'Email', reqd: 1, default: obm.email },
+				{ label: 'Contact No', fieldname: 'contact_no', fieldtype: 'Data', options: 'Phone', reqd: 1, default: obm.contact_no },
+				{ fieldtype: 'Column Break' },
+				{ label: 'Alternate No', fieldname: 'alternate_no', fieldtype: 'Data', options: 'Phone', default: obm.alternate_no },
+				{ label: 'Contact Person', fieldname: 'contact_person', fieldtype: 'Data', reqd: 1, default: obm.contact_person },
+				// Addresses (custom HTML section)
+				{ fieldtype: 'Section Break', label: 'Addresses' },
+				{ fieldtype: 'HTML', fieldname: 'addresses_html', options: '<div class="obi-addr-host"></div>' },
+			],
+			primary_action_label: 'Save',
+			primary_action(values) {
+				const addresses = collect_addresses();
+				if (!addresses.length) {
+					frappe.msgprint(__('Add at least one address.'));
+					return;
+				}
+				const primary_count = addresses.filter(a => a.is_primary).length;
+				if (primary_count === 0) {
+					frappe.msgprint(__('Mark exactly one address as Primary.'));
+					return;
+				}
+				if (primary_count > 1) {
+					frappe.msgprint(__('Only one address can be Primary.'));
+					return;
+				}
+
+				const updates = {
+					customer_business_name: values.customer_business_name,
+					site_name: values.site_name || '',
+					customer_type: values.customer_type,
+					gst_type: values.gst_type,
+					gst_no: values.gst_no || '',
+					pan_no: values.pan_no || '',
+					payment_term: values.payment_term,
+					payment_term_days: values.payment_term_days || null,
+					email: values.email,
+					contact_no: values.contact_no,
+					alternate_no: values.alternate_no || '',
+					contact_person: values.contact_person,
+				};
+
+				frappe.call({
+					method: 'alpinos.offline_buyer_api.update_offline_buyer_master',
+					args: { obm_name, updates: JSON.stringify(updates), addresses: JSON.stringify(addresses) },
+					freeze: true,
+					freeze_message: __('Saving…'),
+					callback(r) {
+						if (r.exc) return;
+						d.hide();
+						frappe.show_alert({ message: __('Buyer info updated'), indicator: 'green' });
+						// Refresh the list so the header reflects new values
+						me._load_records(() => {
+							const updated = me._all_records.find(row => row.name === rec.name);
+							if (updated) {
+								me._current_record = updated;
+								// Update breadcrumb text inline
+								$('.obi-detail-buyer').html(
+									[
+										updated.customer_business_name ? `Business: ${updated.customer_business_name}` : '',
+										`Customer type: ${updated.customer_type || ''}`,
+										`Payment: ${updated.payment_term || ''}`,
+									].filter(Boolean).map(b => frappe.utils.escape_html(b)).join(' · ')
+								);
+							}
+						});
+					},
+				});
+			},
+		});
+
+		d.show();
+
+		// Render the address host after dialog is shown
+		setTimeout(() => {
+			const $host = d.$wrapper.find('.obi-addr-host');
+			render_addr_table($host);
+			(obm.addresses && obm.addresses.length ? obm.addresses : [{}]).forEach(a => add_addr_row(a));
+		}, 80);
 	}
 
 	/* ═══════════════════════════════════════════════════════════════════════
