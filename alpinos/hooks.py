@@ -49,6 +49,7 @@ app_license = "mit"
 doctype_js = {
 	"User": "public/js/user_override.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
+	"Quotation": "public/js/quotation_sales_order_redirect.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -193,6 +194,12 @@ permission_query_conditions = {}
 # ---------------
 # Override standard doctype classes
 
+override_whitelisted_methods = {
+	"erpnext.crm.doctype.opportunity.opportunity.make_quotation": (
+		"alpinos.opportunity_make_quotation.make_quotation"
+	),
+}
+
 override_doctype_class = {
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
@@ -252,7 +259,10 @@ doc_events = {
 		]
 	},
 	"Quotation": {
-		"validate": "alpinos.quotation_validate.validate_partial_payment_fields",
+		"validate": ["alpinos.quotation_validate.validate_quotation_alpinos"],
+	},
+	"Opportunity": {
+		"validate": ["alpinos.opportunity_validate.validate_opportunity_alpinos"],
 	},
 	"Stock Entry": {
 		"before_insert": "alpinos.stock_entry_hooks.set_entry_by",
@@ -402,3 +412,8 @@ before_request = ["alpinos.overrides.oauth_override.patch_oauth_server"]
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+
+
+from alpinos.quotation_obm_patch import apply_quotation_obm_customer_patch
+
+apply_quotation_obm_customer_patch()

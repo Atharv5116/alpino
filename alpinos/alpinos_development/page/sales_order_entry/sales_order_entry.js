@@ -30,6 +30,129 @@ class SalesOrderEntry {
 		this.make_actions();
 		this.bind_events();
 		this.load_recent_orders();
+		this.maybe_prefill_from_quotation();
+	}
+
+	maybe_prefill_from_quotation() {
+		let ro = frappe.route_options || {};
+		if (!ro.from_quotation) return;
+		const qname = ro.from_quotation;
+		delete ro.from_quotation;
+		frappe.route_options = ro;
+		this.prefill_from_quotation(qname);
+	}
+
+	prefill_from_quotation(qname) {
+		let me = this;
+		frappe.call({
+			method: 'alpinos.quotation_api.get_sales_order_entry_payload_from_quotation',
+			args: { quotation: qname },
+			freeze: true,
+			freeze_message: __('Loading quotation...'),
+			callback(r) {
+				if (!r.message) return;
+				me._apply_quotation_prefill(r.message);
+			},
+		});
+	}
+
+	_apply_quotation_prefill(d) {
+		let me = this;
+
+		me.customer_field.set_value(d.customer);
+		me.order_type_field.set_value(d.order_type || '');
+		me.delivery_date_field.set_value(d.delivery_date || '');
+		me.cash_discount_field.set_value(flt(d.custom_cash_discount));
+
+		frappe.call({
+			method: 'alpinos.sales_order_offline_buyer.sync_offline_buyer_master_addresses',
+			args: { customer: d.customer },
+			callback(sr) {
+				const ad = sr.message || {};
+				me.billing_address_field && me.billing_address_field.set_value(
+					d.billing_address || ad.default_billing || ''
+				);
+				me.shipping_address_field && me.shipping_address_field.set_value(
+					d.shipping_address || ad.default_shipping || ''
+				);
+				me._prefill_quotation_after_addresses(d);
+			},
+		});
+	}
+
+	_prefill_quotation_after_addresses(d) {
+		let me = this;
+		const codes = [...new Set((d.items || []).map((x) => x.item_code).filter(Boolean))];
+		const hydrate_and_draw = () => {
+			me.items = [];
+			me.wrapper.find('.items-table tbody').empty();
+			const rows = d.items || [];
+			if (!rows.length) me.add_item_row();
+			else {
+				rows.forEach((it) => me.add_item_row(it));
+				rows.forEach((it, idx) => {
+					me.items[idx].rate = flt(it.rate);
+					me.items[idx].amount = flt(it.amount);
+					me.items[idx].custom_item_tax = flt(it.custom_item_tax);
+					me.items[idx].description = it.description || '';
+					me.items[idx].warehouse = it.warehouse || '';
+					me.items[idx].delivery_date = it.delivery_date || d.delivery_date || '';
+					const $r = me.wrapper.find('.items-table tbody tr').eq(idx);
+					$r.find('.item-amount').text(format_currency(me.items[idx].amount));
+					if (it.item_name) {
+						$r.find('.item-name-text').text(it.item_name).removeClass('text-muted');
+					}
+					if (it.image) {
+						let url = it.image;
+						if (url.indexOf('http') !== 0 && url.charAt(0) === '/') {
+							url = window.location.origin + url;
+						}
+						me.items[idx].item_image = url;
+						me._set_row_image($r, url);
+					}
+				});
+			}
+
+			me.freebies = [];
+			me.scheme_items = [];
+			me.additional_units_items = [];
+			me.wrapper.find('.freebies-table tbody').empty();
+			me.wrapper.find('.scheme-table tbody').empty();
+			me.wrapper.find('.additional-units-table tbody').empty();
+
+			(d.freebies || []).forEach((f) => me.add_freebie_row(f));
+			me.additional_units_damage_field.set_value(d.additional_units_damage ? 1 : 0);
+			if (d.additional_units_damage) {
+				me.wrapper.find('.additional-units-section').toggle(true);
+				(d.additional_units_items || []).forEach((u) => me.add_additional_units_row(u));
+			} else {
+				me.wrapper.find('.additional-units-section').toggle(false);
+				(d.scheme_items || []).forEach((s) => me.add_scheme_row(s));
+			}
+
+			me.calc_totals();
+			frappe.show_alert({
+				message: __('Loaded from quotation {0}', [d.quotation]),
+				indicator: 'green',
+			});
+		};
+
+		if (!codes.length) {
+			hydrate_and_draw();
+			return;
+		}
+		let left = codes.length;
+		codes.forEach((item_code) => {
+			frappe.call({
+				method: 'alpinos.sales_order_api.get_box_conversion_factor',
+				args: { item_code: item_code },
+				callback(rr) {
+					if (rr.message) me._box_cache[item_code] = rr.message;
+					left--;
+					if (left <= 0) hydrate_and_draw();
+				},
+			});
+		});
 	}
 
 	make_header_fields() {
@@ -52,7 +175,7 @@ class SalesOrderEntry {
 		});
 
 		// Bind customer change to auto-fetch order type
-		let fetch_order_type = function() {
+		let on_customer_change = function() {
 			setTimeout(() => {
 				let customer = me.customer_field.get_value();
 				if (customer) {
@@ -61,11 +184,27 @@ class SalesOrderEntry {
 							me.order_type_field.set_value(r.custom_order_type);
 						}
 					});
+					frappe.call({
+						method: 'alpinos.sales_order_offline_buyer.sync_offline_buyer_master_addresses',
+						args: { customer: customer },
+						callback(r2) {
+							const ad = r2.message || {};
+							if (ad.default_billing) {
+								me.billing_address_field.set_value(ad.default_billing);
+							}
+							if (ad.default_shipping) {
+								me.shipping_address_field.set_value(ad.default_shipping);
+							}
+						},
+					});
+				} else {
+					me.billing_address_field.set_value('');
+					me.shipping_address_field.set_value('');
 				}
 			}, 300);
 		};
-		this.customer_field.$input.on('change', fetch_order_type);
-		this.customer_field.$input.on('awesomplete-selectcomplete', fetch_order_type);
+		this.customer_field.$input.on('change', on_customer_change);
+		this.customer_field.$input.on('awesomplete-selectcomplete', on_customer_change);
 
 		this.order_type_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Select', options: '\nGT\nMT\nGYM & NUTRITION\nHoReCa', label: 'Customer Type', fieldname: 'order_type', reqd: 1 },
@@ -136,7 +275,26 @@ class SalesOrderEntry {
 
 	add_item_row(data) {
 		let idx = this.items.length;
-		let row_data = data || { item_code: '', item_name: '', item_image: '', qty: 0, box: 0, mrp: 0, flat_discount: 0, offer: '', additional_discount: 0, amount: 0 };
+		let row_data = Object.assign(
+			{
+				item_code: '',
+				item_name: '',
+				item_image: '',
+				qty: 0,
+				box: 0,
+				mrp: 0,
+				flat_discount: 0,
+				offer: '',
+				additional_discount: 0,
+				amount: 0,
+				rate: 0,
+				custom_item_tax: 0,
+				description: '',
+				warehouse: '',
+				delivery_date: '',
+			},
+			data || {}
+		);
 		this.items.push(row_data);
 
 		let $tbody = this.wrapper.find('.items-table tbody');
@@ -273,19 +431,31 @@ class SalesOrderEntry {
 		// Set values if data was passed
 		if (data && data.item_code) {
 			sku_field.set_value(data.item_code);
-			if (data.qty) qty_field.set_value(data.qty);
-			if (data.box) box_field.set_value(data.box);
-			if (data.mrp) mrp_field.set_value(data.mrp);
-			if (data.flat_discount) flat_disc_field.set_value(data.flat_discount);
-			if (data.offer) offer_field.set_value(data.offer);
-			if (data.additional_discount) add_disc_field.set_value(data.additional_discount);
+			if (data.qty !== undefined && data.qty !== null) qty_field.set_value(data.qty);
+			if (data.box !== undefined && data.box !== null) box_field.set_value(data.box);
+			if (data.mrp !== undefined && data.mrp !== null && data.mrp !== '') {
+				mrp_field.set_value(data.mrp);
+			}
+			if (data.flat_discount !== undefined && data.flat_discount !== null && data.flat_discount !== '') {
+				flat_disc_field.set_value(data.flat_discount);
+			}
+			if (data.offer !== undefined && data.offer !== null) {
+				offer_field.set_value(data.offer);
+			}
+			if (
+				data.additional_discount !== undefined &&
+				data.additional_discount !== null &&
+				data.additional_discount !== ''
+			) {
+				add_disc_field.set_value(data.additional_discount);
+			}
 			if (data.item_name) {
 				$row.find('.item-name-text').text(data.item_name).removeClass('text-muted');
 			}
 			if (data.item_image) {
 				this._set_row_image($row, data.item_image);
 			}
-			if (data.amount) {
+			if (data.amount !== undefined && data.amount !== null) {
 				$row.find('.item-amount').text(format_currency(data.amount));
 			}
 		}
@@ -666,7 +836,17 @@ class SalesOrderEntry {
 
 	add_additional_units_row(data) {
 		let idx = this.additional_units_items.length;
-		let row_data = data || { item_code: '', item_name: '', qty: 0, scheme: '', previous_order_id: '' };
+		let row_data = Object.assign(
+			{
+				item_code: '',
+				item_name: '',
+				qty: 0,
+				scheme: '',
+				previous_order_id: '',
+				remarks: ''
+			},
+			data || {}
+		);
 		this.additional_units_items.push(row_data);
 
 		let $tbody = this.wrapper.find('.additional-units-table tbody');
@@ -677,6 +857,7 @@ class SalesOrderEntry {
 				<td class="au-qty"></td>
 				<td class="au-scheme"></td>
 				<td class="au-prev-order"></td>
+				<td class="au-remarks"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-additional-unit"><i class="fa fa-trash"></i></button></td>
 			</tr>
 		`);
@@ -724,11 +905,20 @@ class SalesOrderEntry {
 		});
 		prev_order_field.$input.on('change', function() { me.additional_units_items[idx].previous_order_id = prev_order_field.get_value(); });
 
+		let remarks_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Small Text', fieldname: `au_remarks_${idx}`, label: 'Remark' },
+			parent: $row.find('.au-remarks'),
+			render_input: true
+		});
+		if (remarks_field.$input) remarks_field.$input.css('min-width', '120px');
+		remarks_field.$input.on('change', function() { me.additional_units_items[idx].remarks = remarks_field.get_value(); });
+
 		if (data && data.item_code) {
 			item_field.set_value(data.item_code);
 			if (data.qty) qty_field.set_value(data.qty);
 			if (data.scheme) scheme_field.set_value(data.scheme);
 			if (data.previous_order_id) prev_order_field.set_value(data.previous_order_id);
+			if (data.remarks !== undefined && data.remarks !== null) remarks_field.set_value(data.remarks);
 			if (data.item_name) {
 				$row.find('.au-name span').text(data.item_name).removeClass('text-muted');
 			}
@@ -782,12 +972,15 @@ class SalesOrderEntry {
 			item_code: item.item_code,
 			qty: item.qty,
 			rate: item.rate || 0,
-			delivery_date: delivery_date,
+			delivery_date: item.delivery_date || delivery_date,
+			description: item.description || '',
+			warehouse: item.warehouse || '',
 			custom_box: item.box,
 			custom_customer_mrp: item.mrp,
 			custom_flat_discount: item.flat_discount,
 			custom_offer: item.offer,
-			custom_additional_discount: item.additional_discount
+			custom_additional_discount: item.additional_discount,
+			custom_item_tax: flt(item.custom_item_tax)
 		}));
 
 		let freebies = this.freebies.filter(f => f.item_code).map(f => ({
@@ -806,7 +999,8 @@ class SalesOrderEntry {
 			item_code: s.item_code,
 			qty: s.qty,
 			scheme: s.scheme,
-			previous_order_id: s.previous_order_id
+			previous_order_id: s.previous_order_id,
+			remarks: s.remarks || ''
 		}));
 
 		frappe.call({

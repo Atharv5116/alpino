@@ -24,3 +24,14 @@ class OfflineBuyerItems(Document):
 				),
 				title=_("Invalid Customer"),
 			)
+
+		if self.buyer:
+			duplicate = frappe.db.get_value("Offline Buyer Items", {"buyer": self.buyer}, "name")
+			if duplicate and duplicate != self.name:
+				frappe.throw(
+					_(
+						"An Offline Buyer Items catalog already exists for {0} ({1}). "
+						"Only one catalog per offline buyer is allowed."
+					).format(frappe.bold(self.buyer), frappe.bold(duplicate)),
+					title=_("Duplicate catalog"),
+				)

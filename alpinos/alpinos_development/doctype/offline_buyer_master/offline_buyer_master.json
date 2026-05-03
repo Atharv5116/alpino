@@ -5,11 +5,11 @@
  "creation": "2026-03-30 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
+ "title_field": "customer_business_name",
  "field_order": [
   "profile_section",
   "customer_business_name",
   "site_name",
-  "customer",
   "customer_id",
   "customer_type",
   "gst_type",
@@ -25,13 +25,7 @@
   "payment_term_days",
   "party_owner",
   "address_section",
-  "address",
-  "pincode",
-  "country",
-  "state",
-  "city",
-  "area",
-  "sub_area",
+  "addresses",
   "contact_section",
   "email",
   "contact_no",
@@ -40,6 +34,15 @@
   "shipping_address",
   "shipping_state",
   "shipping_city",
+  "customer",
+  "legacy_flat_section",
+  "address",
+  "pincode",
+  "country",
+  "state",
+  "city",
+  "area",
+  "sub_area",
   "margin_section",
   "margins",
   "other_section",
@@ -53,6 +56,7 @@
    "label": "Profile"
   },
   {
+   "description": "Saved as the ERPNext Customer name; a Customer record is created automatically on submit.",
    "fieldname": "customer_business_name",
    "fieldtype": "Data",
    "label": "Customer (Business Name)",
@@ -62,14 +66,6 @@
    "fieldname": "site_name",
    "fieldtype": "Data",
    "label": "Site Name"
-  },
-  {
-   "fieldname": "customer",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Customer",
-   "options": "Customer",
-   "reqd": 1
   },
   {
    "fieldname": "customer_id",
@@ -169,49 +165,11 @@
    "label": "Address"
   },
   {
-   "fieldname": "address",
-   "fieldtype": "Data",
-   "label": "Address",
-   "reqd": 1
-  },
-  {
-   "fieldname": "pincode",
-   "fieldtype": "Data",
-   "label": "Pincode",
-   "options": "Phone",
-   "reqd": 1
-  },
-  {
-   "fieldname": "country",
-   "fieldtype": "Link",
-   "label": "Country",
-   "options": "Country",
-   "reqd": 1
-  },
-  {
-   "fieldname": "state",
-   "fieldtype": "Link",
-   "label": "State",
-   "options": "State",
-   "reqd": 1
-  },
-  {
-   "fieldname": "city",
-   "fieldtype": "Link",
-   "label": "City",
-   "options": "City",
-   "reqd": 1
-  },
-  {
-   "fieldname": "area",
-   "fieldtype": "Data",
-   "label": "Area",
-   "reqd": 1
-  },
-  {
-   "fieldname": "sub_area",
-   "fieldtype": "Data",
-   "label": "Sub Area"
+   "description": "Add one or more addresses. Mark exactly one row as Primary for shipping sync and ERPNext Customer defaults.",
+   "fieldname": "addresses",
+   "fieldtype": "Table",
+   "label": "Addresses",
+   "options": "Offline Buyer Address"
   },
   {
    "fieldname": "contact_section",
@@ -245,7 +203,7 @@
   },
   {
    "fieldname": "shipping_address",
-   "fieldtype": "Data",
+   "fieldtype": "Text",
    "label": "Shipping Address"
   },
   {
@@ -287,11 +245,80 @@
    "fieldtype": "Data",
    "label": "Contact Person",
    "reqd": 1
+  },
+  {
+   "description": "Created automatically from Customer (Business Name).",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "legacy_flat_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Legacy address (synced from primary row)"
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Text",
+   "hidden": 1,
+   "label": "Address (primary sync)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pincode",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Pincode (primary sync)",
+   "options": "Phone",
+   "read_only": 1
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Country (primary sync)",
+   "options": "Country",
+   "read_only": 1
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "State (primary sync)",
+   "options": "State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "City (primary sync)",
+   "options": "City",
+   "read_only": 1
+  },
+  {
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Area (primary sync)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sub_area",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Sub Area (primary sync)",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-30 00:00:00.000000",
+ "modified": "2026-05-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Offline Buyer Master",

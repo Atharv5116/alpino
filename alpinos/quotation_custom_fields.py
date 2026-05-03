@@ -18,6 +18,15 @@ def setup_quotation_custom_fields():
 	custom_fields = {
 		"Quotation": [
 			dict(
+				fieldname="custom_resolved_customer",
+				label="Resolved Customer",
+				fieldtype="Link",
+				options="Customer",
+				insert_after="party_name",
+				hidden=1,
+				read_only=1,
+			),
+			dict(
 				fieldname="custom_order_no",
 				label="Order No.",
 				fieldtype="Data",
@@ -82,8 +91,8 @@ def setup_quotation_custom_fields():
 				fieldtype="Attach",
 				insert_after="custom_advance_amount",
 				reqd=0,
-				depends_on='eval:doc.custom_payment_mode=="Partial"',
-				mandatory_depends_on='eval:doc.custom_payment_mode=="Partial"',
+				depends_on='eval:doc.custom_payment_mode=="Advance" || doc.custom_payment_mode=="Partial"',
+				mandatory_depends_on='eval:doc.custom_payment_mode=="Advance" || doc.custom_payment_mode=="Partial"',
 			),
 			dict(
 				fieldname="custom_transaction_id",
@@ -170,14 +179,21 @@ def setup_quotation_custom_fields():
 				reqd=1,
 			),
 			dict(
-				fieldname="custom_discount_type",
-				label="Discount Type",
-				fieldtype="Select",
-				options="\nPercentage\nAmount",
+				fieldname="custom_buyer_margin_percent",
+				label="Buyer Margin %",
+				fieldtype="Percent",
 				insert_after="custom_mrp",
-				default="Percentage",
-				reqd=1,
+				description="Buyer margin applied before Flat / Offer / Additional Discount (same logic as Opportunity).",
 			),
+		dict(
+			fieldname="custom_discount_type",
+			label="Discount Type",
+			fieldtype="Select",
+			options="\nPercentage\nAmount",
+			insert_after="custom_buyer_margin_percent",
+			default="Percentage",
+			reqd=1,
+		),
 			dict(
 				fieldname="custom_flat_discount",
 				label="Flat Discount",
@@ -231,6 +247,14 @@ def setup_quotation_custom_fields():
 
 def _setup_quotation_property_setters():
 	property_setters = [
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Quotation",
+			field_name="order_type",
+			property="label",
+			value="Customer Type",
+			property_type="Data",
+		),
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Quotation",

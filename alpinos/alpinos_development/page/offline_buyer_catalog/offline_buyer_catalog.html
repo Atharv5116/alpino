@@ -75,12 +75,12 @@
       <div>
         <h4 class="obi-list-title" style="margin:0;">Offline Buyer Items</h4>
         <p class="text-muted" style="margin:4px 0 0;font-size:12px;max-width:720px;">
-          New records: choose a <strong>Customer</strong> that already has an Offline Buyer Master (same list as Sales Order). Item grid uses SKUs and margin % from that master (aligned with Sales Order Entry).
+          New records: pick an <strong>Offline Buyer Master</strong> (business name). The ERPNext Customer is created on the master when you save it; this page only links the price list to that master. Item grid uses SKUs and margin % from the master (same rules as Sales Order).
         </p>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="text" class="form-control obi-list-search"
-               placeholder="Search title, customer, OBM, site, customer type, payment term…" />
+               placeholder="Search title, business name, master, site, trade type, payment term…" />
         <button class="btn btn-sm btn-primary obi-btn-new">+ New</button>
       </div>
     </div>
@@ -91,7 +91,7 @@
           <tr>
             <th>Name</th>
             <th>Title</th>
-            <th>Customer</th>
+            <th>Business / Master</th>
             <th>Site Name</th>
             <th>Customer Type</th>
             <th>Payment Term</th>
@@ -132,7 +132,7 @@
 
     <!-- filters -->
     <p class="text-muted" style="margin:0 0 8px;font-size:12px;">
-      SKUs and default margin % / rates follow the <strong>Offline Buyer Master</strong> for this customer (plus rows already saved here).
+      SKUs and default margin % / rates follow the linked <strong>Offline Buyer Master</strong> (plus rows already saved here).
     </p>
     <div class="obi-filters">
       <input type="text" class="form-control obi-search"

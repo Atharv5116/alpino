@@ -4,12 +4,13 @@ frappe.ui.form.on("Offline Buyer Master", {
 		set_city_state_queries(frm);
 		set_margin_queries(frm);
 		toggle_shipping_editability(frm);
+		if (frm.doc.shipping_same_as_profile && (frm.doc.addresses || []).length) {
+			copy_shipping_address(frm);
+		} else if ((frm.doc.addresses || []).some((r) => cint(r.is_shipping))) {
+			sync_shipping_from_table(frm);
+		}
 		frm.set_query("party_owner", () => ({
 			query: "alpinos.offline_buyer_api.party_owner_user_query",
-		}));
-		frm.set_query("customer", () => ({
-			query: "alpinos.offline_buyer_api.obm_customer_query",
-			filters: { obm_name: frm.doc.name || "" },
 		}));
 	},
 
@@ -27,22 +28,92 @@ frappe.ui.form.on("Offline Buyer Master", {
 	shipping_same_as_profile(frm) {
 		copy_shipping_address(frm);
 	},
+});
 
-	address(frm) {
+function get_primary_address_row(frm) {
+	const rows = frm.doc.addresses || [];
+	const p = rows.find((r) => cint(r.is_primary));
+	return p || rows[0];
+}
+
+function copy_shipping_address(frm) {
+	if (frm.doc.shipping_same_as_profile) {
+		const pr = get_primary_address_row(frm);
+		if (pr) {
+			frm.set_value("shipping_address", pr.address_line || "");
+			frm.set_value("shipping_state", pr.state || "");
+			frm.set_value("shipping_city", pr.city || "");
+		}
+	}
+	toggle_shipping_editability(frm);
+}
+
+function get_shipping_address_row(frm) {
+	const rows = frm.doc.addresses || [];
+	return rows.find((r) => cint(r.is_shipping)) || null;
+}
+
+function sync_shipping_from_table(frm) {
+	if (frm.doc.shipping_same_as_profile) {
+		copy_shipping_address(frm);
+		return;
+	}
+	const sh = get_shipping_address_row(frm);
+	if (sh) {
+		frm.set_value("shipping_address", sh.address_line || "");
+		frm.set_value("shipping_state", sh.state || "");
+		frm.set_value("shipping_city", sh.city || "");
+		toggle_shipping_editability(frm);
+	}
+}
+
+frappe.ui.form.on("Offline Buyer Address", {
+	is_primary(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (row.is_primary) {
+			(frm.doc.addresses || []).forEach((r) => {
+				if (r.name && r.name !== row.name && cint(r.is_primary)) {
+					frappe.model.set_value(r.doctype, r.name, "is_primary", 0);
+				}
+			});
+		}
 		if (frm.doc.shipping_same_as_profile) {
 			copy_shipping_address(frm);
 		}
 	},
 
-	state(frm) {
-		if (frm.doc.shipping_same_as_profile) {
-			frm.set_value("shipping_state", frm.doc.state || "");
+	is_shipping(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (row.is_shipping && !frm.doc.shipping_same_as_profile) {
+			sync_shipping_from_table(frm);
 		}
 	},
 
-	city(frm) {
+	address_line(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
 		if (frm.doc.shipping_same_as_profile) {
-			frm.set_value("shipping_city", frm.doc.city || "");
+			copy_shipping_address(frm);
+		} else if (cint(row.is_shipping)) {
+			sync_shipping_from_table(frm);
+		}
+	},
+
+	state(frm, cdt, cdn) {
+		frappe.model.set_value(cdt, cdn, "city", "");
+		const row = locals[cdt][cdn];
+		if (frm.doc.shipping_same_as_profile) {
+			copy_shipping_address(frm);
+		} else if (cint(row.is_shipping)) {
+			sync_shipping_from_table(frm);
+		}
+	},
+
+	city(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (frm.doc.shipping_same_as_profile) {
+			copy_shipping_address(frm);
+		} else if (cint(row.is_shipping)) {
+			sync_shipping_from_table(frm);
 		}
 	},
 });
@@ -63,26 +134,24 @@ function toggle_tax_fields(frm) {
 	frm.toggle_reqd("pan_attachment", is_unregistered);
 }
 
-function copy_shipping_address(frm) {
-	if (frm.doc.shipping_same_as_profile) {
-		frm.set_value("shipping_address", frm.doc.address || "");
-		frm.set_value("shipping_state", frm.doc.state || "");
-		frm.set_value("shipping_city", frm.doc.city || "");
-	}
-	toggle_shipping_editability(frm);
-}
-
 function set_city_state_queries(frm) {
-	frm.set_query("city", () => ({
-		filters: { state: frm.doc.state || "" }
-	}));
-	frm.set_query("shipping_city", () => ({
-		filters: { state: frm.doc.shipping_state || frm.doc.state || "" }
-	}));
+	frm.set_query("city", "addresses", (doc, cdt, cdn) => {
+		const row = locals[cdt][cdn];
+		return { filters: { state: row.state || "" } };
+	});
+	frm.set_query("shipping_city", () => {
+		const pr = get_primary_address_row(frm);
+		const st = frm.doc.shipping_same_as_profile
+			? pr?.state || frm.doc.shipping_state
+			: frm.doc.shipping_state;
+		return { filters: { state: st || "" } };
+	});
 }
 
 function toggle_shipping_editability(frm) {
-	const lock = !!frm.doc.shipping_same_as_profile;
+	const has_shipping_row = !frm.doc.shipping_same_as_profile &&
+		(frm.doc.addresses || []).some((r) => cint(r.is_shipping));
+	const lock = !!frm.doc.shipping_same_as_profile || has_shipping_row;
 	["shipping_address", "shipping_state", "shipping_city"].forEach((fieldname) => {
 		frm.set_df_property(fieldname, "read_only", lock ? 1 : 0);
 	});
@@ -108,7 +177,6 @@ function set_margin_queries(frm) {
 		},
 	}));
 
-	// Only variants should be selectable in SKU.
 	frm.set_query("sku", "margins", () => ({
 		filters: {
 			disabled: 0,
@@ -142,7 +210,6 @@ frappe.ui.form.on("Offline Buyer Margin", {
 					child.margin_percent = margin;
 				});
 
-				// Keep table clean: remove pure item-group helper row after expansion.
 				frappe.model.clear_doc(cdt, cdn);
 				frm.refresh_field("margins");
 			},

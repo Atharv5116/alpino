@@ -18,9 +18,9 @@ def setup_opportunity_custom_fields():
 		"Opportunity": [
 			dict(
 				fieldname="custom_order_type",
-				label="Order Type",
+				label="Customer Type",
 				fieldtype="Select",
-				options="\nGT\nMT\nGYM & NUTRITION\nHoReCa",
+				options="\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS\nGT\nMT\nGYM & NUTRITION\nHoReCa",
 				insert_after="party_name",
 				reqd=1,
 			),
@@ -107,10 +107,17 @@ def setup_opportunity_custom_fields():
 				insert_after="rate",
 			),
 			dict(
+				fieldname="custom_buyer_margin_percent",
+				label="Buyer Margin %",
+				fieldtype="Percent",
+				insert_after="custom_mrp",
+				description="From Offline Buyer Master / catalog when applicable; applied before Flat % / Offer / Additional Discount.",
+			),
+			dict(
 				fieldname="custom_flat_discount",
 				label="Flat Discount %",
 				fieldtype="Percent",
-				insert_after="custom_mrp",
+				insert_after="custom_buyer_margin_percent",
 			),
 			dict(
 				fieldname="custom_offer",

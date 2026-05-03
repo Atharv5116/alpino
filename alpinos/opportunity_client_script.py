@@ -1,215 +1,322 @@
 """
 Client Script for Opportunity custom flow:
-- SKU (Item) link driven row setup
-- Qty <-> Boxes conversion
-- Item discount/tax amount handling
-- Header totals calculation
+- Offline Buyer Master: show business name, hide org noise, Dynamic Link filtering
+- SKU pricing from Offline Buyer Items / Offline Buyer Margin (MRP + buyer margin %) + editable
+- Qty / boxes, totals (buyer margin before other line discounts)
 """
 
 import frappe
 
 
-OPPORTUNITY_CLIENT_SCRIPT = """
-frappe.ui.form.on('Opportunity', {
-    setup: function(frm) {
-        // opportunity_from is Link -> DocType (not Select). Options must remain "DocType" in meta.
-        // Restrict picker to standard party types plus Offline Buyer Master (same pattern as erpnext opportunity.js).
-        frm.set_query('opportunity_from', function () {
-            return {
-                filters: {
-                    name: ['in', ['Customer', 'Lead', 'Prospect', 'Offline Buyer Master']],
-                },
-            };
-        });
-    },
+OPPORTUNITY_CLIENT_SCRIPT = '''
+const OBM_HIDE_FIELDS = [
+	"organization_details_section",
+	"no_of_employees",
+	"annual_revenue",
+	"industry",
+	"market_segment",
+	"column_break_23",
+	"territory",
+	"city",
+	"state",
+	"country",
+];
 
-    onload: function(frm) {
-        if (frm.is_new() && !frm.doc.opportunity_owner) {
-            frm.set_value('opportunity_owner', frappe.session.user);
-        }
-    },
+frappe.ui.form.on("Opportunity", {
+	setup(frm) {
+		frm.set_query("opportunity_from", () => ({
+			filters: { name: ["in", ["Customer", "Lead", "Prospect", "Offline Buyer Master"]] },
+		}));
+		frm.set_query("party_name", () => {
+			const obm = frm.doc.opportunity_from === "Offline Buyer Master";
+			return obm
+				? { filters: { customer: ["!=", ""] } }
+				: {};
+		});
+	},
 
-    custom_cash_discount: function(frm) {
-        recalculate_opportunity_totals(frm);
-    }
+	onload(frm) {
+		if (frm.is_new() && !frm.doc.opportunity_owner) {
+			frappe.model.set_value(frm.doctype, frm.doc.name, "opportunity_owner", frappe.session.user);
+		}
+		apply_opportunity_party_layout(frm);
+	},
+
+	refresh(frm) {
+		apply_opportunity_party_layout(frm);
+	},
+
+	opportunity_from(frm) {
+		apply_opportunity_party_layout(frm);
+	},
+
+	party_name(frm) {
+		if (frm.doc.opportunity_from !== "Offline Buyer Master") {
+			frappe.model.set_value(frm.doctype, frm.doc.name, "customer_name", "");
+			return;
+		}
+		sync_obm_header_from_master(frm);
+	},
+
+	custom_cash_discount(frm) {
+		recalculate_opportunity_totals(frm);
+	},
 });
 
-frappe.ui.form.on('Opportunity Item', {
-    item_code: function(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.item_code) return;
+function sync_obm_header_from_master(frm) {
+	const name = frm.doc.party_name;
+	if (!name) {
+		frappe.model.set_value(frm.doctype, frm.doc.name, "customer_name", "");
+		return;
+	}
+	frappe.call({
+		method: "alpinos.sales_order_api.get_opportunity_obm_party_data",
+		args: { offline_buyer_master: name },
+		callback(r) {
+			const d = r.message || {};
+			if (d.customer_business_name)
+				frappe.model.set_value(
+					frm.doctype,
+					frm.doc.name,
+					"customer_name",
+					d.customer_business_name
+				);
+			else frappe.model.set_value(frm.doctype, frm.doc.name, "customer_name", "");
+			if (d.customer_type) frm.set_value("custom_order_type", d.customer_type);
+			frm.toggle_display("customer_name", !!d.customer_business_name);
+		},
+	});
+}
 
-        frappe.db.get_value('Item', row.item_code, 'item_name')
-            .then((r) => {
-                if (r && r.message && r.message.item_name) {
-                    frappe.model.set_value(cdt, cdn, 'item_name', r.message.item_name);
-                }
-            });
+function apply_opportunity_party_layout(frm) {
+	const is_obm = frm.doc.opportunity_from === "Offline Buyer Master";
 
-        if (frm.doc.party_name) {
-            frappe.call({
-                method: 'alpinos.sales_order_api.get_customer_item_mrp',
-                args: {
-                    customer: frm.doc.party_name,
-                    item_code: row.item_code
-                },
-                callback: function(r) {
-                    if (r.message) {
-                        locals[cdt][cdn].custom_mrp = flt(r.message);
-                        frm.refresh_field('items');
-                        recalculate_row_values(frm, cdt, cdn);
-                    }
-                }
-            });
-        }
-    },
+	frm.set_df_property(
+		"party_name",
+		"label",
+		is_obm ? __("Offline Buyer Master") : __("Customer")
+	);
 
-    qty: function(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        const int_qty = Math.round(flt(row.qty));
-        if (row.qty !== int_qty) {
-            frappe.model.set_value(cdt, cdn, 'qty', int_qty);
-            return;
-        }
-        update_boxes_from_qty(frm, cdt, cdn);
-        recalculate_row_values(frm, cdt, cdn);
-    },
+	OBM_HIDE_FIELDS.forEach((fn) => frm.toggle_display(fn, !is_obm));
 
-    custom_boxes: function(frm, cdt, cdn) {
-        update_qty_from_boxes(frm, cdt, cdn);
-        recalculate_row_values(frm, cdt, cdn);
-    },
+	if (is_obm && frm.doc.party_name) sync_obm_header_from_master(frm);
+	else frappe.model.set_value(frm.doctype, frm.doc.name, "customer_name", "");
 
-    custom_mrp: function(frm, cdt, cdn) {
-        recalculate_row_values(frm, cdt, cdn);
-    },
+	frm.toggle_display("customer_name", is_obm && !!frm.doc.customer_name);
 
-    custom_flat_discount: function(frm, cdt, cdn) {
-        recalculate_row_values(frm, cdt, cdn);
-    },
+	frm.refresh_field("party_name");
+}
 
-    custom_additional_discount: function(frm, cdt, cdn) {
-        recalculate_row_values(frm, cdt, cdn);
-    },
+frappe.ui.form.on("Opportunity Item", {
+	item_code(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		if (!row.item_code) return;
 
-    custom_item_tax: function(frm, cdt, cdn) {
-        recalculate_row_values(frm, cdt, cdn);
-    },
+		frappe.db.get_value("Item", row.item_code, "item_name").then((x) => {
+			if (x && x.message && x.message.item_name) {
+				frappe.model.set_value(cdt, cdn, "item_name", x.message.item_name);
+			}
+		});
 
-    items_remove: function(frm) {
-        recalculate_opportunity_totals(frm);
-    }
+		const pf = frm.doc.opportunity_from;
+		const pn = frm.doc.party_name;
+		if (!pf || !pn) return;
+
+		frappe.call({
+			method: "alpinos.sales_order_api.get_opportunity_line_pricing",
+			args: {
+				opportunity_from: pf,
+				party_name: pn,
+				item_code: row.item_code,
+			},
+			callback(r) {
+				const msg = r.message || {};
+				if (msg.mrp !== undefined && msg.mrp !== null) {
+					frappe.model.set_value(cdt, cdn, "custom_mrp", flt(msg.mrp));
+				}
+				frappe.model.set_value(
+					cdt,
+					cdn,
+					"custom_buyer_margin_percent",
+					msg.margin_percent !== undefined && msg.margin_percent !== null
+						? flt(msg.margin_percent)
+						: 0
+				);
+				frm.refresh_field("items");
+				recalculate_row_values(frm, cdt, cdn);
+			},
+		});
+	},
+
+	custom_buyer_margin_percent(frm, cdt, cdn) {
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	qty(frm, cdt, cdn) {
+		const row = locals[cdt][cdn];
+		const int_qty = Math.round(flt(row.qty));
+		if (row.qty !== int_qty) {
+			frappe.model.set_value(cdt, cdn, "qty", int_qty);
+			return;
+		}
+		update_boxes_from_qty(frm, cdt, cdn);
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	custom_boxes(frm, cdt, cdn) {
+		update_qty_from_boxes(frm, cdt, cdn);
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	custom_mrp(frm, cdt, cdn) {
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	custom_flat_discount(frm, cdt, cdn) {
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	custom_offer(frm, cdt, cdn) {
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	custom_additional_discount(frm, cdt, cdn) {
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	custom_item_tax(frm, cdt, cdn) {
+		recalculate_row_values(frm, cdt, cdn);
+	},
+
+	items_remove(frm) {
+		recalculate_opportunity_totals(frm);
+	},
 });
 
 function get_conversion_factor(item_code, callback) {
-    if (!item_code) {
-        callback(null);
-        return;
-    }
-    frappe.call({
-        method: 'alpinos.sales_order_api.get_box_conversion_factor',
-        args: { item_code: item_code },
-        callback: function(r) {
-            callback(r.message || null);
-        }
-    });
+	if (!item_code) {
+		callback(null);
+		return;
+	}
+	frappe.call({
+		method: "alpinos.sales_order_api.get_box_conversion_factor",
+		args: { item_code: item_code },
+		callback(r) {
+			callback(r.message || null);
+		},
+	});
 }
 
 function update_boxes_from_qty(frm, cdt, cdn) {
-    const row = locals[cdt][cdn];
-    if (!row.item_code || !row.qty) return;
-
-    get_conversion_factor(row.item_code, function(factor) {
-        if (!factor) return;
-        frappe.model.set_value(cdt, cdn, 'custom_boxes', flt(row.qty / factor, 2));
-    });
+	const row = locals[cdt][cdn];
+	if (!row.item_code || !row.qty) return;
+	get_conversion_factor(row.item_code, (factor) => {
+		if (!factor) return;
+		frappe.model.set_value(cdt, cdn, "custom_boxes", flt(row.qty / factor, 2));
+	});
 }
 
 function update_qty_from_boxes(frm, cdt, cdn) {
-    const row = locals[cdt][cdn];
-    if (!row.item_code || !row.custom_boxes) return;
+	const row = locals[cdt][cdn];
+	if (!row.item_code || !row.custom_boxes) return;
+	get_conversion_factor(row.item_code, (factor) => {
+		if (!factor) return;
+		frappe.model.set_value(cdt, cdn, "qty", flt(row.custom_boxes * factor, 2));
+	});
+}
 
-    get_conversion_factor(row.item_code, function(factor) {
-        if (!factor) return;
-        frappe.model.set_value(cdt, cdn, 'qty', flt(row.custom_boxes * factor, 2));
-    });
+function line_unit_base_before_trade_discount(row) {
+	const mrp = flt(row.custom_mrp);
+	const bm = flt(row.custom_buyer_margin_percent);
+	if (!mrp) return 0;
+	return mrp * (1.0 - bm / 100.0);
 }
 
 function recalculate_row_values(frm, cdt, cdn) {
-    const row = locals[cdt][cdn];
-    const qty = flt(row.qty);
-    const mrp = flt(row.custom_mrp);
+	const row = locals[cdt][cdn];
+	const qty = flt(row.qty);
+	const mrp = flt(row.custom_mrp);
 
-    // If MRP is not set yet, leave rate/amount untouched so user can still enter manually.
-    if (!mrp) {
-        recalculate_opportunity_totals(frm);
-        return;
-    }
+	if (!mrp) {
+		recalculate_opportunity_totals(frm);
+		return;
+	}
 
-    const flat_discount_pct = flt(row.custom_flat_discount);
-    const offer_pct = flt(row.custom_offer);
-    const additional_discount_pct = flt(row.custom_additional_discount);
+	const unit_base = line_unit_base_before_trade_discount(row);
+	const gross_amount = qty * unit_base;
 
-    const gross_amount = qty * mrp;
-    const flat_discount_amount = gross_amount * flat_discount_pct / 100.0;
-    const after_flat = gross_amount - flat_discount_amount;
-    const offer_amount = after_flat * offer_pct / 100.0;
-    const after_offer = after_flat - offer_amount;
-    const additional_discount_amount = after_offer * additional_discount_pct / 100.0;
-    let net_amount = after_offer - additional_discount_amount;
-    if (net_amount < 0) net_amount = 0;
+	const flat_discount_pct = flt(row.custom_flat_discount);
+	const offer_pct = flt(row.custom_offer);
+	const additional_discount_pct = flt(row.custom_additional_discount);
 
-    const new_rate = qty ? flt(net_amount / qty, 2) : 0;
+	const flat_discount_amount = gross_amount * flat_discount_pct / 100.0;
+	const after_flat = gross_amount - flat_discount_amount;
+	const offer_amount = after_flat * offer_pct / 100.0;
+	const after_offer = after_flat - offer_amount;
+	const additional_discount_amount = after_offer * additional_discount_pct / 100.0;
+	let net_amount = after_offer - additional_discount_amount;
+	if (net_amount < 0) net_amount = 0;
 
-    // Write directly to locals to avoid triggering ERPNext's async rate→calculate chain
-    // which can race-condition and reset amount to 0 using stale values.
-    row.rate = new_rate;
-    row.amount = flt(net_amount, 2);
-    row.base_rate = new_rate;
-    row.base_amount = flt(net_amount, 2);
+	const new_rate = qty ? flt(net_amount / qty, 2) : 0;
 
-    frm.refresh_field('items');
-    recalculate_opportunity_totals(frm);
+	row.rate = new_rate;
+	row.amount = flt(net_amount, 2);
+	row.base_rate = new_rate;
+	row.base_amount = flt(net_amount, 2);
+
+	frm.refresh_field("items");
+	recalculate_opportunity_totals(frm);
 }
 
 function recalculate_opportunity_totals(frm) {
-    const rows = frm.doc.items || [];
-    let sub_total = 0.0;
-    let over_discount_total = 0.0;
-    let additional_discount_total = 0.0;
-    let gst_total = 0.0;
+	const rows = frm.doc.items || [];
+	let sub_total = 0.0;
+	let over_discount_total = 0.0;
+	let additional_discount_total = 0.0;
+	let gst_total = 0.0;
 
-    rows.forEach((row) => {
-        const qty = flt(row.qty);
-        const mrp = flt(row.custom_mrp);
-        const flat_discount_pct = flt(row.custom_flat_discount);
-        const offer_pct = flt(row.custom_offer);
-        const additional_discount_pct = flt(row.custom_additional_discount);
-        const item_tax = flt(row.custom_item_tax);
+	rows.forEach((row) => {
+		const qty = flt(row.qty);
+		const mrp = flt(row.custom_mrp);
+		const bm = flt(row.custom_buyer_margin_percent);
+		const flat_discount_pct = flt(row.custom_flat_discount);
+		const offer_pct = flt(row.custom_offer);
+		const additional_discount_pct = flt(row.custom_additional_discount);
+		const item_tax = flt(row.custom_item_tax);
 
-        const gross = qty * mrp;
-        const after_flat = gross - (gross * flat_discount_pct / 100.0);
-        const offer_amount = after_flat * offer_pct / 100.0;
-        const after_offer = after_flat - offer_amount;
-        const additional_discount = after_offer * additional_discount_pct / 100.0;
-        sub_total += gross;
-        over_discount_total += gross * flat_discount_pct / 100.0;
-        additional_discount_total += additional_discount;
-        gst_total += item_tax;
-    });
+		if (!mrp) return;
 
-    const cash_discount_pct = flt(frm.doc.custom_cash_discount);
-    const pre_cash_total = sub_total - over_discount_total - additional_discount_total + gst_total;
-    const cash_discount_amount = pre_cash_total > 0 ? pre_cash_total * cash_discount_pct / 100.0 : 0;
-    const final_total = pre_cash_total - cash_discount_amount;
+		const unit_base = mrp * (1.0 - bm / 100.0);
+		const gross = qty * unit_base;
 
-    frm.set_value('custom_over_discount', flt(over_discount_total, 2));
-    frm.set_value('custom_additional_discount_total', flt(additional_discount_total, 2));
-    frm.set_value('custom_gst_total', flt(gst_total, 2));
-    frm.set_value('total', flt(final_total, 2));
-    frm.set_value('opportunity_amount', flt(final_total, 2));
+		const after_flat = gross - gross * flat_discount_pct / 100.0;
+		const offer_amount = after_flat * offer_pct / 100.0;
+		const after_offer = after_flat - offer_amount;
+		const additional_discount = after_offer * additional_discount_pct / 100.0;
+
+		sub_total += gross;
+		over_discount_total += gross * flat_discount_pct / 100.0;
+		additional_discount_total += additional_discount;
+		gst_total += item_tax;
+	});
+
+	const cash_discount_pct = flt(frm.doc.custom_cash_discount);
+	const pre_cash_total =
+		sub_total - over_discount_total - additional_discount_total + gst_total;
+	const cash_discount_amount =
+		pre_cash_total > 0 ? pre_cash_total * cash_discount_pct / 100.0 : 0;
+	const final_total = pre_cash_total - cash_discount_amount;
+
+	frm.set_value("custom_over_discount", flt(over_discount_total, 2));
+	frm.set_value(
+		"custom_additional_discount_total",
+		flt(additional_discount_total, 2)
+	);
+	frm.set_value("custom_gst_total", flt(gst_total, 2));
+	frm.set_value("total", flt(final_total, 2));
+	frm.set_value("opportunity_amount", flt(final_total, 2));
 }
-"""
+'''
 
 
 def create_opportunity_client_script():

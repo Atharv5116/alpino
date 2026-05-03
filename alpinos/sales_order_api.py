@@ -23,6 +23,118 @@ def get_customer_item_mrp(customer, item_code):
 
 
 @frappe.whitelist()
+def get_opportunity_obm_party_data(offline_buyer_master):
+	"""Offline Buyer Master name + ERPNext Customer + Customer Type for Opportunity header."""
+	if not offline_buyer_master or not frappe.db.exists(
+		"Offline Buyer Master", offline_buyer_master
+	):
+		return {}
+	row = frappe.db.get_value(
+		"Offline Buyer Master",
+		offline_buyer_master,
+		["customer", "customer_business_name", "customer_type"],
+		as_dict=True,
+	)
+	return row or {}
+
+
+@frappe.whitelist()
+def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
+	"""MRP + margin for an Opportunity line.
+
+	Priority when **Opportunity From** is Offline Buyer Master:
+	1) Saved row on any **Offline Buyer Items** catalog for that buyer (customer)
+	2) **Offline Buyer Margin** row on the selected master (`party_name`)
+
+	Then ERPNext Customer Item MRP, else Item.standard_rate.
+
+	``matched_buyer_sheet`` is True when pricing came from (1) or (2).
+	"""
+	out = {
+		"customer": None,
+		"mrp": 0,
+		"margin_percent": 0,
+		"matched_buyer_sheet": False,
+		"source": None,
+	}
+	if not opportunity_from or not party_name or not item_code:
+		return out
+
+	if opportunity_from == "Offline Buyer Master":
+		cust = frappe.db.get_value("Offline Buyer Master", party_name, "customer")
+		if not cust:
+			return out
+		out["customer"] = cust
+
+		catalog = frappe.db.sql(
+			"""
+			SELECT obil.mrp, IFNULL(obil.margin_percent, 0) AS margin_percent
+			FROM `tabOffline Buyer Item` obil
+			INNER JOIN `tabOffline Buyer Items` obi ON obi.name = obil.parent AND obil.parenttype = 'Offline Buyer Items'
+			WHERE IFNULL(obi.docstatus, 0) < 2
+				AND obil.item_code = %(item)s
+				AND obi.buyer = %(cust)s
+			ORDER BY obi.modified DESC
+			LIMIT 1
+			""",
+			{"item": item_code, "cust": cust},
+			as_dict=True,
+		)
+		std_mrp = flt(frappe.db.get_value("Item", item_code, "standard_rate"))
+		if catalog:
+			r = catalog[0]
+			mrp = flt(r.mrp) or std_mrp
+			out["mrp"] = mrp
+			out["margin_percent"] = flt(r.margin_percent)
+			out["matched_buyer_sheet"] = True
+			out["source"] = "offline_buyer_items"
+			return out
+
+		m_pct = frappe.db.get_value(
+			"Offline Buyer Margin",
+			{
+				"parent": party_name,
+				"parenttype": "Offline Buyer Master",
+				"sku": item_code,
+			},
+			"margin_percent",
+		)
+		if m_pct is not None:
+			out["mrp"] = std_mrp
+			out["margin_percent"] = flt(m_pct)
+			out["matched_buyer_sheet"] = True
+			out["source"] = "offline_buyer_margin"
+			return out
+
+		mrp = flt(
+			frappe.db.get_value(
+				"Customer Item MRP",
+				{"parent": cust, "parenttype": "Customer", "item_code": item_code},
+				"mrp",
+			)
+		)
+		if not mrp:
+			mrp = std_mrp
+		out["mrp"] = mrp
+		out["margin_percent"] = 0
+		out["matched_buyer_sheet"] = False
+		out["source"] = "fallback"
+		return out
+
+	if opportunity_from == "Customer" and party_name:
+		out["customer"] = party_name
+		mrp = flt(get_customer_item_mrp(party_name, item_code))
+		if not mrp:
+			mrp = flt(frappe.db.get_value("Item", item_code, "standard_rate"))
+		out["mrp"] = mrp
+		out["margin_percent"] = 0
+		out["matched_buyer_sheet"] = False
+		out["source"] = "customer_mrp"
+
+	return out
+
+
+@frappe.whitelist()
 def get_box_conversion_factor(item_code):
 	"""Fetch Box UOM conversion factor from Item's UOM table"""
 	if not item_code:
@@ -76,18 +188,23 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			qty = flt(boxes * factor) if boxes else qty
 			custom_box = boxes
 
-		so.append("items", {
+		row = {
 			"item_code": item_code,
 			"qty": qty,
 			"rate": flt(item.get("rate")),
 			"delivery_date": item.get("delivery_date") or delivery_date,
+			"description": item.get("description") or "",
 			"custom_box": custom_box,
 			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
 			"custom_flat_discount": flt(item.get("custom_flat_discount")),
 			"custom_offer": item.get("custom_offer") or "",
 			"custom_additional_discount": flt(item.get("custom_additional_discount")),
 			"custom_item_tax": flt(item.get("custom_item_tax")),
-		})
+		}
+		w = item.get("warehouse")
+		if w:
+			row["warehouse"] = w
+		so.append("items", row)
 
 	# Marketing Freebies
 	if freebies:
@@ -116,6 +233,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 				"qty": flt(row.get("qty")),
 				"scheme": row.get("scheme") or "",
 				"previous_order_id": row.get("previous_order_id") or "",
+				"remarks": row.get("remarks") or "",
 			})
 
 	so.insert(ignore_permissions=True)

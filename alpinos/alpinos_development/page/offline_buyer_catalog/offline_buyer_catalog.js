@@ -61,16 +61,19 @@ class OfflineBuyerCatalogPage {
 		}
 
 		records.forEach((rec) => {
-			let buyer_label = '';
-			if (rec.buyer) {
-				const nm = (rec.buyer_customer_name || '').trim();
-				buyer_label = nm
-					? `${frappe.utils.escape_html(nm)} (${frappe.utils.escape_html(rec.buyer)})`
-					: frappe.utils.escape_html(rec.buyer);
+			let master_cell = '<span style="color:#ccc;">—</span>';
+			const biz = (rec.customer_business_name || '').trim();
+			const obm = (rec.offline_buyer_master || '').trim();
+			if (biz || obm) {
+				const lines = [];
+				if (biz) {
+					lines.push(`<span style="font-weight:600;color:#333;">${frappe.utils.escape_html(biz)}</span>`);
+				}
+				if (obm) {
+					lines.push(`<span style="font-size:11px;color:#666;">${frappe.utils.escape_html(obm)}</span>`);
+				}
+				master_cell = `<div style="line-height:1.35;">${lines.join('<br>')}</div>`;
 			}
-			const buyer_cell = rec.buyer
-				? `<span style="color:#444;">${buyer_label}</span>`
-				: `<span style="color:#ccc;">—</span>`;
 			const site_cell = rec.site_name
 				? `<span>${frappe.utils.escape_html(rec.site_name)}</span>`
 				: `<span style="color:#ccc;">—</span>`;
@@ -96,7 +99,7 @@ class OfflineBuyerCatalogPage {
 <tr data-record="${frappe.utils.escape_html(rec.name)}">
   <td class="obi-record-name">${frappe.utils.escape_html(rec.name)}</td>
   <td>${frappe.utils.escape_html(rec.title || '')}</td>
-  <td>${buyer_cell}</td>
+  <td>${master_cell}</td>
   <td>${site_cell}</td>
   <td>${ctype_cell}</td>
   <td>${pay_term}</td>
@@ -137,42 +140,76 @@ class OfflineBuyerCatalogPage {
 			fields: [
 				{ label: 'Title', fieldname: 'title', fieldtype: 'Data', reqd: 1 },
 				{
-					label: 'Customer',
-					fieldname: 'buyer',
+					label: 'Offline Buyer Master',
+					fieldname: 'offline_buyer_master',
 					fieldtype: 'Link',
-					options: 'Customer',
-					get_query: () => ({
-						query: 'alpinos.sales_order_offline_buyer.catalog_customer_query',
-					}),
+					options: 'Offline Buyer Master',
+					reqd: 1,
+					description: 'Customer is created on the master from the business name; this links the catalog to that master.',
 				},
 				{ label: 'Description', fieldname: 'description', fieldtype: 'Small Text' },
 			],
 			primary_action_label: 'Create',
 			primary_action: (values) => {
-				frappe.call({
-					method: 'alpinos.offline_buyer_api.create_record',
-					args: {
-						title: values.title,
-						buyer: values.buyer || '',
-						description: values.description || ''
-					},
-					callback: (r) => {
-						d.hide();
-						if (!r.exc) {
-							frappe.show_alert({ message: `Created: ${r.message}`, indicator: 'green' });
-							const newName = r.message;
-							this._load_records(() => {
-								const full = this._all_records.find((row) => row.name === newName);
-								this._open_record(
-									full || {
-										name: newName,
-										title: values.title,
-										buyer: values.buyer || '',
-									}
-								);
-							});
-						}
+				const obm = values.offline_buyer_master || '';
+				if (!obm) return;
+				frappe.db.get_value('Offline Buyer Master', obm, 'customer', (r) => {
+					const cust = r && r.message && r.message.customer;
+					if (!cust) {
+						frappe.msgprint(
+							__('Save the Offline Buyer Master once so a Customer exists before creating a catalog.'),
+							__('Offline Buyer Catalog')
+						);
+						return;
 					}
+					frappe.call({
+						method: 'frappe.client.get_list',
+						args: {
+							doctype: 'Offline Buyer Items',
+							filters: [['buyer', '=', cust]],
+							fields: ['name'],
+							limit_page_length: 1,
+						},
+						callback: (chk) => {
+							const hits = chk.message || [];
+							if (hits.length && hits[0].name) {
+								const existing = hits[0].name;
+								frappe.msgprint({
+									title: __('Duplicate catalog'),
+									message: __('A catalog already exists for this offline buyer ({0}).', [
+										frappe.utils.escape_html(existing),
+									]),
+									indicator: 'red',
+								});
+								return;
+							}
+							frappe.call({
+								method: 'alpinos.offline_buyer_api.create_record',
+								args: {
+									title: values.title,
+									offline_buyer_master: obm,
+									description: values.description || ''
+								},
+								callback: (rc) => {
+									d.hide();
+									if (!rc.exc) {
+										frappe.show_alert({ message: `Created: ${rc.message}`, indicator: 'green' });
+										const newName = rc.message;
+										this._load_records(() => {
+											const full = this._all_records.find((row) => row.name === newName);
+											this._open_record(
+												full || {
+													name: newName,
+													title: values.title,
+													offline_buyer_master: obm,
+												}
+											);
+										});
+									}
+								}
+							});
+						},
+					});
 				});
 			}
 		});
@@ -208,17 +245,17 @@ class OfflineBuyerCatalogPage {
 		// update breadcrumb
 		$('.obi-detail-record-name').text(`${rec.title || rec.name}  (${rec.name})`);
 		const buyer_bits = [];
-		if (rec.buyer) {
-			const nm = (rec.buyer_customer_name || '').trim();
-			buyer_bits.push(
-				nm ? `Customer: ${nm} (${rec.buyer})` : `Customer: ${rec.buyer}`
-			);
+		if (rec.customer_business_name) {
+			buyer_bits.push(`Business: ${rec.customer_business_name}`);
 		}
 		if (rec.offline_buyer_master) {
 			buyer_bits.push(`Offline Buyer Master: ${rec.offline_buyer_master}`);
 		}
-		if (rec.customer_business_name) {
-			buyer_bits.push(`Business: ${rec.customer_business_name}`);
+		if (rec.buyer) {
+			const nm = (rec.buyer_customer_name || '').trim();
+			buyer_bits.push(
+				nm ? `Linked customer: ${nm} (${rec.buyer})` : `Linked customer: ${rec.buyer}`
+			);
 		}
 		if (rec.site_name) {
 			buyer_bits.push(`Site: ${rec.site_name}`);

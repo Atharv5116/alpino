@@ -3,38 +3,8 @@
 import json
 
 import frappe
+from frappe import _
 from frappe.utils import flt, now_datetime
-
-@frappe.whitelist()
-@frappe.validate_and_sanitize_search_inputs
-def obm_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Offline Buyer Master → Customer: only customers not already linked to another master (current doc's customer allowed)."""
-	doctype = "Customer"
-	txt = txt or ""
-	if isinstance(filters, str):
-		filters = frappe.parse_json(filters)
-	filters = filters or {}
-	obm_name = (filters.get("obm_name") or "").strip()
-
-	return frappe.db.sql(
-		"""
-		SELECT c.name, c.customer_name
-		FROM `tabCustomer` c
-		WHERE IFNULL(c.disabled, 0) = 0
-			AND (c.name LIKE %(txt)s OR IFNULL(c.customer_name, '') LIKE %(txt)s)
-			AND (
-				NOT EXISTS (
-					SELECT 1 FROM `tabOffline Buyer Master` m
-					WHERE m.customer = c.name
-						AND (%(obm)s = '' OR m.name != %(obm)s)
-				)
-			)
-		ORDER BY c.name ASC
-		LIMIT %(page_len)s OFFSET %(start)s
-		""",
-		{"txt": f"%{txt}%", "obm": obm_name, "start": int(start), "page_len": int(page_len)},
-	)
-
 
 ALLOWED_OFFLINE_BUYER_ITEM_GROUPS = [
 	"Super Vital",
@@ -195,12 +165,32 @@ def save_buyer_items(record_name, items):
 
 
 @frappe.whitelist()
-def create_record(title, buyer=None, description=None):
-	"""Create a new Offline Buyer Items record and return its name."""
+def create_record(title, buyer=None, offline_buyer_master=None, description=None):
+	"""Create a new Offline Buyer Items record and return its name.
+
+	Prefer ``offline_buyer_master`` (desk page): resolves to the auto-created Customer on that master.
+	Legacy ``buyer`` (Customer name) is still accepted for API callers.
+	"""
+	cust = None
+	if offline_buyer_master:
+		cust = frappe.db.get_value("Offline Buyer Master", offline_buyer_master, "customer")
+		if not cust:
+			frappe.throw(
+				_("Offline Buyer Master {0} has no linked Customer yet. Save the master once to create the customer.").format(
+					frappe.bold(offline_buyer_master)
+				)
+			)
+	elif buyer:
+		cust = buyer
+	if not cust:
+		frappe.throw(_("Choose an Offline Buyer Master (or Customer) for this catalog."))
+
+	if not offline_buyer_master and not frappe.db.exists("Offline Buyer Master", {"customer": cust}):
+		frappe.throw(_("The selected Customer must have an Offline Buyer Master."))
+
 	doc = frappe.new_doc("Offline Buyer Items")
 	doc.title = title
-	if buyer:
-		doc.buyer = buyer
+	doc.buyer = cust
 	if description:
 		doc.description = description
 	doc.insert(ignore_permissions=True)
