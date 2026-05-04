@@ -171,6 +171,16 @@ class SalesOrderEntry {
 			render_input: true
 		});
 
+		// Set address field value AND show its human-readable label in the input
+		me._set_address_display = function(field, addr_name, opts) {
+			if (!field) return;
+			field.set_value(addr_name);
+			if (addr_name && opts) {
+				const opt = opts.find(o => o.value === addr_name);
+				if (opt && field.$input) field.$input.val(opt.label);
+			}
+		};
+
 		// Load address Autocomplete options for a customer and optionally pre-select defaults
 		me._load_address_options = function(customer, defaults) {
 			if (!customer) {
@@ -186,8 +196,8 @@ class SalesOrderEntry {
 					me.billing_address_field && me.billing_address_field.set_data(opts);
 					me.shipping_address_field && me.shipping_address_field.set_data(opts);
 					if (defaults) {
-						if (defaults.billing) me.billing_address_field && me.billing_address_field.set_value(defaults.billing);
-						if (defaults.shipping) me.shipping_address_field && me.shipping_address_field.set_value(defaults.shipping);
+						me._set_address_display(me.billing_address_field, defaults.billing || '', opts);
+						me._set_address_display(me.shipping_address_field, defaults.shipping || '', opts);
 					}
 				},
 			});
