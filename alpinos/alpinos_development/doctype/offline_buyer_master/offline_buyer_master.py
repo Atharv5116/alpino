@@ -23,6 +23,20 @@ def _default_company():
 	return frappe.db.get_value("Company", {"name": ("!=", "")}, "name", order_by="creation asc")
 
 
+_OBM_TYPE_TO_ORDER_TYPE = {
+	"GENERAL TRADE": "GT",
+	"MODERN TRADE": "MT",
+	"HORECA TRADE": "HoReCa",
+	"NUTRITIONAL TRADE": "GYM & NUTRITION",
+	"INSTITUTIONAL TRADE": "MT",
+}
+
+
+def _map_customer_type(obm_customer_type):
+	"""Convert OBM customer_type to the Customer/Quotation order_type option set."""
+	return _OBM_TYPE_TO_ORDER_TYPE.get((obm_customer_type or "").upper().strip(), "")
+
+
 def _ensure_customer_for_obm(doc):
 	"""Create or refresh ERPNext Customer from business name (no manual Customer pick list)."""
 	name = (doc.customer_business_name or "").strip()
@@ -37,11 +51,14 @@ def _ensure_customer_for_obm(doc):
 		)
 
 	company = _default_company()
+	mapped_order_type = _map_customer_type(doc.customer_type)
 
 	if doc.customer and frappe.db.exists("Customer", doc.customer):
 		cust = frappe.get_doc("Customer", doc.customer)
 		if cust.customer_name != name:
 			cust.customer_name = name
+		if mapped_order_type:
+			cust.custom_order_type = mapped_order_type
 		if doc.gst_type == "Registered Business" and doc.gst_no:
 			cust.tax_id = doc.gst_no
 		elif doc.gst_type == "Unregistered Business" and doc.pan_no:
@@ -54,6 +71,8 @@ def _ensure_customer_for_obm(doc):
 	cust.customer_type = "Company"
 	cust.customer_group = cg
 	cust.territory = territory
+	if mapped_order_type:
+		cust.custom_order_type = mapped_order_type
 	if doc.gst_type == "Registered Business" and doc.gst_no:
 		cust.tax_id = doc.gst_no
 	elif doc.gst_type == "Unregistered Business" and doc.pan_no:

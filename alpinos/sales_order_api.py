@@ -38,12 +38,23 @@ def get_opportunity_obm_party_data(offline_buyer_master):
 	if not row:
 		return {}
 
+	_type_map = {
+		"GENERAL TRADE": "GT",
+		"MODERN TRADE": "MT",
+		"HORECA TRADE": "HoReCa",
+		"NUTRITIONAL TRADE": "GYM & NUTRITION",
+		"INSTITUTIONAL TRADE": "MT",
+	}
+
 	# Prefer the Customer's custom_order_type (matches Quotation order_type options like GT/MT).
-	# Fall back to OBM customer_type only if the customer has no value set.
+	# Fall back to a mapped value from OBM's customer_type.
+	resolved_type = ""
 	if row.get("customer"):
-		cust_order_type = frappe.db.get_value("Customer", row["customer"], "custom_order_type")
-		if cust_order_type:
-			row["customer_type"] = cust_order_type
+		resolved_type = frappe.db.get_value("Customer", row["customer"], "custom_order_type") or ""
+	if not resolved_type:
+		resolved_type = _type_map.get((row.get("customer_type") or "").upper().strip(), "")
+	if resolved_type:
+		row["customer_type"] = resolved_type
 
 	return row
 
