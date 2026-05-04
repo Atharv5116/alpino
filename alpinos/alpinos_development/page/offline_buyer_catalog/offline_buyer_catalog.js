@@ -673,6 +673,47 @@ class OfflineBuyerCatalogPage {
 		//               area, sub_area, is_primary, is_shipping, $el }
 		const addr_rows = [];
 
+		// State → City lookup cache
+		let _all_states = [];      // ['Gujarat', 'Maharashtra', ...]
+		let _cities_by_state = {}; // { Gujarat: ['Ahmedabad', 'Surat', ...], ... }
+
+		const _load_states_cities = (cb) => {
+			if (_all_states.length) { cb && cb(); return; }
+			frappe.call({
+				method: 'frappe.client.get_list',
+				args: { doctype: 'State', fields: ['name'], limit_page_length: 1000, order_by: 'name asc' },
+				callback(rs) {
+					_all_states = (rs.message || []).map(r => r.name);
+					frappe.call({
+						method: 'frappe.client.get_list',
+						args: { doctype: 'City', fields: ['name', 'state'], limit_page_length: 5000, order_by: 'name asc' },
+						callback(rc) {
+							_cities_by_state = {};
+							(rc.message || []).forEach(c => {
+								if (!_cities_by_state[c.state]) _cities_by_state[c.state] = [];
+								_cities_by_state[c.state].push(c.name);
+							});
+							cb && cb();
+						},
+					});
+				},
+			});
+		};
+
+		const _state_options_html = (selected) =>
+			'<option value=""></option>' +
+			_all_states.map(s => `<option value="${frappe.utils.escape_html(s)}"${s === selected ? ' selected' : ''}>${frappe.utils.escape_html(s)}</option>`).join('');
+
+		const _city_options_html = (state, selected) => {
+			const cities = _cities_by_state[state] || (selected ? [selected] : []);
+			return '<option value=""></option>' +
+				cities.map(c => `<option value="${frappe.utils.escape_html(c)}"${c === selected ? ' selected' : ''}>${frappe.utils.escape_html(c)}</option>`).join('');
+		};
+
+		const _refresh_city_select = ($tr, state, selected) => {
+			$tr.find('.addr-city').html(_city_options_html(state, selected));
+		};
+
 		const render_addr_table = ($host) => {
 			$host.html(`
 				<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -733,8 +774,8 @@ class OfflineBuyerCatalogPage {
 					<td><input type="text" class="addr-line" value="${frappe.utils.escape_html(row.address_line)}" placeholder="Street / Building" /></td>
 					<td><input type="text" class="addr-pincode" value="${frappe.utils.escape_html(row.pincode)}" placeholder="400001" style="width:70px;" /></td>
 					<td><input type="text" class="addr-country" value="${frappe.utils.escape_html(row.country)}" placeholder="India" /></td>
-					<td><input type="text" class="addr-state" value="${frappe.utils.escape_html(row.state)}" placeholder="Maharashtra" /></td>
-					<td><input type="text" class="addr-city" value="${frappe.utils.escape_html(row.city)}" placeholder="Pune" /></td>
+					<td><select class="addr-state" style="width:100%;">${_state_options_html(row.state)}</select></td>
+					<td><select class="addr-city" style="width:100%;">${_city_options_html(row.state, row.city)}</select></td>
 					<td><input type="text" class="addr-area" value="${frappe.utils.escape_html(row.area)}" placeholder="Shivaji Nagar" /></td>
 					<td><input type="text" class="addr-sub-area" value="${frappe.utils.escape_html(row.sub_area)}" placeholder="" /></td>
 					<td style="text-align:center;"><input type="checkbox" class="obi-chk-primary" ${row.is_primary ? 'checked' : ''} /></td>
@@ -743,10 +784,14 @@ class OfflineBuyerCatalogPage {
 				</tr>
 			`);
 
+			// State → filter City dropdown
+			$tr.on('change', '.addr-state', function () {
+				_refresh_city_select($tr, $(this).val(), '');
+			});
+
 			$tr.on('click', '.obi-addr-row-del', () => {
 				addr_rows.splice(idx, 1);
 				$tr.remove();
-				// re-index remaining rows
 				$('.obi-addr-tbody tr').each((i, el) => $(el).data('addr-idx', i));
 			});
 
@@ -887,11 +932,13 @@ class OfflineBuyerCatalogPage {
 
 		d.show();
 
-		// Render the address host after dialog is shown
+		// Render the address host after dialog is shown — load states/cities first
 		setTimeout(() => {
 			const $host = d.$wrapper.find('.obi-addr-host');
 			render_addr_table($host);
-			(obm.addresses && obm.addresses.length ? obm.addresses : [{}]).forEach(a => add_addr_row(a));
+			_load_states_cities(() => {
+				(obm.addresses && obm.addresses.length ? obm.addresses : [{}]).forEach(a => add_addr_row(a));
+			});
 		}, 80);
 	}
 
