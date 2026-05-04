@@ -264,6 +264,24 @@ def _setup_opportunity_property_setters():
 			value="items",
 			property_type="Data",
 		),
+		# Hide the empty 'Details' tab when OBM is selected
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Opportunity",
+			field_name="custom_details_tab",
+			property="depends_on",
+			value="eval:doc.opportunity_from !== 'Offline Buyer Master'",
+			property_type="Data",
+		),
+		# Hide the 'Contacts' tab when OBM is selected
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Opportunity",
+			field_name="contact_info",
+			property="depends_on",
+			value="eval:doc.opportunity_from !== 'Offline Buyer Master'",
+			property_type="Data",
+		),
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Opportunity Item",

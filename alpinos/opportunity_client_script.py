@@ -23,8 +23,6 @@ const OBM_HIDE_FIELDS = [
 	"country",
 ];
 
-// Tab fieldnames to hide/show via frm.layout.tabs
-const OBM_HIDE_TABS = ["custom_details_tab", "contact_info"];
 
 frappe.ui.form.on("Opportunity", {
 	setup(frm) {
@@ -92,30 +90,6 @@ function sync_obm_header_from_master(frm) {
 	});
 }
 
-function _toggle_tabs_for_obm(frm, is_obm) {
-	if (!frm.layout || !frm.layout.tabs) return;
-	const hide_set = new Set(OBM_HIDE_TABS);
-	let switched = false;
-
-	frm.layout.tabs.forEach((tab) => {
-		if (!tab.df) return;
-		const should_hide = is_obm && hide_set.has(tab.df.fieldname);
-		if (tab.$nav) {
-			tab.$nav.toggle(!should_hide);
-		}
-		// If the tab we're hiding is currently active, jump to the first visible tab
-		if (should_hide && !switched && tab.$nav && tab.$nav.find('.active').length) {
-			const first_ok = frm.layout.tabs.find(
-				(t) => t.df && !hide_set.has(t.df.fieldname) && t.$nav && t.$nav.is(':visible')
-			);
-			if (first_ok) {
-				first_ok.$nav.find('.nav-link').trigger('click');
-				switched = true;
-			}
-		}
-	});
-}
-
 function apply_opportunity_party_layout(frm) {
 	const is_obm = frm.doc.opportunity_from === "Offline Buyer Master";
 
@@ -126,10 +100,6 @@ function apply_opportunity_party_layout(frm) {
 	);
 
 	OBM_HIDE_FIELDS.forEach((fn) => frm.toggle_display(fn, !is_obm));
-
-	// Tabs must be hidden via layout.tabs (toggle_display hides content but not nav items)
-	// Use setTimeout to wait for Frappe to finish rendering the tab bar
-	setTimeout(() => _toggle_tabs_for_obm(frm, is_obm), 150);
 
 	if (is_obm && frm.doc.party_name) sync_obm_header_from_master(frm);
 	else frappe.model.set_value(frm.doctype, frm.doc.name, "customer_name", "");
