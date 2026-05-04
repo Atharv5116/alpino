@@ -139,52 +139,23 @@ class OfflineBuyerCatalogPage {
 
 		// ── helper: do the actual catalog creation (duplicate-check then insert) ──
 		const do_create_catalog = (d, obm, title, description) => {
-			frappe.db.get_value('Offline Buyer Master', obm, 'customer', (r) => {
-				const cust = r && r.message && r.message.customer;
-				if (!cust) {
-					frappe.msgprint(
-						__('The Offline Buyer Master has no linked Customer yet. Please save it first.'),
-						__('Offline Buyer Catalog')
-					);
-					return;
-				}
-				frappe.call({
-					method: 'frappe.client.get_list',
-					args: {
-						doctype: 'Offline Buyer Items',
-						filters: [['buyer', '=', cust]],
-						fields: ['name'],
-						limit_page_length: 1,
-					},
-					callback: (chk) => {
-						const hits = chk.message || [];
-						if (hits.length && hits[0].name) {
-							frappe.msgprint({
-								title: __('Duplicate catalog'),
-								message: __('A catalog already exists for this offline buyer ({0}).', [
-									frappe.utils.escape_html(hits[0].name),
-								]),
-								indicator: 'red',
-							});
-							return;
-						}
-						frappe.call({
-							method: 'alpinos.offline_buyer_api.create_record',
-							args: { title, offline_buyer_master: obm, description: description || '' },
-							callback: (rc) => {
-								d.hide();
-								if (!rc.exc) {
-									frappe.show_alert({ message: `Created: ${rc.message}`, indicator: 'green' });
-									const newName = rc.message;
-									me._load_records(() => {
-										const full = me._all_records.find((row) => row.name === newName);
-										me._open_record(full || { name: newName, title, offline_buyer_master: obm });
-									});
-								}
-							}
+			// create_record handles customer resolution and duplicate checking server-side
+			frappe.call({
+				method: 'alpinos.offline_buyer_api.create_record',
+				args: { title, offline_buyer_master: obm, description: description || '' },
+				freeze: true,
+				freeze_message: __('Creating catalog…'),
+				callback: (rc) => {
+					d.hide();
+					if (!rc.exc) {
+						frappe.show_alert({ message: `Created: ${rc.message}`, indicator: 'green' });
+						const newName = rc.message;
+						me._load_records(() => {
+							const full = me._all_records.find((row) => row.name === newName);
+							me._open_record(full || { name: newName, title, offline_buyer_master: obm });
 						});
-					},
-				});
+					}
+				},
 			});
 		};
 
