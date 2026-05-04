@@ -131,6 +131,21 @@ function sync_obm_quotation_header(frm) {
             }
             if (d.customer) {
                 frappe.model.set_value(frm.doctype, frm.doc.name, 'custom_resolved_customer', d.customer);
+                // Auto-populate billing & shipping address from OBM
+                frappe.call({
+                    method: 'alpinos.sales_order_offline_buyer.sync_offline_buyer_master_addresses',
+                    args: { customer: d.customer },
+                    callback(r2) {
+                        const ad = r2.message || {};
+                        if (ad.default_billing && !frm.doc.customer_address) {
+                            frm.set_value('customer_address', ad.default_billing);
+                        }
+                        if (ad.default_shipping && !frm.doc.shipping_address_name) {
+                            frm.set_value('shipping_address_name', ad.default_shipping);
+                        }
+                        setTimeout(() => apply_quotation_address_queries(frm), 0);
+                    },
+                });
             }
         },
     });

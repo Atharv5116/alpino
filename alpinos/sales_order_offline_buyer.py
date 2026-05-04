@@ -208,12 +208,21 @@ def _offline_buyer_addresses_for_addresses_table(obm_doc):
 		return {"billing_default": None}
 
 	def row_to_addr(obrow):
-		addr_type = "Billing" if int(obrow.get("is_primary") or 0) else "Other"
+		is_primary = int(obrow.get("is_primary") or 0)
+		is_shipping = int(obrow.get("is_shipping") or 0)
+		if is_primary:
+			addr_type = "Billing"
+		elif is_shipping:
+			addr_type = "Shipping"
+		else:
+			addr_type = "Billing"  # all OBM addresses are usable as billing
 		addr_title_parts = []
 		if _nz(obrow.get("address_label")):
 			addr_title_parts.append(_nz(obrow.get("address_label")))
-		if int(obrow.get("is_primary") or 0):
+		if is_primary:
 			addr_title_parts.append(_("Primary"))
+		elif is_shipping:
+			addr_title_parts.append(_("Shipping"))
 		address_title = " — ".join(addr_title_parts) if addr_title_parts else _nz(customer)[:40]
 
 		return _ensure_address_doc(
