@@ -369,6 +369,39 @@ def sync_offline_buyer_master_addresses(customer):
 	return _offline_buyer_address_sync(customer)
 
 
+@frappe.whitelist()
+def get_customer_addresses_for_display(customer):
+	"""Return addresses linked to a Customer with a human-readable display string for Autocomplete."""
+	if not customer:
+		return []
+
+	rows = frappe.db.sql(
+		"""
+		SELECT a.name, a.address_type,
+			a.address_line1, a.address_line2,
+			a.city, a.state, a.country, a.pincode
+		FROM `tabAddress` a
+		INNER JOIN `tabDynamic Link` dl
+			ON dl.parent = a.name
+			AND dl.parenttype = 'Address'
+			AND dl.link_doctype = 'Customer'
+			AND dl.link_name = %(customer)s
+		ORDER BY a.address_type, a.name
+		""",
+		{"customer": customer},
+		as_dict=True,
+	)
+
+	for row in rows:
+		parts = [p for p in [
+			row.address_line1, row.address_line2,
+			row.city, row.state, row.pincode,
+		] if p]
+		row.display = "{} ({})".format(", ".join(parts), row.address_type or "Address")
+
+	return rows
+
+
 def validate_sales_order_offline_buyer_customer(doc, method=None):
 	"""Ensure Sales Order customer is linked to an Offline Buyer Master (UI also restricts the link)."""
 	if doc.docstatus != 0:

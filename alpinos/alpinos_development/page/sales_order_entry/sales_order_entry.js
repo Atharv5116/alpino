@@ -69,12 +69,9 @@ class SalesOrderEntry {
 			args: { customer: d.customer },
 			callback(sr) {
 				const ad = sr.message || {};
-				me.billing_address_field && me.billing_address_field.set_value(
-					d.billing_address || ad.default_billing || ''
-				);
-				me.shipping_address_field && me.shipping_address_field.set_value(
-					d.shipping_address || ad.default_shipping || ''
-				);
+				const billing = d.billing_address || ad.default_billing || '';
+				const shipping = d.shipping_address || ad.default_shipping || '';
+				me._load_address_options(d.customer, { billing, shipping });
 				me._prefill_quotation_after_addresses(d);
 			},
 		});
@@ -174,7 +171,29 @@ class SalesOrderEntry {
 			render_input: true
 		});
 
-		// Bind customer change to auto-fetch order type
+		// Load address Autocomplete options for a customer and optionally pre-select defaults
+		me._load_address_options = function(customer, defaults) {
+			if (!customer) {
+				me.billing_address_field && me.billing_address_field.set_data([]);
+				me.shipping_address_field && me.shipping_address_field.set_data([]);
+				return;
+			}
+			frappe.call({
+				method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
+				args: { customer },
+				callback(r) {
+					const opts = (r.message || []).map(a => ({ value: a.name, label: a.display }));
+					me.billing_address_field && me.billing_address_field.set_data(opts);
+					me.shipping_address_field && me.shipping_address_field.set_data(opts);
+					if (defaults) {
+						if (defaults.billing) me.billing_address_field && me.billing_address_field.set_value(defaults.billing);
+						if (defaults.shipping) me.shipping_address_field && me.shipping_address_field.set_value(defaults.shipping);
+					}
+				},
+			});
+		};
+
+		// Bind customer change to auto-fetch order type + addresses
 		let on_customer_change = function() {
 			setTimeout(() => {
 				let customer = me.customer_field.get_value();
@@ -189,17 +208,16 @@ class SalesOrderEntry {
 						args: { customer: customer },
 						callback(r2) {
 							const ad = r2.message || {};
-							if (ad.default_billing) {
-								me.billing_address_field.set_value(ad.default_billing);
-							}
-							if (ad.default_shipping) {
-								me.shipping_address_field.set_value(ad.default_shipping);
-							}
+							me._load_address_options(customer, {
+								billing: ad.default_billing || '',
+								shipping: ad.default_shipping || '',
+							});
 						},
 					});
 				} else {
-					me.billing_address_field.set_value('');
-					me.shipping_address_field.set_value('');
+					me.billing_address_field && me.billing_address_field.set_value('');
+					me.shipping_address_field && me.shipping_address_field.set_value('');
+					me._load_address_options(null);
 				}
 			}, 300);
 		};
@@ -219,26 +237,16 @@ class SalesOrderEntry {
 		});
 
 		this.billing_address_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Link', options: 'Address', label: 'Billing Address', fieldname: 'billing_address' },
+			df: { fieldtype: 'Autocomplete', label: 'Billing Address', fieldname: 'billing_address' },
 			parent: header.find('.field-billing-address'),
 			render_input: true
 		});
 
 		this.shipping_address_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Link', options: 'Address', label: 'Shipping Address', fieldname: 'shipping_address' },
+			df: { fieldtype: 'Autocomplete', label: 'Shipping Address', fieldname: 'shipping_address' },
 			parent: header.find('.field-shipping-address'),
 			render_input: true
 		});
-
-		const get_customer_address_query = () => ({
-			query: "frappe.contacts.doctype.address.address.address_query",
-			filters: {
-				link_doctype: "Customer",
-				link_name: me.customer_field.get_value()
-			}
-		});
-		this.billing_address_field.get_query = get_customer_address_query;
-		this.shipping_address_field.get_query = get_customer_address_query;
 	}
 
 	make_item_table() {
