@@ -10,6 +10,7 @@ import frappe
 
 OPPORTUNITY_CLIENT_SCRIPT = '''
 const OBM_HIDE_FIELDS = [
+	// Organization noise
 	"organization_details_section",
 	"no_of_employees",
 	"annual_revenue",
@@ -20,6 +21,9 @@ const OBM_HIDE_FIELDS = [
 	"city",
 	"state",
 	"country",
+	// Tabs to remove for OBM
+	"custom_details_tab",   // empty 2nd Details tab
+	"contact_info",         // Contacts tab (contacts + org info)
 ];
 
 frappe.ui.form.on("Opportunity", {
@@ -98,6 +102,24 @@ function apply_opportunity_party_layout(frm) {
 	);
 
 	OBM_HIDE_FIELDS.forEach((fn) => frm.toggle_display(fn, !is_obm));
+
+	// DOM-level tab hiding — frm.toggle_display on Tab Breaks sometimes
+	// only hides the content area; the nav item may linger.
+	setTimeout(() => {
+		const TAB_LABELS_TO_HIDE = ['Contacts', 'Details'];
+		frm.wrapper.find('.form-tabs-list .nav-item').each(function () {
+			const label = $(this).find('.nav-link').text().trim();
+			if (is_obm && TAB_LABELS_TO_HIDE.includes(label)) {
+				$(this).hide();
+				// If this tab is active, switch to the first visible tab
+				if ($(this).find('.nav-link').hasClass('active')) {
+					frm.wrapper.find('.form-tabs-list .nav-item:visible:first .nav-link').click();
+				}
+			} else if (!is_obm) {
+				$(this).show();
+			}
+		});
+	}, 100);
 
 	if (is_obm && frm.doc.party_name) sync_obm_header_from_master(frm);
 	else frappe.model.set_value(frm.doctype, frm.doc.name, "customer_name", "");
