@@ -161,12 +161,13 @@
    "options": "User"
   },
   {
+   "description": "The row marked Primary is used as the Billing Address. Rows with Shipping checked are used as Shipping Addresses.",
    "fieldname": "address_section",
    "fieldtype": "Section Break",
-   "label": "Address"
+   "label": "Billing & Shipping Addresses"
   },
   {
-   "description": "Add one or more addresses. Mark exactly one row as Primary for shipping sync and ERPNext Customer defaults.",
+   "description": "✔ Primary = Billing Address   ✔ Shipping = Shipping Address",
    "fieldname": "addresses",
    "fieldtype": "Table",
    "label": "Addresses",
@@ -194,28 +195,33 @@
   {
    "fieldname": "shipping_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Shipping"
   },
   {
    "default": "0",
    "fieldname": "shipping_same_as_profile",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Shipping Same as Primary"
   },
   {
    "fieldname": "shipping_address",
    "fieldtype": "Text",
+   "hidden": 1,
    "label": "Shipping Address"
   },
   {
    "fieldname": "shipping_state",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Shipping State",
    "options": "State"
   },
   {
    "fieldname": "shipping_city",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Shipping City",
    "options": "City"
   },
