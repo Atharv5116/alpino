@@ -3,6 +3,7 @@
 import frappe
 from frappe import _
 from frappe.utils import flt
+from math import ceil
 
 from alpinos.quotation_line_calc import recalculate_quotation_item_row
 
@@ -14,6 +15,7 @@ def before_validate_quotation_alpinos(doc, method=None):
 def validate_quotation_alpinos(doc, method=None):
 	sync_resolved_customer(doc)
 	disable_rounded_total(doc)
+	sync_obm_payment_mode(doc)
 	recalculate_quotation_items(doc)
 	recalculate_quotation_totals(doc)
 	link_obm_quotation_addresses(doc)
@@ -31,7 +33,61 @@ def disable_rounded_total(doc):
 
 def recalculate_quotation_items(doc):
 	for row in doc.get("items") or []:
+		apply_box_conversion(row)
+		sync_obm_item_pricing(doc, row)
 		recalculate_quotation_item_row(doc, row)
+
+
+def apply_box_conversion(row):
+	if not row.get("item_code"):
+		return
+
+	from alpinos.sales_order_api import get_box_conversion_factor
+
+	factor = flt(get_box_conversion_factor(row.item_code))
+	if not factor:
+		return
+
+	if flt(row.get("qty")):
+		boxes = ceil(flt(row.qty) / factor)
+	elif flt(row.get("custom_boxes")):
+		boxes = ceil(flt(row.custom_boxes))
+	else:
+		return
+
+	row.custom_boxes = boxes
+	row.qty = flt(boxes * factor, 2)
+
+
+def sync_obm_payment_mode(doc):
+	if doc.get("quotation_to") != "Offline Buyer Master" or not doc.get("party_name"):
+		return
+	payment_term = frappe.db.get_value("Offline Buyer Master", doc.party_name, "payment_term")
+	if not payment_term:
+		return
+	doc.custom_payment_mode = {
+		"Credit": "Debit",
+		"Partial": "Partial",
+		"Advance": "Advance",
+	}.get(payment_term, "Advance")
+
+
+def sync_obm_item_pricing(doc, row):
+	if doc.get("quotation_to") != "Offline Buyer Master" or not doc.get("party_name") or not row.get("item_code"):
+		return
+	if flt(row.get("custom_mrp")) and flt(row.get("custom_flat_discount")):
+		return
+
+	from alpinos.sales_order_api import get_opportunity_line_pricing
+
+	pricing = get_opportunity_line_pricing("Offline Buyer Master", doc.party_name, row.item_code)
+	margin = flt(pricing.get("margin_percent"))
+	if pricing.get("mrp") and not flt(row.get("custom_mrp")):
+		row.custom_mrp = flt(pricing.get("mrp"))
+	if margin:
+		row.custom_buyer_margin_percent = margin
+		if not flt(row.get("custom_flat_discount")):
+			row.custom_flat_discount = margin
 
 
 def recalculate_quotation_totals(doc):
@@ -46,11 +102,10 @@ def recalculate_quotation_totals(doc):
 		if not qty or not mrp:
 			continue
 
-		unit_base = mrp * (1.0 - flt(row.get("custom_buyer_margin_percent")) / 100.0)
-		gross = qty * unit_base
+		gross = qty * mrp
 		sub_total += gross
 
-		flat_in = flt(row.get("custom_flat_discount"))
+		flat_in = flt(row.get("custom_flat_discount") or row.get("custom_buyer_margin_percent"))
 		if (row.get("custom_discount_type") or "Percentage") == "Percentage":
 			flat_discount_amount = gross * flat_in / 100.0
 		else:

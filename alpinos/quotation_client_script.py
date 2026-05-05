@@ -137,6 +137,9 @@ function sync_obm_quotation_header(frm) {
             if (d.customer_type) {
                 frm.set_value('order_type', d.customer_type);
             }
+            if (d.payment_term) {
+                frm.set_value('custom_payment_mode', map_obm_payment_mode(d.payment_term));
+            }
             if (d.customer) {
                 frappe.model.set_value(frm.doctype, frm.doc.name, 'custom_resolved_customer', d.customer);
                 // Auto-populate billing & shipping address from OBM
@@ -159,6 +162,12 @@ function sync_obm_quotation_header(frm) {
     });
 }
 
+function map_obm_payment_mode(payment_term) {
+    if (payment_term === 'Credit') return 'Debit';
+    if (payment_term === 'Partial') return 'Partial';
+    return 'Advance';
+}
+
 frappe.ui.form.on('Quotation Item', {
     item_code(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
@@ -172,6 +181,8 @@ frappe.ui.form.on('Quotation Item', {
 
         const pf = frm.doc.quotation_to;
         const pn = frm.doc.party_name;
+        if (row.qty) update_boxes_from_qty(cdt, cdn);
+        if (row.custom_boxes) update_qty_from_boxes(cdt, cdn);
         if (!pf || !pn) return;
 
         frappe.call({
@@ -192,6 +203,9 @@ frappe.ui.form.on('Quotation Item', {
                     'custom_buyer_margin_percent',
                     msg.margin_percent != null ? flt(msg.margin_percent) : 0
                 );
+                if (msg.margin_percent != null) {
+                    frappe.model.set_value(cdt, cdn, 'custom_flat_discount', flt(msg.margin_percent));
+                }
                 frm.refresh_field('items');
                 recalculate_row_values(frm, cdt, cdn);
             },
@@ -272,7 +286,11 @@ function update_boxes_from_qty(cdt, cdn) {
     get_conversion_factor(row.item_code, function (factor) {
         if (!factor) return;
         const boxes = Math.ceil(flt(row.qty) / flt(factor));
+        const adjusted_qty = boxes * flt(factor);
         frappe.model.set_value(cdt, cdn, 'custom_boxes', boxes);
+        if (adjusted_qty !== flt(row.qty)) {
+            frappe.model.set_value(cdt, cdn, 'qty', flt(adjusted_qty, 2));
+        }
     });
 }
 
@@ -298,12 +316,10 @@ function recalculate_row_values(frm, cdt, cdn) {
         return;
     }
 
-    const bm = flt(row.custom_buyer_margin_percent);
-    const unit_base = mrp * (1.0 - bm / 100.0);
-    const gross = qty * unit_base;
+    const gross = mrp * qty;
 
     const discount_type = row.custom_discount_type || 'Percentage';
-    const flat_in = flt(row.custom_flat_discount);
+    const flat_in = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
     let flat_amt = 0;
     if (discount_type === 'Percentage') {
         flat_amt = gross * flat_in / 100.0;
@@ -345,14 +361,12 @@ function recalculate_quotation_totals(frm) {
     rows.forEach((row) => {
         const qty = flt(row.qty);
         const mrp = flt(row.custom_mrp);
-        const bm = flt(row.custom_buyer_margin_percent);
         if (!mrp) return;
 
-        const unit_base = mrp * (1.0 - bm / 100.0);
-        const gross = qty * unit_base;
+        const gross = qty * mrp;
         sub_total += gross;
 
-        const flat_in = flt(row.custom_flat_discount);
+        const flat_in = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
         let flat_discount_amount = 0;
         if ((row.custom_discount_type || 'Percentage') === 'Percentage') {
             flat_discount_amount = gross * flat_in / 100.0;

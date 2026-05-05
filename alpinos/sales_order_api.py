@@ -107,7 +107,7 @@ def get_opportunity_obm_party_data(offline_buyer_master):
 	row = frappe.db.get_value(
 		"Offline Buyer Master",
 		offline_buyer_master,
-		["customer", "customer_business_name", "customer_type"],
+		["customer", "customer_business_name", "customer_type", "payment_term"],
 		as_dict=True,
 	)
 	if not row:

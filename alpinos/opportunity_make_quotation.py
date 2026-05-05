@@ -33,7 +33,7 @@ def _map_opportunity_item_to_quotation_child(source, target, source_parent):
 	target.custom_buyer_margin_percent = flt(_gv(source, "custom_buyer_margin_percent"))
 	target.custom_mrp = flt(_gv(source, "custom_mrp"))
 	target.custom_discount_type = "Percentage"
-	target.custom_flat_discount = flt(_gv(source, "custom_flat_discount"))
+	target.custom_flat_discount = flt(_gv(source, "custom_flat_discount") or _gv(source, "custom_buyer_margin_percent"))
 	target.custom_offer = flt(_gv(source, "custom_offer") or 0)
 	target.custom_additional_discount_type = "Percentage"
 	target.custom_additional_discount = flt(_gv(source, "custom_additional_discount"))
@@ -72,16 +72,18 @@ def make_quotation(source_name, target_doc=None):
 		obm_party = source.party_name if source.get("opportunity_from") == "Offline Buyer Master" else None
 		resolved_customer = None
 		obm_customer_name = None
+		payment_term = None
 		if obm_party:
 			row = frappe.db.get_value(
 				"Offline Buyer Master",
 				obm_party,
-				["customer", "customer_business_name"],
+				["customer", "customer_business_name", "payment_term"],
 				as_dict=True,
 			)
 			if row:
 				resolved_customer = row.get("customer")
 				obm_customer_name = row.get("customer_business_name")
+				payment_term = row.get("payment_term")
 			if not resolved_customer:
 				frappe.throw(
 					"Offline Buyer Master {0} has no linked Customer. Please save the Offline Buyer Master first.".format(
@@ -92,6 +94,12 @@ def make_quotation(source_name, target_doc=None):
 		order_type_src = source.get("custom_order_type")
 		if order_type_src:
 			quotation.order_type = order_type_src
+		if obm_party and payment_term:
+			quotation.custom_payment_mode = {
+				"Credit": "Debit",
+				"Partial": "Partial",
+				"Advance": "Advance",
+			}.get(payment_term, "Advance")
 
 		company_currency = frappe.get_cached_value("Company", quotation.company, "default_currency")
 

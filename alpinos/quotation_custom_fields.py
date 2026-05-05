@@ -48,14 +48,21 @@ def setup_quotation_custom_fields():
 				insert_after="custom_other_details_section",
 			),
 			dict(
-				fieldname="custom_additional_units_damage",
-				label="Additional Units - Damage",
-				fieldtype="Check",
+				fieldname="custom_scheme_item_table",
+				label="Scheme Item Table",
+				fieldtype="Table",
+				options="Sales Order Scheme Item",
 				insert_after="custom_marketing_freebies",
 			),
 			dict(
-				fieldname="custom_scheme_item_table",
-				label="Scheme Item Table",
+				fieldname="custom_additional_units_damage",
+				label="Additional Units - Damage",
+				fieldtype="Check",
+				insert_after="custom_scheme_item_table",
+			),
+			dict(
+				fieldname="custom_additional_units_damage_items",
+				label="Additional Units - Damage Items",
 				fieldtype="Table",
 				options="Sales Order Scheme Item",
 				insert_after="custom_additional_units_damage",
@@ -66,7 +73,7 @@ def setup_quotation_custom_fields():
 				fieldname="custom_payment_section",
 				label="Payment",
 				fieldtype="Section Break",
-				insert_after="custom_scheme_item_table",
+				insert_after="custom_additional_units_damage_items",
 			),
 			dict(
 				fieldname="custom_payment_mode",
@@ -241,6 +248,7 @@ def setup_quotation_custom_fields():
 
 	create_custom_fields(custom_fields, update=True)
 	_ensure_quotation_partial_payment_fields_not_always_mandatory()
+	_fix_quotation_table_layout()
 	frappe.clear_cache(doctype="Quotation")
 	frappe.clear_cache(doctype="Quotation Item")
 
@@ -390,6 +398,46 @@ def _ensure_quotation_partial_payment_fields_not_always_mandatory():
 			continue
 		if frappe.db.get_value("Custom Field", name, "reqd"):
 			frappe.db.set_value("Custom Field", name, "reqd", 0)
+
+
+def _fix_quotation_table_layout():
+	"""Force existing Custom Field rows into the Sales Order Entry sequence."""
+
+	updates = {
+		"custom_marketing_freebies": {
+			"insert_after": "custom_other_details_section",
+			"depends_on": None,
+			"mandatory_depends_on": None,
+		},
+		"custom_scheme_item_table": {
+			"insert_after": "custom_marketing_freebies",
+			"depends_on": None,
+			"mandatory_depends_on": None,
+		},
+		"custom_additional_units_damage": {
+			"insert_after": "custom_scheme_item_table",
+			"depends_on": None,
+			"mandatory_depends_on": None,
+		},
+		"custom_additional_units_damage_items": {
+			"insert_after": "custom_additional_units_damage",
+			"depends_on": "eval:doc.custom_additional_units_damage",
+			"mandatory_depends_on": "eval:doc.custom_additional_units_damage",
+		},
+		"custom_payment_section": {
+			"insert_after": "custom_additional_units_damage_items",
+			"depends_on": None,
+			"mandatory_depends_on": None,
+		},
+	}
+
+	for fieldname, values in updates.items():
+		name = frappe.db.get_value("Custom Field", {"dt": "Quotation", "fieldname": fieldname}, "name")
+		if not name:
+			continue
+		for key, value in values.items():
+			frappe.db.set_value("Custom Field", name, key, value)
+	frappe.db.commit()
 
 
 def _delete_obsolete_quotation_custom_fields():

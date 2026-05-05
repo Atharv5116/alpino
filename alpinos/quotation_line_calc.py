@@ -23,12 +23,10 @@ def quotation_line_taxable_net(row) -> float:
 	if not qty or not mrp:
 		return 0.0
 
-	bm = flt(_rget(row, "custom_buyer_margin_percent"))
-	unit_base = mrp * (1.0 - bm / 100.0)
-	gross = qty * unit_base
+	gross = qty * mrp
 
 	discount_type = _rget(row, "custom_discount_type") or "Percentage"
-	flat_in = flt(_rget(row, "custom_flat_discount"))
+	flat_in = flt(_rget(row, "custom_flat_discount") or _rget(row, "custom_buyer_margin_percent"))
 	if discount_type == "Percentage":
 		flat_amt = gross * flat_in / 100.0
 	else:

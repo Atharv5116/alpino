@@ -70,8 +70,22 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 
 	scheme_items = []
 	add_units = []
+	for r in doc.get("custom_scheme_item_table") or []:
+		scheme_items.append(
+			{
+				"item_code": r.item_code,
+				"qty": flt(r.qty),
+				"scheme": r.get("scheme") or "",
+			}
+		)
+
 	if doc.get("custom_additional_units_damage"):
-		for r in doc.get("custom_scheme_item_table") or []:
+		damage_rows = doc.get("custom_additional_units_damage_items") or []
+		# Backward compatibility for older quotations where the shared scheme table
+		# was used as the damage table.
+		if not damage_rows and not scheme_items:
+			damage_rows = doc.get("custom_scheme_item_table") or []
+		for r in damage_rows:
 			add_units.append(
 				{
 					"item_code": r.item_code,
@@ -79,15 +93,6 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 					"scheme": r.get("scheme") or "",
 					"previous_order_id": r.get("previous_order_id") or "",
 					"remarks": r.get("remarks") or "",
-				}
-			)
-	else:
-		for r in doc.get("custom_scheme_item_table") or []:
-			scheme_items.append(
-				{
-					"item_code": r.item_code,
-					"qty": flt(r.qty),
-					"scheme": r.get("scheme") or "",
 				}
 			)
 
