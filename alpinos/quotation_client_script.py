@@ -20,6 +20,7 @@ frappe.ui.form.on('Quotation', {
     },
 
     onload(frm) {
+        disable_rounded_total(frm);
         toggle_payment_fields(frm);
         enforce_percentage_discounts(frm);
         apply_quotation_party_layout(frm);
@@ -27,6 +28,7 @@ frappe.ui.form.on('Quotation', {
     },
 
     refresh(frm) {
+        disable_rounded_total(frm);
         toggle_payment_fields(frm);
         enforce_percentage_discounts(frm);
         apply_quotation_party_layout(frm);
@@ -65,6 +67,12 @@ frappe.ui.form.on('Quotation', {
         toggle_payment_fields(frm);
     },
 });
+
+function disable_rounded_total(frm) {
+    if (frm.fields_dict.disable_rounded_total && !frm.doc.disable_rounded_total) {
+        frm.set_value('disable_rounded_total', 1);
+    }
+}
 
 function apply_quotation_party_layout(frm) {
     const obm = frm.doc.quotation_to === 'Offline Buyer Master';

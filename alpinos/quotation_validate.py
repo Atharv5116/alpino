@@ -7,16 +7,75 @@ from frappe.utils import flt
 from alpinos.quotation_line_calc import recalculate_quotation_item_row
 
 
+def before_validate_quotation_alpinos(doc, method=None):
+	disable_rounded_total(doc)
+
+
 def validate_quotation_alpinos(doc, method=None):
 	sync_resolved_customer(doc)
+	disable_rounded_total(doc)
 	recalculate_quotation_items(doc)
+	recalculate_quotation_totals(doc)
 	link_obm_quotation_addresses(doc)
 	validate_payment_proof(doc)
+
+
+def disable_rounded_total(doc):
+	if doc.meta.has_field("disable_rounded_total"):
+		doc.disable_rounded_total = 1
+		doc.rounding_adjustment = 0
+		doc.base_rounding_adjustment = 0
+		doc.rounded_total = 0
+		doc.base_rounded_total = 0
 
 
 def recalculate_quotation_items(doc):
 	for row in doc.get("items") or []:
 		recalculate_quotation_item_row(doc, row)
+
+
+def recalculate_quotation_totals(doc):
+	sub_total = 0
+	over_discount = 0
+	additional_discount = 0
+	gst_total = 0
+
+	for row in doc.get("items") or []:
+		qty = flt(row.get("qty"))
+		mrp = flt(row.get("custom_mrp"))
+		if not qty or not mrp:
+			continue
+
+		unit_base = mrp * (1.0 - flt(row.get("custom_buyer_margin_percent")) / 100.0)
+		gross = qty * unit_base
+		sub_total += gross
+
+		flat_in = flt(row.get("custom_flat_discount"))
+		if (row.get("custom_discount_type") or "Percentage") == "Percentage":
+			flat_discount_amount = gross * flat_in / 100.0
+		else:
+			flat_discount_amount = flat_in
+		over_discount += flat_discount_amount
+
+		after_flat = gross - flat_discount_amount
+		after_offer = after_flat - (after_flat * flt(row.get("custom_offer") or 0) / 100.0)
+		additional_discount += after_offer * flt(row.get("custom_additional_discount")) / 100.0
+		gst_total += flt(row.get("custom_item_tax"))
+
+	total_before_cash = sum(flt(row.get("amount")) for row in doc.get("items") or []) + gst_total
+	cash_discount = total_before_cash * flt(doc.get("custom_cash_discount")) / 100.0
+	total_payable = max(total_before_cash - cash_discount, 0)
+
+	doc.custom_sub_total = flt(sub_total, 2)
+	doc.custom_over_discount = flt(over_discount, 2)
+	doc.custom_additional_discount_total = flt(additional_discount, 2)
+	doc.custom_gst_total = flt(gst_total, 2)
+	doc.custom_total_payable = flt(total_payable, 2)
+	doc.custom_remaining_amount = flt(total_payable - flt(doc.get("custom_advance_amount")), 2)
+	doc.total = flt(total_payable, 2)
+	doc.base_total = flt(total_payable, 2)
+	doc.grand_total = flt(total_payable, 2)
+	doc.base_grand_total = flt(total_payable, 2)
 
 
 def sync_resolved_customer(doc):

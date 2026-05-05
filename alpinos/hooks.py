@@ -259,6 +259,7 @@ doc_events = {
 		]
 	},
 	"Quotation": {
+		"before_validate": ["alpinos.quotation_validate.before_validate_quotation_alpinos"],
 		"validate": ["alpinos.quotation_validate.validate_quotation_alpinos"],
 	},
 	"Opportunity": {
