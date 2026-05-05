@@ -69,6 +69,26 @@ def make_quotation(source_name, target_doc=None):
 
 		quotation.opportunity = source.name
 
+		obm_party = source.party_name if source.get("opportunity_from") == "Offline Buyer Master" else None
+		resolved_customer = None
+		obm_customer_name = None
+		if obm_party:
+			row = frappe.db.get_value(
+				"Offline Buyer Master",
+				obm_party,
+				["customer", "customer_business_name"],
+				as_dict=True,
+			)
+			if row:
+				resolved_customer = row.get("customer")
+				obm_customer_name = row.get("customer_business_name")
+			if not resolved_customer:
+				frappe.throw(
+					"Offline Buyer Master {0} has no linked Customer. Please save the Offline Buyer Master first.".format(
+						frappe.bold(obm_party)
+					)
+				)
+
 		order_type_src = source.get("custom_order_type")
 		if order_type_src:
 			quotation.order_type = order_type_src
@@ -89,7 +109,29 @@ def make_quotation(source_name, target_doc=None):
 			quotation.update(taxes)
 
 		quotation.ignore_pricing_rule = 1
+		if obm_party:
+			# ERPNext's set_missing_values/get_party_details only understands standard
+			# selling parties for tax rules. Use the linked Customer internally, then
+			# restore the visible Quotation party back to Offline Buyer Master.
+			quotation.quotation_to = "Customer"
+			quotation.party_name = resolved_customer
 		quotation.run_method("set_missing_values")
+		if obm_party:
+			quotation.quotation_to = "Offline Buyer Master"
+			quotation.party_name = obm_party
+			quotation.customer_name = obm_customer_name or source.get("customer_name") or obm_party
+			quotation.custom_resolved_customer = resolved_customer
+			try:
+				from alpinos.sales_order_offline_buyer import _offline_buyer_address_sync
+
+				addresses = _offline_buyer_address_sync(resolved_customer)
+				if addresses.get("default_billing"):
+					quotation.customer_address = addresses.get("default_billing")
+				if addresses.get("default_shipping"):
+					quotation.shipping_address_name = addresses.get("default_shipping")
+			except Exception:
+				# Address sync is helpful but must not block quotation creation.
+				frappe.log_error(frappe.get_traceback(), "OBM address sync failed while making quotation")
 
 		for row in quotation.get("items") or []:
 			recalculate_quotation_item_row(quotation, row)

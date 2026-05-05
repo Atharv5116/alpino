@@ -29,7 +29,7 @@ def setup_opportunity_custom_fields():
 			label="Billing Address",
 			fieldtype="Link",
 			options="Address",
-			insert_after="customer_address",
+			insert_after="custom_order_type",
 			depends_on="eval:doc.opportunity_from === 'Offline Buyer Master'",
 		),
 		dict(
@@ -244,7 +244,7 @@ def _setup_opportunity_property_setters():
 			doc_type="Opportunity",
 			field_name="customer_address",
 			property="insert_after",
-			value="custom_order_type",
+			value="custom_billing_address",
 			property_type="Data",
 		),
 		dict(

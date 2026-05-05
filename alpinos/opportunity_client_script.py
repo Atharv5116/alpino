@@ -94,11 +94,11 @@ function sync_obm_header_from_master(frm) {
 					args: { customer: d.customer },
 					callback(r2) {
 						const ad = r2.message || {};
-						if (ad.default_billing && !frm.doc.customer_address) {
-							frm.set_value("customer_address", ad.default_billing);
+						if (ad.default_billing && !frm.doc.custom_billing_address) {
+							frm.set_value("custom_billing_address", ad.default_billing);
 						}
-						if (ad.default_shipping && !frm.doc.custom_billing_address) {
-							frm.set_value("custom_billing_address", ad.default_shipping);
+						if (ad.default_shipping && !frm.doc.customer_address) {
+							frm.set_value("customer_address", ad.default_shipping);
 						}
 					},
 				});

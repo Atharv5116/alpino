@@ -264,11 +264,7 @@ function update_boxes_from_qty(cdt, cdn) {
     get_conversion_factor(row.item_code, function (factor) {
         if (!factor) return;
         const boxes = Math.ceil(flt(row.qty) / flt(factor));
-        const adjusted_qty = boxes * flt(factor);
         frappe.model.set_value(cdt, cdn, 'custom_boxes', boxes);
-        if (adjusted_qty !== flt(row.qty)) {
-            frappe.model.set_value(cdt, cdn, 'qty', flt(adjusted_qty, 2));
-        }
     });
 }
 
