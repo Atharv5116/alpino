@@ -199,6 +199,7 @@ override_whitelisted_methods = {
 		"alpinos.opportunity_make_quotation.make_quotation"
 	),
 	"erpnext.accounts.party.get_party_details": "alpinos.item_details.get_party_details",
+	"erpnext.accounts.party.set_taxes": "alpinos.item_details.set_taxes",
 	"erpnext.stock.get_item_details.get_item_details": "alpinos.item_details.get_item_details",
 	"erpnext.stock.get_item_details.get_item_tax_template": "alpinos.item_details.get_item_tax_template",
 }

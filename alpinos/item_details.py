@@ -4,7 +4,10 @@ import json
 
 import frappe
 
-from erpnext.accounts.party import get_party_details as erpnext_get_party_details
+from erpnext.accounts.party import (
+	get_party_details as erpnext_get_party_details,
+	set_taxes as erpnext_set_taxes,
+)
 from erpnext.stock.get_item_details import (
 	get_item_details as erpnext_get_item_details,
 	get_item_tax_template as erpnext_get_item_tax_template,
@@ -93,6 +96,42 @@ def get_party_details(
 		shipping_address=shipping_address,
 		dispatch_address=dispatch_address,
 		pos_profile=pos_profile,
+	)
+
+
+@frappe.whitelist()
+def set_taxes(
+	party,
+	party_type,
+	posting_date,
+	company,
+	customer_group=None,
+	supplier_group=None,
+	tax_category=None,
+	billing_address=None,
+	shipping_address=None,
+	use_for_shopping_cart=None,
+):
+	"""Resolve OBM to Customer before ERPNext tax-rule matching."""
+	if party_type == "Offline Buyer Master" and party:
+		customer = frappe.db.get_value("Offline Buyer Master", party, "customer")
+		if customer:
+			party_type = "Customer"
+			party = customer
+		else:
+			return None
+
+	return erpnext_set_taxes(
+		party=party,
+		party_type=party_type,
+		posting_date=posting_date,
+		company=company,
+		customer_group=customer_group,
+		supplier_group=supplier_group,
+		tax_category=tax_category,
+		billing_address=billing_address,
+		shipping_address=shipping_address,
+		use_for_shopping_cart=use_for_shopping_cart,
 	)
 
 
