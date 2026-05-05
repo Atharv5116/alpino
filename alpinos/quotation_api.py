@@ -29,6 +29,8 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 		if getattr(row, "is_alternative", 0):
 			continue
 		img = row.get("image")
+		buyer_margin = flt(row.get("custom_buyer_margin_percent"))
+		flat_discount = flt(row.get("custom_flat_discount")) or buyer_margin
 		items.append(
 			{
 				"item_code": row.item_code,
@@ -42,10 +44,10 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 				"qty": flt(row.qty),
 				"box": flt(row.get("custom_boxes")),
 				"mrp": flt(row.get("custom_mrp")),
-				"flat_discount": flt(row.get("custom_flat_discount")),
+				"flat_discount": flat_discount,
 				"offer": flt(row.get("custom_offer") or 0),
 				"additional_discount": flt(row.get("custom_additional_discount")),
-				"buyer_margin_percent": flt(row.get("custom_buyer_margin_percent")),
+				"buyer_margin_percent": buyer_margin,
 				"item_tax_percent": flt(row.get("custom_item_tax_percent")),
 				"rate": flt(row.rate),
 				"amount": flt(row.amount),

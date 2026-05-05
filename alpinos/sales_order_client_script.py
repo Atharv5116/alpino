@@ -32,15 +32,32 @@ frappe.ui.form.on('Sales Order Item', {
         let row = locals[cdt][cdn];
         if (!row.item_code) return;
 
-        // Fetch MRP from Customer Item MRP table
+        const apply_pricing = function(mrp, margin_percent) {
+            frappe.model.set_value(cdt, cdn, 'custom_customer_mrp', flt(mrp));
+            frappe.model.set_value(cdt, cdn, 'custom_flat_discount', flt(margin_percent || 0));
+            calculate_item_values(frm, cdt, cdn);
+        };
+
+        // Fetch MRP + buyer margin from Offline Buyer catalog/master first.
         if (frm.doc.customer) {
             frappe.call({
-                method: 'alpinos.sales_order_api.get_customer_item_mrp',
+                method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_item_rate',
                 args: { customer: frm.doc.customer, item_code: row.item_code },
                 callback: function(r) {
-                    if (r.message) {
-                        frappe.model.set_value(cdt, cdn, 'custom_customer_mrp', r.message);
+                    if (r.message && flt(r.message.mrp) > 0) {
+                        apply_pricing(r.message.mrp, r.message.margin_percent);
+                        return;
                     }
+
+                    frappe.call({
+                        method: 'alpinos.sales_order_api.get_customer_item_mrp',
+                        args: { customer: frm.doc.customer, item_code: row.item_code },
+                        callback: function(r2) {
+                            if (r2.message) {
+                                apply_pricing(r2.message, 0);
+                            }
+                        }
+                    });
                 }
             });
         }
@@ -73,9 +90,11 @@ frappe.ui.form.on('Sales Order Item', {
                     if (adjusted_qty !== flt(row.qty)) {
                         frappe.model.set_value(cdt, cdn, 'qty', flt(adjusted_qty, 2));
                     }
+                    calculate_item_values(frm, cdt, cdn);
                 }
             });
         }
+        calculate_item_values(frm, cdt, cdn);
     },
 
     custom_box: function(frm, cdt, cdn) {
@@ -86,6 +105,7 @@ frappe.ui.form.on('Sales Order Item', {
                     let qty = Math.ceil(flt(row.custom_box)) * flt(conversion_factor);
                     frappe.model.set_value(cdt, cdn, 'custom_box', Math.ceil(flt(row.custom_box)));
                     frappe.model.set_value(cdt, cdn, 'qty', flt(qty, 2));
+                    calculate_item_values(frm, cdt, cdn);
                 }
             });
         }
@@ -142,6 +162,7 @@ function calculate_item_values(frm, cdt, cdn) {
         if (net_amount < 0) net_amount = 0;
         let effective_rate = net_amount / qty;
         frappe.model.set_value(cdt, cdn, 'rate', flt(effective_rate, 2));
+        frappe.model.set_value(cdt, cdn, 'amount', flt(net_amount, 2));
     }
 }
 

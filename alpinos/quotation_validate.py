@@ -4,11 +4,19 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from alpinos.quotation_line_calc import recalculate_quotation_item_row
+
 
 def validate_quotation_alpinos(doc, method=None):
 	sync_resolved_customer(doc)
+	recalculate_quotation_items(doc)
 	link_obm_quotation_addresses(doc)
 	validate_payment_proof(doc)
+
+
+def recalculate_quotation_items(doc):
+	for row in doc.get("items") or []:
+		recalculate_quotation_item_row(doc, row)
 
 
 def sync_resolved_customer(doc):

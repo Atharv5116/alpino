@@ -166,7 +166,7 @@ def setup_quotation_custom_fields():
 		"Quotation Item": [
 			dict(
 				fieldname="custom_boxes",
-				label="Boxes",
+				label="Box",
 				fieldtype="Int",
 				insert_after="qty",
 				reqd=1,
@@ -247,6 +247,14 @@ def setup_quotation_custom_fields():
 
 def _setup_quotation_property_setters():
 	property_setters = [
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Quotation",
+			field_name="items",
+			property="label",
+			value="Order Items",
+			property_type="Data",
+		),
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Quotation",

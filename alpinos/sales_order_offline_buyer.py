@@ -39,7 +39,7 @@ def catalog_customer_query(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def get_offline_buyer_item_rate(customer, item_code):
-	"""Return selling rate from Offline Buyer Master margins (same formula as offline buyer catalog)."""
+	"""Return MRP + buyer margin from Offline Buyer catalog/master for a Customer SKU."""
 	if not customer or not item_code:
 		return None
 
@@ -52,6 +52,34 @@ def get_offline_buyer_item_rate(customer, item_code):
 	if not obm_name:
 		return None
 
+	catalog = frappe.db.sql(
+		"""
+		SELECT obil.mrp, IFNULL(obil.margin_percent, 0) AS margin_percent
+		FROM `tabOffline Buyer Item` obil
+		INNER JOIN `tabOffline Buyer Items` obi
+			ON obi.name = obil.parent AND obil.parenttype = 'Offline Buyer Items'
+		WHERE IFNULL(obi.docstatus, 0) < 2
+			AND obi.buyer = %(customer)s
+			AND obil.item_code = %(item_code)s
+		ORDER BY obi.modified DESC
+		LIMIT 1
+		""",
+		{"customer": customer, "item_code": item_code},
+		as_dict=True,
+	)
+	std_mrp = flt(frappe.db.get_value("Item", item_code, "standard_rate") or 0)
+	if catalog:
+		mrp = flt(catalog[0].mrp) or std_mrp
+		pct = flt(catalog[0].margin_percent)
+		rate = flt(mrp * (1 - pct / 100), 2) if mrp else 0.0
+		return {
+			"rate": rate,
+			"margin_percent": pct,
+			"mrp": mrp,
+			"offline_buyer_master": obm_name,
+			"source": "offline_buyer_items",
+		}
+
 	margin_pct = frappe.db.get_value(
 		"Offline Buyer Margin",
 		{"parent": obm_name, "parenttype": "Offline Buyer Master", "sku": item_code},
@@ -60,11 +88,17 @@ def get_offline_buyer_item_rate(customer, item_code):
 	if margin_pct is None:
 		return None
 
-	mrp = flt(frappe.db.get_value("Item", item_code, "standard_rate") or 0)
+	mrp = std_mrp
 	pct = flt(margin_pct)
 	rate = flt(mrp * (1 - pct / 100), 2) if mrp else 0.0
 
-	return {"rate": rate, "margin_percent": pct, "mrp": mrp, "offline_buyer_master": obm_name}
+	return {
+		"rate": rate,
+		"margin_percent": pct,
+		"mrp": mrp,
+		"offline_buyer_master": obm_name,
+		"source": "offline_buyer_margin",
+	}
 
 
 @frappe.whitelist()

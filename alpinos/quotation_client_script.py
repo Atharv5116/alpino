@@ -263,7 +263,12 @@ function update_boxes_from_qty(cdt, cdn) {
 
     get_conversion_factor(row.item_code, function (factor) {
         if (!factor) return;
-        frappe.model.set_value(cdt, cdn, 'custom_boxes', flt(row.qty / factor, 0));
+        const boxes = Math.ceil(flt(row.qty) / flt(factor));
+        const adjusted_qty = boxes * flt(factor);
+        frappe.model.set_value(cdt, cdn, 'custom_boxes', boxes);
+        if (adjusted_qty !== flt(row.qty)) {
+            frappe.model.set_value(cdt, cdn, 'qty', flt(adjusted_qty, 2));
+        }
     });
 }
 
@@ -273,7 +278,9 @@ function update_qty_from_boxes(cdt, cdn) {
 
     get_conversion_factor(row.item_code, function (factor) {
         if (!factor) return;
-        frappe.model.set_value(cdt, cdn, 'qty', flt(row.custom_boxes * factor, 2));
+        const boxes = Math.ceil(flt(row.custom_boxes));
+        frappe.model.set_value(cdt, cdn, 'custom_boxes', boxes);
+        frappe.model.set_value(cdt, cdn, 'qty', flt(boxes * factor, 2));
     });
 }
 

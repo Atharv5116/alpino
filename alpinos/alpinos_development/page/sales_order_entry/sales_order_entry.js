@@ -428,7 +428,8 @@ class SalesOrderEntry {
 		});
 		offer_field.$input && offer_field.$input.css('width', '80px');
 		offer_field.$input.on('change', function() {
-			me.items[idx].offer = offer_field.get_value();
+			me.items[idx].offer = flt(offer_field.get_value());
+			me.calc_row_amount(idx, $row);
 		});
 		row_data._offer_field = offer_field;
 
@@ -996,6 +997,7 @@ class SalesOrderEntry {
 			custom_box: item.box,
 			custom_customer_mrp: item.mrp,
 			custom_flat_discount: item.flat_discount,
+			buyer_margin_percent: item.buyer_margin_percent || item.custom_buyer_margin_percent || 0,
 			custom_offer: item.offer,
 			custom_additional_discount: item.additional_discount,
 			custom_item_tax: flt(item.custom_item_tax)

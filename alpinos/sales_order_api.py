@@ -8,6 +8,81 @@ from frappe.utils import flt
 from math import ceil
 
 
+def _line_flat_discount(item):
+	flat = flt(item.get("custom_flat_discount"))
+	if flat:
+		return flat
+	return flt(item.get("buyer_margin_percent") or item.get("custom_buyer_margin_percent"))
+
+
+def _calculate_sales_order_line_values(item):
+	qty = flt(item.get("qty"))
+	mrp = flt(item.get("custom_customer_mrp"))
+	flat_discount = _line_flat_discount(item)
+	offer_pct = flt(item.get("custom_offer"))
+	additional_discount_pct = flt(item.get("custom_additional_discount"))
+
+	if not qty or not mrp:
+		return {
+			"rate": flt(item.get("rate")),
+			"amount": flt(item.get("amount")),
+			"flat_discount": flat_discount,
+		}
+
+	gross = mrp * qty
+	after_flat = gross - (gross * flat_discount / 100.0)
+	after_offer = after_flat - (after_flat * offer_pct / 100.0)
+	net_amount = after_offer - (after_offer * additional_discount_pct / 100.0)
+	net_amount = max(net_amount, 0)
+
+	return {
+		"rate": flt(net_amount / qty, 2),
+		"amount": flt(net_amount, 2),
+		"flat_discount": flat_discount,
+	}
+
+
+def _apply_calculated_item_values(row, calc):
+	row.rate = calc["rate"]
+	row.amount = calc["amount"]
+	row.base_rate = calc["rate"]
+	row.base_amount = calc["amount"]
+	row.net_rate = calc["rate"]
+	row.net_amount = calc["amount"]
+	row.base_net_rate = calc["rate"]
+	row.base_net_amount = calc["amount"]
+
+
+def _apply_cash_discount(doc):
+	cash_discount = flt(doc.get("custom_cash_discount"))
+	doc.custom_cash_discount_amount = 0
+	if cash_discount <= 0:
+		doc.additional_discount_percentage = 0
+		doc.discount_amount = 0
+		return
+
+	doc.apply_discount_on = "Grand Total"
+	doc.additional_discount_percentage = cash_discount
+
+
+def validate_sales_order_pricing(doc, method=None):
+	"""Keep saved Sales Order rows aligned with the custom entry-page calculation."""
+	doc.ignore_pricing_rule = 1
+	_apply_cash_discount(doc)
+
+	for row in doc.get("items") or []:
+		calc = _calculate_sales_order_line_values(row)
+		if not calc["rate"] and not calc["amount"]:
+			continue
+		if calc["flat_discount"] and not flt(row.get("custom_flat_discount")):
+			row.custom_flat_discount = calc["flat_discount"]
+		_apply_calculated_item_values(row, calc)
+
+	if hasattr(doc, "calculate_taxes_and_totals"):
+		doc.calculate_taxes_and_totals()
+	doc.custom_cash_discount_amount = flt(doc.get("discount_amount"))
+
+
 @frappe.whitelist()
 def get_customer_item_mrp(customer, item_code):
 	"""Fetch MRP for an item from Customer's Item MRP table"""
@@ -192,6 +267,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so.order_type = order_type
 	so.company = company or frappe.defaults.get_user_default("Company")
 	so.delivery_date = delivery_date
+	so.ignore_pricing_rule = 1
 	so.custom_cash_discount = flt(cash_discount)
 	if billing_address:
 		so.customer_address = billing_address
@@ -209,15 +285,23 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			qty = flt(boxes * factor) if boxes else qty
 			custom_box = boxes
 
+		calc = _calculate_sales_order_line_values(
+			{
+				**item,
+				"qty": qty,
+				"custom_box": custom_box,
+				"custom_customer_mrp": item.get("custom_customer_mrp"),
+			}
+		)
 		row = {
 			"item_code": item_code,
 			"qty": qty,
-			"rate": flt(item.get("rate")),
+			"rate": calc["rate"],
 			"delivery_date": item.get("delivery_date") or delivery_date,
 			"description": item.get("description") or "",
 			"custom_box": custom_box,
 			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
-			"custom_flat_discount": flt(item.get("custom_flat_discount")),
+			"custom_flat_discount": calc["flat_discount"],
 			"custom_offer": item.get("custom_offer") or "",
 			"custom_additional_discount": flt(item.get("custom_additional_discount")),
 			"custom_item_tax": flt(item.get("custom_item_tax")),
@@ -225,7 +309,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		w = item.get("warehouse")
 		if w:
 			row["warehouse"] = w
-		so.append("items", row)
+		child = so.append("items", row)
+		_apply_calculated_item_values(child, calc)
 
 	# Marketing Freebies
 	if freebies:
@@ -257,6 +342,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 				"remarks": row.get("remarks") or "",
 			})
 
+	_apply_cash_discount(so)
 	so.insert(ignore_permissions=True)
 	if int(submit_now):
 		so.submit()
