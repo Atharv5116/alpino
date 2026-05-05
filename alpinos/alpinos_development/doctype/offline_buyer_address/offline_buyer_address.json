@@ -78,8 +78,7 @@
   {
    "fieldname": "area",
    "fieldtype": "Data",
-   "label": "Area",
-   "reqd": 1
+   "label": "Area"
   },
   {
    "fieldname": "sub_area",

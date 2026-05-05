@@ -234,7 +234,8 @@
    "fieldname": "margins",
    "fieldtype": "Table",
    "label": "Margins",
-   "options": "Offline Buyer Margin"
+   "options": "Offline Buyer Margin",
+   "read_only": 1
   },
   {
    "fieldname": "other_section",

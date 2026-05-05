@@ -194,7 +194,7 @@ class OfflineBuyerCatalogPage {
 					{ label: 'Country', fieldname: 'country', fieldtype: 'Link', options: 'Country', reqd: 1, default: 'India' },
 					{ label: 'State', fieldname: 'state', fieldtype: 'Link', options: 'State', reqd: 1 },
 					{ label: 'City', fieldname: 'city', fieldtype: 'Link', options: 'City', reqd: 1 },
-					{ label: 'Area', fieldname: 'area', fieldtype: 'Data', reqd: 1 },
+					{ label: 'Area', fieldname: 'area', fieldtype: 'Data' },
 					{ label: 'Pincode', fieldname: 'pincode', fieldtype: 'Data', reqd: 1 },
 				],
 				primary_action_label: 'Create Buyer & Catalog',
@@ -729,7 +729,7 @@ class OfflineBuyerCatalogPage {
 							<th style="width:100px;">Country *</th>
 							<th style="width:100px;">State *</th>
 							<th style="width:100px;">City *</th>
-							<th style="width:80px;">Area *</th>
+							<th style="width:80px;">Area</th>
 							<th style="width:70px;">Sub Area</th>
 							<th style="width:50px;text-align:center;">Primary</th>
 							<th style="width:55px;text-align:center;">Shipping</th>
