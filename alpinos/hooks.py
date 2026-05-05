@@ -198,6 +198,8 @@ override_whitelisted_methods = {
 	"erpnext.crm.doctype.opportunity.opportunity.make_quotation": (
 		"alpinos.opportunity_make_quotation.make_quotation"
 	),
+	"erpnext.stock.get_item_details.get_item_details": "alpinos.item_details.get_item_details",
+	"erpnext.stock.get_item_details.get_item_tax_template": "alpinos.item_details.get_item_tax_template",
 }
 
 override_doctype_class = {
