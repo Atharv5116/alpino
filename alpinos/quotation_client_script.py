@@ -32,7 +32,10 @@ frappe.ui.form.on('Quotation', {
         toggle_payment_fields(frm);
         enforce_percentage_discounts(frm);
         apply_quotation_party_layout(frm);
-        setTimeout(() => apply_quotation_address_queries(frm), 0);
+        setTimeout(() => {
+            fix_dynamic_link_for_obm(frm);
+            apply_quotation_address_queries(frm);
+        }, 0);
     },
 
     quotation_to(frm) {
@@ -71,6 +74,30 @@ frappe.ui.form.on('Quotation', {
 function disable_rounded_total(frm) {
     if (frm.fields_dict.disable_rounded_total && !frm.doc.disable_rounded_total) {
         frm.set_value('disable_rounded_total', 1);
+    }
+}
+
+function fix_dynamic_link_for_obm(frm) {
+    // ERPNext's QuotationController.refresh() sets frappe.dynamic_link.doctype to
+    // "Offline Buyer Master", which causes SQL errors ("Unknown column 'offline_buyer_master'")
+    // in Address/Contact queries. Reset to "Customer" using the resolved customer.
+    if (
+        frm.doc.quotation_to === 'Offline Buyer Master' &&
+        frappe.dynamic_link &&
+        frappe.dynamic_link.doctype === 'Offline Buyer Master'
+    ) {
+        const resolved = frm.doc.custom_resolved_customer || frm.doc.party_name;
+        frappe.dynamic_link = {
+            doc: frm.doc,
+            fieldname: 'party_name',
+            doctype: 'Customer',
+        };
+        if (resolved) {
+            frappe.dynamic_link.doc = Object.assign({}, frm.doc, {
+                quotation_to: 'Customer',
+                party_name: resolved,
+            });
+        }
     }
 }
 

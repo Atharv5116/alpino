@@ -4,6 +4,7 @@ import json
 
 import frappe
 
+from erpnext.accounts.party import get_party_details as erpnext_get_party_details
 from erpnext.stock.get_item_details import (
 	get_item_details as erpnext_get_item_details,
 	get_item_tax_template as erpnext_get_item_tax_template,
@@ -45,6 +46,54 @@ def _normalize_obm_quotation_args(args, doc=None):
 		doc = doc_dict
 
 	return args, doc
+
+
+@frappe.whitelist()
+def get_party_details(
+	party=None,
+	account=None,
+	party_type="Customer",
+	company=None,
+	posting_date=None,
+	bill_date=None,
+	price_list=None,
+	currency=None,
+	doctype=None,
+	ignore_permissions=False,
+	fetch_payment_terms_template=True,
+	party_address=None,
+	company_address=None,
+	shipping_address=None,
+	dispatch_address=None,
+	pos_profile=None,
+):
+	"""Intercept party_type='Offline Buyer Master' and resolve to linked Customer."""
+	if party_type == "Offline Buyer Master" and party:
+		customer = frappe.db.get_value("Offline Buyer Master", party, "customer")
+		if customer:
+			party_type = "Customer"
+			party = customer
+		else:
+			return frappe._dict()
+
+	return erpnext_get_party_details(
+		party=party,
+		account=account,
+		party_type=party_type,
+		company=company,
+		posting_date=posting_date,
+		bill_date=bill_date,
+		price_list=price_list,
+		currency=currency,
+		doctype=doctype,
+		ignore_permissions=ignore_permissions,
+		fetch_payment_terms_template=fetch_payment_terms_template,
+		party_address=party_address,
+		company_address=company_address,
+		shipping_address=shipping_address,
+		dispatch_address=dispatch_address,
+		pos_profile=pos_profile,
+	)
 
 
 @frappe.whitelist()
