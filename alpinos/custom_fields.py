@@ -431,15 +431,6 @@ def setup_custom_fields():
 				insert_after="source_indeed",
 			),
 		],
-		"Lead": [
-			dict(
-				fieldname="is_duplicate",
-				label="Is Duplicate",
-				fieldtype="Check",
-				insert_after="status",
-				default=0,
-			),
-		],
 	"Job Applicant": [
 		# Qualification Section Break (after notice_period or last employment field)
 		dict(

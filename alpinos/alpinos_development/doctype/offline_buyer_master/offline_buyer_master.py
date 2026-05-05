@@ -171,7 +171,6 @@ class OfflineBuyerMaster(Document):
 			("country", _("Country")),
 			("state", _("State")),
 			("city", _("City")),
-			("area", _("Area")),
 		):
 			if not nonempty(row.get(fname)):
 				frappe.throw(
