@@ -12,6 +12,18 @@ def _norm_state(value):
 	return (value or "").strip().lower().replace(" ", "")
 
 
+def _resolve_company(preferred=None):
+	company = (preferred or "").strip()
+	if company:
+		return company
+	company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
+		"Global Defaults", "default_company"
+	)
+	if company:
+		return company
+	return frappe.db.get_value("Company", {"name": ("!=", "")}, "name", order_by="creation asc")
+
+
 def _pick_tax_category(inter_state):
 	"""Pick best-fit Tax Category name for intra/inter-state GST."""
 	names = frappe.get_all("Tax Category", pluck="name") or []
@@ -74,6 +86,18 @@ def _fallback_tax_template(company, inter_state):
 	return templates[0].name
 
 
+def _template_from_tax_category(company, tax_category):
+	if not company or not tax_category:
+		return None
+	row = frappe.db.get_value(
+		"Sales Taxes and Charges Template",
+		{"company": company, "tax_category": tax_category, "disabled": 0},
+		"name",
+		order_by="modified desc",
+	)
+	return row
+
+
 def _apply_tax_template_from_party(doc):
 	"""Resolve and apply Sales Taxes template from party/tax rule context."""
 	if doc.doctype != "Sales Order" or not doc.get("customer") or not doc.get("company"):
@@ -86,7 +110,12 @@ def _apply_tax_template_from_party(doc):
 
 	from erpnext.accounts.party import set_taxes as erpnext_set_taxes
 
-	template = erpnext_set_taxes(
+	# 1) First, try explicit template by tax_category + company (deterministic).
+	template = _template_from_tax_category(doc.company, doc.get("tax_category"))
+
+	# 2) Then ERPNext tax-rule resolution.
+	if not template:
+		template = erpnext_set_taxes(
 		party=doc.customer,
 		party_type="Customer",
 		posting_date=doc.get("transaction_date"),
@@ -95,7 +124,7 @@ def _apply_tax_template_from_party(doc):
 		tax_category=doc.get("tax_category"),
 		billing_address=billing,
 		shipping_address=shipping,
-	)
+		)
 
 	if not template and billing:
 		billing_state = frappe.db.get_value("Address", billing, "state")
@@ -182,6 +211,8 @@ def _apply_cash_discount(doc):
 
 def validate_sales_order_pricing(doc, method=None):
 	"""Keep saved Sales Order rows aligned with the custom entry-page calculation."""
+	if not doc.get("company"):
+		doc.company = _resolve_company()
 	doc.ignore_pricing_rule = 1
 	_apply_tax_mode_from_billing(doc)
 	_apply_tax_template_from_party(doc)
@@ -384,7 +415,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so = frappe.new_doc("Sales Order")
 	so.customer = customer
 	so.order_type = order_type
-	so.company = company or frappe.defaults.get_user_default("Company")
+	so.company = _resolve_company(company)
 	so.delivery_date = delivery_date
 	so.ignore_pricing_rule = 1
 	so.custom_cash_discount = flt(cash_discount)
