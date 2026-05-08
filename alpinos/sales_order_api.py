@@ -42,6 +42,8 @@ def _resolve_default_warehouse(company):
 	candidates = []
 	if abbr:
 		candidates.append(f"Warehouse - {abbr}")
+		candidates.append(f"Finished Goods - {abbr}")
+		candidates.append(f"Stores - {abbr}")
 	candidates.append("Warehouse")
 
 	for wh in candidates:
@@ -57,6 +59,19 @@ def _resolve_default_warehouse(company):
 		"name",
 		order_by="modified desc",
 	)
+
+
+def _resolve_item_warehouse(item_code, company, fallback=None):
+	"""Resolve warehouse for a row, preferring Item Default by company."""
+	if item_code and company:
+		item_wh = frappe.db.get_value(
+			"Item Default",
+			{"parent": item_code, "company": company},
+			"default_warehouse",
+		)
+		if item_wh:
+			return item_wh
+	return fallback
 
 
 def _pick_tax_category(inter_state):
@@ -599,6 +614,10 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		taxes_and_charges,
 		len(items or []),
 	)
+	_so_tax_logger().info(
+		"[create] company default warehouse=%s",
+		default_warehouse,
+	)
 	if billing_address:
 		so.customer_address = billing_address
 	if shipping_address:
@@ -651,7 +670,10 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			"custom_item_tax": flt(calc.get("gst_amount") or item.get("custom_item_tax")),
 		}
 		w = item.get("warehouse")
-		row["warehouse"] = w or default_warehouse
+		row["warehouse"] = w or _resolve_item_warehouse(item_code, so.company, default_warehouse)
+		if not row["warehouse"]:
+			# Last-resort fallback to any non-group warehouse on the site.
+			row["warehouse"] = frappe.db.get_value("Warehouse", {"is_group": 0}, "name", order_by="modified desc")
 		child = so.append("items", row)
 		_apply_calculated_item_values(child, calc)
 
