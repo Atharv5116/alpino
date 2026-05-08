@@ -35,6 +35,8 @@ class SalesOrderEntry {
 	}
 
 	_get_default_company() {
+		const preferred = 'Alpino Health Foods Pvt. Ltd.';
+		if (preferred) return preferred;
 		// Frappe default key is usually "Company" (capital C); keep fallbacks for older setups.
 		return (
 			frappe.defaults.get_user_default('Company') ||
@@ -183,6 +185,22 @@ class SalesOrderEntry {
 			render_input: true
 		});
 
+		this.company_field = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Link',
+				options: 'Company',
+				label: 'Company',
+				fieldname: 'company',
+				reqd: 1,
+			},
+			parent: header.find('.field-company'),
+			render_input: true
+		});
+		this.company_field.set_value(this.default_company || this._get_default_company());
+		if (this.company_field.$input) {
+			this.company_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
+		}
+
 		// Set address field value AND show its human-readable label in the input
 		me._set_address_display = function(field, addr_name, opts) {
 			if (!field) return;
@@ -296,7 +314,7 @@ class SalesOrderEntry {
 				method: 'alpinos.sales_order_api.get_tax_template_for_sales_order',
 				args: {
 					customer: customer,
-					company: me.default_company || me._get_default_company(),
+					company: (me.company_field && me.company_field.get_value()) || me.default_company || me._get_default_company(),
 					billing_address: billing,
 					shipping_address: shipping,
 				},
@@ -1102,7 +1120,7 @@ class SalesOrderEntry {
 			args: {
 				customer: customer,
 				order_type: order_type,
-				company: me.default_company || me._get_default_company(),
+				company: (me.company_field && me.company_field.get_value()) || me.default_company || me._get_default_company(),
 				delivery_date: delivery_date,
 				billing_address: billing_address,
 				shipping_address: shipping_address,

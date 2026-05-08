@@ -8,6 +8,9 @@ from frappe.utils import flt
 from math import ceil
 
 
+DEFAULT_SO_COMPANY = "Alpino Health Foods Pvt. Ltd."
+
+
 def _so_tax_logger():
 	return frappe.logger("alpinos_so_tax", allow_site=True, file_count=20)
 
@@ -20,6 +23,8 @@ def _resolve_company(preferred=None):
 	company = (preferred or "").strip()
 	if company:
 		return company
+	if DEFAULT_SO_COMPANY and frappe.db.exists("Company", DEFAULT_SO_COMPANY):
+		return DEFAULT_SO_COMPANY
 	company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
 		"Global Defaults", "default_company"
 	)
@@ -107,15 +112,39 @@ def _fallback_tax_template(company, inter_state):
 
 
 def _template_from_tax_category(company, tax_category):
-	if not company or not tax_category:
+	if not tax_category:
 		return None
+	# 1) strict match: company + tax category
+	if company:
+		row = frappe.db.get_value(
+			"Sales Taxes and Charges Template",
+			{"company": company, "tax_category": tax_category, "disabled": 0},
+			"name",
+			order_by="modified desc",
+		)
+		if row:
+			return row
+
+	# 2) fallback: any active template with this tax category
 	row = frappe.db.get_value(
 		"Sales Taxes and Charges Template",
-		{"company": company, "tax_category": tax_category, "disabled": 0},
+		{"tax_category": tax_category, "disabled": 0},
 		"name",
 		order_by="modified desc",
 	)
 	return row
+
+
+def _ensure_gst_setup_for_company(company):
+	"""Create default GST categories/templates/rules if missing for company."""
+	if not company:
+		return
+	try:
+		from alpinos.patches.v1_0.create_gst_5_sales_tax_setup import _setup_for_company
+
+		_setup_for_company(company)
+	except Exception as e:
+		_so_tax_logger().warning("[tax_setup] bootstrap failed company=%s err=%s", company, e)
 
 
 def _apply_tax_template_from_party(doc):
@@ -151,6 +180,15 @@ def _apply_tax_template_from_party(doc):
 		inter_state = _norm_state(billing_state) != _norm_state("Gujarat")
 		template = _fallback_tax_template(doc.company, inter_state)
 
+	# 4) Bootstrap tax setup for company once, then retry.
+	if not template:
+		_ensure_gst_setup_for_company(doc.company)
+		template = _template_from_tax_category(doc.company, doc.get("tax_category"))
+		if not template and billing:
+			billing_state = frappe.db.get_value("Address", billing, "state")
+			inter_state = _norm_state(billing_state) != _norm_state("Gujarat")
+			template = _fallback_tax_template(doc.company, inter_state)
+
 	if not template:
 		_so_tax_logger().error(
 			"[tax_template] not found | so=%s customer=%s company=%s tax_category=%s billing=%s shipping=%s",
@@ -161,6 +199,20 @@ def _apply_tax_template_from_party(doc):
 			billing,
 			shipping,
 		)
+		try:
+			frappe.log_error(
+				title="Alpinos SO Tax Template Missing",
+				message=(
+					f"SO: {doc.get('name') or '(new)'}\n"
+					f"Customer: {doc.get('customer')}\n"
+					f"Company: {doc.get('company')}\n"
+					f"Tax Category: {doc.get('tax_category')}\n"
+					f"Billing: {billing}\n"
+					f"Shipping: {shipping}\n"
+				),
+			)
+		except Exception:
+			pass
 		return
 
 	if doc.get("taxes_and_charges") != template:
