@@ -53,6 +53,67 @@ def _apply_tax_mode_from_billing(doc):
 		doc.tax_category = tax_category
 
 
+def _fallback_tax_template(company, inter_state):
+	"""Fallback template pick when tax rules don't return one."""
+	if not company:
+		return None
+	templates = frappe.get_all(
+		"Sales Taxes and Charges Template",
+		filters={"company": company, "disabled": 0},
+		fields=["name"],
+		order_by="modified desc",
+	)
+	if not templates:
+		return None
+
+	keys = ("igst", "inter-state", "interstate") if inter_state else ("cgst", "sgst", "intra", "within")
+	for row in templates:
+		n = (row.name or "").lower()
+		if any(k in n for k in keys):
+			return row.name
+	return templates[0].name
+
+
+def _apply_tax_template_from_party(doc):
+	"""Resolve and apply Sales Taxes template from party/tax rule context."""
+	if doc.doctype != "Sales Order" or not doc.get("customer") or not doc.get("company"):
+		return
+
+	billing = doc.get("customer_address")
+	shipping = doc.get("shipping_address_name")
+	if not billing and not shipping:
+		return
+
+	from erpnext.accounts.party import set_taxes as erpnext_set_taxes
+
+	template = erpnext_set_taxes(
+		party=doc.customer,
+		party_type="Customer",
+		posting_date=doc.get("transaction_date"),
+		company=doc.company,
+		customer_group=frappe.db.get_value("Customer", doc.customer, "customer_group"),
+		tax_category=doc.get("tax_category"),
+		billing_address=billing,
+		shipping_address=shipping,
+	)
+
+	if not template and billing:
+		billing_state = frappe.db.get_value("Address", billing, "state")
+		inter_state = _norm_state(billing_state) != _norm_state("Gujarat")
+		template = _fallback_tax_template(doc.company, inter_state)
+
+	if not template:
+		return
+
+	if doc.get("taxes_and_charges") != template:
+		doc.taxes_and_charges = template
+
+	if hasattr(doc, "set"):
+		doc.set("taxes", [])
+	if hasattr(doc, "append_taxes_from_master"):
+		doc.append_taxes_from_master("Sales Taxes and Charges Template")
+
+
 def _line_flat_discount(item):
 	flat = flt(item.get("custom_flat_discount"))
 	if flat:
@@ -123,6 +184,7 @@ def validate_sales_order_pricing(doc, method=None):
 	"""Keep saved Sales Order rows aligned with the custom entry-page calculation."""
 	doc.ignore_pricing_rule = 1
 	_apply_tax_mode_from_billing(doc)
+	_apply_tax_template_from_party(doc)
 	_apply_cash_discount(doc)
 
 	for row in doc.get("items") or []:
