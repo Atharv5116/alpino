@@ -1,0 +1,44 @@
+<div class="sales-order-entry-view" style="max-width: 1200px; margin: 0 auto; padding: 15px;">
+	<div class="view-header" style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+		<div class="row">
+			<div class="col-md-3"><strong>Sales Order:</strong> <span class="v-so-name">-</span></div>
+			<div class="col-md-3"><strong>Customer:</strong> <span class="v-customer">-</span></div>
+			<div class="col-md-3"><strong>Customer Type:</strong> <span class="v-order-type">-</span></div>
+			<div class="col-md-3"><strong>Delivery Date:</strong> <span class="v-delivery-date">-</span></div>
+		</div>
+		<div class="row" style="margin-top: 10px;">
+			<div class="col-md-6"><strong>Billing Address:</strong> <span class="v-billing">-</span></div>
+			<div class="col-md-6"><strong>Shipping Address:</strong> <span class="v-shipping">-</span></div>
+		</div>
+		<div class="row" style="margin-top: 10px;">
+			<div class="col-md-6"><strong>Tax Category:</strong> <span class="v-tax-category">-</span></div>
+			<div class="col-md-6"><strong>Tax Template:</strong> <span class="v-tax-template">-</span></div>
+		</div>
+	</div>
+
+	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+		<h5 style="margin-bottom: 15px; font-weight: 600;">Order Items</h5>
+		<table class="table table-bordered v-items" style="font-size: 13px;">
+			<thead style="background: var(--bg-color);">
+				<tr>
+					<th>#</th><th>SKU</th><th>SKU Name</th><th>Qty</th><th>Box</th><th>MRP</th><th>GST %</th><th>Flat %</th><th>Offer %</th><th>Add. %</th><th>Rate</th><th>Amount</th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
+	</div>
+
+	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; border: 1px solid var(--border-color);">
+		<div class="row">
+			<div class="col-md-6"></div>
+			<div class="col-md-6">
+				<table class="table" style="font-size: 14px;">
+					<tr><td class="text-right" style="border:none;"><strong>Total:</strong></td><td class="text-right v-total" style="border:none;">0.00</td></tr>
+					<tr><td class="text-right" style="border:none;"><strong>Total Taxes:</strong></td><td class="text-right v-total-taxes" style="border:none;">0.00</td></tr>
+					<tr><td class="text-right" style="border:none;"><strong>Cash Discount:</strong></td><td class="text-right v-cash-discount" style="border:none;">0.00</td></tr>
+					<tr style="font-size: 16px;"><td class="text-right" style="border-top:2px solid var(--border-color);"><strong>Grand Total:</strong></td><td class="text-right v-grand-total" style="border-top:2px solid var(--border-color); font-weight:700;">0.00</td></tr>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>

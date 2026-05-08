@@ -8,6 +8,10 @@ from frappe.utils import flt
 from math import ceil
 
 
+def _so_tax_logger():
+	return frappe.logger("alpinos_so_tax", allow_site=True, file_count=20)
+
+
 def _norm_state(value):
 	return (value or "").strip().lower().replace(" ", "")
 
@@ -53,16 +57,32 @@ def _apply_tax_mode_from_billing(doc):
 
 	billing = doc.get("customer_address")
 	if not billing:
+		_so_tax_logger().warning(
+			"[tax_mode] no billing address | so=%s customer=%s",
+			doc.get("name") or "(new)",
+			doc.get("customer"),
+		)
 		return
 
 	billing_state = frappe.db.get_value("Address", billing, "state")
 	if not billing_state:
+		_so_tax_logger().warning(
+			"[tax_mode] billing state missing | so=%s billing=%s",
+			doc.get("name") or "(new)",
+			billing,
+		)
 		return
 
 	inter_state = _norm_state(billing_state) != _norm_state("Gujarat")
 	tax_category = _pick_tax_category(inter_state)
 	if tax_category:
 		doc.tax_category = tax_category
+		_so_tax_logger().info(
+			"[tax_mode] resolved category=%s | so=%s billing_state=%s",
+			tax_category,
+			doc.get("name") or "(new)",
+			billing_state,
+		)
 
 
 def _fallback_tax_template(company, inter_state):
@@ -132,6 +152,15 @@ def _apply_tax_template_from_party(doc):
 		template = _fallback_tax_template(doc.company, inter_state)
 
 	if not template:
+		_so_tax_logger().error(
+			"[tax_template] not found | so=%s customer=%s company=%s tax_category=%s billing=%s shipping=%s",
+			doc.get("name") or "(new)",
+			doc.get("customer"),
+			doc.get("company"),
+			doc.get("tax_category"),
+			billing,
+			shipping,
+		)
 		return
 
 	if doc.get("taxes_and_charges") != template:
@@ -141,6 +170,51 @@ def _apply_tax_template_from_party(doc):
 		doc.set("taxes", [])
 	if hasattr(doc, "append_taxes_from_master"):
 		doc.append_taxes_from_master("Sales Taxes and Charges Template")
+	_so_tax_logger().info(
+		"[tax_template] applied template=%s rows=%s | so=%s",
+		doc.get("taxes_and_charges"),
+		len(doc.get("taxes") or []),
+		doc.get("name") or "(new)",
+	)
+
+
+@frappe.whitelist()
+def get_tax_template_for_sales_order(customer, company=None, billing_address=None, shipping_address=None):
+	"""Resolve tax category + taxes template for Sales Order Entry page."""
+	out = {"company": None, "tax_category": None, "taxes_and_charges": None}
+	if not customer:
+		return out
+
+	company = _resolve_company(company)
+	out["company"] = company
+
+	doc = frappe._dict(
+		{
+			"doctype": "Sales Order",
+			"customer": customer,
+			"company": company,
+			"customer_address": billing_address,
+			"shipping_address_name": shipping_address,
+			"transaction_date": frappe.utils.nowdate(),
+		}
+	)
+	doc.get = lambda key, default=None: doc[key] if key in doc else default
+	doc.set = lambda key, value: doc.__setitem__(key, value)
+
+	_apply_tax_mode_from_billing(doc)
+	_apply_tax_template_from_party(doc)
+	out["tax_category"] = doc.get("tax_category")
+	out["taxes_and_charges"] = doc.get("taxes_and_charges")
+	_so_tax_logger().info(
+		"[page_resolve] customer=%s company=%s billing=%s shipping=%s -> category=%s template=%s",
+		customer,
+		company,
+		billing_address,
+		shipping_address,
+		out["tax_category"],
+		out["taxes_and_charges"],
+	)
+	return out
 
 
 def _line_flat_discount(item):
@@ -211,6 +285,14 @@ def _apply_cash_discount(doc):
 
 def validate_sales_order_pricing(doc, method=None):
 	"""Keep saved Sales Order rows aligned with the custom entry-page calculation."""
+	_so_tax_logger().info(
+		"[validate] start so=%s customer=%s company=%s billing=%s shipping=%s",
+		doc.get("name") or "(new)",
+		doc.get("customer"),
+		doc.get("company"),
+		doc.get("customer_address"),
+		doc.get("shipping_address_name"),
+	)
 	if not doc.get("company"):
 		doc.company = _resolve_company()
 	doc.ignore_pricing_rule = 1
@@ -231,6 +313,14 @@ def validate_sales_order_pricing(doc, method=None):
 	if hasattr(doc, "calculate_taxes_and_totals"):
 		doc.calculate_taxes_and_totals()
 	doc.custom_cash_discount_amount = flt(doc.get("discount_amount"))
+	_so_tax_logger().info(
+		"[validate] done so=%s template=%s tax_rows=%s total_taxes=%s grand_total=%s",
+		doc.get("name") or "(new)",
+		doc.get("taxes_and_charges"),
+		len(doc.get("taxes") or []),
+		doc.get("total_taxes_and_charges"),
+		doc.get("grand_total"),
+	)
 
 
 @frappe.whitelist()
@@ -399,6 +489,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        delivery_date=None, freebies=None, scheme_items=None,
                        additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
+                       taxes_and_charges=None,
                        submit_now=1):
 	"""Create a Sales Order from the custom entry page"""
 	import json
@@ -419,11 +510,33 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so.delivery_date = delivery_date
 	so.ignore_pricing_rule = 1
 	so.custom_cash_discount = flt(cash_discount)
+	_so_tax_logger().info(
+		"[create] payload customer=%s in_company=%s resolved_company=%s billing=%s shipping=%s explicit_template=%s items=%s",
+		customer,
+		company,
+		so.company,
+		billing_address,
+		shipping_address,
+		taxes_and_charges,
+		len(items or []),
+	)
 	if billing_address:
 		so.customer_address = billing_address
 	if shipping_address:
 		so.shipping_address_name = shipping_address
 	_apply_tax_mode_from_billing(so)
+	if taxes_and_charges:
+		so.taxes_and_charges = taxes_and_charges
+		so.set("taxes", [])
+		so.append_taxes_from_master("Sales Taxes and Charges Template")
+	else:
+		_apply_tax_template_from_party(so)
+	_so_tax_logger().info(
+		"[create] resolved category=%s template=%s tax_rows=%s",
+		so.get("tax_category"),
+		so.get("taxes_and_charges"),
+		len(so.get("taxes") or []),
+	)
 
 	for item in items:
 		item_code = item.get("item_code")
@@ -499,5 +612,13 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	if int(submit_now):
 		so.submit()
 	frappe.db.commit()
+	_so_tax_logger().info(
+		"[create] inserted so=%s template=%s tax_rows=%s total_taxes=%s grand_total=%s",
+		so.name,
+		so.get("taxes_and_charges"),
+		len(so.get("taxes") or []),
+		so.get("total_taxes_and_charges"),
+		so.get("grand_total"),
+	)
 
 	return {"name": so.name, "docstatus": so.docstatus}

@@ -83,6 +83,7 @@ class SalesOrderEntry {
 				const billing = d.billing_address || ad.default_billing || '';
 				const shipping = d.shipping_address || ad.default_shipping || '';
 				me._load_address_options(d.customer, { billing, shipping });
+					me._refresh_tax_template();
 				me._prefill_quotation_after_addresses(d);
 			},
 		});
@@ -233,12 +234,14 @@ class SalesOrderEntry {
 								billing: ad.default_billing || '',
 								shipping: ad.default_shipping || '',
 							});
+							me._refresh_tax_template();
 						},
 					});
 				} else {
 					me.billing_address_field && me.billing_address_field.set_value('');
 					me.shipping_address_field && me.shipping_address_field.set_value('');
 					me._load_address_options(null);
+					if (me.tax_template_field) me.tax_template_field.set_value('');
 				}
 			}, 300);
 		};
@@ -268,6 +271,48 @@ class SalesOrderEntry {
 			parent: header.find('.field-shipping-address'),
 			render_input: true
 		});
+
+		this.tax_template_field = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				label: 'Tax Template (Auto)',
+				fieldname: 'taxes_and_charges',
+				read_only: 1,
+			},
+			parent: header.find('.field-tax-template'),
+			render_input: true
+		});
+		this.tax_template_field.$input && this.tax_template_field.$input.prop('readonly', true);
+
+		this._refresh_tax_template = function() {
+			const customer = me.customer_field.get_value();
+			const billing = me.billing_address_field ? me.billing_address_field.get_value() : '';
+			const shipping = me.shipping_address_field ? me.shipping_address_field.get_value() : '';
+			if (!customer || !billing) {
+				me.tax_template_field && me.tax_template_field.set_value('');
+				return;
+			}
+			frappe.call({
+				method: 'alpinos.sales_order_api.get_tax_template_for_sales_order',
+				args: {
+					customer: customer,
+					company: me.default_company || me._get_default_company(),
+					billing_address: billing,
+					shipping_address: shipping,
+				},
+				callback(r) {
+					const x = r.message || {};
+					me.tax_template_field && me.tax_template_field.set_value(x.taxes_and_charges || '');
+				},
+			});
+		};
+
+		if (this.billing_address_field && this.billing_address_field.$input) {
+			this.billing_address_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
+		}
+		if (this.shipping_address_field && this.shipping_address_field.$input) {
+			this.shipping_address_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
+		}
 	}
 
 	make_item_table() {
@@ -1061,6 +1106,7 @@ class SalesOrderEntry {
 				delivery_date: delivery_date,
 				billing_address: billing_address,
 				shipping_address: shipping_address,
+				taxes_and_charges: me.tax_template_field ? me.tax_template_field.get_value() : '',
 				items: items,
 				cash_discount: flt(me.cash_discount_field.get_value()),
 				freebies: freebies,
