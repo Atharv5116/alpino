@@ -23,6 +23,7 @@ class SalesOrderEntry {
 	}
 
 	setup() {
+		this.default_company = this._get_default_company();
 		this.make_header_fields();
 		this.make_item_table();
 		this.make_other_details();
@@ -31,6 +32,16 @@ class SalesOrderEntry {
 		this.bind_events();
 		this.load_recent_orders();
 		this.maybe_prefill_from_quotation();
+	}
+
+	_get_default_company() {
+		// Frappe default key is usually "Company" (capital C); keep fallbacks for older setups.
+		return (
+			frappe.defaults.get_user_default('Company') ||
+			frappe.defaults.get_user_default('company') ||
+			(frappe.boot && frappe.boot.sysdefaults && frappe.boot.sysdefaults.company) ||
+			''
+		);
 	}
 
 	maybe_prefill_from_quotation() {
@@ -1044,7 +1055,7 @@ class SalesOrderEntry {
 			args: {
 				customer: customer,
 				order_type: order_type,
-				company: frappe.defaults.get_user_default('company'),
+				company: me.default_company || me._get_default_company(),
 				delivery_date: delivery_date,
 				billing_address: billing_address,
 				shipping_address: shipping_address,
