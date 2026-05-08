@@ -218,9 +218,9 @@ def _apply_tax_template_from_party(doc):
 	if doc.get("taxes_and_charges") != template:
 		doc.taxes_and_charges = template
 
-	if hasattr(doc, "set"):
+	if callable(getattr(doc, "set", None)):
 		doc.set("taxes", [])
-	if hasattr(doc, "append_taxes_from_master"):
+	if callable(getattr(doc, "append_taxes_from_master", None)):
 		doc.append_taxes_from_master("Sales Taxes and Charges Template")
 	_so_tax_logger().info(
 		"[tax_template] applied template=%s rows=%s | so=%s",
