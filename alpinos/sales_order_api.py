@@ -33,6 +33,32 @@ def _resolve_company(preferred=None):
 	return frappe.db.get_value("Company", {"name": ("!=", "")}, "name", order_by="creation asc")
 
 
+def _resolve_default_warehouse(company):
+	"""Pick a default stock warehouse for the selected company."""
+	if not company:
+		return None
+
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	candidates = []
+	if abbr:
+		candidates.append(f"Warehouse - {abbr}")
+	candidates.append("Warehouse")
+
+	for wh in candidates:
+		if not wh:
+			continue
+		if frappe.db.exists("Warehouse", {"name": wh, "is_group": 0, "company": company}):
+			return wh
+
+	# Fallback to first non-group warehouse in the company.
+	return frappe.db.get_value(
+		"Warehouse",
+		{"is_group": 0, "company": company},
+		"name",
+		order_by="modified desc",
+	)
+
+
 def _pick_tax_category(inter_state):
 	"""Pick best-fit Tax Category name for intra/inter-state GST."""
 	names = frappe.get_all("Tax Category", pluck="name") or []
@@ -559,6 +585,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so.customer = customer
 	so.order_type = order_type
 	so.company = _resolve_company(company)
+	default_warehouse = _resolve_default_warehouse(so.company)
 	so.delivery_date = delivery_date
 	so.ignore_pricing_rule = 1
 	so.custom_cash_discount = flt(cash_discount)
@@ -624,8 +651,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			"custom_item_tax": flt(calc.get("gst_amount") or item.get("custom_item_tax")),
 		}
 		w = item.get("warehouse")
-		if w:
-			row["warehouse"] = w
+		row["warehouse"] = w or default_warehouse
 		child = so.append("items", row)
 		_apply_calculated_item_values(child, calc)
 
