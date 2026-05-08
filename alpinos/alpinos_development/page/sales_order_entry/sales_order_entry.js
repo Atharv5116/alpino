@@ -484,8 +484,8 @@ class SalesOrderEntry {
 		let me = this;
 		let customer = this.customer_field.get_value();
 
-		// Fetch item name + image
-		frappe.db.get_value('Item', item_code, ['item_name', 'image'], function(r) {
+		// Fetch item name + image + GST %
+		frappe.db.get_value('Item', item_code, ['item_name', 'image', 'custom_gst_percent'], function(r) {
 			if (r) {
 				if (r.item_name) {
 					me.items[idx].item_name = r.item_name;
@@ -493,6 +493,7 @@ class SalesOrderEntry {
 				}
 				me.items[idx].item_image = r.image || '';
 				me._set_row_image($row, r.image || '');
+				me.items[idx].gst_percent = flt(r.custom_gst_percent);
 			}
 		});
 
@@ -603,15 +604,26 @@ class SalesOrderEntry {
 	calc_row_amount(idx, $row) {
 		let item = this.items[idx];
 		let qty = flt(item.qty);
-		let gross = flt(item.mrp) * qty;
-		let flat_disc_amt = gross * flt(item.flat_discount) / 100;
-		let after_flat = gross - flat_disc_amt;
-		let offer_amt = after_flat * flt(item.offer) / 100;
-		let after_offer = after_flat - offer_amt;
-		let additional_disc_amt = after_offer * flt(item.additional_discount) / 100;
-		item.amount = after_offer - additional_disc_amt;
-		if (item.amount < 0) item.amount = 0;
-		item.rate = qty ? flt(item.amount / qty, 2) : 0;
+		const gst_pct = flt(item.gst_percent);
+
+		// MRP is treated as GST-inclusive.
+		const gross_incl = flt(item.mrp) * qty;
+		const flat_disc_amt = gross_incl * flt(item.flat_discount) / 100;
+		const after_flat = gross_incl - flat_disc_amt;
+		const offer_amt = after_flat * flt(item.offer) / 100;
+		const after_offer = after_flat - offer_amt;
+		const additional_disc_amt = after_offer * flt(item.additional_discount) / 100;
+		const final_incl = Math.max(after_offer - additional_disc_amt, 0);
+
+		const div = 1 + (gst_pct / 100);
+		const taxable = div > 0 ? (final_incl / div) : final_incl;
+		const gst_amt = Math.max(final_incl - taxable, 0);
+
+		item.taxable_amount = flt(taxable, 2);
+		item.custom_item_tax = flt(gst_amt, 2);
+		item.amount = flt(final_incl, 2); // UI shows incl-GST line total
+		item.rate = qty ? flt(item.taxable_amount / qty, 2) : 0; // net rate (excl GST)
+
 		$row.find('.item-amount').text(format_currency(item.amount));
 		this.calc_totals();
 	}
@@ -626,18 +638,22 @@ class SalesOrderEntry {
 	}
 
 	calc_totals() {
-		let total_qty = 0, total_amount = 0;
+		let total_qty = 0, total_taxable = 0, total_gst = 0, total_incl = 0;
 		this.items.forEach(item => {
 			total_qty += flt(item.qty);
-			total_amount += flt(item.amount);
+			total_taxable += flt(item.taxable_amount);
+			total_gst += flt(item.custom_item_tax);
+			total_incl += flt(item.amount);
 		});
 
 		let cash_disc_pct = flt(this.cash_discount_field ? this.cash_discount_field.get_value() : 0);
-		let cash_disc_amt = total_amount * cash_disc_pct / 100;
-		let grand_total = total_amount - cash_disc_amt;
+		let cash_disc_amt = total_incl * cash_disc_pct / 100;
+		let grand_total = total_incl - cash_disc_amt;
 
 		this.wrapper.find('.total-qty').text(total_qty);
-		this.wrapper.find('.total-amount').text(format_currency(total_amount));
+		this.wrapper.find('.total-amount').text(format_currency(total_taxable));
+		this.wrapper.find('.gst-amount').text(format_currency(total_gst));
+		this.wrapper.find('.total-incl-gst').text(format_currency(total_incl));
 		this.wrapper.find('.cash-disc-amount').text(format_currency(cash_disc_amt));
 		this.wrapper.find('.grand-total').text(format_currency(grand_total));
 	}

@@ -8,6 +8,51 @@ from frappe.utils import flt
 from math import ceil
 
 
+def _norm_state(value):
+	return (value or "").strip().lower().replace(" ", "")
+
+
+def _pick_tax_category(inter_state):
+	"""Pick best-fit Tax Category name for intra/inter-state GST."""
+	names = frappe.get_all("Tax Category", pluck="name") or []
+	if not names:
+		return None
+
+	intra_keys = ("instate", "in-state", "withinstate", "cgst", "sgst", "intrastate")
+	inter_keys = ("outstate", "out-state", "interstate", "inter-state", "igst")
+	keys = inter_keys if inter_state else intra_keys
+
+	for name in names:
+		n = (name or "").strip().lower()
+		if any(k in n for k in keys):
+			return name
+	return None
+
+
+def _apply_tax_mode_from_billing(doc):
+	"""
+	Use IGST when billing state is outside Gujarat, else CGST/SGST.
+	Implemented by setting tax_category so ERPNext tax rules/templates can resolve correctly.
+	"""
+	if doc.doctype != "Sales Order":
+		return
+	if not doc.get("customer"):
+		return
+
+	billing = doc.get("customer_address")
+	if not billing:
+		return
+
+	billing_state = frappe.db.get_value("Address", billing, "state")
+	if not billing_state:
+		return
+
+	inter_state = _norm_state(billing_state) != _norm_state("Gujarat")
+	tax_category = _pick_tax_category(inter_state)
+	if tax_category:
+		doc.tax_category = tax_category
+
+
 def _line_flat_discount(item):
 	flat = flt(item.get("custom_flat_discount"))
 	if flat:
@@ -21,24 +66,33 @@ def _calculate_sales_order_line_values(item):
 	flat_discount = _line_flat_discount(item)
 	offer_pct = flt(item.get("custom_offer"))
 	additional_discount_pct = flt(item.get("custom_additional_discount"))
+	gst_pct = flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0)
 
 	if not qty or not mrp:
 		return {
 			"rate": flt(item.get("rate")),
 			"amount": flt(item.get("amount")),
 			"flat_discount": flat_discount,
+			"gst_amount": flt(item.get("custom_item_tax")),
 		}
 
-	gross = mrp * qty
-	after_flat = gross - (gross * flat_discount / 100.0)
+	# MRP is GST-inclusive
+	gross_incl = mrp * qty
+	after_flat = gross_incl - (gross_incl * flat_discount / 100.0)
 	after_offer = after_flat - (after_flat * offer_pct / 100.0)
-	net_amount = after_offer - (after_offer * additional_discount_pct / 100.0)
-	net_amount = max(net_amount, 0)
+	final_incl = after_offer - (after_offer * additional_discount_pct / 100.0)
+	final_incl = max(final_incl, 0)
+
+	div = 1 + (gst_pct / 100.0)
+	net_amount = (final_incl / div) if div else final_incl
+	gst_amount = max(final_incl - net_amount, 0)
 
 	return {
+		# Store net values in rate/amount; GST can be calculated by Taxes & Charges template.
 		"rate": flt(net_amount / qty, 2),
 		"amount": flt(net_amount, 2),
 		"flat_discount": flat_discount,
+		"gst_amount": flt(gst_amount, 2),
 	}
 
 
@@ -68,6 +122,7 @@ def _apply_cash_discount(doc):
 def validate_sales_order_pricing(doc, method=None):
 	"""Keep saved Sales Order rows aligned with the custom entry-page calculation."""
 	doc.ignore_pricing_rule = 1
+	_apply_tax_mode_from_billing(doc)
 	_apply_cash_discount(doc)
 
 	for row in doc.get("items") or []:
@@ -76,6 +131,8 @@ def validate_sales_order_pricing(doc, method=None):
 			continue
 		if calc["flat_discount"] and not flt(row.get("custom_flat_discount")):
 			row.custom_flat_discount = calc["flat_discount"]
+		if calc.get("gst_amount") is not None:
+			row.custom_item_tax = flt(calc.get("gst_amount"))
 		_apply_calculated_item_values(row, calc)
 
 	if hasattr(doc, "calculate_taxes_and_totals"):
@@ -273,6 +330,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		so.customer_address = billing_address
 	if shipping_address:
 		so.shipping_address_name = shipping_address
+	_apply_tax_mode_from_billing(so)
 
 	for item in items:
 		item_code = item.get("item_code")
@@ -301,10 +359,11 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			"description": item.get("description") or "",
 			"custom_box": custom_box,
 			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
+			"custom_gst_percent": flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0),
 			"custom_flat_discount": calc["flat_discount"],
 			"custom_offer": item.get("custom_offer") or "",
 			"custom_additional_discount": flt(item.get("custom_additional_discount")),
-			"custom_item_tax": flt(item.get("custom_item_tax")),
+			"custom_item_tax": flt(calc.get("gst_amount") or item.get("custom_item_tax")),
 		}
 		w = item.get("warehouse")
 		if w:

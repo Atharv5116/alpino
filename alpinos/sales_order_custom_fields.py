@@ -17,6 +17,20 @@ def setup_sales_order_custom_fields():
 
 	custom_fields = {
 		# ============================================================
+		# ITEM: GST % (stored on item master)
+		# ============================================================
+		"Item": [
+			dict(
+				fieldname="custom_gst_percent",
+				label="GST %",
+				fieldtype="Percent",
+				insert_after="standard_rate",
+				default="0",
+				description="GST percentage applicable on this item. Used when MRP is GST-inclusive.",
+			),
+		],
+
+		# ============================================================
 		# CUSTOMER: Add Order Type + Item MRP table
 		# ============================================================
 		"Customer": [
@@ -138,7 +152,17 @@ def setup_sales_order_custom_fields():
 				label="MRP",
 				fieldtype="Currency",
 				insert_after="price_list_rate",
-				description="MRP from Customer master. Editable.",
+				description="MRP (Incl. GST). Editable.",
+			),
+			# GST % (from Item)
+			dict(
+				fieldname="custom_gst_percent",
+				label="GST %",
+				fieldtype="Percent",
+				insert_after="custom_customer_mrp",
+				fetch_from="item_code.custom_gst_percent",
+				read_only=1,
+				description="GST percentage pulled from Item master.",
 			),
 			# Flat Discount % (after discount_amount)
 			dict(
