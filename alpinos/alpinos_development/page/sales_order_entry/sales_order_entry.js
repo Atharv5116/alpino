@@ -400,6 +400,7 @@ class SalesOrderEntry {
 				<td class="item-qty"></td>
 				<td class="item-box"></td>
 				<td class="item-mrp"></td>
+				<td class="item-gst"></td>
 				<td class="item-flat-discount"></td>
 				<td class="item-offer"></td>
 				<td class="item-additional-discount"></td>
@@ -479,6 +480,18 @@ class SalesOrderEntry {
 			me.calc_row_amount(idx, $row);
 		});
 		row_data._mrp_field = mrp_field;
+
+		// GST % (read-only, from Item)
+		let gst_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Float', fieldname: `gst_${idx}`, read_only: 1 },
+			parent: $row.find('.item-gst'),
+			render_input: true,
+			only_input: true
+		});
+		gst_field.$input && gst_field.$input.css('width', '70px');
+		gst_field.$input && gst_field.$input.prop('readonly', true);
+		if (row_data.gst_percent) gst_field.set_value(row_data.gst_percent);
+		row_data._gst_field = gst_field;
 
 		// Flat Discount %
 		let flat_disc_field = frappe.ui.form.make_control({
@@ -569,6 +582,8 @@ class SalesOrderEntry {
 				me.items[idx].item_image = r.image || '';
 				me._set_row_image($row, r.image || '');
 				me.items[idx].gst_percent = flt(r.custom_gst_percent);
+				if (me.items[idx]._gst_field) me.items[idx]._gst_field.set_value(me.items[idx].gst_percent);
+				me.calc_row_amount(idx, $row);
 			}
 		});
 
