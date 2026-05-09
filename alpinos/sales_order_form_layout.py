@@ -222,6 +222,8 @@ def _apply_sales_order_field_visibility():
 	KEEP_SECTION_BREAKS = frozenset(
 		{
 			"customer_section",
+			# Keep address split wrapper visible for customer/shipping blocks.
+			"col_break46",
 			# Items ladder
 			"sec_warehouse",
 			"items_section",
@@ -272,11 +274,12 @@ def _apply_sales_order_field_visibility():
 		property_type="Data",
 	)
 
-	# Flatten header: hide all tab headers (fields are re-ordered onto the main form).
+	# Keep Address & Contact tab visible so customer/billing/shipping block is reachable.
 	for df in meta.fields:
 		if df.fieldtype != "Tab Break" or not df.fieldname:
 			continue
-		_upsert_docfield_prop("Sales Order", df.fieldname, "hidden", "1", property_type="Check")
+		hidden = "0" if df.fieldname == "contact_info" else "1"
+		_upsert_docfield_prop("Sales Order", df.fieldname, "hidden", hidden, property_type="Check")
 
 	for df in meta.fields:
 		if df.fieldtype != "Section Break" or not df.fieldname:
@@ -356,7 +359,11 @@ def _apply_sales_order_item_grid():
 	for fname in sorted(targets):
 		df = meta.get_field(fname)
 		ft = getattr(df, "fieldtype", None) or ""
-		show = fname in visible and ft not in structural_ft
+		is_structural = ft in structural_ft
+		show = fname in visible and not is_structural
+		if is_structural:
+			# Keep native section wrappers so row editor can render visible fields.
+			continue
 		_upsert_docfield_prop(
 			"Sales Order Item",
 			fname,
