@@ -1,6 +1,6 @@
 """
-Remove compact Sales Order Desk layout (Property Setters: hidden, label, in_list_view
-on Sales Order family DocTypes), then re-apply Alpinos base setters from
+Remove compact Sales Order Desk layout (Property Setters: hidden, label, in_list_view,
+insert_after on Sales Order family DocTypes), then re-apply Alpinos base setters from
 ``sales_order_custom_fields`` (SKU labels, order-type options, hidden company, etc.).
 
 **Before** ``bench migrate`` with this patch queued:

@@ -593,7 +593,8 @@ def setup_custom_fields():
 			fieldname="custom_offline_buyer_section",
 			label="Offline Buyer",
 			fieldtype="Section Break",
-			insert_after="customer",
+			# After GSTIN so standard customer / name / type / dates / addresses flow right under Customer.
+			insert_after="tax_id",
 			collapsible=1,
 		),
 		dict(
