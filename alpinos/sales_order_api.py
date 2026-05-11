@@ -4,6 +4,7 @@ These bypass child table permission issues when called from client scripts.
 """
 
 import frappe
+from frappe import _
 from frappe.utils import flt
 from math import ceil
 
@@ -722,3 +723,106 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	)
 
 	return {"name": so.name, "docstatus": so.docstatus}
+
+
+def _so_view_abs_url(path):
+	if not path:
+		return ""
+	p = str(path).strip()
+	if p.startswith(("http://", "https://")):
+		return p
+	return frappe.utils.get_url(p)
+
+
+def _so_view_filter_dict_by_read_perm(doctype, row_dict, parenttype=None):
+	"""Keep only field keys the current user may read (perm level + DocPerm)."""
+	meta = frappe.get_meta(doctype)
+	permitted = set(meta.get_permitted_fieldnames(permission_type="read", parenttype=parenttype) or [])
+	if not permitted:
+		return dict(row_dict)
+	out = {}
+	for k, v in row_dict.items():
+		if k.startswith("_"):
+			continue
+		if k in permitted:
+			out[k] = v
+	return out
+
+
+@frappe.whitelist()
+def get_sales_order_entry_view_payload(sales_order):
+	"""Sales Order read-only view data for Desk page; respects perm levels on SO + child rows."""
+	if not sales_order:
+		frappe.throw(_("Sales Order is required"))
+	if not frappe.has_permission("Sales Order", "read", doc=sales_order):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	doc = frappe.get_doc("Sales Order", sales_order)
+	meta_so = frappe.get_meta("Sales Order")
+	permitted_parent = set(meta_so.get_permitted_fieldnames(permission_type="read") or [])
+	parent_src = doc.as_dict()
+	_skip_parent = frozenset(
+		{
+			"items",
+			"taxes",
+			"packed_items",
+			"pricing_rules",
+			"payment_schedule",
+			"sales_team",
+			"custom_marketing_freebies",
+			"custom_scheme_item_table",
+		}
+	)
+	parent = {}
+	for k, v in parent_src.items():
+		if k.startswith("_"):
+			continue
+		if k in _skip_parent:
+			continue
+		if isinstance(v, (list, tuple)):
+			continue
+		if k in permitted_parent:
+			parent[k] = v
+	parent["name"] = doc.name
+
+	items = None
+	if "items" in permitted_parent:
+		items = []
+		for row in doc.get("items") or []:
+			rd = _so_view_filter_dict_by_read_perm("Sales Order Item", row.as_dict(), parenttype="Sales Order")
+			img = rd.get("custom_product_image") or ""
+			if img:
+				rd["custom_product_image_url"] = _so_view_abs_url(img)
+			items.append(rd)
+
+	freebies = None
+	if "custom_marketing_freebies" in permitted_parent:
+		freebies = []
+		for row in doc.get("custom_marketing_freebies") or []:
+			freebies.append(
+				_so_view_filter_dict_by_read_perm(
+					"Sales Order Marketing Freebie", row.as_dict(), parenttype="Sales Order"
+				)
+			)
+
+	scheme_rows = None
+	if "custom_scheme_item_table" in permitted_parent:
+		scheme_rows = []
+		for row in doc.get("custom_scheme_item_table") or []:
+			scheme_rows.append(
+				_so_view_filter_dict_by_read_perm(
+					"Sales Order Scheme Item", row.as_dict(), parenttype="Sales Order"
+				)
+			)
+
+	damage = 0
+	if "custom_additional_units_damage" in permitted_parent:
+		damage = int(doc.get("custom_additional_units_damage") or 0)
+
+	return {
+		"parent": parent,
+		"items": items,
+		"freebies": freebies,
+		"scheme_rows": scheme_rows,
+		"additional_units_damage": damage,
+	}

@@ -783,6 +783,10 @@ class SalesOrderEntry {
 		this.page.set_secondary_action('Clear', function() {
 			me.clear_form();
 		});
+
+		this.page.add_inner_button(__('Sales Order List'), function() {
+			frappe.set_route('List', 'Sales Order');
+		});
 	}
 
 	bind_events() {
@@ -791,6 +795,13 @@ class SalesOrderEntry {
 		// Add Row button
 		this.wrapper.find('.btn-add-row').on('click', function() {
 			me.add_item_row();
+		});
+
+		this.wrapper.on('click', '.order-row', function () {
+			const name = $(this).data('name');
+			if (!name) return;
+			frappe.route_options = { sales_order: name };
+			frappe.set_route('page', 'sales-order-entry-view');
 		});
 
 		// Remove Row
@@ -1156,7 +1167,8 @@ class SalesOrderEntry {
 						message: `Sales Order <b>${r.message.name}</b> created successfully!`,
 						indicator: 'green'
 					}, 5);
-					frappe.set_route('Form', 'Sales Order', r.message.name);
+					frappe.route_options = { sales_order: r.message.name };
+					frappe.set_route('page', 'sales-order-entry-view');
 				}
 			}
 		});
@@ -1203,15 +1215,16 @@ class SalesOrderEntry {
 
 		let rows = orders.map(o => {
 			let color = status_colors[o.status] || 'grey';
+			const nm = frappe.utils.escape_html(o.name || '');
 			return `
-				<tr class="order-row" data-name="${o.name}" style="cursor: pointer;">
-					<td><a href="/app/sales-order/${o.name}" target="_blank" style="font-weight: 500;">${o.name}</a></td>
-					<td>${o.customer_name || o.customer}</td>
-					<td>${o.order_type || '-'}</td>
+				<tr class="order-row" data-name="${nm}" style="cursor: pointer;">
+					<td><span class="text-primary" style="font-weight: 500;">${nm}</span></td>
+					<td>${frappe.utils.escape_html(o.customer_name || o.customer || '')}</td>
+					<td>${frappe.utils.escape_html(o.order_type || '-')}</td>
 					<td>${frappe.datetime.str_to_user(o.transaction_date)}</td>
 					<td>${o.delivery_date ? frappe.datetime.str_to_user(o.delivery_date) : '-'}</td>
 					<td class="text-right">${format_currency(o.grand_total)}</td>
-					<td><span class="indicator-pill ${color}">${o.status}</span></td>
+					<td><span class="indicator-pill ${color}">${frappe.utils.escape_html(o.status || '')}</span></td>
 				</tr>
 			`;
 		}).join('');
