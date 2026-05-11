@@ -329,11 +329,12 @@ class SalesOrderEntryView {
 			w.find('.sec-scheme').show();
 			const sb = w.find('.v-scheme tbody').empty();
 			schemeRows.forEach((row) => {
+				const sch = row.scheme != null && String(row.scheme).trim() !== '' ? String(row.scheme) : '';
 				sb.append(`<tr>
 					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
 					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
 					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
-					<td>${this._has(row, 'scheme') ? this._esc(row.scheme) : '—'}</td>
+					<td>${sch ? this._esc(sch) : '—'}</td>
 				</tr>`);
 			});
 		} else {

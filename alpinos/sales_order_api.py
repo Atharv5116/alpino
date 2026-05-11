@@ -729,15 +729,12 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			},
 		)
 
-	# Scheme child table: only rows with a non-empty scheme value. Blank-scheme lines from
-	# the entry page are not persisted (use Additional Units – Damage for those).
+	# Scheme child table: persist every line with an item (scheme text may be empty; view shows "—").
 	for scheme in scheme_items:
 		ic = (scheme.get("item_code") or "").strip()
 		if not ic:
 			continue
 		sch_txt = (scheme.get("scheme") or "").strip()
-		if not sch_txt:
-			continue
 		iname = (scheme.get("item_name") or "").strip() or _item_name_for_item_code(ic)
 		so.append(
 			"custom_scheme_item_table",
@@ -864,16 +861,10 @@ def get_sales_order_entry_view_payload(sales_order):
 			)
 		)
 
-	# Scheme grid: only `custom_scheme_item_table` rows with a non-empty scheme value.
-	# Use the raw child row for the scheme check so perm-filtered dicts cannot drop `scheme`
-	# and mis-route rows. Additional-units–damage lines come **only** from
-	# `custom_additional_units_damage_items` (legacy blank-scheme rows on the scheme
-	# child are handled by `run_sales_order_scheme_damage_split_migration`, not here).
+	# Scheme grid: all `custom_scheme_item_table` rows (blank scheme still shows SKU / qty; Scheme column "—").
 	scheme_rows = []
 	scheme_item_perm = "Sales Order Scheme Item"
 	for row in doc.get("custom_scheme_item_table") or []:
-		if not (row.get("scheme") or "").strip():
-			continue
 		rd = _so_view_filter_dict_by_read_perm(
 			scheme_item_perm, row.as_dict(), parenttype="Sales Order"
 		)
