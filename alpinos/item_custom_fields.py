@@ -2,7 +2,7 @@
 Item master customization for Alpinos.
 
 - Existing Item fields are adjusted through Property Setters.
-- New Item fields are created as Custom Fields.
+- New Item fields are created as Custom Fields (e.g. SKU No, Pack Type, freebie flags).
 """
 
 import frappe
@@ -12,6 +12,12 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 def setup_item_custom_fields():
 	custom_fields = {
 		"Item": [
+			dict(
+				fieldname="custom_sku_no",
+				label="SKU No",
+				fieldtype="Data",
+				insert_after="item_name",
+			),
 			dict(
 				fieldname="custom_pack_type",
 				label="Pack Type",
