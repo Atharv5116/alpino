@@ -322,8 +322,35 @@ class SalesOrderEntryView {
 		}
 
 		const damage = !!payload.additional_units_damage;
-		const schemeRows = Array.isArray(payload.scheme_rows) ? payload.scheme_rows : [];
-		const damageItemRows = Array.isArray(payload.damage_item_rows) ? payload.damage_item_rows : [];
+		const schemeRowsRaw = Array.isArray(payload.scheme_rows) ? payload.scheme_rows : [];
+		const damageItemRowsRaw = Array.isArray(payload.damage_item_rows) ? payload.damage_item_rows : [];
+
+		// View normalization for mixed/legacy data:
+		// - rows carrying damage metadata (previous_order_id / remarks) should show under
+		//   Additional Units – Damage Items
+		// - plain rows without damage metadata should show under Scheme Details
+		const hasDamageMeta = (row) =>
+			!!(
+				((row && row.previous_order_id) || '').toString().trim() ||
+				((row && row.remarks) || '').toString().trim()
+			);
+		const schemeRows = [];
+		const damageItemRows = [];
+
+		schemeRowsRaw.forEach((row) => {
+			if (damage && hasDamageMeta(row) && !((row.scheme || '').toString().trim())) {
+				damageItemRows.push(row);
+			} else {
+				schemeRows.push(row);
+			}
+		});
+		damageItemRowsRaw.forEach((row) => {
+			if (!hasDamageMeta(row)) {
+				schemeRows.push(row);
+			} else {
+				damageItemRows.push(row);
+			}
+		});
 
 		if (schemeRows.length) {
 			w.find('.sec-scheme').show();
