@@ -145,6 +145,23 @@ class SalesOrderEntryView {
 		return frappe.utils.escape_html(s == null ? '' : String(s));
 	}
 
+	/** Decode HTML entities (e.g. `&amp;` → `&`) for plain Select / Data fields. */
+	_plain_text(s) {
+		if (s == null || s === '') return '';
+		const t = document.createElement('textarea');
+		t.innerHTML = String(s);
+		return t.value;
+	}
+
+	/** Turn address HTML from ERPNext into readable multiline plain text. */
+	_address_plain(html) {
+		if (html == null || html === '') return '';
+		let s = String(html).replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+		const el = document.createElement('div');
+		el.innerHTML = s;
+		return (el.innerText || '').replace(/\r\n/g, '\n').trim();
+	}
+
 	_fmt_date(parent, key) {
 		if (!this._has(parent, key)) return '—';
 		const v = parent[key];
@@ -161,7 +178,10 @@ class SalesOrderEntryView {
 		const v = parent[key];
 		if (v === '' || v === null || v === undefined) return '—';
 		const n = flt(v);
-		if (as_currency) return format_currency(n);
+		if (as_currency) {
+			const cur = parent.currency || frappe.boot?.sysdefaults?.currency;
+			return format_currency(n, cur);
+		}
 		return String(n);
 	}
 
@@ -176,15 +196,22 @@ class SalesOrderEntryView {
 	render(payload) {
 		const p = payload.parent || {};
 		const w = this.wrapper;
+		const currency = p.currency || frappe.boot?.sysdefaults?.currency || '';
 
 		// Customer block — order matches template
-		w.find('.v-customer-name').text(this._has(p, 'customer_name') ? this._esc(p.customer_name) : '—');
-		w.find('.v-order-type').text(this._has(p, 'order_type') ? this._esc(p.order_type) : '—');
-		w.find('.v-billing').html(this._has(p, 'address_display') ? frappe.utils.escape_html(p.address_display) : '—');
-		w.find('.v-shipping').html(this._has(p, 'shipping_address') ? frappe.utils.escape_html(p.shipping_address) : '—');
+		w.find('.v-customer-name').text(
+			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'
+		);
+		w.find('.v-order-type').text(this._has(p, 'order_type') ? this._plain_text(p.order_type) : '—');
+		w.find('.v-billing').text(
+			this._has(p, 'address_display') ? this._address_plain(p.address_display) : '—'
+		);
+		w.find('.v-shipping').text(
+			this._has(p, 'shipping_address') ? this._address_plain(p.shipping_address) : '—'
+		);
 		w.find('.v-date').text(this._fmt_date(p, 'transaction_date'));
-		w.find('.v-po-no').text(this._has(p, 'po_no') ? this._esc(p.po_no) : '—');
-		w.find('.v-tax-id').text(this._has(p, 'tax_id') ? this._esc(p.tax_id) : '—');
+		w.find('.v-po-no').text(this._has(p, 'po_no') ? this._plain_text(p.po_no) : '—');
+		w.find('.v-tax-id').text(this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—');
 		w.find('.v-delivery-date').text(this._fmt_date(p, 'delivery_date'));
 
 		// Hide customer rows where field not permitted
@@ -206,25 +233,31 @@ class SalesOrderEntryView {
 			}
 		});
 
-		// Items
-		const items = payload.items;
-		if (items != null) {
-			w.find('.sec-order-items').show();
-			const tb = w.find('.v-items tbody').empty();
+		const items = Array.isArray(payload.items) ? payload.items : [];
+		w.find('.sec-order-items').show();
+		const tb = w.find('.v-items tbody').empty();
+		if (!items.length) {
+			tb.append(
+				`<tr><td colspan="11" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
+			);
+		} else {
 			items.forEach((it, i) => {
 				const img = it.custom_product_image_url || it.custom_product_image || '';
 				const imgTag = img
-					? `<img src="${this._esc(img)}" alt="" style="max-height:40px;max-width:64px;" />`
+					? `<img src="${this._esc(img)}" alt="" style="max-height:44px;max-width:72px;border-radius:4px;object-fit:contain;" />`
 					: '—';
 				const sku = this._has(it, 'item_code') ? this._esc(it.item_code) : '—';
 				const nm = this._has(it, 'item_name') ? this._esc(it.item_name) : '—';
 				const qty = this._has(it, 'qty') ? flt(it.qty) : null;
 				const box = this._has(it, 'custom_box') ? flt(it.custom_box) : null;
-				const mrp = this._has(it, 'custom_customer_mrp') ? format_currency(flt(it.custom_customer_mrp)) : '—';
+				const rowCur = it.currency || currency;
+				const mrp = this._has(it, 'custom_customer_mrp')
+					? format_currency(flt(it.custom_customer_mrp), rowCur)
+					: '—';
 				const fd = this._has(it, 'custom_flat_discount') ? flt(it.custom_flat_discount) : null;
 				const of = this._has(it, 'custom_offer') ? flt(it.custom_offer) : null;
 				const ad = this._has(it, 'custom_additional_discount') ? flt(it.custom_additional_discount) : null;
-				const amt = this._has(it, 'amount') ? format_currency(flt(it.amount)) : '—';
+				const amt = this._has(it, 'amount') ? format_currency(flt(it.amount), rowCur) : '—';
 				tb.append(`<tr>
 					<td>${i + 1}</td>
 					<td class="text-center">${imgTag}</td>
@@ -236,38 +269,32 @@ class SalesOrderEntryView {
 					<td class="text-right">${fd != null ? fd : '—'}</td>
 					<td class="text-right">${of != null ? of : '—'}</td>
 					<td class="text-right">${ad != null ? ad : '—'}</td>
-					<td class="text-right">${amt}</td>
+					<td class="text-right"><strong>${amt}</strong></td>
 				</tr>`);
 			});
-		} else {
-			w.find('.sec-order-items').hide();
 		}
 
-		// Freebies
-		const freebies = payload.freebies;
-		if (freebies != null) {
+		const freebies = Array.isArray(payload.freebies) ? payload.freebies : [];
+		if (freebies.length) {
 			w.find('.sec-marketing-freebies').show();
 			const fb = w.find('.v-freebies tbody').empty();
-			if (!freebies.length) {
-				fb.append('<tr><td colspan="4" class="text-muted text-center">—</td></tr>');
-			} else {
-				freebies.forEach((row) => {
-					fb.append(`<tr>
-						<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
-						<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
-						<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
-						<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
-					</tr>`);
-				});
-			}
+			freebies.forEach((row) => {
+				fb.append(`<tr>
+					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
+					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
+					<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
+				</tr>`);
+			});
 		} else {
 			w.find('.sec-marketing-freebies').hide();
 		}
 
 		const damage = !!payload.additional_units_damage;
-		const schemeRows = payload.scheme_rows;
+		const schemeRows = Array.isArray(payload.scheme_rows) ? payload.scheme_rows : [];
+		const showScheme = damage || schemeRows.length > 0;
 
-		if (schemeRows != null) {
+		if (showScheme) {
 			w.find('.sec-scheme').show();
 			if (damage) {
 				w.find('.v-scheme-title').text(__('Additional Units – Damage'));
@@ -308,8 +335,8 @@ class SalesOrderEntryView {
 		if (this._has(p, 'custom_additional_units_damage')) {
 			w.find('.sec-damage-flag').show();
 			w.find('.v-damage-flag')
-				.toggleClass('label-success', damage)
-				.toggleClass('label-default', !damage)
+				.removeClass('green red')
+				.addClass(damage ? 'green' : 'red')
 				.text(damage ? __('Yes') : __('No'));
 		} else {
 			w.find('.sec-damage-flag').hide();
@@ -350,11 +377,6 @@ class SalesOrderEntryView {
 			w.find('.sec-net').hide();
 		}
 
-		const anyOrderDetails =
-			items != null ||
-			freebies != null ||
-			schemeRows != null ||
-			this._has(p, 'custom_additional_units_damage');
-		w.find('.so-view-order-details-wrap').toggle(!!anyOrderDetails);
+		w.find('.so-view-order-details-wrap').show();
 	}
 }

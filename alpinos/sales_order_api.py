@@ -788,35 +788,31 @@ def get_sales_order_entry_view_payload(sales_order):
 			parent[k] = v
 	parent["name"] = doc.name
 
-	items = None
-	if "items" in permitted_parent:
-		items = []
-		for row in doc.get("items") or []:
-			rd = _so_view_filter_dict_by_read_perm("Sales Order Item", row.as_dict(), parenttype="Sales Order")
-			img = rd.get("custom_product_image") or ""
-			if img:
-				rd["custom_product_image_url"] = _so_view_abs_url(img)
-			items.append(rd)
+	# Table fields (items, child tables) are excluded from get_permitted_fieldnames but SO read
+	# implies line visibility; still filter each child row by Sales Order *Item* field perms.
+	items = []
+	for row in doc.get("items") or []:
+		rd = _so_view_filter_dict_by_read_perm("Sales Order Item", row.as_dict(), parenttype="Sales Order")
+		img = rd.get("custom_product_image") or ""
+		if img:
+			rd["custom_product_image_url"] = _so_view_abs_url(img)
+		items.append(rd)
 
-	freebies = None
-	if "custom_marketing_freebies" in permitted_parent:
-		freebies = []
-		for row in doc.get("custom_marketing_freebies") or []:
-			freebies.append(
-				_so_view_filter_dict_by_read_perm(
-					"Sales Order Marketing Freebie", row.as_dict(), parenttype="Sales Order"
-				)
+	freebies = []
+	for row in doc.get("custom_marketing_freebies") or []:
+		freebies.append(
+			_so_view_filter_dict_by_read_perm(
+				"Sales Order Marketing Freebie", row.as_dict(), parenttype="Sales Order"
 			)
+		)
 
-	scheme_rows = None
-	if "custom_scheme_item_table" in permitted_parent:
-		scheme_rows = []
-		for row in doc.get("custom_scheme_item_table") or []:
-			scheme_rows.append(
-				_so_view_filter_dict_by_read_perm(
-					"Sales Order Scheme Item", row.as_dict(), parenttype="Sales Order"
-				)
+	scheme_rows = []
+	for row in doc.get("custom_scheme_item_table") or []:
+		scheme_rows.append(
+			_so_view_filter_dict_by_read_perm(
+				"Sales Order Scheme Item", row.as_dict(), parenttype="Sales Order"
 			)
+		)
 
 	damage = 0
 	if "custom_additional_units_damage" in permitted_parent:
