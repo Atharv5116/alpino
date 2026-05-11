@@ -3,19 +3,12 @@ Remove compact Sales Order Desk layout (Property Setters: hidden, label, in_list
 insert_after on Sales Order family DocTypes), then re-apply Alpinos base setters from
 ``sales_order_custom_fields`` (SKU labels, order-type options, hidden company, etc.).
 
-**Before** ``bench migrate`` with this patch queued:
+``after_migrate`` no longer calls ``setup_sales_order_form_layout`` (see ``hooks.py``),
+so the compact Desk layout is not re-applied after migrate.
 
-1. Remove ``alpinos.sales_order_form_layout.setup_sales_order_form_layout`` from
-   ``after_migrate`` in ``hooks.py``. Otherwise ``after_migrate`` will recreate the
-   Desk layout as soon as migrate finishes.
-
-Optional: add the hook line back later if you want the compact layout again.
-
-To run once via migrate, append to ``hooks.py`` ``patches``::
-
-	"alpinos.patches.v1_0.revert_sales_order_desk_layout.execute",
-
-Frappe records it in Patch Log so it only executes once per site.
+This patch is listed in ``patches.txt``; Frappe records it in Patch Log so it runs once
+per site on ``bench migrate``. Re-add ``setup_sales_order_form_layout`` to
+``after_migrate`` if you want the compact layout again.
 """
 
 import frappe

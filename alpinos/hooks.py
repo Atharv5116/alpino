@@ -139,7 +139,6 @@ after_migrate = [
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.patches.create_attendance_widget.execute",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
-	"alpinos.sales_order_form_layout.setup_sales_order_form_layout",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
 	"alpinos.item_custom_fields.setup_item_custom_fields",
