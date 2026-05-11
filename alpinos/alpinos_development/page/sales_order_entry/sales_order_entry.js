@@ -1123,6 +1123,32 @@ class SalesOrderEntry {
 		old.forEach(s => this.add_additional_units_row(s));
 	}
 
+	_sync_other_detail_rows_from_ui() {
+		const w = this.wrapper;
+		w.find('.freebies-table tbody tr').each((i, tr) => {
+			const row = this.freebies[i];
+			if (!row) return;
+			row.item_code = ($(tr).find('.freebie-item input').val() || '').trim();
+			row.qty = flt($(tr).find('.freebie-qty input').val());
+			row.remarks = ($(tr).find('.freebie-remarks input').val() || '').trim();
+		});
+		w.find('.scheme-table tbody tr').each((i, tr) => {
+			const row = this.scheme_items[i];
+			if (!row) return;
+			row.item_code = ($(tr).find('.scheme-item input').val() || '').trim();
+			row.qty = flt($(tr).find('.scheme-qty input').val());
+			row.scheme = ($(tr).find('.scheme-scheme input').val() || '').trim();
+		});
+		w.find('.additional-units-table tbody tr').each((i, tr) => {
+			const row = this.additional_units_items[i];
+			if (!row) return;
+			row.item_code = ($(tr).find('.au-item input').val() || '').trim();
+			row.qty = flt($(tr).find('.au-qty input').val());
+			row.previous_order_id = ($(tr).find('.au-prev-order input').val() || '').trim();
+			row.remarks = ($(tr).find('.au-remarks textarea, .au-remarks input').val() || '').trim();
+		});
+	}
+
 	create_sales_order() {
 		let me = this;
 		let customer = this.customer_field.get_value();
@@ -1136,6 +1162,10 @@ class SalesOrderEntry {
 
 		let valid_items = this.items.filter(i => i.item_code && flt(i.qty) > 0);
 		if (!valid_items.length) return frappe.throw('Please add at least one item');
+
+		// Ensure latest link/input values are captured even if the user clicks create
+		// immediately after selecting from awesomplete.
+		this._sync_other_detail_rows_from_ui();
 
 		let items = valid_items.map(item => ({
 			item_code: item.item_code,
