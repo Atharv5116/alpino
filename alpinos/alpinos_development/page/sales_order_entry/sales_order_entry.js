@@ -991,7 +991,6 @@ class SalesOrderEntry {
 				<td class="au-item"></td>
 				<td class="au-name"><span class="text-muted">-</span></td>
 				<td class="au-qty"></td>
-				<td class="au-scheme"></td>
 				<td class="au-prev-order"></td>
 				<td class="au-remarks"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-additional-unit"><i class="fa fa-trash"></i></button></td>
@@ -1025,14 +1024,6 @@ class SalesOrderEntry {
 		qty_field.$input && qty_field.$input.css('width', '70px');
 		qty_field.$input.on('change', function() { me.additional_units_items[idx].qty = flt(qty_field.get_value()); });
 
-		let scheme_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Data', fieldname: `au_scheme_${idx}` },
-			parent: $row.find('.au-scheme'),
-			render_input: true,
-			only_input: true
-		});
-		scheme_field.$input.on('change', function() { me.additional_units_items[idx].scheme = scheme_field.get_value(); });
-
 		let prev_order_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', fieldname: `au_prev_order_${idx}` },
 			parent: $row.find('.au-prev-order'),
@@ -1052,7 +1043,6 @@ class SalesOrderEntry {
 		if (data && data.item_code) {
 			item_field.set_value(data.item_code);
 			if (data.qty) qty_field.set_value(data.qty);
-			if (data.scheme) scheme_field.set_value(data.scheme);
 			if (data.previous_order_id) prev_order_field.set_value(data.previous_order_id);
 			if (data.remarks !== undefined && data.remarks !== null) remarks_field.set_value(data.remarks);
 			if (data.item_name) {
