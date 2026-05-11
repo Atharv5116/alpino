@@ -363,16 +363,6 @@ class SalesOrderEntryView {
 			w.find('.sec-damage-items').hide();
 		}
 
-		if (this._has(p, 'custom_additional_units_damage')) {
-			w.find('.sec-damage-flag').show();
-			w.find('.v-damage-flag')
-				.removeClass('green red')
-				.addClass(damage ? 'green' : 'red')
-				.text(damage ? __('Yes') : __('No'));
-		} else {
-			w.find('.sec-damage-flag').hide();
-		}
-
 		if (this._has(p, 'custom_cash_discount')) {
 			w.find('.sec-cash-disc').show();
 			w.find('.v-cash-disc-pct').text(`${flt(p.custom_cash_discount)}%`);
