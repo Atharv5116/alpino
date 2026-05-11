@@ -19,7 +19,7 @@ class SalesOrderEntryView {
 
 	setup_toolbar() {
 		this.page.add_inner_button(__('Back to Sales Order List'), () => {
-			frappe.set_route('page', 'sales-order-entry-list');
+			frappe.set_route('sales-order-entry-list');
 		});
 		this.page.add_inner_button(__('Open in ERPNext'), () => {
 			if (this._so_name) {

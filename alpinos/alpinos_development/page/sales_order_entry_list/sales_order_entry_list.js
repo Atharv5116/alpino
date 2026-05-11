@@ -34,7 +34,7 @@ class SalesOrderEntryListPage {
 		if (frappe.model.can_create('Sales Order')) {
 			this.page.set_primary_action(
 				__('New Sales Order'),
-				() => frappe.set_route('page', 'sales-order-entry'),
+				() => frappe.set_route('sales-order-entry'),
 				'fa fa-plus'
 			);
 		}
@@ -119,7 +119,7 @@ class SalesOrderEntryListPage {
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
 			frappe.route_options = { sales_order: name };
-			frappe.set_route('page', 'sales-order-entry-view');
+			frappe.set_route('sales-order-entry-view');
 		});
 	}
 

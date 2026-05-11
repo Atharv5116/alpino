@@ -6,7 +6,7 @@ frappe.ready(function () {
 	frappe.router.on("change", function () {
 		const r = frappe.get_route() || [];
 		if (r[0] === "List" && r[1] === "Sales Order") {
-			frappe.set_route("page", "sales-order-entry-list");
+			frappe.set_route("sales-order-entry-list");
 		}
 	});
 });

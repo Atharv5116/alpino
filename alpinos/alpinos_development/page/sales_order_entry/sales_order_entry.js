@@ -785,7 +785,7 @@ class SalesOrderEntry {
 		});
 
 		this.page.add_inner_button(__('Sales Order List'), function() {
-			frappe.set_route('page', 'sales-order-entry-list');
+			frappe.set_route('sales-order-entry-list');
 		});
 	}
 
@@ -801,7 +801,7 @@ class SalesOrderEntry {
 			const name = $(this).data('name');
 			if (!name) return;
 			frappe.route_options = { sales_order: name };
-			frappe.set_route('page', 'sales-order-entry-view');
+			frappe.set_route('sales-order-entry-view');
 		});
 
 		// Remove Row
@@ -1168,7 +1168,7 @@ class SalesOrderEntry {
 						indicator: 'green'
 					}, 5);
 					frappe.route_options = { sales_order: r.message.name };
-					frappe.set_route('page', 'sales-order-entry-view');
+					frappe.set_route('sales-order-entry-view');
 				}
 			}
 		});
