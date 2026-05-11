@@ -288,7 +288,12 @@ class SalesOrderEntryView {
 				const fd = this._has(it, 'custom_flat_discount') ? flt(it.custom_flat_discount) : null;
 				const of = this._has(it, 'custom_offer') ? flt(it.custom_offer) : null;
 				const ad = this._has(it, 'custom_additional_discount') ? flt(it.custom_additional_discount) : null;
-				const amt = this._has(it, 'amount') ? format_currency(flt(it.amount), rowCur) : '—';
+				const amt = this._has(it, 'amount')
+					? format_currency(
+							flt(it.amount) + flt(it.custom_item_tax || 0),
+							rowCur
+					  )
+					: '—';
 				tb.append(`<tr>
 					<td>${i + 1}</td>
 					<td class="text-center">${imgTag}</td>
