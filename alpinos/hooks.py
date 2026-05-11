@@ -26,7 +26,7 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/alpinos/css/alpinos.css"
-# app_include_js = "/assets/alpinos/js/alpinos.js"
+app_include_js = "/assets/alpinos/js/sales_order_hub_desk.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/alpinos/css/alpinos.css"
@@ -51,7 +51,6 @@ doctype_js = {
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
 }
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 

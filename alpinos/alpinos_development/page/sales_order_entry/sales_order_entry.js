@@ -785,7 +785,7 @@ class SalesOrderEntry {
 		});
 
 		this.page.add_inner_button(__('Sales Order List'), function() {
-			frappe.set_route('List', 'Sales Order');
+			frappe.set_route('page', 'sales-order-entry-list');
 		});
 	}
 

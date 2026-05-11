@@ -5,7 +5,7 @@ These bypass child table permission issues when called from client scripts.
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt, getdate
 from math import ceil
 
 
@@ -597,6 +597,9 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	if isinstance(additional_units_items, str):
 		additional_units_items = json.loads(additional_units_items)
 
+	if not frappe.has_permission("Sales Order", "create"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
 	so = frappe.new_doc("Sales Order")
 	so.customer = customer
 	so.order_type = order_type
@@ -709,7 +712,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			})
 
 	_apply_cash_discount(so)
-	so.insert(ignore_permissions=True)
+	so.insert()
 	if int(submit_now):
 		so.submit()
 	frappe.db.commit()
@@ -826,3 +829,90 @@ def get_sales_order_entry_view_payload(sales_order):
 		"scheme_rows": scheme_rows,
 		"additional_units_damage": damage,
 	}
+
+
+@frappe.whitelist()
+def get_sales_order_entry_list(
+	start=0,
+	page_length=20,
+	search=None,
+	status=None,
+	company=None,
+	customer=None,
+	from_date=None,
+	to_date=None,
+):
+	"""Paginated Sales Order rows for Alpinos custom list page (respects DocPerm / user rules)."""
+	if not frappe.has_permission("Sales Order", "read"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	start = cint(start)
+	page_length = min(max(cint(page_length) or 20, 1), 100)
+
+	filters = {}
+	if status:
+		filters["status"] = str(status).strip()
+	if company:
+		filters["company"] = str(company).strip()
+	if customer:
+		filters["customer"] = str(customer).strip()
+
+	def _d(val):
+		if not val:
+			return None
+		try:
+			return getdate(val)
+		except Exception:
+			return None
+
+	fd = _d(from_date)
+	td = _d(to_date)
+	if fd and td and fd > td:
+		fd, td = td, fd
+	if fd and td:
+		filters["transaction_date"] = ["between", [fd, td]]
+	elif fd:
+		filters["transaction_date"] = [">=", fd]
+	elif td:
+		filters["transaction_date"] = ["<=", td]
+
+	or_filters = None
+	search = (search or "").strip()
+	if search:
+		safe = search.replace("%", "").replace("_", "")
+		like = f"%{safe}%"
+		or_filters = [
+			["name", "like", like],
+			["customer", "like", like],
+			["customer_name", "like", like],
+		]
+
+	fields = [
+		"name",
+		"customer",
+		"customer_name",
+		"transaction_date",
+		"delivery_date",
+		"company",
+		"status",
+		"order_type",
+		"grand_total",
+		"currency",
+		"docstatus",
+		"modified",
+	]
+
+	rows = frappe.get_list(
+		"Sales Order",
+		fields=fields,
+		filters=filters or None,
+		or_filters=or_filters,
+		limit_start=start,
+		limit_page_length=page_length + 1,
+		order_by="modified desc",
+	)
+
+	has_more = len(rows) > page_length
+	rows = rows[:page_length]
+
+	return {"data": rows, "has_more": int(has_more), "start": start, "page_length": page_length}
