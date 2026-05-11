@@ -4,10 +4,43 @@ import frappe
 from frappe.utils import cint
 
 
+def _repair_sales_order_additional_units_item_metadata():
+	"""Fix tabDocType rows that break controller import (frappe.core...)."""
+	if not frappe.db.exists("DocType", "Sales Order Additional Units Item"):
+		return False
+	row = frappe.db.get_value(
+		"DocType",
+		"Sales Order Additional Units Item",
+		["module", "custom"],
+		as_dict=True,
+	)
+	if not row:
+		return False
+	changed = False
+	if row.get("custom"):
+		frappe.db.set_value("DocType", "Sales Order Additional Units Item", "custom", 0)
+		changed = True
+	if (row.get("module") or "").strip() != "Alpinos Development":
+		frappe.db.set_value(
+			"DocType",
+			"Sales Order Additional Units Item",
+			"module",
+			"Alpinos Development",
+		)
+		changed = True
+	if changed:
+		frappe.db.commit()
+		frappe.clear_cache(doctype="DocType")
+	return True
+
+
 def run_sales_order_scheme_damage_split_migration():
 	"""Idempotent: for SOs with damage checked, rows still on scheme child with blank scheme are moved."""
 	if not frappe.db.has_table("Sales Order Additional Units Item"):
 		return
+	if not frappe.db.exists("DocType", "Sales Order Additional Units Item"):
+		return
+	_repair_sales_order_additional_units_item_metadata()
 	if not frappe.get_meta("Sales Order").get_field("custom_additional_units_damage_items"):
 		return
 
