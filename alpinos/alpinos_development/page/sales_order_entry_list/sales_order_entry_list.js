@@ -118,8 +118,7 @@ class SalesOrderEntryListPage {
 			if ($(e.target).closest('a,button').length) return;
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
-			frappe.route_options = { sales_order: name };
-			frappe.set_route('sales-order-entry-view');
+			frappe.set_route('sales-order-entry-view', name);
 		});
 	}
 

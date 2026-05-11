@@ -800,8 +800,7 @@ class SalesOrderEntry {
 		this.wrapper.on('click', '.order-row', function () {
 			const name = $(this).data('name');
 			if (!name) return;
-			frappe.route_options = { sales_order: name };
-			frappe.set_route('sales-order-entry-view');
+			frappe.set_route('sales-order-entry-view', name);
 		});
 
 		// Remove Row
@@ -1157,8 +1156,7 @@ class SalesOrderEntry {
 						message: `Sales Order <b>${r.message.name}</b> created successfully!`,
 						indicator: 'green'
 					}, 5);
-					frappe.route_options = { sales_order: r.message.name };
-					frappe.set_route('sales-order-entry-view');
+					frappe.set_route('sales-order-entry-view', r.message.name);
 				}
 			}
 		});

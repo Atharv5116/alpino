@@ -5,7 +5,13 @@ frappe.pages['sales-order-entry-view'].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('sales_order_entry_view'));
-	new SalesOrderEntryView(page);
+	const view = new SalesOrderEntryView(page);
+	wrapper.so_entry_view = view;
+	wrapper.on_page_show = function () {
+		if (wrapper.so_entry_view) {
+			wrapper.so_entry_view.sync_from_route();
+		}
+	};
 };
 
 class SalesOrderEntryView {
@@ -93,16 +99,34 @@ class SalesOrderEntryView {
 	}
 
 	setup() {
-		const ro = frappe.route_options || {};
-		let so_name = ro.sales_order || ro.name || '';
-		if (!so_name && frappe.urllib && frappe.urllib.get_arg) {
-			so_name = frappe.urllib.get_arg('sales_order') || '';
-		}
+		const so_name = this._resolve_sales_order_name();
 		if (!so_name) {
 			this._ask_for_order();
 			return;
 		}
 		this.load_order(so_name);
+	}
+
+	/** Prefer URL path `/app/sales-order-entry-view/<name>` so refresh and router do not drop context. */
+	_resolve_sales_order_name() {
+		const ro = frappe.route_options || {};
+		let so_name = ro.sales_order || ro.name || '';
+		if (!so_name && frappe.urllib && frappe.urllib.get_arg) {
+			so_name = frappe.urllib.get_arg('sales_order') || '';
+		}
+		const r = frappe.get_route() || [];
+		const slug = 'sales-order-entry-view';
+		if (!so_name && r.length >= 2 && String(r[0]).toLowerCase() === slug) {
+			so_name = r[1] || '';
+		}
+		return String(so_name || '').trim();
+	}
+
+	sync_from_route() {
+		const so_name = this._resolve_sales_order_name();
+		if (so_name && so_name !== this._so_name) {
+			this.load_order(so_name);
+		}
 	}
 
 	_ask_for_order() {
@@ -130,7 +154,14 @@ class SalesOrderEntryView {
 			freeze: true,
 			freeze_message: __('Loading Sales Order...'),
 			callback: (r) => {
-				if (!r.message) return;
+				if (r.exc) {
+					frappe.msgprint({ title: __('Error'), indicator: 'red', message: r.exc });
+					return;
+				}
+				if (!r.message) {
+					frappe.msgprint(__('Could not load Sales Order data.'));
+					return;
+				}
 				this.page.set_title(__('Sales Order View — {0}', [name]));
 				this.render(r.message);
 			},
