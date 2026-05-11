@@ -27,11 +27,6 @@ class SalesOrderEntryView {
 		this.page.add_inner_button(__('Back to Sales Order List'), () => {
 			frappe.set_route('sales-order-entry-list');
 		});
-		this.page.add_inner_button(__('Open in ERPNext'), () => {
-			if (this._so_name) {
-				frappe.set_route('Form', 'Sales Order', this._so_name);
-			}
-		});
 		this.page.add_inner_button(__('Print'), () => this.open_default_print_preview());
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
 	}
@@ -187,10 +182,17 @@ class SalesOrderEntryView {
 	/** Turn address HTML from ERPNext into readable multiline plain text. */
 	_address_plain(html) {
 		if (html == null || html === '') return '';
-		let s = String(html).replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+		let s = String(html)
+			.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+			.replace(/<\/?(p|div|li|tr|table|tbody|thead|h[1-6])[^>]*>/gi, '\n')
+			.replace(/<br\s*\/?>/gi, '\n');
 		const el = document.createElement('div');
 		el.innerHTML = s;
-		return (el.innerText || '').replace(/\r\n/g, '\n').trim();
+		return (el.textContent || '')
+			.replace(/\r\n/g, '\n')
+			.replace(/[ \t]+\n/g, '\n')
+			.replace(/\n{3,}/g, '\n\n')
+			.trim();
 	}
 
 	_fmt_date(parent, key) {

@@ -880,7 +880,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`);
+		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`, true);
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.freebies[idx].item_code = val || '';
@@ -951,7 +951,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`);
+		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`, true);
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.scheme_items[idx].item_code = val || '';
@@ -1032,7 +1032,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`);
+		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`, true);
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.additional_units_items[idx].item_code = val || '';

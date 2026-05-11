@@ -22,6 +22,14 @@ frappe.ui.form.on('Sales Order', {
         }
     },
 
+    setup: function(frm) {
+        set_variant_item_queries(frm);
+    },
+
+    refresh: function(frm) {
+        set_variant_item_queries(frm);
+    },
+
     custom_cash_discount: function(frm) {
         calculate_cash_discount(frm);
     }
@@ -140,6 +148,21 @@ function get_box_conversion(item_code, callback) {
             callback(r.message || null);
         }
     });
+}
+
+function set_variant_item_queries(frm) {
+    const q = function() {
+        return {
+            filters: {
+                disabled: 0,
+                is_sales_item: 1,
+                variant_of: ['!=', '']
+            }
+        };
+    };
+    frm.set_query('item_code', 'custom_marketing_freebies', q);
+    frm.set_query('item_code', 'custom_scheme_item_table', q);
+    frm.set_query('item_code', 'custom_additional_units_damage_items', q);
 }
 
 function calculate_item_values(frm, cdt, cdn) {
