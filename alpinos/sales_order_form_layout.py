@@ -241,7 +241,7 @@ def _apply_sales_order_field_visibility():
 		"Sales Order",
 		"order_type",
 		"label",
-		"Customer Type (Issue Sheet #88)",
+		"Customer Type",
 		property_type="Data",
 	)
 	_upsert_docfield_prop("Sales Order", "tax_id", "label", "GSTIN", property_type="Data")
