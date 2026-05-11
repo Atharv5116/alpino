@@ -870,6 +870,24 @@ def get_sales_order_entry_view_payload(sales_order):
 		)
 		scheme_rows.append(rd)
 
+	# Fallback: if child grid rows exist in DB but did not survive permission shaping,
+	# return a minimal safe projection so the view never hides Scheme Details.
+	if not scheme_rows and frappe.db.has_table("Sales Order Scheme Item"):
+		raw_scheme = frappe.db.sql(
+			"""
+			SELECT item_code, item_name, qty, scheme
+			FROM `tabSales Order Scheme Item`
+			WHERE parent=%s
+				AND parenttype='Sales Order'
+				AND parentfield='custom_scheme_item_table'
+				AND IFNULL(item_code, '') != ''
+			ORDER BY idx ASC
+			""",
+			(sales_order,),
+			as_dict=True,
+		)
+		scheme_rows = [dict(r) for r in (raw_scheme or [])]
+
 	damage_item_rows = []
 	add_units_perm = "Sales Order Additional Units Item"
 	for row in doc.get("custom_additional_units_damage_items") or []:
