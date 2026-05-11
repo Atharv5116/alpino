@@ -976,7 +976,6 @@ class SalesOrderEntry {
 				item_code: '',
 				item_name: '',
 				qty: 0,
-				scheme: '',
 				previous_order_id: '',
 				remarks: ''
 			},
@@ -1125,7 +1124,6 @@ class SalesOrderEntry {
 		let additional_units_items = this.additional_units_items.filter(s => s.item_code).map(s => ({
 			item_code: s.item_code,
 			qty: s.qty,
-			scheme: s.scheme,
 			previous_order_id: s.previous_order_id,
 			remarks: s.remarks || ''
 		}));

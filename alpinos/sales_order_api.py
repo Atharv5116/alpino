@@ -809,19 +809,23 @@ def get_sales_order_entry_view_payload(sales_order):
 			)
 		)
 
+	# Scheme grid: only rows with a non-empty scheme. Damage lines use
+	# `custom_additional_units_damage_items` (and may still exist on the scheme
+	# child with blank scheme until migrated).
 	scheme_rows = []
+	scheme_item_perm = "Sales Order Scheme Item"
 	for row in doc.get("custom_scheme_item_table") or []:
-		scheme_rows.append(
-			_so_view_filter_dict_by_read_perm(
-				"Sales Order Scheme Item", row.as_dict(), parenttype="Sales Order"
-			)
-		)
+		rd = _so_view_filter_dict_by_read_perm(scheme_item_perm, row.as_dict(), parenttype="Sales Order")
+		if not (rd.get("scheme") or "").strip():
+			continue
+		scheme_rows.append(rd)
 
 	damage_item_rows = []
+	add_units_perm = "Sales Order Additional Units Item"
 	for row in doc.get("custom_additional_units_damage_items") or []:
 		damage_item_rows.append(
 			_so_view_filter_dict_by_read_perm(
-				"Sales Order Additional Units Item",
+				add_units_perm,
 				row.as_dict(),
 				parenttype="Sales Order",
 			)
@@ -830,6 +834,35 @@ def get_sales_order_entry_view_payload(sales_order):
 	damage = 0
 	if "custom_additional_units_damage" in permitted_parent:
 		damage = int(doc.get("custom_additional_units_damage") or 0)
+
+	def _damage_row_key(rd):
+		return (
+			rd.get("item_code") or "",
+			flt(rd.get("qty")),
+			(rd.get("previous_order_id") or "").strip(),
+			(rd.get("remarks") or "").strip(),
+		)
+
+	seen_damage = {_damage_row_key(r) for r in damage_item_rows}
+
+	if damage:
+		for row in doc.get("custom_scheme_item_table") or []:
+			if (row.get("scheme") or "").strip() or not row.get("item_code"):
+				continue
+			rd = _so_view_filter_dict_by_read_perm(scheme_item_perm, row.as_dict(), parenttype="Sales Order")
+			nk = _damage_row_key(rd)
+			if nk in seen_damage:
+				continue
+			seen_damage.add(nk)
+			damage_item_rows.append(
+				{
+					"item_code": rd.get("item_code"),
+					"item_name": rd.get("item_name"),
+					"qty": rd.get("qty"),
+					"previous_order_id": rd.get("previous_order_id"),
+					"remarks": rd.get("remarks"),
+				}
+			)
 
 	return {
 		"parent": parent,
@@ -851,6 +884,7 @@ def get_sales_order_entry_list(
 	customer=None,
 	from_date=None,
 	to_date=None,
+	additional_units_damage_filter=None,
 ):
 	"""Paginated Sales Order rows for Alpinos custom list page (respects DocPerm / user rules)."""
 	if not frappe.has_permission("Sales Order", "read"):
@@ -866,6 +900,13 @@ def get_sales_order_entry_list(
 		filters["company"] = str(company).strip()
 	if customer:
 		filters["customer"] = str(customer).strip()
+
+	# Optional: filter by Additional Units – Damage (`custom_additional_units_damage`).
+	_aug = (additional_units_damage_filter or "").strip().lower()
+	if _aug in ("yes", "1", "true", "y"):
+		filters["custom_additional_units_damage"] = 1
+	elif _aug in ("no", "0", "false", "n"):
+		filters["custom_additional_units_damage"] = 0
 
 	def _d(val):
 		if not val:
@@ -908,6 +949,7 @@ def get_sales_order_entry_list(
 		"order_type",
 		"grand_total",
 		"currency",
+		"custom_additional_units_damage",
 		"docstatus",
 		"modified",
 	]

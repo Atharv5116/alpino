@@ -92,6 +92,16 @@ class SalesOrderEntryListPage {
 			parent: w.find('.fld-to-date'),
 			render_input: true,
 		});
+		this._filter_fields.additional_units_damage_filter = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Select',
+				fieldname: 'additional_units_damage_filter',
+				label: __('Add. units damage'),
+				options: '\n\nYes\nNo',
+			},
+			parent: w.find('.fld-au-damage-filter'),
+			render_input: true,
+		});
 	}
 
 	bind_events() {
@@ -124,6 +134,10 @@ class SalesOrderEntryListPage {
 
 	_args() {
 		const f = this._filter_fields;
+		const aug = f.additional_units_damage_filter.get_value();
+		let additional_units_damage_filter = '';
+		if (aug === 'Yes') additional_units_damage_filter = 'yes';
+		else if (aug === 'No') additional_units_damage_filter = 'no';
 		return {
 			start: this.start,
 			page_length: this.page_length,
@@ -133,6 +147,7 @@ class SalesOrderEntryListPage {
 			customer: f.customer.get_value() || '',
 			from_date: f.from_date.get_value() || '',
 			to_date: f.to_date.get_value() || '',
+			additional_units_damage_filter,
 		};
 	}
 
@@ -161,7 +176,7 @@ class SalesOrderEntryListPage {
 		const tb = this.wrapper.find('.so-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="8" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
+				`<tr><td colspan="9" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
 			);
 			return;
 		}
@@ -170,6 +185,15 @@ class SalesOrderEntryListPage {
 			const gt = format_currency(d.grand_total || 0, d.currency);
 			const td = (d.transaction_date && frappe.datetime.str_to_user(d.transaction_date)) || '—';
 			const dd = (d.delivery_date && frappe.datetime.str_to_user(d.delivery_date)) || '—';
+			const hasAug =
+				d.custom_additional_units_damage !== undefined &&
+				d.custom_additional_units_damage !== null;
+			const augLabel = hasAug
+				? cint(d.custom_additional_units_damage)
+					? __('Yes')
+					: __('No')
+				: '—';
+			const augClass = hasAug && cint(d.custom_additional_units_damage) ? 'green' : 'gray';
 			tb.append(`<tr class="so-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td><strong>${esc(d.name)}</strong></td>
 				<td>${esc(d.customer)}</td>
@@ -178,6 +202,7 @@ class SalesOrderEntryListPage {
 				<td>${esc(dd)}</td>
 				<td>${esc(d.company)}</td>
 				<td><span class="indicator-pill blue">${esc(d.status)}</span></td>
+				<td class="text-center"><span class="indicator-pill ${augClass}">${esc(augLabel)}</span></td>
 				<td class="text-right">${gt}</td>
 			</tr>`);
 		});

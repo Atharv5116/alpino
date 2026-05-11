@@ -340,18 +340,24 @@ class SalesOrderEntryView {
 			w.find('.sec-scheme').hide();
 		}
 
-		if (damage && damageItemRows.length) {
+		if (damage) {
 			w.find('.sec-damage-items').show();
 			const db = w.find('.v-damage-items tbody').empty();
-			damageItemRows.forEach((row) => {
-				db.append(`<tr>
-					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
-					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
-					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
-					<td>${this._has(row, 'previous_order_id') ? this._esc(row.previous_order_id) : '—'}</td>
-					<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
-				</tr>`);
-			});
+			if (!damageItemRows.length) {
+				db.append(
+					`<tr><td colspan="5" class="text-muted text-center">${__('No lines in Additional Units – Damage.')}</td></tr>`
+				);
+			} else {
+				damageItemRows.forEach((row) => {
+					db.append(`<tr>
+						<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
+						<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+						<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
+						<td>${this._has(row, 'previous_order_id') ? this._esc(row.previous_order_id) : '—'}</td>
+						<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
+					</tr>`);
+				});
+			}
 		} else {
 			w.find('.sec-damage-items').hide();
 		}
