@@ -729,10 +729,14 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			},
 		)
 
-	# Scheme Items
+	# Scheme child table: only rows with a non-empty scheme value. Blank-scheme lines from
+	# the entry page are not persisted (use Additional Units – Damage for those).
 	for scheme in scheme_items:
 		ic = (scheme.get("item_code") or "").strip()
 		if not ic:
+			continue
+		sch_txt = (scheme.get("scheme") or "").strip()
+		if not sch_txt:
 			continue
 		iname = (scheme.get("item_name") or "").strip() or _item_name_for_item_code(ic)
 		so.append(
@@ -741,11 +745,11 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 				"item_code": ic,
 				"item_name": iname,
 				"qty": flt(scheme.get("qty")),
-				"scheme": scheme.get("scheme") or "",
+				"scheme": sch_txt,
 			},
 		)
 
-	# Additional Units - Damage items (separate child table from scheme rows)
+	# Additional Units – Damage: only explicit rows from the entry page (never from scheme).
 	so.custom_additional_units_damage = int(additional_units_damage)
 	if cint(additional_units_damage) and additional_units_items:
 		for row in additional_units_items:
@@ -860,15 +864,19 @@ def get_sales_order_entry_view_payload(sales_order):
 			)
 		)
 
-	# Scheme grid: only rows with a non-empty scheme. Damage lines use
-	# `custom_additional_units_damage_items` (and may still exist on the scheme
-	# child with blank scheme until migrated).
+	# Scheme grid: only `custom_scheme_item_table` rows with a non-empty scheme value.
+	# Use the raw child row for the scheme check so perm-filtered dicts cannot drop `scheme`
+	# and mis-route rows. Additional-units–damage lines come **only** from
+	# `custom_additional_units_damage_items` (legacy blank-scheme rows on the scheme
+	# child are handled by `run_sales_order_scheme_damage_split_migration`, not here).
 	scheme_rows = []
 	scheme_item_perm = "Sales Order Scheme Item"
 	for row in doc.get("custom_scheme_item_table") or []:
-		rd = _so_view_filter_dict_by_read_perm(scheme_item_perm, row.as_dict(), parenttype="Sales Order")
-		if not (rd.get("scheme") or "").strip():
+		if not (row.get("scheme") or "").strip():
 			continue
+		rd = _so_view_filter_dict_by_read_perm(
+			scheme_item_perm, row.as_dict(), parenttype="Sales Order"
+		)
 		scheme_rows.append(rd)
 
 	damage_item_rows = []
@@ -885,35 +893,6 @@ def get_sales_order_entry_view_payload(sales_order):
 	damage = 0
 	if "custom_additional_units_damage" in permitted_parent:
 		damage = int(doc.get("custom_additional_units_damage") or 0)
-
-	def _damage_row_key(rd):
-		return (
-			rd.get("item_code") or "",
-			flt(rd.get("qty")),
-			(rd.get("previous_order_id") or "").strip(),
-			(rd.get("remarks") or "").strip(),
-		)
-
-	seen_damage = {_damage_row_key(r) for r in damage_item_rows}
-
-	if damage:
-		for row in doc.get("custom_scheme_item_table") or []:
-			if (row.get("scheme") or "").strip() or not row.get("item_code"):
-				continue
-			rd = _so_view_filter_dict_by_read_perm(scheme_item_perm, row.as_dict(), parenttype="Sales Order")
-			nk = _damage_row_key(rd)
-			if nk in seen_damage:
-				continue
-			seen_damage.add(nk)
-			damage_item_rows.append(
-				{
-					"item_code": rd.get("item_code"),
-					"item_name": rd.get("item_name"),
-					"qty": rd.get("qty"),
-					"previous_order_id": rd.get("previous_order_id"),
-					"remarks": rd.get("remarks"),
-				}
-			)
 
 	return {
 		"parent": parent,

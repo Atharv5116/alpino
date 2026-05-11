@@ -79,10 +79,14 @@ def run_sales_order_scheme_damage_split_migration():
 		if not to_move:
 			continue
 		for r in to_move:
+			iname = ((getattr(r, "item_name", None) or "").strip())
+			if not iname and r.item_code:
+				iname = frappe.db.get_value("Item", r.item_code, "item_name") or ""
 			so.append(
 				"custom_additional_units_damage_items",
 				{
 					"item_code": r.item_code,
+					"item_name": iname,
 					"qty": r.qty,
 					"previous_order_id": r.previous_order_id or "",
 					"remarks": r.remarks or "",
