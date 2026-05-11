@@ -365,6 +365,21 @@ class SalesOrderEntry {
 		return field;
 	}
 
+	/**
+	 * Link fields often commit the value on `awesomplete-selectcomplete` without a separate
+	 * `change` event; order lines listen for both — do the same for secondary item grids.
+	 */
+	_bind_item_link_change(item_field, handler) {
+		if (!item_field || !item_field.$input) {
+			return;
+		}
+		const run = () => {
+			setTimeout(handler, 200);
+		};
+		item_field.$input.on('change', run);
+		item_field.$input.on('awesomplete-selectcomplete', run);
+	}
+
 	add_item_row(data) {
 		let idx = this.items.length;
 		let row_data = Object.assign(
@@ -866,19 +881,21 @@ class SalesOrderEntry {
 		let me = this;
 
 		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`);
-		item_field.$input.on('change', function() {
-			setTimeout(() => {
-				let val = item_field.get_value();
-				me.freebies[idx].item_code = val;
-				if (val) {
-					frappe.db.get_value('Item', val, 'item_name', function(r) {
-						if (r) {
-							me.freebies[idx].item_name = r.item_name;
-							$row.find('.freebie-name span').text(r.item_name).removeClass('text-muted');
-						}
-					});
+		this._bind_item_link_change(item_field, function() {
+			let val = item_field.get_value();
+			me.freebies[idx].item_code = val || '';
+			if (!val) {
+				me.freebies[idx].item_name = '';
+				$row.find('.freebie-name span').text('-').addClass('text-muted');
+				return;
+			}
+			frappe.db.get_value('Item', val, 'item_name', function (r) {
+				let nm = r && r.item_name;
+				if (nm) {
+					me.freebies[idx].item_name = nm;
+					$row.find('.freebie-name span').text(nm).removeClass('text-muted');
 				}
-			}, 200);
+			});
 		});
 
 		let qty_field = frappe.ui.form.make_control({
@@ -904,6 +921,14 @@ class SalesOrderEntry {
 			if (data.remarks) remarks_field.set_value(data.remarks);
 			if (data.item_name) {
 				$row.find('.freebie-name span').text(data.item_name).removeClass('text-muted');
+			} else {
+				frappe.db.get_value('Item', data.item_code, 'item_name', function (r) {
+					const nm = r && r.item_name;
+					if (nm) {
+						me.freebies[idx].item_name = nm;
+						$row.find('.freebie-name span').text(nm).removeClass('text-muted');
+					}
+				});
 			}
 		}
 	}
@@ -927,19 +952,21 @@ class SalesOrderEntry {
 		let me = this;
 
 		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`);
-		item_field.$input.on('change', function() {
-			setTimeout(() => {
-				let val = item_field.get_value();
-				me.scheme_items[idx].item_code = val;
-				if (val) {
-					frappe.db.get_value('Item', val, 'item_name', function(r) {
-						if (r) {
-							me.scheme_items[idx].item_name = r.item_name;
-							$row.find('.scheme-name span').text(r.item_name).removeClass('text-muted');
-						}
-					});
+		this._bind_item_link_change(item_field, function() {
+			let val = item_field.get_value();
+			me.scheme_items[idx].item_code = val || '';
+			if (!val) {
+				me.scheme_items[idx].item_name = '';
+				$row.find('.scheme-name span').text('-').addClass('text-muted');
+				return;
+			}
+			frappe.db.get_value('Item', val, 'item_name', function (r) {
+				let nm = r && r.item_name;
+				if (nm) {
+					me.scheme_items[idx].item_name = nm;
+					$row.find('.scheme-name span').text(nm).removeClass('text-muted');
 				}
-			}, 200);
+			});
 		});
 
 		let qty_field = frappe.ui.form.make_control({
@@ -965,6 +992,14 @@ class SalesOrderEntry {
 			if (data.scheme) scheme_field.set_value(data.scheme);
 			if (data.item_name) {
 				$row.find('.scheme-name span').text(data.item_name).removeClass('text-muted');
+			} else {
+				frappe.db.get_value('Item', data.item_code, 'item_name', function (r) {
+					const nm = r && r.item_name;
+					if (nm) {
+						me.scheme_items[idx].item_name = nm;
+						$row.find('.scheme-name span').text(nm).removeClass('text-muted');
+					}
+				});
 			}
 		}
 	}
@@ -998,19 +1033,21 @@ class SalesOrderEntry {
 		let me = this;
 
 		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`);
-		item_field.$input.on('change', function() {
-			setTimeout(() => {
-				let val = item_field.get_value();
-				me.additional_units_items[idx].item_code = val;
-				if (val) {
-					frappe.db.get_value('Item', val, 'item_name', function(r) {
-						if (r) {
-							me.additional_units_items[idx].item_name = r.item_name;
-							$row.find('.au-name span').text(r.item_name).removeClass('text-muted');
-						}
-					});
+		this._bind_item_link_change(item_field, function() {
+			let val = item_field.get_value();
+			me.additional_units_items[idx].item_code = val || '';
+			if (!val) {
+				me.additional_units_items[idx].item_name = '';
+				$row.find('.au-name span').text('-').addClass('text-muted');
+				return;
+			}
+			frappe.db.get_value('Item', val, 'item_name', function (r) {
+				let nm = r && r.item_name;
+				if (nm) {
+					me.additional_units_items[idx].item_name = nm;
+					$row.find('.au-name span').text(nm).removeClass('text-muted');
 				}
-			}, 200);
+			});
 		});
 
 		let qty_field = frappe.ui.form.make_control({
@@ -1045,6 +1082,14 @@ class SalesOrderEntry {
 			if (data.remarks !== undefined && data.remarks !== null) remarks_field.set_value(data.remarks);
 			if (data.item_name) {
 				$row.find('.au-name span').text(data.item_name).removeClass('text-muted');
+			} else {
+				frappe.db.get_value('Item', data.item_code, 'item_name', function (r) {
+					const nm = r && r.item_name;
+					if (nm) {
+						me.additional_units_items[idx].item_name = nm;
+						$row.find('.au-name span').text(nm).removeClass('text-muted');
+					}
+				});
 			}
 		}
 	}
@@ -1111,20 +1156,23 @@ class SalesOrderEntry {
 
 		let freebies = this.freebies.filter(f => f.item_code).map(f => ({
 			item_code: f.item_code,
+			item_name: f.item_name || '',
 			qty: f.qty,
-			remarks: f.remarks
+			remarks: f.remarks || ''
 		}));
 
 		let scheme_items = this.scheme_items.filter(s => s.item_code).map(s => ({
 			item_code: s.item_code,
+			item_name: s.item_name || '',
 			qty: s.qty,
-			scheme: s.scheme
+			scheme: s.scheme || ''
 		}));
 
 		let additional_units_items = this.additional_units_items.filter(s => s.item_code).map(s => ({
 			item_code: s.item_code,
+			item_name: s.item_name || '',
 			qty: s.qty,
-			previous_order_id: s.previous_order_id,
+			previous_order_id: s.previous_order_id || '',
 			remarks: s.remarks || ''
 		}));
 

@@ -578,6 +578,32 @@ def get_box_conversion_factor(item_code):
 	return flt(conversion_factor) if conversion_factor else None
 
 
+def _parse_request_child_list(val):
+	"""Desk sends table data JSON-stringified; normalize to a list safely."""
+	import json
+
+	if val is None:
+		return []
+	if isinstance(val, str):
+		s = val.strip()
+		if not s:
+			return []
+		try:
+			out = json.loads(s)
+		except Exception:
+			return []
+		return list(out) if isinstance(out, list) else []
+	if isinstance(val, (list, tuple)):
+		return list(val)
+	return []
+
+
+def _item_name_for_item_code(item_code):
+	if not item_code:
+		return ""
+	return frappe.db.get_value("Item", item_code, "item_name") or ""
+
+
 @frappe.whitelist()
 def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        delivery_date=None, freebies=None, scheme_items=None,
@@ -590,12 +616,11 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 
 	if isinstance(items, str):
 		items = json.loads(items)
-	if isinstance(freebies, str):
-		freebies = json.loads(freebies)
-	if isinstance(scheme_items, str):
-		scheme_items = json.loads(scheme_items)
-	if isinstance(additional_units_items, str):
-		additional_units_items = json.loads(additional_units_items)
+	if not items:
+		frappe.throw(_("Order items are required"))
+	freebies = _parse_request_child_list(freebies)
+	scheme_items = _parse_request_child_list(scheme_items)
+	additional_units_items = _parse_request_child_list(additional_units_items)
 
 	if not frappe.has_permission("Sales Order", "create"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
@@ -639,6 +664,13 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		so.get("taxes_and_charges"),
 		len(so.get("taxes") or []),
 	)
+	_so_tax_logger().info(
+		"[create] child_counts freebies=%s scheme=%s additional_units=%s damage_flag=%s",
+		len(freebies),
+		len(scheme_items),
+		len(additional_units_items),
+		int(cint(additional_units_damage)),
+	)
 
 	for item in items:
 		item_code = item.get("item_code")
@@ -681,32 +713,51 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		child = so.append("items", row)
 		_apply_calculated_item_values(child, calc)
 
-	# Marketing Freebies
-	if freebies:
-		for freebie in freebies:
-			so.append("custom_marketing_freebies", {
-				"item_code": freebie.get("item_code"),
+	# Marketing Freebies (include item_name; fetch_from is not always applied before first save)
+	for freebie in freebies:
+		ic = (freebie.get("item_code") or "").strip()
+		if not ic:
+			continue
+		iname = (freebie.get("item_name") or "").strip() or _item_name_for_item_code(ic)
+		so.append(
+			"custom_marketing_freebies",
+			{
+				"item_code": ic,
+				"item_name": iname,
 				"qty": flt(freebie.get("qty")),
 				"remarks": freebie.get("remarks") or "",
-			})
+			},
+		)
 
 	# Scheme Items
-	if scheme_items:
-		for scheme in scheme_items:
-			so.append("custom_scheme_item_table", {
-				"item_code": scheme.get("item_code"),
+	for scheme in scheme_items:
+		ic = (scheme.get("item_code") or "").strip()
+		if not ic:
+			continue
+		iname = (scheme.get("item_name") or "").strip() or _item_name_for_item_code(ic)
+		so.append(
+			"custom_scheme_item_table",
+			{
+				"item_code": ic,
+				"item_name": iname,
 				"qty": flt(scheme.get("qty")),
 				"scheme": scheme.get("scheme") or "",
-			})
+			},
+		)
 
 	# Additional Units - Damage items (separate child table from scheme rows)
 	so.custom_additional_units_damage = int(additional_units_damage)
-	if additional_units_damage and additional_units_items:
+	if cint(additional_units_damage) and additional_units_items:
 		for row in additional_units_items:
+			ic = (row.get("item_code") or "").strip()
+			if not ic:
+				continue
+			iname = (row.get("item_name") or "").strip() or _item_name_for_item_code(ic)
 			so.append(
 				"custom_additional_units_damage_items",
 				{
-					"item_code": row.get("item_code"),
+					"item_code": ic,
+					"item_name": iname,
 					"qty": flt(row.get("qty")),
 					"previous_order_id": row.get("previous_order_id") or "",
 					"remarks": row.get("remarks") or "",
