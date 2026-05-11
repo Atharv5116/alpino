@@ -699,17 +699,19 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 				"scheme": scheme.get("scheme") or "",
 			})
 
-	# Additional Units - Damage items
+	# Additional Units - Damage items (separate child table from scheme rows)
 	so.custom_additional_units_damage = int(additional_units_damage)
 	if additional_units_damage and additional_units_items:
 		for row in additional_units_items:
-			so.append("custom_scheme_item_table", {
-				"item_code": row.get("item_code"),
-				"qty": flt(row.get("qty")),
-				"scheme": row.get("scheme") or "",
-				"previous_order_id": row.get("previous_order_id") or "",
-				"remarks": row.get("remarks") or "",
-			})
+			so.append(
+				"custom_additional_units_damage_items",
+				{
+					"item_code": row.get("item_code"),
+					"qty": flt(row.get("qty")),
+					"previous_order_id": row.get("previous_order_id") or "",
+					"remarks": row.get("remarks") or "",
+				},
+			)
 
 	_apply_cash_discount(so)
 	so.insert()
@@ -774,6 +776,7 @@ def get_sales_order_entry_view_payload(sales_order):
 			"sales_team",
 			"custom_marketing_freebies",
 			"custom_scheme_item_table",
+			"custom_additional_units_damage_items",
 		}
 	)
 	parent = {}
@@ -814,6 +817,16 @@ def get_sales_order_entry_view_payload(sales_order):
 			)
 		)
 
+	damage_item_rows = []
+	for row in doc.get("custom_additional_units_damage_items") or []:
+		damage_item_rows.append(
+			_so_view_filter_dict_by_read_perm(
+				"Sales Order Additional Units Item",
+				row.as_dict(),
+				parenttype="Sales Order",
+			)
+		)
+
 	damage = 0
 	if "custom_additional_units_damage" in permitted_parent:
 		damage = int(doc.get("custom_additional_units_damage") or 0)
@@ -823,6 +836,7 @@ def get_sales_order_entry_view_payload(sales_order):
 		"items": items,
 		"freebies": freebies,
 		"scheme_rows": scheme_rows,
+		"damage_item_rows": damage_item_rows,
 		"additional_units_damage": damage,
 	}
 

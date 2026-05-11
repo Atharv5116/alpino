@@ -5,11 +5,10 @@ Uses Property Setters only (Customize Form-compatible). Exactly the field groups
 requested stay visible via a strict whitelist: required ERPNext bookkeeping fields
 stay hidden unless listed (defaults / server-side logic still populate them).
 
-**Scheme rows:** there is only one child table —
-`custom_scheme_item_table` (Sales Order Scheme Item). It becomes visible/mandatory when
-Additional Units — Damage is checked (`depends_on` in Alpinos custom fields).
-There is **no separate** always-on “marketing scheme” table in the DocType beyond
-marketing freebies; a second scheme table would need a new DocType + wiring.
+**Scheme vs damage:** `custom_scheme_item_table` (Sales Order Scheme Item) holds scheme
+rows only (includes **Scheme** column). When **Additional Units — Damage** is checked,
+`custom_additional_units_damage_items` (Sales Order Additional Units Item) holds damage
+lines (no scheme column).
 
 **Customer header:** ``insert_after`` Property Setters reorder name, type, billing and
 shipping addresses, date, PO#, GSTIN, and delivery date into the agreed sequence, with
@@ -31,6 +30,7 @@ def setup_sales_order_form_layout():
 	_apply_sales_order_item_grid()
 	_apply_marketing_freebie_grid()
 	_apply_scheme_item_grid()
+	_apply_additional_units_damage_item_grid()
 
 
 def rollback_sales_order_desk_customizations():
@@ -41,7 +41,8 @@ def rollback_sales_order_desk_customizations():
 		DELETE FROM `tabProperty Setter`
 		WHERE doc_type IN (
 			'Sales Order', 'Sales Order Item',
-			'Sales Order Marketing Freebie', 'Sales Order Scheme Item'
+			'Sales Order Marketing Freebie', 'Sales Order Scheme Item',
+			'Sales Order Additional Units Item'
 		)
 		AND IFNULL(doctype_or_field, '') = 'DocField'
 		AND property IN ('hidden', 'label', 'in_list_view', 'insert_after')
@@ -144,8 +145,9 @@ def _apply_sales_order_field_visibility():
 			"scan_barcode",
 			"items",
 			"custom_marketing_freebies",
-			"custom_additional_units_damage",
 			"custom_scheme_item_table",
+			"custom_additional_units_damage",
+			"custom_additional_units_damage_items",
 			"total_qty",
 			"total",
 			"net_total",
@@ -405,6 +407,26 @@ def _apply_scheme_item_grid():
 			continue
 		_upsert_docfield_prop(
 			"Sales Order Scheme Item",
+			df.fieldname,
+			"in_list_view",
+			str(int(df.fieldname in view)),
+			property_type="Check",
+		)
+
+
+def _apply_additional_units_damage_item_grid():
+	view = frozenset({"item_code", "item_name", "qty", "previous_order_id", "remarks"})
+	if not frappe.db.exists("DocType", "Sales Order Additional Units Item"):
+		return
+	meta = frappe.get_meta("Sales Order Additional Units Item")
+	_upsert_docfield_prop(
+		"Sales Order Additional Units Item", "item_code", "label", "SKU", property_type="Data"
+	)
+	for df in meta.fields:
+		if not df.fieldname:
+			continue
+		_upsert_docfield_prop(
+			"Sales Order Additional Units Item",
 			df.fieldname,
 			"in_list_view",
 			str(int(df.fieldname in view)),

@@ -71,6 +71,9 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 	scheme_items = []
 	add_units = []
 	for r in doc.get("custom_scheme_item_table") or []:
+		# Scheme-only rows (damage lines live on custom_additional_units_damage_items).
+		if not (r.get("scheme") or "").strip():
+			continue
 		scheme_items.append(
 			{
 				"item_code": r.item_code,
@@ -81,16 +84,16 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 
 	if doc.get("custom_additional_units_damage"):
 		damage_rows = doc.get("custom_additional_units_damage_items") or []
-		# Backward compatibility for older quotations where the shared scheme table
-		# was used as the damage table.
-		if not damage_rows and not scheme_items:
-			damage_rows = doc.get("custom_scheme_item_table") or []
+		# Legacy quotations: damage rows still on scheme child with blank scheme.
+		if not damage_rows:
+			for r in doc.get("custom_scheme_item_table") or []:
+				if not (r.get("scheme") or "").strip() and r.item_code:
+					damage_rows.append(r)
 		for r in damage_rows:
 			add_units.append(
 				{
 					"item_code": r.item_code,
 					"qty": flt(r.qty),
-					"scheme": r.get("scheme") or "",
 					"previous_order_id": r.get("previous_order_id") or "",
 					"remarks": r.get("remarks") or "",
 				}

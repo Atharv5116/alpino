@@ -323,44 +323,37 @@ class SalesOrderEntryView {
 
 		const damage = !!payload.additional_units_damage;
 		const schemeRows = Array.isArray(payload.scheme_rows) ? payload.scheme_rows : [];
-		const showScheme = damage || schemeRows.length > 0;
+		const damageItemRows = Array.isArray(payload.damage_item_rows) ? payload.damage_item_rows : [];
 
-		if (showScheme) {
+		if (schemeRows.length) {
 			w.find('.sec-scheme').show();
-			if (damage) {
-				w.find('.v-scheme-title').text(__('Additional Units – Damage'));
-				w.find('.v-scheme-head-normal').hide();
-				w.find('.v-scheme-head-damage').show();
-			} else {
-				w.find('.v-scheme-title').text(__('Scheme Item'));
-				w.find('.v-scheme-head-normal').show();
-				w.find('.v-scheme-head-damage').hide();
-			}
 			const sb = w.find('.v-scheme tbody').empty();
-			if (!schemeRows.length) {
-				sb.append(`<tr><td colspan="${damage ? 5 : 4}" class="text-muted text-center">—</td></tr>`);
-			} else if (damage) {
-				schemeRows.forEach((row) => {
-					sb.append(`<tr>
-						<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
-						<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
-						<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
-						<td>${this._has(row, 'previous_order_id') ? this._esc(row.previous_order_id) : '—'}</td>
-						<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
-					</tr>`);
-				});
-			} else {
-				schemeRows.forEach((row) => {
-					sb.append(`<tr>
-						<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
-						<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
-						<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
-						<td>${this._has(row, 'scheme') ? this._esc(row.scheme) : '—'}</td>
-					</tr>`);
-				});
-			}
+			schemeRows.forEach((row) => {
+				sb.append(`<tr>
+					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
+					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
+					<td>${this._has(row, 'scheme') ? this._esc(row.scheme) : '—'}</td>
+				</tr>`);
+			});
 		} else {
 			w.find('.sec-scheme').hide();
+		}
+
+		if (damage && damageItemRows.length) {
+			w.find('.sec-damage-items').show();
+			const db = w.find('.v-damage-items tbody').empty();
+			damageItemRows.forEach((row) => {
+				db.append(`<tr>
+					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
+					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
+					<td>${this._has(row, 'previous_order_id') ? this._esc(row.previous_order_id) : '—'}</td>
+					<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
+				</tr>`);
+			});
+		} else {
+			w.find('.sec-damage-items').hide();
 		}
 
 		if (this._has(p, 'custom_additional_units_damage')) {

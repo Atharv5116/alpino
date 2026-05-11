@@ -132,13 +132,13 @@ class SalesOrderEntry {
 			me.wrapper.find('.additional-units-table tbody').empty();
 
 			(d.freebies || []).forEach((f) => me.add_freebie_row(f));
+			(d.scheme_items || []).forEach((s) => me.add_scheme_row(s));
 			me.additional_units_damage_field.set_value(d.additional_units_damage ? 1 : 0);
 			if (d.additional_units_damage) {
 				me.wrapper.find('.additional-units-section').toggle(true);
 				(d.additional_units_items || []).forEach((u) => me.add_additional_units_row(u));
 			} else {
 				me.wrapper.find('.additional-units-section').toggle(false);
-				(d.scheme_items || []).forEach((s) => me.add_scheme_row(s));
 			}
 
 			me.calc_totals();

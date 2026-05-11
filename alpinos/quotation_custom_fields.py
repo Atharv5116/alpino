@@ -53,6 +53,8 @@ def setup_quotation_custom_fields():
 				fieldtype="Table",
 				options="Sales Order Scheme Item",
 				insert_after="custom_marketing_freebies",
+				depends_on=None,
+				mandatory_depends_on=None,
 			),
 			dict(
 				fieldname="custom_additional_units_damage",
@@ -64,7 +66,7 @@ def setup_quotation_custom_fields():
 				fieldname="custom_additional_units_damage_items",
 				label="Additional Units - Damage Items",
 				fieldtype="Table",
-				options="Sales Order Scheme Item",
+				options="Sales Order Additional Units Item",
 				insert_after="custom_additional_units_damage",
 				depends_on="eval:doc.custom_additional_units_damage",
 				mandatory_depends_on="eval:doc.custom_additional_units_damage",
@@ -413,6 +415,7 @@ def _fix_quotation_table_layout():
 			"insert_after": "custom_marketing_freebies",
 			"depends_on": None,
 			"mandatory_depends_on": None,
+			"options": "Sales Order Scheme Item",
 		},
 		"custom_additional_units_damage": {
 			"insert_after": "custom_scheme_item_table",
@@ -423,6 +426,7 @@ def _fix_quotation_table_layout():
 			"insert_after": "custom_additional_units_damage",
 			"depends_on": "eval:doc.custom_additional_units_damage",
 			"mandatory_depends_on": "eval:doc.custom_additional_units_damage",
+			"options": "Sales Order Additional Units Item",
 		},
 		"custom_payment_section": {
 			"insert_after": "custom_additional_units_damage_items",

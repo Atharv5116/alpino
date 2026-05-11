@@ -140,6 +140,7 @@ after_migrate = [
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
+	"alpinos.sales_order_scheme_damage_migration.run_sales_order_scheme_damage_split_migration",
 	"alpinos.item_custom_fields.setup_item_custom_fields",
 	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
 	"alpinos.pick_list_custom_fields.setup_pick_list_custom_fields",
