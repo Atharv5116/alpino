@@ -183,7 +183,7 @@ class OfflineBuyerCatalogPage {
 					},
 					{
 						label: 'Payment Term', fieldname: 'payment_term', fieldtype: 'Select',
-						options: '\nAdvance\nCredit\nPartial', default: 'Advance', reqd: 1,
+						options: '\nAdvance\nCredit\nPartial\nNA', default: 'Advance', reqd: 1,
 					},
 					{ fieldtype: 'Section Break', label: 'Contact' },
 					{ label: 'Email', fieldname: 'email', fieldtype: 'Data', options: 'Email', reqd: 1 },
@@ -851,10 +851,10 @@ class OfflineBuyerCatalogPage {
 				{ fieldtype: 'Section Break', label: 'Payment Terms' },
 				{
 					label: 'Payment Term', fieldname: 'payment_term', fieldtype: 'Select',
-					options: '\nAdvance\nCredit\nPartial', reqd: 1, default: obm.payment_term,
+					options: '\nAdvance\nCredit\nPartial\nNA', reqd: 1, default: obm.payment_term,
 				},
 				{ fieldtype: 'Column Break' },
-				{ label: 'Credit Days', fieldname: 'payment_term_days', fieldtype: 'Int',
+				{ label: 'Days', fieldname: 'payment_term_days', fieldtype: 'Data',
 				  default: obm.payment_term_days,
 				  depends_on: 'eval:doc.payment_term=="Credit"||doc.payment_term=="Partial"' },
 				// Contact

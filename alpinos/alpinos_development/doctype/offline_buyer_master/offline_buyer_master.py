@@ -92,7 +92,8 @@ class OfflineBuyerMaster(Document):
 		_ensure_customer_for_obm(self)
 
 		if self.payment_term in ("Credit", "Partial"):
-			if self.payment_term_days is None:
+			self.payment_term_days = (self.payment_term_days or "").strip()
+			if not self.payment_term_days:
 				frappe.throw(
 					_("Days is required when Payment Term is Credit or Partial."),
 					title=_("Payment Term"),
