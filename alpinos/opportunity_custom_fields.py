@@ -19,8 +19,8 @@ def setup_opportunity_custom_fields():
 			dict(
 				fieldname="custom_order_type",
 				label="Customer Type",
-				fieldtype="Select",
-				options="\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS\nGT\nMT\nGYM & NUTRITION\nHoReCa",
+				fieldtype="Link",
+				options="Offline Buyer Customer Type",
 				insert_after="party_name",
 				reqd=1,
 			),

@@ -37,8 +37,8 @@ def setup_sales_order_custom_fields():
 			dict(
 				fieldname="custom_order_type",
 				label="Order Type",
-				fieldtype="Select",
-				options="\nGT\nMT\nGYM & NUTRITION\nHoReCa",
+				fieldtype="Link",
+				options="Offline Buyer Customer Type",
 				insert_after="customer_group",
 				description="Auto-fetched into Sales Order",
 			),
@@ -262,8 +262,16 @@ def _setup_property_setters():
 			"doc_type": "Sales Order",
 			"field_name": "order_type",
 			"property": "options",
-			"value": "\nGT\nMT\nGYM & NUTRITION\nHoReCa",
+			"value": "Offline Buyer Customer Type",
 			"property_type": "Text",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "order_type",
+			"property": "fieldtype",
+			"value": "Link",
+			"property_type": "Data",
 		},
 		# Make order_type mandatory
 		{

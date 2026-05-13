@@ -474,7 +474,7 @@ def quick_create_offline_buyer(
 		)
 
 		if not actual_parent:
-			# Create a new Parent record automatically
+			# Create a new Parent record automatically (no address rows — site/child holds the real address).
 			parent_obm = frappe.new_doc("Offline Buyer Master")
 			parent_obm.customer_business_name = biz_name_stripped
 			parent_obm.is_parent = 1
@@ -486,17 +486,6 @@ def quick_create_offline_buyer(
 			parent_obm.email = email
 			parent_obm.contact_no = contact_no
 			parent_obm.contact_person = contact_person
-			# Add a dummy/placeholder primary address for the parent?
-			# Or copy from the child if appropriate.
-			parent_obm.append("addresses", {
-				"is_primary": 1,
-				"address_line": address_line,
-				"pincode": pincode,
-				"country": country,
-				"state": state,
-				"city": city,
-				"area": area,
-			})
 			parent_obm.insert(ignore_permissions=True)
 			actual_parent = parent_obm.name
 
@@ -531,3 +520,28 @@ def quick_create_offline_buyer(
 		frappe.db.set_value("Offline Buyer Master", obm.name, "customer", obm.customer, update_modified=False)
 	frappe.db.commit()
 	return obm.name
+
+
+@frappe.whitelist()
+def seed_customer_types():
+	"""Seed the Offline Buyer Customer Type master with default values."""
+	types = [
+		"GENERAL TRADE",
+		"HORECA TRADE",
+		"INSTITUTIONAL TRADE",
+		"MODERN TRADE",
+		"NUTRITIONAL TRADE",
+		"OTHERS",
+	]
+	for t in types:
+		if not frappe.db.exists("Offline Buyer Customer Type", t):
+			doc = frappe.get_doc(
+				{
+					"doctype": "Offline Buyer Customer Type",
+					"customer_type": t,
+					"name": t,
+				}
+			)
+			doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return "Seeded"

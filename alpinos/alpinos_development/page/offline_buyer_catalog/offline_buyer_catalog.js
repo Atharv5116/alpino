@@ -168,8 +168,8 @@ class OfflineBuyerCatalogPage {
 					{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master' },
 					{ label: 'Site Name / Trade Name', fieldname: 'site_name', fieldtype: 'Data' },
 					{
-						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Select',
-						options: '\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS',
+						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
+						options: 'Offline Buyer Customer Type',
 						reqd: 1,
 					},
 					{
@@ -200,65 +200,44 @@ class OfflineBuyerCatalogPage {
 				],
 				primary_action_label: 'Create Buyer & Catalog',
 				primary_action: (v) => {
-					const do_call = (actual_parent) => {
-						bd.hide();
-						frappe.call({
-							method: 'alpinos.offline_buyer_api.quick_create_offline_buyer',
-							args: {
-								business_name: v.business_name,
-								site_name: v.site_name || '',
-								customer_type: v.customer_type,
-								level: v.level,
-								gst_type: v.gst_type,
-								payment_term: v.payment_term,
-								email: v.email,
-								contact_no: v.contact_no,
-								contact_person: v.contact_person,
-								address_line: v.address_line,
-								pincode: v.pincode,
-								country: v.country,
-								state: v.state,
-								city: v.city,
-								area: v.area,
-								is_parent: 0,
-								parent_buyer: actual_parent || v.parent_buyer,
-							},
-							freeze: true,
-							freeze_message: __('Creating offline buyer...'),
-							callback: (r) => {
-								if (r.exc || !r.message) return;
-								const obm_name = r.message;
-								frappe.show_alert({ message: __('Buyer created: {0}', [v.business_name]), indicator: 'green' });
+					bd.hide();
+					frappe.call({
+						method: 'alpinos.offline_buyer_api.quick_create_offline_buyer',
+						args: {
+							business_name: v.business_name,
+							site_name: v.site_name || '',
+							customer_type: v.customer_type,
+							level: v.level,
+							gst_type: v.gst_type,
+							payment_term: v.payment_term,
+							email: v.email,
+							contact_no: v.contact_no,
+							contact_person: v.contact_person,
+							address_line: v.address_line,
+							pincode: v.pincode,
+							country: v.country,
+							state: v.state,
+							city: v.city,
+							area: v.area,
+							is_parent: 0,
+							parent_buyer: v.parent_buyer,
+						},
+						freeze: true,
+						freeze_message: __('Creating offline buyer...'),
+						callback: (r) => {
+							if (r.exc || !r.message) return;
+							const obm_name = r.message;
+							frappe.show_alert({ message: __('Buyer created: {0}', [v.business_name]), indicator: 'green' });
 
-								// Now create the catalog for the newly created buyer
-								do_create_catalog(
-									{ hide: () => {} },  // already hidden
-									obm_name,
-									catalog_title || v.business_name,
-									catalog_desc || ''
-								);
-							},
-						});
-					};
-
-					if (!v.parent_buyer && v.business_name) {
-						frappe.db.get_value('Offline Buyer Master', {
-							customer_business_name: v.business_name.trim(),
-							is_parent: 1
-						}, 'name', (r) => {
-							if (r && r.name) {
-								frappe.confirm(
-									__('A parent record for "{0}" already exists. Do you want to link this site to that parent?', [v.business_name]),
-									() => do_call(r.name),
-									() => { /* cancel - stay in dialog */ }
-								);
-							} else {
-								do_call();
-							}
-						});
-					} else {
-						do_call();
-					}
+							// Now create the catalog for the newly created buyer
+							do_create_catalog(
+								{ hide: () => {} },  // already hidden
+								obm_name,
+								catalog_title || v.business_name,
+								catalog_desc || ''
+							);
+						},
+					});
 				},
 			});
 
@@ -870,8 +849,8 @@ class OfflineBuyerCatalogPage {
 				{ label: 'Site / Trade Name', fieldname: 'site_name', fieldtype: 'Data', default: obm.site_name },
 				{ fieldtype: 'Column Break' },
 				{
-					label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Select',
-					options: '\nGENERAL TRADE\nHORECA TRADE\nINSTITUTIONAL TRADE\nMODERN TRADE\nNUTRITIONAL TRADE\nOTHERS',
+					label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
+					options: 'Offline Buyer Customer Type',
 					reqd: 1, default: obm.customer_type,
 				},
 				{

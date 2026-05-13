@@ -170,10 +170,16 @@ class OfflineBuyerMaster(Document):
 			},
 		)
 
+	def _is_hierarchy_obm(self):
+		"""Parent (group) or child (site under a parent) — address rules are relaxed."""
+		return bool(self.get("is_parent") or self.get("parent_buyer"))
+
 	def _normalize_addresses(self):
 		rows = list(self.get("addresses") or [])
 		if not rows:
-			frappe.throw(_("Add at least one address in the Addresses table."), title=_("Address"))
+			if not self._is_hierarchy_obm():
+				frappe.throw(_("Add at least one address in the Addresses table."), title=_("Address"))
+			return
 		prim = [r for r in rows if r.get("is_primary")]
 		if len(prim) > 1:
 			frappe.throw(_("Mark only one address as Primary."), title=_("Primary address"))
@@ -186,6 +192,11 @@ class OfflineBuyerMaster(Document):
 				r.is_shipping = 0
 
 	def _validate_primary_address(self):
+		if self._is_hierarchy_obm():
+			return
+		if not self.get("addresses"):
+			return
+
 		def nonempty(val):
 			if val is None:
 				return False
@@ -206,7 +217,21 @@ class OfflineBuyerMaster(Document):
 				)
 
 	def _sync_primary_to_flat_fields(self):
-		row = next((r for r in self.addresses if r.get("is_primary")), self.addresses[0])
+		rows = list(self.get("addresses") or [])
+		if not rows:
+			self.address = ""
+			self.pincode = ""
+			self.country = ""
+			self.state = ""
+			self.city = ""
+			self.area = ""
+			self.sub_area = ""
+			self.shipping_address = ""
+			self.shipping_state = ""
+			self.shipping_city = ""
+			return
+
+		row = next((r for r in rows if r.get("is_primary")), rows[0])
 		self.address = row.address_line or ""
 		self.pincode = row.pincode or ""
 		self.country = row.country or ""
@@ -217,8 +242,12 @@ class OfflineBuyerMaster(Document):
 
 		# Sync the first is_shipping row into the shipping flat fields when not same-as-primary
 		if not self.get("shipping_same_as_profile"):
-			sh_row = next((r for r in self.addresses if r.get("is_shipping")), None)
+			sh_row = next((r for r in rows if r.get("is_shipping")), None)
 			if sh_row:
 				self.shipping_address = sh_row.address_line or ""
 				self.shipping_state = sh_row.state or ""
 				self.shipping_city = sh_row.city or ""
+			else:
+				self.shipping_address = ""
+				self.shipping_state = ""
+				self.shipping_city = ""

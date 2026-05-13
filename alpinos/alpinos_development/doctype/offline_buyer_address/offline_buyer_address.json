@@ -35,24 +35,21 @@
    "fieldname": "address_line",
    "fieldtype": "Text",
    "in_list_view": 1,
-   "label": "Address",
-   "reqd": 1
+   "label": "Address"
   },
   {
    "fieldname": "city",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "City",
-   "options": "City",
-   "reqd": 1
+   "options": "City"
   },
   {
    "fieldname": "state",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "State",
-   "options": "State",
-   "reqd": 1
+   "options": "State"
   },
   {
    "fieldname": "pincode",
@@ -66,8 +63,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Country",
-   "options": "Country",
-   "reqd": 1
+   "options": "Country"
   },
   {
    "fieldname": "address_label",
@@ -89,7 +85,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-05-04 00:00:00.000000",
+ "modified": "2026-05-13 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Offline Buyer Address",

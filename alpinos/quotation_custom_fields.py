@@ -294,8 +294,16 @@ def _setup_quotation_property_setters():
 			doc_type="Quotation",
 			field_name="order_type",
 			property="options",
-			value="\nGT\nMT\nGYM & NUTRITION\nHoReCa",
+			value="Offline Buyer Customer Type",
 			property_type="Text",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Quotation",
+			field_name="order_type",
+			property="fieldtype",
+			value="Link",
+			property_type="Data",
 		),
 		dict(
 			doctype_or_field="DocField",
