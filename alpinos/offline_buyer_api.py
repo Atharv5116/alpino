@@ -448,7 +448,7 @@ def quick_create_offline_buyer(
 	country,
 	state,
 	city,
-	area,
+	area=None,
 	site_name=None,
 	level=None,
 	is_parent=0,
@@ -458,8 +458,50 @@ def quick_create_offline_buyer(
 
 	Returns the new OBM name so the caller can pre-fill the catalog form.
 	"""
+	# Automatic hierarchy logic:
+	# 1. If parent_buyer is provided, use it.
+	# 2. If not, check if a parent with this business_name already exists.
+	# 3. If still not found, create a new Parent record (no site name, is_parent=1).
+
+	actual_parent = parent_buyer
+	biz_name_stripped = (business_name or "").strip()
+
+	if not actual_parent and biz_name_stripped:
+		actual_parent = frappe.db.get_value(
+			"Offline Buyer Master",
+			{"customer_business_name": biz_name_stripped, "is_parent": 1},
+			"name"
+		)
+
+		if not actual_parent:
+			# Create a new Parent record automatically
+			parent_obm = frappe.new_doc("Offline Buyer Master")
+			parent_obm.customer_business_name = biz_name_stripped
+			parent_obm.is_parent = 1
+			# Use some defaults from the current dialog if applicable
+			parent_obm.customer_type = customer_type
+			parent_obm.level = level or ""
+			parent_obm.gst_type = gst_type
+			parent_obm.payment_term = payment_term
+			parent_obm.email = email
+			parent_obm.contact_no = contact_no
+			parent_obm.contact_person = contact_person
+			# Add a dummy/placeholder primary address for the parent?
+			# Or copy from the child if appropriate.
+			parent_obm.append("addresses", {
+				"is_primary": 1,
+				"address_line": address_line,
+				"pincode": pincode,
+				"country": country,
+				"state": state,
+				"city": city,
+				"area": area,
+			})
+			parent_obm.insert(ignore_permissions=True)
+			actual_parent = parent_obm.name
+
 	obm = frappe.new_doc("Offline Buyer Master")
-	obm.customer_business_name = (business_name or "").strip()
+	obm.customer_business_name = biz_name_stripped
 	obm.site_name = (site_name or "").strip()
 	obm.customer_type = customer_type
 	obm.level = level or ""
@@ -468,8 +510,8 @@ def quick_create_offline_buyer(
 	obm.email = email
 	obm.contact_no = contact_no
 	obm.contact_person = contact_person
-	obm.is_parent = int(is_parent or 0)
-	obm.parent_buyer = parent_buyer or ""
+	obm.is_parent = 0 # Children are not parents by default
+	obm.parent_buyer = actual_parent or ""
 
 	obm.append(
 		"addresses",
@@ -484,8 +526,7 @@ def quick_create_offline_buyer(
 		},
 	)
 	obm.insert(ignore_permissions=True)
-	# Ensure the customer link is persisted — read_only fields can be skipped by some
-	# Frappe internals during insert, so we force an explicit db_set after insert.
+	# Ensure the customer link is persisted
 	if obm.customer:
 		frappe.db.set_value("Offline Buyer Master", obm.name, "customer", obm.customer, update_modified=False)
 	frappe.db.commit()
