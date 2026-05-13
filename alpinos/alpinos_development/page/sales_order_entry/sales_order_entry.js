@@ -337,7 +337,7 @@ class SalesOrderEntry {
 		this.add_item_row();
 	}
 
-	_make_item_link_field(parent, fieldname, variantsOnly) {
+	_make_item_link_field(parent, fieldname, filterType) {
 		let field = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Link',
@@ -349,12 +349,19 @@ class SalesOrderEntry {
 			only_input: true
 		});
 		// Main order lines: all saleable variants (no customer filter on SKU). Other tables: any item.
-		if (variantsOnly) {
+		if (filterType === 'variants') {
 			field.get_query = () => ({
 				filters: {
 					disabled: 0,
 					is_sales_item: 1,
 					variant_of: ['!=', ''],
+				},
+			});
+		} else if (filterType === 'nonTemplates') {
+			field.get_query = () => ({
+				filters: {
+					disabled: 0,
+					has_variants: 0,
 				},
 			});
 		}
@@ -428,7 +435,7 @@ class SalesOrderEntry {
 		let me = this;
 
 		// SKU field with improved search
-		let sku_field = this._make_item_link_field($row.find('.item-sku'), `item_code_${idx}`, true);
+		let sku_field = this._make_item_link_field($row.find('.item-sku'), `item_code_${idx}`, 'variants');
 		sku_field.$input.on('change', function() {
 			setTimeout(() => {
 				let val = sku_field.get_value();
@@ -880,7 +887,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`, true);
+		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`, 'nonTemplates');
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.freebies[idx].item_code = val || '';
@@ -951,7 +958,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`, true);
+		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`, 'nonTemplates');
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.scheme_items[idx].item_code = val || '';
@@ -1032,7 +1039,7 @@ class SalesOrderEntry {
 		$tbody.append($row);
 		let me = this;
 
-		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`, true);
+		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`, 'variants');
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.additional_units_items[idx].item_code = val || '';
