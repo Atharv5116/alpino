@@ -371,6 +371,8 @@ def get_offline_buyer_master_details(obm_name):
 		"alternate_no": doc.alternate_no or "",
 		"contact_person": doc.contact_person or "",
 		"shipping_same_as_profile": int(doc.shipping_same_as_profile or 0),
+		"is_parent": int(doc.is_parent or 0),
+		"parent_buyer": doc.parent_buyer or "",
 		"addresses": [
 			{
 				"address_label": r.get("address_label") or "",
@@ -405,7 +407,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 		"customer_business_name", "site_name", "customer_type", "level", "gst_type",
 		"gst_no", "pan_no", "payment_term", "payment_term_days",
 		"email", "contact_no", "alternate_no", "contact_person",
-		"shipping_same_as_profile",
+		"shipping_same_as_profile", "is_parent", "parent_buyer",
 	]
 	for f in editable:
 		if f in updates:
@@ -449,6 +451,8 @@ def quick_create_offline_buyer(
 	area,
 	site_name=None,
 	level=None,
+	is_parent=0,
+	parent_buyer=None,
 ):
 	"""Create a minimal Offline Buyer Master from the Catalog quick-create dialog.
 
@@ -464,6 +468,8 @@ def quick_create_offline_buyer(
 	obm.email = email
 	obm.contact_no = contact_no
 	obm.contact_person = contact_person
+	obm.is_parent = int(is_parent or 0)
+	obm.parent_buyer = parent_buyer or ""
 
 	obm.append(
 		"addresses",

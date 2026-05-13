@@ -11,6 +11,9 @@
  "field_order": [
   "profile_section",
   "customer_business_name",
+  "is_parent",
+  "parent_buyer",
+  "parent_business_name",
   "site_name",
   "customer_id",
   "customer_type",
@@ -63,6 +66,24 @@
    "fieldtype": "Data",
    "label": "Customer (Business Name)",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_parent",
+   "fieldtype": "Check",
+   "label": "Is Parent"
+  },
+  {
+   "fieldname": "parent_buyer",
+   "fieldtype": "Link",
+   "label": "Parent Buyer",
+   "options": "Offline Buyer Master"
+  },
+  {
+   "fieldname": "parent_business_name",
+   "fieldtype": "Data",
+   "label": "Parent Business Name",
+   "read_only": 1
   },
   {
    "fieldname": "site_name",

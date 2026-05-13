@@ -165,6 +165,8 @@ class OfflineBuyerCatalogPage {
 				title: 'Create New Offline Buyer',
 				fields: [
 					{ label: 'Business Name', fieldname: 'business_name', fieldtype: 'Data', reqd: 1 },
+					{ label: 'Is Parent', fieldname: 'is_parent', fieldtype: 'Check' },
+					{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master' },
 					{ label: 'Site Name / Trade Name', fieldname: 'site_name', fieldtype: 'Data' },
 					{
 						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Select',
@@ -218,6 +220,8 @@ class OfflineBuyerCatalogPage {
 							state: v.state,
 							city: v.city,
 							area: v.area,
+							is_parent: v.is_parent,
+							parent_buyer: v.parent_buyer,
 						},
 						freeze: true,
 						freeze_message: __('Creating offline buyer...'),
@@ -244,6 +248,21 @@ class OfflineBuyerCatalogPage {
 				if (bd.fields_dict.city) {
 					bd.fields_dict.city.df.get_query = () => ({ filters: { state: st || '' } });
 					bd.set_value('city', '');
+				}
+			});
+
+			// Parent Buyer filter & auto-fetch
+			bd.fields_dict.parent_buyer && (bd.fields_dict.parent_buyer.df.get_query = () => ({
+				filters: { is_parent: 1 }
+			}));
+			bd.fields_dict.parent_buyer && bd.fields_dict.parent_buyer.$input.on('change awesomplete-selectcomplete', function () {
+				const pb = bd.get_value('parent_buyer');
+				if (pb) {
+					frappe.db.get_value('Offline Buyer Master', pb, 'customer_business_name', (r) => {
+						if (r && r.customer_business_name && !bd.get_value('business_name')) {
+							bd.set_value('business_name', r.customer_business_name);
+						}
+					});
 				}
 			});
 
@@ -826,6 +845,8 @@ class OfflineBuyerCatalogPage {
 				// Business info
 				{ fieldtype: 'Section Break', label: 'Business Information' },
 				{ label: 'Business Name', fieldname: 'customer_business_name', fieldtype: 'Data', reqd: 1, default: obm.customer_business_name },
+				{ label: 'Is Parent', fieldname: 'is_parent', fieldtype: 'Check', default: obm.is_parent },
+				{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master', default: obm.parent_buyer },
 				{ label: 'Site / Trade Name', fieldname: 'site_name', fieldtype: 'Data', default: obm.site_name },
 				{ fieldtype: 'Column Break' },
 				{
@@ -899,6 +920,8 @@ class OfflineBuyerCatalogPage {
 					contact_no: values.contact_no,
 					alternate_no: values.alternate_no || '',
 					contact_person: values.contact_person,
+					is_parent: values.is_parent,
+					parent_buyer: values.parent_buyer,
 				};
 
 				frappe.call({
@@ -919,6 +942,7 @@ class OfflineBuyerCatalogPage {
 								$('.obi-detail-buyer').html(
 									[
 										updated.customer_business_name ? `Business: ${updated.customer_business_name}` : '',
+										updated.parent_buyer ? `Parent: ${updated.parent_buyer}` : '',
 										`Customer type: ${updated.customer_type || ''}`,
 										`Payment: ${updated.payment_term || ''}`,
 									].filter(Boolean).map(b => frappe.utils.escape_html(b)).join(' · ')

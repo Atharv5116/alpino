@@ -39,7 +39,11 @@ def _map_customer_type(obm_customer_type):
 
 def _ensure_customer_for_obm(doc):
 	"""Create or refresh ERPNext Customer from business name (no manual Customer pick list)."""
-	name = (doc.customer_business_name or "").strip()
+	biz_name = (doc.customer_business_name or "").strip()
+	name = biz_name
+	if doc.site_name:
+		name = f"{biz_name} - {doc.site_name}"
+
 	if not name:
 		frappe.throw(_("Customer (Business Name) is required."), title=_("Missing business name"))
 
@@ -53,6 +57,10 @@ def _ensure_customer_for_obm(doc):
 	company = _default_company()
 	mapped_order_type = _map_customer_type(doc.customer_type)
 
+	parent_customer = None
+	if doc.parent_buyer:
+		parent_customer = frappe.db.get_value("Offline Buyer Master", doc.parent_buyer, "customer")
+
 	if doc.customer and frappe.db.exists("Customer", doc.customer):
 		cust = frappe.get_doc("Customer", doc.customer)
 		if cust.customer_name != name:
@@ -63,6 +71,8 @@ def _ensure_customer_for_obm(doc):
 			cust.tax_id = doc.gst_no
 		elif doc.gst_type == "Unregistered Business" and doc.pan_no:
 			cust.tax_id = doc.pan_no
+		if parent_customer:
+			cust.parent_customer = parent_customer
 		cust.save(ignore_permissions=True)
 		return
 
@@ -77,6 +87,8 @@ def _ensure_customer_for_obm(doc):
 		cust.tax_id = doc.gst_no
 	elif doc.gst_type == "Unregistered Business" and doc.pan_no:
 		cust.tax_id = doc.pan_no
+	if parent_customer:
+		cust.parent_customer = parent_customer
 	if company:
 		cust.append("companies", {"company": company})
 	cust.insert(ignore_permissions=True)
@@ -89,6 +101,20 @@ class OfflineBuyerMaster(Document):
 		self._normalize_addresses()
 		self._validate_primary_address()
 		self._sync_primary_to_flat_fields()
+
+		if self.is_parent and self.parent_buyer:
+			frappe.throw(_("A record cannot be both a Parent and a Child."), title=_("Relationship Error"))
+
+		if self.parent_buyer == self.name:
+			frappe.throw(_("A record cannot be its own Parent."), title=_("Relationship Error"))
+
+		# If this record has children, it cannot be a child itself
+		if self.parent_buyer and frappe.db.exists("Offline Buyer Master", {"parent_buyer": self.name}):
+			frappe.throw(
+				_("This record is already a Parent to other records and cannot be assigned a Parent."),
+				title=_("Relationship Error"),
+			)
+
 		_ensure_customer_for_obm(self)
 
 		if self.payment_term in ("Credit", "Partial"):

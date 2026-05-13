@@ -12,6 +12,12 @@ frappe.ui.form.on("Offline Buyer Master", {
 		frm.set_query("party_owner", () => ({
 			query: "alpinos.offline_buyer_api.party_owner_user_query",
 		}));
+		frm.set_query("parent_buyer", () => ({
+			filters: {
+				is_parent: 1,
+				name: ["!=", frm.doc.name || ""],
+			},
+		}));
 	},
 
 	payment_term(frm) {
@@ -27,6 +33,29 @@ frappe.ui.form.on("Offline Buyer Master", {
 
 	shipping_same_as_profile(frm) {
 		copy_shipping_address(frm);
+	},
+
+	parent_buyer(frm) {
+		if (frm.doc.parent_buyer) {
+			frappe.db.get_value("Offline Buyer Master", frm.doc.parent_buyer, "customer_business_name", (r) => {
+				if (r && r.customer_business_name) {
+					frm.set_value("parent_business_name", r.customer_business_name);
+					// Auto-fill business name if it's a child of the same business
+					if (!frm.doc.customer_business_name) {
+						frm.set_value("customer_business_name", r.customer_business_name);
+					}
+				}
+			});
+		} else {
+			frm.set_value("parent_business_name", "");
+		}
+	},
+
+	is_parent(frm) {
+		if (frm.doc.is_parent && frm.doc.parent_buyer) {
+			frappe.msgprint(__("A record cannot be both a parent and a child."));
+			frm.set_value("is_parent", 0);
+		}
 	},
 });
 
