@@ -53,11 +53,17 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	party_name(frm) {
-		if (frm.doc.opportunity_from !== "Offline Buyer Master") {
+		if (frm.doc.opportunity_from === "Offline Buyer Master") {
+			sync_obm_header_from_master(frm);
+		} else if (frm.doc.opportunity_from === "Customer" && frm.doc.party_name) {
+			frappe.db.get_value("Customer", frm.doc.party_name, "custom_order_type", (r) => {
+				if (r && r.custom_order_type) {
+					frm.set_value("custom_order_type", r.custom_order_type);
+				}
+			});
+		} else {
 			frappe.model.set_value(frm.doctype, frm.doc.name, "customer_name", "");
-			return;
 		}
-		sync_obm_header_from_master(frm);
 	},
 
 	custom_cash_discount(frm) {

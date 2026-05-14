@@ -12,11 +12,19 @@ import frappe
 SALES_ORDER_CLIENT_SCRIPT = """
 frappe.ui.form.on('Sales Order', {
     customer: function(frm) {
-        // Auto-fetch Order Type from Customer master
         if (frm.doc.customer) {
-            frappe.db.get_value('Customer', frm.doc.customer, 'custom_order_type', function(r) {
-                if (r && r.custom_order_type) {
-                    frm.set_value('order_type', r.custom_order_type);
+            frappe.call({
+                method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_for_customer',
+                args: { customer: frm.doc.customer },
+                callback: function(r) {
+                    const m = r.message || {};
+                    if (m.customer_type) {
+                        frm.set_value('order_type', m.customer_type);
+                        frm.set_value('custom_offline_buyer_customer_type', m.customer_type);
+                    }
+                    if (m.offline_buyer_master) {
+                        frm.set_value('custom_offline_buyer_master', m.offline_buyer_master);
+                    }
                 }
             });
         }

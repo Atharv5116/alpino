@@ -23,18 +23,9 @@ def _default_company():
 	return frappe.db.get_value("Company", {"name": ("!=", "")}, "name", order_by="creation asc")
 
 
-_OBM_TYPE_TO_ORDER_TYPE = {
-	"GENERAL TRADE": "GT",
-	"MODERN TRADE": "MT",
-	"HORECA TRADE": "HoReCa",
-	"NUTRITIONAL TRADE": "GYM & NUTRITION",
-	"INSTITUTIONAL TRADE": "MT",
-}
-
-
 def _map_customer_type(obm_customer_type):
-	"""Convert OBM customer_type to the Customer/Quotation order_type option set."""
-	return _OBM_TYPE_TO_ORDER_TYPE.get((obm_customer_type or "").upper().strip(), "")
+	"""Customer type is now a Link field; pass the master name directly."""
+	return (obm_customer_type or "").strip()
 
 
 def _ensure_customer_for_obm(doc):

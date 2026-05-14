@@ -41,6 +41,9 @@ function sync_offline_buyer_from_customer(frm, done) {
 			const m = r.message || {};
 			frm.set_value("custom_offline_buyer_master", m.offline_buyer_master || "");
 			frm.set_value("custom_offline_buyer_customer_type", m.customer_type || "");
+			if (m.customer_type) {
+				frm.set_value("order_type", m.customer_type);
+			}
 			if (typeof done === "function") {
 				done();
 			}

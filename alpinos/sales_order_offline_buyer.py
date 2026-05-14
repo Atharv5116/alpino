@@ -103,7 +103,8 @@ def get_offline_buyer_item_rate(customer, item_code):
 
 @frappe.whitelist()
 def get_offline_buyer_for_customer(customer):
-	"""Return Offline Buyer Master name and trade customer_type for a linked ERPNext Customer."""
+	"""Return Offline Buyer Master name and trade customer_type for a linked ERPNext Customer.
+	Fallback to Customer.custom_order_type if not defined on OBM."""
 	if not customer:
 		return {"offline_buyer_master": None, "customer_type": None}
 
@@ -113,12 +114,15 @@ def get_offline_buyer_for_customer(customer):
 		["name", "customer_type"],
 		as_dict=True,
 	)
-	if not row:
-		return {"offline_buyer_master": None, "customer_type": None}
+
+	cust_type = row.get("customer_type") if row else None
+	if not cust_type:
+		# Fallback to Customer master
+		cust_type = frappe.db.get_value("Customer", customer, "custom_order_type")
 
 	return {
-		"offline_buyer_master": row.get("name"),
-		"customer_type": row.get("customer_type"),
+		"offline_buyer_master": row.get("name") if row else None,
+		"customer_type": cust_type,
 	}
 
 
