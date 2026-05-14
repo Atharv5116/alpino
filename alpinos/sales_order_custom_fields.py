@@ -361,7 +361,7 @@ def _setup_property_setters():
 			"Property Setter",
 			{
 				"doc_type": ps_data["doc_type"],
-				"field_name": ps_data["field_name"],
+				"field_name": ps_data.get("field_name"),
 				"property": ps_data["property"],
 			}
 		)
