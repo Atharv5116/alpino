@@ -238,9 +238,13 @@ class SalesOrderEntry {
 			setTimeout(() => {
 				let customer = me.customer_field.get_value();
 				if (customer) {
-					frappe.db.get_value('Customer', customer, 'custom_order_type', function(r) {
-						if (r && r.custom_order_type) {
-							me.order_type_field.set_value(r.custom_order_type);
+					frappe.call({
+						method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_for_customer',
+						args: { customer: customer },
+						callback: function(r) {
+							if (r.message && r.message.customer_type) {
+								me.order_type_field.set_value(r.message.customer_type);
+							}
 						}
 					});
 					frappe.call({
