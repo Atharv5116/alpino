@@ -124,6 +124,7 @@ after_migrate = [
 	"alpinos.employee_naming_config.setup_employee_manual_naming",
 	"alpinos.impersonate.create_impersonate_role",
 	"alpinos.workflow_setup.execute",
+	"alpinos.employee_onboarding_workflow_setup.execute",
 	"alpinos.patches.v1_0.setup_job_applicant_workflow.execute",
 	"alpinos.page_setup.create_screening_page",
 	"alpinos.overrides.interview_override.setup_interview_override",
@@ -299,8 +300,10 @@ doc_events = {
 			"alpinos.employee_onboarding_automation.handle_pre_onboarding_workflow"
 		],
 		"after_insert": [
-			"alpinos.employee_onboarding_automation.send_onboarding_created_email",
 			"alpinos.employee_onboarding_webform.process_webform_submission"
+		],
+		"on_update": [
+			"alpinos.employee_onboarding_automation.handle_workflow_transition"
 		]
 	},
 	"Work From Home Request": {

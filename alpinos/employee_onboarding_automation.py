@@ -170,6 +170,7 @@ def populate_from_job_applicant(doc, method=None):
 def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	"""
 	Allow saving Employee Onboarding even if certain mandatory fields are not filled.
+	- While the form is in Draft workflow state: allow any user to save without mandatory fields.
 	- On first save of a new document: allow any user to save without filling mandatory fields.
 	- On subsequent saves: allow HR Manager role to skip specific fields (as per SRS).
 	Also ensures hidden designation field is non-mandatory for all users.
@@ -179,10 +180,14 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	if getattr(doc, "boarding_status", None) == "Document Pending":
 		doc.boarding_status = "Documents Pending"
 
-	# 1) First save: completely bypass mandatory checks using Frappe's built-in flag.
+	# 1) While form is in Draft state: bypass ALL mandatory checks for all users.
 	# This lets HR create an onboarding shell with minimal data and complete details later.
 	if hasattr(doc, "is_new") and doc.is_new():
-		# This flag is checked inside Document._validate_mandatory()
+		doc.flags.ignore_mandatory = True
+		return
+
+	# Draft workflow state: bypass mandatory for all users
+	if getattr(doc, "boarding_status", None) == "Draft" or getattr(doc, "workflow_state", None) == "Draft":
 		doc.flags.ignore_mandatory = True
 		return
 	
@@ -1167,5 +1172,60 @@ def send_welcome_formalities_reminders():
 		frappe.log_error(
 			f"Reminders sent: {notifications_sent} upcoming, {overdue_notifications_sent} overdue (Total: {total_notifications})",
 			"Welcome Formalities Reminder Summary"
+		)
+
+
+def handle_workflow_transition(doc, method=None):
+	"""
+	Handle Employee Onboarding workflow transitions.
+	- When state changes to 'Email Sent': send pre-onboarding email to candidate.
+	- When state changes to 'Employee Created': trigger create employee mapped doc.
+	"""
+	# Determine the current workflow state
+	current_state = getattr(doc, "boarding_status", None) or getattr(doc, "workflow_state", None)
+
+	if not current_state:
+		return
+
+	# --- Transition to "Email Sent": send the pre-onboarding email ---
+	if current_state == "Email Sent":
+		_send_email_on_workflow_transition(doc)
+
+
+def _send_email_on_workflow_transition(doc):
+	"""
+	Send pre-onboarding email when workflow transitions to 'Email Sent'.
+	Uses the 'Onboarding - Document Reminder' email template with webform link.
+	"""
+	if not doc.job_applicant:
+		frappe.throw(_("Job Applicant is required to send email to candidate."))
+
+	try:
+		job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+		applicant_email = getattr(job_applicant, "email_id", None)
+
+		if not applicant_email:
+			# Fallback to personal_email on the onboarding doc
+			applicant_email = getattr(doc, "personal_email", None)
+
+		if not applicant_email:
+			frappe.throw(_("No email address found for the candidate. Please set personal email or update Job Applicant."))
+
+		# Reuse the existing send_pre_onboarding_email function
+		send_pre_onboarding_email(doc, applicant_email)
+
+		frappe.msgprint(
+			_("Pre-onboarding email sent to {0}").format(applicant_email),
+			title=_("Email Sent"),
+			indicator="green",
+		)
+	except Exception as e:
+		frappe.log_error(
+			f"Error sending email on workflow transition for {doc.name}: {str(e)}",
+			"Employee Onboarding Workflow Email Error"
+		)
+		frappe.throw(
+			_("Failed to send email to candidate: {0}").format(str(e)),
+			title=_("Email Error")
 		)
 

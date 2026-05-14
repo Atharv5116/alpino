@@ -460,7 +460,8 @@ function set_variant_item_queries(frm) {
         return {
             filters: {
                 disabled: 0,
-                is_sales_item: 1
+                is_sales_item: 1,
+                has_variants: 0
             }
         };
     };

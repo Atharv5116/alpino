@@ -318,7 +318,18 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 		return billing_default_name or None
 
 	# --- Priority 2: is_shipping rows in child table ---
-	shipping_rows = [r for r in (obm_doc.get("addresses") or []) if int(r.get("is_shipping") or 0)]
+	# Exclude rows that are ALSO the primary address — those are already created as the
+	# Billing address (billing_default_name). Treating them as shipping too would create
+	# a duplicate Shipping-type Address record, leading to "not found" errors in the UI.
+	shipping_rows = [
+		r for r in (obm_doc.get("addresses") or [])
+		if int(r.get("is_shipping") or 0) and not int(r.get("is_primary") or 0)
+	]
+	if not shipping_rows:
+		# All shipping rows were also primary → single address serves as both
+		all_shipping = [r for r in (obm_doc.get("addresses") or []) if int(r.get("is_shipping") or 0)]
+		if all_shipping:
+			return billing_default_name or None
 	if shipping_rows:
 		default_shipping = None
 		for sh_row in shipping_rows:
