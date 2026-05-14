@@ -147,7 +147,7 @@
    "fieldname": "level",
    "fieldtype": "Select",
    "label": "Level",
-   "options": "\nSuperstockist\nDistributor",
+   "options": "\nSuperstockist\nDistributor\nN/A",
    "reqd": 1
   },
   {
