@@ -189,6 +189,36 @@ def _ensure_gst_setup_for_company(company):
 		_so_tax_logger().warning("[tax_setup] bootstrap failed company=%s err=%s", company, e)
 
 
+def _resolve_address_name(address_string, customer):
+	"""
+	If the frontend passes the display label instead of the actual ERPNext Address Name,
+	this function resolves it back to the Address Name.
+	"""
+	if not address_string or not customer:
+		return address_string
+
+	# Check if it's already a valid Address name linked to customer
+	exists = frappe.db.get_value(
+		"Dynamic Link", 
+		{"parent": address_string, "parenttype": "Address", "link_doctype": "Customer", "link_name": customer},
+		"parent"
+	)
+	if exists: 
+		return address_string
+
+	# If not found, it might be the display string. Resolve via display label.
+	try:
+		from alpinos.sales_order_offline_buyer import get_customer_addresses_for_display
+		opts = get_customer_addresses_for_display(customer)
+		for o in opts:
+			if o.get("display") == address_string:
+				return o.get("name")
+	except Exception:
+		pass
+
+	return address_string
+
+
 def _apply_tax_template_from_party(doc):
 	"""Resolve and apply Sales Taxes template from party/tax rule context."""
 	if doc.doctype != "Sales Order" or not doc.get("customer") or not doc.get("company"):
@@ -281,6 +311,9 @@ def get_tax_template_for_sales_order(customer, company=None, billing_address=Non
 
 	company = _resolve_company(company)
 	out["company"] = company
+
+	billing_address = _resolve_address_name(billing_address, customer)
+	shipping_address = _resolve_address_name(shipping_address, customer)
 
 	doc = frappe._dict(
 		{
@@ -636,8 +669,10 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		default_warehouse,
 	)
 	if billing_address:
+		billing_address = _resolve_address_name(billing_address, customer)
 		so.customer_address = billing_address
 	if shipping_address:
+		shipping_address = _resolve_address_name(shipping_address, customer)
 		so.shipping_address_name = shipping_address
 	_apply_tax_mode_from_billing(so)
 	if taxes_and_charges:
