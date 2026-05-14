@@ -14,6 +14,8 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 def setup_sales_order_custom_fields():
 	"""Create all custom fields for Sales Order customization"""
+	# Force field type changes in DB to bypass Select -> Link validation
+	_force_fieldtype_sync()
 
 	custom_fields = {
 		# ============================================================
@@ -352,3 +354,33 @@ def _setup_property_setters():
 
 	frappe.db.commit()
 	print("✅ Property setters applied (SKU labels, Order Type options)")
+
+
+def _force_fieldtype_sync():
+	"""Manually sync field types in the database to bypass Frappe validation errors."""
+	# 1. Standard field order_type on Sales Order (via Property Setter)
+	ps_name = frappe.db.get_value("Property Setter", {
+		"doc_type": "Sales Order",
+		"field_name": "order_type",
+		"property": "fieldtype"
+	}, "name")
+	if ps_name:
+		frappe.db.set_value("Property Setter", ps_name, "value", "Link", update_modified=False)
+
+	ps_opts = frappe.db.get_value("Property Setter", {
+		"doc_type": "Sales Order",
+		"field_name": "order_type",
+		"property": "options"
+	}, "name")
+	if ps_opts:
+		frappe.db.set_value("Property Setter", ps_opts, "value", "Offline Buyer Customer Type", update_modified=False)
+
+	# 2. Custom field custom_order_type on Customer
+	cf_name = frappe.db.get_value("Custom Field", {"dt": "Customer", "fieldname": "custom_order_type"}, "name")
+	if cf_name:
+		frappe.db.set_value("Custom Field", cf_name, {
+			"fieldtype": "Link",
+			"options": "Offline Buyer Customer Type"
+		}, update_modified=False)
+
+	frappe.db.commit()

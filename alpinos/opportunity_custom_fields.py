@@ -11,6 +11,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
 def setup_opportunity_custom_fields():
+	_force_opportunity_fieldtype_sync()
 	_delete_obsolete_opportunity_custom_fields()
 	_cleanup_opportunity_from_property_setters()
 
@@ -371,3 +372,18 @@ def _delete_obsolete_opportunity_custom_fields():
 		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
 		if name:
 			frappe.db.delete("Custom Field", {"name": name})
+	frappe.db.commit()
+	print("✅ Opportunity: obsolete fields deleted")
+
+
+def _force_opportunity_fieldtype_sync():
+	"""Manually sync field types in the database for Opportunity to bypass Frappe validation errors."""
+	# Custom field custom_order_type on Opportunity
+	cf_name = frappe.db.get_value("Custom Field", {"dt": "Opportunity", "fieldname": "custom_order_type"}, "name")
+	if cf_name:
+		frappe.db.set_value("Custom Field", cf_name, {
+			"fieldtype": "Link",
+			"options": "Offline Buyer Customer Type"
+		}, update_modified=False)
+	frappe.db.commit()
+

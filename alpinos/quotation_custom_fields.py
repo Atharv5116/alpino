@@ -10,6 +10,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
 def setup_quotation_custom_fields():
+	_force_quotation_fieldtype_sync()
 	_delete_obsolete_quotation_custom_fields()
 	# Apply property setters before creating/updating custom fields, otherwise doctype
 	# validation can fail (e.g. Quotation.order_type default still being ERPNext's "Sales").
@@ -462,3 +463,28 @@ def _delete_obsolete_quotation_custom_fields():
 		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
 		if name:
 			frappe.db.delete("Custom Field", {"name": name})
+	frappe.db.commit()
+	print("✅ Quotation: obsolete fields deleted")
+
+
+def _force_quotation_fieldtype_sync():
+	"""Manually sync field types in the database for Quotation to bypass Frappe validation errors."""
+	# Standard field order_type on Quotation (via Property Setter)
+	ps_name = frappe.db.get_value("Property Setter", {
+		"doc_type": "Quotation",
+		"field_name": "order_type",
+		"property": "fieldtype"
+	}, "name")
+	if ps_name:
+		frappe.db.set_value("Property Setter", ps_name, "value", "Link", update_modified=False)
+
+	ps_opts = frappe.db.get_value("Property Setter", {
+		"doc_type": "Quotation",
+		"field_name": "order_type",
+		"property": "options"
+	}, "name")
+	if ps_opts:
+		frappe.db.set_value("Property Setter", ps_opts, "value", "Offline Buyer Customer Type", update_modified=False)
+
+	frappe.db.commit()
+

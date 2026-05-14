@@ -609,7 +609,8 @@ def setup_custom_fields():
 		dict(
 			fieldname="custom_offline_buyer_customer_type",
 			label="Customer Type (Offline Buyer)",
-			fieldtype="Data",
+			fieldtype="Link",
+			options="Offline Buyer Customer Type",
 			insert_after="custom_offline_buyer_master",
 			read_only=1,
 			allow_on_submit=1,
