@@ -647,10 +647,19 @@ def send_pre_onboarding_email(doc, applicant_email):
 	Send pre-onboarding email to the applicant
 	Sets status to "Document Pending" after sending
 	"""
+	# DEBUG: Log that this function was called and from where
+	frappe.log_error(
+		f"[EMAIL DEBUG] send_pre_onboarding_email called for {doc.name} | recipient: {applicant_email}\nTraceback:\n{frappe.get_traceback()}",
+		"Onboarding Email Trace"
+	)
 	try:
 		template_name = "Onboarding - Document Reminder"
 
 		if not frappe.db.exists("Email Template", template_name):
+			frappe.log_error(
+				f"[EMAIL DEBUG] Template '{template_name}' NOT FOUND in DB for {doc.name}",
+				"Onboarding Email Trace"
+			)
 			return
 
 		# Generate webform link with Employee Onboarding name
@@ -744,6 +753,16 @@ def send_pre_onboarding_email(doc, applicant_email):
 		tmpl = frappe.get_doc("Email Template", template_name)
 		formatted = tmpl.get_formatted_email({"doc": email_doc})
 
+		# DEBUG: Log exactly which template and subject is being sent
+		frappe.log_error(
+			f"[EMAIL DEBUG] ABOUT TO SEND via send_pre_onboarding_email\n"
+			f"  Doc: {doc.name}\n"
+			f"  Template: {template_name}\n"
+			f"  Subject: {formatted.get('subject')}\n"
+			f"  Recipient: {applicant_email}",
+			"Onboarding Email Trace"
+		)
+
 		frappe.sendmail(
 			recipients=[applicant_email],
 			subject=formatted["subject"],
@@ -757,7 +776,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Documents Pending", update_modified=False)
 		frappe.db.commit()
 		
-		frappe.log_error(f"Pre-onboarding email sent to {applicant_email} for Employee Onboarding {doc.name}", "Pre-Onboarding Email")
+		frappe.log_error(f"[EMAIL DEBUG] SUCCESS: Pre-onboarding email sent to {applicant_email} for {doc.name} using template '{template_name}'", "Onboarding Email Trace")
 		
 	except Exception as e:
 		frappe.log_error(f"Error sending pre-onboarding email: {str(e)}", "Pre-Onboarding Email Error")
@@ -1200,6 +1219,12 @@ def _send_email_on_workflow_transition(doc):
 	Send pre-onboarding email when workflow transitions to 'Email Sent'.
 	Uses the 'Onboarding - Document Reminder' email template with webform link.
 	"""
+	# DEBUG: Log that this function was called
+	frappe.log_error(
+		f"[EMAIL DEBUG] _send_email_on_workflow_transition called for {doc.name} | boarding_status={doc.boarding_status}\nTraceback:\n{frappe.get_traceback()}",
+		"Onboarding Email Trace"
+	)
+
 	if not doc.job_applicant:
 		frappe.throw(_("Job Applicant is required to send email to candidate."))
 
