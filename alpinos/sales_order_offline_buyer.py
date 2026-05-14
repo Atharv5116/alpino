@@ -15,6 +15,7 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len):
 		FROM `tabCustomer` c
 		INNER JOIN `tabOffline Buyer Master` m ON m.customer = c.name
 		WHERE IFNULL(c.disabled, 0) = 0
+			AND IFNULL(m.is_parent, 0) = 0
 			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s)
 		ORDER BY c.name ASC
 		LIMIT %(page_len)s OFFSET %(start)s

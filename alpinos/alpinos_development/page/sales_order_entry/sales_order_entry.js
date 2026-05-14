@@ -216,10 +216,10 @@ class SalesOrderEntry {
 		// Map an Autocomplete's display label back to its internal Address document name
 		me._get_actual_address = function(field) {
 			if (!field) return '';
-			let val = field.get_value();
+			let val = (field.get_value() || '').trim();
 			if (!val) return '';
 			if (field._opts) {
-				let opt = field._opts.find(o => o.label === val || o.value === val);
+				let opt = field._opts.find(o => (o.label || '').trim() === val || (o.value || '').trim() === val);
 				if (opt) return opt.value;
 			}
 			return val;

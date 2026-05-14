@@ -208,10 +208,11 @@ def _resolve_address_name(address_string, customer):
 
 	# If not found, it might be the display string. Resolve via display label.
 	try:
+		address_string = address_string.strip()
 		from alpinos.sales_order_offline_buyer import get_customer_addresses_for_display
 		opts = get_customer_addresses_for_display(customer)
 		for o in opts:
-			if o.get("display") == address_string:
+			if (o.get("display") or "").strip() == address_string:
 				return o.get("name")
 	except Exception:
 		pass
