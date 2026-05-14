@@ -357,6 +357,13 @@ def _setup_opportunity_property_setters():
 			value="OPP-2627-.#####",
 			property_type="Text",
 		),
+		dict(
+			doctype_or_field="DocType",
+			doc_type="Opportunity",
+			property="default_print_format",
+			value="Final Opportunity",
+			property_type="Text",
+		),
 	]
 
 	for ps_data in property_setters:

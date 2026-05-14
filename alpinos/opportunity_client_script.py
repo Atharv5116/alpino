@@ -35,6 +35,7 @@ frappe.ui.form.on("Opportunity", {
 				? { filters: { customer: ["!=", ""] } }
 				: {};
 		});
+		set_variant_item_queries(frm);
 	},
 
 	onload(frm) {
@@ -349,6 +350,21 @@ function recalculate_opportunity_totals(frm) {
 	frm.set_value("custom_gst_total", flt(gst_total, 2));
 	frm.set_value("total", flt(final_total, 2));
 	frm.set_value("opportunity_amount", flt(final_total, 2));
+}
+
+function set_variant_item_queries(frm) {
+	const q = function() {
+		return {
+			filters: {
+				disabled: 0,
+				is_sales_item: 1,
+				variant_of: ['!=', '']
+			}
+		};
+	};
+	frm.set_query('item_code', 'custom_marketing_freebies', q);
+	frm.set_query('item_code', 'custom_scheme_item_table', q);
+	frm.set_query('item_code', 'custom_additional_units_damage_items', q);
 }
 '''
 

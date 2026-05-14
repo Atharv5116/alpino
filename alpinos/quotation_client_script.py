@@ -17,6 +17,7 @@ frappe.ui.form.on('Quotation', {
             }
             return {};
         });
+        set_variant_item_queries(frm);
     },
 
     onload(frm) {
@@ -452,6 +453,21 @@ function enforce_percentage_discounts(frm) {
         }
     });
     frm.set_df_property('custom_additional_discount_type', 'read_only', 1);
+}
+
+function set_variant_item_queries(frm) {
+    const q = function() {
+        return {
+            filters: {
+                disabled: 0,
+                is_sales_item: 1,
+                variant_of: ['!=', '']
+            }
+        };
+    };
+    frm.set_query('item_code', 'custom_marketing_freebies', q);
+    frm.set_query('item_code', 'custom_scheme_item_table', q);
+    frm.set_query('item_code', 'custom_additional_units_damage_items', q);
 }
 """
 

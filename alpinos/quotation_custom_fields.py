@@ -395,6 +395,13 @@ def _setup_quotation_property_setters():
 			value="QTN-2627-.#####",
 			property_type="Text",
 		),
+		dict(
+			doctype_or_field="DocType",
+			doc_type="Quotation",
+			property="default_print_format",
+			value="Final Quotation",
+			property_type="Text",
+		),
 	]
 
 	for ps_data in property_setters:
