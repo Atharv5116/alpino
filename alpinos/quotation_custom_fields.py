@@ -379,6 +379,22 @@ def _setup_quotation_property_setters():
 			value="1",
 			property_type="Check",
 		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Quotation",
+			field_name="naming_series",
+			property="options",
+			value="QTN-2627-.#####",
+			property_type="Text",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Quotation",
+			field_name="naming_series",
+			property="default",
+			value="QTN-2627-.#####",
+			property_type="Text",
+		),
 	]
 
 	for ps_data in property_setters:
@@ -386,7 +402,7 @@ def _setup_quotation_property_setters():
 			"Property Setter",
 			{
 				"doc_type": ps_data["doc_type"],
-				"field_name": ps_data["field_name"],
+				"field_name": ps_data.get("field_name"),
 				"property": ps_data["property"],
 			},
 		)
