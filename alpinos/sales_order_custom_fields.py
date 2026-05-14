@@ -266,6 +266,14 @@ def _setup_property_setters():
 			"value": "Order Items",
 			"property_type": "Data",
 		},
+		# Default Print Format
+		{
+			"doctype_or_field": "DocType",
+			"doc_type": "Sales Order",
+			"property": "default_print_format",
+			"value": "Final Sales Order",
+			"property_type": "Text",
+		},
 		# Rename order_type label to Customer Type
 		{
 			"doctype_or_field": "DocField",
