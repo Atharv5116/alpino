@@ -153,17 +153,45 @@ frappe.ui.form.on('Interview', {
 	
 	# Client Script for Employee Onboarding
 	employee_onboarding_script = """
-// Allow first save of Employee Onboarding without client-side mandatory checks
+// Allow saving Employee Onboarding in Draft state without client-side mandatory checks
 if (!frappe.ui.form._employee_onboarding_check_mandatory_patched) {
 	frappe.ui.form._employee_onboarding_check_mandatory_patched = true;
 	const original_check_mandatory = frappe.ui.form.check_mandatory;
 	frappe.ui.form.check_mandatory = function (frm) {
-		if (frm && frm.doctype === 'Employee Onboarding' && frm.is_new()) {
-			// Skip mandatory check on very first save; backend still runs its own logic
-			return true;
+		if (frm && frm.doctype === 'Employee Onboarding') {
+			// Skip mandatory check when in Draft state or on first save
+			if (frm.is_new() || frm.doc.boarding_status === 'Draft' || frm.doc.workflow_state === 'Draft') {
+				return true;
+			}
 		}
 		return original_check_mandatory(frm);
 	};
+}
+
+// Helper: Remove or restore mandatory asterisks based on workflow state
+function toggle_mandatory_indicators(frm) {
+	var is_draft = frm.is_new() || frm.doc.boarding_status === 'Draft' || frm.doc.workflow_state === 'Draft';
+
+	if (is_draft) {
+		// Store original reqd values and remove mandatory from ALL fields
+		if (!frm._original_reqd_map) {
+			frm._original_reqd_map = {};
+		}
+		frm.meta.fields.forEach(function(df) {
+			if (df.reqd) {
+				frm._original_reqd_map[df.fieldname] = 1;
+				frm.set_df_property(df.fieldname, 'reqd', 0);
+			}
+		});
+	} else {
+		// Restore original mandatory values
+		if (frm._original_reqd_map) {
+			Object.keys(frm._original_reqd_map).forEach(function(fieldname) {
+				frm.set_df_property(fieldname, 'reqd', 1);
+			});
+			frm._original_reqd_map = null;
+		}
+	}
 }
 
 frappe.ui.form.on('Employee Onboarding', {
@@ -197,6 +225,10 @@ frappe.ui.form.on('Employee Onboarding', {
 		} catch (e) {
 			// ignore if boarding_status is not defined
 		}
+
+		// Toggle mandatory asterisks based on workflow state
+		toggle_mandatory_indicators(frm);
+
 		// Auto-populate fields when form loads if job_applicant is set
 		if (frm.doc.job_applicant) {
 			// Set candidate_id to job_applicant (Link field)

@@ -141,19 +141,82 @@ def setup_employee_onboarding_workflow():
 	return workflow_doc.name
 
 
+def update_boarding_status_options():
+	"""Update boarding_status field options to match the new workflow states.
+	This ensures 'Draft', 'Email Sent', 'Employee Created' are valid values."""
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	new_options = "Draft\nEmail Sent\nEmployee Created"
+
+	# Update options via property setter
+	try:
+		existing = frappe.db.exists(
+			"Property Setter",
+			{"doc_type": "Employee Onboarding", "field_name": "boarding_status", "property": "options"}
+		)
+		if existing:
+			ps = frappe.get_doc("Property Setter", existing)
+			ps.value = new_options
+			ps.save(ignore_permissions=True)
+		else:
+			ps = frappe.get_doc({
+				"doctype": "Property Setter",
+				"doctype_or_field": "DocField",
+				"doc_type": "Employee Onboarding",
+				"field_name": "boarding_status",
+				"property": "options",
+				"value": new_options,
+				"property_type": "Text",
+			})
+			ps.insert(ignore_permissions=True)
+		frappe.db.commit()
+		print(f"✅ Updated boarding_status options: {new_options.replace(chr(10), ', ')}")
+	except Exception as e:
+		print(f"⚠️  Could not update boarding_status options: {str(e)}")
+
+	# Update default value
+	try:
+		existing = frappe.db.exists(
+			"Property Setter",
+			{"doc_type": "Employee Onboarding", "field_name": "boarding_status", "property": "default"}
+		)
+		if existing:
+			ps = frappe.get_doc("Property Setter", existing)
+			ps.value = "Draft"
+			ps.save(ignore_permissions=True)
+		else:
+			ps = frappe.get_doc({
+				"doctype": "Property Setter",
+				"doctype_or_field": "DocField",
+				"doc_type": "Employee Onboarding",
+				"field_name": "boarding_status",
+				"property": "default",
+				"value": "Draft",
+				"property_type": "Data",
+			})
+			ps.insert(ignore_permissions=True)
+		frappe.db.commit()
+		print("✅ Updated boarding_status default to 'Draft'")
+	except Exception as e:
+		print(f"⚠️  Could not update boarding_status default: {str(e)}")
+
+
 def execute():
 	"""Execute Employee Onboarding workflow setup"""
 	try:
-		# Step 1: Create workflow states
+		# Step 1: Update boarding_status field options FIRST
+		update_boarding_status_options()
+
+		# Step 2: Create workflow states
 		create_workflow_states()
 
-		# Step 2: Create workflow actions
+		# Step 3: Create workflow actions
 		create_workflow_actions()
 
-		# Step 3: Clear cache so meta is fresh
+		# Step 4: Clear cache so meta is fresh
 		frappe.clear_cache()
 
-		# Step 4: Create the workflow
+		# Step 5: Create the workflow
 		setup_employee_onboarding_workflow()
 
 		frappe.clear_cache()
@@ -161,3 +224,4 @@ def execute():
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Employee Onboarding Workflow Setup Error")
 		raise
+
