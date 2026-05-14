@@ -353,7 +353,15 @@ function recalculate_opportunity_totals(frm) {
 }
 
 function set_variant_item_queries(frm) {
-	const q = function() {
+	const q_freebies = function() {
+		return {
+			filters: {
+				disabled: 0,
+				is_sales_item: 1
+			}
+		};
+	};
+	const q_variants = function() {
 		return {
 			filters: {
 				disabled: 0,
@@ -362,9 +370,9 @@ function set_variant_item_queries(frm) {
 			}
 		};
 	};
-	frm.set_query('item_code', 'custom_marketing_freebies', q);
-	frm.set_query('item_code', 'custom_scheme_item_table', q);
-	frm.set_query('item_code', 'custom_additional_units_damage_items', q);
+	frm.set_query('item_code', 'custom_marketing_freebies', q_freebies);
+	frm.set_query('item_code', 'custom_scheme_item_table', q_variants);
+	frm.set_query('item_code', 'custom_additional_units_damage_items', q_variants);
 }
 '''
 
