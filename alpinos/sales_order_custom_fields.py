@@ -231,6 +231,23 @@ def _setup_property_setters():
 			"value": "SKU",
 			"property_type": "Data",
 		},
+		# Naming Series for Sales Order
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "naming_series",
+			"property": "options",
+			"value": "SOR-2627-.#####",
+			"property_type": "Text",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Sales Order",
+			"field_name": "naming_series",
+			"property": "default",
+			"value": "SOR-2627-.#####",
+			"property_type": "Text",
+		},
 		# Relabel item_name → SKU No.
 		{
 			"doctype_or_field": "DocField",
