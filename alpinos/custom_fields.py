@@ -623,6 +623,9 @@ def setup_custom_fields():
 	if not frappe.db.exists("DocType", "Offline Buyer Master"):
 		custom_fields.pop("Sales Order", None)
 
+	# Force field type changes in DB to bypass Data -> Link validation
+	_force_offline_buyer_fieldtype_sync()
+
 	create_custom_fields(custom_fields, update=True)
 	print("Custom fields created for Job Requisition, Job Opening, and Job Applicant")
 	
@@ -668,6 +671,20 @@ def setup_custom_fields():
 		print(f"⚠️  Delivery Note (Alpinos) setup skipped: {str(e)}")
 
 	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")
+
+
+def _force_offline_buyer_fieldtype_sync():
+	"""Manually sync field types in the database for Offline Buyer fields to bypass Frappe validation errors."""
+	# Custom field custom_offline_buyer_customer_type on Sales Order
+	cf_name = frappe.db.get_value("Custom Field", {"dt": "Sales Order", "fieldname": "custom_offline_buyer_customer_type"}, "name")
+	if cf_name:
+		current_type = frappe.db.get_value("Custom Field", cf_name, "fieldtype")
+		if current_type == "Data":
+			frappe.db.set_value("Custom Field", cf_name, {
+				"fieldtype": "Link",
+				"options": "Offline Buyer Customer Type"
+			}, update_modified=False)
+			frappe.db.commit()
 
 
 def delete_exit_letter_field():
