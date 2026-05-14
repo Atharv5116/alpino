@@ -200,15 +200,17 @@ class SalesOrderEntry {
 		if (this.company_field.$input) {
 			this.company_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
 		}
-
-		// Set address field value AND show its human-readable label in the input
+		// Set address field value AND show its human-readable label in the input.
+		// Guard: only set_value if the address name is actually in opts (linked to Customer).
+		// Calling set_value with an unlinked address name triggers Frappe's "not found" error.
 		me._set_address_display = function(field, addr_name, opts) {
 			if (!field) return;
-			field.set_value(addr_name);
-			if (addr_name && opts) {
-				const opt = opts.find(o => o.value === addr_name);
-				if (opt && field.$input) field.$input.val(opt.label);
-			}
+			if (!opts || !opts.length) return;
+			const opt = opts.find(o => o.value === addr_name);
+			const use = opt || opts[0]; // fallback to first available address
+			if (!use) return;
+			field.set_value(use.value);
+			if (field.$input) field.$input.val(use.label);
 		};
 
 		// Load address Autocomplete options for a customer and optionally pre-select defaults
