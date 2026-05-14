@@ -451,10 +451,13 @@ def get_customer_addresses_for_display(customer):
 	)
 
 	for row in rows:
-		parts = [p for p in [
-			row.address_line1, row.address_line2,
-			row.city, row.state, row.pincode,
-		] if p]
+		parts = []
+		for p in [row.address_line1, row.address_line2, row.city, row.state, row.pincode]:
+			if p:
+				# Remove newlines so the label matches the single-line Autocomplete input text
+				clean_p = " ".join(str(p).replace("\n", " ").replace("\r", " ").split())
+				if clean_p:
+					parts.append(clean_p)
 		row.display = "{} ({})".format(", ".join(parts), row.address_type or "Address")
 
 	return rows
