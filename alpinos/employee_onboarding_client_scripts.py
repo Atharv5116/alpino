@@ -159,8 +159,9 @@ if (!frappe.ui.form._employee_onboarding_check_mandatory_patched) {
 	const original_check_mandatory = frappe.ui.form.check_mandatory;
 	frappe.ui.form.check_mandatory = function (frm) {
 		if (frm && frm.doctype === 'Employee Onboarding') {
-			// Skip mandatory check when in Draft state or on first save
-			if (frm.is_new() || frm.doc.boarding_status === 'Draft' || frm.doc.workflow_state === 'Draft') {
+			// Skip mandatory check when in Draft or Email Sent state
+			var state = frm.doc.boarding_status || frm.doc.workflow_state || '';
+			if (frm.is_new() || state === 'Draft' || state === 'Email Sent') {
 				return true;
 			}
 		}
@@ -170,9 +171,10 @@ if (!frappe.ui.form._employee_onboarding_check_mandatory_patched) {
 
 // Helper: Remove or restore mandatory asterisks based on workflow state
 function toggle_mandatory_indicators(frm) {
-	var is_draft = frm.is_new() || frm.doc.boarding_status === 'Draft' || frm.doc.workflow_state === 'Draft';
+	var state = frm.doc.boarding_status || frm.doc.workflow_state || '';
+	var skip_mandatory = frm.is_new() || state === 'Draft' || state === 'Email Sent';
 
-	if (is_draft) {
+	if (skip_mandatory) {
 		// Store original reqd values and remove mandatory from ALL fields
 		if (!frm._original_reqd_map) {
 			frm._original_reqd_map = {};

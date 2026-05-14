@@ -213,6 +213,18 @@ class SalesOrderEntry {
 			if (field.$input) field.$input.val(use.label);
 		};
 
+		// Map an Autocomplete's display label back to its internal Address document name
+		me._get_actual_address = function(field) {
+			if (!field) return '';
+			let val = field.get_value();
+			if (!val) return '';
+			if (field._opts) {
+				let opt = field._opts.find(o => o.label === val || o.value === val);
+				if (opt) return opt.value;
+			}
+			return val;
+		};
+
 		// Load address Autocomplete options for a customer and optionally pre-select defaults
 		me._load_address_options = function(customer, defaults) {
 			if (!customer) {
@@ -225,8 +237,14 @@ class SalesOrderEntry {
 				args: { customer },
 				callback(r) {
 					const opts = (r.message || []).map(a => ({ value: a.name, label: a.display }));
-					me.billing_address_field && me.billing_address_field.set_data(opts);
-					me.shipping_address_field && me.shipping_address_field.set_data(opts);
+					if (me.billing_address_field) {
+						me.billing_address_field._opts = opts;
+						me.billing_address_field.set_data(opts);
+					}
+					if (me.shipping_address_field) {
+						me.shipping_address_field._opts = opts;
+						me.shipping_address_field.set_data(opts);
+					}
 					if (defaults) {
 						me._set_address_display(me.billing_address_field, defaults.billing || '', opts);
 						me._set_address_display(me.shipping_address_field, defaults.shipping || '', opts);
@@ -310,8 +328,8 @@ class SalesOrderEntry {
 
 		this._refresh_tax_template = function() {
 			const customer = me.customer_field.get_value();
-			const billing = me.billing_address_field ? me.billing_address_field.get_value() : '';
-			const shipping = me.shipping_address_field ? me.shipping_address_field.get_value() : '';
+			const billing = me._get_actual_address(me.billing_address_field);
+			const shipping = me._get_actual_address(me.shipping_address_field);
 			if (!customer || !billing) {
 				me.tax_template_field && me.tax_template_field.set_value('');
 				return;
@@ -1167,8 +1185,8 @@ class SalesOrderEntry {
 		let customer = this.customer_field.get_value();
 		let order_type = this.order_type_field.get_value();
 		let delivery_date = this.delivery_date_field.get_value();
-		let billing_address = this.billing_address_field.get_value();
-		let shipping_address = this.shipping_address_field.get_value();
+		let billing_address = me._get_actual_address(this.billing_address_field);
+		let shipping_address = me._get_actual_address(this.shipping_address_field);
 
 		if (!customer) return frappe.throw('Please select a Customer');
 		if (!order_type) return frappe.throw('Please select Customer Type');

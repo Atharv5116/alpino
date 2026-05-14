@@ -186,8 +186,10 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 		doc.flags.ignore_mandatory = True
 		return
 
-	# Draft workflow state: bypass mandatory for all users
-	if getattr(doc, "boarding_status", None) == "Draft" or getattr(doc, "workflow_state", None) == "Draft":
+	# Draft and Email Sent workflow states: bypass mandatory for all users.
+	# Only the final "Employee Created" state should enforce mandatory checks.
+	current_state = getattr(doc, "boarding_status", None) or getattr(doc, "workflow_state", None)
+	if current_state in ("Draft", "Email Sent"):
 		doc.flags.ignore_mandatory = True
 		return
 	
