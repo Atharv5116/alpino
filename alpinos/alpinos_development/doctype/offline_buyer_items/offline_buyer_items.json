@@ -8,6 +8,7 @@
  "field_order": [
   "title",
   "buyer",
+  "level",
   "col_break",
   "description",
   "items_section",
@@ -31,6 +32,13 @@
    "options": "Customer"
   },
   {
+   "fieldname": "level",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Level",
+   "read_only": 1
+  },
+  {
    "fieldname": "col_break",
    "fieldtype": "Column Break"
   },
@@ -52,7 +60,7 @@
   }
  ],
  "links": [],
- "modified": "2026-04-28 12:00:00.000000",
+ "modified": "2026-05-15 13:45:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Offline Buyer Items",

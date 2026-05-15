@@ -35,3 +35,9 @@ class OfflineBuyerItems(Document):
 					).format(frappe.bold(self.buyer), frappe.bold(duplicate)),
 					title=_("Duplicate catalog"),
 				)
+		
+		# Fetch Level from Master
+		if self.buyer:
+			level = frappe.db.get_value("Offline Buyer Master", {"customer": self.buyer}, "level")
+			if level:
+				self.level = level

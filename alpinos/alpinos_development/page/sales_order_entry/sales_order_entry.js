@@ -390,6 +390,7 @@ class SalesOrderEntry {
 			field.get_query = () => ({
 				filters: {
 					disabled: 0,
+					is_sales_item: 1,
 					has_variants: 0,
 				},
 			});
