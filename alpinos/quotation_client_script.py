@@ -371,13 +371,12 @@ function recalculate_row_values(frm, cdt, cdn) {
 
     const new_rate = qty ? flt(taxable / qty, 2) : 0;
 
-    row.custom_item_tax = flt(tax_amount, 2);
-    row.rate = new_rate;
-    row.amount = flt(taxable, 2);
-    row.base_rate = new_rate;
-    row.base_amount = flt(taxable, 2);
+    frappe.model.set_value(cdt, cdn, 'custom_item_tax', flt(tax_amount, 2));
+    frappe.model.set_value(cdt, cdn, 'rate', new_rate);
+    frappe.model.set_value(cdt, cdn, 'amount', flt(taxable, 2));
+    frappe.model.set_value(cdt, cdn, 'base_rate', new_rate);
+    frappe.model.set_value(cdt, cdn, 'base_amount', flt(taxable, 2));
 
-    frm.refresh_field('items');
     recalculate_quotation_totals(frm);
 }
 
@@ -386,6 +385,8 @@ function recalculate_quotation_totals(frm) {
     let sub_total = 0;
     let over_discount = 0;
     let additional_discount = 0;
+    let sum_taxable = 0;
+    let sum_gst = 0;
 
     rows.forEach((row) => {
         const qty = flt(row.qty);
@@ -396,28 +397,29 @@ function recalculate_quotation_totals(frm) {
         sub_total += gross;
 
         const flat_in = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
-        let flat_discount_amount = 0;
+        let flat_amt = 0;
         if ((row.custom_discount_type || 'Percentage') === 'Percentage') {
-            flat_discount_amount = gross * flat_in / 100.0;
+            flat_amt = gross * flat_in / 100.0;
         } else {
-            flat_discount_amount = flat_in;
+            flat_amt = flat_in;
         }
 
-        const after_flat = gross - flat_discount_amount;
+        const after_flat = gross - flat_amt;
         const offer_amt = after_flat * flt(row.custom_offer) / 100.0;
         const after_offer = after_flat - offer_amt;
 
-        over_discount += flat_discount_amount;
+        over_discount += flat_amt;
 
         const add_in = flt(row.custom_additional_discount);
-        additional_discount += after_offer * add_in / 100.0;
-    });
+        const additional_amt = after_offer * add_in / 100.0;
+        additional_discount += additional_amt;
 
-    let sum_taxable = 0;
-    let sum_gst = 0;
-    rows.forEach((row) => {
-        sum_taxable += flt(row.amount);
-        sum_gst += flt(row.custom_item_tax);
+        let taxable = after_offer - additional_amt;
+        if (taxable < 0) taxable = 0;
+        sum_taxable += taxable;
+
+        const tax_pct = flt(row.custom_item_tax_percent);
+        sum_gst += taxable * tax_pct / 100.0;
     });
 
     const cash_discount_pct = flt(frm.doc.custom_cash_discount);
@@ -435,6 +437,8 @@ function recalculate_quotation_totals(frm) {
     frm.set_value('custom_remaining_amount', flt(remaining, 2));
     frm.set_value('total', flt(final_total, 2));
     frm.set_value('grand_total', flt(final_total, 2));
+    frm.set_value('base_total', flt(final_total, 2));
+    frm.set_value('base_grand_total', flt(final_total, 2));
 }
 
 function toggle_payment_fields(frm) {

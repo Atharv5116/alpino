@@ -295,12 +295,11 @@ function recalculate_row_values(frm, cdt, cdn) {
 
 	const new_rate = qty ? flt(net_amount / qty, 2) : 0;
 
-	row.rate = new_rate;
-	row.amount = flt(net_amount, 2);
-	row.base_rate = new_rate;
-	row.base_amount = flt(net_amount, 2);
+	frappe.model.set_value(cdt, cdn, "rate", new_rate);
+	frappe.model.set_value(cdt, cdn, "amount", flt(net_amount, 2));
+	frappe.model.set_value(cdt, cdn, "base_rate", new_rate);
+	frappe.model.set_value(cdt, cdn, "base_amount", flt(net_amount, 2));
 
-	frm.refresh_field("items");
 	recalculate_opportunity_totals(frm);
 }
 
