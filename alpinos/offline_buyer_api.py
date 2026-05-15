@@ -41,6 +41,7 @@ def get_all_records():
 			obm.customer,
 			obm.customer_business_name,
 			obm.customer_type,
+			obm.level,
 			obm.payment_term,
 			obm.payment_term_days,
 			obm.party_owner
@@ -359,6 +360,7 @@ def get_offline_buyer_master_details(obm_name):
 	doc = frappe.get_doc("Offline Buyer Master", obm_name)
 	return {
 		"customer_business_name": doc.customer_business_name,
+		"level": doc.level or "",
 		"site_name": doc.site_name or "",
 		"customer_type": doc.customer_type or "",
 		"gst_type": doc.gst_type or "",

@@ -284,7 +284,25 @@ def _offline_buyer_addresses_for_addresses_table(obm_doc):
 		if int(row.get("is_primary") or 0):
 			default_billing = results[i]
 			break
+
+	if default_billing is None:
+		# If no primary row in OBM, try to find an existing ERPNext address of type 'Billing' for this customer
+		existing_billing = frappe.db.get_value(
+			"Address",
+			{
+				"links.link_doctype": "Customer",
+				"links.link_name": customer,
+				"address_type": "Billing",
+				"disabled": 0,
+			},
+			"name",
+			order_by="is_primary_address desc, creation desc",
+		)
+		if existing_billing:
+			default_billing = existing_billing
+
 	if default_billing is None and results:
+		# Still nothing? Fall back to the first address created from OBM
 		default_billing = results[0]
 
 	return {"billing_default": default_billing}

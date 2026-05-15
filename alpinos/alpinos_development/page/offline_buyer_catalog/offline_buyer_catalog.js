@@ -80,6 +80,9 @@ class OfflineBuyerCatalogPage {
 			const ctype_cell = rec.customer_type
 				? `<span>${frappe.utils.escape_html(rec.customer_type)}</span>`
 				: `<span style="color:#ccc;">—</span>`;
+			const level_cell = rec.level
+				? `<span>${frappe.utils.escape_html(rec.level)}</span>`
+				: `<span style="color:#ccc;">—</span>`;
 			const pay_term = rec.payment_term
 				? frappe.utils.escape_html(rec.payment_term)
 				: `<span style="color:#ccc;">—</span>`;
@@ -102,6 +105,7 @@ class OfflineBuyerCatalogPage {
   <td>${master_cell}</td>
   <td>${site_cell}</td>
   <td>${ctype_cell}</td>
+  <td>${level_cell}</td>
   <td>${pay_term}</td>
   <td style="text-align:center;">${pay_days}</td>
   <td>${party}</td>
@@ -127,6 +131,7 @@ class OfflineBuyerCatalogPage {
 				(r.customer || '').toLowerCase().includes(q) ||
 				(r.customer_business_name || '').toLowerCase().includes(q) ||
 				(r.customer_type || '').toLowerCase().includes(q) ||
+				(r.level || '').toLowerCase().includes(q) ||
 				(r.payment_term || '').toLowerCase().includes(q) ||
 				String(r.payment_term_days ?? '').toLowerCase().includes(q) ||
 				(r.party_owner || '').toLowerCase().includes(q)
@@ -362,6 +367,9 @@ class OfflineBuyerCatalogPage {
 		}
 		if (rec.customer_type) {
 			buyer_bits.push(`Customer type: ${rec.customer_type}`);
+		}
+		if (rec.level) {
+			buyer_bits.push(`Level: ${rec.level}`);
 		}
 		if (rec.payment_term) {
 			let pay = `Payment: ${rec.payment_term}`;

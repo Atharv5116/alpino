@@ -371,8 +371,9 @@ function set_variant_item_queries(frm) {
 			}
 		};
 	};
+	frm.set_query('item_code', 'items', q_variants);
 	frm.set_query('item_code', 'custom_marketing_freebies', q_freebies);
-	frm.set_query('item_code', 'custom_scheme_item_table', q_variants);
+	frm.set_query('item_code', 'custom_scheme_item_table', q_freebies);
 	frm.set_query('item_code', 'custom_additional_units_damage_items', q_variants);
 }
 '''

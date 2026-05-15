@@ -207,7 +207,12 @@ class SalesOrderEntry {
 			if (!field) return;
 			if (!opts || !opts.length) return;
 			const opt = opts.find(o => o.value === addr_name);
-			const use = opt || opts[0]; // fallback to first available address
+			let use = opt;
+			if (!use) {
+				// If no specific default (or it's not in the list), look for an address of type "Billing"
+				use = opts.find(o => (o.label || '').includes('(Billing)'));
+			}
+			if (!use) use = opts[0]; // fallback to first available
 			if (!use) return;
 			field.set_value(use.value);
 			if (field.$input) field.$input.val(use.label);
