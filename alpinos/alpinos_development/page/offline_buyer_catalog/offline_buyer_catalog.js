@@ -863,7 +863,7 @@ class OfflineBuyerCatalogPage {
 				},
 				{
 					label: 'Level', fieldname: 'level', fieldtype: 'Select',
-					options: '\nSuperstockist\nDistributor',
+					options: '\nSuperstockist\nDistributor\nN/A',
 					reqd: 1, default: obm.level,
 				},
 				{
@@ -961,6 +961,7 @@ class OfflineBuyerCatalogPage {
 			},
 		});
 
+		d.set_values(obm);
 		d.show();
 
 		// Render the address host after dialog is shown — load states/cities first
