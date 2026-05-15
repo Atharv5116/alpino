@@ -47,6 +47,7 @@ frappe.ui.form.on("Opportunity", {
 
 	refresh(frm) {
 		apply_opportunity_party_layout(frm);
+		set_variant_item_queries(frm);
 	},
 
 	opportunity_from(frm) {
@@ -389,6 +390,7 @@ def create_opportunity_client_script():
 		doc.script = OPPORTUNITY_CLIENT_SCRIPT
 		doc.enabled = 1
 		doc.save(ignore_permissions=True)
+		print(f"✅ Updated client script: {script_name}")
 	else:
 		doc = frappe.get_doc(
 			{
@@ -401,5 +403,6 @@ def create_opportunity_client_script():
 			}
 		)
 		doc.insert(ignore_permissions=True)
+		print(f"✅ Created client script: {script_name}")
 
 	frappe.db.commit()

@@ -33,6 +33,7 @@ frappe.ui.form.on('Quotation', {
         toggle_payment_fields(frm);
         enforce_percentage_discounts(frm);
         apply_quotation_party_layout(frm);
+        set_variant_item_queries(frm);
         setTimeout(() => {
             fix_dynamic_link_for_obm(frm);
             apply_quotation_address_queries(frm);
@@ -492,6 +493,7 @@ def create_quotation_client_script():
 		doc.script = QUOTATION_CLIENT_SCRIPT
 		doc.enabled = 1
 		doc.save(ignore_permissions=True)
+		print(f"✅ Updated client script: {script_name}")
 	else:
 		doc = frappe.get_doc(
 			{
@@ -504,5 +506,6 @@ def create_quotation_client_script():
 			}
 		)
 		doc.insert(ignore_permissions=True)
+		print(f"✅ Created client script: {script_name}")
 
 	frappe.db.commit()
