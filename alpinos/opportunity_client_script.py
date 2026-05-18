@@ -171,6 +171,9 @@ frappe.ui.form.on("Opportunity Item", {
 						? flt(msg.margin_percent)
 						: 0
 				);
+				if (msg.margin_percent != null) {
+					frappe.model.set_value(cdt, cdn, "custom_flat_discount", flt(msg.margin_percent));
+				}
 				frm.refresh_field("items");
 				recalculate_row_values(frm, cdt, cdn);
 			},

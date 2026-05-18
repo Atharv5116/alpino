@@ -680,7 +680,7 @@ class SalesOrderEntry {
 				args: { customer: customer, item_code: item_code },
 				callback: function(r) {
 					const msg = r.message;
-					if (msg && typeof msg.mrp === 'number' && msg.mrp > 0) {
+					if (msg && (flt(msg.mrp) > 0 || flt(msg.margin_percent) > 0)) {
 						apply_obm_pricing(msg);
 						return;
 					}
