@@ -16,3 +16,4 @@ alpinos.patches.v1_0.revert_sales_order_desk_layout
 alpinos.patches.v1_0.install_sales_order_entry_list_page
 alpinos.patches.v1_0.fix_sales_order_additional_units_item_doctype
 alpinos.patches.v1_0.refresh_sales_order_scheme_damage_grids
+alpinos.patches.v1_0.enable_guest_file_uploads
