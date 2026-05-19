@@ -67,9 +67,6 @@
   {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
 {% endif %}
 
-{# Compute cash discount amount from percentage #}
-{% set _cash_disc_pct = frappe.utils.flt(doc.get('custom_cash_discount') or 0) %}
-{% set _cash_disc_amt = frappe.utils.flt(_cash_disc_pct * frappe.utils.flt(doc.get('custom_sub_total') or 0) / 100.0, 2) %}
 
 {% set company_gst = '24AASCA1881A1ZV' %}
 {% set freebies = doc.custom_marketing_freebies or [] %}
@@ -222,8 +219,11 @@
     {{ colgroup_items }}
     <tbody>
     <tr><td colspan='8' class='right bold'>Sub Total</td><td class='right'>{{ frappe.utils.fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>
-    <tr><td colspan='8' class='right bold'>Cash Disc. ({{ doc.custom_cash_discount or 0 }}%)</td><td class='right'>{{ frappe.utils.fmt_money(_cash_disc_amt, currency=doc.currency) }}</td></tr>
-    <tr><td colspan='8' class='right bold' style="font-size: 14px; background-color: #f7f7f7; color: #000; font-weight: 800;">Grand Total</td><td class='right bold' style="font-size: 15px; color: #000; background-color: #f7f7f7;">{{ frappe.utils.fmt_money(doc.custom_total_payable or doc.grand_total or 0, currency=doc.currency) }}</td></tr>
+    {% set _cash_disc_pct = frappe.utils.flt(doc.get('custom_cash_discount') or 0) %}
+    {% set _cash_disc_amt = frappe.utils.flt(_cash_disc_pct * frappe.utils.flt(_amt_ns.sub) / 100.0, 2) %}
+    <tr><td colspan='8' class='right bold'>Cash Disc. ({{ _cash_disc_pct|int if _cash_disc_pct % 1 == 0 else _cash_disc_pct }}%)</td><td class='right'>{{ frappe.utils.fmt_money(_cash_disc_amt, currency=doc.currency) }}</td></tr>
+    {% set final_total = frappe.utils.flt(_amt_ns.sub) - frappe.utils.flt(_cash_disc_amt) %}
+    <tr><td colspan='8' class='right bold' style="font-size: 14px; background-color: #f7f7f7; color: #000; font-weight: 800;">Grand Total</td><td class='right bold' style="font-size: 15px; color: #000; background-color: #f7f7f7;">{{ frappe.utils.fmt_money(final_total, currency=doc.currency) }}</td></tr>
     </tbody>
   </table>
 
