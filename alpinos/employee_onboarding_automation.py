@@ -1213,8 +1213,14 @@ def handle_workflow_transition(doc, method=None):
 	if not frappe.db.exists(doc.doctype, doc.name):
 		return
 
+	# Only trigger if the state actually changed
+	previous_state = None
+	doc_before_save = doc.get_doc_before_save()
+	if doc_before_save:
+		previous_state = getattr(doc_before_save, "boarding_status", None) or getattr(doc_before_save, "workflow_state", None)
+
 	# --- Transition to "Email Sent": send the pre-onboarding email ---
-	if current_state == "Email Sent":
+	if current_state == "Email Sent" and current_state != previous_state:
 		_send_email_on_workflow_transition(doc)
 
 
