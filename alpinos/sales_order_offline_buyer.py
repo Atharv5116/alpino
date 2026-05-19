@@ -68,7 +68,7 @@ def get_offline_buyer_item_rate(customer, item_code):
 		{"customer": customer, "item_code": item_code},
 		as_dict=True,
 	)
-	std_mrp = flt(frappe.db.get_value("Item", item_code, "standard_rate") or 0)
+	std_mrp = flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
 	if catalog:
 		mrp = flt(catalog[0].mrp) or std_mrp
 		pct = flt(catalog[0].margin_percent)

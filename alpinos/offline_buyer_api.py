@@ -61,7 +61,7 @@ def get_buyer_items(record_name):
 
 	When this catalog's **buyer** (Customer) has an Offline Buyer Master with margin rows, the page only lists
 	SKUs that appear on that master (plus any SKUs already saved on this catalog). Default **margin %** and
-	**MRP** match the master (and Sales Order Entry): MRP from Item ``standard_rate``, margin from
+	**MRP** match the master (and Sales Order Entry): MRP from Item ``valuation_rate``, margin from
 	``Offline Buyer Margin``; saved child rows still win if present.
 	"""
 	# All active, saleable variant items from Item master
@@ -72,7 +72,7 @@ def get_buyer_items(record_name):
 			"is_sales_item": 1,
 			"variant_of": ["!=", ""],
 		},
-		fields=["name", "item_name", "item_group", "standard_rate", "variant_of"],
+		fields=["name", "item_name", "item_group", "valuation_rate", "variant_of"],
 		order_by="item_group, item_name",
 	)
 
@@ -107,7 +107,7 @@ def get_buyer_items(record_name):
 		if allowed_skus is not None and item.name not in allowed_skus:
 			continue
 		row = saved.get(item.name)
-		mrp = flt(row.mrp if row else item.standard_rate)
+		mrp = flt(row.mrp if row else item.valuation_rate)
 		if row:
 			margin_pct = flt(row.margin_percent)
 		else:

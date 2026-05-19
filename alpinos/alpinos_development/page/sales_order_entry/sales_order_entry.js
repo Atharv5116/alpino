@@ -692,16 +692,16 @@ class SalesOrderEntry {
 								apply_mrp_only(r2.message);
 								return;
 							}
-							frappe.db.get_value('Item', item_code, 'standard_rate', function(ir) {
-								apply_mrp_only(ir && ir.standard_rate);
+							frappe.db.get_value('Item', item_code, 'valuation_rate', function(ir) {
+								apply_mrp_only(ir && ir.valuation_rate);
 							});
 						},
 					});
 				},
 			});
 		} else {
-			frappe.db.get_value('Item', item_code, 'standard_rate', function(ir) {
-				apply_mrp_only(ir && ir.standard_rate);
+			frappe.db.get_value('Item', item_code, 'valuation_rate', function(ir) {
+				apply_mrp_only(ir && ir.valuation_rate);
 			});
 		}
 

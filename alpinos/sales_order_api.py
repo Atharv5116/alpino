@@ -498,7 +498,7 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 	1) Saved row on any **Offline Buyer Items** catalog for that buyer (customer)
 	2) **Offline Buyer Margin** row on the selected master (`party_name`)
 
-	Then ERPNext Customer Item MRP, else Item.standard_rate.
+	Then ERPNext Customer Item MRP, else Item.valuation_rate.
 
 	``matched_buyer_sheet`` is True when pricing came from (1) or (2).
 	"""
@@ -532,7 +532,7 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 			{"item": item_code, "cust": cust},
 			as_dict=True,
 		)
-		std_mrp = flt(frappe.db.get_value("Item", item_code, "standard_rate"))
+		std_mrp = flt(frappe.db.get_value("Item", item_code, "valuation_rate"))
 		if catalog:
 			r = catalog[0]
 			mrp = flt(r.mrp) or std_mrp
@@ -577,7 +577,7 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 		out["customer"] = party_name
 		mrp = flt(get_customer_item_mrp(party_name, item_code))
 		if not mrp:
-			mrp = flt(frappe.db.get_value("Item", item_code, "standard_rate"))
+			mrp = flt(frappe.db.get_value("Item", item_code, "valuation_rate"))
 		out["mrp"] = mrp
 		out["margin_percent"] = 0
 		out["matched_buyer_sheet"] = False
