@@ -42,11 +42,15 @@
 
 {% set place_supply_display = (billing_addr_doc.get('state') if billing_addr_doc else '') or '' %}
 
-{# Resolve OBM from party_name (Opportunity uses opportunity_from + party_name) #}
+{# Resolve OBM from custom field or party_name #}
 {% set customer_display = doc.customer_name or doc.party_name or '' %}
 {% set obm_doc = None %}
 {% set site_name_obm = '' %}
-{% if doc.get('opportunity_from') == 'Offline Buyer Master' and doc.party_name %}
+{% if doc.get('custom_offline_buyer_master') %}
+  {% set obm_doc = frappe.get_doc('Offline Buyer Master', doc.custom_offline_buyer_master) %}
+  {% set site_name_obm = obm_doc.site_name or '' %}
+  {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
+{% elif doc.get('opportunity_from') == 'Offline Buyer Master' and doc.party_name %}
   {% set obm_doc = frappe.get_doc('Offline Buyer Master', doc.party_name) %}
   {% set site_name_obm = obm_doc.site_name or '' %}
   {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
