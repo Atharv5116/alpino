@@ -148,6 +148,7 @@ def process_webform_submission_async(temp_doc_name, employee_onboarding_name):
 	
 	# Map webform fields to Employee Onboarding fields
 	field_mapping = {
+		'personal_mobile_number': 'personal_mobile_number',
 		'date_of_birth': 'date_of_birth',
 		'gender': 'gender',
 		'blood_group': 'blood_group',
