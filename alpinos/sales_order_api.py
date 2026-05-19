@@ -715,6 +715,12 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 				"custom_customer_mrp": item.get("custom_customer_mrp"),
 			}
 		)
+
+		flat_discount = flt(calc.get("flat_discount"))
+		if customer and item_code:
+			from alpinos.sales_order_offline_buyer import update_offline_buyer_margin_if_changed
+			update_offline_buyer_margin_if_changed(customer, item_code, flat_discount)
+
 		row = {
 			"item_code": item_code,
 			"qty": qty,

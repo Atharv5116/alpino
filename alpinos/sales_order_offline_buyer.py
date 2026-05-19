@@ -482,6 +482,45 @@ def get_customer_addresses_for_display(customer):
 	return rows
 
 
+def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
+	"""If the Flat Disc % on the Sales Order differs from the Offline Buyer Margin/Catalog, update the master."""
+	new_margin = flt(new_margin, 2)
+	obm_name = frappe.db.get_value("Offline Buyer Master", {"customer": customer}, "name")
+	if not obm_name:
+		return
+
+	# 1. Update in Offline Buyer Items (Catalog)
+	obi_list = frappe.db.get_all("Offline Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, order_by="modified desc")
+	for obi in obi_list:
+		frappe.db.sql("""
+			UPDATE `tabOffline Buyer Item`
+			SET margin_percent = %s
+			WHERE parent = %s AND item_code = %s AND IFNULL(margin_percent, 0) != %s
+		""", (new_margin, obi.name, item_code, new_margin))
+
+	# 2. Update in Offline Buyer Master (Margin table)
+	doc = frappe.get_doc("Offline Buyer Master", obm_name)
+	updated = False
+	found = False
+	for row in doc.get("margins") or []:
+		if row.sku == item_code:
+			found = True
+			if flt(row.margin_percent, 2) != new_margin:
+				row.margin_percent = new_margin
+				updated = True
+	
+	if not found:
+		doc.append("margins", {
+			"sku": item_code,
+			"margin_percent": new_margin
+		})
+		updated = True
+		
+	if updated:
+		doc.flags.ignore_permissions = True
+		doc.save()
+
+
 def validate_sales_order_offline_buyer_customer(doc, method=None):
 	"""Ensure Sales Order customer is linked to an Offline Buyer Master (UI also restricts the link)."""
 	if doc.docstatus != 0:
