@@ -48,8 +48,36 @@
 {% set _po_gc = frappe.db.sql("SELECT GROUP_CONCAT(DISTINCT purchase_order SEPARATOR ', ') FROM `tabSales Order Item` WHERE parent=%s AND IFNULL(purchase_order,'') != ''", doc.name) %}
 {% set po_linked = (_po_gc[0][0] if _po_gc and _po_gc[0] and _po_gc[0][0] else '') %}
 {% set po_display = po_linked or (doc.get('inter_company_order_reference') or '') or (doc.po_no or '') %}
-{% set site_name_obm = frappe.db.get_value('Offline Buyer Master', doc.custom_offline_buyer_master, 'site_name') if doc.get('custom_offline_buyer_master') else '' %}
-{% set obm_doc = frappe.get_doc('Offline Buyer Master', doc.custom_offline_buyer_master) if doc.get('custom_offline_buyer_master') else None %}
+{# Aggressive OBM Lookup #}
+{% set customer_display = doc.customer_name or doc.customer or '' %}
+{% set obm_doc = None %}
+{% set site_name_obm = '' %}
+
+{% set obm_name = doc.get('custom_offline_buyer_master') %}
+
+{% if not obm_name and doc.customer and doc.customer.startswith('OBM-') %}
+  {% set obm_name = doc.customer %}
+{% endif %}
+
+{% if not obm_name and doc.customer %}
+  {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer': doc.customer}, 'name') %}
+{% endif %}
+
+{% if not obm_name and doc.customer_name %}
+  {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer_business_name': doc.customer_name}, 'name') %}
+{% endif %}
+
+{% if obm_name %}
+  {% set obm_doc = frappe.get_doc('Offline Buyer Master', obm_name) %}
+  {% set site_name_obm = obm_doc.site_name or '' %}
+  {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.customer or '' %}
+{% endif %}
+
+{# Strip suffix if standard Frappe customer_name includes the site name #}
+{% if customer_display and ' - ' in customer_display %}
+  {% set customer_display = customer_display.split(' - ')[0] %}
+{% endif %}
+
 {% set company_gst = '24AASCA1881A1ZV' %}
 
 {% set freebies = doc.custom_marketing_freebies or [] %}
@@ -150,13 +178,13 @@
     <tr>
       <td colspan="2">
         <span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Buyer Name</span><br>
-        <span style="font-weight: 800; font-size: 13px;">{{ doc.customer_name or doc.customer or '' }}</span><br>
+        <span style="font-weight: 800; font-size: 13px;">{{ customer_display }}</span><br>
         <span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase; margin-top: 6px; display: inline-block;'>Site Name</span><br>
         <span style="font-weight: 700;">{{ site_name_obm or '—' }}</span>
       </td>
       <td style="vertical-align: top;">
         <span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Name</span><br>
-        <span style="font-weight: 800; font-size: 13px;">{{ doc.customer_name or '' }}</span>
+        <span style="font-weight: 800; font-size: 13px;">{{ customer_display }}</span>
       </td>
     </tr>
     <tr>

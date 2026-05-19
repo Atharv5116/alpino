@@ -67,6 +67,11 @@
   {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
 {% endif %}
 
+{# Strip suffix if standard Frappe customer_name includes the site name #}
+{% if customer_display and ' - ' in customer_display %}
+  {% set customer_display = customer_display.split(' - ')[0] %}
+{% endif %}
+
 
 {% set company_gst = '24AASCA1881A1ZV' %}
 {% set freebies = doc.custom_marketing_freebies or [] %}

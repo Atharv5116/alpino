@@ -61,6 +61,11 @@
   {% endif %}
 {% endif %}
 
+{# Strip suffix if standard Frappe customer_name includes the site name #}
+{% if customer_display and ' - ' in customer_display %}
+  {% set customer_display = customer_display.split(' - ')[0] %}
+{% endif %}
+
 {# Compute cash discount amount from percentage #}
 {% set _cash_disc_pct = frappe.utils.flt(doc.get('custom_cash_discount') or 0) %}
 {% set _cash_disc_amt = frappe.utils.flt(_cash_disc_pct * frappe.utils.flt(doc.get('custom_sub_total') or 0) / 100.0, 2) %}
