@@ -43,20 +43,27 @@
 {% set place_supply_display = (billing_addr_doc.get('state') if billing_addr_doc else '') or '' %}
 
 {# Resolve OBM from party_name (Opportunity uses opportunity_from + party_name) #}
-{% set customer_display = doc.party_name or '' %}
+{% set customer_display = doc.customer_name or doc.party_name or '' %}
 {% set obm_doc = None %}
 {% set site_name_obm = '' %}
 {% if doc.get('opportunity_from') == 'Offline Buyer Master' and doc.party_name %}
   {% set obm_doc = frappe.get_doc('Offline Buyer Master', doc.party_name) %}
   {% set site_name_obm = obm_doc.site_name or '' %}
-  {% set customer_display = obm_doc.customer_name or doc.party_name %}
+  {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
 {% elif doc.get('opportunity_from') == 'Customer' and doc.party_name %}
   {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer': doc.party_name}, 'name') %}
+  {% if not obm_name and doc.customer_name %}
+    {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer_business_name': doc.customer_name}, 'name') %}
+  {% endif %}
   {% if obm_name %}
     {% set obm_doc = frappe.get_doc('Offline Buyer Master', obm_name) %}
     {% set site_name_obm = obm_doc.site_name or '' %}
   {% endif %}
 {% endif %}
+
+{# Compute cash discount amount from percentage #}
+{% set _cash_disc_pct = frappe.utils.flt(doc.get('custom_cash_discount') or 0) %}
+{% set _cash_disc_amt = frappe.utils.flt(_cash_disc_pct * frappe.utils.flt(doc.get('custom_sub_total') or 0) / 100.0, 2) %}
 
 {% set company_gst = '24AASCA1881A1ZV' %}
 {% set freebies = doc.custom_marketing_freebies or [] %}
@@ -145,15 +152,21 @@
     </tr>
     <tr>
       <td style="padding: 8px; vertical-align: top; line-height: 1.5;">
-        <div style="margin-bottom: 2px;"><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Phone:</span> <span style="font-weight: 700;">{% if obm_doc and obm_doc.contact_no %}{{ obm_doc.contact_no }}{% elif doc.contact_mobile %}{{ doc.contact_mobile }}{% else %}—{% endif %}</span></div>
-        <div><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Email:</span> <span style="font-weight: 700; word-break: break-all;">{% if obm_doc and obm_doc.email %}{{ obm_doc.email }}{% elif doc.contact_email %}{{ doc.contact_email }}{% else %}—{% endif %}</span></div>
+        {% set _phone = (obm_doc.contact_no if obm_doc and obm_doc.contact_no else '') or (obm_doc.mobile_no if obm_doc and obm_doc.get('mobile_no') else '') or (doc.contact_mobile if doc.get('contact_mobile') else '') or (doc.mobile_no if doc.get('mobile_no') else '') or '—' %}
+        {% set _email = (obm_doc.email if obm_doc and obm_doc.email else '') or (obm_doc.email_id if obm_doc and obm_doc.get('email_id') else '') or (doc.contact_email if doc.get('contact_email') else '') or (doc.email_id if doc.get('email_id') else '') or '—' %}
+        <div style="margin-bottom: 2px;"><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Phone:</span> <span style="font-weight: 700;">{{ _phone }}</span></div>
+        <div><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Email:</span> <span style="font-weight: 700; word-break: break-all;">{{ _email }}</span></div>
       </td>
       <td style="padding: 8px; vertical-align: top; line-height: 1.5;">
-        {% set display_gst_type = obm_doc.gst_type if obm_doc and obm_doc.gst_type else 'Unregistered' %}
+        {% set buyer_gst = (obm_doc.gst_no if obm_doc and obm_doc.gst_no else '') or (obm_doc.gstin if obm_doc and obm_doc.get('gstin') else '') or (doc.tax_id if doc.get('tax_id') else '') %}
+        {% set buyer_pan = (obm_doc.pan_no if obm_doc and obm_doc.pan_no else '') or (obm_doc.pan if obm_doc and obm_doc.get('pan') else '') or (doc.pan if doc.get('pan') else '') %}
+        {% set display_gst_type = obm_doc.gst_type if obm_doc and obm_doc.gst_type else ('Registered' if buyer_gst else 'Unregistered') %}
         <div style="margin-bottom: 2px;"><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>GST Type:</span> <span style="font-weight: 700;">{{ display_gst_type }}</span></div>
-        {% set id_label = 'GSTIN' %}{% set id_val = '—' %}
-        {% if obm_doc %}{% if obm_doc.gst_type == 'Registered Business' %}{% set id_label = 'GSTIN' %}{% set id_val = obm_doc.gst_no %}{% else %}{% set id_label = 'PAN No.' %}{% set id_val = obm_doc.pan_no %}{% endif %}{% endif %}
-        <div><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>{{ id_label }}:</span> <span style="font-weight: 700;">{{ id_val or '—' }}</span></div>
+        {% if buyer_gst %}
+        <div><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>GSTIN:</span> <span style="font-weight: 700;">{{ buyer_gst }}</span></div>
+        {% else %}
+        <div><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>PAN No.:</span> <span style="font-weight: 700;">{{ buyer_pan or '—' }}</span></div>
+        {% endif %}
       </td>
     </tr>
   </table>
@@ -203,8 +216,8 @@
     {{ colgroup_items }}
     <tbody>
     <tr><td colspan='8' class='right bold'>Sub Total</td><td class='right'>{{ frappe.utils.fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>
-    <tr><td colspan='8' class='right bold'>Cash Disc. (%)</td><td class='right'>{{ doc.custom_cash_discount or 0 }}%</td></tr>
-    <tr><td colspan='8' class='right bold' style="font-size: 14px; background-color: #f7f7f7; color: #000; font-weight: 800;">Grand Total</td><td class='right bold' style="font-size: 15px; color: #000; background-color: #f7f7f7;">{{ frappe.utils.fmt_money(doc.custom_additional_discount_total or _amt_ns.sub, currency=doc.currency) }}</td></tr>
+    <tr><td colspan='8' class='right bold'>Cash Disc. ({{ doc.custom_cash_discount or 0 }}%)</td><td class='right'>{{ frappe.utils.fmt_money(_cash_disc_amt, currency=doc.currency) }}</td></tr>
+    <tr><td colspan='8' class='right bold' style="font-size: 14px; background-color: #f7f7f7; color: #000; font-weight: 800;">Grand Total</td><td class='right bold' style="font-size: 15px; color: #000; background-color: #f7f7f7;">{{ frappe.utils.fmt_money(doc.custom_total_payable or doc.grand_total or 0, currency=doc.currency) }}</td></tr>
     </tbody>
   </table>
 

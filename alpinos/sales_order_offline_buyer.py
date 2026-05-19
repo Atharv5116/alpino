@@ -485,6 +485,8 @@ def get_customer_addresses_for_display(customer):
 def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
 	"""If the Flat Disc % on the Sales Order differs from the Offline Buyer Margin/Catalog, update the master."""
 	new_margin = flt(new_margin, 2)
+	if new_margin <= 0:
+		return
 	obm_name = frappe.db.get_value("Offline Buyer Master", {"customer": customer}, "name")
 	if not obm_name:
 		return
