@@ -42,27 +42,29 @@
 
 {% set place_supply_display = (billing_addr_doc.get('state') if billing_addr_doc else '') or '' %}
 
-{# Resolve OBM from custom field or party_name #}
+{# Aggressive OBM Lookup #}
 {% set customer_display = doc.customer_name or doc.party_name or '' %}
 {% set obm_doc = None %}
 {% set site_name_obm = '' %}
-{% if doc.get('custom_offline_buyer_master') %}
-  {% set obm_doc = frappe.get_doc('Offline Buyer Master', doc.custom_offline_buyer_master) %}
-  {% set site_name_obm = obm_doc.site_name or '' %}
-  {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
-{% elif doc.get('opportunity_from') == 'Offline Buyer Master' and doc.party_name %}
-  {% set obm_doc = frappe.get_doc('Offline Buyer Master', doc.party_name) %}
-  {% set site_name_obm = obm_doc.site_name or '' %}
-  {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
-{% elif doc.get('opportunity_from') == 'Customer' and doc.party_name %}
+
+{% set obm_name = doc.get('custom_offline_buyer_master') %}
+
+{% if not obm_name and doc.party_name and doc.party_name.startswith('OBM-') %}
+  {% set obm_name = doc.party_name %}
+{% endif %}
+
+{% if not obm_name and doc.party_name %}
   {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer': doc.party_name}, 'name') %}
-  {% if not obm_name and doc.customer_name %}
-    {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer_business_name': doc.customer_name}, 'name') %}
-  {% endif %}
-  {% if obm_name %}
-    {% set obm_doc = frappe.get_doc('Offline Buyer Master', obm_name) %}
-    {% set site_name_obm = obm_doc.site_name or '' %}
-  {% endif %}
+{% endif %}
+
+{% if not obm_name and doc.customer_name %}
+  {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer_business_name': doc.customer_name}, 'name') %}
+{% endif %}
+
+{% if obm_name %}
+  {% set obm_doc = frappe.get_doc('Offline Buyer Master', obm_name) %}
+  {% set site_name_obm = obm_doc.site_name or '' %}
+  {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
 {% endif %}
 
 {# Compute cash discount amount from percentage #}
@@ -156,7 +158,7 @@
     </tr>
     <tr>
       <td style="padding: 8px; vertical-align: top; line-height: 1.5;">
-        {% set _phone = (obm_doc.contact_no if obm_doc and obm_doc.contact_no else '') or (obm_doc.mobile_no if obm_doc and obm_doc.get('mobile_no') else '') or (doc.contact_mobile if doc.get('contact_mobile') else '') or (doc.mobile_no if doc.get('mobile_no') else '') or '—' %}
+        {% set _phone = (obm_doc.contact_no if obm_doc and obm_doc.contact_no else '') or (obm_doc.mobile_no if obm_doc and obm_doc.get('mobile_no') else '') or (doc.contact_mobile if doc.get('contact_mobile') else '') or (doc.mobile_no if doc.get('mobile_no') else '') or (doc.phone if doc.get('phone') else '') or '—' %}
         {% set _email = (obm_doc.email if obm_doc and obm_doc.email else '') or (obm_doc.email_id if obm_doc and obm_doc.get('email_id') else '') or (doc.contact_email if doc.get('contact_email') else '') or (doc.email_id if doc.get('email_id') else '') or '—' %}
         <div style="margin-bottom: 2px;"><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Phone:</span> <span style="font-weight: 700;">{{ _phone }}</span></div>
         <div><span class='bold' style='color: #000; font-size: 10px; text-transform: uppercase;'>Email:</span> <span style="font-weight: 700; word-break: break-all;">{{ _email }}</span></div>
