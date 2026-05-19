@@ -1208,6 +1208,10 @@ def handle_workflow_transition(doc, method=None):
 
 	if not current_state:
 		return
+		
+	# Skip if the document was deleted (e.g. temporary webform docs deleted in after_insert)
+	if not frappe.db.exists(doc.doctype, doc.name):
+		return
 
 	# --- Transition to "Email Sent": send the pre-onboarding email ---
 	if current_state == "Email Sent":

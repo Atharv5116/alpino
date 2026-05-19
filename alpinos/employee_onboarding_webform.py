@@ -197,7 +197,16 @@ def process_webform_submission(doc, method=None):
 	current_status = onboarding_doc.get("boarding_status")
 	if current_status not in ["Draft", "Email Sent", "Employee Created"]:
 		onboarding_doc.boarding_status = "Email Sent"
+		
+	# Relink all file attachments from the temporary document to the target document
+	frappe.db.sql("""
+		UPDATE `tabFile`
+		SET attached_to_name = %s
+		WHERE attached_to_doctype = 'Employee Onboarding'
+		AND attached_to_name = %s
+	""", (employee_onboarding_name, temp_doc_name))
 	
+
 	# Save the Employee Onboarding document
 	try:
 		# Webform updates only a subset of fields; avoid failing due unrelated mandatory HR fields.
