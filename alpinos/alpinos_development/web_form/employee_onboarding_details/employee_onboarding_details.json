@@ -58,6 +58,18 @@
   },
   {
    "allow_read_on_all_link_options": 0,
+   "fieldname": "personal_mobile_number",
+   "fieldtype": "Data",
+   "hidden": 0,
+   "label": "Personal Mobile Number",
+   "max_length": 0,
+   "max_value": 0,
+   "read_only": 0,
+   "reqd": 1,
+   "show_in_filter": 0
+  },
+  {
+   "allow_read_on_all_link_options": 0,
    "fieldname": "date_of_birth",
    "fieldtype": "Date",
    "hidden": 0,
