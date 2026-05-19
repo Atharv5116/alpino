@@ -192,10 +192,11 @@ def process_webform_submission(doc, method=None):
 	onboarding_doc.webform_submitted = 1
 	onboarding_doc.webform_submitted_on = now()
 
-	# Backward compatibility: older logic wrote "Document Pending" (singular),
-	# but valid option is "Documents Pending".
-	if onboarding_doc.get("boarding_status") == "Document Pending":
-		onboarding_doc.boarding_status = "Documents Pending"
+	# Ensure the boarding_status conforms to the new workflow states
+	# It shouldn't be 'Document Pending' or 'Documents Pending' anymore.
+	current_status = onboarding_doc.get("boarding_status")
+	if current_status not in ["Draft", "Email Sent", "Employee Created"]:
+		onboarding_doc.boarding_status = "Email Sent"
 	
 	# Save the Employee Onboarding document
 	try:

@@ -176,9 +176,9 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	Also ensures hidden designation field is non-mandatory for all users.
 	"""
 	# Normalize legacy status value before field validation runs.
-	# "Document Pending" is invalid for current options; valid value is "Documents Pending".
-	if getattr(doc, "boarding_status", None) == "Document Pending":
-		doc.boarding_status = "Documents Pending"
+	# "Document Pending" is invalid for current options; valid value is "Email Sent".
+	if getattr(doc, "boarding_status", None) in ["Document Pending", "Documents Pending"]:
+		doc.boarding_status = "Email Sent"
 
 	# 1) While form is in Draft state: bypass ALL mandatory checks for all users.
 	# This lets HR create an onboarding shell with minimal data and complete details later.
@@ -772,8 +772,8 @@ def send_pre_onboarding_email(doc, applicant_email):
 			now=True,
 		)
 		
-		# Update status to "Documents Pending" (must match allowed select options)
-		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Documents Pending", update_modified=False)
+		# Ensure status is Email Sent, don't set to invalid 'Documents Pending'
+		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Email Sent", update_modified=False)
 		frappe.db.commit()
 		
 		frappe.log_error(f"[EMAIL DEBUG] SUCCESS: Pre-onboarding email sent to {applicant_email} for {doc.name} using template '{template_name}'", "Onboarding Email Trace")
