@@ -180,6 +180,19 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	if getattr(doc, "boarding_status", None) in ["Document Pending", "Documents Pending"]:
 		doc.boarding_status = "Email Sent"
 
+	# Date of Joining - use existing date_of_joining field or expected_date_of_joining
+	# Move to the very top so it always executes regardless of early returns!
+	if not doc.date_of_joining_onboarding:
+		if doc.date_of_joining:
+			doc.date_of_joining_onboarding = doc.date_of_joining
+		elif hasattr(doc, 'job_applicant') and doc.job_applicant:
+			try:
+				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+				if job_applicant.expected_date_of_joining:
+					doc.date_of_joining_onboarding = job_applicant.expected_date_of_joining
+			except:
+				pass
+
 	# 1) While form is in Draft state: bypass ALL mandatory checks for all users.
 	# This lets HR create an onboarding shell with minimal data and complete details later.
 	if hasattr(doc, "is_new") and doc.is_new():
@@ -290,17 +303,7 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 						doc_field.reqd = 0
 						break
 	
-	# Date of Joining - use existing date_of_joining field or expected_date_of_joining
-	if not doc.date_of_joining_onboarding:
-		if doc.date_of_joining:
-			doc.date_of_joining_onboarding = doc.date_of_joining
-		elif hasattr(doc, 'job_applicant') and doc.job_applicant:
-			try:
-				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
-				if job_applicant.expected_date_of_joining:
-					doc.date_of_joining_onboarding = job_applicant.expected_date_of_joining
-			except:
-				pass
+
 
 
 def validate_date_of_birth(doc, method=None):
@@ -674,36 +677,46 @@ def send_pre_onboarding_email(doc, applicant_email):
 			company_name = frappe.db.get_value("Company", company, "company_name") or company
 
 		# Fetch HR Manager details (name, phone, email, designation)
-		hr_name = "HR Team"
-		hr_email = ""
-		hr_phone = ""
-		hr_designation = ""
+		hr_name = "Khushi Doshi"
+		hr_email = "hr@alpinohealthfoods.com"
+		hr_phone = "+91 6359474000"
+		hr_designation = "HR Manager"
 		try:
-			hr_users = frappe.get_all(
-				"Has Role",
-				filters={"role": "HR Manager", "parenttype": "User"},
-				fields=["parent"],
+			# Prioritize the hr@alpinohealthfoods.com user details if active
+			user_details = frappe.db.get_value(
+				"User",
+				{"email": "hr@alpinohealthfoods.com", "enabled": 1},
+				["full_name", "phone", "name"],
+				as_dict=True
 			)
-			for hr_user in hr_users:
-				user_details = frappe.db.get_value(
-					"User",
-					hr_user.parent,
-					["full_name", "email", "phone", "enabled"],
-					as_dict=True
+			if user_details:
+				hr_name = user_details.full_name or hr_name
+				hr_phone = user_details.phone or hr_phone
+				employee_designation = frappe.db.get_value("Employee", {"user_id": user_details.name}, "designation")
+				hr_designation = employee_designation or hr_designation
+			else:
+				# Otherwise look for any active user with HR Manager role
+				hr_users = frappe.get_all(
+					"Has Role",
+					filters={"role": "HR Manager", "parenttype": "User"},
+					fields=["parent"],
 				)
-				if user_details and user_details.enabled:
-					hr_name = user_details.full_name or hr_user.parent or "HR Team"
-					hr_email = user_details.email or ""
-					hr_phone = user_details.phone or ""
-					# Attempt to get HR Manager's designation from Employee doctype
-					employee_designation = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation")
-					hr_designation = employee_designation or "HR Team"
-					break
+				for hr_user in hr_users:
+					ud = frappe.db.get_value(
+						"User",
+						hr_user.parent,
+						["full_name", "email", "phone", "enabled"],
+						as_dict=True
+					)
+					if ud and ud.enabled:
+						hr_name = ud.full_name or hr_user.parent or hr_name
+						hr_email = ud.email or hr_email
+						hr_phone = ud.phone or hr_phone
+						employee_designation = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation")
+						hr_designation = employee_designation or hr_designation
+						break
 		except Exception:
-			hr_name = frappe.session.user_fullname or "HR Team"
-			hr_email = frappe.session.user if frappe.session.user and "@" in frappe.session.user else ""
-			hr_phone = ""
-			hr_designation = "HR Team"
+			pass
 
 		# Get candidate/applicant name from Job Applicant if available
 		candidate_name = getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or "Candidate"
