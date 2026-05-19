@@ -43,16 +43,24 @@
 {% set place_supply_display = (billing_addr_doc.get('state') if billing_addr_doc else '') or (doc.get('place_of_supply') or '') %}
 
 {# Resolve customer from party_name (Quotation uses quotation_to + party_name) #}
-{% set customer_display = doc.party_name or '' %}
+{% set customer_display = doc.customer_name or doc.party_name or '' %}
 {% set obm_doc = None %}
 {% set site_name_obm = '' %}
-{% if doc.get('quotation_to') == 'Customer' and doc.party_name %}
+{% if doc.get('quotation_to') == 'Offline Buyer Master' and doc.party_name %}
+  {% set obm_doc = frappe.get_doc('Offline Buyer Master', doc.party_name) %}
+  {% set site_name_obm = obm_doc.site_name or '' %}
+  {% set customer_display = obm_doc.customer_business_name or doc.customer_name or doc.party_name or '' %}
+{% elif doc.get('quotation_to') == 'Customer' and doc.party_name %}
   {% set obm_name = frappe.db.get_value('Offline Buyer Master', {'customer': doc.party_name}, 'name') %}
   {% if obm_name %}
     {% set obm_doc = frappe.get_doc('Offline Buyer Master', obm_name) %}
     {% set site_name_obm = obm_doc.site_name or '' %}
   {% endif %}
 {% endif %}
+
+{# Compute cash discount amount from percentage #}
+{% set _cash_disc_pct = frappe.utils.flt(doc.get('custom_cash_discount') or 0) %}
+{% set _cash_disc_amt = frappe.utils.flt(_cash_disc_pct * frappe.utils.flt(doc.get('custom_sub_total') or 0) / 100.0, 2) %}
 
 {% set company_gst = '24AASCA1881A1ZV' %}
 {% set freebies = doc.custom_marketing_freebies or [] %}
@@ -199,7 +207,7 @@
     {{ colgroup_items }}
     <tbody>
     <tr><td colspan='8' class='right bold'>Sub Total</td><td class='right'>{{ frappe.utils.fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>
-    <tr><td colspan='8' class='right bold'>Cash Disc. (%)</td><td class='right'>{{ doc.custom_cash_discount or 0 }}%</td></tr>
+    <tr><td colspan='8' class='right bold'>Cash Disc. ({{ doc.custom_cash_discount or 0 }}%)</td><td class='right'>{{ frappe.utils.fmt_money(_cash_disc_amt, currency=doc.currency) }}</td></tr>
     <tr><td colspan='8' class='right bold' style="font-size: 14px; background-color: #f7f7f7; color: #000; font-weight: 800;">Grand Total</td><td class='right bold' style="font-size: 15px; color: #000; background-color: #f7f7f7;">{{ frappe.utils.fmt_money(doc.custom_total_payable or doc.grand_total or 0, currency=doc.currency) }}</td></tr>
     </tbody>
   </table>

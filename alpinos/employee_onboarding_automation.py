@@ -649,16 +649,16 @@ def send_pre_onboarding_email(doc, applicant_email):
 	"""
 	# DEBUG: Log that this function was called and from where
 	frappe.log_error(
-		f"[EMAIL DEBUG] send_pre_onboarding_email called for {doc.name} | recipient: {applicant_email}\nTraceback:\n{frappe.get_traceback()}",
-		"Onboarding Email Trace"
+		title="Onboarding Email Trace",
+		message=f"[EMAIL DEBUG] send_pre_onboarding_email called for {doc.name} | recipient: {applicant_email}\nTraceback:\n{frappe.get_traceback()}"
 	)
 	try:
 		template_name = "Onboarding - Document Reminder"
 
 		if not frappe.db.exists("Email Template", template_name):
 			frappe.log_error(
-				f"[EMAIL DEBUG] Template '{template_name}' NOT FOUND in DB for {doc.name}",
-				"Onboarding Email Trace"
+				title="Onboarding Email Trace",
+				message=f"[EMAIL DEBUG] Template '{template_name}' NOT FOUND in DB for {doc.name}"
 			)
 			return
 
@@ -755,12 +755,12 @@ def send_pre_onboarding_email(doc, applicant_email):
 
 		# DEBUG: Log exactly which template and subject is being sent
 		frappe.log_error(
-			f"[EMAIL DEBUG] ABOUT TO SEND via send_pre_onboarding_email\n"
+			title="Onboarding Email Trace",
+			message=f"[EMAIL DEBUG] ABOUT TO SEND via send_pre_onboarding_email\n"
 			f"  Doc: {doc.name}\n"
 			f"  Template: {template_name}\n"
 			f"  Subject: {formatted.get('subject')}\n"
-			f"  Recipient: {applicant_email}",
-			"Onboarding Email Trace"
+			f"  Recipient: {applicant_email}"
 		)
 
 		frappe.sendmail(
@@ -776,7 +776,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Email Sent", update_modified=False)
 		frappe.db.commit()
 		
-		frappe.log_error(f"[EMAIL DEBUG] SUCCESS: Pre-onboarding email sent to {applicant_email} for {doc.name} using template '{template_name}'", "Onboarding Email Trace")
+		frappe.log_error(title="Onboarding Email Trace", message=f"[EMAIL DEBUG] SUCCESS: Pre-onboarding email sent to {applicant_email} for {doc.name} using template '{template_name}'")
 		
 	except Exception as e:
 		frappe.log_error(f"Error sending pre-onboarding email: {str(e)}", "Pre-Onboarding Email Error")
@@ -1221,8 +1221,8 @@ def _send_email_on_workflow_transition(doc):
 	"""
 	# DEBUG: Log that this function was called
 	frappe.log_error(
-		f"[EMAIL DEBUG] _send_email_on_workflow_transition called for {doc.name} | boarding_status={doc.boarding_status}\nTraceback:\n{frappe.get_traceback()}",
-		"Onboarding Email Trace"
+		title="Onboarding Email Trace",
+		message=f"[EMAIL DEBUG] _send_email_on_workflow_transition called for {doc.name} | boarding_status={doc.boarding_status}\nTraceback:\n{frappe.get_traceback()}"
 	)
 
 	if not doc.job_applicant:
