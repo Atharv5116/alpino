@@ -29,6 +29,20 @@ class SalesOrderEntryView {
 		});
 		this.page.add_inner_button(__('Print'), () => this.open_default_print_preview());
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
+
+		this.page.add_inner_button(__('Create'), () => {
+			if (!this._ensure_loaded_name()) return;
+			frappe.call({
+				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_pick_list',
+				args: { sales_order: this._so_name },
+				freeze: true,
+				callback: function(r) {
+					if (r.message) {
+						frappe.set_route('pick_list_entry', r.message);
+					}
+				}
+			});
+		}, __('Pick List'));
 	}
 
 	_ensure_loaded_name() {
