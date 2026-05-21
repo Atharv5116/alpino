@@ -18,9 +18,7 @@
 		});
 	}
 
-	if (typeof frappe.ready === "function") {
-		frappe.ready(attach);
-	} else {
-		$(document).on("app_ready", attach);
-	}
+	$(document).on("app_ready", attach);
+	// Also try attaching after a short timeout in case app_ready already fired
+	setTimeout(attach, 1000);
 })();
