@@ -1,6 +1,7 @@
 frappe.pages['pick-list-entry'] = frappe.pages['pick-list-entry'] || {};
 
 frappe.pages['pick-list-entry'].on_page_load = function(wrapper) {
+	console.log("pick-list-entry on_page_load triggered");
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: 'Pick List Entry',
@@ -8,19 +9,35 @@ frappe.pages['pick-list-entry'].on_page_load = function(wrapper) {
 	});
 
 	page.pick_list_name = frappe.get_route()[1];
+	console.log("Pick list name from route:", page.pick_list_name);
 	
 	if (!page.pick_list_name) {
-		frappe.msgprint("No Pick List specified.");
+		console.warn("No Pick List specified. The page will render empty. Please click 'Pick List' from a Sales Order.");
+		page.main.html('<h3>No Pick List specified. Please go to a Sales Order and click "Pick List" -> "Create".</h3>');
 		return;
 	}
 
+	console.log("Setting primary action...");
 	page.set_primary_action('Save', () => {
 		page.save_pick_list();
 	});
 
-	page.main.html(frappe.render_template("pick_list_entry", {}));
+	console.log("Rendering template pick_list_entry...");
+	try {
+		let html = frappe.render_template("pick_list_entry", {});
+		console.log("Rendered HTML length:", html ? html.length : "null/undefined");
+		if (!html) {
+			console.error("Template 'pick_list_entry' returned empty html.");
+			page.main.html("<h3>Error: Template 'pick_list_entry' could not be rendered.</h3>");
+		} else {
+			page.main.html(html);
+		}
+	} catch (e) {
+		console.error("Error rendering template:", e);
+		page.main.html("<h3>Error rendering template: " + e.message + "</h3>");
+	}
 
-	page.load_data = function() {
+	console.log("Setting up load_data...");
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_pick_list_data',
 			args: { name: page.pick_list_name },
