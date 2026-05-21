@@ -24,6 +24,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.html("<h3>Error: Template 'pick_list_entry' could not be rendered.</h3>");
 		} else {
 			page.main.html(html);
+			
+			// Setup static listeners
+			page.main.find('#btn-go-to-list').on('click', function() {
+				frappe.set_route('List', 'Pick List');
+			});
 		}
 	} catch (e) {
 		page.main.html("<h3>Error rendering template: " + e.message + "</h3>");
