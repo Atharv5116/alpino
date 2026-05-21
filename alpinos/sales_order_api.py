@@ -1083,6 +1083,7 @@ def create_pick_list_from_so(sales_order):
 	for additional in so.get("custom_additional_units_damage_items") or []:
 		add_item_to_pick_list(additional, "Additional Units")
 		
+	pick_list.flags.ignore_mandatory = True
 	pick_list.insert(ignore_permissions=True)
 	
 	return pick_list.name
