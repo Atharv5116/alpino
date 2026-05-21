@@ -45,6 +45,24 @@ def setup_pick_list_custom_fields():
 				reqd=1,
 			),
 			dict(
+				fieldname="custom_po_no",
+				label="PO No.",
+				fieldtype="Data",
+				insert_after="custom_qc_attended_by",
+			),
+			dict(
+				fieldname="custom_transporter",
+				label="Transporter",
+				fieldtype="Data",
+				insert_after="custom_po_no",
+			),
+			dict(
+				fieldname="custom_party_code",
+				label="Party Code",
+				fieldtype="Data",
+				insert_after="custom_transporter",
+			),
+			dict(
 				fieldname="custom_order_total_section",
 				label="Order Total",
 				fieldtype="Section Break",
@@ -105,6 +123,14 @@ def setup_pick_list_custom_fields():
 		],
 		"Pick List Item": [
 			dict(
+				fieldname="custom_ordered_qty",
+				label="Ordered Qty",
+				fieldtype="Float",
+				insert_after="item_name",
+				read_only=1,
+				default="0",
+			),
+			dict(
 				fieldname="custom_box",
 				label="Box",
 				fieldtype="Float",
@@ -150,6 +176,14 @@ def setup_pick_list_custom_fields():
 				insert_after="custom_mfg_date",
 				read_only=1,
 				reqd=0,
+			),
+			dict(
+				fieldname="custom_source_table",
+				label="Source Table",
+				fieldtype="Data",
+				insert_after="custom_expiry_date",
+				read_only=1,
+				hidden=1,
 			),
 		],
 	}

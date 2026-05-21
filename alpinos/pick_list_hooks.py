@@ -81,11 +81,13 @@ def _validate_mandatory_rows(doc):
 	for row in doc.locations or []:
 		if not row.item_code:
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")
-		if not row.qty:
-			frappe.throw(f"Row #{row.idx}: Quantity is mandatory.")
-		if not row.batch_no:
-			frappe.throw(f"Row #{row.idx}: Batch No is mandatory.")
-		if row.batch_no and not row.custom_mfg_date:
-			frappe.throw(f"Row #{row.idx}: MFG Date is mandatory for selected batch.")
-		if row.batch_no and not row.custom_expiry_date:
-			frappe.throw(f"Row #{row.idx}: Expiry Date is mandatory for selected batch.")
+			
+		if doc.docstatus == 1:
+			if not row.qty and not row.custom_sample_quantity:
+				frappe.throw(f"Row #{row.idx}: Quantity or Sample Quantity is mandatory.")
+			if not row.batch_no:
+				frappe.throw(f"Row #{row.idx}: Batch No is mandatory.")
+			if row.batch_no and not row.custom_mfg_date:
+				frappe.throw(f"Row #{row.idx}: MFG Date is mandatory for selected batch.")
+			if row.batch_no and not row.custom_expiry_date:
+				frappe.throw(f"Row #{row.idx}: Expiry Date is mandatory for selected batch.")

@@ -36,6 +36,21 @@ frappe.ui.form.on('Sales Order', {
 
     refresh: function(frm) {
         set_variant_item_queries(frm);
+        
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Pick List'), function() {
+                frappe.call({
+                    method: 'alpinos.sales_order_api.create_pick_list_from_so',
+                    args: { sales_order: frm.doc.name },
+                    freeze: true,
+                    callback: function(r) {
+                        if (r.message) {
+                            frappe.set_route('pick-list-entry', r.message);
+                        }
+                    }
+                });
+            }, __('Create'));
+        }
     },
 
     custom_cash_discount: function(frm) {

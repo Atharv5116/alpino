@@ -1037,3 +1037,52 @@ def get_sales_order_entry_list(
 	rows = rows[:page_length]
 
 	return {"data": rows, "has_more": int(has_more), "start": start, "page_length": page_length}
+
+@frappe.whitelist()
+def create_pick_list_from_so(sales_order):
+	so = frappe.get_doc("Sales Order", sales_order)
+	
+	pick_list = frappe.new_doc("Pick List")
+	pick_list.company = so.company
+	pick_list.purpose = "Delivery"
+	pick_list.custom_sales_order_id = so.name
+	pick_list.custom_customer_name = so.customer_name
+	pick_list.custom_party_code = so.customer
+	pick_list.custom_order_date = so.transaction_date
+	pick_list.custom_po_no = so.po_no
+	
+	def add_item_to_pick_list(item_row, source_table):
+		if not item_row.item_code:
+			return
+		
+		# Box conversion logic
+		box = flt(item_row.get("custom_box"))
+		if source_table in ["Marketing Freebies", "Scheme Table", "Additional Units"]:
+			factor = get_box_conversion_factor(item_row.item_code)
+			if factor:
+				box = flt(item_row.qty) / factor
+				
+		pick_list.append("locations", {
+			"item_code": item_row.item_code,
+			"custom_ordered_qty": item_row.qty,
+			"qty": 0, # To be manually filled
+			"custom_box": box,
+			"custom_source_table": source_table
+		})
+		
+	for item in so.get("items") or []:
+		add_item_to_pick_list(item, "Items")
+		
+	for freebie in so.get("custom_marketing_freebies") or []:
+		add_item_to_pick_list(freebie, "Marketing Freebies")
+		
+	for scheme in so.get("custom_scheme_item_table") or []:
+		add_item_to_pick_list(scheme, "Scheme Table")
+		
+	for additional in so.get("custom_additional_units_damage_items") or []:
+		add_item_to_pick_list(additional, "Additional Units")
+		
+	pick_list.insert(ignore_permissions=True)
+	
+	return pick_list.name
+

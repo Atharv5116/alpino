@@ -1,0 +1,103 @@
+<style>
+	.pick-list-container {
+		padding: 15px;
+		background: #fff;
+	}
+	.header-grid {
+		display: grid;
+		grid-template-columns: 150px 1fr 150px 1fr;
+		gap: 10px;
+		margin-bottom: 20px;
+	}
+	.header-grid label {
+		font-weight: bold;
+		text-align: right;
+		padding-right: 10px;
+		align-self: center;
+	}
+	.sku-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+	.sku-table th, .sku-table td {
+		border: 1px solid #d1d8dd;
+		padding: 5px;
+		text-align: center;
+	}
+	.sku-table th {
+		background: #f8f9fa;
+		font-weight: bold;
+	}
+	.sku-table input {
+		width: 100%;
+		box-sizing: border-box;
+	}
+</style>
+
+<div class="pick-list-container">
+	<div class="header-grid">
+		<label>ACTUAL BOX</label>
+		<input type="number" class="form-control" data-fieldname="custom_actual_box">
+		<label>QC Attended By</label>
+		<input type="text" class="form-control" data-fieldname="custom_qc_attended_by" readonly>
+		
+		<label>SAMPLE BOX</label>
+		<input type="number" class="form-control" data-fieldname="custom_sample_box">
+		<label></label><div></div>
+		
+		<label>SAMPLE WEIGHT</label>
+		<input type="number" class="form-control" data-fieldname="custom_sample_weight">
+		<label></label><div></div>
+		
+		<label>TOTAL BOX</label>
+		<input type="number" class="form-control" data-fieldname="custom_total_box">
+		<label></label><div></div>
+		
+		<label>GROSS WEIGHT</label>
+		<input type="number" class="form-control" data-fieldname="custom_gross_weight">
+		<label></label><div></div>
+		
+		<label>TOTAL UNITS</label>
+		<input type="number" class="form-control" data-fieldname="custom_total_unit">
+		<label></label><div></div>
+		
+		<label>PO NO.</label>
+		<input type="text" class="form-control" data-fieldname="custom_po_no">
+		<label></label><div></div>
+		
+		<label>TRANSPORTER</label>
+		<input type="text" class="form-control" data-fieldname="custom_transporter">
+		<label></label><div></div>
+		
+		<label>PARTY NAME</label>
+		<input type="text" class="form-control" data-fieldname="custom_customer_name" readonly>
+		<label>PARTY CODE</label>
+		<input type="text" class="form-control" data-fieldname="custom_party_code" readonly>
+		
+		<label>DATE</label>
+		<input type="text" class="form-control" data-fieldname="custom_order_date" readonly>
+		<label></label><div></div>
+	</div>
+	
+	<table class="sku-table">
+		<thead>
+			<tr>
+				<th>SR.</th>
+				<th>SKU</th>
+				<th>SKU NO</th>
+				<th>ORDERED QTY</th>
+				<th>PICKED QTY</th>
+				<th>BOX</th>
+				<th>SAMPLE QTY</th>
+				<th>BATCH CODE</th>
+				<th>MFG</th>
+				<th>EXP</th>
+			</tr>
+		</thead>
+		<tbody>
+			<!-- Rows will be injected here via JS -->
+		</tbody>
+	</table>
+	
+	<datalist id="batch-list"></datalist>
+</div>
