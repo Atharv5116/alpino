@@ -45,7 +45,7 @@ frappe.ui.form.on('Sales Order', {
                     freeze: true,
                     callback: function(r) {
                         if (r.message) {
-                            frappe.set_route('pick-list-entry', r.message);
+                            frappe.set_route('pick_list_entry', r.message);
                         }
                     }
                 });
