@@ -1,8 +1,6 @@
-console.log("EVALUATING PICK LIST ENTRY SCRIPT FROM DATABASE!");
 frappe.pages['pick_list_entry'] = frappe.pages['pick_list_entry'] || {};
 
 frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
-	console.log("pick-list-entry on_page_load triggered");
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: 'Pick List Entry',
@@ -10,35 +8,27 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	});
 
 	page.pick_list_name = frappe.get_route()[1];
-	console.log("Pick list name from route:", page.pick_list_name);
 	
 	if (!page.pick_list_name) {
-		console.warn("No Pick List specified. The page will render empty. Please click 'Pick List' from a Sales Order.");
 		page.main.html('<h3>No Pick List specified. Please go to a Sales Order and click "Pick List" -> "Create".</h3>');
 		return;
 	}
 
-	console.log("Setting primary action...");
 	page.set_primary_action('Save', () => {
 		page.save_pick_list();
 	});
 
-	console.log("Rendering template pick_list_entry...");
 	try {
 		let html = frappe.render_template("pick_list_entry", {});
-		console.log("Rendered HTML length:", html ? html.length : "null/undefined");
 		if (!html) {
-			console.error("Template 'pick_list_entry' returned empty html.");
 			page.main.html("<h3>Error: Template 'pick_list_entry' could not be rendered.</h3>");
 		} else {
 			page.main.html(html);
 		}
 	} catch (e) {
-		console.error("Error rendering template:", e);
 		page.main.html("<h3>Error rendering template: " + e.message + "</h3>");
 	}
 
-	console.log("Setting up load_data...");
 	page.load_data = function() {
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_pick_list_data',
@@ -65,32 +55,87 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
 
-		// Render table
-		let tbody = page.main.find('.sku-table tbody');
-		tbody.empty();
+		let container = page.main.find('#tables-container');
+		container.empty();
 		
-		(data.locations || []).forEach((row, i) => {
-			let is_sample_only = ["Scheme Table", "Additional Units"].includes(row.custom_source_table);
+		let groups = {
+			"Items": [],
+			"Scheme Table": [],
+			"Marketing Freebies": [],
+			"Additional Units": []
+		};
+		
+		(data.locations || []).forEach(row => {
+			let src = row.custom_source_table || "Items";
+			if (!groups[src]) groups[src] = [];
+			groups[src].push(row);
+		});
+		
+		const create_table = (title, rows) => {
+			if (!rows || rows.length === 0) return;
 			
-			let tr = $(`
-				<tr data-name="${row.name}">
-					<td>${i + 1}</td>
-					<td data-item-code="${row.item_code}">${row.item_code}</td>
-					<td>${row.item_name || ''}</td>
-					<td>${row.custom_ordered_qty || 0}</td>
-					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty}" ${is_sample_only ? 'disabled' : ''} /></td>
-					<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" /></td>
-					<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || 0}" ${!is_sample_only ? 'disabled' : ''} /></td>
-					<td><input type="text" list="batch-list" class="form-control input-sm batch-input" value="${row.batch_no || ''}" /></td>
-					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" /></td>
-					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" /></td>
-				</tr>
-			`);
-			tbody.append(tr);
+			let is_sample_only = ["Scheme Table", "Additional Units"].includes(title);
+			
+			let html = `
+				<div class="table-section-title">${title}</div>
+				<table class="sku-table" data-table-name="${title}">
+					<thead>
+						<tr>
+							<th>SR.</th>
+							<th>SKU</th>
+							<th>SKU NO</th>
+							<th>ORDERED QTY</th>
+							<th>PICKED QTY</th>
+							<th>BOX</th>
+							<th>SAMPLE QTY</th>
+							<th>BATCH CODE</th>
+							<th>MFG</th>
+							<th>EXP</th>
+						</tr>
+					</thead>
+					<tbody>
+			`;
+			
+			rows.forEach((row, i) => {
+				html += `
+					<tr data-name="${row.name}">
+						<td>${i + 1}</td>
+						<td data-item-code="${row.item_code}">${row.item_code}</td>
+						<td>${row.item_name || ''}</td>
+						<td class="ordered-qty-cell">${row.custom_ordered_qty || 0}</td>
+						<td><input type="number" class="form-control input-sm qty-input" value="${row.picked_qty || ''}" ${is_sample_only ? 'disabled' : ''} /></td>
+						<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" /></td>
+						<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || 0}" ${!is_sample_only ? 'disabled' : ''} /></td>
+						<td><input type="text" list="batch-list" class="form-control input-sm batch-input" value="${row.batch_no || ''}" /></td>
+						<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" /></td>
+						<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" /></td>
+					</tr>
+				`;
+			});
+			
+			html += `</tbody></table>`;
+			container.append(html);
+		};
+		
+		create_table("Items", groups["Items"]);
+		create_table("Scheme Table", groups["Scheme Table"]);
+		create_table("Marketing Freebies", groups["Marketing Freebies"]);
+		create_table("Additional Units", groups["Additional Units"]);
+		
+		// Validation logic for Picked Qty
+		container.find('.qty-input').on('change', function() {
+			let tr = $(this).closest('tr');
+			let ordered = flt(tr.find('.ordered-qty-cell').text());
+			let picked = flt($(this).val());
+			
+			if (picked > ordered) {
+				frappe.msgprint(__("Picked Qty cannot be greater than Ordered Qty"));
+				$(this).val(ordered); // Reset to max allowed
+			}
 		});
 		
 		// Setup Batch auto-fetch logic
-		tbody.find('.batch-input').on('change', function() {
+		container.find('.batch-input').on('change', function() {
 			let val = $(this).val();
 			let tr = $(this).closest('tr');
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
@@ -101,8 +146,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					args: { batch_no: val, item_code: item_code },
 					callback: function(res) {
 						if (res.message) {
-							tr.find('.mfg-input').val(res.message.manufacturing_date || '');
-							tr.find('.exp-input').val(res.message.expiry_date || '');
+							// Ensure format is YYYY-MM-DD for date inputs
+							let mfg = res.message.manufacturing_date ? frappe.datetime.str_to_obj(res.message.manufacturing_date) : null;
+							let exp = res.message.expiry_date ? frappe.datetime.str_to_obj(res.message.expiry_date) : null;
+							
+							tr.find('.mfg-input').val(mfg ? frappe.datetime.obj_to_str(mfg) : '');
+							tr.find('.exp-input').val(exp ? frappe.datetime.obj_to_str(exp) : '');
 						}
 					}
 				});

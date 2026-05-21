@@ -18,6 +18,7 @@
 	.sku-table {
 		width: 100%;
 		border-collapse: collapse;
+		margin-bottom: 20px;
 	}
 	.sku-table th, .sku-table td {
 		border: 1px solid #d1d8dd;
@@ -32,9 +33,22 @@
 		width: 100%;
 		box-sizing: border-box;
 	}
+	.table-section-title {
+		margin-top: 30px;
+		margin-bottom: 10px;
+		font-size: 16px;
+		font-weight: bold;
+		color: #333;
+		border-bottom: 1px solid #ddd;
+		padding-bottom: 5px;
+	}
 </style>
 
 <div class="pick-list-container">
+	<div class="text-right" style="margin-bottom: 15px;">
+		<button class="btn btn-default btn-sm" onclick="frappe.set_route('List', 'Pick List')">Go to List View</button>
+	</div>
+	
 	<div class="header-grid">
 		<label>ACTUAL BOX</label>
 		<input type="number" class="form-control" data-fieldname="custom_actual_box">
@@ -79,25 +93,9 @@
 		<label></label><div></div>
 	</div>
 	
-	<table class="sku-table">
-		<thead>
-			<tr>
-				<th>SR.</th>
-				<th>SKU</th>
-				<th>SKU NO</th>
-				<th>ORDERED QTY</th>
-				<th>PICKED QTY</th>
-				<th>BOX</th>
-				<th>SAMPLE QTY</th>
-				<th>BATCH CODE</th>
-				<th>MFG</th>
-				<th>EXP</th>
-			</tr>
-		</thead>
-		<tbody>
-			<!-- Rows will be injected here via JS -->
-		</tbody>
-	</table>
+	<div id="tables-container">
+		<!-- Tables will be dynamically generated here -->
+	</div>
 	
 	<datalist id="batch-list"></datalist>
 </div>
