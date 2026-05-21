@@ -33,7 +33,7 @@ class SalesOrderEntryView {
 		this.page.add_inner_button(__('Create'), () => {
 			if (!this._ensure_loaded_name()) return;
 			frappe.call({
-				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_pick_list',
+				method: 'alpinos.sales_order_api.create_pick_list_from_so',
 				args: { sales_order: this._so_name },
 				freeze: true,
 				callback: function(r) {
