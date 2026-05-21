@@ -90,7 +90,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							<th>SKU</th>
 							<th>SKU NO</th>
 							<th>ORDERED QTY</th>
-							<th>PICKED QTY</th>
+							${!is_sample_only ? '<th>PICKED QTY</th>' : ''}
 							<th>BOX</th>
 							<th>SAMPLE QTY</th>
 							<th>BATCH CODE</th>
@@ -108,10 +108,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						<td data-item-code="${row.item_code}">${row.item_code}</td>
 						<td>${row.item_name || ''}</td>
 						<td class="ordered-qty-cell">${row.custom_ordered_qty || 0}</td>
-						<td><input type="number" class="form-control input-sm qty-input" value="${row.picked_qty || ''}" ${is_sample_only ? 'disabled' : ''} /></td>
+						${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.picked_qty || ''}" /></td>` : ''}
 						<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" /></td>
-						<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || 0}" ${!is_sample_only ? 'disabled' : ''} /></td>
-						<td><input type="text" list="batch-list" class="form-control input-sm batch-input" value="${row.batch_no || ''}" /></td>
+						<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || 0}" /></td>
+						<td><input type="text" list="batch-list" class="form-control input-sm batch-input" value="${row.custom_batch_code || row.batch_no || ''}" /></td>
 						<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" /></td>
 						<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" /></td>
 					</tr>
@@ -123,8 +123,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		};
 		
 		create_table("Items", groups["Items"]);
-		create_table("Scheme Table", groups["Scheme Table"]);
 		create_table("Marketing Freebies", groups["Marketing Freebies"]);
+		create_table("Scheme Table", groups["Scheme Table"]);
 		create_table("Additional Units", groups["Additional Units"]);
 		
 		// Validation logic for Picked Qty
@@ -176,6 +176,25 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				}
 			}
 		});
+
+		// Fetch users for QC dropdown
+		frappe.call({
+			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_users',
+			callback: function(res) {
+				if(res.message) {
+					let qc_select = page.main.find('[data-fieldname="custom_qc_attended_by"]');
+					qc_select.empty();
+					qc_select.append(`<option value=""></option>`);
+					res.message.forEach(u => {
+						qc_select.append(`<option value="${u}">${u}</option>`);
+					});
+					// Set previously saved value if any
+					if (data.custom_qc_attended_by) {
+						qc_select.val(data.custom_qc_attended_by);
+					}
+				}
+			}
+		});
 	};
 	
 	page.save_pick_list = function() {
@@ -195,8 +214,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		let items = [];
 		page.main.find('.sku-table tbody tr').each(function() {
 			let tr = $(this);
-			let is_sample_only = tr.find('.qty-input').prop('disabled');
-			let qty_val = tr.find('.qty-input').val();
+			let table_name = tr.closest('table').attr('data-table-name');
+			let is_sample_only = ["Scheme Table", "Additional Units"].includes(table_name);
+			let qty_val = is_sample_only ? 0 : tr.find('.qty-input').val();
 			let sample_qty_val = tr.find('.sample-qty-input').val();
 			
 			items.push({
