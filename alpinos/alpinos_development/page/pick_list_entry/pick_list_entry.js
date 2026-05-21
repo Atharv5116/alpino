@@ -1,6 +1,7 @@
-frappe.pages['pick-list-entry'] = frappe.pages['pick-list-entry'] || {};
+console.log("EVALUATING PICK LIST ENTRY SCRIPT FROM DATABASE!");
+frappe.pages['pick_list_entry'] = frappe.pages['pick_list_entry'] || {};
 
-frappe.pages['pick-list-entry'].on_page_load = function(wrapper) {
+frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	console.log("pick-list-entry on_page_load triggered");
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
