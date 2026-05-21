@@ -1050,6 +1050,7 @@ def create_pick_list_from_so(sales_order):
 	pick_list.custom_party_code = so.customer
 	pick_list.custom_order_date = so.transaction_date
 	pick_list.custom_po_no = so.po_no
+	pick_list.pick_manually = 1
 	
 	def add_item_to_pick_list(item_row, source_table):
 		if not item_row.item_code:
@@ -1065,7 +1066,7 @@ def create_pick_list_from_so(sales_order):
 		pick_list.append("locations", {
 			"item_code": item_row.item_code,
 			"custom_ordered_qty": item_row.qty,
-			"qty": 0, # To be manually filled
+			"qty": item_row.qty,
 			"custom_box": box,
 			"custom_source_table": source_table
 		})
