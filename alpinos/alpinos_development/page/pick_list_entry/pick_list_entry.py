@@ -56,5 +56,6 @@ def save_pick_list_data(name, header, items):
 			item.custom_mfg_date = item_data.get('custom_mfg_date')
 			item.custom_expiry_date = item_data.get('custom_expiry_date')
 			
+	doc.flags.ignore_mandatory = True
 	doc.save()
 	return True
