@@ -38,6 +38,7 @@ frappe.pages['pick-list-entry'].on_page_load = function(wrapper) {
 	}
 
 	console.log("Setting up load_data...");
+	page.load_data = function() {
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_pick_list_data',
 			args: { name: page.pick_list_name },
