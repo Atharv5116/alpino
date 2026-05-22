@@ -18,6 +18,17 @@ frappe.ui.form.on('Pick List', {
 
 	locations_add(frm) {
 		setTimeout(() => recalculate_pick_list_totals(frm), 200);
+	},
+	
+	validate(frm) {
+		// Aggressively bypass all batch fields and validations before submit!
+		if (frm.doc.locations) {
+			frm.doc.locations.forEach(row => {
+				row.has_batch_no = 0;
+				row.use_serial_batch_fields = 0;
+			});
+		}
+		frappe.meta.get_docfield("Pick List Item", "batch_no", frm.doc.name).reqd = 0;
 	}
 });
 
