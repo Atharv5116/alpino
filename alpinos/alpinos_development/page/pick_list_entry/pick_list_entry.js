@@ -27,7 +27,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			// Setup static listeners
 			page.main.find('#btn-go-to-list').on('click', function() {
-				frappe.set_route('pick-list-list');
+				frappe.set_route('pick_list_list');
 			});
 
 			page.main.find('#btn-create-delivery-note').on('click', function() {

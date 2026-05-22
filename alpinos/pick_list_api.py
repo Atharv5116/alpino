@@ -109,12 +109,39 @@ def create_delivery_note_from_pick_list(pick_list_name):
 		pass
 	frappe.msgprint = _silent_msgprint
 
+	# Monkeypatch frappe.get_doc to handle custom SO child tables mapping
+	_original_get_doc = frappe.get_doc
+	def _custom_get_doc(doctype, name=None, *args, **kwargs):
+		if doctype == "Sales Order Item" and name:
+			if not frappe.db.exists("Sales Order Item", name):
+				for custom_doctype in [
+					"Sales Order Marketing Freebie",
+					"Sales Order Scheme Item",
+					"Sales Order Additional Units Item"
+				]:
+					if frappe.db.exists(custom_doctype, name):
+						custom_doc = _original_get_doc(custom_doctype, name)
+						# Masquerade custom table doc as a Sales Order Item
+						custom_doc.doctype = "Sales Order Item"
+						if not getattr(custom_doc, "uom", None):
+							custom_doc.uom = frappe.db.get_value("Item", custom_doc.item_code, "stock_uom") or "Nos"
+						if not getattr(custom_doc, "conversion_factor", None):
+							custom_doc.conversion_factor = 1.0
+						if not getattr(custom_doc, "stock_uom", None):
+							custom_doc.stock_uom = custom_doc.uom
+						return custom_doc
+				return None
+		return _original_get_doc(doctype, name, *args, **kwargs)
+
+	frappe.get_doc = _custom_get_doc
+
 	try:
 		# Call standard erpnext mapper to create Delivery Note
 		dn = create_delivery_note(pick_list_name)
 	finally:
-		# Restore original msgprint
+		# Restore original msgprint and get_doc
 		frappe.msgprint = _original_msgprint
+		frappe.get_doc = _original_get_doc
 
 	if not dn:
 		frappe.throw("Could not create Delivery Note from Pick List.")
