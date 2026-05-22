@@ -26,6 +26,17 @@ frappe.ui.form.on('Pick List', {
 			frm.doc.locations.forEach(row => {
 				row.has_batch_no = 0;
 				row.use_serial_batch_fields = 0;
+				
+				// Fix Frappe's inner cache which save.js uses!
+				if (frappe.meta.docfield_copy && 
+					frappe.meta.docfield_copy["Pick List Item"] && 
+					frappe.meta.docfield_copy["Pick List Item"][row.name]) {
+					
+					let df_copy = frappe.meta.docfield_copy["Pick List Item"][row.name]["batch_no"];
+					if (df_copy) {
+						df_copy.reqd = 0;
+					}
+				}
 			});
 		}
 		let df = frappe.meta.get_docfield("Pick List Item", "batch_no");
