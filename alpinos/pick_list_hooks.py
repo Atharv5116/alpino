@@ -40,8 +40,10 @@ def _sync_rows_and_totals(doc):
 		factor = flt(get_box_conversion_factor(row.item_code)) if row.item_code else 0
 		factor = factor or 1
 
-		row.custom_box = ceil(qty / factor) if qty else 0
-		row.custom_sample_box = ceil(sample_qty / factor) if sample_qty else 0
+		if not flt(row.custom_box):
+			row.custom_box = ceil(qty / factor) if qty else 0
+		if not flt(row.custom_sample_box):
+			row.custom_sample_box = ceil(sample_qty / factor) if sample_qty else 0
 
 		if row.batch_no:
 			batch_details = frappe.db.get_value(

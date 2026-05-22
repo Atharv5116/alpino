@@ -5,7 +5,13 @@ import json
 def get_pick_list_data(name):
 	doc = frappe.get_doc('Pick List', name)
 	doc.check_permission('read')
-	return doc.as_dict()
+	
+	from alpinos.sales_order_api import get_box_conversion_factor
+	doc_dict = doc.as_dict()
+	for row in doc_dict.get("locations", []):
+		row["custom_conversion_factor"] = get_box_conversion_factor(row.get("item_code")) or 1
+		
+	return doc_dict
 
 @frappe.whitelist()
 def get_active_batches():
@@ -188,14 +194,21 @@ def create_and_submit_pick_list(so_name, header, items):
 	pick_list.flags.ignore_mandatory = True
 	pick_list.insert(ignore_permissions=True)
 	
-	# Force set custom_batch_code on the newly created items
+	# Force set all fields on the newly created items to ensure direct DB matches UI exactly
 	for item in pick_list.locations:
 		ui_item = next((i for i in items if i.get("item_code") == item.item_code and i.get("custom_source_table") == item.custom_source_table), None)
 		if ui_item:
 			batch_no_val = ui_item.get('custom_batch_code') or ui_item.get('batch_no')
 			frappe.db.set_value('Pick List Item', item.name, {
+				'qty': float(ui_item.get('qty') or 0),
+				'custom_box': float(ui_item.get('custom_box') or 0),
+				'custom_sample_quantity': float(ui_item.get('custom_sample_quantity') or 0),
 				'custom_batch_code': batch_no_val,
-				'batch_no': None
+				'batch_no': None,
+				'has_batch_no': 0,
+				'use_serial_batch_fields': 0,
+				'custom_mfg_date': ui_item.get('custom_mfg_date') or None,
+				'custom_expiry_date': ui_item.get('custom_expiry_date') or None
 			}, update_modified=False)
 			
 	# Reload to fetch forced updates

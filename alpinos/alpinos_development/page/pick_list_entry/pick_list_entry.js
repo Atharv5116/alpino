@@ -131,11 +131,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let input_disabled = data.docstatus === 1 ? 'disabled' : '';
 			
 			let row_html = `
-				<tr data-name="${row.name}">
+				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}">
 					<td>${idx + 1}</td>
 					<td data-item-code="${row.item_code}">${row.item_code}</td>
 					<td>-</td>
-					<td>${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
+					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" ${input_disabled}/></td>` : ''}
 					<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" ${input_disabled}/></td>
 					<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || (is_sample_only ? row.qty : 0)}" ${input_disabled}/></td>
@@ -157,16 +157,70 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		create_table("Scheme Table", groups["Scheme Table"]);
 		create_table("Additional Units", groups["Additional Units"]);
 		
-		// Validation logic for Picked Qty
-		container.find('.qty-input').on('change', function() {
+		// Define recalculate_totals function
+		page.recalculate_totals = function() {
+			let actual_box = 0;
+			let sample_box = 0;
+			let sample_weight = 0;
+			let gross_weight = 0;
+			let total_unit = 0;
+
+			page.main.find('.sku-table tbody tr').each(function() {
+				let tr = $(this);
+				let table_name = tr.closest('table').attr('data-table-name');
+				let is_sample_only = ["Scheme Table", "Additional Units"].includes(table_name);
+				
+				let qty = flt(is_sample_only ? 0 : tr.find('.qty-input').val());
+				let sample_qty = flt(tr.find('.sample-qty-input').val());
+				
+				let factor = flt(tr.attr('data-conversion-factor')) || 1;
+				let weight_per_box = flt(tr.attr('data-weight-per-box')) || 0;
+				
+				let box = flt(tr.find('.box-input').val());
+				let sample_box_val = factor ? Math.ceil(sample_qty / factor) : 0;
+				
+				actual_box += box;
+				sample_box += sample_box_val;
+				sample_weight += sample_box_val * weight_per_box;
+				gross_weight += (box + sample_box_val) * weight_per_box;
+				total_unit += qty + sample_qty;
+			});
+
+			page.main.find('[data-fieldname="custom_actual_box"]').val(actual_box);
+			page.main.find('[data-fieldname="custom_sample_box"]').val(sample_box);
+			page.main.find('[data-fieldname="custom_sample_weight"]').val(sample_weight);
+			page.main.find('[data-fieldname="custom_total_box"]').val(actual_box + sample_box);
+			page.main.find('[data-fieldname="custom_gross_weight"]').val(gross_weight);
+			page.main.find('[data-fieldname="custom_total_unit"]').val(total_unit);
+		};
+
+		// Validation and auto-calculation logic for Picked Qty
+		container.find('.qty-input').on('input change', function() {
 			let tr = $(this).closest('tr');
 			let ordered = flt(tr.find('.ordered-qty-cell').text());
 			let picked = flt($(this).val());
 			
 			if (picked > ordered) {
 				frappe.msgprint(__("Picked Qty cannot be greater than Ordered Qty"));
+				picked = ordered;
 				$(this).val(ordered); // Reset to max allowed
 			}
+			
+			let factor = flt(tr.attr('data-conversion-factor')) || 1;
+			let box = Math.ceil(picked / factor);
+			tr.find('.box-input').val(box);
+			
+			page.recalculate_totals();
+		});
+
+		// Auto-calculation logic for Sample Qty
+		container.find('.sample-qty-input').on('input change', function() {
+			page.recalculate_totals();
+		});
+
+		// Box manual input updates totals
+		container.find('.box-input').on('input change', function() {
+			page.recalculate_totals();
 		});
 		
 		// Setup Batch auto-fetch logic
@@ -218,13 +272,17 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					res.message.forEach(u => {
 						qc_select.append(`<option value="${u}">${u}</option>`);
 					});
-					// Set previously saved value if any
-					if (data.custom_qc_attended_by) {
-						qc_select.val(data.custom_qc_attended_by);
+					// Set previously saved value or default to current user if new
+					let val = data.custom_qc_attended_by || frappe.session.user;
+					if (val) {
+						qc_select.val(val);
 					}
 				}
 			}
 		});
+		
+		// Run initial recalculation
+		page.recalculate_totals();
 	};
 	
 	page.save_pick_list = function() {
@@ -238,6 +296,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_total_unit: page.main.find('[data-fieldname="custom_total_unit"]').val(),
 			custom_po_no: page.main.find('[data-fieldname="custom_po_no"]').val(),
 			custom_transporter: page.main.find('[data-fieldname="custom_transporter"]').val(),
+			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
 		};
 		
 		// Gather item data
@@ -253,12 +312,13 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				name: tr.attr('data-name'),
 				item_code: tr.find('[data-item-code]').attr('data-item-code'),
 				qty: is_sample_only ? sample_qty_val : qty_val,
-				custom_sample_quantity: is_sample_only ? sample_qty_val : 0,
+				custom_sample_quantity: sample_qty_val,
 				custom_box: tr.find('.box-input').val(),
 				custom_batch_code: tr.find('.batch-input').val(),
 				batch_no: "", // Leave standard batch_no empty since we are not creating real batches
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
+				custom_source_table: table_name
 			});
 		});
 

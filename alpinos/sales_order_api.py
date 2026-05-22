@@ -1060,8 +1060,8 @@ def get_pick_list_mapping_data(sales_order):
 		
 		# Box conversion logic
 		box = flt(item_row.get("custom_box"))
+		factor = get_box_conversion_factor(item_row.item_code) or 1
 		if source_table in ["Marketing Freebies", "Scheme Table", "Additional Units"]:
-			factor = get_box_conversion_factor(item_row.item_code)
 			if factor:
 				box = flt(item_row.qty) / factor
 				
@@ -1071,7 +1071,8 @@ def get_pick_list_mapping_data(sales_order):
 			"custom_ordered_qty": item_row.qty,
 			"qty": item_row.qty,
 			"custom_box": box,
-			"custom_source_table": source_table
+			"custom_source_table": source_table,
+			"custom_conversion_factor": factor
 		})
 		
 	for item in so.get("items") or []:
