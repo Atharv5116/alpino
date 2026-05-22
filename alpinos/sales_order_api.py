@@ -1059,11 +1059,11 @@ def get_pick_list_mapping_data(sales_order):
 			return
 		
 		# Box conversion logic
-		box = flt(item_row.get("custom_box"))
+		box = flt(item_row.get("custom_box"), 2)
 		factor = get_box_conversion_factor(item_row.item_code) or 1
 		if source_table in ["Marketing Freebies", "Scheme Table", "Additional Units"]:
 			if factor:
-				box = flt(item_row.qty) / factor
+				box = flt(flt(item_row.qty) / factor, 2)
 				
 		pick_list["locations"].append({
 			"name": frappe.generate_hash(length=10), # Fake ID for unsaved rows
@@ -1088,4 +1088,90 @@ def get_pick_list_mapping_data(sales_order):
 		add_item_to_pick_list(additional, "Additional Units")
 		
 	return pick_list
+
+
+@frappe.whitelist()
+def get_so_pick_list_status(sales_order):
+	if not sales_order:
+		return {"fully_picked": False, "has_draft": False, "draft_name": None}
+		
+	so = frappe.get_doc("Sales Order", sales_order)
+	
+	# 1. Calculate ordered qtys
+	ordered_qtys = {}
+	for item in so.get("items") or []:
+		if item.item_code:
+			ordered_qtys[item.item_code] = ordered_qtys.get(item.item_code, 0.0) + flt(item.qty)
+	for item in so.get("custom_marketing_freebies") or []:
+		if item.item_code:
+			ordered_qtys[item.item_code] = ordered_qtys.get(item.item_code, 0.0) + flt(item.qty)
+	for item in so.get("custom_scheme_item_table") or []:
+		if item.item_code:
+			ordered_qtys[item.item_code] = ordered_qtys.get(item.item_code, 0.0) + flt(item.qty)
+	for item in so.get("custom_additional_units_damage_items") or []:
+		if item.item_code:
+			ordered_qtys[item.item_code] = ordered_qtys.get(item.item_code, 0.0) + flt(item.qty)
+			
+	# 2. Get picked qtys from submitted Pick Lists
+	picked_qtys = {}
+	
+	pl_names = frappe.get_all(
+		"Pick List Item",
+		filters={"sales_order": sales_order, "docstatus": ["<", 2]},
+		pluck="parent"
+	) or []
+	
+	custom_pl_names = frappe.get_all(
+		"Pick List",
+		filters={"custom_sales_order_id": sales_order, "docstatus": ["<", 2]},
+		pluck="name"
+	) or []
+	
+	all_pls = list(set(pl_names + custom_pl_names))
+	
+	draft_name = None
+	has_draft = False
+	
+	if all_pls:
+		# Check for draft
+		drafts = frappe.get_all(
+			"Pick List",
+			filters={"name": ["in", all_pls], "docstatus": 0},
+			pluck="name"
+		)
+		if drafts:
+			has_draft = True
+			draft_name = drafts[0]
+			
+		# Get picked quantities from submitted pick lists
+		submitted_pls = frappe.get_all(
+			"Pick List",
+			filters={"name": ["in", all_pls], "docstatus": 1},
+			pluck="name"
+		)
+		if submitted_pls:
+			items = frappe.get_all(
+				"Pick List Item",
+				filters={"parent": ["in", submitted_pls]},
+				fields=["item_code", "qty"]
+			)
+			for row in items:
+				if row.item_code:
+					picked_qtys[row.item_code] = picked_qtys.get(row.item_code, 0.0) + flt(row.qty)
+					
+	fully_picked = True
+	if not ordered_qtys:
+		fully_picked = False
+	else:
+		for sku, ordered in ordered_qtys.items():
+			if picked_qtys.get(sku, 0.0) < ordered:
+				fully_picked = False
+				break
+				
+	return {
+		"fully_picked": fully_picked,
+		"has_draft": has_draft,
+		"draft_name": draft_name
+	}
+
 

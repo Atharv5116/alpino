@@ -112,6 +112,9 @@ def _recalc_dn_totals(doc):
 
 
 def _validate_dn_mandatory(doc):
+	if doc.flags.ignore_mandatory:
+		return
+
 	if not doc.get("custom_sales_order_id"):
 		frappe.throw("Sales Order ID is mandatory.")
 	if not doc.get("custom_dn_so_customer_name"):
@@ -124,7 +127,7 @@ def _validate_dn_mandatory(doc):
 		frappe.throw("Transporter Name is mandatory.")
 	if not doc.get("vehicle_no"):
 		frappe.throw("Vehicle No. is mandatory.")
-	if doc.get("custom_lr_gr_no") in (None, ""):
+	if doc.docstatus == 1 and doc.get("custom_lr_gr_no") in (None, ""):
 		frappe.throw("LR No. (GR No.) is mandatory.")
 	if not doc.get("custom_dispatch_from"):
 		frappe.throw("Dispatch From is mandatory.")

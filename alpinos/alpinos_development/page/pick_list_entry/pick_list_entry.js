@@ -29,6 +29,23 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.find('#btn-go-to-list').on('click', function() {
 				frappe.set_route('List', 'Pick List');
 			});
+
+			page.main.find('#btn-create-delivery-note').on('click', function() {
+				frappe.call({
+					method: 'alpinos.pick_list_api.create_delivery_note_from_pick_list',
+					args: {
+						pick_list_name: page.pick_list_name
+					},
+					freeze: true,
+					freeze_message: __("Creating Delivery Note..."),
+					callback: function(r) {
+						if (!r.exc && r.message) {
+							frappe.show_alert({message: __("Delivery Note {0} created successfully", [r.message]), indicator: "green"});
+							frappe.set_route('Form', 'Delivery Note', r.message);
+						}
+					}
+				});
+			});
 		}
 	} catch (e) {
 		page.main.html("<h3>Error rendering template: " + e.message + "</h3>");
@@ -67,6 +84,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	page.render_data = function(data) {
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
+			page.main.find('#btn-create-delivery-note').show();
+		} else {
+			page.main.find('#btn-create-delivery-note').hide();
 		}
 		
 		// Set header fields
@@ -137,7 +157,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td>-</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" ${input_disabled}/></td>` : ''}
-					<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" ${input_disabled}/></td>
+					<td><input type="number" class="form-control input-sm box-input" value="${flt(row.custom_box, 2) || 0}" step="0.01" ${input_disabled}/></td>
 					<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || (is_sample_only ? row.qty : 0)}" ${input_disabled}/></td>
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
@@ -177,7 +197,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				let weight_per_box = flt(tr.attr('data-weight-per-box')) || 0;
 				
 				let box = flt(tr.find('.box-input').val());
-				let sample_box_val = factor ? Math.ceil(sample_qty / factor) : 0;
+				let sample_box_val = factor ? flt(sample_qty / factor, 2) : 0;
 				
 				actual_box += box;
 				sample_box += sample_box_val;
@@ -186,12 +206,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				total_unit += qty + sample_qty;
 			});
 
-			page.main.find('[data-fieldname="custom_actual_box"]').val(actual_box);
-			page.main.find('[data-fieldname="custom_sample_box"]').val(sample_box);
-			page.main.find('[data-fieldname="custom_sample_weight"]').val(sample_weight);
-			page.main.find('[data-fieldname="custom_total_box"]').val(actual_box + sample_box);
-			page.main.find('[data-fieldname="custom_gross_weight"]').val(gross_weight);
-			page.main.find('[data-fieldname="custom_total_unit"]').val(total_unit);
+			page.main.find('[data-fieldname="custom_actual_box"]').val(flt(actual_box, 2));
+			page.main.find('[data-fieldname="custom_sample_box"]').val(flt(sample_box, 2));
+			page.main.find('[data-fieldname="custom_sample_weight"]').val(flt(sample_weight, 2));
+			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual_box + sample_box, 2));
+			page.main.find('[data-fieldname="custom_gross_weight"]').val(flt(gross_weight, 2));
+			page.main.find('[data-fieldname="custom_total_unit"]').val(flt(total_unit, 2));
 		};
 
 		// Validation and auto-calculation logic for Picked Qty
@@ -215,7 +235,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 			
 			let factor = flt(tr.attr('data-conversion-factor')) || 1;
-			let box = Math.ceil(picked / factor);
+			let box = flt(picked / factor, 2);
 			tr.find('.box-input').val(box);
 			
 			page.recalculate_totals();

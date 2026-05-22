@@ -149,8 +149,8 @@ function recalculate_pick_list_row(frm, cdt, cdn) {
 		args: { item_code: row.item_code },
 		callback: function(r) {
 			const factor = flt(r.message) || 1;
-			const box = factor ? Math.ceil(qty / factor) : 0;
-			const sample_box = factor ? Math.ceil(sample_qty / factor) : 0;
+			const box = factor ? flt(qty / factor, 2) : 0;
+			const sample_box = factor ? flt(sample_qty / factor, 2) : 0;
 			frappe.model.set_value(cdt, cdn, 'custom_box', box);
 			frappe.model.set_value(cdt, cdn, 'custom_sample_box', sample_box);
 			recalculate_pick_list_totals(frm);
@@ -176,12 +176,12 @@ function recalculate_pick_list_totals(frm) {
 		total_unit += flt(row.qty) + flt(row.custom_sample_quantity);
 	});
 
-	frm.set_value('custom_actual_box', actual_box);
-	frm.set_value('custom_sample_box', sample_box);
-	frm.set_value('custom_sample_weight', sample_weight);
-	frm.set_value('custom_total_box', actual_box + sample_box);
-	frm.set_value('custom_gross_weight', gross_weight);
-	frm.set_value('custom_total_unit', total_unit);
+	frm.set_value('custom_actual_box', flt(actual_box, 2));
+	frm.set_value('custom_sample_box', flt(sample_box, 2));
+	frm.set_value('custom_sample_weight', flt(sample_weight, 2));
+	frm.set_value('custom_total_box', flt(actual_box + sample_box, 2));
+	frm.set_value('custom_gross_weight', flt(gross_weight, 2));
+	frm.set_value('custom_total_unit', flt(total_unit, 2));
 
 	sync_order_information(frm);
 }

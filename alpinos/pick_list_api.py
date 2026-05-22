@@ -73,3 +73,66 @@ def resolve_batch_dates_for_row(batch_no=None, serial_and_batch_bundle=None):
 		"manufacturing_date": d.get("manufacturing_date"),
 		"expiry_date": d.get("expiry_date"),
 	}
+
+
+@frappe.whitelist()
+def bulk_edit_transporter(pick_lists, transporter):
+	import json
+	if isinstance(pick_lists, str):
+		pick_lists = json.loads(pick_lists)
+
+	if not pick_lists or not isinstance(pick_lists, list):
+		frappe.throw("No Pick Lists selected or invalid input format.")
+
+	for pl in pick_lists:
+		frappe.db.set_value("Pick List", pl, "custom_transporter", transporter)
+
+	frappe.db.commit()
+	return {"status": "success"}
+
+
+@frappe.whitelist()
+def create_delivery_note_from_pick_list(pick_list_name):
+	from erpnext.stock.doctype.pick_list.pick_list import create_delivery_note
+	import json
+
+	# Load Pick List to get its custom fields
+	pick_list = frappe.get_doc("Pick List", pick_list_name)
+
+	# Ensure Pick List is submitted
+	if pick_list.docstatus != 1:
+		frappe.throw("Pick List must be submitted to create a Delivery Note.")
+
+	# Call standard erpnext mapper to create Delivery Note
+	dn = create_delivery_note(pick_list_name)
+
+	if not dn:
+		frappe.throw("Could not create Delivery Note from Pick List.")
+
+	if isinstance(dn, str):
+		dn = frappe.get_doc("Delivery Note", dn)
+
+	# Map custom fields from Pick List to Delivery Note
+	dn.custom_sales_order_id = pick_list.custom_sales_order_id
+	dn.custom_dn_so_customer_name = pick_list.custom_customer_name
+	dn.custom_dispatch_date = pick_list.custom_order_date or frappe.utils.now_datetime()
+	dn.custom_delivery_date = pick_list.custom_order_date or frappe.utils.now_datetime()
+
+	# Map transporter
+	pt = pick_list.custom_transporter
+	valid_transporters = ["Local", "Own Vehicle", "Third Party", "Other"]
+	if pt in valid_transporters:
+		dn.custom_transporter_name = pt
+	elif pt:
+		dn.custom_transporter_name = "Third Party"
+		dn.transporter = pt
+	else:
+		dn.custom_transporter_name = "Third Party"
+
+	# Save updated Delivery Note bypassing validations for Draft
+	dn.flags.ignore_mandatory = True
+	dn.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return dn.name
+

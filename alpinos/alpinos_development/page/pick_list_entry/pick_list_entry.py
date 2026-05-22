@@ -178,16 +178,16 @@ def create_and_submit_pick_list(so_name, header, items):
 		
 	# Match mapping rows with UI submitted items
 	for mapped_row in mapping_data.locations:
-		ui_item = next((i for i in items if i.get("name") == mapped_row.name), None)
+		ui_item = next((i for i in items if i.get("name") == mapped_row.get("name")), None)
 		if ui_item:
 			qty = float(ui_item.get('qty') or 0)
 			pick_list.append("locations", {
-				"item_code": mapped_row.item_code,
-				"custom_ordered_qty": mapped_row.custom_ordered_qty,
+				"item_code": mapped_row.get("item_code"),
+				"custom_ordered_qty": mapped_row.get("custom_ordered_qty"),
 				"qty": qty,
 				"custom_box": float(ui_item.get('custom_box') or 0),
 				"custom_sample_quantity": float(ui_item.get('custom_sample_quantity') or 0),
-				"custom_source_table": mapped_row.custom_source_table,
+				"custom_source_table": mapped_row.get("custom_source_table"),
 				"has_batch_no": 0,
 				"use_serial_batch_fields": 0,
 				"custom_mfg_date": ui_item.get('custom_mfg_date') or None,

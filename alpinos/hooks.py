@@ -51,6 +51,9 @@ doctype_js = {
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
 }
+doctype_list_js = {
+	"Pick List": "public/js/pick_list_list.js",
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 

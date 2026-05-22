@@ -41,9 +41,9 @@ def _sync_rows_and_totals(doc):
 		factor = factor or 1
 
 		if not flt(row.custom_box):
-			row.custom_box = ceil(qty / factor) if qty else 0
+			row.custom_box = flt(qty / factor, 2) if qty else 0
 		if not flt(row.custom_sample_box):
-			row.custom_sample_box = ceil(sample_qty / factor) if sample_qty else 0
+			row.custom_sample_box = flt(sample_qty / factor, 2) if sample_qty else 0
 
 		if row.batch_no:
 			batch_details = frappe.db.get_value(
@@ -62,12 +62,12 @@ def _sync_rows_and_totals(doc):
 		gross_weight += (flt(row.custom_box) + flt(row.custom_sample_box)) * row_weight_per_box
 		total_unit += qty + sample_qty
 
-	doc.custom_actual_box = actual_box
-	doc.custom_sample_box = sample_box
-	doc.custom_sample_weight = sample_weight
-	doc.custom_total_box = actual_box + sample_box
-	doc.custom_gross_weight = gross_weight
-	doc.custom_total_unit = total_unit
+	doc.custom_actual_box = flt(actual_box, 2)
+	doc.custom_sample_box = flt(sample_box, 2)
+	doc.custom_sample_weight = flt(sample_weight, 2)
+	doc.custom_total_box = flt(actual_box + sample_box, 2)
+	doc.custom_gross_weight = flt(gross_weight, 2)
+	doc.custom_total_unit = flt(total_unit, 2)
 
 
 def before_validate_pick_list(doc, method):

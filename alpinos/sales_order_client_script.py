@@ -38,18 +38,31 @@ frappe.ui.form.on('Sales Order', {
         set_variant_item_queries(frm);
         
         if (!frm.is_new()) {
-            frm.add_custom_button(__('Pick List'), function() {
-                frappe.call({
-                    method: 'alpinos.sales_order_api.create_pick_list_from_so',
-                    args: { sales_order: frm.doc.name },
-                    freeze: true,
-                    callback: function(r) {
-                        if (r.message) {
-                            frappe.set_route('pick_list_entry', r.message);
-                        }
+            frappe.call({
+                method: 'alpinos.sales_order_api.get_so_pick_list_status',
+                args: { sales_order: frm.doc.name },
+                callback: function(r) {
+                    const status = r.message || {};
+                    frm.remove_custom_button(__('Create'), __('Pick List'));
+                    frm.remove_custom_button(__('Edit'), __('Pick List'));
+                    frm.remove_custom_button(__('Pick List'));
+
+                    if (status.fully_picked) {
+                        return;
                     }
-                });
-            }, __('Create'));
+
+                    if (status.has_draft) {
+                        frm.add_custom_button(__('Edit'), function() {
+                            frappe.set_route('pick_list_entry', status.draft_name);
+                        }, __('Pick List'));
+                    } else {
+                        frm.add_custom_button(__('Create'), function() {
+                            frappe.route_options = { "so_name": frm.doc.name };
+                            frappe.set_route('pick_list_entry', 'New Pick List');
+                        }, __('Pick List'));
+                    }
+                }
+            });
         }
     },
 

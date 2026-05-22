@@ -29,13 +29,6 @@ class SalesOrderEntryView {
 		});
 		this.page.add_inner_button(__('Print'), () => this.open_default_print_preview());
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
-
-		this.page.add_inner_button(__('Create'), () => {
-			if (!this._ensure_loaded_name()) return;
-			// Route directly to unsaved Pick List view
-			frappe.route_options = { "so_name": this._so_name };
-			frappe.set_route('pick_list_entry', 'New Pick List');
-		}, __('Pick List'));
 	}
 
 	_ensure_loaded_name() {
@@ -166,7 +159,36 @@ class SalesOrderEntryView {
 				}
 				this.page.set_title(__('Sales Order View — {0}', [name]));
 				this.render(r.message);
+				this.update_pick_list_button();
 			},
+		});
+	}
+
+	update_pick_list_button() {
+		this.page.remove_inner_button(__('Create'), __('Pick List'));
+		this.page.remove_inner_button(__('Edit'), __('Pick List'));
+		this.page.remove_custom_menu(__('Pick List'));
+
+		frappe.call({
+			method: 'alpinos.sales_order_api.get_so_pick_list_status',
+			args: { sales_order: this._so_name },
+			callback: (r) => {
+				const status = r.message || {};
+				if (status.fully_picked) {
+					// Fully picked, do not show any buttons
+					return;
+				}
+				if (status.has_draft) {
+					this.page.add_inner_button(__('Edit'), () => {
+						frappe.set_route('pick_list_entry', status.draft_name);
+					}, __('Pick List'));
+				} else {
+					this.page.add_inner_button(__('Create'), () => {
+						frappe.route_options = { "so_name": this._so_name };
+						frappe.set_route('pick_list_entry', 'New Pick List');
+					}, __('Pick List'));
+				}
+			}
 		});
 	}
 
