@@ -138,12 +138,30 @@ def create_delivery_note_from_pick_list(pick_list_name):
 						custom_doc = _original_get_doc(custom_doctype, name)
 						# Masquerade custom table doc as a Sales Order Item
 						custom_doc.doctype = "Sales Order Item"
+						
+						# Fetch missing item fields from Item master
+						item_details = frappe.db.get_value(
+							"Item",
+							custom_doc.item_code,
+							["item_group", "item_name", "brand", "description", "stock_uom"],
+							as_dict=True,
+						) or {}
+						for key, val in item_details.items():
+							if not getattr(custom_doc, key, None):
+								setattr(custom_doc, key, val)
+
 						if not getattr(custom_doc, "uom", None):
-							custom_doc.uom = frappe.db.get_value("Item", custom_doc.item_code, "stock_uom") or "Nos"
+							custom_doc.uom = custom_doc.stock_uom or "Nos"
 						if not getattr(custom_doc, "conversion_factor", None):
 							custom_doc.conversion_factor = 1.0
 						if not getattr(custom_doc, "stock_uom", None):
 							custom_doc.stock_uom = custom_doc.uom
+						if not getattr(custom_doc, "rate", None):
+							custom_doc.rate = 0.0
+						if not getattr(custom_doc, "delivered_qty", None):
+							custom_doc.delivered_qty = 0.0
+						if not getattr(custom_doc, "delivered_by_supplier", None):
+							custom_doc.delivered_by_supplier = 0
 						return custom_doc
 				return None
 		return _original_get_doc(*args, **kwargs)
