@@ -106,7 +106,12 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	# Suppress the default ERPNext msgprint during DN creation
 	_original_msgprint = frappe.msgprint
 	def _silent_msgprint(*args, **kwargs):
-		pass
+		if "raise_exception" in kwargs and kwargs["raise_exception"]:
+			raise_exception = kwargs["raise_exception"]
+			if isinstance(raise_exception, type) and issubclass(raise_exception, Exception):
+				raise raise_exception(args[0] if args else "Validation Error")
+			else:
+				raise frappe.ValidationError(args[0] if args else "Validation Error")
 	frappe.msgprint = _silent_msgprint
 
 	# Monkeypatch frappe.get_doc to handle custom SO child tables mapping
@@ -166,15 +171,64 @@ def create_delivery_note_from_pick_list(pick_list_name):
 				return None
 		return _original_get_doc(*args, **kwargs)
 
+	# Monkeypatch frappe.get_all to fetch details for masqueraded Sales Order Items from custom tables
+	_original_get_all = frappe.get_all
+	def _custom_get_all(*args, **kwargs):
+		doctype = args[0] if args else kwargs.get("doctype")
+		filters = kwargs.get("filters")
+		if doctype == "Sales Order Item" and filters and "name" in filters:
+			name_filter = filters["name"]
+			names_to_query = []
+			if isinstance(name_filter, (list, tuple)):
+				if len(name_filter) == 2 and name_filter[0] == "in" and isinstance(name_filter[1], (list, tuple)):
+					names_to_query = list(name_filter[1])
+				elif len(name_filter) == 2 and isinstance(name_filter[1], str):
+					names_to_query = [name_filter[1]]
+			elif isinstance(name_filter, str):
+				names_to_query = [name_filter]
+
+			results = _original_get_all(*args, **kwargs)
+			found_names = {r.name if hasattr(r, "name") else r.get("name") for r in results}
+			missing_names = [n for n in names_to_query if n not in found_names]
+
+			if missing_names:
+				fields = kwargs.get("fields") or ["name"]
+				fields_list = fields if isinstance(fields, list) else [fields]
+				custom_results = []
+				for custom_doctype in [
+					"Sales Order Marketing Freebie",
+					"Sales Order Scheme Item",
+					"Sales Order Additional Units Item"
+				]:
+					missing_in_custom = [n for n in missing_names if frappe.db.exists(custom_doctype, n)]
+					if missing_in_custom:
+						valid_fields = [f.fieldname for f in frappe.get_meta(custom_doctype).fields] + ["name", "parent"]
+						query_fields = [f for f in fields_list if f in valid_fields]
+						custom_records = _original_get_all(
+							custom_doctype,
+							filters={"name": ("in", missing_in_custom)},
+							fields=query_fields
+						)
+						for r in custom_records:
+							for f in fields_list:
+								if f not in r:
+									r[f] = 1.0 if f == "conversion_factor" else (0.0 if f in ["rate", "qty", "delivered_qty"] else None)
+						custom_results.extend(custom_records)
+				results.extend(custom_results)
+			return results
+		return _original_get_all(*args, **kwargs)
+
 	frappe.get_doc = _custom_get_doc
+	frappe.get_all = _custom_get_all
 
 	try:
 		# Call standard erpnext mapper to create Delivery Note
 		dn = create_delivery_note(pick_list_name)
 	finally:
-		# Restore original msgprint and get_doc
+		# Restore original msgprint, get_doc, and get_all
 		frappe.msgprint = _original_msgprint
 		frappe.get_doc = _original_get_doc
+		frappe.get_all = _original_get_all
 
 	if not dn:
 		frappe.throw("Could not create Delivery Note from Pick List.")
