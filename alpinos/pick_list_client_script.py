@@ -55,10 +55,6 @@ frappe.ui.form.on('Pick List Item', {
 		recalculate_pick_list_row(frm, cdt, cdn);
 	},
 
-	custom_sample_quantity(frm, cdt, cdn) {
-		recalculate_pick_list_row(frm, cdt, cdn);
-	},
-
 	custom_weight_per_box(frm, cdt, cdn) {
 		recalculate_pick_list_totals(frm);
 	},
@@ -135,11 +131,17 @@ function recalculate_pick_list_row(frm, cdt, cdn) {
 	if (!row) return;
 
 	const qty = flt(row.qty);
-	const sample_qty = flt(row.custom_sample_quantity);
 
 	if (!row.item_code) {
 		frappe.model.set_value(cdt, cdn, 'custom_box', 0);
 		frappe.model.set_value(cdt, cdn, 'custom_sample_box', 0);
+		recalculate_pick_list_totals(frm);
+		return;
+	}
+
+	const table_name = row.custom_source_table || "Items";
+	if (table_name !== "Items") {
+		// Keep the box field blank (or 0) by default for non-Items tables, don't auto-calculate from quantity.
 		recalculate_pick_list_totals(frm);
 		return;
 	}
@@ -150,9 +152,9 @@ function recalculate_pick_list_row(frm, cdt, cdn) {
 		callback: function(r) {
 			const factor = flt(r.message) || 1;
 			const box = factor ? flt(qty / factor, 2) : 0;
-			const sample_box = factor ? flt(sample_qty / factor, 2) : 0;
 			frappe.model.set_value(cdt, cdn, 'custom_box', box);
-			frappe.model.set_value(cdt, cdn, 'custom_sample_box', sample_box);
+			frappe.model.set_value(cdt, cdn, 'custom_sample_box', 0);
+			frappe.model.set_value(cdt, cdn, 'custom_sample_quantity', 0);
 			recalculate_pick_list_totals(frm);
 		}
 	});
@@ -167,20 +169,17 @@ function recalculate_pick_list_totals(frm) {
 
 	(frm.doc.locations || []).forEach((row) => {
 		const row_box = flt(row.custom_box);
-		const row_sample_box = flt(row.custom_sample_box);
 		const row_weight_per_box = flt(row.custom_weight_per_box);
 		const table_name = row.custom_source_table || "Items";
 		
 		if (table_name === "Items") {
 			actual_box += row_box;
-			sample_box += row_sample_box;
-			sample_weight += row_sample_box * row_weight_per_box;
 		} else {
-			sample_box += row_box + row_sample_box;
-			sample_weight += (row_box + row_sample_box) * row_weight_per_box;
+			sample_box += row_box;
+			sample_weight += row_box * row_weight_per_box;
 		}
-		gross_weight += (row_box + row_sample_box) * row_weight_per_box;
-		total_unit += flt(row.qty) + flt(row.custom_sample_quantity);
+		gross_weight += row_box * row_weight_per_box;
+		total_unit += flt(row.qty);
 	});
 
 	frm.set_value('custom_actual_box', flt(actual_box, 2));

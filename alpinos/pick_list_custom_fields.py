@@ -185,6 +185,12 @@ def setup_pick_list_custom_fields():
 				read_only=1,
 				hidden=1,
 			),
+			dict(
+				fieldname="custom_remark",
+				label="Remark",
+				fieldtype="Data",
+				insert_after="custom_source_table",
+			),
 		],
 	}
 

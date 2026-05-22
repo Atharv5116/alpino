@@ -79,11 +79,12 @@ def save_pick_list_data(name, header, items):
 				'picked_qty': qty_val,
 				'conversion_factor': 1,
 				'custom_box': float(item_data.get('custom_box') or 0),
-				'custom_sample_quantity': float(item_data.get('custom_sample_quantity') or 0),
+				'custom_sample_quantity': 0,
 				'custom_batch_code': batch_no_val,
 				'batch_no': None,
 				'custom_mfg_date': item_data.get('custom_mfg_date') or None,
-				'custom_expiry_date': item_data.get('custom_expiry_date') or None
+				'custom_expiry_date': item_data.get('custom_expiry_date') or None,
+				'custom_remark': item_data.get('custom_remark') or None
 			}, update_modified=False)
 	
 	frappe.db.commit()
@@ -182,13 +183,14 @@ def create_and_submit_pick_list(so_name, header, items):
 				"conversion_factor": 1,
 				"warehouse": mapped_row.get("warehouse"),
 				"custom_box": float(ui_item.get('custom_box') or 0),
-				"custom_sample_quantity": float(ui_item.get('custom_sample_quantity') or 0),
+				"custom_sample_quantity": 0,
 				"custom_source_table": mapped_row.get("custom_source_table"),
 				"has_batch_no": 0,
 				"use_serial_batch_fields": 0,
 				"custom_mfg_date": ui_item.get('custom_mfg_date') or None,
 				"custom_expiry_date": ui_item.get('custom_expiry_date') or None,
-				"batch_no": None
+				"batch_no": None,
+				"custom_remark": ui_item.get('custom_remark') or None
 			})
 	
 	pick_list.flags.ignore_mandatory = True
@@ -206,11 +208,12 @@ def create_and_submit_pick_list(so_name, header, items):
 				'picked_qty': qty_val,
 				'conversion_factor': 1,
 				'custom_box': float(ui_item.get('custom_box') or 0),
-				'custom_sample_quantity': float(ui_item.get('custom_sample_quantity') or 0),
+				'custom_sample_quantity': 0,
 				'custom_batch_code': batch_no_val,
 				'batch_no': None,
 				'custom_mfg_date': ui_item.get('custom_mfg_date') or None,
-				'custom_expiry_date': ui_item.get('custom_expiry_date') or None
+				'custom_expiry_date': ui_item.get('custom_expiry_date') or None,
+				'custom_remark': ui_item.get('custom_remark') or None
 			}, update_modified=False)
 			
 	# Reload to fetch forced updates

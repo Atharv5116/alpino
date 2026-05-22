@@ -36,14 +36,18 @@ def _sync_rows_and_totals(doc):
 
 	for row in doc.locations or []:
 		qty = flt(row.qty)
-		sample_qty = flt(row.custom_sample_quantity)
+		row.custom_sample_quantity = 0.0
+		row.custom_sample_box = 0.0
+		
 		factor = flt(get_box_conversion_factor(row.item_code)) if row.item_code else 0
 		factor = factor or 1
 
+		table_name = row.custom_source_table or "Items"
 		if not flt(row.custom_box):
-			row.custom_box = flt(qty / factor, 2) if qty else 0
-		if not flt(row.custom_sample_box):
-			row.custom_sample_box = flt(sample_qty / factor, 2) if sample_qty else 0
+			if table_name == "Items":
+				row.custom_box = flt(qty / factor, 2) if qty else 0.0
+			else:
+				row.custom_box = 0.0
 
 		if row.batch_no:
 			batch_details = frappe.db.get_value(
@@ -57,19 +61,15 @@ def _sync_rows_and_totals(doc):
 
 		row_weight_per_box = flt(row.custom_weight_per_box)
 		row_box = flt(row.custom_box)
-		row_sample_box = flt(row.custom_sample_box)
-		table_name = row.custom_source_table or "Items"
 
 		if table_name == "Items":
 			actual_box += row_box
-			sample_box += row_sample_box
-			sample_weight += row_sample_box * row_weight_per_box
 		else:
-			sample_box += row_box + row_sample_box
-			sample_weight += (row_box + row_sample_box) * row_weight_per_box
+			sample_box += row_box
+			sample_weight += row_box * row_weight_per_box
 
-		gross_weight += (row_box + row_sample_box) * row_weight_per_box
-		total_unit += qty + sample_qty
+		gross_weight += row_box * row_weight_per_box
+		total_unit += qty
 
 	doc.custom_actual_box = flt(actual_box, 2)
 	doc.custom_sample_box = flt(sample_box, 2)
@@ -105,23 +105,15 @@ def _validate_mandatory_rows(doc):
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")
 			
 		# Quantity validations
-		is_sample_only = row.custom_source_table in ["Scheme Table", "Additional Units"]
 		qty = flt(row.qty)
-		sample_qty = flt(row.custom_sample_quantity)
 		ordered = flt(row.custom_ordered_qty)
 		
-		if not is_sample_only:
-			if ordered and qty > ordered:
-				frappe.throw(f"Row #{row.idx} ({row.item_code}): Picked Qty ({qty}) cannot be greater than Ordered Qty ({ordered}).")
-			if sample_qty > qty:
-				frappe.throw(f"Row #{row.idx} ({row.item_code}): Sample Qty ({sample_qty}) cannot be greater than Picked Qty ({qty}).")
-		else:
-			if ordered and sample_qty > ordered:
-				frappe.throw(f"Row #{row.idx} ({row.item_code}): Sample Qty ({sample_qty}) cannot be greater than Ordered Qty ({ordered}).")
+		if ordered and qty > ordered:
+			frappe.throw(f"Row #{row.idx} ({row.item_code}): Picked Qty ({qty}) cannot be greater than Ordered Qty ({ordered}).")
 
 		if doc.docstatus == 1:
-			if not row.qty and not row.custom_sample_quantity:
-				frappe.throw(f"Row #{row.idx}: Quantity or Sample Quantity is mandatory.")
+			if not row.qty:
+				frappe.throw(f"Row #{row.idx}: Quantity is mandatory.")
 			if row.batch_no and not row.custom_mfg_date:
 				frappe.throw(f"Row #{row.idx}: MFG Date is mandatory for selected batch.")
 			if row.batch_no and not row.custom_expiry_date:
