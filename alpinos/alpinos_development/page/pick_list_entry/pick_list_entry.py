@@ -78,3 +78,49 @@ def save_pick_list_data(name, header, items):
 	doc.flags.ignore_mandatory = True
 	doc.save()
 	return True
+
+
+@frappe.whitelist()
+def get_pick_list_entry_list(
+	start=0,
+	page_length=20,
+	search="",
+	status="",
+	company=""
+):
+	start = frappe.utils.cint(start)
+	page_length = frappe.utils.cint(page_length)
+	
+	filters = {}
+	if status:
+		filters["status"] = status
+	if company:
+		filters["company"] = company
+		
+	or_filters = []
+	if search:
+		or_filters = [
+			["name", "like", f"%{search}%"],
+			["custom_customer_name", "like", f"%{search}%"]
+		]
+		
+	data = frappe.get_all(
+		"Pick List",
+		filters=filters,
+		or_filters=or_filters,
+		fields=["name", "custom_customer_name", "custom_order_date", "company", "status"],
+		order_by="creation desc",
+		limit_start=start,
+		limit_page_length=page_length + 1
+	)
+	
+	has_more = len(data) > page_length
+	if has_more:
+		data = data[:page_length]
+		
+	return {
+		"data": data,
+		"has_more": has_more,
+		"start": start,
+		"page_length": page_length
+	}

@@ -1,0 +1,100 @@
+<style>
+	.pl-list-container {
+		background-color: #fff;
+		border-radius: 4px;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+	}
+	.pl-list-filters {
+		padding: 15px;
+		border-bottom: 1px solid #d1d8dd;
+		background: #f8f9fa;
+	}
+	.pl-list-filters-title {
+		font-weight: bold;
+		margin-bottom: 10px;
+		color: #333;
+	}
+	.pl-list-filter-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 15px;
+		align-items: flex-end;
+	}
+	.pl-list-filter-item {
+		flex: 1;
+		min-width: 200px;
+	}
+	.pl-list-filter-actions {
+		display: flex;
+		gap: 10px;
+	}
+	.pl-list-table-wrapper {
+		overflow-x: auto;
+	}
+	.pl-list-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+	.pl-list-table th, .pl-list-table td {
+		padding: 10px 15px;
+		border-bottom: 1px solid #edf0f2;
+	}
+	.pl-list-table th {
+		font-weight: bold;
+		background: #f8f9fa;
+		color: #8D99A6;
+		text-transform: uppercase;
+		font-size: 11px;
+	}
+	.pl-list-row:hover {
+		background-color: #f4f5f6;
+	}
+	.pl-pager {
+		padding: 15px;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		background: #fff;
+		border-top: 1px solid #d1d8dd;
+	}
+</style>
+
+<div class="pl-list-container">
+	<div class="pl-list-filters">
+		<div class="pl-list-filters-title">Filters</div>
+		<div class="pl-list-filter-row">
+			<div class="pl-list-filter-item fld-search"></div>
+			<div class="pl-list-filter-item fld-status"></div>
+			<div class="pl-list-filter-item fld-company"></div>
+			<div class="pl-list-filter-actions">
+				<button class="btn btn-primary btn-sm btn-pl-list-apply">Apply</button>
+				<button class="btn btn-default btn-sm btn-pl-list-clear">Clear</button>
+			</div>
+		</div>
+	</div>
+	
+	<div class="pl-list-table-wrapper">
+		<table class="pl-list-table">
+			<thead>
+				<tr>
+					<th>ID</th>
+					<th>Customer Name</th>
+					<th>Date</th>
+					<th>Company</th>
+					<th>Status</th>
+				</tr>
+			</thead>
+			<tbody>
+				<!-- Rows -->
+			</tbody>
+		</table>
+	</div>
+	
+	<div class="pl-pager">
+		<div class="pl-list-count text-muted"></div>
+		<div class="pl-list-nav">
+			<button class="btn btn-default btn-sm btn-pl-list-prev">Previous</button>
+			<button class="btn btn-default btn-sm btn-pl-list-next">Next</button>
+		</div>
+	</div>
+</div>
