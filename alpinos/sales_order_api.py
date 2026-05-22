@@ -1065,15 +1065,20 @@ def get_pick_list_mapping_data(sales_order):
 			if factor:
 				box = flt(flt(item_row.qty) / factor, 2)
 				
+		warehouse = item_row.get("warehouse")
+		if not warehouse:
+			warehouse = _resolve_item_warehouse(item_row.item_code, so.company, _resolve_default_warehouse(so.company))
+			
 		pick_list["locations"].append({
-			"name": frappe.generate_hash(length=10), # Fake ID for unsaved rows
+			"name": item_row.name, # Stable unique ID from SO Child Table Row
 			"item_code": item_row.item_code,
 			"custom_ordered_qty": item_row.qty,
 			"qty": item_row.qty,
 			"custom_box": box,
 			"custom_source_table": source_table,
 			"custom_conversion_factor": factor,
-			"custom_sku_no": frappe.db.get_value("Item", item_row.item_code, "custom_sku_no") or ""
+			"custom_sku_no": frappe.db.get_value("Item", item_row.item_code, "custom_sku_no") or "",
+			"warehouse": warehouse
 		})
 		
 	for item in so.get("items") or []:

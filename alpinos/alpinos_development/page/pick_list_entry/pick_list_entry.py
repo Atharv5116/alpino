@@ -72,8 +72,12 @@ def save_pick_list_data(name, header, items):
 		if item_doc:
 			item = item_doc[0]
 			batch_no_val = item_data.get('custom_batch_code') or item_data.get('batch_no')
+			qty_val = float(item_data.get('qty') or 0)
 			frappe.db.set_value('Pick List Item', item.name, {
-				'qty': float(item_data.get('qty') or 0),
+				'qty': qty_val,
+				'stock_qty': qty_val,
+				'picked_qty': qty_val,
+				'conversion_factor': 1,
 				'custom_box': float(item_data.get('custom_box') or 0),
 				'custom_sample_quantity': float(item_data.get('custom_sample_quantity') or 0),
 				'custom_batch_code': batch_no_val,
@@ -120,7 +124,7 @@ def get_pick_list_entry_list(
 			["name", "like", f"%{search}%"],
 			["custom_customer_name", "like", f"%{search}%"]
 		]
-		
+	
 	data = frappe.get_all(
 		"Pick List",
 		filters=filters,
@@ -170,9 +174,15 @@ def create_and_submit_pick_list(so_name, header, items):
 		if ui_item:
 			qty = float(ui_item.get('qty') or 0)
 			pick_list.append("locations", {
+				"sales_order": so_name,
+				"sales_order_item": mapped_row.get("name"), # Stable name from SO child row
 				"item_code": mapped_row.get("item_code"),
 				"custom_ordered_qty": mapped_row.get("custom_ordered_qty"),
 				"qty": qty,
+				"stock_qty": qty,
+				"picked_qty": qty,
+				"conversion_factor": 1,
+				"warehouse": mapped_row.get("warehouse"),
 				"custom_box": float(ui_item.get('custom_box') or 0),
 				"custom_sample_quantity": float(ui_item.get('custom_sample_quantity') or 0),
 				"custom_source_table": mapped_row.get("custom_source_table"),
@@ -188,11 +198,15 @@ def create_and_submit_pick_list(so_name, header, items):
 	
 	# Force set all fields on the newly created items to ensure direct DB matches UI exactly
 	for item in pick_list.locations:
-		ui_item = next((i for i in items if i.get("item_code") == item.item_code and i.get("custom_source_table") == item.custom_source_table), None)
+		ui_item = next((i for i in items if i.get("name") == item.sales_order_item), None)
 		if ui_item:
 			batch_no_val = ui_item.get('custom_batch_code') or ui_item.get('batch_no')
+			qty_val = float(ui_item.get('qty') or 0)
 			frappe.db.set_value('Pick List Item', item.name, {
-				'qty': float(ui_item.get('qty') or 0),
+				'qty': qty_val,
+				'stock_qty': qty_val,
+				'picked_qty': qty_val,
+				'conversion_factor': 1,
 				'custom_box': float(ui_item.get('custom_box') or 0),
 				'custom_sample_quantity': float(ui_item.get('custom_sample_quantity') or 0),
 				'custom_batch_code': batch_no_val,
