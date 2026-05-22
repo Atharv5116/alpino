@@ -35,18 +35,40 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	}
 
 	page.load_data = function() {
-		frappe.call({
-			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_pick_list_data',
-			args: { name: page.pick_list_name },
-			callback: function(r) {
-				if (r.message) {
-					page.render_data(r.message);
-				}
+		if (page.pick_list_name === 'New Pick List') {
+			let so_name = frappe.route_options ? frappe.route_options.so_name : null;
+			if (!so_name) {
+				page.main.html('<h3>Missing Sales Order context for New Pick List.</h3>');
+				return;
 			}
-		});
+			page.so_name = so_name;
+			frappe.call({
+				method: 'alpinos.sales_order_api.get_pick_list_mapping_data',
+				args: { sales_order: so_name },
+				callback: function(r) {
+					if (r.message) {
+						page.render_data(r.message);
+					}
+				}
+			});
+		} else {
+			frappe.call({
+				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_pick_list_data',
+				args: { name: page.pick_list_name },
+				callback: function(r) {
+					if (r.message) {
+						page.render_data(r.message);
+					}
+				}
+			});
+		}
 	};
 	
 	page.render_data = function(data) {
+		if (data.docstatus === 1) {
+			page.clear_primary_action();
+		}
+		
 		// Set header fields
 		page.main.find('[data-fieldname="custom_actual_box"]').val(data.custom_actual_box);
 		page.main.find('[data-fieldname="custom_sample_box"]').val(data.custom_sample_box);
@@ -101,23 +123,31 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<tbody>
 			`;
 			
-			rows.forEach((row, i) => {
-				html += `
-					<tr data-name="${row.name}">
-						<td>${i + 1}</td>
-						<td data-item-code="${row.item_code}">${row.item_code}</td>
-						<td>${row.item_name || ''}</td>
-						<td class="ordered-qty-cell">${row.custom_ordered_qty || 0}</td>
-						${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" /></td>` : ''}
-						<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" /></td>
-						<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || 0}" /></td>
-						<td><input type="text" list="batch-list" class="form-control input-sm batch-input" value="${row.custom_batch_code || row.batch_no || ''}" /></td>
-						<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" /></td>
-						<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" /></td>
-					</tr>
-				`;
-			});
+			rows.forEach((row, idx) => {
+			let src = row.custom_source_table || "Items";
+			let is_sample_only = ["Scheme Table", "Additional Units"].includes(src);
 			
+			let batch_readonly = data.docstatus === 1 ? 'readonly' : '';
+			let input_disabled = data.docstatus === 1 ? 'disabled' : '';
+			
+			let row_html = `
+				<tr data-name="${row.name}">
+					<td>${idx + 1}</td>
+					<td data-item-code="${row.item_code}">${row.item_code}</td>
+					<td>-</td>
+					<td>${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
+					${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" ${input_disabled}/></td>` : ''}
+					<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" ${input_disabled}/></td>
+					<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || (is_sample_only ? row.qty : 0)}" ${input_disabled}/></td>
+					<td>
+						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
+					</td>
+					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" ${batch_readonly}></td>
+					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" ${batch_readonly}></td>
+				</tr>
+			`;
+			html += row_html;
+		});	
 			html += `</tbody></table>`;
 			container.append(html);
 		};
@@ -232,20 +262,38 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 		});
 
-		frappe.call({
-			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.save_pick_list_data',
-			args: {
-				name: page.pick_list_name,
-				header: header_data,
-				items: items
-			},
-			freeze: true,
-			callback: function(r) {
-				if(!r.exc) {
-					frappe.show_alert({message: "Pick List Saved", indicator: "green"});
+		if (page.pick_list_name === 'New Pick List') {
+			frappe.call({
+				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_and_submit_pick_list',
+				args: {
+					so_name: page.so_name,
+					header: header_data,
+					items: items
+				},
+				freeze: true,
+				callback: function(r) {
+					if(!r.exc && r.message) {
+						frappe.show_alert({message: "Pick List Created and Submitted Successfully", indicator: "green"});
+						frappe.set_route('pick_list_entry', r.message);
+					}
 				}
-			}
-		});
+			});
+		} else {
+			frappe.call({
+				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.save_pick_list_data',
+				args: {
+					name: page.pick_list_name,
+					header: header_data,
+					items: items
+				},
+				freeze: true,
+				callback: function(r) {
+					if(!r.exc) {
+						frappe.show_alert({message: "Pick List Saved", indicator: "green"});
+					}
+				}
+			});
+		}
 	};
 
 	page.load_data();

@@ -1039,18 +1039,20 @@ def get_sales_order_entry_list(
 	return {"data": rows, "has_more": int(has_more), "start": start, "page_length": page_length}
 
 @frappe.whitelist()
-def create_pick_list_from_so(sales_order):
+def get_pick_list_mapping_data(sales_order):
 	so = frappe.get_doc("Sales Order", sales_order)
 	
-	pick_list = frappe.new_doc("Pick List")
-	pick_list.company = so.company
-	pick_list.purpose = "Delivery"
-	pick_list.custom_sales_order_id = so.name
-	pick_list.custom_customer_name = so.customer_name
-	pick_list.custom_party_code = so.customer
-	pick_list.custom_order_date = so.transaction_date
-	pick_list.custom_po_no = so.po_no
-	pick_list.pick_manually = 1
+	pick_list = frappe._dict({
+		"company": so.company,
+		"purpose": "Delivery",
+		"custom_sales_order_id": so.name,
+		"custom_customer_name": so.customer_name,
+		"custom_party_code": so.customer,
+		"custom_order_date": so.transaction_date,
+		"custom_po_no": so.po_no,
+		"pick_manually": 1,
+		"locations": []
+	})
 	
 	def add_item_to_pick_list(item_row, source_table):
 		if not item_row.item_code:
@@ -1063,7 +1065,8 @@ def create_pick_list_from_so(sales_order):
 			if factor:
 				box = flt(item_row.qty) / factor
 				
-		pick_list.append("locations", {
+		pick_list["locations"].append({
+			"name": frappe.generate_hash(length=10), # Fake ID for unsaved rows
 			"item_code": item_row.item_code,
 			"custom_ordered_qty": item_row.qty,
 			"qty": item_row.qty,
@@ -1083,8 +1086,5 @@ def create_pick_list_from_so(sales_order):
 	for additional in so.get("custom_additional_units_damage_items") or []:
 		add_item_to_pick_list(additional, "Additional Units")
 		
-	pick_list.flags.ignore_mandatory = True
-	pick_list.insert(ignore_permissions=True)
-	
-	return pick_list.name
+	return pick_list
 

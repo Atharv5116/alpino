@@ -32,16 +32,9 @@ class SalesOrderEntryView {
 
 		this.page.add_inner_button(__('Create'), () => {
 			if (!this._ensure_loaded_name()) return;
-			frappe.call({
-				method: 'alpinos.sales_order_api.create_pick_list_from_so',
-				args: { sales_order: this._so_name },
-				freeze: true,
-				callback: function(r) {
-					if (r.message) {
-						frappe.set_route('pick_list_entry', r.message);
-					}
-				}
-			});
+			// Route directly to unsaved Pick List view
+			frappe.route_options = { "so_name": this._so_name };
+			frappe.set_route('pick_list_entry', 'New Pick List');
 		}, __('Pick List'));
 	}
 

@@ -143,3 +143,65 @@ def get_pick_list_entry_list(
 		"start": start,
 		"page_length": page_length
 	}
+
+@frappe.whitelist()
+def create_and_submit_pick_list(so_name, header, items):
+	header = json.loads(header) if isinstance(header, str) else header
+	items = json.loads(items) if isinstance(items, str) else items
+	
+	# Fetch original mapping data to reconstruct the locations
+	from alpinos.sales_order_api import get_pick_list_mapping_data
+	mapping_data = get_pick_list_mapping_data(so_name)
+	
+	pick_list = frappe.new_doc("Pick List")
+	pick_list.company = mapping_data.company
+	pick_list.purpose = mapping_data.purpose
+	pick_list.custom_sales_order_id = mapping_data.custom_sales_order_id
+	pick_list.custom_customer_name = mapping_data.custom_customer_name
+	pick_list.custom_party_code = mapping_data.custom_party_code
+	pick_list.custom_order_date = mapping_data.custom_order_date
+	pick_list.custom_po_no = mapping_data.custom_po_no
+	pick_list.pick_manually = 1
+	
+	for k, v in header.items():
+		pick_list.set(k, v)
+		
+	# Match mapping rows with UI submitted items
+	for mapped_row in mapping_data.locations:
+		ui_item = next((i for i in items if i.get("name") == mapped_row.name), None)
+		if ui_item:
+			qty = float(ui_item.get('qty') or 0)
+			pick_list.append("locations", {
+				"item_code": mapped_row.item_code,
+				"custom_ordered_qty": mapped_row.custom_ordered_qty,
+				"qty": qty,
+				"custom_box": float(ui_item.get('custom_box') or 0),
+				"custom_sample_quantity": float(ui_item.get('custom_sample_quantity') or 0),
+				"custom_source_table": mapped_row.custom_source_table,
+				"has_batch_no": 0,
+				"use_serial_batch_fields": 0,
+				"custom_mfg_date": ui_item.get('custom_mfg_date') or None,
+				"custom_expiry_date": ui_item.get('custom_expiry_date') or None,
+				"batch_no": None
+			})
+	
+	pick_list.flags.ignore_mandatory = True
+	pick_list.insert(ignore_permissions=True)
+	
+	# Force set custom_batch_code on the newly created items
+	for item in pick_list.locations:
+		ui_item = next((i for i in items if i.get("item_code") == item.item_code and i.get("custom_source_table") == item.custom_source_table), None)
+		if ui_item:
+			batch_no_val = ui_item.get('custom_batch_code') or ui_item.get('batch_no')
+			frappe.db.set_value('Pick List Item', item.name, {
+				'custom_batch_code': batch_no_val,
+				'batch_no': None
+			}, update_modified=False)
+			
+	# Reload to fetch forced updates
+	pick_list.reload()
+	
+	# Submit
+	pick_list.submit()
+	
+	return pick_list.name
