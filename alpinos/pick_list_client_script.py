@@ -28,7 +28,14 @@ frappe.ui.form.on('Pick List', {
 				row.use_serial_batch_fields = 0;
 			});
 		}
-		frappe.meta.get_docfield("Pick List Item", "batch_no", frm.doc.name).reqd = 0;
+		let df = frappe.meta.get_docfield("Pick List Item", "batch_no");
+		if (df) {
+			df.reqd = 0;
+		}
+		
+		if (frm.fields_dict.locations && frm.fields_dict.locations.grid) {
+			frm.fields_dict.locations.grid.update_docfield_property("batch_no", "reqd", 0);
+		}
 	}
 });
 
