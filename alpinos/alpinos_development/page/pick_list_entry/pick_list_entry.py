@@ -82,8 +82,6 @@ def save_pick_list_data(name, header, items):
 				'custom_sample_quantity': float(item_data.get('custom_sample_quantity') or 0),
 				'custom_batch_code': batch_no_val,
 				'batch_no': None,
-				'has_batch_no': 0,
-				'use_serial_batch_fields': 0,
 				'custom_mfg_date': item_data.get('custom_mfg_date') or None,
 				'custom_expiry_date': item_data.get('custom_expiry_date') or None
 			}, update_modified=False)

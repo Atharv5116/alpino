@@ -92,6 +92,25 @@ def bulk_edit_transporter(pick_lists, transporter):
 
 
 @frappe.whitelist()
+def bulk_edit_pick_lists(pick_lists, fieldname, value):
+	import json
+	if isinstance(pick_lists, str):
+		pick_lists = json.loads(pick_lists)
+
+	if not pick_lists or not isinstance(pick_lists, list):
+		frappe.throw("No Pick Lists selected or invalid input format.")
+
+	if fieldname not in ["custom_transporter", "custom_qc_attended_by"]:
+		frappe.throw("Unauthorized field modification.")
+
+	for pl in pick_lists:
+		frappe.db.set_value("Pick List", pl, fieldname, value)
+
+	frappe.db.commit()
+	return {"status": "success"}
+
+
+@frappe.whitelist()
 def create_delivery_note_from_pick_list(pick_list_name):
 	from erpnext.stock.doctype.pick_list.pick_list import create_delivery_note
 	import json
