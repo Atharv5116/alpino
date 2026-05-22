@@ -68,7 +68,18 @@ def _sync_rows_and_totals(doc):
 	doc.custom_total_unit = total_unit
 
 
+def before_validate_pick_list(doc, method):
+	# Hack to ensure backend doesn't enforce batch_no mandatory regardless of DB/Cache state
+	# Since Frappe's _validate_mandatory checks doc.meta.get("fields", {"reqd": 1}),
+	# we strip reqd=1 from batch_no before the validation runs.
+	meta = frappe.get_meta("Pick List Item")
+	df = meta.get_field("batch_no")
+	if df and df.reqd:
+		df.reqd = 0
+
+
 def _validate_mandatory_rows(doc):
+
 	if not doc.custom_sales_order_id:
 		frappe.throw("Sales Order ID is mandatory.")
 	if not doc.custom_customer_name:
