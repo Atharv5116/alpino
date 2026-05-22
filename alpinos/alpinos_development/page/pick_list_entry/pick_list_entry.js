@@ -206,6 +206,14 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				$(this).val(ordered); // Reset to max allowed
 			}
 			
+			// Adjust sample quantity if it is now greater than the picked quantity
+			let sample_input = tr.find('.sample-qty-input');
+			let sample_qty = flt(sample_input.val());
+			if (sample_qty > picked) {
+				frappe.msgprint(__("Sample Qty adjusted as it cannot be greater than Picked Qty"));
+				sample_input.val(picked);
+			}
+			
 			let factor = flt(tr.attr('data-conversion-factor')) || 1;
 			let box = Math.ceil(picked / factor);
 			tr.find('.box-input').val(box);
@@ -213,8 +221,29 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.recalculate_totals();
 		});
 
-		// Auto-calculation logic for Sample Qty
+		// Auto-calculation and validation logic for Sample Qty
 		container.find('.sample-qty-input').on('input change', function() {
+			let tr = $(this).closest('tr');
+			let table_name = tr.closest('table').attr('data-table-name');
+			let is_sample_only = ["Scheme Table", "Additional Units"].includes(table_name);
+			let sample_qty = flt($(this).val());
+			
+			if (!is_sample_only) {
+				let picked = flt(tr.find('.qty-input').val());
+				if (sample_qty > picked) {
+					frappe.msgprint(__("Sample Qty cannot be greater than Picked Qty"));
+					sample_qty = picked;
+					$(this).val(picked);
+				}
+			} else {
+				let ordered = flt(tr.find('.ordered-qty-cell').text());
+				if (sample_qty > ordered) {
+					frappe.msgprint(__("Sample Qty cannot be greater than Ordered Qty"));
+					sample_qty = ordered;
+					$(this).val(ordered);
+				}
+			}
+			
 			page.recalculate_totals();
 		});
 
@@ -299,18 +328,40 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
 		};
 		
-		// Gather item data
+		// Gather item data and validate
 		let items = [];
+		let validation_error = false;
 		page.main.find('.sku-table tbody tr').each(function() {
 			let tr = $(this);
 			let table_name = tr.closest('table').attr('data-table-name');
 			let is_sample_only = ["Scheme Table", "Additional Units"].includes(table_name);
-			let qty_val = is_sample_only ? 0 : tr.find('.qty-input').val();
-			let sample_qty_val = tr.find('.sample-qty-input').val();
+			let qty_val = is_sample_only ? 0 : flt(tr.find('.qty-input').val());
+			let sample_qty_val = flt(tr.find('.sample-qty-input').val());
+			let ordered_qty = flt(tr.find('.ordered-qty-cell').text());
+			let item_code = tr.find('[data-item-code]').attr('data-item-code');
+			
+			if (!is_sample_only) {
+				if (qty_val > ordered_qty) {
+					frappe.msgprint(__("Row for item {0}: Picked Qty ({1}) cannot be greater than Ordered Qty ({2})", [item_code, qty_val, ordered_qty]));
+					validation_error = true;
+					return false; // Break loop
+				}
+				if (sample_qty_val > qty_val) {
+					frappe.msgprint(__("Row for item {0}: Sample Qty ({1}) cannot be greater than Picked Qty ({2})", [item_code, sample_qty_val, qty_val]));
+					validation_error = true;
+					return false; // Break loop
+				}
+			} else {
+				if (sample_qty_val > ordered_qty) {
+					frappe.msgprint(__("Row for item {0}: Sample Qty ({1}) cannot be greater than Ordered Qty ({2})", [item_code, sample_qty_val, ordered_qty]));
+					validation_error = true;
+					return false; // Break loop
+				}
+			}
 			
 			items.push({
 				name: tr.attr('data-name'),
-				item_code: tr.find('[data-item-code]').attr('data-item-code'),
+				item_code: item_code,
 				qty: is_sample_only ? sample_qty_val : qty_val,
 				custom_sample_quantity: sample_qty_val,
 				custom_box: tr.find('.box-input').val(),
@@ -321,6 +372,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_source_table: table_name
 			});
 		});
+
+		if (validation_error) {
+			return;
+		}
 
 		if (page.pick_list_name === 'New Pick List') {
 			frappe.call({

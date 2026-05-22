@@ -95,6 +95,21 @@ def _validate_mandatory_rows(doc):
 		if not row.item_code:
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")
 			
+		# Quantity validations
+		is_sample_only = row.custom_source_table in ["Scheme Table", "Additional Units"]
+		qty = flt(row.qty)
+		sample_qty = flt(row.custom_sample_quantity)
+		ordered = flt(row.custom_ordered_qty)
+		
+		if not is_sample_only:
+			if ordered and qty > ordered:
+				frappe.throw(f"Row #{row.idx} ({row.item_code}): Picked Qty ({qty}) cannot be greater than Ordered Qty ({ordered}).")
+			if sample_qty > qty:
+				frappe.throw(f"Row #{row.idx} ({row.item_code}): Sample Qty ({sample_qty}) cannot be greater than Picked Qty ({qty}).")
+		else:
+			if ordered and sample_qty > ordered:
+				frappe.throw(f"Row #{row.idx} ({row.item_code}): Sample Qty ({sample_qty}) cannot be greater than Ordered Qty ({ordered}).")
+
 		if doc.docstatus == 1:
 			if not row.qty and not row.custom_sample_quantity:
 				frappe.throw(f"Row #{row.idx}: Quantity or Sample Quantity is mandatory.")
