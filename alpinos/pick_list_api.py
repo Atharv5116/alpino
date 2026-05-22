@@ -224,39 +224,39 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	try:
 		# Call standard erpnext mapper to create Delivery Note
 		dn = create_delivery_note(pick_list_name)
+
+		if not dn:
+			frappe.throw("Could not create Delivery Note from Pick List.")
+
+		if isinstance(dn, str):
+			dn = frappe.get_doc("Delivery Note", dn)
+
+		# Map custom fields from Pick List to Delivery Note
+		dn.custom_sales_order_id = pick_list.custom_sales_order_id
+		dn.custom_dn_so_customer_name = pick_list.custom_customer_name
+		dn.custom_dispatch_date = pick_list.custom_order_date or frappe.utils.now_datetime()
+		dn.custom_delivery_date = pick_list.custom_order_date or frappe.utils.now_datetime()
+
+		# Map transporter
+		pt = pick_list.custom_transporter
+		valid_transporters = ["Local", "Own Vehicle", "Third Party", "Other"]
+		if pt in valid_transporters:
+			dn.custom_transporter_name = pt
+		elif pt:
+			dn.custom_transporter_name = "Third Party"
+			dn.transporter = pt
+		else:
+			dn.custom_transporter_name = "Third Party"
+
+		# Save updated Delivery Note bypassing validations for Draft
+		dn.flags.ignore_mandatory = True
+		dn.save(ignore_permissions=True)
+		frappe.db.commit()
 	finally:
 		# Restore original msgprint, get_doc, and get_all
 		frappe.msgprint = _original_msgprint
 		frappe.get_doc = _original_get_doc
 		frappe.get_all = _original_get_all
-
-	if not dn:
-		frappe.throw("Could not create Delivery Note from Pick List.")
-
-	if isinstance(dn, str):
-		dn = frappe.get_doc("Delivery Note", dn)
-
-	# Map custom fields from Pick List to Delivery Note
-	dn.custom_sales_order_id = pick_list.custom_sales_order_id
-	dn.custom_dn_so_customer_name = pick_list.custom_customer_name
-	dn.custom_dispatch_date = pick_list.custom_order_date or frappe.utils.now_datetime()
-	dn.custom_delivery_date = pick_list.custom_order_date or frappe.utils.now_datetime()
-
-	# Map transporter
-	pt = pick_list.custom_transporter
-	valid_transporters = ["Local", "Own Vehicle", "Third Party", "Other"]
-	if pt in valid_transporters:
-		dn.custom_transporter_name = pt
-	elif pt:
-		dn.custom_transporter_name = "Third Party"
-		dn.transporter = pt
-	else:
-		dn.custom_transporter_name = "Third Party"
-
-	# Save updated Delivery Note bypassing validations for Draft
-	dn.flags.ignore_mandatory = True
-	dn.save(ignore_permissions=True)
-	frappe.db.commit()
 
 	return dn.name
 
