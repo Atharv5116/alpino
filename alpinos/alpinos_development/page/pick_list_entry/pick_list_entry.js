@@ -108,7 +108,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						<td data-item-code="${row.item_code}">${row.item_code}</td>
 						<td>${row.item_name || ''}</td>
 						<td class="ordered-qty-cell">${row.custom_ordered_qty || 0}</td>
-						${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.picked_qty || ''}" /></td>` : ''}
+						${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" /></td>` : ''}
 						<td><input type="number" class="form-control input-sm box-input" value="${row.custom_box || 0}" /></td>
 						<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || 0}" /></td>
 						<td><input type="text" list="batch-list" class="form-control input-sm batch-input" value="${row.custom_batch_code || row.batch_no || ''}" /></td>

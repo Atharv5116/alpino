@@ -60,7 +60,7 @@ def save_pick_list_data(name, header, items):
 		item_doc = [d for d in doc.locations if d.name == item_data.get('name')]
 		if item_doc:
 			item = item_doc[0]
-			item.picked_qty = float(item_data.get('qty') or 0)
+			item.qty = float(item_data.get('qty') or 0)
 			item.custom_box = float(item_data.get('custom_box') or 0)
 			item.custom_sample_quantity = float(item_data.get('custom_sample_quantity') or 0)
 			
