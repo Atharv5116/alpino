@@ -48,14 +48,20 @@ frappe.ui.form.on('Sales Order', {
                     frm.remove_custom_button(__('Pick List'));
 
                     if (status.fully_picked) {
+                        // All items fully picked — no button needed
                         return;
                     }
 
                     if (status.has_draft) {
+                        // Draft pick list exists — allow editing it
                         frm.add_custom_button(__('Edit'), function() {
                             frappe.set_route('pick_list_entry', status.draft_name);
                         }, __('Pick List'));
+                    } else if (status.has_pick_list) {
+                        // A submitted pick list exists but not fully picked — don't allow creating new
+                        // (no button shown)
                     } else {
+                        // No pick list at all — allow creating
                         frm.add_custom_button(__('Create'), function() {
                             frappe.route_options = { "so_name": frm.doc.name };
                             frappe.set_route('pick_list_entry', 'New Pick List');

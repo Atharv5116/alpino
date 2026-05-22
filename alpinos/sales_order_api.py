@@ -1172,7 +1172,8 @@ def get_so_pick_list_status(sales_order):
 	return {
 		"fully_picked": fully_picked,
 		"has_draft": has_draft,
-		"draft_name": draft_name
+		"draft_name": draft_name,
+		"has_pick_list": bool(all_pls)  # Any pick list exists (draft or submitted)
 	}
 
 
