@@ -99,6 +99,18 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	# Load Pick List to get its custom fields
 	pick_list = frappe.get_doc("Pick List", pick_list_name)
 
+	# TEMPORARY DEBUG INFO
+	debug_info = []
+	for d in pick_list.locations:
+		debug_info.append(
+			f"Item: {d.item_code} | Qty: {d.qty} | Picked: {d.picked_qty} | Delivered: {d.delivered_qty} | PL Item Name: {d.name} | SO Item Ref: {d.sales_order_item}"
+		)
+	# Check if there is any Delivery Note linked to this Pick List
+	linked_dns = frappe.get_all("Delivery Note Item", filters={"against_pick_list": pick_list_name}, fields=["parent", "item_code", "qty"])
+	debug_info.append(f"Linked DNs: {linked_dns}")
+	
+	frappe.throw("<br>".join(debug_info))
+
 	# Ensure Pick List is submitted
 	if pick_list.docstatus != 1:
 		frappe.throw("Pick List must be submitted to create a Delivery Note.")
