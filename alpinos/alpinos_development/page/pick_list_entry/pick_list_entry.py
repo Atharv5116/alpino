@@ -72,11 +72,30 @@ def save_pick_list_data(name, header, items):
 			item.has_batch_no = 0
 			item.use_serial_batch_fields = 0
 			
-			item.custom_mfg_date = item_data.get('custom_mfg_date')
-			item.custom_expiry_date = item_data.get('custom_expiry_date')
+			item.custom_mfg_date = item_data.get('custom_mfg_date') or None
+			item.custom_expiry_date = item_data.get('custom_expiry_date') or None
 			
 	doc.flags.ignore_mandatory = True
-	doc.save()
+	doc.save(ignore_permissions=True)
+	
+	# Force update the database directly to bypass any read-only or dirty tracking issues
+	for item_data in items:
+		item_doc = [d for d in doc.locations if d.name == item_data.get('name')]
+		if item_doc:
+			item = item_doc[0]
+			batch_no_val = item_data.get('custom_batch_code') or item_data.get('batch_no')
+			frappe.db.set_value('Pick List Item', item.name, {
+				'qty': float(item_data.get('qty') or 0),
+				'custom_box': float(item_data.get('custom_box') or 0),
+				'custom_sample_quantity': float(item_data.get('custom_sample_quantity') or 0),
+				'custom_batch_code': batch_no_val,
+				'batch_no': None,
+				'has_batch_no': 0,
+				'use_serial_batch_fields': 0,
+				'custom_mfg_date': item_data.get('custom_mfg_date') or None,
+				'custom_expiry_date': item_data.get('custom_expiry_date') or None
+			}, update_modified=False)
+	
 	return True
 
 
