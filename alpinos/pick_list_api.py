@@ -111,7 +111,22 @@ def create_delivery_note_from_pick_list(pick_list_name):
 
 	# Monkeypatch frappe.get_doc to handle custom SO child tables mapping
 	_original_get_doc = frappe.get_doc
-	def _custom_get_doc(doctype, name=None, *args, **kwargs):
+	def _custom_get_doc(*args, **kwargs):
+		doctype = None
+		name = None
+		if args:
+			if isinstance(args[0], str):
+				doctype = args[0]
+				if len(args) > 1:
+					name = args[1]
+			elif isinstance(args[0], dict):
+				doctype = args[0].get("doctype")
+				name = args[0].get("name")
+		
+		if not doctype and kwargs:
+			doctype = kwargs.get("doctype")
+			name = kwargs.get("name")
+
 		if doctype == "Sales Order Item" and name:
 			if not frappe.db.exists("Sales Order Item", name):
 				for custom_doctype in [
@@ -131,7 +146,7 @@ def create_delivery_note_from_pick_list(pick_list_name):
 							custom_doc.stock_uom = custom_doc.uom
 						return custom_doc
 				return None
-		return _original_get_doc(doctype, name, *args, **kwargs)
+		return _original_get_doc(*args, **kwargs)
 
 	frappe.get_doc = _custom_get_doc
 
