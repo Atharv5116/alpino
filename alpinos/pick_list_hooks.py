@@ -56,10 +56,19 @@ def _sync_rows_and_totals(doc):
 			row.custom_expiry_date = batch_details.get("expiry_date")
 
 		row_weight_per_box = flt(row.custom_weight_per_box)
-		actual_box += flt(row.custom_box)
-		sample_box += flt(row.custom_sample_box)
-		sample_weight += flt(row.custom_sample_box) * row_weight_per_box
-		gross_weight += (flt(row.custom_box) + flt(row.custom_sample_box)) * row_weight_per_box
+		row_box = flt(row.custom_box)
+		row_sample_box = flt(row.custom_sample_box)
+		table_name = row.custom_source_table or "Items"
+
+		if table_name == "Items":
+			actual_box += row_box
+			sample_box += row_sample_box
+			sample_weight += row_sample_box * row_weight_per_box
+		else:
+			sample_box += row_box + row_sample_box
+			sample_weight += (row_box + row_sample_box) * row_weight_per_box
+
+		gross_weight += (row_box + row_sample_box) * row_weight_per_box
 		total_unit += qty + sample_qty
 
 	doc.custom_actual_box = flt(actual_box, 2)

@@ -200,9 +200,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				let box = flt(tr.find('.box-input').val());
 				let sample_box_val = factor ? flt(sample_qty / factor, 2) : 0;
 				
-				actual_box += box;
-				sample_box += sample_box_val;
-				sample_weight += sample_box_val * weight_per_box;
+				if (table_name === "Items") {
+					actual_box += box;
+					sample_box += sample_box_val;
+					sample_weight += sample_box_val * weight_per_box;
+				} else {
+					sample_box += box + sample_box_val;
+					sample_weight += (box + sample_box_val) * weight_per_box;
+				}
+				
 				gross_weight += (box + sample_box_val) * weight_per_box;
 				total_unit += qty + sample_qty;
 			});

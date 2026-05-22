@@ -169,9 +169,16 @@ function recalculate_pick_list_totals(frm) {
 		const row_box = flt(row.custom_box);
 		const row_sample_box = flt(row.custom_sample_box);
 		const row_weight_per_box = flt(row.custom_weight_per_box);
-		actual_box += row_box;
-		sample_box += row_sample_box;
-		sample_weight += row_sample_box * row_weight_per_box;
+		const table_name = row.custom_source_table || "Items";
+		
+		if (table_name === "Items") {
+			actual_box += row_box;
+			sample_box += row_sample_box;
+			sample_weight += row_sample_box * row_weight_per_box;
+		} else {
+			sample_box += row_box + row_sample_box;
+			sample_weight += (row_box + row_sample_box) * row_weight_per_box;
+		}
 		gross_weight += (row_box + row_sample_box) * row_weight_per_box;
 		total_unit += flt(row.qty) + flt(row.custom_sample_quantity);
 	});
