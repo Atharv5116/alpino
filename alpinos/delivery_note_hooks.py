@@ -142,9 +142,12 @@ def _validate_dn_mandatory(doc):
 			frappe.throw(f"Row #{row.idx}: Quantity is mandatory.")
 		if meta_dn_item.get_field("custom_box") and flt(row.qty) and not flt(row.custom_box):
 			frappe.throw(f"Row #{row.idx}: Box is mandatory.")
-		if not row.batch_no:
-			frappe.throw(f"Row #{row.idx}: Batch No. is mandatory.")
-		if meta_dn_item.get_field("custom_mfg_date") and not row.get("custom_mfg_date"):
-			frappe.throw(f"Row #{row.idx}: MFG Date is mandatory.")
-		if meta_dn_item.get_field("custom_expiry_date") and not row.get("custom_expiry_date"):
-			frappe.throw(f"Row #{row.idx}: Expiry Date is mandatory.")
+		# Check if the item is batched in the Item master
+		has_batch_no = frappe.db.get_value("Item", row.item_code, "has_batch_no") if row.item_code else 0
+		if has_batch_no:
+			if not row.batch_no:
+				frappe.throw(f"Row #{row.idx}: Batch No. is mandatory.")
+			if meta_dn_item.get_field("custom_mfg_date") and not row.get("custom_mfg_date"):
+				frappe.throw(f"Row #{row.idx}: MFG Date is mandatory.")
+			if meta_dn_item.get_field("custom_expiry_date") and not row.get("custom_expiry_date"):
+				frappe.throw(f"Row #{row.idx}: Expiry Date is mandatory.")
