@@ -18,9 +18,9 @@
 				frappe.set_route("pick-list-list");
 			} else if (r[0] === "Pick List" && r[1] && r[1] !== "List") {
 				// Intercept standard Pick List form and redirect to custom entry
-				frappe.set_route("app", "pick-list-entry", { name: r[1] });
+				frappe.set_route("pick-list-entry", r[1]);
 			} else if (r[0] === "Form" && r[1] === "Pick List" && r[2]) {
-				frappe.set_route("app", "pick-list-entry", { name: r[2] });
+				frappe.set_route("pick-list-entry", r[2]);
 			}
 		});
 	}
