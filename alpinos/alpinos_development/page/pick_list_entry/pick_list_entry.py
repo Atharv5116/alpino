@@ -67,20 +67,9 @@ def save_pick_list_data(name, header, items):
 			batch_no = item_data.get('batch_no')
 			item.custom_batch_code = batch_no
 			
-			if batch_no:
-				item_code = item_data.get('item_code')
-				has_batch = frappe.db.get_value("Item", item_code, "has_batch_no")
-				if has_batch:
-					if not frappe.db.exists("Batch", batch_no):
-						new_batch = frappe.get_doc({
-							"doctype": "Batch",
-							"batch_id": batch_no,
-							"item": item_code,
-							"manufacturing_date": item_data.get('custom_mfg_date'),
-							"expiry_date": item_data.get('custom_expiry_date')
-						})
-						new_batch.insert(ignore_permissions=True)
-					item.batch_no = batch_no
+			# Forcefully disable batch validations for this Pick List Item
+			item.has_batch_no = 0
+			item.use_serial_batch_fields = 0
 			
 			item.custom_mfg_date = item_data.get('custom_mfg_date')
 			item.custom_expiry_date = item_data.get('custom_expiry_date')
