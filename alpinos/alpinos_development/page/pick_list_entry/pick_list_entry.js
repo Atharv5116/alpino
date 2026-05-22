@@ -101,6 +101,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_customer_name"]').val(data.custom_customer_name);
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
+		page.main.find('[data-fieldname="custom_sales_order_id"]').val(data.custom_sales_order_id);
 
 		let container = page.main.find('#tables-container');
 		container.empty();
