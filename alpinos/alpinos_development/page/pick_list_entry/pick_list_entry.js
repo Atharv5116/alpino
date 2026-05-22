@@ -14,7 +14,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		return;
 	}
 
-	page.set_primary_action('Save', () => {
+	page.set_primary_action('Submit', () => {
 		page.save_pick_list();
 	});
 
@@ -404,7 +404,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				freeze: true,
 				callback: function(r) {
 					if(!r.exc) {
-						frappe.show_alert({message: "Pick List Saved", indicator: "green"});
+						frappe.show_alert({message: "Pick List Submitted Successfully", indicator: "green"});
+						page.load_data();
 					}
 				}
 			});

@@ -99,6 +99,12 @@ def save_pick_list_data(name, header, items):
 				'custom_mfg_date': item_data.get('custom_mfg_date') or None,
 				'custom_expiry_date': item_data.get('custom_expiry_date') or None
 			}, update_modified=False)
+			
+	# Reload to fetch forced updates
+	doc.reload()
+	
+	# Submit
+	doc.submit()
 	
 	return True
 
