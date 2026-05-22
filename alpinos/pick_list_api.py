@@ -102,8 +102,9 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	# TEMPORARY DEBUG INFO
 	debug_info = []
 	for d in pick_list.locations:
+		so_item = frappe.db.get_value("Sales Order Item", d.sales_order_item, ["parent", "qty", "delivered_qty"], as_dict=True) if d.sales_order_item else None
 		debug_info.append(
-			f"Item: {d.item_code} | Qty: {d.qty} | Picked: {d.picked_qty} | Delivered: {d.delivered_qty} | PL Item Name: {d.name} | SO Item Ref: {d.sales_order_item}"
+			f"Item: {d.item_code} | Picked: {d.picked_qty} | Delivered: {d.delivered_qty} | PL Item Name: {d.name} | SO Item Ref: {d.sales_order_item} | SO Qty: {so_item.qty if so_item else 'N/A'} | SO Delivered: {so_item.delivered_qty if so_item else 'N/A'} | SO Name: {so_item.parent if so_item else 'N/A'}"
 		)
 	# Check if there is any Delivery Note linked to this Pick List
 	linked_dns = frappe.get_all("Delivery Note Item", filters={"against_pick_list": pick_list_name}, fields=["parent", "item_code", "qty"])
