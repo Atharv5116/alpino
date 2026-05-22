@@ -83,7 +83,7 @@ class PickListListPage {
 			if ($(e.target).closest('a,button').length) return;
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
-			frappe.set_route('pick-list-entry', name);
+			frappe.set_route('pick_list_entry', name);
 		});
 	}
 

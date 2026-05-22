@@ -15,12 +15,12 @@
 			if (r[0] === "List" && r[1] === "Sales Order") {
 				frappe.set_route("sales-order-entry-list");
 			} else if (r[0] === "List" && r[1] === "Pick List") {
-				frappe.set_route("pick-list-list");
+				frappe.set_route("pick_list_list");
 			} else if (r[0] === "Pick List" && r[1] && r[1] !== "List") {
 				// Intercept standard Pick List form and redirect to custom entry
-				frappe.set_route("pick-list-entry", r[1]);
+				frappe.set_route("pick_list_entry", r[1]);
 			} else if (r[0] === "Form" && r[1] === "Pick List" && r[2]) {
-				frappe.set_route("pick-list-entry", r[2]);
+				frappe.set_route("pick_list_entry", r[2]);
 			}
 		});
 	}
