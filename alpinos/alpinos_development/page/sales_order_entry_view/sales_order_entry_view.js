@@ -165,9 +165,19 @@ class SalesOrderEntryView {
 	}
 
 	update_pick_list_button() {
+		// Remove any previously added Pick List group buttons
 		this.page.remove_inner_button(__('Create'), __('Pick List'));
 		this.page.remove_inner_button(__('Edit'), __('Pick List'));
-		this.page.remove_custom_menu(__('Pick List'));
+		// Also remove the group itself if it exists by clearing its children
+		const $plGroup = this.page.inner_toolbar && this.page.inner_toolbar.find('.btn-group');
+		if ($plGroup) {
+			$plGroup.each(function() {
+				const $g = $(this);
+				if ($g.find('[data-label="Pick List"]').length) {
+					$g.remove();
+				}
+			});
+		}
 
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_so_pick_list_status',
@@ -175,22 +185,26 @@ class SalesOrderEntryView {
 			callback: (r) => {
 				const status = r.message || {};
 				if (status.fully_picked) {
-					// Fully picked, do not show any buttons
+					// Fully picked — no button needed
 					return;
 				}
 				if (status.has_draft) {
+					// Draft pick list exists — allow editing it
 					this.page.add_inner_button(__('Edit'), () => {
 						frappe.set_route('pick_list_entry', status.draft_name);
 					}, __('Pick List'));
-				} else {
+				} else if (!status.has_pick_list) {
+					// No pick list at all — allow creating
 					this.page.add_inner_button(__('Create'), () => {
 						frappe.route_options = { "so_name": this._so_name };
 						frappe.set_route('pick_list_entry', 'New Pick List');
 					}, __('Pick List'));
 				}
+				// If has_pick_list but not draft and not fully_picked: submitted PL exists, no new create allowed
 			}
 		});
 	}
+
 
 	_has(parent, key) {
 		return parent && Object.prototype.hasOwnProperty.call(parent, key);
