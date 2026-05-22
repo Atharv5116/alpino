@@ -64,8 +64,9 @@ def save_pick_list_data(name, header, items):
 			item.custom_box = float(item_data.get('custom_box') or 0)
 			item.custom_sample_quantity = float(item_data.get('custom_sample_quantity') or 0)
 			
-			batch_no = item_data.get('batch_no')
-			item.custom_batch_code = batch_no
+			batch_no_val = item_data.get('custom_batch_code') or item_data.get('batch_no')
+			item.custom_batch_code = batch_no_val
+			item.batch_no = None
 			
 			# Forcefully disable batch validations for this Pick List Item
 			item.has_batch_no = 0

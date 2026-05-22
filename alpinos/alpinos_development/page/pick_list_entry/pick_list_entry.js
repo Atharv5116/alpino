@@ -225,7 +225,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				qty: is_sample_only ? sample_qty_val : qty_val,
 				custom_sample_quantity: is_sample_only ? sample_qty_val : 0,
 				custom_box: tr.find('.box-input').val(),
-				batch_no: tr.find('.batch-input').val(),
+				custom_batch_code: tr.find('.batch-input').val(),
+				batch_no: "", // Leave standard batch_no empty since we are not creating real batches
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
 			});
