@@ -10,6 +10,8 @@ def get_pick_list_data(name):
 	doc_dict = doc.as_dict()
 	for row in doc_dict.get("locations", []):
 		row["custom_conversion_factor"] = get_box_conversion_factor(row.get("item_code")) or 1
+		# Fetch SKU No from Item master
+		row["custom_sku_no"] = frappe.db.get_value("Item", row.get("item_code"), "custom_sku_no") or ""
 		
 	return doc_dict
 

@@ -103,8 +103,18 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	if pick_list.docstatus != 1:
 		frappe.throw("Pick List must be submitted to create a Delivery Note.")
 
-	# Call standard erpnext mapper to create Delivery Note
-	dn = create_delivery_note(pick_list_name)
+	# Suppress the default ERPNext msgprint during DN creation
+	_original_msgprint = frappe.msgprint
+	def _silent_msgprint(*args, **kwargs):
+		pass
+	frappe.msgprint = _silent_msgprint
+
+	try:
+		# Call standard erpnext mapper to create Delivery Note
+		dn = create_delivery_note(pick_list_name)
+	finally:
+		# Restore original msgprint
+		frappe.msgprint = _original_msgprint
 
 	if not dn:
 		frappe.throw("Could not create Delivery Note from Pick List.")

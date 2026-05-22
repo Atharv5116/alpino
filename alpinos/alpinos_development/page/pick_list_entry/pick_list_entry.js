@@ -27,7 +27,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			// Setup static listeners
 			page.main.find('#btn-go-to-list').on('click', function() {
-				frappe.set_route('List', 'Pick List');
+				frappe.set_route('pick-list-list');
 			});
 
 			page.main.find('#btn-create-delivery-note').on('click', function() {
@@ -154,11 +154,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}">
 					<td>${idx + 1}</td>
 					<td data-item-code="${row.item_code}">${row.item_code}</td>
-					<td>-</td>
+					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
-					${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" ${input_disabled}/></td>` : ''}
-					<td><input type="number" class="form-control input-sm box-input" value="${flt(row.custom_box, 2) || 0}" step="0.01" ${input_disabled}/></td>
-					<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity || (is_sample_only ? row.qty : 0)}" ${input_disabled}/></td>
+					${!is_sample_only ? `<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled}/></td>` : ''}
+					<td><input type="number" class="form-control input-sm box-input" value="${flt(row.custom_box, 2) || 0}" step="0.01" min="0" ${input_disabled}/></td>
+					<td><input type="number" class="form-control input-sm sample-qty-input" value="${row.custom_sample_quantity !== undefined && row.custom_sample_quantity !== null ? row.custom_sample_quantity : (is_sample_only ? row.qty : 0)}" min="0" ${input_disabled}/></td>
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
 					</td>
@@ -220,6 +220,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let ordered = flt(tr.find('.ordered-qty-cell').text());
 			let picked = flt($(this).val());
 			
+			if (picked < 0) {
+				picked = 0;
+				$(this).val(0);
+			}
 			if (picked > ordered) {
 				frappe.msgprint(__("Picked Qty cannot be greater than Ordered Qty"));
 				picked = ordered;
@@ -247,6 +251,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let table_name = tr.closest('table').attr('data-table-name');
 			let is_sample_only = ["Scheme Table", "Additional Units"].includes(table_name);
 			let sample_qty = flt($(this).val());
+			
+			if (sample_qty < 0) {
+				sample_qty = 0;
+				$(this).val(0);
+			}
 			
 			if (!is_sample_only) {
 				let picked = flt(tr.find('.qty-input').val());

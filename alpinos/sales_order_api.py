@@ -1072,7 +1072,8 @@ def get_pick_list_mapping_data(sales_order):
 			"qty": item_row.qty,
 			"custom_box": box,
 			"custom_source_table": source_table,
-			"custom_conversion_factor": factor
+			"custom_conversion_factor": factor,
+			"custom_sku_no": frappe.db.get_value("Item", item_row.item_code, "custom_sku_no") or ""
 		})
 		
 	for item in so.get("items") or []:
