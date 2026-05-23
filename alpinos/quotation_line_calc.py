@@ -23,23 +23,27 @@ def quotation_line_taxable_net(row) -> float:
 	if not qty or not mrp:
 		return 0.0
 
-	gross = qty * mrp
+	flat_discount = flt(_rget(row, "custom_flat_discount"))
+	if not flat_discount:
+		flat_discount = flt(_rget(row, "custom_buyer_margin_percent"))
 
-	discount_type = _rget(row, "custom_discount_type") or "Percentage"
-	flat_in = flt(_rget(row, "custom_flat_discount") or _rget(row, "custom_buyer_margin_percent"))
-	if discount_type == "Percentage":
-		flat_amt = gross * flat_in / 100.0
-	else:
-		flat_amt = flat_in
+	offer_pct = flt(_rget(row, "custom_offer"))
+	additional_discount_pct = flt(_rget(row, "custom_additional_discount"))
+	gst_pct = flt(_rget(row, "custom_item_tax_percent") or _rget(row, "custom_gst_percent") or _rget(row, "gst_percent") or 0)
+	if not gst_pct and _rget(row, "item_code"):
+		import frappe
+		gst_pct = flt(frappe.db.get_value("Item", _rget(row, "item_code"), "custom_gst_percent"))
 
-	after_flat = gross - flat_amt
-	offer_amt = after_flat * flt(_rget(row, "custom_offer") or 0) / 100.0
-	after_offer = after_flat - offer_amt
+	# MRP is GST-inclusive
+	gross_incl = mrp * qty
+	after_flat = gross_incl - (gross_incl * flat_discount / 100.0)
+	after_offer = after_flat - (after_flat * offer_pct / 100.0)
+	final_incl = after_offer - (after_offer * additional_discount_pct / 100.0)
+	final_incl = max(final_incl, 0)
 
-	add_pct = flt(_rget(row, "custom_additional_discount"))
-	additional_amt = after_offer * add_pct / 100.0
-	taxable = after_offer - additional_amt
-	return max(taxable, 0.0)
+	div = 1 + (gst_pct / 100.0)
+	net_amount = (final_incl / div) if div else final_incl
+	return net_amount
 
 
 def recalculate_quotation_item_row(doc, row) -> None:
@@ -51,8 +55,26 @@ def recalculate_quotation_item_row(doc, row) -> None:
 	if not flt(_rget(row, "custom_mrp")):
 		return
 
-	tax_pct = flt(_rget(row, "custom_item_tax_percent"))
-	tax_amt = taxable * tax_pct / 100.0 if taxable > 0 else 0
+	# Retrieve GST percent
+	gst_pct = flt(_rget(row, "custom_item_tax_percent") or _rget(row, "custom_gst_percent") or _rget(row, "gst_percent") or 0)
+	if not gst_pct and _rget(row, "item_code"):
+		import frappe
+		gst_pct = flt(frappe.db.get_value("Item", _rget(row, "item_code"), "custom_gst_percent"))
+
+	flat_discount = flt(_rget(row, "custom_flat_discount"))
+	if not flat_discount:
+		flat_discount = flt(_rget(row, "custom_buyer_margin_percent"))
+
+	offer_pct = flt(_rget(row, "custom_offer"))
+	additional_discount_pct = flt(_rget(row, "custom_additional_discount"))
+
+	gross_incl = flt(_rget(row, "custom_mrp")) * qty
+	after_flat = gross_incl - (gross_incl * flat_discount / 100.0)
+	after_offer = after_flat - (after_flat * offer_pct / 100.0)
+	final_incl = after_offer - (after_offer * additional_discount_pct / 100.0)
+	final_incl = max(final_incl, 0)
+
+	tax_amt = max(final_incl - taxable, 0.0)
 
 	row.custom_item_tax = flt(tax_amt, 2)
 	row.rate = flt(taxable / qty, 2) if qty else 0.0

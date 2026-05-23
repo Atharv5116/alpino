@@ -91,10 +91,11 @@ def sync_obm_item_pricing(doc, row):
 
 
 def recalculate_quotation_totals(doc):
-	sub_total = 0
-	over_discount = 0
-	additional_discount = 0
-	gst_total = 0
+	sub_total = 0.0
+	over_discount = 0.0
+	additional_discount = 0.0
+	gst_total = 0.0
+	total_incl = 0.0
 
 	for row in doc.get("items") or []:
 		qty = flt(row.get("qty"))
@@ -102,24 +103,35 @@ def recalculate_quotation_totals(doc):
 		if not qty or not mrp:
 			continue
 
-		gross = qty * mrp
-		sub_total += gross
+		flat_discount = flt(row.get("custom_flat_discount"))
+		if not flat_discount:
+			flat_discount = flt(row.get("custom_buyer_margin_percent"))
 
-		flat_in = flt(row.get("custom_flat_discount") or row.get("custom_buyer_margin_percent"))
-		if (row.get("custom_discount_type") or "Percentage") == "Percentage":
-			flat_discount_amount = gross * flat_in / 100.0
-		else:
-			flat_discount_amount = flat_in
-		over_discount += flat_discount_amount
+		offer_pct = flt(row.get("custom_offer"))
+		additional_discount_pct = flt(row.get("custom_additional_discount"))
+		gst_pct = flt(row.get("custom_item_tax_percent") or row.get("custom_gst_percent") or row.get("gst_percent") or 0)
+		if not gst_pct and row.get("item_code"):
+			gst_pct = flt(frappe.db.get_value("Item", row.get("item_code"), "custom_gst_percent"))
 
-		after_flat = gross - flat_discount_amount
-		after_offer = after_flat - (after_flat * flt(row.get("custom_offer") or 0) / 100.0)
-		additional_discount += after_offer * flt(row.get("custom_additional_discount")) / 100.0
-		gst_total += flt(row.get("custom_item_tax"))
+		gross_incl = qty * mrp
+		after_flat = gross_incl - (gross_incl * flat_discount / 100.0)
+		after_offer = after_flat - (after_flat * offer_pct / 100.0)
+		final_incl = after_offer - (after_offer * additional_discount_pct / 100.0)
+		final_incl = max(final_incl, 0)
 
-	total_before_cash = sum(flt(row.get("amount")) for row in doc.get("items") or []) + gst_total
-	cash_discount = total_before_cash * flt(doc.get("custom_cash_discount")) / 100.0
-	total_payable = max(total_before_cash - cash_discount, 0)
+		div = 1 + (gst_pct / 100.0)
+		net_amount = (final_incl / div) if div else final_incl
+		gst_amount = max(final_incl - net_amount, 0)
+
+		sub_total += gross_incl
+		over_discount += (gross_incl - after_flat)
+		additional_discount += (after_offer - final_incl)
+		gst_total += gst_amount
+		total_incl += final_incl
+
+	cash_discount_pct = flt(doc.get("custom_cash_discount"))
+	cash_discount_amount = total_incl * (cash_discount_pct / 100.0) if total_incl > 0 else 0
+	total_payable = max(total_incl - cash_discount_amount, 0)
 
 	doc.custom_sub_total = flt(sub_total, 2)
 	doc.custom_over_discount = flt(over_discount, 2)

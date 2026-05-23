@@ -281,29 +281,44 @@ function recalculate_row_values(frm, cdt, cdn) {
 		return;
 	}
 
-	const unit_base = line_unit_base_before_trade_discount(row);
-	const gross_amount = qty * unit_base;
-
-	const flat_discount_pct = flt(row.custom_flat_discount);
+	const flat_discount = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
 	const offer_pct = flt(row.custom_offer);
 	const additional_discount_pct = flt(row.custom_additional_discount);
 
-	const flat_discount_amount = gross_amount * flat_discount_pct / 100.0;
-	const after_flat = gross_amount - flat_discount_amount;
-	const offer_amount = after_flat * offer_pct / 100.0;
-	const after_offer = after_flat - offer_amount;
-	const additional_discount_amount = after_offer * additional_discount_pct / 100.0;
-	let net_amount = after_offer - additional_discount_amount;
-	if (net_amount < 0) net_amount = 0;
+	let gst_pct = flt(row.custom_gst_percent || row.gst_percent || 0);
 
-	const new_rate = qty ? flt(net_amount / qty, 2) : 0;
+	const run_calc = (g_pct) => {
+		const gross_incl = mrp * qty;
+		const flat_disc_amt = gross_incl * flat_discount / 100.0;
+		const after_flat = gross_incl - flat_disc_amt;
+		const offer_amt = after_flat * offer_pct / 100.0;
+		const after_offer = after_flat - offer_amt;
+		const additional_amt = after_offer * additional_discount_pct / 100.0;
+		const final_incl = Math.max(after_offer - additional_amt, 0);
 
-	frappe.model.set_value(cdt, cdn, "rate", new_rate);
-	frappe.model.set_value(cdt, cdn, "amount", flt(net_amount, 2));
-	frappe.model.set_value(cdt, cdn, "base_rate", new_rate);
-	frappe.model.set_value(cdt, cdn, "base_amount", flt(net_amount, 2));
+		const div = 1 + (g_pct / 100.0);
+		const taxable = div > 0 ? (final_incl / div) : final_incl;
+		const tax_amount = Math.max(final_incl - taxable, 0);
 
-	recalculate_opportunity_totals(frm);
+		const new_rate = qty ? flt(taxable / qty, 2) : 0;
+
+		frappe.model.set_value(cdt, cdn, "custom_item_tax", flt(tax_amount, 2));
+		frappe.model.set_value(cdt, cdn, "rate", new_rate);
+		frappe.model.set_value(cdt, cdn, "amount", flt(taxable, 2));
+		frappe.model.set_value(cdt, cdn, "base_rate", new_rate);
+		frappe.model.set_value(cdt, cdn, "base_amount", flt(taxable, 2));
+
+		recalculate_opportunity_totals(frm);
+	};
+
+	if (!gst_pct && row.item_code) {
+		frappe.db.get_value("Item", row.item_code, "custom_gst_percent", (r) => {
+			gst_pct = flt(r && r.custom_gst_percent);
+			run_calc(gst_pct);
+		});
+	} else {
+		run_calc(gst_pct);
+	}
 }
 
 function recalculate_opportunity_totals(frm) {
@@ -312,47 +327,73 @@ function recalculate_opportunity_totals(frm) {
 	let over_discount_total = 0.0;
 	let additional_discount_total = 0.0;
 	let gst_total = 0.0;
+	let sum_incl = 0.0;
+
+	const promises = [];
 
 	rows.forEach((row) => {
 		const qty = flt(row.qty);
 		const mrp = flt(row.custom_mrp);
-		const bm = flt(row.custom_buyer_margin_percent);
-		const flat_discount_pct = flt(row.custom_flat_discount);
-		const offer_pct = flt(row.custom_offer);
-		const additional_discount_pct = flt(row.custom_additional_discount);
-		const item_tax = flt(row.custom_item_tax);
-
 		if (!mrp) return;
 
-		const unit_base = mrp * (1.0 - bm / 100.0);
-		const gross = qty * unit_base;
+		const flat_discount = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
+		const offer_pct = flt(row.custom_offer);
+		const additional_discount_pct = flt(row.custom_additional_discount);
 
-		const after_flat = gross - gross * flat_discount_pct / 100.0;
-		const offer_amount = after_flat * offer_pct / 100.0;
-		const after_offer = after_flat - offer_amount;
-		const additional_discount = after_offer * additional_discount_pct / 100.0;
+		let gst_pct = flt(row.custom_gst_percent || row.gst_percent || 0);
 
-		sub_total += gross;
-		over_discount_total += gross * flat_discount_pct / 100.0;
-		additional_discount_total += additional_discount;
-		gst_total += item_tax;
+		const add_to_totals = (g_pct) => {
+			const gross_incl = qty * mrp;
+			sub_total += gross_incl;
+
+			const flat_disc_amt = gross_incl * flat_discount / 100.0;
+			const after_flat = gross_incl - flat_disc_amt;
+			const offer_amt = after_flat * offer_pct / 100.0;
+			const after_offer = after_flat - offer_amt;
+			const additional_amt = after_offer * additional_discount_pct / 100.0;
+			const final_incl = Math.max(after_offer - additional_amt, 0);
+
+			const div = 1 + (g_pct / 100.0);
+			const taxable = div > 0 ? (final_incl / div) : final_incl;
+			const tax_amount = Math.max(final_incl - taxable, 0);
+
+			over_discount_total += flat_disc_amt;
+			additional_discount_total += additional_amt;
+			gst_total += tax_amount;
+			sum_incl += final_incl;
+		};
+
+		if (!gst_pct && row.item_code) {
+			const p = new Promise((resolve) => {
+				frappe.db.get_value("Item", row.item_code, "custom_gst_percent", (r) => {
+					const g_val = flt(r && r.custom_gst_percent);
+					add_to_totals(g_val);
+					resolve();
+				});
+			});
+			promises.push(p);
+		} else {
+			add_to_totals(gst_pct);
+		}
 	});
 
-	const cash_discount_pct = flt(frm.doc.custom_cash_discount);
-	const pre_cash_total =
-		sub_total - over_discount_total - additional_discount_total + gst_total;
-	const cash_discount_amount =
-		pre_cash_total > 0 ? pre_cash_total * cash_discount_pct / 100.0 : 0;
-	const final_total = pre_cash_total - cash_discount_amount;
+	const update_values = () => {
+		const cash_discount_pct = flt(frm.doc.custom_cash_discount);
+		const cash_discount_amount = sum_incl > 0 ? sum_incl * cash_discount_pct / 100.0 : 0;
+		const final_total = sum_incl - cash_discount_amount;
 
-	frm.set_value("custom_over_discount", flt(over_discount_total, 2));
-	frm.set_value(
-		"custom_additional_discount_total",
-		flt(additional_discount_total, 2)
-	);
-	frm.set_value("custom_gst_total", flt(gst_total, 2));
-	frm.set_value("total", flt(final_total, 2));
-	frm.set_value("opportunity_amount", flt(final_total, 2));
+		frm.set_value("custom_over_discount", flt(over_discount_total, 2));
+		frm.set_value("custom_additional_discount_total", flt(additional_discount_total, 2));
+		frm.set_value("custom_gst_total", flt(gst_total, 2));
+		frm.set_value("total", flt(final_total, 2));
+		frm.set_value("opportunity_amount", flt(final_total, 2));
+	};
+
+	if (promises.length > 0) {
+		Promise.all(promises).then(update_values);
+	} else {
+		update_values();
+	}
 }
 
 function set_variant_item_queries(frm) {

@@ -345,29 +345,22 @@ function recalculate_row_values(frm, cdt, cdn) {
         return;
     }
 
-    const gross = mrp * qty;
+    const flat_discount = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
+    const offer_pct = flt(row.custom_offer);
+    const additional_discount_pct = flt(row.custom_additional_discount);
+    const gst_pct = flt(row.custom_item_tax_percent);
 
-    const discount_type = row.custom_discount_type || 'Percentage';
-    const flat_in = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
-    let flat_amt = 0;
-    if (discount_type === 'Percentage') {
-        flat_amt = gross * flat_in / 100.0;
-    } else {
-        flat_amt = flat_in;
-    }
-
-    const after_flat = gross - flat_amt;
-    const offer_amt = after_flat * flt(row.custom_offer) / 100.0;
+    const gross_incl = mrp * qty;
+    const flat_disc_amt = gross_incl * flat_discount / 100.0;
+    const after_flat = gross_incl - flat_disc_amt;
+    const offer_amt = after_flat * offer_pct / 100.0;
     const after_offer = after_flat - offer_amt;
+    const additional_amt = after_offer * additional_discount_pct / 100.0;
+    const final_incl = Math.max(after_offer - additional_amt, 0);
 
-    const add_in = flt(row.custom_additional_discount);
-    const additional_amt = after_offer * add_in / 100.0;
-
-    let taxable = after_offer - additional_amt;
-    if (taxable < 0) taxable = 0;
-
-    const tax_pct = flt(row.custom_item_tax_percent);
-    const tax_amount = taxable * tax_pct / 100.0;
+    const div = 1 + (gst_pct / 100.0);
+    const taxable = div > 0 ? (final_incl / div) : final_incl;
+    const tax_amount = Math.max(final_incl - taxable, 0);
 
     const new_rate = qty ? flt(taxable / qty, 2) : 0;
 
@@ -387,45 +380,42 @@ function recalculate_quotation_totals(frm) {
     let additional_discount = 0;
     let sum_taxable = 0;
     let sum_gst = 0;
+    let sum_incl = 0;
 
     rows.forEach((row) => {
         const qty = flt(row.qty);
         const mrp = flt(row.custom_mrp);
         if (!mrp) return;
 
-        const gross = qty * mrp;
-        sub_total += gross;
+        const flat_discount = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
+        const offer_pct = flt(row.custom_offer);
+        const additional_discount_pct = flt(row.custom_additional_discount);
+        const gst_pct = flt(row.custom_item_tax_percent);
 
-        const flat_in = flt(row.custom_flat_discount || row.custom_buyer_margin_percent);
-        let flat_amt = 0;
-        if ((row.custom_discount_type || 'Percentage') === 'Percentage') {
-            flat_amt = gross * flat_in / 100.0;
-        } else {
-            flat_amt = flat_in;
-        }
+        const gross_incl = qty * mrp;
+        sub_total += gross_incl;
 
-        const after_flat = gross - flat_amt;
-        const offer_amt = after_flat * flt(row.custom_offer) / 100.0;
+        const flat_disc_amt = gross_incl * flat_discount / 100.0;
+        const after_flat = gross_incl - flat_disc_amt;
+        const offer_amt = after_flat * offer_pct / 100.0;
         const after_offer = after_flat - offer_amt;
+        const additional_amt = after_offer * additional_discount_pct / 100.0;
+        const final_incl = Math.max(after_offer - additional_amt, 0);
 
-        over_discount += flat_amt;
+        const div = 1 + (gst_pct / 100.0);
+        const taxable = div > 0 ? (final_incl / div) : final_incl;
+        const tax_amount = Math.max(final_incl - taxable, 0);
 
-        const add_in = flt(row.custom_additional_discount);
-        const additional_amt = after_offer * add_in / 100.0;
+        over_discount += flat_disc_amt;
         additional_discount += additional_amt;
-
-        let taxable = after_offer - additional_amt;
-        if (taxable < 0) taxable = 0;
         sum_taxable += taxable;
-
-        const tax_pct = flt(row.custom_item_tax_percent);
-        sum_gst += taxable * tax_pct / 100.0;
+        sum_gst += tax_amount;
+        sum_incl += final_incl;
     });
 
     const cash_discount_pct = flt(frm.doc.custom_cash_discount);
-    const pre_cash_total = sum_taxable + sum_gst;
-    const cash_discount_amount = pre_cash_total > 0 ? pre_cash_total * cash_discount_pct / 100.0 : 0;
-    const final_total = pre_cash_total - cash_discount_amount;
+    const cash_discount_amount = sum_incl > 0 ? sum_incl * cash_discount_pct / 100.0 : 0;
+    const final_total = sum_incl - cash_discount_amount;
     const advance = flt(frm.doc.custom_advance_amount);
     const remaining = final_total - advance;
 

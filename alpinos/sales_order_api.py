@@ -1181,3 +1181,4 @@ def get_so_pick_list_status(sales_order):
 	}
 
 
+

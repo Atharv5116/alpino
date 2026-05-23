@@ -41,35 +41,54 @@ def recalculate_opportunity_totals(doc):
 	over_discount_total = 0.0
 	additional_discount_total = 0.0
 	gst_total = 0.0
+	total_incl = 0.0
 
 	for row in doc.get("items") or []:
 		qty = flt(row.qty)
 		mrp = flt(row.custom_mrp)
-		bm = flt(row.custom_buyer_margin_percent)
-		flat_discount_pct = flt(row.custom_flat_discount)
-		offer_pct = flt(row.custom_offer)
-		additional_discount_pct = flt(row.custom_additional_discount)
-		item_tax = flt(row.custom_item_tax)
-
-		if not mrp:
+		if not qty or not mrp:
 			continue
 
-		unit_base = mrp * (1.0 - bm / 100.0)
-		gross = qty * unit_base
-		after_flat = gross - (gross * flat_discount_pct / 100.0)
-		offer_amount = after_flat * offer_pct / 100.0
-		after_offer = after_flat - offer_amount
-		additional_discount = after_offer * additional_discount_pct / 100.0
+		flat_discount = flt(row.custom_flat_discount)
+		if not flat_discount:
+			flat_discount = flt(row.get("custom_buyer_margin_percent"))
 
-		sub_total += gross
-		over_discount_total += (gross * flat_discount_pct / 100.0)
-		additional_discount_total += additional_discount
-		gst_total += item_tax
+		offer_pct = flt(row.custom_offer)
+		additional_discount_pct = flt(row.custom_additional_discount)
+
+		gst_pct = flt(row.get("custom_gst_percent") or row.get("gst_percent") or 0)
+		if not gst_pct and row.item_code:
+			gst_pct = flt(frappe.db.get_value("Item", row.item_code, "custom_gst_percent"))
+
+		# MRP is GST-inclusive
+		gross_incl = mrp * qty
+		after_flat = gross_incl - (gross_incl * flat_discount / 100.0)
+		after_offer = after_flat - (after_flat * offer_pct / 100.0)
+		final_incl = after_offer - (after_offer * additional_discount_pct / 100.0)
+		final_incl = max(final_incl, 0)
+
+		div = 1 + (gst_pct / 100.0)
+		net_amount = (final_incl / div) if div else final_incl
+		gst_amount = max(final_incl - net_amount, 0)
+
+		row.rate = flt(net_amount / qty, 2) if qty else 0.0
+		row.amount = flt(net_amount, 2)
+		row.base_rate = row.rate
+		row.base_amount = row.amount
+		row.custom_item_tax = flt(gst_amount, 2)
+		if flat_discount and not flt(row.custom_flat_discount):
+			row.custom_flat_discount = flat_discount
+
+		# Running totals
+		sub_total += gross_incl
+		over_discount_total += (gross_incl - after_flat)
+		additional_discount_total += (after_offer - final_incl)
+		gst_total += gst_amount
+		total_incl += final_incl
 
 	cash_discount_pct = flt(doc.get("custom_cash_discount"))
-	pre_cash_total = sub_total - over_discount_total - additional_discount_total + gst_total
-	cash_discount_amount = pre_cash_total * (cash_discount_pct / 100.0) if pre_cash_total > 0 else 0
-	final_total = pre_cash_total - cash_discount_amount
+	cash_discount_amount = total_incl * (cash_discount_pct / 100.0) if total_incl > 0 else 0
+	final_total = max(total_incl - cash_discount_amount, 0)
 
 	doc.custom_over_discount = flt(over_discount_total, 2)
 	doc.custom_additional_discount_total = flt(additional_discount_total, 2)

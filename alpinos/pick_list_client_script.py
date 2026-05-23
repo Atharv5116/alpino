@@ -47,12 +47,28 @@ frappe.ui.form.on('Pick List', {
 		if (frm.fields_dict.locations && frm.fields_dict.locations.grid) {
 			frm.fields_dict.locations.grid.update_docfield_property("batch_no", "reqd", 0);
 		}
+	},
+	
+	custom_actual_box(frm) {
+		frm.set_value('custom_total_box', cint(frm.doc.custom_actual_box || 0) + cint(frm.doc.custom_sample_box || 0));
+	},
+	
+	custom_sample_box(frm) {
+		frm.set_value('custom_total_box', cint(frm.doc.custom_actual_box || 0) + cint(frm.doc.custom_sample_box || 0));
 	}
 });
 
 frappe.ui.form.on('Pick List Item', {
 	qty(frm, cdt, cdn) {
 		recalculate_pick_list_row(frm, cdt, cdn);
+	},
+
+	custom_box(frm, cdt, cdn) {
+		recalculate_pick_list_totals(frm);
+	},
+
+	custom_sample_box(frm, cdt, cdn) {
+		recalculate_pick_list_totals(frm);
 	},
 
 	custom_weight_per_box(frm, cdt, cdn) {
