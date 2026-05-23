@@ -160,8 +160,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
 					</td>
-					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" ${batch_readonly}></td>
-					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" ${batch_readonly}></td>
+					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_readonly}></td>
+					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 				</tr>
 			`;
@@ -246,6 +246,19 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				$(this).val(val);
 			}
 			page.recalculate_totals();
+		});
+
+		// Enforce maximum 4-digit year for date inputs to avoid invalid dates like year 275760
+		container.find('.mfg-input, .exp-input').on('input change', function() {
+			let val = $(this).val();
+			if (val) {
+				let parts = val.split('-');
+				if (parts.length === 3 && parts[0].length > 4) {
+					parts[0] = parts[0].substring(0, 4);
+					let fixed = parts.join('-');
+					$(this).val(fixed);
+				}
+			}
 		});
 		
 		// Setup Batch auto-fetch logic
