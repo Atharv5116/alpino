@@ -6,13 +6,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		title: 'Pick List Entry',
 		single_column: true
 	});
-
-	page.pick_list_name = frappe.get_route()[1];
-	
-	if (!page.pick_list_name) {
-		page.main.html('<h3>No Pick List specified. Please go to a Sales Order and click "Pick List" -> "Create".</h3>');
-		return;
-	}
+	wrapper.page_instance = page;
 
 	page.set_primary_action('Submit', () => {
 		page.save_pick_list();
@@ -394,6 +388,16 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 		}
 	};
+};
 
-	page.load_data();
-}
+frappe.pages['pick_list_entry'].on_page_show = function(wrapper) {
+	if (wrapper.page_instance) {
+		let current_route_name = frappe.get_route()[1];
+		if (!current_route_name) {
+			wrapper.page_instance.main.html('<h3>No Pick List specified. Please go to a Sales Order and click "Pick List" -> "Create".</h3>');
+			return;
+		}
+		wrapper.page_instance.pick_list_name = current_route_name;
+		wrapper.page_instance.load_data();
+	}
+};

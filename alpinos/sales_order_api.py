@@ -1062,8 +1062,7 @@ def get_pick_list_mapping_data(sales_order):
 		box = flt(item_row.get("custom_box"), 2)
 		factor = get_box_conversion_factor(item_row.item_code) or 1
 		if source_table in ["Marketing Freebies", "Scheme Table", "Additional Units"]:
-			if factor:
-				box = flt(flt(item_row.qty) / factor, 2)
+			box = 0.0
 				
 		warehouse = item_row.get("warehouse")
 		if not warehouse:

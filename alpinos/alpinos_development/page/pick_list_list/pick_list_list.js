@@ -5,7 +5,7 @@ frappe.pages['pick_list_list'].on_page_load = function (wrapper) {
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('pick_list_list'));
-	new PickListListPage(page);
+	wrapper.page_instance = new PickListListPage(page);
 };
 
 class PickListListPage {
@@ -289,3 +289,10 @@ class PickListListPage {
 		dialog.show();
 	}
 }
+
+frappe.pages['pick_list_list'].on_page_show = function (wrapper) {
+	if (wrapper.page_instance) {
+		wrapper.page_instance.start = 0;
+		wrapper.page_instance.load_list();
+	}
+};
