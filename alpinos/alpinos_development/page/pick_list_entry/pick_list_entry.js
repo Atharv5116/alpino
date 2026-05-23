@@ -144,9 +144,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let box_val = "";
 			if (title === "Items") {
-				box_val = (row.custom_box !== undefined && row.custom_box !== null) ? flt(row.custom_box, 2) : 0;
+				box_val = (row.custom_box !== undefined && row.custom_box !== null) ? cint(row.custom_box) : 0;
 			} else {
-				box_val = (row.custom_box !== undefined && row.custom_box !== null && flt(row.custom_box) !== 0) ? flt(row.custom_box, 2) : "";
+				box_val = (row.custom_box !== undefined && row.custom_box !== null && cint(row.custom_box) !== 0) ? cint(row.custom_box) : "";
 			}
 			
 			let row_html = `
@@ -156,7 +156,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled}/></td>
-					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="0.01" min="0" ${input_disabled}/></td>
+					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="1" min="0" ${input_disabled}/></td>
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
 					</td>
@@ -191,7 +191,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				let qty = flt(tr.find('.qty-input').val());
 				let factor = flt(tr.attr('data-conversion-factor')) || 1;
 				let weight_per_box = flt(tr.attr('data-weight-per-box')) || 0;
-				let box = flt(tr.find('.box-input').val());
+				let box = cint(tr.find('.box-input').val());
 				
 				if (table_name === "Items") {
 					actual_box += box;
@@ -204,10 +204,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				total_unit += qty;
 			});
 
-			page.main.find('[data-fieldname="custom_actual_box"]').val(flt(actual_box, 2));
-			page.main.find('[data-fieldname="custom_sample_box"]').val(flt(sample_box, 2));
+			page.main.find('[data-fieldname="custom_actual_box"]').val(cint(actual_box));
+			page.main.find('[data-fieldname="custom_sample_box"]').val(cint(sample_box));
 			page.main.find('[data-fieldname="custom_sample_weight"]').val(flt(sample_weight, 2));
-			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual_box + sample_box, 2));
+			page.main.find('[data-fieldname="custom_total_box"]').val(cint(actual_box + sample_box));
 			page.main.find('[data-fieldname="custom_gross_weight"]').val(flt(gross_weight, 2));
 			page.main.find('[data-fieldname="custom_total_unit"]').val(flt(total_unit, 2));
 		};
@@ -231,7 +231,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let table_name = tr.closest('table').attr('data-table-name');
 			if (table_name === "Items") {
 				let factor = flt(tr.attr('data-conversion-factor')) || 1;
-				let box = flt(picked / factor, 2);
+				let box = Math.ceil(picked / factor);
 				tr.find('.box-input').val(box);
 			}
 			
@@ -240,6 +240,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 
 		// Box manual input updates totals
 		container.find('.box-input').on('input change', function() {
+			let val = $(this).val();
+			if (val && val.indexOf('.') !== -1) {
+				val = Math.round(parseFloat(val));
+				$(this).val(val);
+			}
 			page.recalculate_totals();
 		});
 		

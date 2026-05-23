@@ -45,9 +45,11 @@ def _sync_rows_and_totals(doc):
 		table_name = row.custom_source_table or "Items"
 		if not flt(row.custom_box):
 			if table_name == "Items":
-				row.custom_box = flt(qty / factor, 2) if qty else 0.0
+				row.custom_box = int(ceil(qty / factor)) if qty else 0
 			else:
-				row.custom_box = 0.0
+				row.custom_box = 0
+		else:
+			row.custom_box = int(round(flt(row.custom_box)))
 
 		if row.batch_no:
 			batch_details = frappe.db.get_value(
@@ -71,10 +73,10 @@ def _sync_rows_and_totals(doc):
 		gross_weight += row_box * row_weight_per_box
 		total_unit += qty
 
-	doc.custom_actual_box = flt(actual_box, 2)
-	doc.custom_sample_box = flt(sample_box, 2)
+	doc.custom_actual_box = int(round(actual_box))
+	doc.custom_sample_box = int(round(sample_box))
 	doc.custom_sample_weight = flt(sample_weight, 2)
-	doc.custom_total_box = flt(actual_box + sample_box, 2)
+	doc.custom_total_box = int(round(actual_box + sample_box))
 	doc.custom_gross_weight = flt(gross_weight, 2)
 	doc.custom_total_unit = flt(total_unit, 2)
 
