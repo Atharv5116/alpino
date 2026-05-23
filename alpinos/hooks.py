@@ -220,6 +220,7 @@ override_doctype_class = {
 	"Leave Application": "alpinos.overrides.leave_application_override.CustomLeaveApplication",
 	"Shift Request": "alpinos.overrides.shift_request_override.CustomShiftRequest",
 	"User": "alpinos.overrides.user_override.CustomUser",
+	"Delivery Note": "alpinos.overrides.delivery_note_override.CustomDeliveryNote",
 }
 
 # Document Events
