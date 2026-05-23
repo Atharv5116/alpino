@@ -260,6 +260,18 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				}
 			}
 		});
+
+		// Header ACTUAL BOX or SAMPLE BOX changes update TOTAL BOX in real-time
+		page.main.find('[data-fieldname="custom_actual_box"], [data-fieldname="custom_sample_box"]').on('input change', function() {
+			let val = $(this).val();
+			if (val && val.indexOf('.') !== -1) {
+				val = Math.round(parseFloat(val));
+				$(this).val(val);
+			}
+			let actual = cint(page.main.find('[data-fieldname="custom_actual_box"]').val());
+			let sample = cint(page.main.find('[data-fieldname="custom_sample_box"]').val());
+			page.main.find('[data-fieldname="custom_total_box"]').val(actual + sample);
+		});
 		
 		// Setup Batch auto-fetch logic
 		container.find('.batch-input').on('change', function() {
