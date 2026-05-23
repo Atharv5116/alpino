@@ -202,9 +202,14 @@ frappe.ui.form.on('Quotation Item', {
         const row = locals[cdt][cdn];
         if (!row.item_code) return;
 
-        frappe.db.get_value('Item', row.item_code, 'item_name').then((r) => {
-            if (r && r.message && r.message.item_name) {
-                frappe.model.set_value(cdt, cdn, 'item_name', r.message.item_name);
+        frappe.db.get_value('Item', row.item_code, ['item_name', 'custom_gst_percent']).then((r) => {
+            if (r && r.message) {
+                if (r.message.item_name) {
+                    frappe.model.set_value(cdt, cdn, 'item_name', r.message.item_name);
+                }
+                if (r.message.custom_gst_percent !== undefined) {
+                    frappe.model.set_value(cdt, cdn, 'custom_item_tax_percent', flt(r.message.custom_gst_percent));
+                }
             }
         });
 

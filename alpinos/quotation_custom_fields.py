@@ -237,6 +237,7 @@ def setup_quotation_custom_fields():
 				label="Tax %",
 				fieldtype="Percent",
 				insert_after="custom_additional_discount",
+				fetch_from="item_code.custom_gst_percent",
 				reqd=1,
 			),
 			dict(
@@ -395,13 +396,7 @@ def _setup_quotation_property_setters():
 			value="QTN-2627-.#####",
 			property_type="Text",
 		),
-		dict(
-			doctype_or_field="DocType",
-			doc_type="Quotation",
-			property="default_print_format",
-			value="Final Quotation",
-			property_type="Text",
-		),
+
 	]
 
 	for ps_data in property_setters:
