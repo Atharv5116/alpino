@@ -118,7 +118,8 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 			}
 			
 			# Link fields that should not accept "NA" values
-			link_fields = {"location", "reports_to", "hod", "designation", "department", "employment_type"}
+			# Note: employment_type is now a Select field, not a Link field
+			link_fields = {"location", "reports_to", "hod", "designation", "department"}
 
 			for src_field, tgt_field in company_details_field_map.items():
 				if hasattr(source, src_field) and hasattr(target, tgt_field):

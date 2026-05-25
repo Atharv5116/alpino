@@ -1,0 +1,213 @@
+<style>
+.sales-order-entry .awesomplete {
+	position: relative;
+	display: inline-block;
+}
+.sales-order-entry .awesomplete > ul {
+	z-index: 9999 !important;
+	position: absolute !important;
+	left: 0 !important;
+	right: auto !important;
+	min-width: 350px !important;
+	max-width: 450px !important;
+	max-height: 300px;
+	overflow-y: auto;
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d5db);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.sales-order-entry .awesomplete > ul > li {
+	padding: 8px 12px;
+	cursor: pointer;
+	white-space: normal;
+	word-wrap: break-word;
+}
+.sales-order-entry .awesomplete > ul > li:hover,
+.sales-order-entry .awesomplete > ul > li[aria-selected="true"] {
+	background: var(--bg-color, #f5f5f5);
+}
+.sales-order-entry .items-table,
+.sales-order-entry .freebies-table,
+.sales-order-entry .scheme-table {
+	overflow: visible !important;
+}
+.sales-order-entry .items-table td,
+.sales-order-entry .freebies-table td,
+.sales-order-entry .scheme-table td {
+	overflow: visible !important;
+	position: relative;
+}
+</style>
+<div class="sales-order-entry" style="max-width: 1200px; margin: 0 auto; padding: 15px;">
+
+	<p class="text-muted" style="font-size: 12px; margin-bottom: 12px;">
+		<strong>Customer</strong> is limited to customers on <strong>Offline Buyer Master</strong> (same as Sales Order). Main-line <strong>SKU</strong> lists all saleable <strong>variants</strong>. If that SKU has margin on the master for this customer, MRP and margin fill automatically; otherwise MRP comes from Customer Item MRP or Item standard rate—edit the row as needed.
+	</p>
+
+	<!-- Header Fields -->
+	<div class="so-header" style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+		<div class="row">
+			<div class="col-md-4 field-customer"></div>
+			<div class="col-md-4 field-company"></div>
+			<div class="col-md-4 field-order-type"></div>
+			<div class="col-md-4 field-delivery-date"></div>
+		</div>
+		<div class="row" style="margin-top: 12px;">
+			<div class="col-md-6 field-billing-address"></div>
+			<div class="col-md-6 field-shipping-address"></div>
+		</div>
+		<div class="row" style="margin-top: 12px;">
+			<div class="col-md-6 field-tax-template"></div>
+		</div>
+	</div>
+
+	<!-- Items Table -->
+	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+		<h5 style="margin-bottom: 15px; font-weight: 600;">Order Items</h5>
+		<div style="overflow: visible;">
+			<table class="table table-bordered items-table" style="font-size: 13px;">
+				<thead style="background: var(--bg-color);">
+					<tr>
+						<th style="width: 40px;">#</th>
+						<th style="width: 90px;">Product Image</th>
+						<th style="min-width: 140px;">SKU</th>
+						<th style="min-width: 120px;">SKU Name</th>
+						<th style="width: 80px;">Qty</th>
+						<th style="width: 80px;">Box</th>
+						<th style="width: 100px;">MRP</th>
+						<th style="width: 80px;">GST %</th>
+						<th style="width: 90px;">Flat Disc. %</th>
+						<th style="width: 90px;">Offer %</th>
+						<th style="width: 90px;">Add. Disc. %</th>
+						<th style="width: 100px;">Amount</th>
+						<th style="width: 40px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button class="btn btn-sm btn-light btn-add-row" style="margin-top: 5px;">
+			<i class="fa fa-plus"></i> Add Row
+		</button>
+	</div>
+
+	<!-- Other Details Section -->
+	<div class="other-details-section" style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+
+		<!-- Marketing Freebies -->
+		<div style="margin-top: 20px;">
+			<h5 style="margin-bottom: 10px; font-weight: 600;">Marketing Freebies</h5>
+			<table class="table table-bordered freebies-table" style="font-size: 13px;">
+				<thead style="background: var(--bg-color);">
+					<tr>
+						<th style="min-width: 140px;">Item</th>
+						<th>Item Name</th>
+						<th style="width: 80px;">Qty</th>
+						<th>Remarks</th>
+						<th style="width: 40px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+			<button class="btn btn-sm btn-light btn-add-freebie">
+				<i class="fa fa-plus"></i> Add Freebie
+			</button>
+		</div>
+
+		<!-- Scheme Item Table -->
+		<div style="margin-top: 20px;">
+			<h5 style="margin-bottom: 10px; font-weight: 600;">Scheme Item Table</h5>
+			<table class="table table-bordered scheme-table" style="font-size: 13px;">
+				<thead style="background: var(--bg-color);">
+					<tr>
+						<th style="min-width: 140px;">SKU</th>
+						<th>SKU Name</th>
+						<th style="width: 80px;">Qty</th>
+						<th>Scheme</th>
+						<th style="width: 40px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+			<button class="btn btn-sm btn-light btn-add-scheme">
+				<i class="fa fa-plus"></i> Add Scheme Item
+			</button>
+		</div>
+
+		<!-- Additional Units - Damage Checkbox -->
+		<div style="margin-top: 20px;">
+			<div class="field-additional-units-damage"></div>
+		</div>
+
+		<!-- Additional Units - Damage Item Table (conditional) -->
+		<div class="additional-units-section" style="margin-top: 20px; display: none;">
+			<h5 style="margin-bottom: 10px; font-weight: 600;">Additional Units - Damage Items</h5>
+			<table class="table table-bordered additional-units-table" style="font-size: 13px;">
+				<thead style="background: var(--bg-color);">
+					<tr>
+						<th style="min-width: 140px;">SKU</th>
+						<th>SKU Name</th>
+						<th style="width: 80px;">Qty</th>
+						<th>Previous Order No / ID</th>
+						<th style="min-width: 120px;">Remark</th>
+						<th style="width: 40px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+			<button class="btn btn-sm btn-light btn-add-additional-units">
+				<i class="fa fa-plus"></i> Add Additional Unit
+			</button>
+		</div>
+
+		<div style="margin-top: 20px;">
+			<h5 style="margin-bottom: 15px; font-weight: 600;">Cash Discount</h5>
+			<div class="field-cash-discount"></div>
+		</div>
+	</div>
+
+	<!-- Totals -->
+	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+		<div class="row">
+			<div class="col-md-6"></div>
+			<div class="col-md-6">
+				<table class="table" style="font-size: 14px;">
+					<tr>
+						<td class="text-right" style="border: none;"><strong>Total Qty:</strong></td>
+						<td class="text-right total-qty" style="border: none; font-weight: 600;">0</td>
+					</tr>
+					<tr>
+						<td class="text-right" style="border: none;"><strong>Total Amount:</strong></td>
+						<td class="text-right total-amount" style="border: none; font-weight: 600;">0.00</td>
+					</tr>
+					<tr>
+						<td class="text-right" style="border: none;"><strong>GST:</strong></td>
+						<td class="text-right gst-amount" style="border: none; font-weight: 600;">0.00</td>
+					</tr>
+					<tr>
+						<td class="text-right" style="border: none;"><strong>Total (Incl. GST):</strong></td>
+						<td class="text-right total-incl-gst" style="border: none; font-weight: 600;">0.00</td>
+					</tr>
+					<tr>
+						<td class="text-right" style="border: none;"><strong>Cash Discount:</strong></td>
+						<td class="text-right cash-disc-amount" style="border: none; color: var(--red-500);">0.00</td>
+					</tr>
+					<tr style="font-size: 16px;">
+						<td class="text-right" style="border-top: 2px solid var(--border-color);"><strong>Grand Total:</strong></td>
+						<td class="text-right grand-total" style="border-top: 2px solid var(--border-color); font-weight: 700; color: var(--primary);">0.00</td>
+					</tr>
+				</table>
+			</div>
+		</div>
+	</div>
+
+	<!-- Recent Sales Orders List -->
+	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; border: 1px solid var(--border-color);">
+		<h5 style="margin-bottom: 15px; font-weight: 600;">Recent Sales Orders</h5>
+		<div class="recent-orders-list">
+			<p class="text-muted text-center">Loading...</p>
+		</div>
+	</div>
+
+</div>

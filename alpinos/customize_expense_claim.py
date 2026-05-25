@@ -229,14 +229,15 @@ frappe.ui.form.on('Expense Claim', {
 	},
 
 	employee: function(frm) {
-		// Auto-fill Expense Approver based on employee.reports_to.user_id (if field exists)
 		if (!frm.fields_dict.expense_approver) {
 			return;
 		}
 
 		if (frm.doc.employee) {
-			frappe.db.get_value('Employee', frm.doc.employee, 'reports_to', function(data) {
-				if (data && data.reports_to) {
+			frappe.db.get_value('Employee', frm.doc.employee, ['expense_approver', 'reports_to'], function(data) {
+				if (data && data.expense_approver) {
+					frm.set_value('expense_approver', data.expense_approver);
+				} else if (data && data.reports_to) {
 					frappe.db.get_value('Employee', data.reports_to, 'user_id', function(manager) {
 						frm.set_value('expense_approver', (manager && manager.user_id) ? manager.user_id : '');
 					});
@@ -288,6 +289,7 @@ frappe.ui.form.on('Expense Claim', {
 	},
 	
 	reimbursement_remove: function(frm, cdt, cdn) {
+		calculate_reimbursement_total(frm);
 		setTimeout(function() {
 			toggle_reimbursement_add_row(frm);
 		}, 100);
@@ -304,6 +306,11 @@ frappe.ui.form.on('Reimbursement child table', {
 		}, 300);
 	},
 	
+	amount_claimed: function(frm, cdt, cdn) {
+		calculate_reimbursement_total(frm);
+	},
+
+	
 	payment_type: function(frm, cdt, cdn) {
 		// Toggle payment_mode required state based on payment_type
 		toggle_payment_mode_required(frm, cdt, cdn);
@@ -316,6 +323,17 @@ frappe.ui.form.on('Reimbursement child table', {
 		}, 100);
 	}
 });
+
+function calculate_reimbursement_total(frm) {
+	let total = 0;
+	if (frm.doc.reimbursement && frm.doc.reimbursement.length > 0) {
+		frm.doc.reimbursement.forEach(function(row) {
+			total += (row.amount_claimed || 0);
+		});
+	}
+	frm.set_value("total_claimed_amount", total);
+	frm.set_value("grand_total", total);
+}
 
 function setup_reimbursement_add_row_control(frm) {
 	var grid_field = frm.get_field('reimbursement');
@@ -991,6 +1009,24 @@ def update_expense_claim_approval_status_options():
 			"Text"
 		)
 		print("✅ Updated approval_status field options to match workflow states")
+		# Allow workflow to update approval_status after submit (e.g. Submitted to Payroll -> Paid)
+		update_property_setter(
+			"Expense Claim",
+			"approval_status",
+			"allow_on_submit",
+			"1",
+			"Check"
+		)
+		print("✅ Set approval_status allow_on_submit for workflow transitions after submit")
+		# Approval status is controlled by workflow; make it read-only in the form
+		update_property_setter(
+			"Expense Claim",
+			"approval_status",
+			"read_only",
+			"1",
+			"Check"
+		)
+		print("✅ Set approval_status read_only (workflow-controlled)")
 	except Exception as e:
 		frappe.log_error(f"Error updating approval_status options: {str(e)}", "Approval Status Options Error")
 		print(f"⚠️  Could not update approval_status options: {str(e)}")
@@ -1588,44 +1624,41 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 		workflow_name = get_workflow_name("Expense Claim")
 		if workflow_name:
 			workflow = frappe.get_doc("Workflow", workflow_name)
-			if workflow.is_active and workflow.override_status and workflow.workflow_state_field == "status":
-				# Workflow is managing status, don't override it
-				# Get valid workflow states (use state field, not update_value)
+			if workflow.is_active:
 				valid_states = [state.state for state in workflow.states]
-				
-				# If current status is a valid workflow state (and not just "Draft" matching docstatus),
-				# it means workflow set it, so don't override
-				if self.status and self.status in valid_states:
-					# Special workflow states that should never be overridden
-					workflow_managed_states = ["Pending RM Approval", "Approved by RM", "Rejected", "Submitted to Payroll", "Paid"]
-					if self.status in workflow_managed_states:
-						# This is definitely a workflow-managed state, don't override
-						return
-					
-					# For "Draft", only override if it matches docstatus (normal case)
-					# If status is "Draft" but docstatus suggests something else, workflow might have set it
-					docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
-					if self.status != docstatus_based_status:
-						# Status doesn't match docstatus, workflow must have set it
-						return
-				
-				# Only set initial status if document is new or status is empty/invalid
-				# This should only happen for new documents
-				if not self.status or (self.status not in valid_states and self.status in ["Draft", "Submitted", "Cancelled"]):
-					# Set initial status based on docstatus only
-					docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
-					status = docstatus_based_status
-					# Make sure it's a valid workflow state
+
+				# When workflow uses approval_status: sync status from approval_status
+				# (status field options are restricted to workflow states; standard "Submitted" would fail validation)
+				if workflow.workflow_state_field == "approval_status":
+					status = self.approval_status or "Draft"
 					if status not in valid_states:
-						status = "Draft"  # Default to Draft if not in workflow states
+						status = "Draft"
 					if update:
 						self.db_set("status", status)
 					else:
 						self.status = status
-				return
+					return
+
+				# When workflow uses status field and override_status
+				if workflow.override_status and workflow.workflow_state_field == "status":
+					if self.status and self.status in valid_states:
+						workflow_managed_states = ["Pending RM Approval", "Approved by RM", "Rejected", "Submitted to Payroll", "Paid"]
+						if self.status in workflow_managed_states:
+							return
+						docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
+						if self.status != docstatus_based_status:
+							return
+
+					if not self.status or (self.status not in valid_states and self.status in ["Draft", "Submitted", "Cancelled"]):
+						docstatus_based_status = {"0": "Draft", "1": "Submitted", "2": "Cancelled"}[cstr(self.docstatus or 0)]
+						status = docstatus_based_status if docstatus_based_status in valid_states else "Draft"
+						if update:
+							self.db_set("status", status)
+						else:
+							self.status = status
+					return
 		
 		# If no workflow or workflow not overriding, use original logic
-		# Call parent's set_status method
 		super().set_status(update)
 	
 	def validate(self):
@@ -1634,29 +1667,49 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 		workflow_name = get_workflow_name("Expense Claim")
 		if workflow_name:
 			workflow = frappe.get_doc("Workflow", workflow_name)
-			if workflow.is_active and workflow.override_status and workflow.workflow_state_field == "status":
-				# Skip calling set_status in validate - workflow will manage it
-				# Call other validations from parent
+			if workflow.is_active and (
+				workflow.workflow_state_field == "approval_status"
+				or (workflow.override_status and workflow.workflow_state_field == "status")
+			):
+				# Sync status from approval_status when workflow uses approval_status
+				if workflow.workflow_state_field == "approval_status":
+					valid_states = [state.state for state in workflow.states]
+					self.status = (self.approval_status or "Draft") if (self.approval_status or "Draft") in valid_states else "Draft"
+				# Run validations (skip parent's set_status to avoid "Submitted")
 				validate_active_employee = frappe.get_attr("hrms.hr.utils.validate_active_employee")
 				set_employee_name = frappe.get_attr("hrms.hr.utils.set_employee_name")
-				
 				validate_active_employee(self)
 				set_employee_name(self)
+				self.calculate_total_amount()
 				self.validate_sanctioned_amount()
 				self.calculate_total_amount()
 				self.validate_advances()
 				self.set_expense_account(validate=True)
 				self.set_default_accounting_dimension()
 				self.calculate_taxes()
-				# Skip self.set_status() - workflow manages it
 				self.validate_company_and_department()
 				if self.task and not self.project:
 					self.project = frappe.db.get_value("Task", self.task, "project")
-				
 				return
 		
-		# If no workflow, use original validate
 		super().validate()
+	
+	def calculate_total_amount(self):
+		"""Overridden to calculate total from 'reimbursement' instead of 'expenses'"""
+		from frappe.utils import flt
+		
+		# First call super to handle standard fields initially
+		super().calculate_total_amount()
+		
+		# Then override with our custom reimbursement table
+		self.total_claimed_amount = 0
+		
+		if self.get("reimbursement"):
+			for d in self.get("reimbursement"):
+				self.total_claimed_amount += flt(d.amount_claimed)
+		
+		# Set grand total
+		self.grand_total = self.total_claimed_amount
 	
 	def on_submit(self):
 		"""Override on_submit to handle workflow status"""
@@ -1706,23 +1759,25 @@ def execute():
 		# Update approval_status field options to match workflow requirements
 		update_expense_claim_approval_status_options()
 		
+		# DISABLED: Automatic workflow creation
+		# Workflow should be created manually if needed
 		# Step 1: Create Workflow State master records FIRST (required for workflow validation)
-		create_expense_claim_workflow_states()
+		# create_expense_claim_workflow_states()
 		
 		# Step 2: Verify all states exist (fail fast if any are missing)
-		verify_expense_claim_workflow_states_exist()
+		# verify_expense_claim_workflow_states_exist()
 		
 		# Step 3: Create Workflow Action Master records (required for transitions)
-		create_expense_claim_workflow_actions()
+		# create_expense_claim_workflow_actions()
 		
 		# Step 4: Clear cache to ensure updated field options are loaded
-		frappe.clear_cache()
+		# frappe.clear_cache()
 		
 		# Step 5: Create workflow (now all prerequisites are met)
-		setup_expense_claim_workflow()
+		# setup_expense_claim_workflow()
 		
 		# Step 6: Clear cache after workflow creation
-		frappe.clear_cache()
+		# frappe.clear_cache()
 		
 		# Add status field visibility script
 		add_status_field_visibility_script()

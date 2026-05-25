@@ -816,6 +816,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="location",
 				label="Location",
 				fieldtype="Select",
+				options="\nHead Office",
 				insert_after="designation_company_profile",  # Will be after department via field_order
 				reqd=1,
 				read_only=0,  # Editable select field
@@ -848,7 +849,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="category",
 				label="Category",
 				fieldtype="Select",
-				options="\nRegular\nContract\nIntern",
+				options="\nProbation\nFull-Time\nPart-Time\nIntern\nFreelancer\nContract",
 				insert_after="hod",
 				reqd=1,
 			),
@@ -905,6 +906,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="salary_template",
 				label="Salary Template",
 				fieldtype="Select",
+				options="\nNA",
 				insert_after="ctc_monthly",
 				reqd=1,
 			),
@@ -1135,6 +1137,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="roles",
 				label="Roles",
 				fieldtype="Select",
+				options="\nNA",
 				insert_after="access_level_section",
 				reqd=1,
 			),
@@ -1147,6 +1150,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldname="rights",
 				label="Rights",
 				fieldtype="Select",
+				options="\nNA",
 				insert_after="column_break_access",
 				reqd=1,
 			),
@@ -1174,6 +1178,34 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Attach",
 				insert_after="offer_letter",
 				reqd=1,
+			),
+			
+			# ============================================
+			# SECTION: Webform Tracking
+			# ============================================
+			dict(
+				fieldname="webform_tracking_section",
+				label="Webform Tracking",
+				fieldtype="Section Break",
+				insert_after="bond_letter",
+				collapsible=1,
+				hidden=1,  # Hidden from users, for internal tracking
+			),
+			dict(
+				fieldname="webform_submitted",
+				label="Webform Submitted",
+				fieldtype="Check",
+				insert_after="webform_tracking_section",
+				reqd=0,
+				hidden=1,
+			),
+			dict(
+				fieldname="webform_submitted_on",
+				label="Webform Submitted On",
+				fieldtype="Datetime",
+				insert_after="webform_submitted",
+				reqd=0,
+				hidden=1,
 			),
 		]
 	}

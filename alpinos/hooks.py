@@ -26,7 +26,7 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/alpinos/css/alpinos.css"
-# app_include_js = "/assets/alpinos/js/alpinos.js"
+app_include_js = "/assets/alpinos/js/sales_order_hub_desk_v2.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/alpinos/css/alpinos.css"
@@ -46,10 +46,14 @@ app_license = "mit"
 # Note: Job Applicant, Interview, and Employee Onboarding are in HRMS module
 # All JavaScript functionality is handled via Client Scripts (see employee_onboarding_client_scripts.py)
 # No doctype_js needed - client scripts are the correct approach for doctypes in other modules
-# doctype_js = {
-# 	"Employee Onboarding": "doctype.employee_onboarding.employee_onboarding"
-# }
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_js = {
+	"User": "public/js/user_override.js",
+	"Sales Order": "public/js/sales_order_offline_buyer.js",
+	"Quotation": "public/js/quotation_sales_order_redirect.js",
+}
+doctype_list_js = {
+	"Pick List": "public/js/pick_list_list.js",
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -93,7 +97,10 @@ app_license = "mit"
 # Boot Session Hook
 # ------------
 # Apply patches when session boots (ensures patch is active on every request)
-boot_session = "alpinos.overrides.interview_override.setup_interview_override"
+boot_session = [
+	"alpinos.overrides.interview_override.setup_interview_override",
+	"alpinos.overrides.employee_checkin_override.patch_mark_attendance_and_link_log",
+]
 
 # Fixtures
 # --------
@@ -109,20 +116,45 @@ fixtures = [
 ]
 
 patches = [
-	"alpinos.patches.create_attendance_widget"
+	"alpinos.patches.create_attendance_widget",
+	"alpinos.patches.v1_0.delete_unused_employee_bank_fields",
+	"alpinos.patches.v1_0.remove_pick_list_batch_mandatory",
 ]
 
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
+	"alpinos.employee_naming_config.setup_employee_manual_naming",
+	"alpinos.impersonate.create_impersonate_role",
 	"alpinos.workflow_setup.execute",
+	"alpinos.employee_onboarding_workflow_setup.execute",
+	"alpinos.patches.v1_0.setup_job_applicant_workflow.execute",
 	"alpinos.page_setup.create_screening_page",
 	"alpinos.overrides.interview_override.setup_interview_override",
 	"alpinos.update_job_application_webform.update_web_form_script",
 	"alpinos.customize_expense_claim.execute",
 	"alpinos.employee_expense_claim_button.execute",
-	"alpinos.patches.create_hrms_email_templates.execute"
+	"alpinos.patches.create_hrms_email_templates.execute",
+	"alpinos.job_requisition_automation.create_job_requisition_client_script",
+	"alpinos.work_from_home_request_automation.create_work_from_home_client_script",
+	"alpinos.attendance_request_automation.create_attendance_request_client_script",
+	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
+	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
+	"alpinos.patches.create_attendance_widget.execute",
+	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
+	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
+	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
+	"alpinos.sales_order_scheme_damage_migration.run_sales_order_scheme_damage_split_migration",
+	"alpinos.item_custom_fields.setup_item_custom_fields",
+	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
+	"alpinos.pick_list_custom_fields.setup_pick_list_custom_fields",
+	"alpinos.sales_order_client_script.create_sales_order_client_script",
+	"alpinos.opportunity_client_script.create_opportunity_client_script",
+	"alpinos.stock_entry_client_script.create_stock_entry_client_script",
+	"alpinos.quotation_client_script.create_quotation_client_script",
+	"alpinos.pick_list_client_script.create_pick_list_client_script",
+	"alpinos.web_form_update.execute",
 ]
 
 # Uninstallation
@@ -157,30 +189,38 @@ after_migrate = [
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {}
 
 # Raven permissions (override from Alpinos, without touching raven app)
 # Ensures Raven can list channels/messages by membership (helps imports + visibility).
-permission_query_conditions = {
-	"Raven Channel": "alpinos.raven_permissions.raven_channel_query",
-	"Raven Message": "alpinos.raven_permissions.raven_message_query",
-}
+
 
 # DocType Class
 # ---------------
 # Override standard doctype classes
 
+override_whitelisted_methods = {
+	"erpnext.crm.doctype.opportunity.opportunity.make_quotation": (
+		"alpinos.opportunity_make_quotation.make_quotation"
+	),
+	"erpnext.accounts.party.get_party_details": "alpinos.item_details.get_party_details",
+	"erpnext.accounts.party.set_taxes": "alpinos.item_details.set_taxes",
+	"erpnext.stock.get_item_details.get_item_details": "alpinos.item_details.get_item_details",
+	"erpnext.stock.get_item_details.get_item_tax_template": "alpinos.item_details.get_item_tax_template",
+}
+
 override_doctype_class = {
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
 	"Interview": "alpinos.overrides.interview_override.CustomInterview",
-	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding"
+	"Employee Onboarding": "alpinos.overrides.employee_onboarding_override.CustomEmployeeOnboarding",
+	"Job Opening": "alpinos.overrides.job_opening_override.CustomJobOpening",
+	"Attendance Request": "alpinos.overrides.attendance_request_override.CustomAttendanceRequest",
+	"Employee Checkin": "alpinos.overrides.employee_checkin_override.CustomEmployeeCheckin",
+	"Leave Application": "alpinos.overrides.leave_application_override.CustomLeaveApplication",
+	"Shift Request": "alpinos.overrides.shift_request_override.CustomShiftRequest",
+	"User": "alpinos.overrides.user_override.CustomUser",
+	"Delivery Note": "alpinos.overrides.delivery_note_override.CustomDeliveryNote",
 }
 
 # Document Events
@@ -191,6 +231,8 @@ doc_events = {
 	"Job Requisition": {
 		"before_insert": "alpinos.job_requisition_automation.set_requested_by",
 		"validate": [
+			"alpinos.job_requisition_automation.set_requested_by",
+			"alpinos.job_requisition_automation.fetch_designation_details",
 			"alpinos.job_requisition_automation.validate_salary_range",
 			"alpinos.job_requisition_automation.validate_job_requisition"
 		],
@@ -226,9 +268,34 @@ doc_events = {
 			"alpinos.job_applicant_automation.send_interview_scheduled_emails",
 		]
 	},
+	"Quotation": {
+		"before_validate": ["alpinos.quotation_validate.before_validate_quotation_alpinos"],
+		"validate": ["alpinos.quotation_validate.validate_quotation_alpinos"],
+	},
+	"Opportunity": {
+		"validate": ["alpinos.opportunity_validate.validate_opportunity_alpinos"],
+	},
+	"Stock Entry": {
+		"before_insert": "alpinos.stock_entry_hooks.set_entry_by",
+	},
+	"Pick List": {
+		"before_validate": "alpinos.pick_list_hooks.before_validate_pick_list",
+		"validate": "alpinos.pick_list_hooks.validate_pick_list",
+	},
+	"Delivery Note": {
+		"validate": "alpinos.delivery_note_hooks.validate_delivery_note",
+	},
+	"Sales Order": {
+		"validate": [
+			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
+			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
+			"alpinos.sales_order_api.validate_sales_order_pricing",
+		],
+	},
 	"Employee Onboarding": {
 		"before_validate": [
-			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields"
+			"alpinos.employee_onboarding_automation.allow_hr_manager_to_save_without_mandatory_fields",
+			"alpinos.employee_onboarding_webform.prepare_webform_temp_onboarding",
 		],
 		"validate": [
 			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
@@ -239,8 +306,26 @@ doc_events = {
 			"alpinos.employee_onboarding_automation.handle_pre_onboarding_workflow"
 		],
 		"after_insert": [
-			"alpinos.employee_onboarding_automation.send_onboarding_created_email"
+			"alpinos.employee_onboarding_webform.process_webform_submission"
+		],
+		"on_update": [
+			"alpinos.employee_onboarding_automation.handle_workflow_transition"
 		]
+	},
+	"Work From Home Request": {
+		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
+	},
+	"Attendance Request": {
+		"validate": "alpinos.attendance_request_automation.set_reporting_person"
+	},
+	"Attendance": {
+		"validate": [
+			"alpinos.attendance_request_automation.validate_saturday_attendance_threshold"
+		],
+		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
+		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
 	}
 }
 
@@ -251,10 +336,13 @@ scheduler_events = {
 	"daily": [
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
 	],
+	"cron": {
+		"*/30 * * * *": [
+			"alpinos.essl_sync.sync_essl_logs",
+			"alpinos.attendance_scheduler.process_auto_attendance_periodic"
+		]
+	}
 }
-
-# Run email template setup on every migrate (idempotent: skips if template exists)
-# Note: This is now included in the after_migrate list above
 
 # Boot Info Extensions
 # --------------------
@@ -293,7 +381,8 @@ extend_bootinfo = [
 
 # Request Events
 # ----------------
-# before_request = ["alpinos.utils.before_request"]
+# Monkey-patch OAuth server on every request to extend token expiry for Raven mobile app
+before_request = ["alpinos.overrides.oauth_override.patch_oauth_server"]
 # after_request = ["alpinos.utils.after_request"]
 
 # Job Events
@@ -332,10 +421,14 @@ extend_bootinfo = [
 # 	"alpinos.auth.validate"
 # ]
 
-# Automatically update python controller files with type annotations for this app.
+# Automatically update python controller files with type annotations in this app.
 # export_python_type_annotations = True
 
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+
+from alpinos.quotation_obm_patch import apply_quotation_obm_customer_patch
+
+apply_quotation_obm_customer_patch()

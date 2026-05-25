@@ -1,0 +1,27 @@
+{
+ "content": null,
+ "creation": "2026-04-27 12:00:00.000000",
+ "doctype": "Page",
+ "icon": "fa fa-list",
+ "idx": 0,
+ "modified": "2026-04-27 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "offline-buyer-catalog",
+ "owner": "Administrator",
+ "page_name": "offline-buyer-catalog",
+ "roles": [
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "standard": "Yes",
+ "system_page": 0,
+ "title": "Offline Buyer Items"
+}

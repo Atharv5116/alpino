@@ -1,0 +1,60 @@
+<div class="sales-order-entry-list" style="max-width: 1400px; margin: 0 auto; padding: 12px;">
+	<div class="so-list-filters so-view-card" style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+		<h6 class="so-list-filters-title" style="margin-top: 0; margin-bottom: 12px; font-weight: 600;">Filters</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6" style="margin-bottom: 10px;">
+				<div class="fld-search"></div>
+			</div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;">
+				<div class="fld-status"></div>
+			</div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;">
+				<div class="fld-company"></div>
+			</div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;">
+				<div class="fld-customer"></div>
+			</div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;">
+				<div class="fld-from-date"></div>
+			</div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;">
+				<div class="fld-to-date"></div>
+			</div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;">
+				<div class="fld-au-damage-filter"></div>
+			</div>
+		</div>
+		<div>
+			<button type="button" class="btn btn-primary btn-sm btn-so-list-apply">Apply</button>
+			<button type="button" class="btn btn-default btn-sm btn-so-list-clear">Clear</button>
+		</div>
+	</div>
+
+	<div class="so-view-card" style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0; overflow: hidden;">
+		<div style="padding: 12px 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+			<span class="text-muted so-list-count"></span>
+			<div>
+				<button type="button" class="btn btn-default btn-sm btn-so-list-prev" disabled>Previous</button>
+				<button type="button" class="btn btn-default btn-sm btn-so-list-next" disabled>Next</button>
+			</div>
+		</div>
+		<div style="overflow-x: auto;">
+			<table class="table table-bordered so-list-table" style="font-size: 13px; margin-bottom: 0;">
+				<thead style="background: var(--bg-color);">
+					<tr>
+						<th>ID</th>
+						<th>Customer</th>
+						<th>Customer Name</th>
+						<th>Date</th>
+						<th>Delivery Date</th>
+						<th>Company</th>
+						<th>Status</th>
+						<th class="text-center">Damage AU</th>
+						<th class="text-right">Grand Total</th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+</div>

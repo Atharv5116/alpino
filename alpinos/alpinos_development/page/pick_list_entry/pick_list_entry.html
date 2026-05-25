@@ -1,0 +1,95 @@
+<style>
+	.pick-list-container {
+		padding: 15px;
+		background: #fff;
+	}
+	.header-grid {
+		display: grid;
+		grid-template-columns: 150px 1fr 150px 1fr;
+		gap: 10px;
+		margin-bottom: 20px;
+	}
+	.header-grid label {
+		font-weight: bold;
+		text-align: right;
+		padding-right: 10px;
+		align-self: center;
+	}
+	.sku-table {
+		width: 100%;
+		border-collapse: collapse;
+		margin-bottom: 20px;
+	}
+	.sku-table th, .sku-table td {
+		border: 1px solid #d1d8dd;
+		padding: 5px;
+		text-align: center;
+	}
+	.sku-table th {
+		background: #f8f9fa;
+		font-weight: bold;
+	}
+	.sku-table input {
+		width: 100%;
+		box-sizing: border-box;
+	}
+	.table-section-title {
+		margin-top: 30px;
+		margin-bottom: 10px;
+		font-size: 16px;
+		font-weight: bold;
+		color: #333;
+		border-bottom: 1px solid #ddd;
+		padding-bottom: 5px;
+	}
+</style>
+
+<div class="pick-list-container">
+	<div class="text-right" style="margin-bottom: 15px;">
+		<button class="btn btn-primary btn-sm" id="btn-create-delivery-note" style="display: none; margin-right: 5px;">Create Delivery Note</button>
+		<button class="btn btn-default btn-sm" id="btn-go-to-list">Go to List View</button>
+	</div>
+	
+	<div class="header-grid">
+		<label>ACTUAL BOX</label>
+		<input type="number" class="form-control" data-fieldname="custom_actual_box" step="1">
+		<label>QC Attended By</label>
+		<select class="form-control" data-fieldname="custom_qc_attended_by"></select>
+		
+		<label>SAMPLE BOX</label>
+		<input type="number" class="form-control" data-fieldname="custom_sample_box" step="1">
+		<label>DATE</label>
+		<input type="text" class="form-control" data-fieldname="custom_order_date" readonly>
+		
+		<label>SAMPLE WEIGHT</label>
+		<input type="number" class="form-control" data-fieldname="custom_sample_weight" step="0.01" readonly>
+		<label>PARTY NAME</label>
+		<input type="text" class="form-control" data-fieldname="custom_customer_name" readonly>
+		
+		<label>TOTAL BOX</label>
+		<input type="number" class="form-control" data-fieldname="custom_total_box" step="1" readonly>
+		<label>PARTY CODE</label>
+		<input type="text" class="form-control" data-fieldname="custom_party_code" readonly>
+		
+		<label>GROSS WEIGHT</label>
+		<input type="number" class="form-control" data-fieldname="custom_gross_weight" step="0.01" readonly>
+		<label>SO NO.</label>
+		<input type="text" class="form-control" data-fieldname="custom_sales_order_id" readonly>
+		
+		<label>TOTAL UNITS</label>
+		<input type="number" class="form-control" data-fieldname="custom_total_unit" step="0.01" readonly>
+		<label>PO NO.</label>
+		<input type="text" class="form-control" data-fieldname="custom_po_no">
+		
+		<label></label>
+		<div></div>
+		<label>TRANSPORTER</label>
+		<input type="text" class="form-control" data-fieldname="custom_transporter">
+	</div>
+	
+	<div id="tables-container">
+		<!-- Tables will be dynamically generated here -->
+	</div>
+	
+	<datalist id="batch-list"></datalist>
+</div>

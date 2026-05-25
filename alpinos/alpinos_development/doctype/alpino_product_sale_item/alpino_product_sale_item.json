@@ -1,0 +1,41 @@
+{
+ "actions": [],
+ "creation": "2026-03-30 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sku",
+  "qty"
+ ],
+ "fields": [
+  {
+   "columns": 8,
+   "fieldname": "sku",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "SKU",
+   "options": "NT-CR-1000 - Peanut Butter Natural Crunch 1 KG\nNT-CR-400 - Peanut Butter Natural Crunch 400 GM\nNT-SM-1000 - Peanut Butter Natural Smooth 1 KG\nNT-SM-400 - Peanut Butter Natural Smooth 400 GM\nCL-CR-1000 - Peanut Butter Classic+ Crunch 1 KG\nCL-CR-400 - Peanut Butter Classic+ Crunch 400 GM\nCH-CR-1000 - Peanut Butter Chocolate Crunch 1 KG\nCH-CR-400 - Peanut Butter Chocolate Crunch 400 GM\nCH-SM-1000 - Peanut Butter Chocolate Smooth 1 KG\nCH-SM-400 - Peanut Butter Chocolate Smooth 400 GM\nSP-CH-1000 - Peanut Butter Chocolate Super Crunch 1 KG\nDC-CR-1000 - Peanut Butter High Protein Dark Chocolate Crunch 1 KG\nDC-CP-1000 - Peanut Butter High Protein Dark Chocolate Crisp 1 KG\nDC-CR-500 - Peanut Butter High Protein Dark Chocolate Crunch 500 GM\nPC-HO-200 - Peanut Crackers Chipotle Honey 200 GM\nPC-BB-200 - Peanut Crackers BBQ 200 GM\nPC-HO-60 - Peanut Crackers Chipotle Honey 60 GM\nPC-BB-60 - Peanut Crackers BBQ 60 GM\nSB-CC-40 - Super Bar Cookies & Cream 40 GM\nSB-CH-40 - Super Bar Chocolate 40 GM\nSB-CF-40 - Super Bar Coffee 40 GM\nSM-BC-400 - Super Muesli Berry Crunch 400 GM\nDM-NB-400 - Diet Muesli Nuts & Berries 400 GM\nMM-ND-400 - Millet Muesli Nuts Delight 400 GM\nHM-DC-400 - High Protein Muesli Dark Chocolate 400 GM\nHM-CF-400 - High Protein Muesli Cold Coffee 400 GM\nHM-DC-2000 - High Protein Muesli Dark Chocolate 2 KG\nSM-ST-1000 - Super Muesli Strawberry & Nuts 1 KG\nMFN 750 - MUESLI FRUIT & NUT 750\nMND 750 - MUESLI NUT DELIGHT 750\nMCH 750 - MUESLI CHOCOLATE 750\nMFN400 - MUESLI FRUIT & NUT 400\nMND400 - MUESLI NUT DELIGHT 400\nMCH400 - MUESLI CHOCOLATE 400\nMCF400 - MUESLI COFFEE 400\nMO-HM-400 - Masala Oats Hot Mexicana 400 GM\nMO-KF-400 - Masala Oats Korean Fire 400 GM\nMO-IM-400 - Masala Oats Indian Masala 400 GM\nSO-US-1000 - Super Oats Unsweetened 1 KG\nSO-CH-2500 - Super Oats Chocolate 2.5 KG\nSO-CH-1000 - Super Oats Chocolate 1 KG\nSO-CH-400 - Super Oats Chocolate 400 GM\nSO-HO-400 - Super Oats Honey 400 GM\nSO-CF-2000 - Super Oats Classic Coffee 2 KG\nSO-CF-1000 - Super Oats Classic Coffee 1 KG\nSO-CF-400 - Super Oats Classic Coffee 400 GM\nHO-DC-2000 - High Protein Oats Dark Chocolate 2 KG\nHO-DC-1000 - High Protein Oats Dark Chocolate 1 KG\nHO-DC-400 - High Protein Oats Dark Chocolate 400 GM\nCF-CH-750 - Corn Flakes Chocolate 750 GM\nAS-PW-220 - Supernatural Peanut Protein (Pack of 6) 220 GM\nSP-DC-1000 - Supernatural Peanut Protein Dark Chocolate 1 KG\nSP-DC-36 - Supernatural Peanut Protein Dark Chocolate 36 GM\nSP-CF-1000 - Supernatural Peanut Protein Cold Coffee 1 KG\nSP-CF-37 - Supernatural Peanut Protein Cold Coffee 37 GM\nSP-TF-1000 - Supernatural Peanut Protein Thandai Fusion 1 KG\nSP-TF-37 - Supernatural Peanut Protein Thandai Fusion 37 GM\nSP-KM-1000 - Supernatural Peanut Protein Kesar Mango 1 KG\nSP-KM-37 - Supernatural Peanut Protein Kesar Mango 37 GM\nAC-VI-500 - Organic Apple Cider Vinegar 500 ML\nSV-AB-60 - Active B-Complex 60 Tablets\nSV-MV-60 - Daily Multivitamin 60 Tablets\nSV-DK-60 - Vitamin D3+K2 60 Tablets\nSV-MZ-60 - Magnesium Bisglycinate + Zinc 60 Tablets\nSV-OD-60 - Omega 3 Fish Oil + D3 60 Softgels\nSV-TO-60 - Triple Strength Omega 3 60 Softgels\nCM-LE-300 - Nano Particle Creatine Monohydrate Lemonade 300 GM\nCM-UF-300 - Nano Particle Creatine Monohydrate Unflavoured 300 GM\nDN-MB-360 - Daily Complete Nutrition+ Mix Berries 360 GM\nDN-MB-12 - Daily Complete Nutrition+ Mix Berries 12 GM",
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "fieldname": "qty",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Qty",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-03-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Alpino Product Sale Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

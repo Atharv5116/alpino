@@ -51,6 +51,59 @@ def hide_status_field():
 		print(f"⚠️  Could not hide status field: {str(e)}")
 
 
+def remove_custom_requested_by_default():
+	"""Remove any property setters that set default='user' for custom_requested_by field"""
+	try:
+		# Remove property setters for custom_requested_by
+		property_setters = frappe.get_all(
+			"Property Setter",
+			filters={
+				"doc_type": "Job Requisition",
+				"field_name": "custom_requested_by",
+				"property": "default"
+			},
+			fields=["name", "value"]
+		)
+		
+		for ps in property_setters:
+			if ps.value == "user" or not ps.value:
+				frappe.delete_doc("Property Setter", ps.name, force=1, ignore_permissions=True)
+				print(f"✅ Removed property setter: {ps.name}")
+		
+		# Also check and update Custom Field default value
+		custom_field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Job Requisition", "fieldname": "custom_requested_by"},
+			["name", "default"],
+			as_dict=True
+		)
+		
+		if custom_field and (custom_field.default == "user" or custom_field.default):
+			frappe.db.set_value("Custom Field", custom_field.name, "default", None)
+			print(f"✅ Removed default value from Custom Field: {custom_field.name}")
+		
+		# Fix any existing Job Requisition records that have "user" as value
+		invalid_records = frappe.get_all(
+			"Job Requisition",
+			filters={"custom_requested_by": "user"},
+			fields=["name"]
+		)
+		
+		if invalid_records:
+			for record in invalid_records:
+				# Try to get the owner or creator as fallback
+				owner = frappe.db.get_value("Job Requisition", record.name, "owner")
+				if owner and frappe.db.exists("User", owner):
+					frappe.db.set_value("Job Requisition", record.name, "custom_requested_by", owner)
+					print(f"✅ Fixed Job Requisition {record.name}: set custom_requested_by to {owner}")
+		
+		if property_setters or (custom_field and custom_field.default):
+			frappe.db.commit()
+	except Exception as e:
+		print(f"⚠️  Could not remove custom_requested_by default property setters: {str(e)}")
+		frappe.log_error(f"Error in remove_custom_requested_by_default: {str(e)}", "Custom Fields Setup")
+
+
 def update_property_setter(doctype, fieldname, property_name, value, property_type="Data"):
 	"""Create or update a property setter"""
 	existing = frappe.db.exists(
@@ -93,7 +146,7 @@ def setup_custom_fields():
 				fieldtype="Section Break",
 				insert_after="naming_series",
 				collapsible=1,
-				depends_on="eval:!doc.__islocal",  # Only show in Edit view (when saved)
+				# Always visible (new + saved docs)
 			),
 			
 			# Column Break for Status and Approval
@@ -103,22 +156,22 @@ def setup_custom_fields():
 				insert_after="requisition_details_section",
 			),
 			
-			# Approved On - Datetime (Read-only, auto-set)
+			# Approved On - Datetime (auto-set, but editable if needed)
 			dict(
 				fieldname="approved_on",
 				label="Approved On",
 				fieldtype="Datetime",
-				read_only=1,
+				read_only=0,
 				insert_after="column_break_requisition",
 			),
 			
-			# Approved By - Link to User (Read-only, auto-set)
+			# Approved By - Link to User (auto-set, but editable if needed)
 			dict(
 				fieldname="approved_by",
 				label="Approved By",
 				fieldtype="Link",
 				options="User",
-				read_only=1,
+				read_only=0,
 				insert_after="approved_on",
 			),
 			
@@ -270,7 +323,7 @@ def setup_custom_fields():
 				insert_after="posting_date",
 				read_only=1,
 				reqd=1,
-				default="user",
+				# No default - will be set by automation function set_requested_by
 			),
 			
 			# Column Break for Employee Info
@@ -314,6 +367,42 @@ def setup_custom_fields():
 				read_only=1,
 				hidden=1,
 				description="User ID of requestor's manager (for workflow)",
+			),
+			
+			# Required Skills Section Break (in job_description_tab)
+			dict(
+				fieldname="required_skills_section",
+				label="Skills",
+				fieldtype="Section Break",
+				insert_after="reason_for_requesting",
+				collapsible=1,
+			),
+			
+			# Skills - Table (Designation Skill)
+			dict(
+				fieldname="skills",
+				label="Skills",
+				fieldtype="Table",
+				options="Designation Skill",
+				insert_after="required_skills_section",
+			),
+			
+			# Required Languages Section Break
+			dict(
+				fieldname="required_languages_section",
+				label="Language Proficiency",
+				fieldtype="Section Break",
+				insert_after="skills",
+				collapsible=1,
+			),
+			
+			# Languages - Table (Language Child)
+			dict(
+				fieldname="languages",
+				label="Languages",
+				fieldtype="Table",
+				options="Language Child",
+				insert_after="required_languages_section",
 			),
 		],
 		"Job Opening": [
@@ -362,12 +451,14 @@ def setup_custom_fields():
 		),
 		
 		# Candidate Category - Select (White/Hold/Black)
+		# allow_on_submit=1 so screening page can update category on submitted applicants
 		dict(
 			fieldname="candidate_category",
 			label="Candidate Category",
 			fieldtype="Select",
 			options="\nWhite\nHold\nBlack",
 			insert_after="screening_section",
+			allow_on_submit=1,
 		),
 		
 		# Screening Status - Select (Read-only, auto-updated)
@@ -469,13 +560,77 @@ def setup_custom_fields():
 			default=0,
 		),
 	],
-	
+	"Employee Checkin": [
+		dict(
+			fieldname="checkout_reason",
+			label="Checkout Reason (Outside Location)",
+			fieldtype="Small Text",
+			insert_after="geolocation",
+			description="Required when checking out from outside the office geo-fence.",
+		),
+		dict(
+			fieldname="from_attendance_request",
+			label="From Attendance Request",
+			fieldtype="Check",
+			insert_after="checkout_reason",
+			default=0,
+			hidden=1,
+			description="Set when check-in/check-out is created from Attendance Request; skips location validation.",
+		),
+	],
+	"Attendance": [
+		dict(
+			fieldname="checkout_reason",
+			label="Checkout Reason (Outside Location)",
+			fieldtype="Small Text",
+			insert_after="out_time",
+			read_only=1,
+			description="Reason provided when employee checked out from outside office location (from Employee Checkin).",
+		),
+	],
+	"Sales Order": [
+		dict(
+			fieldname="custom_offline_buyer_section",
+			label="Offline Buyer",
+			fieldtype="Section Break",
+			# After GSTIN so standard customer / name / type / dates / addresses flow right under Customer.
+			insert_after="tax_id",
+			collapsible=1,
+		),
+		dict(
+			fieldname="custom_offline_buyer_master",
+			label="Offline Buyer Master",
+			fieldtype="Link",
+			options="Offline Buyer Master",
+			insert_after="custom_offline_buyer_section",
+			read_only=1,
+			allow_on_submit=1,
+		),
+		dict(
+			fieldname="custom_offline_buyer_customer_type",
+			label="Customer Type (Offline Buyer)",
+			fieldtype="Link",
+			options="Offline Buyer Customer Type",
+			insert_after="custom_offline_buyer_master",
+			read_only=1,
+			allow_on_submit=1,
+		),
+	],
 	# Delete qualification table field if it exists (references non-existent Qualification DocType)
 	# This is handled separately to avoid validation errors
 	}
-	
+
+	if not frappe.db.exists("DocType", "Offline Buyer Master"):
+		custom_fields.pop("Sales Order", None)
+
+	# Force field type changes in DB to bypass Data -> Link validation
+	_force_offline_buyer_fieldtype_sync()
+
 	create_custom_fields(custom_fields, update=True)
 	print("Custom fields created for Job Requisition, Job Opening, and Job Applicant")
+	
+	# Remove any property setters that set default="user" for custom_requested_by
+	remove_custom_requested_by_default()
 	
 	# Delete qualification table field if it exists (it references non-existent Qualification DocType)
 	delete_qualification_field()
@@ -507,8 +662,29 @@ def setup_custom_fields():
 	
 	# Update bank_account_type and increment_cycle to Data fields
 	update_employee_fields_to_data()
-	
+
+	try:
+		from alpinos.delivery_note_custom_fields import setup_delivery_note_alpinos
+
+		setup_delivery_note_alpinos()
+	except Exception as e:
+		print(f"⚠️  Delivery Note (Alpinos) setup skipped: {str(e)}")
+
 	print("✅ Job Requisition custom fields created (property setters loaded from fixtures/property_setter.json)")
+
+
+def _force_offline_buyer_fieldtype_sync():
+	"""Manually sync field types in the database for Offline Buyer fields to bypass Frappe validation errors."""
+	# Custom field custom_offline_buyer_customer_type on Sales Order
+	cf_name = frappe.db.get_value("Custom Field", {"dt": "Sales Order", "fieldname": "custom_offline_buyer_customer_type"}, "name")
+	if cf_name:
+		current_type = frappe.db.get_value("Custom Field", cf_name, "fieldtype")
+		if current_type == "Data":
+			frappe.db.set_value("Custom Field", cf_name, {
+				"fieldtype": "Link",
+				"options": "Offline Buyer Customer Type"
+			}, update_modified=False)
+			frappe.db.commit()
 
 
 def delete_exit_letter_field():

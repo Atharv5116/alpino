@@ -56,13 +56,11 @@ def update_employee_onboarding_fields():
 		"Check"
 	)
 	
-	# 5. Update Status field options
+	# 5. Update Status field options to match workflow states
 	status_options = (
-		"Pre-Onboarding Initiated\n"
-		"Job Confirmed\n"
-		"Documents Pending\n"
-		"Joined\n"
-		"Active Employee"
+		"Draft\n"
+		"Email Sent\n"
+		"Employee Created"
 	)
 	update_property_setter(
 		"Employee Onboarding",
@@ -72,12 +70,12 @@ def update_employee_onboarding_fields():
 		"Text"
 	)
 	
-	# 6. Update default status to "Pre-Onboarding Initiated"
+	# 6. Update default status to "Draft"
 	update_property_setter(
 		"Employee Onboarding",
 		"boarding_status",
 		"default",
-		"Pre-Onboarding Initiated",
+		"Draft",
 		"Data"
 	)
 	

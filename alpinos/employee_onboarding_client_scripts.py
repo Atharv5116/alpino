@@ -28,7 +28,7 @@ frappe.ui.form.on('Job Applicant', {
 								var onboarding_doc = frappe.model.get_new_doc('Employee Onboarding');
 								onboarding_doc.job_applicant = r.message.job_applicant;
 								onboarding_doc.candidate_id = r.message.job_applicant;  // Link field to Job Applicant
-								onboarding_doc.boarding_status = 'Pre-Onboarding Initiated';
+								onboarding_doc.boarding_status = 'Draft';
 								
 								// Work experience fields will be auto-populated by the client script
 								
@@ -57,6 +57,30 @@ frappe.ui.form.on('Job Applicant', {
 				});
 			}, __('Actions'));
 		}
+	},
+
+	// Auto-fill Applied Position immediately when Job Opening changes
+	job_requisition: function(frm) {
+		if (!frm.doc.job_requisition) return;
+		frappe.db.get_value('Job Opening', frm.doc.job_requisition, 'designation')
+			.then((r) => {
+				const designation = r && r.message ? r.message.designation : null;
+				if (designation) {
+					frm.set_value('applied_position', designation);
+					// Keep designation in sync as well, if present on the form
+					if (frm.doc.designation !== undefined) {
+						frm.set_value('designation', designation);
+					}
+				}
+			})
+			.catch(() => {});
+	},
+
+	// If job_title is used to carry Job Opening in some flows, sync from it too
+	job_title: function(frm) {
+		if (!frm.doc.job_title || frm.doc.job_requisition) return;
+		frm.set_value('job_requisition', frm.doc.job_title);
+		frm.trigger('job_requisition');
 	}
 });
 """
@@ -80,7 +104,7 @@ frappe.ui.form.on('Interview', {
 								var onboarding_doc = frappe.model.get_new_doc('Employee Onboarding');
 								onboarding_doc.job_applicant = r.message.job_applicant;
 								onboarding_doc.candidate_id = r.message.job_applicant;  // Link field to Job Applicant
-								onboarding_doc.boarding_status = 'Pre-Onboarding Initiated';
+								onboarding_doc.boarding_status = 'Draft';
 								
 								// Work experience fields will be auto-populated by the client script
 								
@@ -129,17 +153,47 @@ frappe.ui.form.on('Interview', {
 	
 	# Client Script for Employee Onboarding
 	employee_onboarding_script = """
-// Allow first save of Employee Onboarding without client-side mandatory checks
+// Allow saving Employee Onboarding in Draft state without client-side mandatory checks
 if (!frappe.ui.form._employee_onboarding_check_mandatory_patched) {
 	frappe.ui.form._employee_onboarding_check_mandatory_patched = true;
 	const original_check_mandatory = frappe.ui.form.check_mandatory;
 	frappe.ui.form.check_mandatory = function (frm) {
-		if (frm && frm.doctype === 'Employee Onboarding' && frm.is_new()) {
-			// Skip mandatory check on very first save; backend still runs its own logic
-			return true;
+		if (frm && frm.doctype === 'Employee Onboarding') {
+			// Skip mandatory check when in Draft or Email Sent state
+			var state = frm.doc.boarding_status || frm.doc.workflow_state || '';
+			if (frm.is_new() || state === 'Draft' || state === 'Email Sent') {
+				return true;
+			}
 		}
 		return original_check_mandatory(frm);
 	};
+}
+
+// Helper: Remove or restore mandatory asterisks based on workflow state
+function toggle_mandatory_indicators(frm) {
+	var state = frm.doc.boarding_status || frm.doc.workflow_state || '';
+	var skip_mandatory = frm.is_new() || state === 'Draft' || state === 'Email Sent';
+
+	if (skip_mandatory) {
+		// Store original reqd values and remove mandatory from ALL fields
+		if (!frm._original_reqd_map) {
+			frm._original_reqd_map = {};
+		}
+		frm.meta.fields.forEach(function(df) {
+			if (df.reqd) {
+				frm._original_reqd_map[df.fieldname] = 1;
+				frm.set_df_property(df.fieldname, 'reqd', 0);
+			}
+		});
+	} else {
+		// Restore original mandatory values
+		if (frm._original_reqd_map) {
+			Object.keys(frm._original_reqd_map).forEach(function(fieldname) {
+				frm.set_df_property(fieldname, 'reqd', 1);
+			});
+			frm._original_reqd_map = null;
+		}
+	}
 }
 
 frappe.ui.form.on('Employee Onboarding', {
@@ -173,6 +227,10 @@ frappe.ui.form.on('Employee Onboarding', {
 		} catch (e) {
 			// ignore if boarding_status is not defined
 		}
+
+		// Toggle mandatory asterisks based on workflow state
+		toggle_mandatory_indicators(frm);
+
 		// Auto-populate fields when form loads if job_applicant is set
 		if (frm.doc.job_applicant) {
 			// Set candidate_id to job_applicant (Link field)
@@ -184,61 +242,29 @@ frappe.ui.form.on('Employee Onboarding', {
 			auto_populate_from_job_applicant(frm);
 		}
 		
-		// Add Create Employee button
+		// Add Create Employee button when in 'Employee Created' workflow state
+		// or when no workflow state is set (backward compat)
 		if (!frm.is_new() && !frm.doc.employee) {
-			frm.add_custom_button(__('Create Employee'), function() {
-				frappe.model.open_mapped_doc({
-					method: 'alpinos.employee_onboarding_to_employee.make_employee_with_details',
-					frm: frm
-				});
-			}, __('Actions'));
-		}
-		
-		// Check if pre-onboarding interview was created and redirect
-		if (frm.doc.boarding_status === 'Pre-Onboarding Initiated' && frm.doc.job_applicant) {
-			// Check if interview exists
-			frappe.db.get_value('Interview', {
-				'job_applicant': frm.doc.job_applicant,
-				'interview_round': 'pre-onboarding'
-			}, 'name', (r) => {
-				if (r && r.name) {
-					// Show message and add button to open interview
-					frappe.show_alert({
-						message: __('Pre-Onboarding Interview created. Click to open.'),
-						indicator: 'blue'
-					}, 5);
-					
-					frm.add_custom_button(__('Open Pre-Onboarding Interview'), function() {
-						frappe.set_route('Form', 'Interview', r.name);
+			if (frm.doc.boarding_status === 'Employee Created' || !frm.doc.boarding_status) {
+				frm.add_custom_button(__('Create Employee'), function() {
+					frappe.model.open_mapped_doc({
+						method: 'alpinos.employee_onboarding_to_employee.make_employee_with_details',
+						frm: frm
 					});
-				}
-			});
+				}, __('Actions'));
+			}
 		}
 	},
 	
 	after_save: function(frm) {
-		// After save, check if pre-onboarding interview was created
-		if (frm.doc.boarding_status === 'Pre-Onboarding Initiated' && frm.doc.job_applicant) {
-			// Wait a moment for the interview to be created
+		// When workflow transitions to 'Employee Created', open the Employee creation form
+		if (frm.doc.boarding_status === 'Employee Created' && !frm.doc.employee) {
 			setTimeout(function() {
-				frappe.db.get_value('Interview', {
-					'job_applicant': frm.doc.job_applicant,
-					'interview_round': 'pre-onboarding'
-				}, 'name', (r) => {
-					if (r && r.name) {
-						// Show message and redirect to interview
-						frappe.show_alert({
-							message: __('Pre-Onboarding Interview created. Redirecting...'),
-							indicator: 'blue'
-						}, 3);
-						
-						// Redirect to interview after a short delay
-						setTimeout(function() {
-							frappe.set_route('Form', 'Interview', r.name);
-						}, 500);
-					}
+				frappe.model.open_mapped_doc({
+					method: 'alpinos.employee_onboarding_to_employee.make_employee_with_details',
+					frm: frm
 				});
-			}, 1500);
+			}, 1000);
 		}
 	},
 	

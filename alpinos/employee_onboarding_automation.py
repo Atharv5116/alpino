@@ -170,14 +170,39 @@ def populate_from_job_applicant(doc, method=None):
 def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	"""
 	Allow saving Employee Onboarding even if certain mandatory fields are not filled.
+	- While the form is in Draft workflow state: allow any user to save without mandatory fields.
 	- On first save of a new document: allow any user to save without filling mandatory fields.
 	- On subsequent saves: allow HR Manager role to skip specific fields (as per SRS).
 	Also ensures hidden designation field is non-mandatory for all users.
 	"""
-	# 1) First save: completely bypass mandatory checks using Frappe's built-in flag.
+	# Normalize legacy status value before field validation runs.
+	# "Document Pending" is invalid for current options; valid value is "Email Sent".
+	if getattr(doc, "boarding_status", None) in ["Document Pending", "Documents Pending"]:
+		doc.boarding_status = "Email Sent"
+
+	# Date of Joining - use existing date_of_joining field or expected_date_of_joining
+	# Move to the very top so it always executes regardless of early returns!
+	if not doc.date_of_joining_onboarding:
+		if doc.date_of_joining:
+			doc.date_of_joining_onboarding = doc.date_of_joining
+		elif hasattr(doc, 'job_applicant') and doc.job_applicant:
+			try:
+				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+				if job_applicant.expected_date_of_joining:
+					doc.date_of_joining_onboarding = job_applicant.expected_date_of_joining
+			except:
+				pass
+
+	# 1) While form is in Draft state: bypass ALL mandatory checks for all users.
 	# This lets HR create an onboarding shell with minimal data and complete details later.
 	if hasattr(doc, "is_new") and doc.is_new():
-		# This flag is checked inside Document._validate_mandatory()
+		doc.flags.ignore_mandatory = True
+		return
+
+	# Draft and Email Sent workflow states: bypass mandatory for all users.
+	# Only the final "Employee Created" state should enforce mandatory checks.
+	current_state = getattr(doc, "boarding_status", None) or getattr(doc, "workflow_state", None)
+	if current_state in ("Draft", "Email Sent"):
 		doc.flags.ignore_mandatory = True
 		return
 	
@@ -278,17 +303,7 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 						doc_field.reqd = 0
 						break
 	
-	# Date of Joining - use existing date_of_joining field or expected_date_of_joining
-	if not doc.date_of_joining_onboarding:
-		if doc.date_of_joining:
-			doc.date_of_joining_onboarding = doc.date_of_joining
-		elif hasattr(doc, 'job_applicant') and doc.job_applicant:
-			try:
-				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
-				if job_applicant.expected_date_of_joining:
-					doc.date_of_joining_onboarding = job_applicant.expected_date_of_joining
-			except:
-				pass
+
 
 
 def validate_date_of_birth(doc, method=None):
@@ -635,25 +650,131 @@ def send_pre_onboarding_email(doc, applicant_email):
 	Send pre-onboarding email to the applicant
 	Sets status to "Document Pending" after sending
 	"""
+	# DEBUG: Log that this function was called and from where
+	frappe.log_error(
+		title="Onboarding Email Trace",
+		message=f"[EMAIL DEBUG] send_pre_onboarding_email called for {doc.name} | recipient: {applicant_email}\nTraceback:\n{frappe.get_traceback()}"
+	)
 	try:
 		template_name = "Onboarding - Document Reminder"
 
 		if not frappe.db.exists("Email Template", template_name):
+			frappe.log_error(
+				title="Onboarding Email Trace",
+				message=f"[EMAIL DEBUG] Template '{template_name}' NOT FOUND in DB for {doc.name}"
+			)
 			return
 
-		onboarding_link = get_url(f"/app/employee-onboarding/{doc.name}")
+		# Generate webform link with Employee Onboarding name
+		from alpinos.employee_onboarding_webform import get_webform_url
+		webform_link = get_webform_url(doc.name)
+		desk_onboarding_link = get_url(f"/app/employee-onboarding/{doc.name}")
+
+		# Get company name
+		company = getattr(doc, "company", "") or ""
+		company_name = company
+		if company:
+			company_name = frappe.db.get_value("Company", company, "company_name") or company
+
+		# Fetch HR Manager details (name, phone, email, designation)
+		hr_name = "Khushi Doshi"
+		hr_email = "hr@alpinohealthfoods.com"
+		hr_phone = "+91 6359474000"
+		hr_designation = "HR Manager"
+		try:
+			# Prioritize the hr@alpinohealthfoods.com user details if active
+			user_details = frappe.db.get_value(
+				"User",
+				{"email": "hr@alpinohealthfoods.com", "enabled": 1},
+				["full_name", "phone", "name"],
+				as_dict=True
+			)
+			if user_details:
+				hr_name = user_details.full_name or hr_name
+				hr_phone = user_details.phone or hr_phone
+				employee_designation = frappe.db.get_value("Employee", {"user_id": user_details.name}, "designation")
+				hr_designation = employee_designation or hr_designation
+			else:
+				# Otherwise look for any active user with HR Manager role
+				hr_users = frappe.get_all(
+					"Has Role",
+					filters={"role": "HR Manager", "parenttype": "User"},
+					fields=["parent"],
+				)
+				for hr_user in hr_users:
+					ud = frappe.db.get_value(
+						"User",
+						hr_user.parent,
+						["full_name", "email", "phone", "enabled"],
+						as_dict=True
+					)
+					if ud and ud.enabled:
+						hr_name = ud.full_name or hr_user.parent or hr_name
+						hr_email = ud.email or hr_email
+						hr_phone = ud.phone or hr_phone
+						employee_designation = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation")
+						hr_designation = employee_designation or hr_designation
+						break
+		except Exception:
+			pass
+
+		# Get candidate/applicant name from Job Applicant if available
+		candidate_name = getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or "Candidate"
+		job_title = getattr(doc, "designation", "") or ""
+		if getattr(doc, "job_applicant", None):
+			try:
+				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+				candidate_name = job_applicant.applicant_name or candidate_name
+				job_title = job_applicant.job_title or job_applicant.job_requisition or ""
+				if job_applicant.job_requisition:
+					job_opening_designation = frappe.db.get_value("Job Opening", job_applicant.job_requisition, "designation")
+					job_title = job_opening_designation or job_title
+			except Exception:
+				pass
+
+		# Format joining date
+		joining_date = ""
+		if getattr(doc, "date_of_joining_onboarding", None):
+			try:
+				joining_date = frappe.utils.formatdate(doc.date_of_joining_onboarding, "dd-MMM-yyyy")
+			except Exception:
+				joining_date = str(doc.date_of_joining_onboarding)
 
 		email_doc = {
 			"doctype": "Employee Onboarding",
 			"name": doc.name,
-			"full_name_display": getattr(doc, "full_name_display", "") or "Employee",
-			"company": getattr(doc, "company", "") or "",
+			"full_name_display": candidate_name,
+			"candidate_name": candidate_name,
+			"company": company,
+			"company_name": company_name,
 			"date_of_joining_onboarding": getattr(doc, "date_of_joining_onboarding", "") or "",
-			"onboarding_link": onboarding_link,
+			"joining_date": joining_date,
+			"job_title": job_title,
+			"designation": job_title,
+			# Keep onboarding_link mapped to webform for backward compatibility with older templates.
+			"onboarding_link": webform_link,
+			"webform_link": webform_link,
+			"desk_onboarding_link": desk_onboarding_link,
+			"hr_name": hr_name,
+			"hr_designation": hr_designation,
+			"hr_email": hr_email,
+			"hr_email_address": hr_email,
+			"hr_phone": hr_phone,
+			"hr_phone_number": hr_phone,
 		}
 
 		tmpl = frappe.get_doc("Email Template", template_name)
 		formatted = tmpl.get_formatted_email({"doc": email_doc})
+
+		# DEBUG: Log exactly which template and subject is being sent
+		frappe.log_error(
+			title="Onboarding Email Trace",
+			message=f"[EMAIL DEBUG] ABOUT TO SEND via send_pre_onboarding_email\n"
+			f"  Doc: {doc.name}\n"
+			f"  Template: {template_name}\n"
+			f"  Subject: {formatted.get('subject')}\n"
+			f"  Recipient: {applicant_email}"
+		)
 
 		frappe.sendmail(
 			recipients=[applicant_email],
@@ -664,11 +785,11 @@ def send_pre_onboarding_email(doc, applicant_email):
 			now=True,
 		)
 		
-		# Update status to "Document Pending"
-		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Document Pending", update_modified=False)
+		# Ensure status is Email Sent, don't set to invalid 'Documents Pending'
+		frappe.db.set_value("Employee Onboarding", doc.name, "boarding_status", "Email Sent", update_modified=False)
 		frappe.db.commit()
 		
-		frappe.log_error(f"Pre-onboarding email sent to {applicant_email} for Employee Onboarding {doc.name}", "Pre-Onboarding Email")
+		frappe.log_error(title="Onboarding Email Trace", message=f"[EMAIL DEBUG] SUCCESS: Pre-onboarding email sent to {applicant_email} for {doc.name} using template '{template_name}'")
 		
 	except Exception as e:
 		frappe.log_error(f"Error sending pre-onboarding email: {str(e)}", "Pre-Onboarding Email Error")
@@ -715,57 +836,144 @@ def send_scheduled_pre_onboarding_emails():
 			frappe.log_error(f"Error processing pre-onboarding email for {doc_data.name}: {str(e)}", "Pre-Onboarding Email Scheduler")
 
 
-def send_onboarding_created_email(doc, method=None):
+def DEPRECATED_send_onboarding_created_email(doc, method=None):
 	"""
-	Send job confirmation / onboarding initiation email when Employee Onboarding
-	is created for the first time.
+	DEPRECATED: This was sending the wrong email.
 	"""
-	try:
-		template_name = "Onboarding - Job Confirmation"
-
-		if not frappe.db.exists("Email Template", template_name):
-			return
-
-		# Prefer personal_email from onboarding, else from linked Job Applicant
-		applicant_email = getattr(doc, "personal_email", None) or None
-
-		if not applicant_email and getattr(doc, "job_applicant", None):
-			try:
-				job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
-				applicant_email = getattr(job_applicant, "email_id", None)
-			except Exception:
-				applicant_email = None
-
-		if not applicant_email:
-			return
-
-		email_doc = {
-			"doctype": "Employee Onboarding",
-			"name": doc.name,
-			"full_name_display": getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or "",
-			"company": getattr(doc, "company", "") or "",
-			"date_of_joining_onboarding": getattr(doc, "date_of_joining_onboarding", "") or "",
-			"location": getattr(doc, "location", "") or "",
-			"department": getattr(doc, "department", "") or "",
-			"reporting_manager": getattr(doc, "reporting_manager", "") or "",
-		}
-
-		tmpl = frappe.get_doc("Email Template", template_name)
-		formatted = tmpl.get_formatted_email({"doc": email_doc})
-
-		frappe.sendmail(
-			recipients=[applicant_email],
-			subject=formatted["subject"],
-			message=formatted["message"],
-			reference_doctype="Employee Onboarding",
-			reference_name=doc.name,
-			now=True,
-		)
-	except Exception as e:
-		frappe.log_error(
-			f"Error sending onboarding created email for {doc.name}: {str(e)}",
-			"Onboarding Job Confirmation Email Error",
-		)
+	frappe.log_error(f"DEPRECATED_send_onboarding_created_email called for {doc.name}", "Onboarding Email Debug")
+	return
+	# try:
+	# 	template_name = "Onboarding - Job Confirmation"
+	# 
+	# 	if not frappe.db.exists("Email Template", template_name):
+	# 		return
+	# 
+	# 	# Prefer personal_email from onboarding, else from linked Job Applicant
+	# 	applicant_email = getattr(doc, "personal_email", None) or None
+	# 
+	# 	if not applicant_email and getattr(doc, "job_applicant", None):
+	# 		try:
+	# 			job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+	# 			applicant_email = getattr(job_applicant, "email_id", None)
+	# 		except Exception:
+	# 			applicant_email = None
+	# 
+	# 	if not applicant_email:
+	# 		return
+	# 
+	# 	# Get company name
+	# 	company = getattr(doc, "company", "") or ""
+	# 	company_name = company
+	# 	if company:
+	# 		company_name = frappe.db.get_value("Company", company, "company_name") or company
+	# 
+	# 	# Fetch HR Manager details (name, phone, email)
+	# 	hr_name = "HR Team"
+	# 	hr_email = ""
+	# 	hr_phone = ""
+	# 	hr_designation = ""
+	# 	try:
+	# 		# Get all HR Manager role users
+	# 		hr_users = frappe.get_all(
+	# 			"Has Role",
+	# 			filters={"role": "HR Manager", "parenttype": "User"},
+	# 			fields=["parent"],
+	# 		)
+	# 		# Get first HR Manager's full details
+	# 		for hr_user in hr_users:
+	# 			user_details = frappe.db.get_value(
+	# 				"User",
+	# 				hr_user.parent,
+	# 				["full_name", "email", "phone", "enabled"],
+	# 				as_dict=True
+	# 			)
+	# 			if user_details and user_details.enabled:
+	# 				hr_name = user_details.full_name or hr_user.parent or "HR Team"
+	# 				hr_email = user_details.email or ""
+	# 				hr_phone = user_details.phone or ""
+	# 				# Try to get designation from Employee record if exists
+	# 				employee = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation")
+	# 				if employee:
+	# 					hr_designation = frappe.db.get_value("Employee", employee, "designation") or ""
+	# 				break
+	# 	except Exception:
+	# 		pass
+	# 
+	# 	# Get candidate/applicant name from Job Applicant if available
+	# 	candidate_name = getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or ""
+	# 	applicant_name = ""
+	# 	job_title = getattr(doc, "designation", "") or ""
+	# 	if getattr(doc, "job_applicant", None):
+	# 		try:
+	# 			job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+	# 			applicant_name = getattr(job_applicant, "applicant_name", "") or ""
+	# 			if not candidate_name:
+	# 				candidate_name = applicant_name
+	# 			# Get job title from Job Applicant's job_requisition -> Job Opening
+	# 			if not job_title and getattr(job_applicant, "job_requisition", None):
+	# 				job_opening_designation = frappe.db.get_value("Job Opening", job_applicant.job_requisition, "designation")
+	# 				if job_opening_designation:
+	# 					job_title = job_opening_designation
+	# 		except Exception:
+	# 			pass
+	# 
+	# 	# Get reporting manager name if it's a link
+	# 	reporting_to_name = getattr(doc, "reporting_manager", "") or ""
+	# 	if reporting_to_name:
+	# 		try:
+	# 			# Check if it's an Employee link
+	# 			if frappe.db.exists("Employee", reporting_to_name):
+	# 				reporting_to_name = frappe.db.get_value("Employee", reporting_to_name, "employee_name") or reporting_to_name
+	# 			# Check if it's a User link
+	# 			elif frappe.db.exists("User", reporting_to_name):
+	# 				reporting_to_name = frappe.db.get_value("User", reporting_to_name, "full_name") or reporting_to_name
+	# 		except Exception:
+	# 			pass
+	# 
+	# 	email_doc = {
+	# 		"doctype": "Employee Onboarding",
+	# 		"name": doc.name,
+	# 		"candidate_name": candidate_name,
+	# 		"applicant_name": applicant_name,
+	# 		"full_name_display": candidate_name,
+	# 		"company": company,
+	# 		"company_name": company_name,
+	# 		"job_title": job_title,
+	# 		"designation": job_title,
+	# 		"joining_date": getattr(doc, "date_of_joining_onboarding", "") or "",
+	# 		"date_of_joining": getattr(doc, "date_of_joining_onboarding", "") or "",
+	# 		"date_of_joining_onboarding": getattr(doc, "date_of_joining_onboarding", "") or "",
+	# 		"department": getattr(doc, "department", "") or "",
+	# 		"department_name": getattr(doc, "department", "") or "",
+	# 		"location": getattr(doc, "location", "") or "",
+	# 		"reporting_location": getattr(doc, "location", "") or "",
+	# 		"reporting_manager": getattr(doc, "reporting_manager", "") or "",
+	# 		"reporting_to_name": reporting_to_name,
+	# 		"reporting_time": "",  # Not typically stored in Employee Onboarding
+	# 		"hr_name": hr_name,
+	# 		"hr_email": hr_email,
+	# 		"hr_email_address": hr_email,
+	# 		"hr_phone": hr_phone,
+	# 		"hr_phone_number": hr_phone,
+	# 		"hr_designation": hr_designation,
+	# 	}
+	# 
+	# 	tmpl = frappe.get_doc("Email Template", template_name)
+	# 	formatted = tmpl.get_formatted_email({"doc": email_doc})
+	# 
+	# 	frappe.sendmail(
+	# 		recipients=[applicant_email],
+	# 		subject=formatted["subject"],
+	# 		message=formatted["message"],
+	# 		reference_doctype="Employee Onboarding",
+	# 		reference_name=doc.name,
+	# 		now=True,
+	# 	)
+	# except Exception as e:
+	# 	frappe.log_error(
+	# 		f"Error sending onboarding created email for {doc.name}: {str(e)}",
+	# 		"Onboarding Job Confirmation Email Error",
+	# 	)
 
 
 def handle_pre_onboarding_workflow(doc, method=None):
@@ -999,5 +1207,76 @@ def send_welcome_formalities_reminders():
 		frappe.log_error(
 			f"Reminders sent: {notifications_sent} upcoming, {overdue_notifications_sent} overdue (Total: {total_notifications})",
 			"Welcome Formalities Reminder Summary"
+		)
+
+
+def handle_workflow_transition(doc, method=None):
+	"""
+	Handle Employee Onboarding workflow transitions.
+	- When state changes to 'Email Sent': send pre-onboarding email to candidate.
+	- When state changes to 'Employee Created': trigger create employee mapped doc.
+	"""
+	# Determine the current workflow state
+	current_state = getattr(doc, "boarding_status", None) or getattr(doc, "workflow_state", None)
+
+	if not current_state:
+		return
+		
+	# Skip if the document was deleted (e.g. temporary webform docs deleted in after_insert)
+	if not frappe.db.exists(doc.doctype, doc.name):
+		return
+
+	# Only trigger if the state actually changed
+	previous_state = None
+	doc_before_save = doc.get_doc_before_save()
+	if doc_before_save:
+		previous_state = getattr(doc_before_save, "boarding_status", None) or getattr(doc_before_save, "workflow_state", None)
+
+	# --- Transition to "Email Sent": send the pre-onboarding email ---
+	if current_state == "Email Sent" and current_state != previous_state:
+		_send_email_on_workflow_transition(doc)
+
+
+def _send_email_on_workflow_transition(doc):
+	"""
+	Send pre-onboarding email when workflow transitions to 'Email Sent'.
+	Uses the 'Onboarding - Document Reminder' email template with webform link.
+	"""
+	# DEBUG: Log that this function was called
+	frappe.log_error(
+		title="Onboarding Email Trace",
+		message=f"[EMAIL DEBUG] _send_email_on_workflow_transition called for {doc.name} | boarding_status={doc.boarding_status}\nTraceback:\n{frappe.get_traceback()}"
+	)
+
+	if not doc.job_applicant:
+		frappe.throw(_("Job Applicant is required to send email to candidate."))
+
+	try:
+		job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
+		applicant_email = getattr(job_applicant, "email_id", None)
+
+		if not applicant_email:
+			# Fallback to personal_email on the onboarding doc
+			applicant_email = getattr(doc, "personal_email", None)
+
+		if not applicant_email:
+			frappe.throw(_("No email address found for the candidate. Please set personal email or update Job Applicant."))
+
+		# Reuse the existing send_pre_onboarding_email function
+		send_pre_onboarding_email(doc, applicant_email)
+
+		frappe.msgprint(
+			_("Pre-onboarding email sent to {0}").format(applicant_email),
+			title=_("Email Sent"),
+			indicator="green",
+		)
+	except Exception as e:
+		frappe.log_error(
+			f"Error sending email on workflow transition for {doc.name}: {str(e)}",
+			"Employee Onboarding Workflow Email Error"
+		)
+		frappe.throw(
+			_("Failed to send email to candidate: {0}").format(str(e)),
+			title=_("Email Error")
 		)
 

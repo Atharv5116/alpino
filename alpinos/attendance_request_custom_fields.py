@@ -1,0 +1,180 @@
+"""
+Custom Fields for Attendance Request and Attendance DocTypes
+"""
+
+import frappe
+from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+
+def setup_attendance_request_custom_fields():
+	"""Update reason field options and add custom fields to Attendance and Attendance Request"""
+	
+	# Update reason field options in Attendance Request
+	update_attendance_request_reason_options()
+
+	# Add custom fields to Attendance Request doctype
+	add_attendance_request_custom_fields()
+	
+	# Add custom fields to Attendance doctype
+	add_attendance_custom_fields()
+	
+	# Add custom fields to Employee Checkin
+	add_employee_checkin_custom_fields()
+	
+	# Add custom fields to Shift Type
+	add_shift_type_custom_fields()
+	
+	print("✅ Attendance Request and Attendance custom fields setup completed")
+
+
+def add_attendance_request_custom_fields():
+	"""Add custom fields to Attendance Request doctype"""
+	custom_fields = {
+		"Attendance Request": [
+			dict(
+				fieldname="reporting_person",
+				label="Reporting Person",
+				fieldtype="Link",
+				options="User",
+				insert_after="company",
+				read_only=1,
+				allow_on_submit=1,
+			),
+		]
+	}
+
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added custom fields to Attendance Request doctype")
+	except Exception as e:
+		print(f"⚠️  Could not add custom fields to Attendance Request: {str(e)}")
+		frappe.log_error(
+			f"Error adding Attendance Request custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}",
+			"Add Attendance Request Custom Fields",
+		)
+
+
+def update_attendance_request_reason_options():
+	"""Update reason field options in Attendance Request"""
+	try:
+		# Update the reason field options using property setter
+		# First option becomes the default
+		make_property_setter(
+			doctype="Attendance Request",
+			fieldname="reason",
+			property="options",
+			value="On Duty\nWork From Home\nOffice\nOther",
+			property_type="Text"
+		)
+		
+		# Set default value to "On Duty"
+		make_property_setter(
+			doctype="Attendance Request",
+			fieldname="reason",
+			property="default",
+			value="On Duty",
+			property_type="Text"
+		)
+		
+		frappe.db.commit()
+		print("✅ Updated reason field options in Attendance Request (default: On Duty)")
+	except Exception as e:
+		print(f"⚠️  Could not update reason field options: {str(e)}")
+		frappe.log_error(f"Error updating reason options: {str(e)}\nTraceback: {frappe.get_traceback()}", "Update Reason Options")
+
+
+def add_attendance_custom_fields():
+	"""Add custom fields to Attendance doctype"""
+	# Delete the checkbox field if it exists
+	try:
+		checkbox_field = frappe.db.get_value(
+			"Custom Field",
+			{"dt": "Attendance", "fieldname": "from_attendance_request"},
+			"name"
+		)
+		if checkbox_field:
+			frappe.delete_doc("Custom Field", checkbox_field, force=1, ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Deleted from_attendance_request checkbox field from Attendance")
+	except Exception as e:
+		print(f"⚠️  Could not delete checkbox field: {str(e)}")
+	
+	# Add only the text field
+	custom_fields = {
+		"Attendance": [
+			dict(
+				fieldname="attendance_request_reason",
+				label="Attendance Request Reason",
+				fieldtype="Small Text",
+				insert_after="attendance_request",
+				read_only=0,
+				hidden=0,
+				description=""
+			),
+		]
+	}
+	
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added custom fields to Attendance doctype")
+	except Exception as e:
+		print(f"⚠️  Could not add custom fields to Attendance: {str(e)}")
+		frappe.log_error(f"Error adding Attendance custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Attendance Custom Fields")
+
+def add_employee_checkin_custom_fields():
+	"""Add custom fields to Employee Checkin doctype"""
+	custom_fields = {
+		"Employee Checkin": [
+			dict(
+				fieldname="from_attendance_request",
+				label="From Attendance Request",
+				fieldtype="Check",
+				insert_after="time",
+				read_only=1,
+				hidden=1,
+				default=0
+			),
+			dict(
+				fieldname="is_manual",
+				label="Is Manual",
+				fieldtype="Check",
+				insert_after="from_attendance_request",
+				read_only=1,
+				hidden=1,
+				default=0
+			),
+		]
+	}
+	
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added custom fields to Employee Checkin doctype")
+	except Exception as e:
+		print(f"⚠️  Could not add custom fields to Employee Checkin: {str(e)}")
+		frappe.log_error(f"Error adding Employee Checkin custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Employee Checkin Custom Fields")
+
+def add_shift_type_custom_fields():
+	"""Add custom fields to Shift Type doctype"""
+	custom_fields = {
+		"Shift Type": [
+			dict(
+				fieldname="saturday_working_hours_threshold",
+				label="Saturday Working Hours Threshold for Present",
+				fieldtype="Float",
+				insert_after="working_hours_threshold_for_half_day",
+				description="Minimum working hours required on Saturday to be marked as Present. If hours are less, Employee will be marked Absent."
+			),
+		]
+	}
+	
+	try:
+		create_custom_fields(custom_fields, update=True)
+		frappe.db.commit()
+		print("✅ Added custom fields to Shift Type doctype")
+	except Exception as e:
+		print(f"⚠️  Could not add custom fields to Shift Type: {str(e)}")
+		frappe.log_error(f"Error adding Shift Type custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Shift Type Custom Fields")
