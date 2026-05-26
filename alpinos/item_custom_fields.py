@@ -13,6 +13,13 @@ def setup_item_custom_fields():
 	custom_fields = {
 		"Item": [
 			dict(
+				fieldname="custom_sequence",
+				label="Sequence",
+				fieldtype="Int",
+				insert_after="item_code",
+				in_list_view=1,
+			),
+			dict(
 				fieldname="custom_sku_no",
 				label="SKU No",
 				fieldtype="Data",

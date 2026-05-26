@@ -11,6 +11,30 @@ import frappe
 
 SALES_ORDER_CLIENT_SCRIPT = """
 frappe.ui.form.on('Sales Order', {
+    onload: function(frm) {
+        if (frm.is_new() && !frm.doc.custom_dispatch_date) {
+            _set_default_dispatch_date(frm);
+        }
+    },
+
+    custom_dispatch_date: function(frm) {
+        if (!frm.doc.custom_dispatch_date) return;
+        frappe.call({
+            method: 'alpinos.dispatch_date_utils.validate_dispatch_date',
+            args: { date: frm.doc.custom_dispatch_date },
+            callback: function(r) {
+                if (r.message && !r.message.valid) {
+                    frappe.msgprint({
+                        title: __('Invalid Dispatch Date'),
+                        message: __(r.message.message),
+                        indicator: 'red'
+                    });
+                    frm.set_value('custom_dispatch_date', '');
+                }
+            }
+        });
+    },
+
     customer: function(frm) {
         if (frm.doc.customer) {
             frappe.call({
@@ -239,6 +263,17 @@ function calculate_item_values(frm, cdt, cdn) {
         frappe.model.set_value(cdt, cdn, 'rate', flt(effective_rate, 2));
         frappe.model.set_value(cdt, cdn, 'amount', flt(net_amount, 2));
     }
+}
+
+function _set_default_dispatch_date(frm) {
+    frappe.call({
+        method: 'alpinos.dispatch_date_utils.get_default_dispatch_date',
+        callback: function(r) {
+            if (r.message && r.message.date) {
+                frm.set_value('custom_dispatch_date', r.message.date);
+            }
+        }
+    });
 }
 
 function calculate_cash_discount(frm) {

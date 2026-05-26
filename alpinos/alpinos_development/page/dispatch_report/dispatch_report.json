@@ -1,0 +1,20 @@
+{
+ "creation": "2026-05-26 00:00:00.000000",
+ "doctype": "Page",
+ "modified": "2026-05-26 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "dispatch-report",
+ "owner": "Administrator",
+ "page_name": "dispatch-report",
+ "roles": [
+  {"role": "System Manager"},
+  {"role": "Stock Manager"},
+  {"role": "Stock User"},
+  {"role": "Sales Manager"},
+  {"role": "Sales User"}
+ ],
+ "standard": "Yes",
+ "system_page": 0,
+ "title": "Dispatch Report"
+}

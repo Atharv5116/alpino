@@ -285,11 +285,16 @@ doc_events = {
 	"Delivery Note": {
 		"validate": "alpinos.delivery_note_hooks.validate_delivery_note",
 	},
+	"Item": {
+		"before_insert": "alpinos.item_sequence.reorder_on_insert",
+		"before_save": "alpinos.item_sequence.reorder_on_save",
+	},
 	"Sales Order": {
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
+			"alpinos.dispatch_date_utils.validate_dispatch_date_on_save",
 		],
 	},
 	"Employee Onboarding": {
