@@ -628,7 +628,7 @@ def _item_name_for_item_code(item_code):
 
 @frappe.whitelist()
 def create_sales_order(customer, order_type, company, items, cash_discount=0,
-                       delivery_date=None, freebies=None, scheme_items=None,
+                       delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
                        additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None,
@@ -653,6 +653,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so.company = _resolve_company(company)
 	default_warehouse = _resolve_default_warehouse(so.company)
 	so.delivery_date = delivery_date
+	if dispatch_date:
+		so.custom_dispatch_date = dispatch_date
 	so.ignore_pricing_rule = 1
 	so.custom_cash_discount = flt(cash_discount)
 	_so_tax_logger().info(
@@ -1049,6 +1051,7 @@ def get_pick_list_mapping_data(sales_order):
 		"custom_customer_name": so.customer_name,
 		"custom_party_code": so.customer,
 		"custom_order_date": so.transaction_date,
+		"custom_dispatch_date": str(so.custom_dispatch_date) if so.custom_dispatch_date else "",
 		"custom_po_no": so.po_no,
 		"pick_manually": 1,
 		"locations": []

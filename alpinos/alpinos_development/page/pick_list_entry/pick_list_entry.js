@@ -96,6 +96,19 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
 		page.main.find('[data-fieldname="custom_sales_order_id"]').val(data.custom_sales_order_id);
+		let dispatch_date_val = data.custom_dispatch_date || '';
+		if (dispatch_date_val) {
+			page.main.find('[data-fieldname="custom_dispatch_date"]').val(dispatch_date_val);
+		} else {
+			frappe.call({
+				method: 'alpinos.dispatch_date_utils.get_default_dispatch_date',
+				callback: function(r) {
+					if (r.message) {
+						page.main.find('[data-fieldname="custom_dispatch_date"]').val(r.message.date);
+					}
+				}
+			});
+		}
 
 		let container = page.main.find('#tables-container');
 		container.empty();
@@ -347,6 +360,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_po_no: page.main.find('[data-fieldname="custom_po_no"]').val(),
 			custom_transporter: page.main.find('[data-fieldname="custom_transporter"]').val(),
 			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
+			custom_dispatch_date: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
 		};
 		
 		// Gather item data and validate
