@@ -63,12 +63,11 @@ def get_dispatch_report_data(date=None, warehouse=None):
 # ---------------------------------------------------------------------------
 
 def _get_customer_types():
-	rows = frappe.db.get_all(
-		"Offline Buyer Customer Type",
-		fields=["customer_type"],
-		order_by="customer_type asc",
+	rows = frappe.db.sql(
+		"SELECT name FROM `tabOffline Buyer Customer Type` ORDER BY name ASC",
+		as_dict=True,
 	)
-	return [r["customer_type"] for r in rows]
+	return [r.name for r in rows]
 
 
 def _get_sequenced_items():
