@@ -48,7 +48,7 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			background: #388e3c; color: #fff; font-weight: 700;
 			writing-mode: vertical-rl; text-orientation: mixed;
 			transform: rotate(180deg);
-			height: 60px; min-width: 28px; max-width: 34px;
+			height: 120px; min-width: 28px; max-width: 34px;
 			font-size: 9px; white-space: nowrap;
 		}
 		.dr-green-sum  { background: #c8e6c9; color: #1b5e20; font-weight: 600; }
@@ -62,7 +62,7 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			background: #e53935; color: #fff; font-weight: 700;
 			writing-mode: vertical-rl; text-orientation: mixed;
 			transform: rotate(180deg);
-			height: 60px; min-width: 28px; max-width: 34px;
+			height: 120px; min-width: 28px; max-width: 34px;
 			font-size: 9px; white-space: nowrap;
 		}
 		.dr-red-sum  { background: #ffcdd2; color: #b71c1c; font-weight: 600; }
@@ -125,12 +125,6 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		});
 	}
 
-	// ── Abbreviate CT name: "NUTRITIONAL TRADE" → "NT" ───────────────────────
-	function abbr(name) {
-		if (!name) return '?';
-		return name.split(/\s+/).map(w => w[0].toUpperCase()).join('');
-	}
-
 	// ── Table builder ──────────────────────────────────────────────────────────
 	function build_table(data) {
 		let { items, customer_types, summary, date } = data;
@@ -174,10 +168,10 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			<td colspan="${N}" class="dr-red-date-hdr">PENDING DISPATCH</td>
 		</tr>`);
 
-		// ── H2: CT column names (abbreviated, full name on hover) ─────────────
+		// ── H2: CT column names (full name, vertical) ────────────────────────
 		rows.push(`<tr>
-			${customer_types.map(ct => `<td class="dr-green-ct-hdr" title="${ct}">${abbr(ct)}</td>`).join('')}
-			${customer_types.map(ct => `<td class="dr-red-ct-hdr"   title="${ct}-P">${abbr(ct)}-P</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-green-ct-hdr">${ct}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-red-ct-hdr">${ct}-P</td>`).join('')}
 		</tr>`);
 
 		// ── H3: TOTAL BOX per CT ──────────────────────────────────────────────
