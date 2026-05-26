@@ -7,300 +7,252 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 
 	// ── CSS ──────────────────────────────────────────────────────────────────
 	frappe.dom.set_style(`
-		.dr-wrapper { overflow-x: auto; padding: 12px 4px; font-size: 11px; }
-		.dr-table {
-			border-collapse: collapse;
-			min-width: 100%;
-			table-layout: auto;
-			white-space: nowrap;
-		}
+		.dr-wrap { overflow-x: auto; padding: 10px 0; font-size: 12px; font-family: 'Inter', sans-serif; }
+
+		.dr-table { border-collapse: collapse; min-width: 100%; }
 		.dr-table td, .dr-table th {
-			border: 1px solid #aaa;
-			padding: 3px 5px;
+			border: 1px solid #d0d0d0;
+			padding: 4px 6px;
 			text-align: center;
 			vertical-align: middle;
 		}
 
-		/* ── Left section column colors ── */
-		.dr-col-dispatch  { background: #ffffff; }
-		.dr-col-pending   { background: #ffff00; }
-		.dr-col-stock     { background: #ffc000; }
-		.dr-col-net       { background: #92d050; }
-		.dr-col-inward    { background: #ffffff; min-width: 90px; }
-		.dr-col-item      { background: #ffffff; text-align: left; min-width: 110px; font-weight: 600; }
+		/* ── Left column headers ── */
+		.dr-hdr-dispatch { background: #1565c0; color: #fff; font-weight: 700; font-size: 10px; min-width: 64px; }
+		.dr-hdr-pending  { background: #f9a825; color: #fff; font-weight: 700; font-size: 10px; min-width: 64px; }
+		.dr-hdr-stock    { background: #e65100; color: #fff; font-weight: 700; font-size: 10px; min-width: 64px; }
+		.dr-hdr-net      { background: #2e7d32; color: #fff; font-weight: 700; font-size: 10px; min-width: 64px; }
+		.dr-hdr-inward   { background: #546e7a; color: #fff; font-weight: 700; font-size: 10px; min-width: 80px; }
+		.dr-hdr-item     { background: #37474f; color: #fff; font-weight: 700; font-size: 10px; min-width: 100px; }
 
-		/* ── Header labels ── */
-		.dr-hdr-dispatch  { background: #d9d9d9; font-weight: 700; font-size: 10px; }
-		.dr-hdr-pending   { background: #ffff00; font-weight: 700; font-size: 10px; }
-		.dr-hdr-stock     { background: #ffc000; font-weight: 700; font-size: 10px; }
-		.dr-hdr-net       { background: #92d050; font-weight: 700; font-size: 10px; }
-		.dr-hdr-inward    { background: #f2f2f2; font-weight: 700; font-size: 10px; }
+		/* ── Left column data cells ── */
+		.dr-d  { background: #e3f2fd; }
+		.dr-p  { background: #fff9c4; }
+		.dr-s  { background: #fff3e0; }
+		.dr-n  { background: #e8f5e9; }
+		.dr-i  { background: #fafafa; min-width: 80px; }
+		.dr-item-cell { background: #fff; text-align: left; font-weight: 600; font-size: 11px; min-width: 100px; }
+
+		/* ── Summary totals row ── */
+		.dr-sum-dispatch { background: #1565c0; color: #fff; font-weight: 700; font-size: 15px; }
+		.dr-sum-pending  { background: #f9a825; color: #fff; font-weight: 700; font-size: 10px; }
+		.dr-sum-stock    { background: #e65100; color: #fff; font-weight: 700; font-size: 15px; }
+		.dr-sum-net      { background: #2e7d32; color: #fff; font-weight: 700; font-size: 15px; }
+		.dr-sum-label    { background: #eceff1; color: #37474f; font-weight: 700; font-size: 10px; text-align: right; }
+		.dr-sum-val      { background: #eceff1; color: #37474f; font-weight: 700; }
 
 		/* ── Green section (Today's Dispatch by CT) ── */
-		.dr-green-merged  { background: #375623; color: #fff; font-weight: 700; font-size: 13px; }
-		.dr-green-date    { background: #375623; color: #fff; font-weight: 700; font-size: 10px; }
+		.dr-green-merged  { background: #1b5e20; color: #fff; font-weight: 700; font-size: 15px; }
+		.dr-green-date-hdr{ background: #2e7d32; color: #fff; font-weight: 700; font-size: 10px; }
 		.dr-green-ct-hdr  {
-			background: #00b050; color: #fff; font-weight: 700;
+			background: #388e3c; color: #fff; font-weight: 700;
 			writing-mode: vertical-rl; text-orientation: mixed;
-			transform: rotate(180deg); height: 75px; min-width: 32px; max-width: 40px;
-			font-size: 10px;
+			transform: rotate(180deg);
+			height: 60px; min-width: 28px; max-width: 34px;
+			font-size: 9px; white-space: nowrap;
 		}
-		.dr-green-sum     { background: #e2efda; }
-		.dr-green-cell    { background: #e2efda; }
-		.dr-green-zero    { background: #e2efda; color: #4472c4; }
+		.dr-green-sum  { background: #c8e6c9; color: #1b5e20; font-weight: 600; }
+		.dr-green-val  { background: #f1f8e9; color: #33691e; font-weight: 700; }
+		.dr-green-zero { background: #f9fbe7; color: #bdbdbd; }
 
-		/* ── Red section (Pending Dispatch by CT) ── */
-		.dr-red-merged    { background: #c00000; color: #fff; font-weight: 700; font-size: 13px; }
-		.dr-red-date      { background: #c00000; color: #fff; font-weight: 700; font-size: 10px; }
-		.dr-red-ct-hdr    {
-			background: #ff0000; color: #fff; font-weight: 700;
+		/* ── Red section (Pending by CT) ── */
+		.dr-red-merged  { background: #b71c1c; color: #fff; font-weight: 700; font-size: 15px; }
+		.dr-red-date-hdr{ background: #c62828; color: #fff; font-weight: 700; font-size: 10px; }
+		.dr-red-ct-hdr  {
+			background: #e53935; color: #fff; font-weight: 700;
 			writing-mode: vertical-rl; text-orientation: mixed;
-			transform: rotate(180deg); height: 75px; min-width: 32px; max-width: 40px;
-			font-size: 10px;
+			transform: rotate(180deg);
+			height: 60px; min-width: 28px; max-width: 34px;
+			font-size: 9px; white-space: nowrap;
 		}
-		.dr-red-sum       { background: #fce4d6; }
-		.dr-red-cell      { background: #fce4d6; }
-		.dr-red-zero      { background: #fce4d6; color: #4472c4; }
+		.dr-red-sum  { background: #ffcdd2; color: #b71c1c; font-weight: 600; }
+		.dr-red-val  { background: #fff5f5; color: #c62828; font-weight: 700; }
+		.dr-red-zero { background: #fff8f8; color: #bdbdbd; }
 
 		/* ── Row states ── */
-		.dr-row-negative td.dr-col-dispatch,
-		.dr-row-negative td.dr-col-pending,
-		.dr-row-negative td.dr-col-stock,
-		.dr-row-negative td.dr-col-net { background: #ff9999; }
+		.dr-row-neg .dr-d,
+		.dr-row-neg .dr-p,
+		.dr-row-neg .dr-s,
+		.dr-row-neg .dr-n { background: #ffebee !important; }
+		.dr-row-neg .dr-item-cell { background: #ffebee !important; }
+		.dr-neg-val { color: #c62828; font-weight: 700; }
 
-		.dr-inward-past   { background: #ff0000 !important; color: #fff !important; font-weight: 700; }
+		/* ── Inward past ── */
+		.dr-inward-past { background: #ff6f00 !important; color: #fff !important; font-weight: 700; }
 
-		/* ── Summary labels ── */
-		.dr-total-label   { background: #f2f2f2; font-weight: 700; text-align: right; font-size: 10px; }
-		.dr-total-val     { background: #f2f2f2; font-weight: 700; }
+		/* ── Box/GW label rows ── */
+		.dr-subhdr td { background: #f5f5f5; font-size: 10px; color: #555; }
 
-		/* ── Misc ── */
-		.dr-spacer td     { border: none; background: #fff; height: 6px; }
-		.dr-negative-val  { color: #c00000; font-weight: 700; }
+		/* ── Spacer ── */
+		.dr-spacer td { border: none; background: #fff; height: 8px; }
+
+		/* ── Non-zero highlight ── */
+		.dr-d-nz { background: #1565c0; color: #fff; font-weight: 700; }
+		.dr-p-nz { background: #f9a825; color: #fff; font-weight: 700; }
+		.dr-s-nz { background: #e65100; color: #fff; font-weight: 700; }
 	`);
 
 	// ── Filters ──────────────────────────────────────────────────────────────
 	let date_field = page.add_field({
-		fieldtype: 'Date',
-		fieldname: 'date',
-		label: 'Date',
+		fieldtype: 'Date', fieldname: 'date', label: 'Date',
 		default: frappe.datetime.get_today(),
 		change() { load_data(); },
 	});
-
-	let warehouse_field = page.add_field({
-		fieldtype: 'Link',
-		fieldname: 'warehouse',
-		label: 'Warehouse',
+	let wh_field = page.add_field({
+		fieldtype: 'Link', fieldname: 'warehouse', label: 'Warehouse',
 		options: 'Warehouse',
 		change() { load_data(); },
 	});
-
 	page.add_button(__('Refresh'), () => load_data(), { icon: 'refresh' });
 
-	// ── Main container ───────────────────────────────────────────────────────
-	let $wrap = $('<div class="dr-wrapper"><div class="dr-content"></div></div>');
+	// ── Container ─────────────────────────────────────────────────────────────
+	let $wrap = $('<div class="dr-wrap"><div class="dr-content"></div></div>');
 	$(wrapper).find('.page-content').append($wrap);
 	let $content = $wrap.find('.dr-content');
 
-	// ── Load data ────────────────────────────────────────────────────────────
+	// ── Load ──────────────────────────────────────────────────────────────────
 	function load_data() {
 		let date = date_field.get_value();
-		let warehouse = warehouse_field.get_value();
-
-		$content.html('<div style="padding:40px;text-align:center;color:#888;">Loading…</div>');
-
+		let wh   = wh_field.get_value();
+		$content.html('<p style="padding:30px;color:#888;">Loading…</p>');
 		frappe.call({
 			method: 'alpinos.dispatch_report_api.get_dispatch_report_data',
-			args: { date, warehouse },
+			args: { date, warehouse: wh },
 			callback(r) {
-				if (r.message) {
-					$content.html(build_table(r.message));
-				} else {
-					$content.html('<div style="padding:40px;text-align:center;color:#888;">No data found.</div>');
-				}
+				$content.html(r.message ? build_table(r.message)
+					: '<p style="padding:30px;color:#888;">No data found.</p>');
 			},
 		});
 	}
 
-	// ── Table builder ─────────────────────────────────────────────────────────
+	// ── Abbreviate CT name: "NUTRITIONAL TRADE" → "NT" ───────────────────────
+	function abbr(name) {
+		if (!name) return '?';
+		return name.split(/\s+/).map(w => w[0].toUpperCase()).join('');
+	}
+
+	// ── Table builder ──────────────────────────────────────────────────────────
 	function build_table(data) {
 		let { items, customer_types, summary, date } = data;
-		let N = customer_types.length;
-		let total_cols = 6 + N + N; // dispatch, pending, stock, net, inward, item + 2×CT
+		let N    = customer_types.length;
+		let today = frappe.datetime.get_today();
+		let rows  = [];
 
+		// ── S1: Big section totals row ────────────────────────────────────────
+		rows.push(`<tr>
+			<td rowspan="2" class="dr-sum-dispatch">${fmt(summary.dispatch_total)}</td>
+			<td rowspan="2" class="dr-sum-pending"></td>
+			<td rowspan="2" class="dr-sum-stock">${fmt(summary.stock_total || 0)}</td>
+			<td rowspan="2" class="dr-sum-net">${fmt(summary.net_total || 0)}</td>
+			<td class="dr-sum-label">TOTAL BOX</td>
+			<td class="dr-sum-val">${fmt2(summary.total_box)}</td>
+			<td colspan="${N}" class="dr-green-merged">${fmt(summary.dispatch_total)}</td>
+			<td colspan="${N}" class="dr-red-merged">${fmt(summary.pending_total)}</td>
+		</tr>`);
+
+		// ── S2: Per-CT unit totals ─────────────────────────────────────────────
+		rows.push(`<tr>
+			<td class="dr-sum-label">TOTAL GW</td>
+			<td class="dr-sum-val">${fmt2(summary.total_gw)}</td>
+			${customer_types.map(ct => `<td class="dr-green-sum">${fmt(summary.dispatch_by_ct[ct]||0)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-red-sum">${fmt(summary.pending_by_ct[ct]||0)}</td>`).join('')}
+		</tr>`);
+
+		// ── Spacer ─────────────────────────────────────────────────────────────
+		rows.push(`<tr class="dr-spacer"><td colspan="${6+N+N}"></td></tr>`);
+
+		// ── H1: Section date headers ───────────────────────────────────────────
 		let fmt_date = frappe.datetime.str_to_user(date) || date;
-		let today_str = frappe.datetime.get_today();
+		rows.push(`<tr>
+			<td rowspan="2" class="dr-hdr-dispatch">TODAY'S<br>DISPATCH</td>
+			<td rowspan="2" class="dr-hdr-pending">PENDING<br>DISPATCH</td>
+			<td rowspan="2" class="dr-hdr-stock">TODAY'S<br>STOCK</td>
+			<td rowspan="2" class="dr-hdr-net">NET<br>UNIT</td>
+			<td rowspan="2" class="dr-hdr-inward">INWARD DATE<br>APPROX</td>
+			<td rowspan="2" class="dr-hdr-item">ITEM</td>
+			<td colspan="${N}" class="dr-green-date-hdr">TODAY'S DATE &nbsp; ${fmt_date}</td>
+			<td colspan="${N}" class="dr-red-date-hdr">PENDING DISPATCH</td>
+		</tr>`);
 
-		let rows = [];
+		// ── H2: CT column names (abbreviated, full name on hover) ─────────────
+		rows.push(`<tr>
+			${customer_types.map(ct => `<td class="dr-green-ct-hdr" title="${ct}">${abbr(ct)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-red-ct-hdr"   title="${ct}-P">${abbr(ct)}-P</td>`).join('')}
+		</tr>`);
 
-		// ── ROW S1: Section merged headers + summary totals ──────────────────
-		rows.push(`
-			<tr>
-				<td rowspan="2" class="dr-col-dispatch" style="font-weight:700;font-size:13px;">
-					${fmt(summary.dispatch_total)}
-				</td>
-				<td rowspan="2" class="dr-col-pending"></td>
-				<td rowspan="2" class="dr-col-stock" style="font-weight:700;font-size:13px;">
-					${fmt(summary.stock_total || 0)}
-				</td>
-				<td rowspan="2" class="dr-col-net" style="font-weight:700;font-size:13px;">
-					${fmt(summary.net_total || 0)}
-				</td>
-				<td class="dr-total-label">TOTAL BOX</td>
-				<td class="dr-total-val">${fmt2(summary.total_box)}</td>
-				<td colspan="${N}" class="dr-green-merged">${fmt(summary.dispatch_total)}</td>
-				<td colspan="${N}" class="dr-red-merged">${fmt(summary.pending_total)}</td>
-			</tr>
-		`);
+		// ── H3: TOTAL BOX per CT ──────────────────────────────────────────────
+		rows.push(`<tr class="dr-subhdr">
+			<td colspan="5"></td>
+			<td style="font-weight:700;text-align:right;">BOX</td>
+			${customer_types.map(ct => `<td class="dr-green-sum">${fmt2(summary.box_by_ct[ct]||0)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-red-sum">${fmt2(summary.pending_box_by_ct[ct]||0)}</td>`).join('')}
+		</tr>`);
 
-		// ── ROW S2: Per-CT unit totals ────────────────────────────────────────
-		let green_ct_totals = customer_types.map(ct =>
-			`<td class="dr-green-sum">${fmt(summary.dispatch_by_ct[ct] || 0)}</td>`
-		).join('');
-		let red_ct_totals = customer_types.map(ct =>
-			`<td class="dr-red-sum">${fmt(summary.pending_by_ct[ct] || 0)}</td>`
-		).join('');
+		// ── H4: TOTAL GW per CT ───────────────────────────────────────────────
+		rows.push(`<tr class="dr-subhdr">
+			<td colspan="5"></td>
+			<td style="font-weight:700;text-align:right;">GW</td>
+			${customer_types.map(ct => `<td class="dr-green-sum">${fmt2(summary.gw_by_ct[ct]||0)}</td>`).join('')}
+			${customer_types.map(() => `<td class="dr-red-zero"></td>`).join('')}
+		</tr>`);
 
-		rows.push(`
-			<tr>
-				<td class="dr-total-label">TOTAL GW</td>
-				<td class="dr-total-val">${fmt2(summary.total_gw)}</td>
-				${green_ct_totals}
-				${red_ct_totals}
-			</tr>
-		`);
-
-		// ── SPACER ────────────────────────────────────────────────────────────
-		rows.push(`<tr class="dr-spacer"><td colspan="${total_cols}"></td></tr>`);
-
-		// ── ROW H1: Column section headers ───────────────────────────────────
-		rows.push(`
-			<tr>
-				<td rowspan="2" class="dr-hdr-dispatch">TODAY'S<br>DISPATCH</td>
-				<td rowspan="2" class="dr-hdr-pending">PENDING<br>DISPATCH</td>
-				<td rowspan="2" class="dr-hdr-stock">TODAY'S<br>STOCK</td>
-				<td rowspan="2" class="dr-hdr-net">NET<br>UNIT</td>
-				<td rowspan="2" class="dr-hdr-inward">INWARD DATE<br>APPROX</td>
-				<td rowspan="2" style="background:#f2f2f2;font-weight:700;font-size:10px;"></td>
-				<td colspan="${N}" class="dr-green-date">TODAY'S DATE &nbsp; ${fmt_date}</td>
-				<td colspan="${N}" class="dr-red-date">PENDING DISPATCH</td>
-			</tr>
-		`);
-
-		// ── ROW H2: CT column names (vertical text) ──────────────────────────
-		let green_ct_hdrs = customer_types.map(ct =>
-			`<td class="dr-green-ct-hdr">${ct}</td>`
-		).join('');
-		let red_ct_hdrs = customer_types.map(ct =>
-			`<td class="dr-red-ct-hdr">${ct}-P</td>`
-		).join('');
-		rows.push(`<tr>${green_ct_hdrs}${red_ct_hdrs}</tr>`);
-
-		// ── ROW H3: TOTAL BOX per CT ──────────────────────────────────────────
-		let green_box = customer_types.map(ct =>
-			`<td class="dr-green-sum">${fmt2(summary.box_by_ct[ct] || 0)}</td>`
-		).join('');
-		let red_box = customer_types.map(ct =>
-			`<td class="dr-red-sum">${fmt2(summary.pending_box_by_ct[ct] || 0)}</td>`
-		).join('');
-		rows.push(`
-			<tr>
-				<td colspan="5"></td>
-				<td class="dr-col-item" style="font-size:10px;font-weight:700;">TOTAL BOX</td>
-				${green_box}${red_box}
-			</tr>
-		`);
-
-		// ── ROW H4: TOTAL GW per CT ───────────────────────────────────────────
-		let green_gw = customer_types.map(ct =>
-			`<td class="dr-green-sum">${fmt2(summary.gw_by_ct[ct] || 0)}</td>`
-		).join('');
-		let red_gw_blank = customer_types.map(() => `<td class="dr-red-sum"></td>`).join('');
-		rows.push(`
-			<tr>
-				<td colspan="5"></td>
-				<td class="dr-col-item" style="font-size:10px;font-weight:700;">TOTAL GW</td>
-				${green_gw}${red_gw_blank}
-			</tr>
-		`);
-
-		// ── DATA ROWS ─────────────────────────────────────────────────────────
-		for (let item of items) {
-			let is_negative = item.net_unit < 0;
-			let row_class = is_negative ? 'dr-row-negative' : '';
-
-			// Inward date cell
-			let inward_cell = '';
-			if (item.inward_date) {
-				let is_past = item.inward_date < today_str;
-				let inward_cls = is_past ? 'dr-col-inward dr-inward-past' : 'dr-col-inward';
-				let inward_fmt = frappe.datetime.str_to_user(item.inward_date) || item.inward_date;
-				inward_cell = `<td class="${inward_cls}">${inward_fmt}</td>`;
-			} else {
-				inward_cell = `<td class="dr-col-inward"></td>`;
-			}
-
-			// Net unit — highlight negative in red
-			let net_display = item.net_unit;
-			let net_extra = is_negative ? ' dr-negative-val' : '';
-
-			// Per-CT dispatch cells
-			let green_cells = customer_types.map(ct => {
-				let v = item.dispatch_by_ct[ct] || 0;
-				let cls = v === 0 ? 'dr-green-zero' : 'dr-green-cell';
-				return `<td class="${cls}">${fmt(v)}</td>`;
-			}).join('');
-
-			// Per-CT pending cells
-			let red_cells = customer_types.map(ct => {
-				let v = item.pending_by_ct[ct] || 0;
-				let cls = v === 0 ? 'dr-red-zero' : 'dr-red-cell';
-				return `<td class="${cls}">${fmt(v)}</td>`;
-			}).join('');
-
-			rows.push(`
-				<tr class="${row_class}">
-					<td class="dr-col-dispatch">${fmt(item.today_dispatch)}</td>
-					<td class="dr-col-pending">${fmt(item.pending_dispatch)}</td>
-					<td class="dr-col-stock">${fmt(item.today_stock)}</td>
-					<td class="dr-col-net${net_extra}">${fmt(net_display)}</td>
-					${inward_cell}
-					<td class="dr-col-item" title="${item.item_name}">${item.item_code}</td>
-					${green_cells}
-					${red_cells}
-				</tr>
-			`);
+		// ── Data rows ─────────────────────────────────────────────────────────
+		if (items.length === 0) {
+			rows.push(`<tr><td colspan="${6+N+N}" style="padding:20px;color:#888;text-align:center;">
+				No sequenced items found for ${fmt_date}.
+			</td></tr>`);
 		}
 
-		if (items.length === 0) {
-			rows.push(`
-				<tr>
-					<td colspan="${total_cols}" style="padding:20px;color:#888;text-align:center;">
-						No sequenced items found for this date.
-					</td>
-				</tr>
-			`);
+		for (let item of items) {
+			let is_neg  = item.net_unit < 0;
+			let row_cls = is_neg ? 'dr-row-neg' : '';
+
+			// Inward date
+			let inward_cell;
+			if (item.inward_date) {
+				let past = item.inward_date < today;
+				let fmt_inward = frappe.datetime.str_to_user(item.inward_date) || item.inward_date;
+				inward_cell = `<td class="dr-i${past ? ' dr-inward-past' : ''}">${fmt_inward}</td>`;
+			} else {
+				inward_cell = `<td class="dr-i"></td>`;
+			}
+
+			// Main column cells — highlight non-zero
+			let d_cls = item.today_dispatch > 0 ? 'dr-d-nz' : 'dr-d';
+			let p_cls = item.pending_dispatch > 0 ? 'dr-p-nz' : 'dr-p';
+			let s_cls = item.today_stock > 0 ? 'dr-s-nz' : 'dr-s';
+			let net_extra = is_neg ? ' dr-neg-val' : '';
+
+			// CT dispatch cells
+			let green_cells = customer_types.map(ct => {
+				let v = item.dispatch_by_ct[ct] || 0;
+				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
+			}).join('');
+
+			// CT pending cells
+			let red_cells = customer_types.map(ct => {
+				let v = item.pending_by_ct[ct] || 0;
+				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
+			}).join('');
+
+			rows.push(`<tr class="${row_cls}">
+				<td class="${d_cls}">${fmt(item.today_dispatch)}</td>
+				<td class="${p_cls}">${fmt(item.pending_dispatch)}</td>
+				<td class="${s_cls}">${fmt(item.today_stock)}</td>
+				<td class="dr-n${net_extra}">${fmt(item.net_unit)}</td>
+				${inward_cell}
+				<td class="dr-item-cell" title="${item.item_name}">${item.item_code}</td>
+				${green_cells}
+				${red_cells}
+			</tr>`);
 		}
 
 		return `<table class="dr-table">${rows.join('')}</table>`;
 	}
 
-	// ── Formatters ────────────────────────────────────────────────────────────
-	function fmt(v) {
-		if (v === null || v === undefined) return '0';
-		let n = parseFloat(v);
-		if (isNaN(n)) return '0';
-		return n % 1 === 0 ? n.toString() : n.toFixed(2);
-	}
+	// ── Formatters ─────────────────────────────────────────────────────────────
+	function fmt(v)  { let n=parseFloat(v); return isNaN(n)?'0':(n%1===0?n.toString():n.toFixed(2)); }
+	function fmt2(v) { let n=parseFloat(v); return (!n||isNaN(n))?'':( n%1===0?n.toString():n.toFixed(2) ); }
 
-	function fmt2(v) {
-		if (v === null || v === undefined) return '0';
-		let n = parseFloat(v);
-		if (isNaN(n) || n === 0) return '0';
-		return n % 1 === 0 ? n.toString() : n.toFixed(2);
-	}
-
-	// ── Auto-load ─────────────────────────────────────────────────────────────
 	setTimeout(() => load_data(), 200);
 };
