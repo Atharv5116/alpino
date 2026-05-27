@@ -131,6 +131,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let html = `
 				<div class="table-section-title">${title}</div>
+				<div class="sku-table-wrapper">
 				<table class="sku-table" data-table-name="${title}">
 					<thead>
 						<tr>
@@ -180,7 +181,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			`;
 			html += row_html;
 		});	
-			html += `</tbody></table>`;
+			html += `</tbody></table></div>`;
 			container.append(html);
 		};
 		
