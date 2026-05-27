@@ -35,7 +35,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					callback: function(r) {
 						if (!r.exc && r.message) {
 							frappe.show_alert({message: __("Delivery Note {0} created successfully", [r.message]), indicator: "green"});
-							frappe.set_route('Form', 'Delivery Note', r.message);
+							frappe.set_route('delivery_note_entry', r.message);
 						}
 					}
 				});
