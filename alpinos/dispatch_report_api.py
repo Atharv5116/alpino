@@ -111,8 +111,8 @@ def _get_dispatch_data(date):
 
 def _get_pending_data(date):
 	"""
-	Pending dispatch: Sales Order items where the SO has custom_dispatch_date = date
-	and the order is not yet completed/cancelled.
+	Pending dispatch: Sales Order items where the SO has custom_dispatch_date <= date
+	(overdue + today's pending) and the order is not yet completed/cancelled.
 	"""
 	rows = frappe.db.sql(
 		"""
@@ -122,7 +122,7 @@ def _get_pending_data(date):
 			COALESCE(so.order_type, 'Other') AS customer_type
 		FROM `tabSales Order` so
 		JOIN `tabSales Order Item` soi ON soi.parent = so.name
-		WHERE so.custom_dispatch_date = %(date)s
+		WHERE so.custom_dispatch_date <= %(date)s
 		  AND so.docstatus = 1
 		  AND so.status NOT IN ('Completed', 'Cancelled', 'Closed')
 		GROUP BY soi.item_code, so.order_type
@@ -218,7 +218,7 @@ def _build_summary(date, customer_types, dispatch_data, pending_data):
 			SUM(soi.custom_box) AS box
 		FROM `tabSales Order` so
 		JOIN `tabSales Order Item` soi ON soi.parent = so.name
-		WHERE so.custom_dispatch_date = %(date)s
+		WHERE so.custom_dispatch_date <= %(date)s
 		  AND so.docstatus = 1
 		  AND so.status NOT IN ('Completed', 'Cancelled', 'Closed')
 		GROUP BY so.order_type
