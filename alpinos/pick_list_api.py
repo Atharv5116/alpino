@@ -6,6 +6,30 @@ import frappe
 from frappe.utils import flt
 
 
+def _format_address_text(address_name: Optional[str]) -> str:
+	"""Return a plain-text, comma-separated address for the given Address name.
+
+	Used to seed Delivery Note Dispatch From / Dispatch To fields (Small Text)
+	from the standard ERPNext company / shipping address links. Returns "" when
+	the address can't be loaded so callers can fall back silently.
+	"""
+	if not address_name:
+		return ""
+	try:
+		addr = frappe.get_cached_doc("Address", address_name)
+	except Exception:
+		return ""
+	parts = [
+		addr.get("address_line1"),
+		addr.get("address_line2"),
+		addr.get("city"),
+		addr.get("state"),
+		addr.get("country"),
+		addr.get("pincode"),
+	]
+	return ", ".join(p for p in parts if p)
+
+
 def resolve_batch_no_for_row(row) -> Optional[str]:
 	"""Batch may live on row.batch_no (legacy fields) or inside Serial and Batch Bundle."""
 	bn = getattr(row, "batch_no", None)
@@ -309,6 +333,18 @@ def create_delivery_note_from_pick_list(pick_list_name):
 			dn.transporter = pt
 		else:
 			dn.custom_transporter_name = "Third Party"
+
+		# Auto-populate Dispatch From / Dispatch To from the standard ERPNext
+		# address fields ERPNext already set on the DN during mapping.
+		if not dn.get("custom_dispatch_from"):
+			dispatch_from = _format_address_text(dn.get("company_address"))
+			if dispatch_from:
+				dn.custom_dispatch_from = dispatch_from
+
+		if not (dn.get("custom_dispatch_to") or []):
+			dispatch_to = _format_address_text(dn.get("shipping_address_name"))
+			if dispatch_to:
+				dn.append("custom_dispatch_to", {"dispatch_to_address": dispatch_to})
 
 		# Save updated Delivery Note bypassing validations for Draft
 		dn.flags.ignore_mandatory = True
