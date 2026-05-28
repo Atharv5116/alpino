@@ -1,63 +1,51 @@
-import json
-
 import frappe
+from frappe.utils import formatdate
 
 
 @frappe.whitelist()
 def get_delivery_note_data(name):
-	doc = frappe.get_doc("Delivery Note", name)
-	doc.check_permission("read")
+	"""Return Delivery Note header + items for the custom page."""
+	dn = frappe.get_doc("Delivery Note", name)
+	dn.check_permission("read")
 
-	d = doc.as_dict()
+	# Get Pick List name from the first item that has one
+	pick_list_name = ""
+	for item in dn.items:
+		if item.get("against_pick_list"):
+			pick_list_name = item.against_pick_list
+			break
 
-	# Surface SO No. and Pick List No. from the item rows so the page can
-	# show them as header-level read-only fields.
-	sales_orders = sorted({i.against_sales_order for i in doc.items if i.against_sales_order})
-	pick_lists = sorted({i.against_pick_list for i in doc.items if i.against_pick_list})
-	d["sales_order_no"] = ", ".join(sales_orders)
-	d["pick_list_no"] = ", ".join(pick_lists)
+	dispatch_date = ""
+	if dn.custom_dispatch_date:
+		try:
+			dispatch_date = formatdate(str(dn.custom_dispatch_date)[:10])
+		except Exception:
+			dispatch_date = str(dn.custom_dispatch_date)
 
-	return d
+	items = []
+	for item in dn.items:
+		items.append({
+			"item_code": item.item_code,
+			"item_name": item.item_name,
+			"qty": item.qty,
+			"custom_box": item.get("custom_box") or 0,
+			"batch_no": item.get("batch_no") or "",
+			"custom_mfg_date": str(item.get("custom_mfg_date") or ""),
+			"custom_expiry_date": str(item.get("custom_expiry_date") or ""),
+		})
 
-
-@frappe.whitelist()
-def save_delivery_note_data(name, header, items):
-	header = json.loads(header) if isinstance(header, str) else header
-	items = json.loads(items) if isinstance(items, str) else items
-
-	doc = frappe.get_doc("Delivery Note", name)
-	doc.check_permission("write")
-
-	if doc.docstatus != 0:
-		frappe.throw("Submitted Delivery Note cannot be edited.")
-
-	# Only logistics fields are editable from this page; everything else stays
-	# as set by create_delivery_note_from_pick_list.
-	header_fields = {
-		"lr_no",
-		"lr_date",
-		"vehicle_no",
-		"driver_name",
-		"transporter",
+	return {
+		"name": dn.name,
+		"posting_date": formatdate(str(dn.posting_date)) if dn.posting_date else "",
+		"custom_sales_order_id": dn.get("custom_sales_order_id") or "",
+		"pick_list_name": pick_list_name,
+		"custom_lr_gr_no": dn.get("custom_lr_gr_no") or "",
+		"custom_dn_so_customer_name": dn.get("custom_dn_so_customer_name") or "",
+		"custom_transporter_name": dn.get("custom_transporter_name") or "",
+		"vehicle_no": dn.get("vehicle_no") or "",
+		"custom_dispatch_date": dispatch_date,
+		"custom_total_boxes": dn.get("custom_total_boxes") or 0,
+		"custom_dn_order_gross_weight": dn.get("custom_dn_order_gross_weight") or 0,
+		"custom_total_units_dn": dn.get("custom_total_units_dn") or 0,
+		"items": items,
 	}
-	for k, v in header.items():
-		if k in header_fields:
-			doc.set(k, v or None)
-
-	doc.flags.ignore_mandatory = True
-	doc.save(ignore_permissions=True)
-	frappe.db.commit()
-	return True
-
-
-@frappe.whitelist()
-def submit_delivery_note(name, header=None, items=None):
-	if header is not None or items is not None:
-		save_delivery_note_data(name, header or "{}", items or "[]")
-
-	doc = frappe.get_doc("Delivery Note", name)
-	doc.check_permission("submit")
-	if doc.docstatus == 0:
-		doc.submit()
-		frappe.db.commit()
-	return doc.name

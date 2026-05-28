@@ -1,214 +1,164 @@
 <style>
 	.dn-container {
 		padding: 15px;
-		background: #fff;
+		max-width: 1200px;
+		margin: 0 auto;
 	}
-	.dn-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		justify-content: flex-end;
-		margin-bottom: 15px;
-	}
-	.dn-grid {
+	.dn-header {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 12px 18px;
-		margin-bottom: 20px;
-	}
-	.dn-col {
-		display: flex;
-		flex-direction: column;
+		grid-template-columns: 120px 1fr 120px 1fr;
 		gap: 10px;
-		min-width: 0;
+		margin-bottom: 20px;
+		background: var(--card-bg, #fff);
+		border-radius: 8px;
+		padding: 20px;
+		border: 1px solid var(--border-color, #d1d8dd);
 	}
-	.dn-field {
-		display: grid;
-		grid-template-columns: 120px 1fr;
-		gap: 6px;
-		align-items: center;
-	}
-	.dn-field label {
-		font-weight: 600;
-		font-size: 12px;
-		margin: 0;
-		text-align: right;
-	}
-	.dn-field input,
-	.dn-field select,
-	.dn-field textarea {
-		width: 100%;
-		min-width: 0;
-		box-sizing: border-box;
-	}
-	.dn-section-title {
-		margin-top: 20px;
-		margin-bottom: 10px;
-		font-size: 16px;
+	.dn-header label {
 		font-weight: bold;
-		color: #333;
-		border-bottom: 1px solid #ddd;
-		padding-bottom: 5px;
+		text-align: right;
+		padding-right: 8px;
+		align-self: center;
+		font-size: 12px;
+		color: var(--text-muted);
 	}
-	.dn-table-wrap {
-		width: 100%;
+	.dn-header .form-control {
+		font-size: 13px;
+	}
+	@media (max-width: 768px) {
+		.dn-header {
+			grid-template-columns: 110px 1fr;
+		}
+		.dn-header label {
+			text-align: left;
+			padding-right: 0;
+		}
+	}
+	@media (max-width: 480px) {
+		.dn-header {
+			grid-template-columns: 1fr;
+			gap: 6px;
+		}
+		.dn-header label {
+			margin-top: 8px;
+			font-size: 11px;
+		}
+	}
+	.dn-table-wrapper {
 		overflow-x: auto;
 		-webkit-overflow-scrolling: touch;
+		background: var(--card-bg, #fff);
+		border-radius: 8px;
+		padding: 15px;
+		border: 1px solid var(--border-color, #d1d8dd);
+		margin-bottom: 20px;
 	}
 	.dn-table {
 		width: 100%;
-		min-width: 720px;
 		border-collapse: collapse;
-		margin-bottom: 20px;
-	}
-	.dn-table th,
-	.dn-table td {
-		border: 1px solid #d1d8dd;
-		padding: 5px;
-		text-align: center;
+		min-width: 650px;
 		font-size: 13px;
 	}
-	.dn-table th {
-		background: #f8f9fa;
-		font-weight: bold;
-		position: sticky;
-		top: 0;
-		z-index: 1;
+	.dn-table th, .dn-table td {
+		border: 1px solid var(--border-color, #d1d8dd);
+		padding: 6px 8px;
+		text-align: center;
 	}
-	.dn-table input {
-		width: 100%;
-		box-sizing: border-box;
+	.dn-table th {
+		background: var(--bg-color, #f8f9fa);
+		font-weight: 600;
+		font-size: 12px;
 	}
 	.dn-totals {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 8px 18px;
-		margin-top: 10px;
+		grid-template-columns: 1fr 1fr 1fr;
+		gap: 15px;
+		margin-bottom: 20px;
 	}
-
-	/* Tablet narrow */
-	@media (max-width: 720px) {
-		.dn-field {
-			grid-template-columns: 100px 1fr;
-		}
-		.dn-field label {
-			font-size: 11px;
-		}
+	.dn-totals .total-card {
+		background: var(--card-bg, #fff);
+		border: 1px solid var(--border-color, #d1d8dd);
+		border-radius: 8px;
+		padding: 12px 15px;
+		text-align: center;
 	}
-
-	/* Phone — keep 2 columns, stack label on top of input inside each cell */
+	.dn-totals .total-card .total-label {
+		font-size: 11px;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		font-weight: 600;
+	}
+	.dn-totals .total-card .total-value {
+		font-size: 18px;
+		font-weight: 700;
+		color: var(--text-color);
+	}
 	@media (max-width: 480px) {
-		.dn-container {
-			padding: 8px;
-		}
-		.dn-grid {
-			gap: 10px 10px;
-		}
-		.dn-field {
+		.dn-totals {
 			grid-template-columns: 1fr;
-			gap: 2px;
-		}
-		.dn-field label {
-			text-align: left;
-			font-size: 11px;
-		}
-		.dn-field input,
-		.dn-field select {
-			font-size: 13px;
-			padding: 4px 6px;
-			height: 30px;
-		}
-		.dn-table {
-			font-size: 12px;
 		}
 	}
 </style>
 
 <div class="dn-container">
-	<div class="dn-actions">
-		<button class="btn btn-primary btn-sm" id="dn-btn-submit" style="display:none;">Submit</button>
-		<button class="btn btn-default btn-sm" id="dn-btn-print" style="display:none;">Print</button>
-		<button class="btn btn-default btn-sm" id="dn-btn-list">Go to List</button>
+	<div class="text-right" style="margin-bottom: 15px;">
+		<button class="btn btn-default btn-sm" id="btn-dn-back">Back</button>
 	</div>
 
-	<div class="dn-grid">
-		<!-- Left column -->
-		<div class="dn-col">
-			<div class="dn-field">
-				<label>Customer</label>
-				<input type="text" class="form-control" data-fieldname="customer" readonly>
-			</div>
-			<div class="dn-field">
-				<label>Posting Date</label>
-				<input type="date" class="form-control" data-fieldname="posting_date" readonly>
-			</div>
-			<div class="dn-field">
-				<label>SO No.</label>
-				<input type="text" class="form-control" data-fieldname="sales_order_no" readonly>
-			</div>
-			<div class="dn-field">
-				<label>Pick No.</label>
-				<input type="text" class="form-control" data-fieldname="pick_list_no" readonly>
-			</div>
-			<div class="dn-field">
-				<label>Transporter</label>
-				<input type="text" class="form-control" data-fieldname="transporter">
-			</div>
-		</div>
+	<div class="dn-header">
+		<label>DATE</label>
+		<input type="text" class="form-control" data-fieldname="posting_date" readonly>
+		<label>SO NO.</label>
+		<input type="text" class="form-control" data-fieldname="custom_sales_order_id" readonly>
 
-		<!-- Right column -->
-		<div class="dn-col">
-			<div class="dn-field">
-				<label>LR No.</label>
-				<input type="text" class="form-control" data-fieldname="lr_no">
-			</div>
-			<div class="dn-field">
-				<label>LR Date</label>
-				<input type="date" class="form-control" data-fieldname="lr_date">
-			</div>
-			<div class="dn-field">
-				<label>Vehicle No.</label>
-				<input type="text" class="form-control" data-fieldname="vehicle_no">
-			</div>
-			<div class="dn-field">
-				<label>Driver</label>
-				<input type="text" class="form-control" data-fieldname="driver_name">
-			</div>
-			<div class="dn-field">
-				<label>Dispatch Date</label>
-				<input type="date" class="form-control" data-fieldname="custom_dispatch_date" readonly>
-			</div>
-		</div>
-	</div>
+		<label>PICK NO.</label>
+		<input type="text" class="form-control" data-fieldname="pick_list_name" readonly>
+		<label>LR NO.</label>
+		<input type="text" class="form-control" data-fieldname="custom_lr_gr_no">
 
-	<div class="dn-section-title">Items</div>
-	<div class="dn-table-wrap">
-		<table class="dn-table" id="dn-items-table">
-			<thead>
-				<tr>
-					<th>SR.</th>
-					<th>Item Code</th>
-					<th>Description</th>
-					<th>Qty</th>
-					<th>UOM</th>
-					<th>Rate</th>
-					<th>Amount</th>
-					<th>Warehouse</th>
-					<th>Batch</th>
-				</tr>
-			</thead>
-			<tbody></tbody>
-		</table>
+		<label>CUSTOMER</label>
+		<input type="text" class="form-control" data-fieldname="custom_dn_so_customer_name" readonly>
+		<label>TRANSPORTER</label>
+		<input type="text" class="form-control" data-fieldname="custom_transporter_name" readonly>
+
+		<label>VEHICLE NO.</label>
+		<input type="text" class="form-control" data-fieldname="vehicle_no">
+		<label>DISPATCH DATE</label>
+		<input type="text" class="form-control" data-fieldname="custom_dispatch_date" readonly>
 	</div>
 
 	<div class="dn-totals">
-		<div class="dn-field">
-			<label>Total Qty</label>
-			<input type="number" class="form-control" data-fieldname="total_qty" readonly>
+		<div class="total-card">
+			<div class="total-label">Total Boxes</div>
+			<div class="total-value" data-fieldname="custom_total_boxes">0</div>
 		</div>
-		<div class="dn-field">
-			<label>Grand Total</label>
-			<input type="number" class="form-control" data-fieldname="grand_total" readonly>
+		<div class="total-card">
+			<div class="total-label">Gross Weight</div>
+			<div class="total-value" data-fieldname="custom_dn_order_gross_weight">0</div>
 		</div>
+		<div class="total-card">
+			<div class="total-label">Total Units</div>
+			<div class="total-value" data-fieldname="custom_total_units_dn">0</div>
+		</div>
+	</div>
+
+	<div class="dn-table-wrapper">
+		<h6 style="font-weight: 600; margin-bottom: 10px;">Items</h6>
+		<table class="dn-table">
+			<thead>
+				<tr>
+					<th>SR.</th>
+					<th>SKU</th>
+					<th>SKU Name</th>
+					<th>QTY</th>
+					<th>BOX</th>
+					<th>BATCH CODE</th>
+					<th>MFG</th>
+					<th>EXP</th>
+				</tr>
+			</thead>
+			<tbody id="dn-items-body">
+			</tbody>
+		</table>
 	</div>
 </div>

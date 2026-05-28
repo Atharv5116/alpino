@@ -1,168 +1,109 @@
 frappe.pages['delivery_note_entry'] = frappe.pages['delivery_note_entry'] || {};
 
 frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
-	const page = frappe.ui.make_app_page({
+	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: 'Delivery Note',
+		title: 'Delivery Note Entry',
 		single_column: true
 	});
 	wrapper.page_instance = page;
 
-	try {
-		const html = frappe.render_template("delivery_note_entry", {});
-		page.main.html(html);
-	} catch (e) {
-		page.main.html("<h3>Error rendering template: " + e.message + "</h3>");
-		return;
-	}
+	page.main.html(frappe.render_template('delivery_note_entry'));
 
-	page.main.find('#dn-btn-list').on('click', function() {
-		frappe.set_route('List', 'Delivery Note');
+	page.main.find('#btn-dn-back').on('click', function() {
+		window.history.back();
 	});
 
-	page.main.find('#dn-btn-print').on('click', function() {
-		if (page.dn_name) {
-			frappe.set_route('print', 'Delivery Note', page.dn_name);
-		}
-	});
-
-	page.main.find('#dn-btn-submit').on('click', function() {
-		page.submit_dn();
-	});
-
-	page.load_data = function() {
+	page.load_data = function(dn_name) {
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.get_delivery_note_data',
-			args: { name: page.dn_name },
+			args: { name: dn_name },
 			callback: function(r) {
 				if (r.message) {
 					page.render_data(r.message);
-				} else {
-					page.main.html('<h3>Delivery Note not found.</h3>');
 				}
 			}
 		});
 	};
 
 	page.render_data = function(data) {
-		const editable = data.docstatus === 0;
-		const $main = page.main;
-
 		// Header fields
-		const setVal = (fn, v) => {
-			const $el = $main.find(`[data-fieldname="${fn}"]`);
-			$el.val(v == null ? '' : v);
-			if (!editable && $el.is('input, select, textarea')) {
-				$el.attr('readonly', true);
-				$el.attr('disabled', $el.is('select') ? true : false);
-			}
-		};
+		page.main.find('[data-fieldname="posting_date"]').val(data.posting_date || '');
+		page.main.find('[data-fieldname="custom_sales_order_id"]').val(data.custom_sales_order_id || '');
+		page.main.find('[data-fieldname="pick_list_name"]').val(data.pick_list_name || '');
+		page.main.find('[data-fieldname="custom_lr_gr_no"]').val(data.custom_lr_gr_no || '');
+		page.main.find('[data-fieldname="custom_dn_so_customer_name"]').val(data.custom_dn_so_customer_name || '');
+		page.main.find('[data-fieldname="custom_transporter_name"]').val(data.custom_transporter_name || '');
+		page.main.find('[data-fieldname="vehicle_no"]').val(data.vehicle_no || '');
+		page.main.find('[data-fieldname="custom_dispatch_date"]').val(data.custom_dispatch_date || '');
 
-		setVal('customer', data.customer);
-		setVal('posting_date', data.posting_date);
-		setVal('sales_order_no', data.sales_order_no);
-		setVal('pick_list_no', data.pick_list_no);
-		setVal('transporter', data.transporter);
-		setVal('lr_no', data.lr_no);
-		setVal('lr_date', data.lr_date);
-		setVal('vehicle_no', data.vehicle_no);
-		setVal('driver_name', data.driver_name);
-		setVal('custom_dispatch_date', data.custom_dispatch_date);
+		// Totals
+		page.main.find('.total-value[data-fieldname="custom_total_boxes"]').text(data.custom_total_boxes || 0);
+		page.main.find('.total-value[data-fieldname="custom_dn_order_gross_weight"]').text(data.custom_dn_order_gross_weight || 0);
+		page.main.find('.total-value[data-fieldname="custom_total_units_dn"]').text(data.custom_total_units_dn || 0);
 
-		// Items — qty/rate come from the pick list logic; show as read-only.
-		const $tbody = $main.find('#dn-items-table tbody').empty();
-		(data.items || []).forEach((row, idx) => {
-			const qty = flt(row.qty || 0);
-			const rate = flt(row.rate || 0);
+		// Items table
+		var $tbody = page.main.find('#dn-items-body');
+		$tbody.empty();
+
+		(data.items || []).forEach(function(item, idx) {
+			var mfg = item.custom_mfg_date || '';
+			var exp = item.custom_expiry_date || '';
+			// Format datetime to date-only for display
+			if (mfg && mfg.length > 10) mfg = mfg.substring(0, 10);
+			if (exp && exp.length > 10) exp = exp.substring(0, 10);
+
 			$tbody.append(`
-				<tr data-name="${row.name}">
+				<tr>
 					<td>${idx + 1}</td>
-					<td>${frappe.utils.escape_html(row.item_code || '')}</td>
-					<td style="text-align:left;">${frappe.utils.escape_html(row.description || row.item_name || '')}</td>
-					<td>${flt(qty, 2)}</td>
-					<td>${frappe.utils.escape_html(row.uom || '')}</td>
-					<td>${flt(rate, 2)}</td>
-					<td>${flt(qty * rate, 2)}</td>
-					<td>${frappe.utils.escape_html(row.warehouse || '')}</td>
-					<td>${frappe.utils.escape_html(row.batch_no || '')}</td>
+					<td>${frappe.utils.escape_html(item.item_code || '')}</td>
+					<td style="text-align: left;">${frappe.utils.escape_html(item.item_name || '')}</td>
+					<td>${item.qty || 0}</td>
+					<td>${item.custom_box || 0}</td>
+					<td>${frappe.utils.escape_html(item.batch_no || '')}</td>
+					<td>${mfg}</td>
+					<td>${exp}</td>
 				</tr>
 			`);
 		});
 
-		// Show/hide actions based on docstatus
-		if (editable) {
-			$main.find('#dn-btn-submit').show();
-			$main.find('#dn-btn-print').hide();
-		} else {
-			$main.find('#dn-btn-submit').hide();
-			$main.find('#dn-btn-print').show();
+		if (!data.items || data.items.length === 0) {
+			$tbody.append('<tr><td colspan="8" class="text-muted text-center">No items</td></tr>');
 		}
 
-		page.recalc_totals();
-		page.bind_row_inputs();
-	};
-
-	page.bind_row_inputs = function() {
-		// Items are read-only on this page; nothing to bind on the rows.
-	};
-
-	page.recalc_totals = function() {
-		// Totals are derived from the DN data directly since items are not editable.
-		let total_qty = 0;
-		let grand_total = 0;
-		page.main.find('#dn-items-table tbody tr').each(function() {
-			const $tr = $(this);
-			const cells = $tr.find('td');
-			total_qty += flt(cells.eq(3).text());
-			grand_total += flt(cells.eq(6).text());
+		// Save editable fields on change
+		page.main.find('[data-fieldname="custom_lr_gr_no"]').off('change').on('change', function() {
+			page._save_field(data.name, 'custom_lr_gr_no', $(this).val());
 		});
-		page.main.find('[data-fieldname="total_qty"]').val(flt(total_qty, 2));
-		page.main.find('[data-fieldname="grand_total"]').val(flt(grand_total, 2));
+		page.main.find('[data-fieldname="vehicle_no"]').off('change').on('change', function() {
+			page._save_field(data.name, 'vehicle_no', $(this).val());
+		});
 	};
 
-	page.collect_payload = function() {
-		// Only the logistics fields are user-editable; everything else stays as
-		// set by the create_delivery_note_from_pick_list backend logic.
-		const header = {
-			lr_no: page.main.find('[data-fieldname="lr_no"]').val() || null,
-			lr_date: page.main.find('[data-fieldname="lr_date"]').val() || null,
-			vehicle_no: page.main.find('[data-fieldname="vehicle_no"]').val() || null,
-			driver_name: page.main.find('[data-fieldname="driver_name"]').val() || null,
-			transporter: page.main.find('[data-fieldname="transporter"]').val() || null,
-		};
-		return { header, items: [] };
-	};
-
-	page.submit_dn = function() {
-		const payload = page.collect_payload();
-		frappe.confirm(__('Submit this Delivery Note? This cannot be undone.'), function() {
-			frappe.call({
-				method: 'alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.submit_delivery_note',
-				args: {
-					name: page.dn_name,
-					header: JSON.stringify(payload.header),
-					items: JSON.stringify(payload.items),
-				},
-				freeze: true,
-				freeze_message: __('Submitting Delivery Note...'),
-				callback: function(r) {
-					if (!r.exc) {
-						frappe.show_alert({ message: __('Delivery Note submitted'), indicator: 'green' });
-						page.load_data();
-					}
-				}
-			});
+	page._save_field = function(dn_name, fieldname, value) {
+		frappe.call({
+			method: 'frappe.client.set_value',
+			args: {
+				doctype: 'Delivery Note',
+				name: dn_name,
+				fieldname: fieldname,
+				value: value
+			},
+			callback: function() {
+				frappe.show_alert({ message: __('{0} updated', [fieldname]), indicator: 'green' }, 2);
+			}
 		});
 	};
 };
 
 frappe.pages['delivery_note_entry'].on_page_show = function(wrapper) {
-	if (!wrapper.page_instance) return;
-	const name = frappe.get_route()[1];
-	if (!name) {
-		wrapper.page_instance.main.html('<h3>No Delivery Note specified.</h3>');
-		return;
+	if (wrapper.page_instance) {
+		var dn_name = frappe.get_route()[1];
+		if (!dn_name) {
+			wrapper.page_instance.main.html('<h3 class="text-muted text-center" style="margin-top: 50px;">No Delivery Note specified.</h3>');
+			return;
+		}
+		wrapper.page_instance.set_title('Delivery Note - ' + dn_name);
+		wrapper.page_instance.load_data(dn_name);
 	}
-	wrapper.page_instance.dn_name = name;
-	wrapper.page_instance.load_data();
 };
