@@ -48,6 +48,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	page.render_data = function(data) {
 		page.dn_name = data.name;
 		page.docstatus = data.docstatus;
+		page.original_item_names = (data.items || []).map(function(i) { return i.name; });
 
 		// Header fields
 		var $main = page.main;
@@ -67,28 +68,47 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('.total-value[data-fieldname="custom_total_units_dn"]').text(data.custom_total_units_dn || 0);
 
 		// Items table
+		var draft = data.docstatus === 0;
 		var $tbody = $main.find('#dn-items-body').empty();
 		(data.items || []).forEach(function(item, idx) {
 			var mfg = item.custom_mfg_date || '';
 			var exp = item.custom_expiry_date || '';
 			if (mfg && mfg.length > 10) mfg = mfg.substring(0, 10);
 			if (exp && exp.length > 10) exp = exp.substring(0, 10);
+			var qty_cell = draft
+				? `<input type="number" min="0" step="any" class="form-control input-xs dn-item-qty" data-row-name="${frappe.utils.escape_html(item.name || '')}" value="${item.qty || 0}" style="text-align:center; padding:2px 4px; height:28px;">`
+				: (item.qty || 0);
+			var action_cell = draft
+				? `<td class="dn-col-action"><button type="button" class="btn btn-xs btn-danger dn-item-remove" data-row-name="${frappe.utils.escape_html(item.name || '')}" title="Remove">&times;</button></td>`
+				: '<td class="dn-col-action" style="display:none;"></td>';
 			$tbody.append(`
-				<tr>
+				<tr data-row-name="${frappe.utils.escape_html(item.name || '')}">
 					<td>${idx + 1}</td>
 					<td>${frappe.utils.escape_html(item.item_code || '')}</td>
 					<td style="text-align: left;">${frappe.utils.escape_html(item.item_name || '')}</td>
-					<td>${item.qty || 0}</td>
+					<td>${qty_cell}</td>
 					<td>${item.custom_box || 0}</td>
 					<td>${frappe.utils.escape_html(item.batch_no || '')}</td>
 					<td>${mfg}</td>
 					<td>${exp}</td>
+					${action_cell}
 				</tr>
 			`);
 		});
 		if (!data.items || data.items.length === 0) {
-			$tbody.append('<tr><td colspan="8" class="text-muted text-center">No items</td></tr>');
+			$tbody.append('<tr><td colspan="9" class="text-muted text-center">No items</td></tr>');
 		}
+
+		// Show/hide the action column header for draft
+		$main.find('th.dn-col-action').toggle(draft);
+
+		// Wire up remove buttons
+		$main.find('.dn-item-remove').off('click').on('click', function() {
+			var $btn = $(this);
+			frappe.confirm(__('Remove this item from the Delivery Note?'), function() {
+				$btn.closest('tr').remove();
+			});
+		});
 
 		page.apply_mode();
 	};
@@ -139,16 +159,64 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	page.collect_header = function() {
 		var $main = page.main;
 		return {
-			custom_lr_gr_no: $main.find('[data-fieldname="custom_lr_gr_no"]').val() || null,
-			custom_dispatch_from: $main.find('[data-fieldname="custom_dispatch_from"]').val() || null,
+			custom_lr_gr_no: ($main.find('[data-fieldname="custom_lr_gr_no"]').val() || '').trim() || null,
+			custom_dispatch_from: ($main.find('[data-fieldname="custom_dispatch_from"]').val() || '').trim() || null,
 			custom_transporter_name: $main.find('[data-fieldname="custom_transporter_name"]').val() || null,
-			vehicle_no: $main.find('[data-fieldname="vehicle_no"]').val() || null,
+			vehicle_no: ($main.find('[data-fieldname="vehicle_no"]').val() || '').trim() || null,
 		};
+	};
+
+	page.collect_items = function() {
+		var rows = [];
+		page.main.find('#dn-items-body tr[data-row-name]').each(function() {
+			var $tr = $(this);
+			var name = $tr.attr('data-row-name');
+			if (!name) return;
+			var $qty = $tr.find('.dn-item-qty');
+			rows.push({
+				name: name,
+				qty: $qty.length ? $qty.val() : undefined,
+			});
+		});
+		// Also collect removed rows (compare against original)
+		var visible = new Set(rows.map(function(r) { return r.name; }));
+		(page.original_item_names || []).forEach(function(n) {
+			if (!visible.has(n)) rows.push({ name: n, delete: true });
+		});
+		return rows;
+	};
+
+	page.validate_before_submit = function(header) {
+		var missing = [];
+		if (!header.custom_dispatch_from) missing.push('Dispatch From');
+		if (!header.custom_transporter_name) missing.push('Transporter');
+		if (!header.vehicle_no) missing.push('Vehicle No.');
+		if (!header.custom_lr_gr_no) missing.push('LR No.');
+		// Per-row qty
+		page.main.find('.dn-item-qty').each(function() {
+			var v = parseFloat($(this).val());
+			if (!v || v <= 0) {
+				missing.push('Quantity in row ' + ($(this).closest('tr').index() + 1));
+			}
+		});
+		return missing;
 	};
 
 	page.save_dn = function(do_submit) {
 		if (!page.dn_name) return;
 		var header = page.collect_header();
+		var items = page.collect_items();
+		if (do_submit) {
+			var missing = page.validate_before_submit(header);
+			if (missing.length) {
+				frappe.msgprint({
+					title: __('Required fields missing'),
+					message: missing.map(function(m) { return '• ' + m; }).join('<br>'),
+					indicator: 'red',
+				});
+				return;
+			}
+		}
 		var method = do_submit
 			? 'alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.submit_delivery_note'
 			: 'alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.save_delivery_note_data';
@@ -157,6 +225,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			args: {
 				name: page.dn_name,
 				header: JSON.stringify(header),
+				items: JSON.stringify(items),
 			},
 			freeze: true,
 			freeze_message: do_submit ? __('Submitting...') : __('Saving...'),
