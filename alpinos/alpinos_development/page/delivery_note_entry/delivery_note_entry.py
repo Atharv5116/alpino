@@ -24,6 +24,13 @@ def get_delivery_note_data(name):
 		except Exception:
 			dispatch_date = str(dn.custom_dispatch_date)
 
+	dispatch_to_rows = []
+	for row in (dn.get("custom_dispatch_to") or []):
+		dispatch_to_rows.append({
+			"name": row.name,
+			"dispatch_to_address": row.get("dispatch_to_address") or "",
+		})
+
 	items = []
 	for item in dn.items:
 		items.append({
@@ -54,6 +61,7 @@ def get_delivery_note_data(name):
 		"custom_dn_order_gross_weight": dn.get("custom_dn_order_gross_weight") or 0,
 		"custom_total_units_dn": dn.get("custom_total_units_dn") or 0,
 		"items": items,
+		"custom_dispatch_to": dispatch_to_rows,
 	}
 
 
@@ -92,9 +100,25 @@ def _apply_items_changes(dn, items):
 		dn.remove(row)
 
 
+def _apply_dispatch_to_changes(dn, dispatch_to):
+	"""Replace the Dispatch To child rows with the provided list."""
+	if dispatch_to is None:
+		return
+	dispatch_to = json.loads(dispatch_to) if isinstance(dispatch_to, str) else dispatch_to
+
+	dn.set("custom_dispatch_to", [])
+	for entry in dispatch_to:
+		text = (entry or {}).get("dispatch_to_address")
+		if isinstance(text, str):
+			text = text.strip()
+		if not text:
+			continue
+		dn.append("custom_dispatch_to", {"dispatch_to_address": text})
+
+
 @frappe.whitelist()
-def save_delivery_note_data(name, header, items=None):
-	"""Save editable header fields and item edits on a Draft Delivery Note."""
+def save_delivery_note_data(name, header, items=None, dispatch_to=None):
+	"""Save editable header fields, item edits and Dispatch To rows on a Draft DN."""
 	header = json.loads(header) if isinstance(header, str) else header
 
 	dn = frappe.get_doc("Delivery Note", name)
@@ -108,6 +132,7 @@ def save_delivery_note_data(name, header, items=None):
 			dn.set(k, v if v not in ("", None) else None)
 
 	_apply_items_changes(dn, items)
+	_apply_dispatch_to_changes(dn, dispatch_to)
 
 	dn.flags.ignore_mandatory = True
 	dn.save(ignore_permissions=True)
@@ -116,10 +141,10 @@ def save_delivery_note_data(name, header, items=None):
 
 
 @frappe.whitelist()
-def submit_delivery_note(name, header=None, items=None):
+def submit_delivery_note(name, header=None, items=None, dispatch_to=None):
 	"""Save then submit the Delivery Note."""
 	if header is not None:
-		save_delivery_note_data(name, header, items)
+		save_delivery_note_data(name, header, items, dispatch_to)
 
 	dn = frappe.get_doc("Delivery Note", name)
 	dn.check_permission("submit")

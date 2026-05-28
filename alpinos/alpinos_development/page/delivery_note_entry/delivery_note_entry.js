@@ -30,6 +30,9 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			page.save_dn(true);
 		});
 	});
+	page.main.find('#btn-dn-dispatch-to-add').on('click', function() {
+		page.add_dispatch_to_row('');
+	});
 
 	page.load_data = function(dn_name) {
 		frappe.call({
@@ -110,7 +113,41 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			});
 		});
 
+		// Dispatch To rows
+		page.render_dispatch_to(data.custom_dispatch_to || []);
+
 		page.apply_mode();
+	};
+
+	page.render_dispatch_to = function(rows) {
+		var $wrap = page.main.find('#dn-dispatch-to-rows').empty();
+		if (!rows.length) {
+			$wrap.append('<div class="text-muted" style="font-size:12px; margin-bottom:8px;">No Dispatch To address yet — click "+ Add row" to add one.</div>');
+		}
+		rows.forEach(function(r) {
+			page.add_dispatch_to_row(r.dispatch_to_address || '');
+		});
+	};
+
+	page.add_dispatch_to_row = function(text) {
+		var draft = page.docstatus === 0;
+		var $wrap = page.main.find('#dn-dispatch-to-rows');
+		// Drop the empty-state hint if it's there.
+		$wrap.find('.text-muted').remove();
+		var $row = $(`
+			<div class="dn-dispatch-to-row" style="display:flex; gap:6px; margin-bottom:6px; align-items:flex-start;">
+				<textarea class="form-control dn-dispatch-to-input" rows="2" style="flex:1; resize:vertical;"></textarea>
+				<button type="button" class="btn btn-xs btn-danger dn-dispatch-to-remove" title="Remove" style="display:${draft ? '' : 'none'};">&times;</button>
+			</div>
+		`);
+		$row.find('textarea').val(text || '').prop('readonly', !draft);
+		$row.find('.dn-dispatch-to-remove').on('click', function() {
+			$row.remove();
+			if (!$wrap.find('.dn-dispatch-to-row').length) {
+				$wrap.append('<div class="text-muted" style="font-size:12px; margin-bottom:8px;">No Dispatch To address yet — click "+ Add row" to add one.</div>');
+			}
+		});
+		$wrap.append($row);
 	};
 
 	page.apply_mode = function() {
@@ -142,6 +179,9 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('#btn-dn-save').toggle(draft);
 		$main.find('#btn-dn-submit').toggle(draft);
 		$main.find('#btn-dn-print').toggle(submitted);
+		$main.find('#btn-dn-dispatch-to-add').toggle(draft);
+		$main.find('.dn-dispatch-to-input').prop('readonly', !draft);
+		$main.find('.dn-dispatch-to-remove').toggle(draft);
 
 		// Status banner
 		var $banner = $main.find('#dn-status-banner');
@@ -186,12 +226,22 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		return rows;
 	};
 
-	page.validate_before_submit = function(header) {
+	page.collect_dispatch_to = function() {
+		var rows = [];
+		page.main.find('.dn-dispatch-to-input').each(function() {
+			var text = ($(this).val() || '').trim();
+			if (text) rows.push({ dispatch_to_address: text });
+		});
+		return rows;
+	};
+
+	page.validate_before_submit = function(header, dispatch_to) {
 		var missing = [];
 		if (!header.custom_dispatch_from) missing.push('Dispatch From');
 		if (!header.custom_transporter_name) missing.push('Transporter');
 		if (!header.vehicle_no) missing.push('Vehicle No.');
 		if (!header.custom_lr_gr_no) missing.push('LR No.');
+		if (!dispatch_to || !dispatch_to.length) missing.push('At least one Dispatch To row');
 		// Per-row qty
 		page.main.find('.dn-item-qty').each(function() {
 			var v = parseFloat($(this).val());
@@ -206,8 +256,9 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		if (!page.dn_name) return;
 		var header = page.collect_header();
 		var items = page.collect_items();
+		var dispatch_to = page.collect_dispatch_to();
 		if (do_submit) {
-			var missing = page.validate_before_submit(header);
+			var missing = page.validate_before_submit(header, dispatch_to);
 			if (missing.length) {
 				frappe.msgprint({
 					title: __('Required fields missing'),
@@ -226,6 +277,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 				name: page.dn_name,
 				header: JSON.stringify(header),
 				items: JSON.stringify(items),
+				dispatch_to: JSON.stringify(dispatch_to),
 			},
 			freeze: true,
 			freeze_message: do_submit ? __('Submitting...') : __('Saving...'),
