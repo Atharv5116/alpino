@@ -3,17 +3,43 @@
 		padding: 15px;
 		background: #fff;
 	}
-	.header-grid {
+	.pl-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		justify-content: flex-end;
+		margin-bottom: 15px;
+	}
+	.pl-grid {
 		display: grid;
-		grid-template-columns: 150px 1fr 150px 1fr;
-		gap: 10px;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px 18px;
 		margin-bottom: 20px;
 	}
-	.header-grid label {
-		font-weight: bold;
+	.pl-col {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		min-width: 0;
+	}
+	.pl-field {
+		display: grid;
+		grid-template-columns: 130px 1fr;
+		gap: 6px;
+		align-items: center;
+	}
+	.pl-field label {
+		font-weight: 600;
+		font-size: 12px;
+		margin: 0;
 		text-align: right;
-		padding-right: 10px;
-		align-self: center;
+	}
+	.pl-field input,
+	.pl-field select,
+	.pl-field textarea {
+		width: 100%;
+		min-width: 0;
+		box-sizing: border-box;
 	}
 	.sku-table {
 		width: 100%;
@@ -42,59 +68,125 @@
 		border-bottom: 1px solid #ddd;
 		padding-bottom: 5px;
 	}
+	#tables-container {
+		width: 100%;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+	}
+	#tables-container .sku-table {
+		min-width: 720px;
+	}
+
+	/* Tablet narrow */
+	@media (max-width: 720px) {
+		.pl-field {
+			grid-template-columns: 110px 1fr;
+		}
+		.pl-field label {
+			font-size: 11px;
+		}
+	}
+
+	/* Phone — keep 2 outer columns; stack label on top of input inside each cell */
+	@media (max-width: 480px) {
+		.pick-list-container {
+			padding: 8px;
+		}
+		.pl-grid {
+			gap: 10px 10px;
+		}
+		.pl-field {
+			grid-template-columns: 1fr;
+			gap: 2px;
+		}
+		.pl-field label {
+			text-align: left;
+			font-size: 11px;
+		}
+		.pl-field input,
+		.pl-field select {
+			font-size: 13px;
+			padding: 4px 6px;
+			height: 30px;
+		}
+	}
 </style>
 
 <div class="pick-list-container">
-	<div class="text-right" style="margin-bottom: 15px;">
-		<button class="btn btn-primary btn-sm" id="btn-create-delivery-note" style="display: none; margin-right: 5px;">Create Delivery Note</button>
+	<div class="pl-actions">
+		<button class="btn btn-primary btn-sm" id="btn-create-delivery-note" style="display: none;">Create Delivery Note</button>
 		<button class="btn btn-default btn-sm" id="btn-go-to-list">Go to List View</button>
 	</div>
-	
-	<div class="header-grid">
-		<label>ACTUAL BOX</label>
-		<input type="number" class="form-control" data-fieldname="custom_actual_box" step="1">
-		<label>QC Attended By</label>
-		<select class="form-control" data-fieldname="custom_qc_attended_by"></select>
-		
-		<label>SAMPLE BOX</label>
-		<input type="number" class="form-control" data-fieldname="custom_sample_box" step="1">
-		<label>DATE</label>
-		<input type="text" class="form-control" data-fieldname="custom_order_date" readonly>
-		
-		<label>DISPATCH DATE</label>
-		<input type="date" class="form-control" data-fieldname="custom_dispatch_date">
-		<label>PARTY NAME</label>
-		<input type="text" class="form-control" data-fieldname="custom_customer_name" readonly>
 
-		<label>SAMPLE WEIGHT</label>
-		<input type="number" class="form-control" data-fieldname="custom_sample_weight" step="0.01" readonly>
-		<label></label>
-		<div></div>
-		
-		<label>TOTAL BOX</label>
-		<input type="number" class="form-control" data-fieldname="custom_total_box" step="1" readonly>
-		<label>PARTY CODE</label>
-		<input type="text" class="form-control" data-fieldname="custom_party_code" readonly>
-		
-		<label>GROSS WEIGHT</label>
-		<input type="number" class="form-control" data-fieldname="custom_gross_weight" step="0.01" readonly>
-		<label>SO NO.</label>
-		<input type="text" class="form-control" data-fieldname="custom_sales_order_id" readonly>
-		
-		<label>TOTAL UNITS</label>
-		<input type="number" class="form-control" data-fieldname="custom_total_unit" step="0.01" readonly>
-		<label>PO NO.</label>
-		<input type="text" class="form-control" data-fieldname="custom_po_no">
-		
-		<label></label>
-		<div></div>
-		<label>TRANSPORTER</label>
-		<input type="text" class="form-control" data-fieldname="custom_transporter">
+	<div class="pl-grid">
+		<!-- Left column -->
+		<div class="pl-col">
+			<div class="pl-field">
+				<label>QC Attended By</label>
+				<select class="form-control" data-fieldname="custom_qc_attended_by"></select>
+			</div>
+			<div class="pl-field">
+				<label>SO Date</label>
+				<input type="text" class="form-control" data-fieldname="custom_order_date" readonly>
+			</div>
+			<div class="pl-field">
+				<label>Party Name</label>
+				<input type="text" class="form-control" data-fieldname="custom_customer_name" readonly>
+			</div>
+			<div class="pl-field">
+				<label>Party Code</label>
+				<input type="text" class="form-control" data-fieldname="custom_party_code" readonly>
+			</div>
+			<div class="pl-field">
+				<label>SO NO.</label>
+				<input type="text" class="form-control" data-fieldname="custom_sales_order_id" readonly>
+			</div>
+			<div class="pl-field">
+				<label>PO NO.</label>
+				<input type="text" class="form-control" data-fieldname="custom_po_no">
+			</div>
+			<div class="pl-field">
+				<label>Transporter</label>
+				<input type="text" class="form-control" data-fieldname="custom_transporter">
+			</div>
+		</div>
+
+		<!-- Right column -->
+		<div class="pl-col">
+			<div class="pl-field">
+				<label>Actual Box</label>
+				<input type="number" class="form-control" data-fieldname="custom_actual_box" step="1">
+			</div>
+			<div class="pl-field">
+				<label>Sample Box</label>
+				<input type="number" class="form-control" data-fieldname="custom_sample_box" step="1">
+			</div>
+			<div class="pl-field">
+				<label>Total Box</label>
+				<input type="number" class="form-control" data-fieldname="custom_total_box" step="1" readonly>
+			</div>
+			<div class="pl-field">
+				<label>Sample Weight</label>
+				<input type="number" class="form-control" data-fieldname="custom_sample_weight" step="0.01" readonly>
+			</div>
+			<div class="pl-field">
+				<label>Gross Weight</label>
+				<input type="number" class="form-control" data-fieldname="custom_gross_weight" step="0.01" readonly>
+			</div>
+			<div class="pl-field">
+				<label>Total Units</label>
+				<input type="number" class="form-control" data-fieldname="custom_total_unit" step="0.01" readonly>
+			</div>
+			<div class="pl-field">
+				<label>Dispatch Date</label>
+				<input type="date" class="form-control" data-fieldname="custom_dispatch_date">
+			</div>
+		</div>
 	</div>
-	
+
 	<div id="tables-container">
 		<!-- Tables will be dynamically generated here -->
 	</div>
-	
+
 	<datalist id="batch-list"></datalist>
 </div>

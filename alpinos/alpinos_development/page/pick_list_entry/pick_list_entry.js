@@ -25,6 +25,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 
 			page.main.find('#btn-create-delivery-note').on('click', function() {
+				// If a DN already exists for this pick list, just open it.
+				if (page.existing_delivery_note) {
+					frappe.set_route('delivery_note_entry', page.existing_delivery_note);
+					return;
+				}
 				frappe.call({
 					method: 'alpinos.pick_list_api.create_delivery_note_from_pick_list',
 					args: {
@@ -35,7 +40,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					callback: function(r) {
 						if (!r.exc && r.message) {
 							frappe.show_alert({message: __("Delivery Note {0} created successfully", [r.message]), indicator: "green"});
-							frappe.set_route('Form', 'Delivery Note', r.message);
+							frappe.set_route('delivery_note_entry', r.message);
 						}
 					}
 				});
@@ -76,11 +81,17 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	};
 	
 	page.render_data = function(data) {
+		page.existing_delivery_note = data.existing_delivery_note || null;
+		const $dnBtn = page.main.find('#btn-create-delivery-note');
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
-			page.main.find('#btn-create-delivery-note').show();
+			if (page.existing_delivery_note) {
+				$dnBtn.text('View Delivery Note').show();
+			} else {
+				$dnBtn.text('Create Delivery Note').show();
+			}
 		} else {
-			page.main.find('#btn-create-delivery-note').hide();
+			$dnBtn.hide();
 		}
 		
 		// Set header fields

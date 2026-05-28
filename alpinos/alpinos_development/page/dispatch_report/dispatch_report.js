@@ -103,6 +103,11 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		options: 'Warehouse',
 		change() { load_data(); },
 	});
+	let mi_field = page.add_field({
+		fieldtype: 'Check', fieldname: 'include_material_issue', label: 'Material Issue',
+		default: 0,
+		change() { load_data(); },
+	});
 	page.add_button(__('Refresh'), () => load_data(), { icon: 'refresh' });
 
 	// ── Container ─────────────────────────────────────────────────────────────
@@ -114,10 +119,11 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 	function load_data() {
 		let date = date_field.get_value();
 		let wh   = wh_field.get_value();
+		let include_mi = mi_field.get_value() ? 1 : 0;
 		$content.html('<p style="padding:30px;color:#888;">Loading…</p>');
 		frappe.call({
 			method: 'alpinos.dispatch_report_api.get_dispatch_report_data',
-			args: { date, warehouse: wh },
+			args: { date, warehouse: wh, include_material_issue: include_mi },
 			callback(r) {
 				$content.html(r.message ? build_table(r.message)
 					: '<p style="padding:30px;color:#888;">No data found.</p>');
@@ -148,8 +154,8 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		rows.push(`<tr>
 			<td class="dr-sum-label">TOTAL GW</td>
 			<td class="dr-sum-val">${fmt2(summary.total_gw)}</td>
-			${customer_types.map(ct => `<td class="dr-green-sum">${fmt(summary.dispatch_by_ct[ct]||0)}</td>`).join('')}
-			${customer_types.map(ct => `<td class="dr-red-sum">${fmt(summary.pending_by_ct[ct]||0)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-green-sum">${fmt(summary.dispatch_by_ct[ct.name]||0)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-red-sum">${fmt(summary.pending_by_ct[ct.name]||0)}</td>`).join('')}
 		</tr>`);
 
 		// ── Spacer ─────────────────────────────────────────────────────────────
@@ -168,25 +174,25 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			<td colspan="${N}" class="dr-red-date-hdr">PENDING DISPATCH</td>
 		</tr>`);
 
-		// ── H2: CT column names (full name, vertical) ────────────────────────
+		// ── H2: CT column abbreviations (vertical) ───────────────────────────
 		rows.push(`<tr>
-			${customer_types.map(ct => `<td class="dr-green-ct-hdr">${ct}</td>`).join('')}
-			${customer_types.map(ct => `<td class="dr-red-ct-hdr">${ct}-P</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-green-ct-hdr" title="${frappe.utils.escape_html(ct.name)}">${frappe.utils.escape_html(ct.abbr)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-red-ct-hdr" title="${frappe.utils.escape_html(ct.name)}">${frappe.utils.escape_html(ct.abbr)}-P</td>`).join('')}
 		</tr>`);
 
 		// ── H3: TOTAL BOX per CT ──────────────────────────────────────────────
 		rows.push(`<tr class="dr-subhdr">
 			<td colspan="5"></td>
 			<td style="font-weight:700;text-align:right;">BOX</td>
-			${customer_types.map(ct => `<td class="dr-green-sum">${fmt2(summary.box_by_ct[ct]||0)}</td>`).join('')}
-			${customer_types.map(ct => `<td class="dr-red-sum">${fmt2(summary.pending_box_by_ct[ct]||0)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-green-sum">${fmt2(summary.box_by_ct[ct.name]||0)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-red-sum">${fmt2(summary.pending_box_by_ct[ct.name]||0)}</td>`).join('')}
 		</tr>`);
 
 		// ── H4: TOTAL GW per CT ───────────────────────────────────────────────
 		rows.push(`<tr class="dr-subhdr">
 			<td colspan="5"></td>
 			<td style="font-weight:700;text-align:right;">GW</td>
-			${customer_types.map(ct => `<td class="dr-green-sum">${fmt2(summary.gw_by_ct[ct]||0)}</td>`).join('')}
+			${customer_types.map(ct => `<td class="dr-green-sum">${fmt2(summary.gw_by_ct[ct.name]||0)}</td>`).join('')}
 			${customer_types.map(() => `<td class="dr-red-zero"></td>`).join('')}
 		</tr>`);
 
@@ -219,13 +225,13 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 
 			// CT dispatch cells
 			let green_cells = customer_types.map(ct => {
-				let v = item.dispatch_by_ct[ct] || 0;
+				let v = item.dispatch_by_ct[ct.name] || 0;
 				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 
 			// CT pending cells
 			let red_cells = customer_types.map(ct => {
-				let v = item.pending_by_ct[ct] || 0;
+				let v = item.pending_by_ct[ct.name] || 0;
 				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 

@@ -5,14 +5,22 @@ import json
 def get_pick_list_data(name):
 	doc = frappe.get_doc('Pick List', name)
 	doc.check_permission('read')
-	
+
 	from alpinos.sales_order_api import get_box_conversion_factor
 	doc_dict = doc.as_dict()
 	for row in doc_dict.get("locations", []):
 		row["custom_conversion_factor"] = get_box_conversion_factor(row.get("item_code")) or 1
 		# Fetch SKU No from Item master
 		row["custom_sku_no"] = frappe.db.get_value("Item", row.get("item_code"), "custom_sku_no") or ""
-		
+
+	# Surface any existing (non-cancelled) DN against this pick list so the UI
+	# can hide the Create Delivery Note button.
+	doc_dict["existing_delivery_note"] = frappe.db.get_value(
+		"Delivery Note Item",
+		{"against_pick_list": name, "docstatus": ["<", 2]},
+		"parent",
+	)
+
 	return doc_dict
 
 @frappe.whitelist()

@@ -14,13 +14,18 @@ from frappe.utils import today, getdate
 
 
 @frappe.whitelist()
-def get_dispatch_report_data(date=None, warehouse=None):
+def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0):
 	if not date:
 		date = today()
+
+	# Frappe sends checkbox values as strings ("0"/"1") over the wire.
+	include_material_issue = int(include_material_issue or 0)
 
 	customer_types = _get_customer_types()
 	items = _get_sequenced_items()
 	dispatch_data = _get_dispatch_data(date)
+	if include_material_issue:
+		_merge_dispatch_data(dispatch_data, _get_material_issue_data(date))
 	pending_data = _get_pending_data(date)
 	stock_data = _get_stock_data(warehouse)
 	inward_data = _get_inward_data()
@@ -63,11 +68,27 @@ def get_dispatch_report_data(date=None, warehouse=None):
 # ---------------------------------------------------------------------------
 
 def _get_customer_types():
+	"""
+	Returns a list of {name, abbr} dicts, ordered by `sequence` (ascending,
+	with un-sequenced rows pushed to the end), then by name. The dispatch /
+	pending data dicts still key off the full name; `abbr` is purely for
+	display in the report columns.
+	"""
 	rows = frappe.db.sql(
-		"SELECT name FROM `tabOffline Buyer Customer Type` ORDER BY name ASC",
+		"""
+		SELECT name, abbreviation, sequence
+		FROM `tabOffline Buyer Customer Type`
+		ORDER BY
+			CASE WHEN COALESCE(sequence, 0) = 0 THEN 1 ELSE 0 END,
+			sequence ASC,
+			name ASC
+		""",
 		as_dict=True,
 	)
-	return [r.name for r in rows]
+	return [
+		{"name": r.name, "abbr": (r.abbreviation or r.name)}
+		for r in rows
+	]
 
 
 def _get_sequenced_items():
@@ -107,6 +128,41 @@ def _get_dispatch_data(date):
 		as_dict=True,
 	)
 	return _aggregate_by_item(rows)
+
+
+def _get_material_issue_data(date):
+	"""
+	Material Issue dispatch: Stock Entry rows where purpose = 'Material Issue',
+	posting_date = report date, and docstatus = 1. Customer type is read from
+	the custom_customer_type field on the Stock Entry header.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT
+			sed.item_code,
+			SUM(sed.qty) AS qty,
+			COALESCE(se.custom_customer_type, 'Other') AS customer_type
+		FROM `tabStock Entry` se
+		JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+		WHERE se.posting_date = %(date)s
+		  AND se.docstatus = 1
+		  AND se.purpose = 'Material Issue'
+		GROUP BY sed.item_code, se.custom_customer_type
+		""",
+		{"date": date},
+		as_dict=True,
+	)
+	return _aggregate_by_item(rows)
+
+
+def _merge_dispatch_data(target, extra):
+	"""Add extra dispatch data into target in place, summing totals and per-CT qty."""
+	for ic, e in extra.items():
+		if ic not in target:
+			target[ic] = {"total": 0, "by_ct": {}}
+		target[ic]["total"] += e.get("total", 0)
+		for ct, qty in e.get("by_ct", {}).items():
+			target[ic]["by_ct"][ct] = target[ic]["by_ct"].get(ct, 0) + qty
 
 
 def _get_pending_data(date):

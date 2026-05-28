@@ -122,6 +122,16 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	if pick_list.docstatus != 1:
 		frappe.throw("Pick List must be submitted to create a Delivery Note.")
 
+	# If a DN already exists against this pick list (previous attempt), return it
+	# instead of trying to create a duplicate — frontend can navigate to the real doc.
+	existing_dn = frappe.db.get_value(
+		"Delivery Note Item",
+		{"against_pick_list": pick_list_name, "docstatus": ["<", 2]},
+		"parent",
+	)
+	if existing_dn:
+		return existing_dn
+
 	# Suppress the default ERPNext msgprint during DN creation
 	_original_msgprint = frappe.msgprint
 	def _silent_msgprint(*args, **kwargs):
@@ -240,12 +250,45 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	frappe.get_doc = _custom_get_doc
 	frappe.get_all = _custom_get_all
 
+	# Patch create_dn_with_so / create_dn_wo_so to drop zero-qty rows
+	# (items already fully delivered or never picked) before save, otherwise
+	# erpnext's validate_qty_is_not_zero blows up the whole DN creation.
+	from erpnext.stock.doctype.pick_list import pick_list as _pl_module
+	_orig_create_dn_with_so = _pl_module.create_dn_with_so
+	_orig_create_dn_wo_so = _pl_module.create_dn_wo_so
+
+	def _patched_create_dn_with_so(sales_dict, pl):
+		delivery_note = None
+		for customer in sales_dict:
+			delivery_note = _pl_module.create_dn_from_so(pl, sales_dict[customer], None)
+			if not delivery_note:
+				continue
+			delivery_note.items = [it for it in delivery_note.items if flt(it.qty) > 0]
+			if not delivery_note.items:
+				delivery_note = None
+				continue
+			delivery_note.flags.ignore_mandatory = True
+			delivery_note.save()
+		return delivery_note
+
+	def _patched_create_dn_wo_so(pl, delivery_note=None):
+		dn_local = _orig_create_dn_wo_so(pl, delivery_note)
+		if dn_local:
+			dn_local.items = [it for it in dn_local.items if flt(it.qty) > 0]
+		return dn_local
+
+	_pl_module.create_dn_with_so = _patched_create_dn_with_so
+	_pl_module.create_dn_wo_so = _patched_create_dn_wo_so
+
 	try:
 		# Call standard erpnext mapper to create Delivery Note
 		dn = create_delivery_note(pick_list_name)
 
 		if not dn:
-			frappe.throw("Could not create Delivery Note from Pick List.")
+			frappe.throw(
+				"Could not create Delivery Note: no remaining quantity to deliver "
+				"for this Pick List (all items appear to be already delivered)."
+			)
 
 		if isinstance(dn, str):
 			dn = frappe.get_doc("Delivery Note", dn)
@@ -276,6 +319,8 @@ def create_delivery_note_from_pick_list(pick_list_name):
 		frappe.msgprint = _original_msgprint
 		frappe.get_doc = _original_get_doc
 		frappe.get_all = _original_get_all
+		_pl_module.create_dn_with_so = _orig_create_dn_with_so
+		_pl_module.create_dn_wo_so = _orig_create_dn_wo_so
 
 	return dn.name
 
