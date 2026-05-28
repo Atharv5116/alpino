@@ -102,8 +102,14 @@
 
 <div class="dn-container">
 	<div class="text-right" style="margin-bottom: 15px;">
+		<button class="btn btn-primary btn-sm" id="btn-dn-submit" style="display:none;">Submit</button>
+		<button class="btn btn-default btn-sm" id="btn-dn-save" style="display:none;">Save</button>
+		<button class="btn btn-default btn-sm" id="btn-dn-print" style="display:none;">Print</button>
+		<button class="btn btn-default btn-sm" id="btn-dn-list">List</button>
 		<button class="btn btn-default btn-sm" id="btn-dn-back">Back</button>
 	</div>
+
+	<div id="dn-status-banner" style="display:none; padding:8px 12px; margin-bottom:12px; border-radius:6px; font-weight:600; font-size:13px;"></div>
 
 	<div class="dn-header">
 		<label>DATE</label>
@@ -119,12 +125,21 @@
 		<label>CUSTOMER</label>
 		<input type="text" class="form-control" data-fieldname="custom_dn_so_customer_name" readonly>
 		<label>TRANSPORTER</label>
-		<input type="text" class="form-control" data-fieldname="custom_transporter_name" readonly>
+		<select class="form-control" data-fieldname="custom_transporter_name">
+			<option value=""></option>
+			<option value="Local">Local</option>
+			<option value="Own Vehicle">Own Vehicle</option>
+			<option value="Third Party">Third Party</option>
+			<option value="Other">Other</option>
+		</select>
 
 		<label>VEHICLE NO.</label>
 		<input type="text" class="form-control" data-fieldname="vehicle_no">
 		<label>DISPATCH DATE</label>
 		<input type="text" class="form-control" data-fieldname="custom_dispatch_date" readonly>
+
+		<label>DISPATCH FROM</label>
+		<textarea class="form-control" data-fieldname="custom_dispatch_from" rows="2" style="grid-column: span 3; resize: vertical;"></textarea>
 	</div>
 
 	<div class="dn-totals">
