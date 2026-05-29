@@ -155,7 +155,7 @@ def setup_delivery_note_alpinos():
 				fieldtype="Datetime",
 				insert_after="batch_no",
 				read_only=1,
-				reqd=1,
+				reqd=0,
 			),
 			dict(
 				fieldname="custom_expiry_date",
@@ -163,7 +163,7 @@ def setup_delivery_note_alpinos():
 				fieldtype="Datetime",
 				insert_after="custom_mfg_date",
 				read_only=1,
-				reqd=1,
+				reqd=0,
 			),
 		],
 	}

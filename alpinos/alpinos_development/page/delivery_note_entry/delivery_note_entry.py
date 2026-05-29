@@ -141,39 +141,59 @@ def save_delivery_note_data(name, header, items=None, dispatch_to=None):
 
 
 def _backfill_item_dates_from_pick_list(dn):
-	"""Copy custom_mfg_date / custom_expiry_date / custom_box / batch_no from the
-	linked Pick List Item for any DN item that's missing them.
+	"""Fill MFG / Expiry / Box / Batch on DN items from the best available source.
 
-	Older DN drafts (created before pick_list_api copied these fields) hit
-	"Value missing for: MFG Date" on submit. Backfilling here lets those go
-	through without manual data entry.
+	Priority for each field, first non-empty wins:
+	1. The DN item itself (already populated)
+	2. The linked Pick List Item (custom_mfg_date / custom_expiry_date / custom_box
+	   / custom_batch_code)
+	3. The Batch master pointed to by batch_no — Batch always has
+	   manufacturing_date + expiry_date
+
+	The DN custom_mfg_date / custom_expiry_date fields are reqd=1 read_only=1, so
+	without this no DN can submit if either the Pick List didn't enter dates or
+	the DN was created before pick_list_api started copying them.
 	"""
 	pl_row_names = [it.get("pick_list_item") for it in dn.items if it.get("pick_list_item")]
-	if not pl_row_names:
-		return False
-	pl_rows = frappe.get_all(
-		"Pick List Item",
-		filters={"name": ["in", pl_row_names]},
-		fields=["name", "custom_mfg_date", "custom_expiry_date", "custom_box", "custom_batch_code"],
-	)
-	by_name = {r["name"]: r for r in pl_rows}
+	pl_data = {}
+	if pl_row_names:
+		for r in frappe.get_all(
+			"Pick List Item",
+			filters={"name": ["in", pl_row_names]},
+			fields=["name", "custom_mfg_date", "custom_expiry_date", "custom_box", "custom_batch_code"],
+		):
+			pl_data[r["name"]] = r
+
 	changed = False
+
+	def _fill(item, attr, value):
+		nonlocal changed
+		if value and not item.get(attr):
+			item.set(attr, value)
+			changed = True
+
 	for item in dn.items:
-		pl = by_name.get(item.get("pick_list_item"))
-		if not pl:
-			continue
-		if not item.get("custom_mfg_date") and pl.get("custom_mfg_date"):
-			item.custom_mfg_date = pl["custom_mfg_date"]
-			changed = True
-		if not item.get("custom_expiry_date") and pl.get("custom_expiry_date"):
-			item.custom_expiry_date = pl["custom_expiry_date"]
-			changed = True
-		if not item.get("custom_box") and pl.get("custom_box"):
-			item.custom_box = pl["custom_box"]
-			changed = True
-		if not item.get("batch_no") and pl.get("custom_batch_code"):
-			item.batch_no = pl["custom_batch_code"]
-			changed = True
+		pl = pl_data.get(item.get("pick_list_item")) or {}
+
+		# Batch first — Pick List's custom_batch_code is the source of truth.
+		_fill(item, "batch_no", pl.get("custom_batch_code"))
+		_fill(item, "custom_box", pl.get("custom_box"))
+		_fill(item, "custom_mfg_date", pl.get("custom_mfg_date"))
+		_fill(item, "custom_expiry_date", pl.get("custom_expiry_date"))
+
+		# Final fallback: read manufacturing / expiry from the Batch master.
+		if item.get("batch_no") and (
+			not item.get("custom_mfg_date") or not item.get("custom_expiry_date")
+		):
+			b = frappe.db.get_value(
+				"Batch",
+				item.batch_no,
+				["manufacturing_date", "expiry_date"],
+				as_dict=True,
+			) or {}
+			_fill(item, "custom_mfg_date", b.get("manufacturing_date"))
+			_fill(item, "custom_expiry_date", b.get("expiry_date"))
+
 	return changed
 
 
