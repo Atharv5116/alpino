@@ -140,6 +140,43 @@ def save_delivery_note_data(name, header, items=None, dispatch_to=None):
 	return True
 
 
+def _backfill_item_dates_from_pick_list(dn):
+	"""Copy custom_mfg_date / custom_expiry_date / custom_box / batch_no from the
+	linked Pick List Item for any DN item that's missing them.
+
+	Older DN drafts (created before pick_list_api copied these fields) hit
+	"Value missing for: MFG Date" on submit. Backfilling here lets those go
+	through without manual data entry.
+	"""
+	pl_row_names = [it.get("pick_list_item") for it in dn.items if it.get("pick_list_item")]
+	if not pl_row_names:
+		return False
+	pl_rows = frappe.get_all(
+		"Pick List Item",
+		filters={"name": ["in", pl_row_names]},
+		fields=["name", "custom_mfg_date", "custom_expiry_date", "custom_box", "custom_batch_code"],
+	)
+	by_name = {r["name"]: r for r in pl_rows}
+	changed = False
+	for item in dn.items:
+		pl = by_name.get(item.get("pick_list_item"))
+		if not pl:
+			continue
+		if not item.get("custom_mfg_date") and pl.get("custom_mfg_date"):
+			item.custom_mfg_date = pl["custom_mfg_date"]
+			changed = True
+		if not item.get("custom_expiry_date") and pl.get("custom_expiry_date"):
+			item.custom_expiry_date = pl["custom_expiry_date"]
+			changed = True
+		if not item.get("custom_box") and pl.get("custom_box"):
+			item.custom_box = pl["custom_box"]
+			changed = True
+		if not item.get("batch_no") and pl.get("custom_batch_code"):
+			item.batch_no = pl["custom_batch_code"]
+			changed = True
+	return changed
+
+
 @frappe.whitelist()
 def submit_delivery_note(name, header=None, items=None, dispatch_to=None):
 	"""Save then submit the Delivery Note."""
@@ -149,6 +186,9 @@ def submit_delivery_note(name, header=None, items=None, dispatch_to=None):
 	dn = frappe.get_doc("Delivery Note", name)
 	dn.check_permission("submit")
 	if dn.docstatus == 0:
+		if _backfill_item_dates_from_pick_list(dn):
+			dn.flags.ignore_mandatory = True
+			dn.save(ignore_permissions=True)
 		dn.submit()
 		frappe.db.commit()
 	return dn.name

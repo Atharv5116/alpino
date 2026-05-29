@@ -334,6 +334,23 @@ def create_delivery_note_from_pick_list(pick_list_name):
 		else:
 			dn.custom_transporter_name = "Third Party"
 
+		# Copy custom_mfg_date / custom_expiry_date / custom_box from the matching
+		# Pick List Item rows — ERPNext's standard mapper drops these custom fields
+		# and Delivery Note Item declares them as reqd=1, blocking submit.
+		pl_rows_by_name = {row.name: row for row in (pick_list.locations or [])}
+		for dn_item in dn.items:
+			pl_row = pl_rows_by_name.get(dn_item.get("pick_list_item"))
+			if not pl_row:
+				continue
+			if not dn_item.get("custom_mfg_date") and pl_row.get("custom_mfg_date"):
+				dn_item.custom_mfg_date = pl_row.custom_mfg_date
+			if not dn_item.get("custom_expiry_date") and pl_row.get("custom_expiry_date"):
+				dn_item.custom_expiry_date = pl_row.custom_expiry_date
+			if not dn_item.get("custom_box") and pl_row.get("custom_box"):
+				dn_item.custom_box = pl_row.custom_box
+			if not dn_item.get("batch_no") and pl_row.get("custom_batch_code"):
+				dn_item.batch_no = pl_row.custom_batch_code
+
 		# Auto-populate Dispatch From / Dispatch To from the standard ERPNext
 		# address fields ERPNext already set on the DN during mapping.
 		if not dn.get("custom_dispatch_from"):
