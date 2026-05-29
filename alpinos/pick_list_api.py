@@ -146,6 +146,29 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	if pick_list.docstatus != 1:
 		frappe.throw("Pick List must be submitted to create a Delivery Note.")
 
+	# Ensure every referenced Sales Order is submitted — ERPNext's SO→DN mapper
+	# silently throws a cryptic "Cannot map because following condition fails:
+	# docstatus=1" otherwise.
+	unsubmitted_sos = []
+	seen = set()
+	for loc in pick_list.locations or []:
+		so = loc.sales_order
+		if not so or so in seen:
+			continue
+		seen.add(so)
+		ds = frappe.db.get_value("Sales Order", so, "docstatus")
+		if ds != 1:
+			unsubmitted_sos.append((so, ds))
+	if unsubmitted_sos:
+		details = ", ".join(
+			f"{so} (docstatus={ds if ds is not None else 'missing'})"
+			for so, ds in unsubmitted_sos
+		)
+		frappe.throw(
+			"Cannot create Delivery Note — the following Sales Orders are not "
+			f"submitted: {details}. Submit or amend the Sales Order(s) first."
+		)
+
 	# If a DN already exists against this pick list (previous attempt), return it
 	# instead of trying to create a duplicate — frontend can navigate to the real doc.
 	existing_dn = frappe.db.get_value(
