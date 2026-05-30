@@ -15,7 +15,7 @@ def validate_pick_list(doc, method=None):
 
 def _set_defaults(doc):
 	if not doc.custom_qc_attended_by:
-		doc.custom_qc_attended_by = frappe.session.user
+		doc.custom_qc_attended_by = doc.get("custom_assigned_to") or frappe.session.user
 	if not doc.custom_order_date:
 		doc.custom_order_date = now_datetime()
 

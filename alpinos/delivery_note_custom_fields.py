@@ -54,6 +54,16 @@ def setup_delivery_note_alpinos():
 				depends_on="eval:!doc.is_return",
 			),
 			dict(
+				fieldname="custom_assigned_to",
+				label="Assigned To",
+				fieldtype="Link",
+				options="User",
+				insert_after="custom_delivery_date",
+				in_list_view=1,
+				in_standard_filter=1,
+				depends_on="eval:!doc.is_return",
+			),
+			dict(
 				fieldname="custom_transporter_section",
 				label="Transporter Information",
 				fieldtype="Section Break",

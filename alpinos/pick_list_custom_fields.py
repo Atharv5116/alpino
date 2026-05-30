@@ -54,6 +54,15 @@ def setup_pick_list_custom_fields():
 				reqd=1,
 			),
 			dict(
+				fieldname="custom_assigned_to",
+				label="Assigned To",
+				fieldtype="Link",
+				options="User",
+				insert_after="custom_qc_attended_by",
+				in_list_view=1,
+				in_standard_filter=1,
+			),
+			dict(
 				fieldname="custom_po_no",
 				label="PO No.",
 				fieldtype="Data",
