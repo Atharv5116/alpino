@@ -42,6 +42,11 @@ def _sync_rows_and_totals(doc):
 		factor = flt(get_box_conversion_factor(row.item_code)) if row.item_code else 0
 		factor = factor or 1
 
+		if row.item_code and not flt(row.custom_weight_per_box):
+			row.custom_weight_per_box = flt(
+				frappe.db.get_value("Item", row.item_code, "custom_gross_weight")
+			)
+
 		table_name = row.custom_source_table or "Items"
 		if not flt(row.custom_box):
 			if table_name == "Items":

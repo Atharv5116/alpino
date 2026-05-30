@@ -168,6 +168,8 @@ def setup_pick_list_custom_fields():
 				label="Std Weight / Box",
 				fieldtype="Float",
 				insert_after="custom_sample_box",
+				fetch_from="item_code.custom_gross_weight",
+				read_only=1,
 				default="0",
 			),
 			dict(
@@ -280,6 +282,22 @@ def _setup_pick_list_property_setters():
 			"property": "reqd",
 			"value": "1",
 			"property_type": "Check",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Pick List Item",
+			"field_name": "custom_box",
+			"property": "read_only_depends_on",
+			"value": "eval:doc.custom_source_table && doc.custom_source_table != \"Items\"",
+			"property_type": "Data",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Pick List Item",
+			"field_name": "custom_sample_box",
+			"property": "read_only_depends_on",
+			"value": "eval:!doc.custom_source_table || doc.custom_source_table == \"Items\"",
+			"property_type": "Data",
 		},
 	]
 
