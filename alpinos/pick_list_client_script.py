@@ -86,6 +86,21 @@ frappe.ui.form.on('Pick List Item', {
 			const d = r.message || {};
 			frappe.model.set_value(cdt, cdn, 'custom_mfg_date', d.manufacturing_date || null);
 			frappe.model.set_value(cdt, cdn, 'custom_expiry_date', d.expiry_date || null);
+			if (d.expiry_date && row.sales_order) {
+				frappe.call({
+					method: 'alpinos.expiry_validation.check_row_expiry_warning',
+					args: {
+						expiry_date: d.expiry_date,
+						sales_order: row.sales_order,
+						dispatch_date: frm.doc.custom_dispatch_date || null,
+					},
+				}).then((res) => {
+					const m = res.message || {};
+					if (!m.ok && m.message) {
+						frappe.show_alert({ message: `Row #${row.idx}: ${m.message}`, indicator: 'orange' }, 7);
+					}
+				});
+			}
 		});
 	},
 

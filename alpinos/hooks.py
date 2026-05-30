@@ -147,6 +147,7 @@ after_migrate = [
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
 	"alpinos.sales_order_scheme_damage_migration.run_sales_order_scheme_damage_split_migration",
 	"alpinos.item_custom_fields.setup_item_custom_fields",
+	"alpinos.offline_buyer_api.seed_customer_types",
 	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
 	"alpinos.pick_list_custom_fields.setup_pick_list_custom_fields",
 	"alpinos.sales_order_client_script.create_sales_order_client_script",
@@ -280,10 +281,19 @@ doc_events = {
 	},
 	"Pick List": {
 		"before_validate": "alpinos.pick_list_hooks.before_validate_pick_list",
-		"validate": "alpinos.pick_list_hooks.validate_pick_list",
+		"validate": [
+			"alpinos.pick_list_hooks.validate_pick_list",
+			"alpinos.expiry_validation.validate_expiry_on_pick_list",
+		],
 	},
 	"Delivery Note": {
-		"validate": "alpinos.delivery_note_hooks.validate_delivery_note",
+		"validate": [
+			"alpinos.delivery_note_hooks.validate_delivery_note",
+			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
+		],
+	},
+	"Batch": {
+		"before_validate": "alpinos.batch_hooks.compute_expiry_from_shelf_life",
 	},
 	"Item": {
 		"before_insert": "alpinos.item_sequence.reorder_on_insert",

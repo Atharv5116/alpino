@@ -175,7 +175,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 			
 			let row_html = `
-				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}">
+				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}">
 					<td>${idx + 1}</td>
 					<td data-item-code="${row.item_code}">${row.item_code}</td>
 					<td>${row.custom_sku_no || '-'}</td>
@@ -284,6 +284,19 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					$(this).val(fixed);
 				}
 			}
+		});
+
+		// MFG -> Expiry auto-fill from Item.shelf_life_in_days when expiry is blank.
+		container.find('.mfg-input').on('change', function() {
+			let tr = $(this).closest('tr');
+			let mfg = $(this).val();
+			let exp_input = tr.find('.exp-input');
+			let shelf = cint(tr.attr('data-shelf-life')) || 0;
+			if (!mfg || !shelf || exp_input.val()) return;
+			let d = frappe.datetime.str_to_obj(mfg);
+			if (!d) return;
+			d.setDate(d.getDate() + shelf);
+			exp_input.val(frappe.datetime.obj_to_str(d).split(' ')[0]);
 		});
 
 		// Header ACTUAL BOX or SAMPLE BOX changes update TOTAL BOX in real-time

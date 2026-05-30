@@ -1,5 +1,15 @@
 import frappe
 import json
+from frappe.utils import add_days
+
+
+def _compute_expiry_from_shelf_life(item_code, mfg_date):
+	if not item_code or not mfg_date:
+		return None
+	shelf = frappe.db.get_value("Item", item_code, "shelf_life_in_days")
+	if not shelf or int(shelf) <= 0:
+		return None
+	return add_days(mfg_date, int(shelf))
 
 @frappe.whitelist()
 def get_pick_list_data(name):
@@ -10,12 +20,19 @@ def get_pick_list_data(name):
 	doc_dict = doc.as_dict()
 	for row in doc_dict.get("locations", []):
 		row["custom_conversion_factor"] = get_box_conversion_factor(row.get("item_code")) or 1
-		# Fetch SKU No from Item master
-		row["custom_sku_no"] = frappe.db.get_value("Item", row.get("item_code"), "custom_sku_no") or ""
-		if not row.get("custom_weight_per_box"):
-			row["custom_weight_per_box"] = (
-				frappe.db.get_value("Item", row.get("item_code"), "custom_gross_weight") or 0
+		item_info = (
+			frappe.db.get_value(
+				"Item",
+				row.get("item_code"),
+				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days"],
+				as_dict=True,
 			)
+			or {}
+		)
+		row["custom_sku_no"] = item_info.get("custom_sku_no") or ""
+		if not row.get("custom_weight_per_box"):
+			row["custom_weight_per_box"] = item_info.get("custom_gross_weight") or 0
+		row["shelf_life_in_days"] = item_info.get("shelf_life_in_days") or 0
 
 	# Surface any existing (non-cancelled) DN against this pick list so the UI
 	# can hide the Create Delivery Note button.
@@ -85,6 +102,10 @@ def save_pick_list_data(name, header, items):
 			item = item_doc[0]
 			batch_no_val = item_data.get('custom_batch_code') or item_data.get('batch_no')
 			qty_val = float(item_data.get('qty') or 0)
+			mfg = item_data.get('custom_mfg_date') or None
+			exp = item_data.get('custom_expiry_date') or None
+			if mfg and not exp:
+				exp = _compute_expiry_from_shelf_life(item.item_code, mfg)
 			frappe.db.set_value('Pick List Item', item.name, {
 				'qty': qty_val,
 				'stock_qty': qty_val,
@@ -94,8 +115,8 @@ def save_pick_list_data(name, header, items):
 				'custom_sample_quantity': 0,
 				'custom_batch_code': batch_no_val,
 				'batch_no': None,
-				'custom_mfg_date': item_data.get('custom_mfg_date') or None,
-				'custom_expiry_date': item_data.get('custom_expiry_date') or None,
+				'custom_mfg_date': mfg,
+				'custom_expiry_date': exp,
 				'custom_remark': item_data.get('custom_remark') or None
 			}, update_modified=False)
 	
@@ -214,6 +235,10 @@ def create_and_submit_pick_list(so_name, header, items):
 		if ui_item:
 			batch_no_val = ui_item.get('custom_batch_code') or ui_item.get('batch_no')
 			qty_val = float(ui_item.get('qty') or 0)
+			mfg = ui_item.get('custom_mfg_date') or None
+			exp = ui_item.get('custom_expiry_date') or None
+			if mfg and not exp:
+				exp = _compute_expiry_from_shelf_life(item.item_code, mfg)
 			frappe.db.set_value('Pick List Item', item.name, {
 				'qty': qty_val,
 				'stock_qty': qty_val,
@@ -223,8 +248,8 @@ def create_and_submit_pick_list(so_name, header, items):
 				'custom_sample_quantity': 0,
 				'custom_batch_code': batch_no_val,
 				'batch_no': None,
-				'custom_mfg_date': ui_item.get('custom_mfg_date') or None,
-				'custom_expiry_date': ui_item.get('custom_expiry_date') or None,
+				'custom_mfg_date': mfg,
+				'custom_expiry_date': exp,
 				'custom_remark': ui_item.get('custom_remark') or None
 			}, update_modified=False)
 			
