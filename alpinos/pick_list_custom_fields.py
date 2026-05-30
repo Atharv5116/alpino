@@ -138,6 +138,16 @@ def setup_pick_list_custom_fields():
 				default="0",
 				reqd=1,
 			),
+			dict(
+				fieldname="custom_removed_items",
+				label="Removed Items",
+				fieldtype="Table",
+				options="Alpinos Removed Pick List Item",
+				insert_after="custom_total_unit",
+				read_only=1,
+				collapsible=1,
+				description="Audit log of rows removed from the pick list before submit, with the reason supplied at the time.",
+			),
 		],
 		"Pick List Item": [
 			dict(

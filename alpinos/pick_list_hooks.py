@@ -9,8 +9,24 @@ def validate_pick_list(doc, method=None):
 	"""Server-side enforcement for Alpinos Pick List business rules."""
 	_set_defaults(doc)
 	_sync_order_information(doc)
+	_block_post_submit_row_removal(doc)
 	_sync_rows_and_totals(doc)
 	_validate_mandatory_rows(doc)
+
+
+def _block_post_submit_row_removal(doc):
+	"""Once a Pick List is submitted, locations rows cannot be deleted."""
+	if doc.docstatus != 1:
+		return
+	prev = doc.get_doc_before_save()
+	if not prev:
+		return
+	prev_count = len(prev.locations or [])
+	curr_count = len(doc.locations or [])
+	if curr_count < prev_count:
+		frappe.throw(
+			"Cannot remove rows from a submitted Pick List. Cancel the document first."
+		)
 
 
 def _set_defaults(doc):

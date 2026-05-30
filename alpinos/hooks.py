@@ -119,6 +119,7 @@ patches = [
 	"alpinos.patches.create_attendance_widget",
 	"alpinos.patches.v1_0.delete_unused_employee_bank_fields",
 	"alpinos.patches.v1_0.remove_pick_list_batch_mandatory",
+	"alpinos.patches.v1_0.install_alpinos_removed_pick_list_item",
 ]
 
 after_migrate = [
