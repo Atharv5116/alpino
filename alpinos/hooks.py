@@ -149,6 +149,7 @@ after_migrate = [
 	"alpinos.sales_order_scheme_damage_migration.run_sales_order_scheme_damage_split_migration",
 	"alpinos.item_custom_fields.setup_item_custom_fields",
 	"alpinos.offline_buyer_api.seed_customer_types",
+	"alpinos.assigned_visibility.setup_visibility_roles",
 	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
 	"alpinos.pick_list_custom_fields.setup_pick_list_custom_fields",
 	"alpinos.sales_order_client_script.create_sales_order_client_script",
@@ -191,7 +192,15 @@ after_migrate = [
 # -----------
 # Permissions evaluated in scripted ways
 
-permission_query_conditions = {}
+permission_query_conditions = {
+	"Pick List": "alpinos.assigned_visibility.pick_list_query_conditions",
+	"Delivery Note": "alpinos.assigned_visibility.delivery_note_query_conditions",
+}
+
+has_permission = {
+	"Pick List": "alpinos.assigned_visibility.pick_list_has_permission",
+	"Delivery Note": "alpinos.assigned_visibility.delivery_note_has_permission",
+}
 
 # Raven permissions (override from Alpinos, without touching raven app)
 # Ensures Raven can list channels/messages by membership (helps imports + visibility).
