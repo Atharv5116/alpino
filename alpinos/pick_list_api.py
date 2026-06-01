@@ -77,6 +77,62 @@ def get_box_conversion_factor(item_code):
 	return flt(v) if v else None
 
 
+SAMPLE_SOURCE_TABLES = {"Marketing Freebies", "Scheme Table", "Additional Units"}
+
+
+@frappe.whitelist()
+def generate_pick_list_stickers(pick_list):
+	"""Return a PDF stream of pick-list stickers — one per box per row.
+
+	Sticker layout fields (per sticker dict): see templates/print/pick_list_stickers.html.
+	Rows whose custom_source_table is in SAMPLE_SOURCE_TABLES are marked
+	is_sample=1 so the template overlays a SAMPLE watermark + flag.
+	Box index is 1..N within the SKU; total_box is N (per-row, per spec answer).
+	Dispatch area is left blank until that source is confirmed.
+	"""
+	doc = frappe.get_doc("Pick List", pick_list)
+	doc.check_permission("read")
+
+	party_name = doc.get("custom_customer_name") or ""
+	po_no = doc.get("custom_po_no") or ""
+	dispatch_area = doc.get("custom_dispatch_area") or ""  # placeholder until source confirmed
+
+	stickers = []
+	for row in (doc.locations or []):
+		total_box = int(flt(row.get("custom_box") or 0))
+		if total_box <= 0:
+			continue
+		sku_no = ""
+		if row.item_code:
+			sku_no = frappe.db.get_value("Item", row.item_code, "custom_sku_no") or ""
+		source_table = row.get("custom_source_table") or "Items"
+		is_sample = source_table in SAMPLE_SOURCE_TABLES
+		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
+		for box_idx in range(1, total_box + 1):
+			stickers.append({
+				"sku_no": sku_no,
+				"sku_name": row.item_code or "",
+				"batch_no": batch_no,
+				"box_index": box_idx,
+				"total_box": total_box,
+				"party_name": party_name,
+				"po_no": po_no,
+				"dispatch_area": dispatch_area,
+				"is_sample": is_sample,
+			})
+
+	html = frappe.render_template(
+		"alpinos/templates/print/pick_list_stickers.html",
+		{"stickers": stickers, "pick_list": doc.name},
+	)
+	from frappe.utils.pdf import get_pdf
+	pdf = get_pdf(html)
+
+	frappe.local.response.filename = "stickers-{0}.pdf".format(pick_list)
+	frappe.local.response.filecontent = pdf
+	frappe.local.response.type = "download"
+
+
 @frappe.whitelist()
 def update_pick_list_assignment(pick_list, assigned_to):
 	"""Lightweight assignment update — works on any docstatus.

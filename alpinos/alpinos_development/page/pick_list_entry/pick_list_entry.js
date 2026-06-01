@@ -32,6 +32,16 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				page.save_pick_list_keep_draft();
 			});
 
+			page.main.find('#btn-generate-sticker').on('click', function() {
+				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
+					frappe.msgprint(__('Save the Pick List first, then generate stickers.'));
+					return;
+				}
+				let url = '/api/method/alpinos.pick_list_api.generate_pick_list_stickers'
+					+ '?pick_list=' + encodeURIComponent(page.pick_list_name);
+				window.open(url, '_blank');
+			});
+
 			page.main.find('#btn-create-delivery-note').on('click', function() {
 				// If a DN already exists for this pick list, just open it.
 				if (page.existing_delivery_note) {
@@ -101,6 +111,13 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		const $dnBtn = page.main.find('#btn-create-delivery-note');
 		const $draftBtn = page.main.find('#btn-save-draft');
 		const $saveDraftUpdate = page.main.find('#btn-save-draft-update');
+		const $stickerBtn = page.main.find('#btn-generate-sticker');
+		// Sticker generation needs a persisted PL — show on saved drafts + submitted, hide on new.
+		if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
+			$stickerBtn.show();
+		} else {
+			$stickerBtn.hide();
+		}
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
 			$draftBtn.hide();

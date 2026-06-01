@@ -1,0 +1,150 @@
+{# Pick List sticker sheet.
+
+   Dimensions are placeholders — the user is finalizing the physical label
+   size. Adjust .sticker { width / height } and @page { size } below when the
+   exact label sheet dimensions are known. For now we render two stickers
+   per A4 row, three rows per page.
+
+   Fields per sticker (set by alpinos.pick_list_api.generate_pick_list_stickers):
+     sku_no, sku_name, batch_no, box_index, total_box,
+     party_name, po_no, dispatch_area, is_sample.
+#}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+	@page { size: A4; margin: 6mm; }
+	* { box-sizing: border-box; }
+	body { font-family: "Helvetica", "Arial", sans-serif; margin: 0; padding: 0; color: #111; }
+	.sheet {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 6mm 6mm;
+	}
+	.sticker {
+		position: relative;
+		width: 100%;
+		height: 80mm;
+		border: 1.5px solid #111;
+		padding: 6mm 8mm;
+		page-break-inside: avoid;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		grid-template-rows: auto 1fr auto;
+		gap: 4mm 6mm;
+		overflow: hidden;
+	}
+	.sticker .sku-no {
+		font-size: 48pt;
+		font-weight: 800;
+		line-height: 1;
+		letter-spacing: 1px;
+	}
+	.sticker .sku-name {
+		font-size: 14pt;
+		font-weight: 700;
+		text-align: right;
+	}
+	.sticker .batch-no {
+		font-size: 11pt;
+		font-weight: 600;
+		text-align: right;
+		grid-column: 2;
+		grid-row: 2 / 3;
+	}
+	.sticker .dispatch {
+		font-size: 22pt;
+		font-weight: 800;
+		grid-column: 1;
+		grid-row: 2 / 3;
+	}
+	.sticker .dispatch small {
+		display: block;
+		font-size: 8pt;
+		font-weight: 500;
+		color: #555;
+		letter-spacing: 1px;
+	}
+	.sticker .box-counter {
+		font-size: 14pt;
+		font-weight: 700;
+	}
+	.sticker .party-name {
+		font-size: 10pt;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+	.sticker .po-no {
+		font-size: 18pt;
+		font-weight: 800;
+		text-align: right;
+	}
+	.sticker .row-bottom {
+		grid-column: 1 / 3;
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-end;
+		border-top: 1px solid #ddd;
+		padding-top: 3mm;
+	}
+	.sticker.sticker-sample::before {
+		content: "SAMPLE";
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%) rotate(-22deg);
+		font-size: 60pt;
+		font-weight: 900;
+		color: rgba(220, 38, 38, 0.18);
+		letter-spacing: 8px;
+		pointer-events: none;
+		z-index: 0;
+	}
+	.sticker.sticker-sample .sample-flag {
+		position: absolute;
+		top: 4mm;
+		right: 4mm;
+		background: #dc2626;
+		color: #fff;
+		padding: 2px 8px;
+		font-size: 9pt;
+		font-weight: 700;
+		letter-spacing: 1px;
+		border-radius: 3px;
+		z-index: 1;
+	}
+	.sticker > * { position: relative; z-index: 1; }
+	.empty-state {
+		padding: 40px;
+		text-align: center;
+		color: #6b7280;
+	}
+</style>
+</head>
+<body>
+{% if not stickers %}
+	<div class="empty-state">No items to print. The Pick List has no rows with a non-zero Box value.</div>
+{% else %}
+	<div class="sheet">
+	{% for sticker in stickers %}
+		<div class="sticker {% if sticker.is_sample %}sticker-sample{% endif %}">
+			{% if sticker.is_sample %}<div class="sample-flag">SAMPLE</div>{% endif %}
+			<div class="sku-no">{{ sticker.sku_no or "—" }}</div>
+			<div class="sku-name">{{ sticker.sku_name or "" }}</div>
+			<div class="dispatch">
+				{{ sticker.dispatch_area or "—" }}
+				<small>{{ sticker.box_index }} / {{ sticker.total_box }}</small>
+			</div>
+			<div class="batch-no">Batch<br>{{ sticker.batch_no or "—" }}</div>
+			<div class="row-bottom">
+				<div class="party-name">{{ sticker.party_name or "" }}</div>
+				<div class="po-no">{{ sticker.po_no or "" }}</div>
+			</div>
+		</div>
+	{% endfor %}
+	</div>
+{% endif %}
+</body>
+</html>
