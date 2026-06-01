@@ -234,7 +234,71 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		create_table("Marketing Freebies", groups["Marketing Freebies"]);
 		create_table("Scheme Table", groups["Scheme Table"]);
 		create_table("Additional Units", groups["Additional Units"]);
-		
+
+		// Removed Items audit table — server-persisted rows for saved PLs,
+		// plus any pending client-side removals on a new (unsaved) PL.
+		page.render_removed_items = function() {
+			let removed = (data.custom_removed_items || []).slice();
+			(page._pending_removals || []).forEach(r => removed.push({
+				item_code: r.item_code,
+				item_name: r.item_name,
+				removed_qty: r.removed_qty,
+				removed_box: r.removed_box,
+				batch_no: r.batch_no,
+				reason: r.reason,
+				removed_by: frappe.session.user,
+				removed_on: 'Pending save',
+				is_pending: true,
+			}));
+			let $existing = container.find('#removed-items-section');
+			if (!removed.length) {
+				$existing.remove();
+				return;
+			}
+			let rows_html = removed.map((r, idx) => `
+				<tr ${r.is_pending ? 'style="background:#fffbeb;"' : ''}>
+					<td>${idx + 1}</td>
+					<td>${frappe.utils.escape_html(r.item_code || '')}</td>
+					<td>${frappe.utils.escape_html(r.item_name || '')}</td>
+					<td>${flt(r.removed_qty || 0)}</td>
+					<td>${cint(r.removed_box || 0)}</td>
+					<td>${frappe.utils.escape_html(r.batch_no || '')}</td>
+					<td style="text-align:left;">${frappe.utils.escape_html(r.reason || '')}</td>
+					<td>${frappe.utils.escape_html(r.removed_by || '')}</td>
+					<td>${frappe.utils.escape_html(String(r.removed_on || ''))}</td>
+				</tr>
+			`).join('');
+			let html = `
+				<div id="removed-items-section">
+					<div class="table-section-title">Removed Items</div>
+					<div class="sku-table-wrapper">
+					<table class="sku-table">
+						<thead>
+							<tr>
+								<th>SR.</th>
+								<th>SKU</th>
+								<th>ITEM NAME</th>
+								<th>QTY</th>
+								<th>BOX</th>
+								<th>BATCH</th>
+								<th>REASON</th>
+								<th>REMOVED BY</th>
+								<th>REMOVED ON</th>
+							</tr>
+						</thead>
+						<tbody>${rows_html}</tbody>
+					</table>
+					</div>
+				</div>
+			`;
+			if ($existing.length) {
+				$existing.replaceWith(html);
+			} else {
+				container.append(html);
+			}
+		};
+		page.render_removed_items();
+
 		// Define recalculate_totals function
 		page.recalculate_totals = function() {
 			let actual_box = 0;
@@ -505,6 +569,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						});
 						tr.remove();
 						page.recalculate_totals();
+						if (page.render_removed_items) page.render_removed_items();
 						frappe.show_alert({ message: `Row removed (${item_code}).`, indicator: 'orange' }, 4);
 						return;
 					}
