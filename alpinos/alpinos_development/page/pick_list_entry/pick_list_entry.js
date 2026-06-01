@@ -213,7 +213,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
-						${(data.docstatus === 0 && data.name && data.name !== 'New Pick List') ? `
+						${data.docstatus !== 1 ? `
 							<button type="button" class="alpinos-row-icon-btn row-split-btn" aria-label="Split row" title="Split this row across multiple batches">
 								<i class="fa fa-code-fork"></i>
 							</button>
@@ -477,13 +477,37 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		});
 		
 		// Per-row Remove (Task 9) and Split (Task 10) action buttons.
+		// On an unsaved "New Pick List" we mutate the in-memory grid directly
+		// — both extra rows and removed rows ride along to the server on the
+		// final Submit / Save as Draft. On an existing draft we hit the dedicated
+		// server endpoints and reload the page.
+		const is_unsaved_new_pl = () => !data.name || data.name === 'New Pick List' || page.pick_list_name === 'New Pick List';
+
 		container.off('click.alpinosRowActions').on('click.alpinosRowActions', '.row-remove-btn', function() {
 			let tr = $(this).closest('tr');
 			let row_name = tr.attr('data-name');
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
+			let item_name_cell = tr.find('td').eq(2).text();
 			frappe.prompt(
 				[{ fieldname: 'reason', fieldtype: 'Small Text', label: 'Reason for Removal', reqd: 1 }],
 				(values) => {
+					if (is_unsaved_new_pl()) {
+						// Client-side: record audit + drop row from DOM.
+						page._pending_removals = page._pending_removals || [];
+						page._pending_removals.push({
+							row_name: row_name,
+							item_code: item_code,
+							item_name: item_name_cell,
+							removed_qty: flt(tr.find('.qty-input').val()),
+							removed_box: cint(tr.find('.box-input').val()),
+							batch_no: tr.find('.batch-input').val() || null,
+							reason: values.reason,
+						});
+						tr.remove();
+						page.recalculate_totals();
+						frappe.show_alert({ message: `Row removed (${item_code}).`, indicator: 'orange' }, 4);
+						return;
+					}
 					frappe.call({
 						method: 'alpinos.pick_list_api.remove_pick_list_row_with_reason',
 						args: { pick_list: data.name, row_name: row_name, reason: values.reason },
@@ -516,6 +540,47 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					let split_box = cint(values.split_box);
 					if (split_box <= 0 || split_box >= current_box) {
 						frappe.msgprint(__(`Split box must be between 1 and ${current_box - 1}.`));
+						return;
+					}
+					if (is_unsaved_new_pl()) {
+						// Client-side split: clone the source row, decrement original,
+						// new row gets a client-generated name so save flow knows it's extra.
+						let factor = flt(tr.attr('data-conversion-factor')) || 1;
+						let new_qty = flt(split_box * factor, 2);
+						let remaining_box = current_box - split_box;
+						let remaining_qty = flt(remaining_box * factor, 2);
+						let weight_per_box = tr.attr('data-weight-per-box') || 0;
+						let shelf_life = tr.attr('data-shelf-life') || 0;
+						let source_idx = tr.index() + 2; // SR. column is 1-based; new clone gets +1
+						let clone_name = 'client-split-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+						let item_name_text = tr.find('td').eq(2).text();
+						let sku_no_text = tr.find('td').eq(2).text();
+						let ordered_qty_text = tr.find('.ordered-qty-cell').text();
+						let table_name = tr.closest('table').attr('data-table-name');
+						let new_row_html = `
+							<tr data-name="${clone_name}" data-conversion-factor="${factor}" data-weight-per-box="${weight_per_box}" data-shelf-life="${shelf_life}" data-client-extra="1" data-source-row="${row_name}">
+								<td>${source_idx}</td>
+								<td data-item-code="${item_code}">${item_code}</td>
+								<td>${sku_no_text}</td>
+								<td class="ordered-qty-cell">${ordered_qty_text}</td>
+								<td><input type="number" class="form-control input-sm qty-input" value="${new_qty}" min="0"/></td>
+								<td><input type="number" class="form-control input-sm box-input" value="${split_box}" step="1" min="0" ${table_name === 'Items' ? '' : 'readonly tabindex="-1"'}/></td>
+								<td><input type="text" class="form-control input-sm batch-input" list="batch-list" value=""></td>
+								<td><input type="date" class="form-control input-sm mfg-input" value="" max="9999-12-31"></td>
+								<td><input type="date" class="form-control input-sm exp-input" value="" max="9999-12-31"></td>
+								<td><input type="text" class="form-control input-sm remark-input" value="[split]"></td>
+								<td class="row-actions-cell">
+									<button type="button" class="alpinos-row-icon-btn row-split-btn" aria-label="Split row" title="Split this row across multiple batches"><i class="fa fa-code-fork"></i></button>
+									<button type="button" class="alpinos-row-icon-btn alpinos-row-icon-danger row-remove-btn" aria-label="Remove row" title="Remove this row (audit reason required)"><i class="fa fa-trash"></i></button>
+								</td>
+							</tr>
+						`;
+						tr.after(new_row_html);
+						// Decrement source row.
+						tr.find('.box-input').val(remaining_box);
+						tr.find('.qty-input').val(remaining_qty);
+						page.recalculate_totals();
+						frappe.show_alert({ message: `Row split (${item_code}): ${split_box} boxes moved.`, indicator: 'green' }, 4);
 						return;
 					}
 					frappe.call({
@@ -582,7 +647,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_source_table: table_name,
-				custom_remark: tr.find('.remark-input').val() || ""
+				custom_remark: tr.find('.remark-input').val() || "",
+				is_client_extra: tr.attr('data-client-extra') === '1' ? 1 : 0,
+				source_row: tr.attr('data-source-row') || null
 			});
 		});
 
@@ -590,13 +657,16 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			return;
 		}
 
+		let removed_rows = page._pending_removals || [];
+
 		if (page.pick_list_name === 'New Pick List') {
 			frappe.call({
 				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_and_submit_pick_list',
 				args: {
 					so_name: page.so_name,
 					header: header_data,
-					items: items
+					items: items,
+					removed_rows: removed_rows
 				},
 				freeze: true,
 				callback: function(r) {
@@ -665,12 +735,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_source_table: table_name,
-				custom_remark: tr.find('.remark-input').val() || ""
+				custom_remark: tr.find('.remark-input').val() || "",
+				is_client_extra: tr.attr('data-client-extra') === '1' ? 1 : 0,
+				source_row: tr.attr('data-source-row') || null
 			});
 		});
+		let removed_rows = page._pending_removals || [];
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_pick_list_as_draft',
-			args: { so_name: page.so_name, header: header_data, items: items },
+			args: { so_name: page.so_name, header: header_data, items: items, removed_rows: removed_rows },
 			freeze: true,
 			freeze_message: __('Saving as draft...'),
 			callback: function(r) {

@@ -178,16 +178,23 @@ def get_pick_list_entry_list(
 		"page_length": page_length
 	}
 
-def _build_pick_list_from_mapping(so_name, header, items):
+def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 	"""Shared core: insert a Pick List in draft state from SO mapping data + UI edits.
+
+	Items may include client-side split rows (marked is_client_extra=1) that
+	don't exist in the SO mapping — those get appended as fresh locations
+	cloned from their `source_row` mapping. removed_rows is a list of audit
+	entries written to custom_removed_items.
 
 	Returns the inserted doc (still docstatus=0). Caller decides whether to submit.
 	"""
 	header = json.loads(header) if isinstance(header, str) else header
 	items = json.loads(items) if isinstance(items, str) else items
+	removed_rows = json.loads(removed_rows) if isinstance(removed_rows, str) else (removed_rows or [])
 
 	from alpinos.sales_order_api import get_pick_list_mapping_data
 	mapping_data = get_pick_list_mapping_data(so_name)
+	mapping_by_name = {row.get("name"): row for row in (mapping_data.locations or [])}
 
 	pick_list = frappe.new_doc("Pick List")
 	pick_list.company = mapping_data.company
@@ -202,64 +209,125 @@ def _build_pick_list_from_mapping(so_name, header, items):
 	for k, v in header.items():
 		pick_list.set(k, v)
 
+	# Index UI items by original mapping name so we know which mapping rows
+	# survived (not removed) and which need their qty/box edits applied.
+	ui_by_name = {i.get("name"): i for i in items if not i.get("is_client_extra")}
+
 	for mapped_row in mapping_data.locations:
-		ui_item = next((i for i in items if i.get("name") == mapped_row.get("name")), None)
-		if ui_item:
-			qty = float(ui_item.get('qty') or 0)
-			pick_list.append("locations", {
-				"sales_order": so_name,
-				"sales_order_item": mapped_row.get("name"),
-				"item_code": mapped_row.get("item_code"),
-				"custom_ordered_qty": mapped_row.get("custom_ordered_qty"),
-				"qty": qty,
-				"stock_qty": qty,
-				"picked_qty": qty,
-				"conversion_factor": 1,
-				"warehouse": mapped_row.get("warehouse"),
-				"custom_box": float(ui_item.get('custom_box') or 0),
-				"custom_sample_quantity": 0,
-				"custom_source_table": mapped_row.get("custom_source_table"),
-				"has_batch_no": 0,
-				"use_serial_batch_fields": 0,
-				"custom_mfg_date": ui_item.get('custom_mfg_date') or None,
-				"custom_expiry_date": ui_item.get('custom_expiry_date') or None,
-				"batch_no": None,
-				"custom_remark": ui_item.get('custom_remark') or None
-			})
+		ui_item = ui_by_name.get(mapped_row.get("name"))
+		if not ui_item:
+			# Row was removed client-side; skip.
+			continue
+		qty = float(ui_item.get('qty') or 0)
+		pick_list.append("locations", {
+			"sales_order": so_name,
+			"sales_order_item": mapped_row.get("name"),
+			"item_code": mapped_row.get("item_code"),
+			"custom_ordered_qty": mapped_row.get("custom_ordered_qty"),
+			"qty": qty,
+			"stock_qty": qty,
+			"picked_qty": qty,
+			"conversion_factor": 1,
+			"warehouse": mapped_row.get("warehouse"),
+			"custom_box": float(ui_item.get('custom_box') or 0),
+			"custom_sample_quantity": 0,
+			"custom_source_table": mapped_row.get("custom_source_table"),
+			"has_batch_no": 0,
+			"use_serial_batch_fields": 0,
+			"custom_mfg_date": ui_item.get('custom_mfg_date') or None,
+			"custom_expiry_date": ui_item.get('custom_expiry_date') or None,
+			"batch_no": None,
+			"custom_remark": ui_item.get('custom_remark') or None
+		})
+
+	# Client-side split rows: clone from the source mapping row when known so
+	# they inherit warehouse / source_table / ordered_qty correctly.
+	for extra in (i for i in items if i.get("is_client_extra")):
+		source = mapping_by_name.get(extra.get("source_row")) or {}
+		qty = float(extra.get('qty') or 0)
+		pick_list.append("locations", {
+			"sales_order": so_name,
+			"sales_order_item": source.get("name") or extra.get("source_row"),
+			"item_code": extra.get("item_code") or source.get("item_code"),
+			"custom_ordered_qty": source.get("custom_ordered_qty"),
+			"qty": qty,
+			"stock_qty": qty,
+			"picked_qty": qty,
+			"conversion_factor": 1,
+			"warehouse": source.get("warehouse"),
+			"custom_box": float(extra.get('custom_box') or 0),
+			"custom_sample_quantity": 0,
+			"custom_source_table": extra.get("custom_source_table") or source.get("custom_source_table"),
+			"has_batch_no": 0,
+			"use_serial_batch_fields": 0,
+			"custom_mfg_date": extra.get('custom_mfg_date') or None,
+			"custom_expiry_date": extra.get('custom_expiry_date') or None,
+			"batch_no": None,
+			"custom_remark": extra.get('custom_remark') or None
+		})
+
+	# Client-side removals: write the audit child rows on the new doc.
+	for removed in removed_rows:
+		if not removed.get("reason"):
+			continue
+		pick_list.append("custom_removed_items", {
+			"item_code": removed.get("item_code"),
+			"item_name": removed.get("item_name"),
+			"removed_qty": float(removed.get("removed_qty") or 0),
+			"removed_box": float(removed.get("removed_box") or 0),
+			"batch_no": removed.get("batch_no") or None,
+			"reason": removed.get("reason"),
+			"removed_by": frappe.session.user,
+			"removed_on": frappe.utils.now_datetime(),
+		})
 
 	pick_list.flags.ignore_mandatory = True
 	pick_list.insert(ignore_permissions=True)
 
-	# Force set all fields on the newly created items to ensure direct DB matches UI exactly
+	# Force-set qty/box/dates on every location row so direct DB matches the UI
+	# (mapping items go through ORM; client extras likewise need precision).
 	for item in pick_list.locations:
-		ui_item = next((i for i in items if i.get("name") == item.sales_order_item), None)
-		if ui_item:
-			batch_no_val = ui_item.get('custom_batch_code') or ui_item.get('batch_no')
-			qty_val = float(ui_item.get('qty') or 0)
-			mfg = ui_item.get('custom_mfg_date') or None
-			exp = ui_item.get('custom_expiry_date') or None
-			if mfg and not exp:
-				exp = _compute_expiry_from_shelf_life(item.item_code, mfg)
-			frappe.db.set_value('Pick List Item', item.name, {
-				'qty': qty_val,
-				'stock_qty': qty_val,
-				'picked_qty': qty_val,
-				'conversion_factor': 1,
-				'custom_box': float(ui_item.get('custom_box') or 0),
-				'custom_sample_quantity': 0,
-				'custom_batch_code': batch_no_val,
-				'batch_no': None,
-				'custom_mfg_date': mfg,
-				'custom_expiry_date': exp,
-				'custom_remark': ui_item.get('custom_remark') or None
-			}, update_modified=False)
+		ui_item = (
+			ui_by_name.get(item.sales_order_item)
+			or next(
+				(
+					i for i in items
+					if i.get("is_client_extra")
+					and (i.get("source_row") == item.sales_order_item)
+					and float(i.get('custom_box') or 0) == float(item.custom_box or 0)
+					and float(i.get('qty') or 0) == float(item.qty or 0)
+				),
+				None,
+			)
+		)
+		if not ui_item:
+			continue
+		batch_no_val = ui_item.get('custom_batch_code') or ui_item.get('batch_no')
+		qty_val = float(ui_item.get('qty') or 0)
+		mfg = ui_item.get('custom_mfg_date') or None
+		exp = ui_item.get('custom_expiry_date') or None
+		if mfg and not exp:
+			exp = _compute_expiry_from_shelf_life(item.item_code, mfg)
+		frappe.db.set_value('Pick List Item', item.name, {
+			'qty': qty_val,
+			'stock_qty': qty_val,
+			'picked_qty': qty_val,
+			'conversion_factor': 1,
+			'custom_box': float(ui_item.get('custom_box') or 0),
+			'custom_sample_quantity': 0,
+			'custom_batch_code': batch_no_val,
+			'batch_no': None,
+			'custom_mfg_date': mfg,
+			'custom_expiry_date': exp,
+			'custom_remark': ui_item.get('custom_remark') or None
+		}, update_modified=False)
 
 	pick_list.reload()
 	return pick_list
 
 
 @frappe.whitelist()
-def create_pick_list_as_draft(so_name, header, items):
+def create_pick_list_as_draft(so_name, header, items, removed_rows=None):
 	"""Persist a Pick List as draft (docstatus=0) and return its name.
 
 	Used by the entry page when the user wants to split/remove rows on a
@@ -267,13 +335,13 @@ def create_pick_list_as_draft(so_name, header, items):
 	creation, the page navigates to the new doc and the row-action buttons
 	become available.
 	"""
-	pick_list = _build_pick_list_from_mapping(so_name, header, items)
+	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows)
 	frappe.db.commit()
 	return pick_list.name
 
 
 @frappe.whitelist()
-def create_and_submit_pick_list(so_name, header, items):
-	pick_list = _build_pick_list_from_mapping(so_name, header, items)
+def create_and_submit_pick_list(so_name, header, items, removed_rows=None):
+	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows)
 	pick_list.submit()
 	return pick_list.name
