@@ -64,6 +64,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('[data-fieldname="custom_transporter_name"]').val(data.custom_transporter_name || '');
 		$main.find('[data-fieldname="vehicle_no"]').val(data.vehicle_no || '');
 		$main.find('[data-fieldname="custom_dispatch_date"]').val(data.custom_dispatch_date || '');
+		page.populate_assigned_to_select(data.custom_assigned_to || '');
 
 		// Totals
 		$main.find('.total-value[data-fieldname="custom_total_boxes"]').text(data.custom_total_boxes || 0);
@@ -203,7 +204,42 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			custom_dispatch_from: ($main.find('[data-fieldname="custom_dispatch_from"]').val() || '').trim() || null,
 			custom_transporter_name: $main.find('[data-fieldname="custom_transporter_name"]').val() || null,
 			vehicle_no: ($main.find('[data-fieldname="vehicle_no"]').val() || '').trim() || null,
+			custom_assigned_to: $main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 		};
+	};
+
+	// Assigned To select — populated from active users; auto-saves on change so
+	// the value sticks even when the DN is submitted (custom field is
+	// allow_on_submit=1).
+	page.populate_assigned_to_select = function(current_value) {
+		var $select = page.main.find('[data-fieldname="custom_assigned_to"]');
+		if ($select.data('alpinos-populated')) {
+			$select.val(current_value || '');
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_users',
+			callback: function(r) {
+				if (!r.message) return;
+				$select.empty().append('<option value=""></option>');
+				r.message.forEach(function(u) {
+					$select.append('<option value="' + frappe.utils.escape_html(u) + '">' + frappe.utils.escape_html(u) + '</option>');
+				});
+				$select.val(current_value || '');
+				$select.data('alpinos-populated', true);
+				$select.off('change.alpinosAssign').on('change.alpinosAssign', function() {
+					if (!page.dn_name) return;
+					var val = $(this).val() || '';
+					frappe.call({
+						method: 'alpinos.delivery_note_api.update_delivery_note_assignment',
+						args: { delivery_note: page.dn_name, assigned_to: val },
+						callback: function() {
+							frappe.show_alert({ message: __('Assigned To updated'), indicator: 'green' }, 3);
+						}
+					});
+				});
+			}
+		});
 	};
 
 	page.collect_items = function() {

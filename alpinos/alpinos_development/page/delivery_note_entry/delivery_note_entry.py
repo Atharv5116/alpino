@@ -57,6 +57,7 @@ def get_delivery_note_data(name):
 		"custom_transporter_name": dn.get("custom_transporter_name") or "",
 		"vehicle_no": dn.get("vehicle_no") or "",
 		"custom_dispatch_date": dispatch_date,
+		"custom_assigned_to": dn.get("custom_assigned_to") or "",
 		"custom_total_boxes": dn.get("custom_total_boxes") or 0,
 		"custom_dn_order_gross_weight": dn.get("custom_dn_order_gross_weight") or 0,
 		"custom_total_units_dn": dn.get("custom_total_units_dn") or 0,
@@ -70,6 +71,7 @@ _EDITABLE_HEADER_FIELDS = {
 	"custom_dispatch_from",
 	"vehicle_no",
 	"custom_transporter_name",
+	"custom_assigned_to",
 }
 
 

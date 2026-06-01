@@ -62,6 +62,7 @@ def setup_delivery_note_alpinos():
 				in_list_view=1,
 				in_standard_filter=1,
 				depends_on="eval:!doc.is_return",
+				allow_on_submit=1,
 			),
 			dict(
 				fieldname="custom_transporter_section",

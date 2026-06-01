@@ -78,6 +78,25 @@ def get_box_conversion_factor(item_code):
 
 
 @frappe.whitelist()
+def update_pick_list_assignment(pick_list, assigned_to):
+	"""Lightweight assignment update — works on any docstatus.
+
+	Used by the pick_list_entry page's on-change handler so the value sticks
+	immediately without going through the full save/submit flow. The field
+	is allow_on_submit=1, so this is safe even for docstatus=1 docs.
+	"""
+	if not pick_list:
+		frappe.throw("Pick List name is required.")
+	if not frappe.db.exists("Pick List", pick_list):
+		frappe.throw(f"Pick List {pick_list} not found.")
+	frappe.has_permission("Pick List", "write", doc=pick_list, throw=True)
+	value = (assigned_to or "").strip() or None
+	frappe.db.set_value("Pick List", pick_list, "custom_assigned_to", value)
+	frappe.db.commit()
+	return value
+
+
+@frappe.whitelist()
 def remove_pick_list_row_with_reason(pick_list, row_name, reason):
 	"""Remove a draft Pick List Item row with an audit entry in custom_removed_items.
 

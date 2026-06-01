@@ -8,6 +8,24 @@ from alpinos.pick_list_api import resolve_batch_no_from_args
 
 
 @frappe.whitelist()
+def update_delivery_note_assignment(delivery_note, assigned_to):
+	"""Lightweight assignment update — works on any docstatus.
+
+	Used by the delivery_note_entry page's on-change handler. custom_assigned_to
+	is allow_on_submit=1, so this is safe even for submitted DNs.
+	"""
+	if not delivery_note:
+		frappe.throw("Delivery Note name is required.")
+	if not frappe.db.exists("Delivery Note", delivery_note):
+		frappe.throw(f"Delivery Note {delivery_note} not found.")
+	frappe.has_permission("Delivery Note", "write", doc=delivery_note, throw=True)
+	value = (assigned_to or "").strip() or None
+	frappe.db.set_value("Delivery Note", delivery_note, "custom_assigned_to", value)
+	frappe.db.commit()
+	return value
+
+
+@frappe.whitelist()
 def get_pick_list_row_for_delivery(pick_list_item: Optional[str] = None):
 	"""Return Pick List Item row fields needed to populate DN line (custom fields optional)."""
 	if not pick_list_item or not frappe.db.exists("Pick List Item", pick_list_item):

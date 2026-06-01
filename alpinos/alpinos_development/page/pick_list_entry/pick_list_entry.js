@@ -452,12 +452,24 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						assigned_select.val(data.custom_assigned_to);
 					}
 
-					// When Assigned To changes, sync QC if QC is blank (Task 5 auto-fetch).
+					// When Assigned To changes:
+					//   - sync QC Attended By if QC is blank (Task 5 auto-fetch).
+					//   - persist immediately via update_pick_list_assignment so the
+					//     change sticks at any docstatus (custom field is allow_on_submit=1).
 					assigned_select.off('change.alpinosAssign').on('change.alpinosAssign', function() {
 						let assigned = $(this).val();
 						let qc_current = qc_select.val();
 						if (assigned && !qc_current) {
 							qc_select.val(assigned);
+						}
+						if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
+							frappe.call({
+								method: 'alpinos.pick_list_api.update_pick_list_assignment',
+								args: { pick_list: page.pick_list_name, assigned_to: assigned || '' },
+								callback: function() {
+									frappe.show_alert({ message: __('Assigned To updated'), indicator: 'green' }, 3);
+								}
+							});
 						}
 					});
 				}
