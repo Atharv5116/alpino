@@ -328,11 +328,11 @@ function recalculate_pick_list_totals(frm) {
 		
 		if (table_name === "Items") {
 			actual_box += row_box;
+			gross_weight += row_box * row_weight_per_box;
 		} else {
 			sample_box += row_box;
 			sample_weight += row_box * row_weight_per_box;
 		}
-		gross_weight += row_box * row_weight_per_box;
 		total_unit += flt(row.qty);
 	});
 

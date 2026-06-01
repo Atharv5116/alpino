@@ -221,12 +221,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				
 				if (table_name === "Items") {
 					actual_box += box;
+					gross_weight += box * weight_per_box;
 				} else {
 					sample_box += box;
 					sample_weight += box * weight_per_box;
 				}
-				
-				gross_weight += box * weight_per_box;
+
 				total_unit += qty;
 			});
 
@@ -317,7 +317,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let val = $(this).val();
 			let tr = $(this).closest('tr');
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
-			
+
 			if (val) {
 				frappe.call({
 					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_batch_details',
@@ -327,9 +327,31 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							// Ensure format is YYYY-MM-DD for date inputs
 							let mfg = res.message.manufacturing_date ? frappe.datetime.str_to_obj(res.message.manufacturing_date) : null;
 							let exp = res.message.expiry_date ? frappe.datetime.str_to_obj(res.message.expiry_date) : null;
-							
+
 							tr.find('.mfg-input').val(mfg ? frappe.datetime.obj_to_str(mfg) : '');
 							tr.find('.exp-input').val(exp ? frappe.datetime.obj_to_str(exp) : '');
+
+							// Customer-type expiry warning (Task 7) — soft alert only.
+							let sales_order = page.main.find('[data-fieldname="custom_sales_order_id"]').val()
+								|| (data && data.custom_sales_order_id);
+							let dispatch_date = page.main.find('[data-fieldname="custom_dispatch_date"]').val()
+								|| (data && data.custom_dispatch_date);
+							if (res.message.expiry_date && sales_order) {
+								frappe.call({
+									method: 'alpinos.expiry_validation.check_row_expiry_warning',
+									args: {
+										expiry_date: res.message.expiry_date,
+										sales_order: sales_order,
+										dispatch_date: dispatch_date || null,
+									},
+								}).then((r2) => {
+									let m = r2.message || {};
+									if (!m.ok && m.message) {
+										let label = tr.find('[data-item-code]').text() || item_code;
+										frappe.show_alert({ message: `${label}: ${m.message}`, indicator: 'orange' }, 7);
+									}
+								});
+							}
 						}
 					}
 				});

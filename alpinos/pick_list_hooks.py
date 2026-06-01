@@ -87,11 +87,11 @@ def _sync_rows_and_totals(doc):
 
 		if table_name == "Items":
 			actual_box += row_box
+			gross_weight += row_box * row_weight_per_box
 		else:
 			sample_box += row_box
 			sample_weight += row_box * row_weight_per_box
 
-		gross_weight += row_box * row_weight_per_box
 		total_unit += qty
 
 	doc.custom_actual_box = int(round(actual_box))
