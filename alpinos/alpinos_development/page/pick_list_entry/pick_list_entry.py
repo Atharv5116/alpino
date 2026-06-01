@@ -83,6 +83,50 @@ def get_batch_details(batch_no, item_code):
 	return batch or {}
 
 @frappe.whitelist()
+def save_pick_list_keep_draft(name, header, items):
+	"""Persist header + per-row edits on an existing draft Pick List WITHOUT
+	submitting it. Mirrors save_pick_list_data but skips doc.submit().
+	"""
+	header = json.loads(header) if isinstance(header, str) else header
+	items = json.loads(items) if isinstance(items, str) else items
+
+	doc = frappe.get_doc('Pick List', name)
+	doc.check_permission('write')
+	if doc.docstatus != 0:
+		frappe.throw("Only draft Pick Lists can be saved with this action.")
+
+	frappe.db.set_value('Pick List', name, {k: v for k, v in header.items()}, update_modified=False)
+
+	for item_data in items:
+		item_doc = [d for d in doc.locations if d.name == item_data.get('name')]
+		if not item_doc:
+			continue
+		item = item_doc[0]
+		batch_no_val = item_data.get('custom_batch_code') or item_data.get('batch_no')
+		qty_val = float(item_data.get('qty') or 0)
+		mfg = item_data.get('custom_mfg_date') or None
+		exp = item_data.get('custom_expiry_date') or None
+		if mfg and not exp:
+			exp = _compute_expiry_from_shelf_life(item.item_code, mfg)
+		frappe.db.set_value('Pick List Item', item.name, {
+			'qty': qty_val,
+			'stock_qty': qty_val,
+			'picked_qty': qty_val,
+			'conversion_factor': 1,
+			'custom_box': float(item_data.get('custom_box') or 0),
+			'custom_sample_quantity': 0,
+			'custom_batch_code': batch_no_val,
+			'batch_no': None,
+			'custom_mfg_date': mfg,
+			'custom_expiry_date': exp,
+			'custom_remark': item_data.get('custom_remark') or None
+		}, update_modified=False)
+
+	frappe.db.commit()
+	return True
+
+
+@frappe.whitelist()
 def save_pick_list_data(name, header, items):
 	header = json.loads(header) if isinstance(header, str) else header
 	items = json.loads(items) if isinstance(items, str) else items
