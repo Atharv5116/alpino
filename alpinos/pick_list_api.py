@@ -3,7 +3,7 @@
 from typing import Optional
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt, now_datetime
 
 
 def _format_address_text(address_name: Optional[str]) -> str:
@@ -75,6 +75,115 @@ def get_box_conversion_factor(item_code):
 		"conversion_factor",
 	)
 	return flt(v) if v else None
+
+
+@frappe.whitelist()
+def remove_pick_list_row_with_reason(pick_list, row_name, reason):
+	"""Remove a draft Pick List Item row with an audit entry in custom_removed_items.
+
+	Used by the pick_list_entry custom page. Returns True on success; throws on
+	invalid input.
+	"""
+	if not reason or not str(reason).strip():
+		frappe.throw("A reason is required to remove a row.")
+
+	doc = frappe.get_doc("Pick List", pick_list)
+	doc.check_permission("write")
+	if doc.docstatus != 0:
+		frappe.throw("Cannot remove rows from a submitted or cancelled Pick List.")
+
+	row = next((r for r in doc.locations if r.name == row_name), None)
+	if not row:
+		frappe.throw(f"Row {row_name} not found on Pick List {pick_list}.")
+
+	doc.append(
+		"custom_removed_items",
+		{
+			"item_code": row.item_code,
+			"item_name": row.item_name,
+			"removed_qty": flt(row.qty),
+			"removed_box": flt(row.custom_box),
+			"batch_no": row.batch_no or row.get("custom_batch_code"),
+			"reason": reason,
+			"removed_by": frappe.session.user,
+			"removed_on": now_datetime(),
+		},
+	)
+	doc.locations = [r for r in doc.locations if r.name != row_name]
+	doc.flags.ignore_mandatory = True
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+	return True
+
+
+@frappe.whitelist()
+def split_pick_list_row(pick_list, row_name, split_box):
+	"""Split a draft Pick List row by box count.
+
+	Clones the source row with `custom_box = split_box` and the matching
+	`qty = split_box * factor`, decrements the original's box and qty, clears
+	batch/MFG/expiry on the new row so a different batch can be assigned.
+	Throws if the item has no UOM 'Box' configured — we don't silently fall
+	back to a 1:1 factor.
+	"""
+	split_box = cint(split_box)
+	doc = frappe.get_doc("Pick List", pick_list)
+	doc.check_permission("write")
+	if doc.docstatus != 0:
+		frappe.throw("Cannot split rows on a submitted or cancelled Pick List.")
+
+	row = next((r for r in doc.locations if r.name == row_name), None)
+	if not row:
+		frappe.throw(f"Row {row_name} not found on Pick List {pick_list}.")
+
+	current_box = cint(row.custom_box)
+	if split_box <= 0 or split_box >= current_box:
+		frappe.throw(
+			f"Split box must be between 1 and {current_box - 1} (row has {current_box} boxes)."
+		)
+
+	factor = flt(get_box_conversion_factor(row.item_code))
+	if not factor:
+		frappe.throw(
+			f"Define UOM 'Box' on Item {row.item_code} before splitting."
+		)
+
+	new_qty = flt(split_box * factor, 2)
+	doc.append(
+		"locations",
+		{
+			"item_code": row.item_code,
+			"item_name": row.item_name,
+			"custom_ordered_qty": row.custom_ordered_qty,
+			"qty": new_qty,
+			"stock_qty": new_qty,
+			"picked_qty": new_qty,
+			"conversion_factor": row.conversion_factor or 1,
+			"warehouse": row.warehouse,
+			"sales_order": row.sales_order,
+			"sales_order_item": row.sales_order_item,
+			"custom_box": split_box,
+			"custom_sample_quantity": 0,
+			"custom_sample_box": 0,
+			"custom_weight_per_box": row.custom_weight_per_box,
+			"custom_source_table": row.custom_source_table,
+			"custom_remark": (row.custom_remark or "") + " [split]",
+			"has_batch_no": 0,
+			"use_serial_batch_fields": 0,
+		},
+	)
+
+	remaining_box = current_box - split_box
+	remaining_qty = flt(remaining_box * factor, 2)
+	row.custom_box = remaining_box
+	row.qty = remaining_qty
+	row.stock_qty = remaining_qty
+	row.picked_qty = remaining_qty
+
+	doc.flags.ignore_mandatory = True
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+	return True
 
 
 @frappe.whitelist()

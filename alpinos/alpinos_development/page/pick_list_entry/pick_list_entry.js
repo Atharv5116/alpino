@@ -156,6 +156,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							<th>MFG</th>
 							<th>EXP</th>
 							<th>REMARK</th>
+							<th>ACTIONS</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -189,6 +190,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
+					<td class="row-actions-cell">
+						${data.docstatus === 0 ? `
+							<button type="button" class="btn btn-xs btn-default row-split-btn" title="Split this row by box count">Split</button>
+							<button type="button" class="btn btn-xs btn-danger row-remove-btn" title="Remove this row with reason">Remove</button>
+						` : ''}
+					</td>
 				</tr>
 			`;
 			html += row_html;
@@ -392,6 +399,65 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 		
+		// Per-row Remove (Task 9) and Split (Task 10) action buttons.
+		container.off('click.alpinosRowActions').on('click.alpinosRowActions', '.row-remove-btn', function() {
+			let tr = $(this).closest('tr');
+			let row_name = tr.attr('data-name');
+			let item_code = tr.find('[data-item-code]').attr('data-item-code');
+			frappe.prompt(
+				[{ fieldname: 'reason', fieldtype: 'Small Text', label: 'Reason for Removal', reqd: 1 }],
+				(values) => {
+					frappe.call({
+						method: 'alpinos.pick_list_api.remove_pick_list_row_with_reason',
+						args: { pick_list: data.name, row_name: row_name, reason: values.reason },
+						freeze: true,
+						freeze_message: 'Removing row...',
+					}).then((r) => {
+						if (r.message) {
+							frappe.show_alert({ message: `Row removed (${item_code}).`, indicator: 'orange' }, 4);
+							page.load_data();
+						}
+					});
+				},
+				`Remove Row ${item_code}`,
+				'Confirm'
+			);
+		});
+
+		container.on('click.alpinosRowActions', '.row-split-btn', function() {
+			let tr = $(this).closest('tr');
+			let row_name = tr.attr('data-name');
+			let item_code = tr.find('[data-item-code]').attr('data-item-code');
+			let current_box = cint(tr.find('.box-input').val());
+			if (current_box <= 1) {
+				frappe.msgprint(__('Row must have at least 2 boxes to split.'));
+				return;
+			}
+			frappe.prompt(
+				[{ fieldname: 'split_box', fieldtype: 'Int', label: `Boxes to split (current: ${current_box})`, reqd: 1 }],
+				(values) => {
+					let split_box = cint(values.split_box);
+					if (split_box <= 0 || split_box >= current_box) {
+						frappe.msgprint(__(`Split box must be between 1 and ${current_box - 1}.`));
+						return;
+					}
+					frappe.call({
+						method: 'alpinos.pick_list_api.split_pick_list_row',
+						args: { pick_list: data.name, row_name: row_name, split_box: split_box },
+						freeze: true,
+						freeze_message: 'Splitting row...',
+					}).then((r) => {
+						if (r.message) {
+							frappe.show_alert({ message: `Row split (${item_code}): ${split_box} boxes moved.`, indicator: 'green' }, 4);
+							page.load_data();
+						}
+					});
+				},
+				`Split Row ${item_code}`,
+				'Split'
+			);
+		});
+
 		// Run initial recalculation
 		page.recalculate_totals();
 	};

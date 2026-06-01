@@ -100,8 +100,8 @@ def setup_pick_list_custom_fields():
 				label="Sample Box",
 				fieldtype="Float",
 				insert_after="custom_actual_box",
-				read_only=1,
 				default="0",
+				description="Editable manual override; auto-filled from sample-table rows on every save.",
 			),
 			dict(
 				fieldname="custom_sample_weight",
