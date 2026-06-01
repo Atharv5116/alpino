@@ -24,6 +24,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				frappe.set_route('pick_list_list');
 			});
 
+			page.main.find('#btn-save-draft').on('click', function() {
+				page.save_pick_list_as_draft();
+			});
+
 			page.main.find('#btn-create-delivery-note').on('click', function() {
 				// If a DN already exists for this pick list, just open it.
 				if (page.existing_delivery_note) {
@@ -91,8 +95,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	page.render_data = function(data) {
 		page.existing_delivery_note = data.existing_delivery_note || null;
 		const $dnBtn = page.main.find('#btn-create-delivery-note');
+		const $draftBtn = page.main.find('#btn-save-draft');
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
+			$draftBtn.hide();
 			if (page.existing_delivery_note) {
 				$dnBtn.text('View Delivery Note').show();
 			} else {
@@ -100,6 +106,13 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		} else {
 			$dnBtn.hide();
+			// Show Save as Draft only on an unsaved (new) PL — once persisted,
+			// the user already has a real draft and can split/remove directly.
+			if (page.pick_list_name === 'New Pick List') {
+				$draftBtn.show();
+			} else {
+				$draftBtn.hide();
+			}
 		}
 		
 		// Set header fields
@@ -598,6 +611,63 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				}
 			});
 		}
+	};
+
+	// Persist a new Pick List as draft (docstatus=0) so the user can split/remove
+	// rows before final submit. After save we navigate to the new draft URL so
+	// per-row action buttons become available.
+	page.save_pick_list_as_draft = function() {
+		if (page.pick_list_name !== 'New Pick List') {
+			frappe.show_alert({ message: __('Already saved.'), indicator: 'orange' });
+			return;
+		}
+		if (!page.so_name) {
+			frappe.msgprint(__('Sales Order context is missing — open this page from a Sales Order.'));
+			return;
+		}
+		let header_data = {
+			custom_actual_box: page.main.find('[data-fieldname="custom_actual_box"]').val(),
+			custom_sample_box: page.main.find('[data-fieldname="custom_sample_box"]').val(),
+			custom_sample_weight: page.main.find('[data-fieldname="custom_sample_weight"]').val(),
+			custom_total_box: page.main.find('[data-fieldname="custom_total_box"]').val(),
+			custom_gross_weight: page.main.find('[data-fieldname="custom_gross_weight"]').val(),
+			custom_total_unit: page.main.find('[data-fieldname="custom_total_unit"]').val(),
+			custom_po_no: page.main.find('[data-fieldname="custom_po_no"]').val(),
+			custom_transporter: page.main.find('[data-fieldname="custom_transporter"]').val(),
+			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
+			custom_assigned_to: page.main.find('[data-fieldname="custom_assigned_to"]').val() || null,
+			custom_dispatch_date: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
+		};
+		let items = [];
+		page.main.find('.sku-table tbody tr').each(function() {
+			let tr = $(this);
+			let table_name = tr.closest('table').attr('data-table-name');
+			items.push({
+				name: tr.attr('data-name'),
+				item_code: tr.find('[data-item-code]').attr('data-item-code'),
+				qty: flt(tr.find('.qty-input').val()),
+				custom_sample_quantity: 0,
+				custom_box: tr.find('.box-input').val(),
+				custom_batch_code: tr.find('.batch-input').val(),
+				batch_no: "",
+				custom_mfg_date: tr.find('.mfg-input').val(),
+				custom_expiry_date: tr.find('.exp-input').val(),
+				custom_source_table: table_name,
+				custom_remark: tr.find('.remark-input').val() || ""
+			});
+		});
+		frappe.call({
+			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_pick_list_as_draft',
+			args: { so_name: page.so_name, header: header_data, items: items },
+			freeze: true,
+			freeze_message: __('Saving as draft...'),
+			callback: function(r) {
+				if (!r.exc && r.message) {
+					frappe.show_alert({ message: __('Saved as draft.'), indicator: 'green' });
+					frappe.set_route('pick_list_entry', r.message);
+				}
+			}
+		});
 	};
 };
 

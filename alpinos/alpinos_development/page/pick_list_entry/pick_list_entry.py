@@ -178,15 +178,17 @@ def get_pick_list_entry_list(
 		"page_length": page_length
 	}
 
-@frappe.whitelist()
-def create_and_submit_pick_list(so_name, header, items):
+def _build_pick_list_from_mapping(so_name, header, items):
+	"""Shared core: insert a Pick List in draft state from SO mapping data + UI edits.
+
+	Returns the inserted doc (still docstatus=0). Caller decides whether to submit.
+	"""
 	header = json.loads(header) if isinstance(header, str) else header
 	items = json.loads(items) if isinstance(items, str) else items
-	
-	# Fetch original mapping data to reconstruct the locations
+
 	from alpinos.sales_order_api import get_pick_list_mapping_data
 	mapping_data = get_pick_list_mapping_data(so_name)
-	
+
 	pick_list = frappe.new_doc("Pick List")
 	pick_list.company = mapping_data.company
 	pick_list.purpose = mapping_data.purpose
@@ -196,18 +198,17 @@ def create_and_submit_pick_list(so_name, header, items):
 	pick_list.custom_order_date = mapping_data.custom_order_date
 	pick_list.custom_po_no = mapping_data.custom_po_no
 	pick_list.pick_manually = 1
-	
+
 	for k, v in header.items():
 		pick_list.set(k, v)
-		
-	# Match mapping rows with UI submitted items
+
 	for mapped_row in mapping_data.locations:
 		ui_item = next((i for i in items if i.get("name") == mapped_row.get("name")), None)
 		if ui_item:
 			qty = float(ui_item.get('qty') or 0)
 			pick_list.append("locations", {
 				"sales_order": so_name,
-				"sales_order_item": mapped_row.get("name"), # Stable name from SO child row
+				"sales_order_item": mapped_row.get("name"),
 				"item_code": mapped_row.get("item_code"),
 				"custom_ordered_qty": mapped_row.get("custom_ordered_qty"),
 				"qty": qty,
@@ -225,10 +226,10 @@ def create_and_submit_pick_list(so_name, header, items):
 				"batch_no": None,
 				"custom_remark": ui_item.get('custom_remark') or None
 			})
-	
+
 	pick_list.flags.ignore_mandatory = True
 	pick_list.insert(ignore_permissions=True)
-	
+
 	# Force set all fields on the newly created items to ensure direct DB matches UI exactly
 	for item in pick_list.locations:
 		ui_item = next((i for i in items if i.get("name") == item.sales_order_item), None)
@@ -252,11 +253,27 @@ def create_and_submit_pick_list(so_name, header, items):
 				'custom_expiry_date': exp,
 				'custom_remark': ui_item.get('custom_remark') or None
 			}, update_modified=False)
-			
-	# Reload to fetch forced updates
+
 	pick_list.reload()
-	
-	# Submit
+	return pick_list
+
+
+@frappe.whitelist()
+def create_pick_list_as_draft(so_name, header, items):
+	"""Persist a Pick List as draft (docstatus=0) and return its name.
+
+	Used by the entry page when the user wants to split/remove rows on a
+	new PL — those actions need a persisted doc to operate on. After draft
+	creation, the page navigates to the new doc and the row-action buttons
+	become available.
+	"""
+	pick_list = _build_pick_list_from_mapping(so_name, header, items)
+	frappe.db.commit()
+	return pick_list.name
+
+
+@frappe.whitelist()
+def create_and_submit_pick_list(so_name, header, items):
+	pick_list = _build_pick_list_from_mapping(so_name, header, items)
 	pick_list.submit()
-	
 	return pick_list.name
