@@ -126,13 +126,21 @@ def _validate_mandatory_rows(doc):
 	for row in doc.locations or []:
 		if not row.item_code:
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")
-			
+
 		# Quantity validations
 		qty = flt(row.qty)
 		ordered = flt(row.custom_ordered_qty)
-		
+
 		if ordered and qty > ordered:
 			frappe.throw(f"Row #{row.idx} ({row.item_code}): Picked Qty ({qty}) cannot be greater than Ordered Qty ({ordered}).")
+
+		# Expiry must be on or after manufacturing (applies whenever both are present).
+		if row.custom_mfg_date and row.custom_expiry_date:
+			from frappe.utils import getdate
+			if getdate(row.custom_expiry_date) < getdate(row.custom_mfg_date):
+				frappe.throw(
+					f"Row #{row.idx} ({row.item_code}): Expiry Date ({row.custom_expiry_date}) cannot be earlier than Manufacturing Date ({row.custom_mfg_date})."
+				)
 
 		if doc.docstatus == 1:
 			if not row.qty:

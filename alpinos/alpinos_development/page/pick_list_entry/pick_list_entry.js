@@ -192,7 +192,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
-						${data.docstatus === 0 ? `
+						${data.docstatus !== 1 ? `
 							<button type="button" class="btn btn-xs btn-default row-split-btn" title="Split this row by box count">Split</button>
 							<button type="button" class="btn btn-xs btn-danger row-remove-btn" title="Remove this row with reason">Remove</button>
 						` : ''}
@@ -292,6 +292,27 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					let fixed = parts.join('-');
 					$(this).val(fixed);
 				}
+			}
+		});
+
+		// EXP must be >= MFG; clear exp if user enters an earlier date than mfg.
+		container.find('.exp-input').on('change', function() {
+			let tr = $(this).closest('tr');
+			let mfg = tr.find('.mfg-input').val();
+			let exp = $(this).val();
+			if (mfg && exp && exp < mfg) {
+				frappe.msgprint(__('Expiry Date cannot be earlier than Manufacturing Date.'));
+				$(this).val('');
+			}
+		});
+		container.find('.mfg-input').on('change', function() {
+			let tr = $(this).closest('tr');
+			let mfg = $(this).val();
+			let exp_input = tr.find('.exp-input');
+			let exp = exp_input.val();
+			if (mfg && exp && exp < mfg) {
+				frappe.msgprint(__('Expiry Date cannot be earlier than Manufacturing Date. Clearing expiry; re-enter it.'));
+				exp_input.val('');
 			}
 		});
 
