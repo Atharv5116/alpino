@@ -52,9 +52,17 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 
 	page.load_data = function() {
 		if (page.pick_list_name === 'New Pick List') {
-			let so_name = frappe.route_options ? frappe.route_options.so_name : null;
+			// route_options is wiped on reload — fall back to a sessionStorage cache
+			// keyed by the page route so a refresh keeps the SO context.
+			let so_name = (frappe.route_options && frappe.route_options.so_name) || null;
+			const cache_key = 'alpinos_pick_list_entry_so_name';
+			if (so_name) {
+				try { sessionStorage.setItem(cache_key, so_name); } catch (e) {}
+			} else {
+				try { so_name = sessionStorage.getItem(cache_key); } catch (e) {}
+			}
 			if (!so_name) {
-				page.main.html('<h3>Missing Sales Order context for New Pick List.</h3>');
+				page.main.html('<h3>Missing Sales Order context for New Pick List.</h3><p>Open a Sales Order and click the "Create Pick List" button to start a new Pick List Entry.</p>');
 				return;
 			}
 			page.so_name = so_name;
@@ -192,9 +200,13 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
-						${data.docstatus !== 1 ? `
-							<button type="button" class="btn btn-xs btn-default row-split-btn" title="Split this row by box count">Split</button>
-							<button type="button" class="btn btn-xs btn-danger row-remove-btn" title="Remove this row with reason">Remove</button>
+						${(data.docstatus === 0 && data.name && data.name !== 'New Pick List') ? `
+							<button type="button" class="btn btn-xs row-split-btn alpinos-row-action-btn" title="Split this row across multiple batches">
+								<i class="fa fa-code-fork"></i> Split
+							</button>
+							<button type="button" class="btn btn-xs row-remove-btn alpinos-row-action-btn alpinos-row-action-danger" title="Remove this row (audit reason required)">
+								<i class="fa fa-trash"></i>
+							</button>
 						` : ''}
 					</td>
 				</tr>
