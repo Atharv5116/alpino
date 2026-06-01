@@ -1071,6 +1071,15 @@ def get_pick_list_mapping_data(sales_order):
 		if not warehouse:
 			warehouse = _resolve_item_warehouse(item_row.item_code, so.company, _resolve_default_warehouse(so.company))
 			
+		item_info = (
+			frappe.db.get_value(
+				"Item",
+				item_row.item_code,
+				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days"],
+				as_dict=True,
+			)
+			or {}
+		)
 		pick_list["locations"].append({
 			"name": item_row.name, # Stable unique ID from SO Child Table Row
 			"item_code": item_row.item_code,
@@ -1079,7 +1088,9 @@ def get_pick_list_mapping_data(sales_order):
 			"custom_box": box,
 			"custom_source_table": source_table,
 			"custom_conversion_factor": factor,
-			"custom_sku_no": frappe.db.get_value("Item", item_row.item_code, "custom_sku_no") or "",
+			"custom_sku_no": item_info.get("custom_sku_no") or "",
+			"custom_weight_per_box": flt(item_info.get("custom_gross_weight")) or 0,
+			"shelf_life_in_days": item_info.get("shelf_life_in_days") or 0,
 			"warehouse": warehouse
 		})
 		

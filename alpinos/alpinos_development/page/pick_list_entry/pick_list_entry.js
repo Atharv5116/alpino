@@ -107,6 +107,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
 		page.main.find('[data-fieldname="custom_sales_order_id"]').val(data.custom_sales_order_id);
+		page.main.find('[data-fieldname="custom_assigned_to"]').val(data.custom_assigned_to || '');
 		let dispatch_date_val = data.custom_dispatch_date || '';
 		if (dispatch_date_val) {
 			page.main.find('[data-fieldname="custom_dispatch_date"]').val(dispatch_date_val);
@@ -379,7 +380,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// Fetch users for QC dropdown
+		// Fetch users for QC + Assigned To dropdowns (same enabled System Users list).
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_users',
 			callback: function(res) {
@@ -390,11 +391,29 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					res.message.forEach(u => {
 						qc_select.append(`<option value="${u}">${u}</option>`);
 					});
-					// Set previously saved value or default to current user if new
-					let val = data.custom_qc_attended_by || frappe.session.user;
-					if (val) {
-						qc_select.val(val);
+					let qc_val = data.custom_qc_attended_by || data.custom_assigned_to || frappe.session.user;
+					if (qc_val) {
+						qc_select.val(qc_val);
 					}
+
+					let assigned_select = page.main.find('[data-fieldname="custom_assigned_to"]');
+					assigned_select.empty();
+					assigned_select.append(`<option value=""></option>`);
+					res.message.forEach(u => {
+						assigned_select.append(`<option value="${u}">${u}</option>`);
+					});
+					if (data.custom_assigned_to) {
+						assigned_select.val(data.custom_assigned_to);
+					}
+
+					// When Assigned To changes, sync QC if QC is blank (Task 5 auto-fetch).
+					assigned_select.off('change.alpinosAssign').on('change.alpinosAssign', function() {
+						let assigned = $(this).val();
+						let qc_current = qc_select.val();
+						if (assigned && !qc_current) {
+							qc_select.val(assigned);
+						}
+					});
 				}
 			}
 		});
@@ -474,6 +493,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_po_no: page.main.find('[data-fieldname="custom_po_no"]').val(),
 			custom_transporter: page.main.find('[data-fieldname="custom_transporter"]').val(),
 			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
+			custom_assigned_to: page.main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 			custom_dispatch_date: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
 		};
 		
