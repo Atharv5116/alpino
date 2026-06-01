@@ -78,40 +78,73 @@
 	}
 	.row-actions-cell {
 		white-space: nowrap;
-		min-width: 110px;
+		min-width: 64px;
+		padding: 4px 6px !important;
 	}
-	.alpinos-row-action-btn {
+	.alpinos-row-icon-btn {
 		display: inline-flex;
 		align-items: center;
-		gap: 4px;
-		padding: 3px 8px;
-		font-size: 11px;
-		font-weight: 500;
-		line-height: 1.2;
-		border: 1px solid #d1d8dd;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		margin: 0 1px;
+		border: none;
+		background: transparent;
+		color: #6b7280;
 		border-radius: 4px;
-		background: #fff;
-		color: #525252;
-		margin: 0 2px;
-		transition: all .12s ease-in-out;
 		cursor: pointer;
+		transition: background-color .12s ease-in-out, color .12s ease-in-out;
 	}
-	.alpinos-row-action-btn:hover {
+	.alpinos-row-icon-btn .fa {
+		font-size: 12px;
+		line-height: 1;
+	}
+	.alpinos-row-icon-btn:hover {
+		background: #f1f5f9;
+		color: #111827;
+	}
+	.alpinos-row-icon-btn:focus {
+		outline: 2px solid #cbd5e1;
+		outline-offset: 1px;
+	}
+	.alpinos-row-icon-danger {
+		color: #b91c1c;
+	}
+	.alpinos-row-icon-danger:hover {
+		background: #fef2f2;
+		color: #7f1d1d;
+	}
+
+	/* Page-level action buttons (Go to List View / Create Delivery Note). */
+	.pl-actions .btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 12px;
+		font-size: 12px;
+		font-weight: 500;
+		line-height: 1.4;
+		border-radius: 6px;
+		border: 1px solid #d1d8dd;
+		background: #fff;
+		color: #374151;
+		transition: all .12s ease-in-out;
+		box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+	}
+	.pl-actions .btn:hover {
 		background: #f1f5f9;
 		border-color: #94a3b8;
-		color: #1e293b;
+		color: #111827;
 	}
-	.alpinos-row-action-btn .fa {
-		font-size: 10px;
+	.pl-actions .btn.btn-primary {
+		background: #111827;
+		border-color: #111827;
+		color: #fff;
 	}
-	.alpinos-row-action-danger {
-		color: #b91c1c;
-		border-color: #fecaca;
-	}
-	.alpinos-row-action-danger:hover {
-		background: #fef2f2;
-		border-color: #ef4444;
-		color: #991b1b;
+	.pl-actions .btn.btn-primary:hover {
+		background: #1f2937;
+		border-color: #1f2937;
 	}
 
 	/* Tablet narrow */

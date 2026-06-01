@@ -201,10 +201,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
 						${(data.docstatus === 0 && data.name && data.name !== 'New Pick List') ? `
-							<button type="button" class="btn btn-xs row-split-btn alpinos-row-action-btn" title="Split this row across multiple batches">
-								<i class="fa fa-code-fork"></i> Split
+							<button type="button" class="alpinos-row-icon-btn row-split-btn" aria-label="Split row" title="Split this row across multiple batches">
+								<i class="fa fa-code-fork"></i>
 							</button>
-							<button type="button" class="btn btn-xs row-remove-btn alpinos-row-action-btn alpinos-row-action-danger" title="Remove this row (audit reason required)">
+							<button type="button" class="alpinos-row-icon-btn alpinos-row-icon-danger row-remove-btn" aria-label="Remove row" title="Remove this row (audit reason required)">
 								<i class="fa fa-trash"></i>
 							</button>
 						` : ''}
