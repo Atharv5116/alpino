@@ -40,6 +40,7 @@ def get_delivery_note_data(name):
 			"qty": item.qty,
 			"custom_box": item.get("custom_box") or 0,
 			"batch_no": item.get("batch_no") or "",
+			"custom_batch_code": item.get("custom_batch_code") or "",
 			"custom_mfg_date": str(item.get("custom_mfg_date") or ""),
 			"custom_expiry_date": str(item.get("custom_expiry_date") or ""),
 			"against_pick_list": item.get("against_pick_list") or "",

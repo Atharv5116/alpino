@@ -85,6 +85,10 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			var action_cell = draft
 				? `<td class="dn-col-action"><button type="button" class="btn btn-xs btn-danger dn-item-remove" data-row-name="${frappe.utils.escape_html(item.name || '')}" title="Remove">&times;</button></td>`
 				: '<td class="dn-col-action" style="display:none;"></td>';
+			// BATCH CODE column: prefer the Link-to-Batch value when present
+			// (real Batch master), else fall back to the picker's free-text
+			// custom_batch_code so manually-entered codes still show up.
+			var batch_display = item.batch_no || item.custom_batch_code || '';
 			$tbody.append(`
 				<tr data-row-name="${frappe.utils.escape_html(item.name || '')}">
 					<td>${idx + 1}</td>
@@ -92,7 +96,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 					<td style="text-align: left;">${frappe.utils.escape_html(item.item_name || '')}</td>
 					<td>${qty_cell}</td>
 					<td>${item.custom_box || 0}</td>
-					<td>${frappe.utils.escape_html(item.batch_no || '')}</td>
+					<td>${frappe.utils.escape_html(batch_display)}</td>
 					<td>${mfg}</td>
 					<td>${exp}</td>
 					${action_cell}

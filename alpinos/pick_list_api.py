@@ -631,10 +631,13 @@ def create_delivery_note_from_pick_list(pick_list_name):
 				dn_item.custom_expiry_date = pl_row.custom_expiry_date
 			if not dn_item.get("custom_box") and pl_row.get("custom_box"):
 				dn_item.custom_box = pl_row.custom_box
+			# Mirror the picker's free-text batch code onto DN Item unconditionally
+			# so it survives even when the Item isn't batched or Batch insert fails.
+			if pl_row.get("custom_batch_code") and not dn_item.get("custom_batch_code"):
+				dn_item.custom_batch_code = pl_row.custom_batch_code
+			# Standard batch_no link: only set when the Item is batched and the
+			# Batch can be auto-created (or already exists).
 			if not dn_item.get("batch_no") and pl_row.get("custom_batch_code"):
-				# custom_batch_code is free text; the standard batch_no link
-				# requires an actual Batch master. Auto-create the Batch when
-				# the Item is batched.
 				bn = _ensure_batch_exists(
 					dn_item.item_code,
 					pl_row.custom_batch_code,
