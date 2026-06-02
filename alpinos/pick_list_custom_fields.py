@@ -222,6 +222,14 @@ def setup_pick_list_custom_fields():
 				fieldtype="Data",
 				insert_after="custom_source_table",
 			),
+			dict(
+				fieldname="custom_gate",
+				label="Gate",
+				fieldtype="Data",
+				insert_after="custom_remark",
+				length=20,
+				description="Dispatch gate / bay code (printed on the sticker, e.g. A1).",
+			),
 		],
 	}
 

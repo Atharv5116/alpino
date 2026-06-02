@@ -202,6 +202,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							<th>BATCH CODE</th>
 							<th>MFG</th>
 							<th>EXP</th>
+							<th>GATE</th>
 							<th>REMARK</th>
 							<th>ACTIONS</th>
 						</tr>
@@ -236,6 +237,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					</td>
 					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
+					<td><input type="text" class="form-control input-sm gate-input" value="${row.custom_gate || ''}" ${batch_readonly} maxlength="20" placeholder="e.g. A1"></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
 						${data.docstatus !== 1 ? `
@@ -658,6 +660,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 								<td><input type="text" class="form-control input-sm batch-input" list="batch-list" value=""></td>
 								<td><input type="date" class="form-control input-sm mfg-input" value="" max="9999-12-31"></td>
 								<td><input type="date" class="form-control input-sm exp-input" value="" max="9999-12-31"></td>
+								<td><input type="text" class="form-control input-sm gate-input" value="${tr.find('.gate-input').val() || ''}" maxlength="20" placeholder="e.g. A1"></td>
 								<td><input type="text" class="form-control input-sm remark-input" value="[split]"></td>
 								<td class="row-actions-cell">
 									<button type="button" class="alpinos-row-icon-btn row-split-btn" aria-label="Split row" title="Split this row across multiple batches"><i class="fa fa-code-fork"></i></button>
@@ -738,6 +741,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_source_table: table_name,
 				custom_remark: tr.find('.remark-input').val() || "",
+				custom_gate: tr.find('.gate-input').val() || "",
 				is_client_extra: tr.attr('data-client-extra') === '1' ? 1 : 0,
 				source_row: tr.attr('data-source-row') || null
 			});
@@ -819,6 +823,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_remark: tr.find('.remark-input').val() || "",
+				custom_gate: tr.find('.gate-input').val() || "",
 			});
 		});
 		frappe.call({
@@ -876,6 +881,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_source_table: table_name,
 				custom_remark: tr.find('.remark-input').val() || "",
+				custom_gate: tr.find('.gate-input').val() || "",
 				is_client_extra: tr.attr('data-client-extra') === '1' ? 1 : 0,
 				source_row: tr.attr('data-source-row') || null
 			});

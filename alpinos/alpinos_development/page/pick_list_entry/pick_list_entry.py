@@ -119,7 +119,8 @@ def save_pick_list_keep_draft(name, header, items):
 			'batch_no': None,
 			'custom_mfg_date': mfg,
 			'custom_expiry_date': exp,
-			'custom_remark': item_data.get('custom_remark') or None
+			'custom_remark': item_data.get('custom_remark') or None,
+			'custom_gate': (item_data.get('custom_gate') or '').strip() or None,
 		}, update_modified=False)
 
 	frappe.db.commit()
@@ -161,7 +162,8 @@ def save_pick_list_data(name, header, items):
 				'batch_no': None,
 				'custom_mfg_date': mfg,
 				'custom_expiry_date': exp,
-				'custom_remark': item_data.get('custom_remark') or None
+				'custom_remark': item_data.get('custom_remark') or None,
+			'custom_gate': (item_data.get('custom_gate') or '').strip() or None,
 			}, update_modified=False)
 	
 	frappe.db.commit()
@@ -281,7 +283,8 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 			"custom_mfg_date": ui_item.get('custom_mfg_date') or None,
 			"custom_expiry_date": ui_item.get('custom_expiry_date') or None,
 			"batch_no": None,
-			"custom_remark": ui_item.get('custom_remark') or None
+			"custom_remark": ui_item.get('custom_remark') or None,
+			"custom_gate": (ui_item.get('custom_gate') or '').strip() or None,
 		})
 
 	# Client-side split rows: clone from the source mapping row when known so
@@ -307,7 +310,8 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 			"custom_mfg_date": extra.get('custom_mfg_date') or None,
 			"custom_expiry_date": extra.get('custom_expiry_date') or None,
 			"batch_no": None,
-			"custom_remark": extra.get('custom_remark') or None
+			"custom_remark": extra.get('custom_remark') or None,
+			"custom_gate": (extra.get('custom_gate') or '').strip() or None,
 		})
 
 	# Client-side removals: write the audit child rows on the new doc.

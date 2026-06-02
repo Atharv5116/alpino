@@ -95,7 +95,6 @@ def generate_pick_list_stickers(pick_list):
 
 	party_name = doc.get("custom_customer_name") or ""
 	po_no = doc.get("custom_po_no") or ""
-	dispatch_area = doc.get("custom_dispatch_area") or ""  # placeholder until source confirmed
 
 	stickers = []
 	for row in (doc.locations or []):
@@ -108,6 +107,7 @@ def generate_pick_list_stickers(pick_list):
 		source_table = row.get("custom_source_table") or "Items"
 		is_sample = source_table in SAMPLE_SOURCE_TABLES
 		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
+		gate = row.get("custom_gate") or ""
 		for box_idx in range(1, total_box + 1):
 			stickers.append({
 				"sku_no": sku_no,
@@ -117,7 +117,7 @@ def generate_pick_list_stickers(pick_list):
 				"total_box": total_box,
 				"party_name": party_name,
 				"po_no": po_no,
-				"dispatch_area": dispatch_area,
+				"dispatch_area": gate,
 				"is_sample": is_sample,
 			})
 
@@ -126,7 +126,16 @@ def generate_pick_list_stickers(pick_list):
 		{"stickers": stickers, "pick_list": doc.name},
 	)
 	from frappe.utils.pdf import get_pdf
-	pdf = get_pdf(html)
+	pdf_options = {
+		"page-width": "100mm",
+		"page-height": "75mm",
+		"margin-top": "0mm",
+		"margin-bottom": "0mm",
+		"margin-left": "0mm",
+		"margin-right": "0mm",
+		"disable-smart-shrinking": "",
+	}
+	pdf = get_pdf(html, options=pdf_options)
 
 	frappe.local.response.filename = "stickers-{0}.pdf".format(pick_list)
 	frappe.local.response.filecontent = pdf
