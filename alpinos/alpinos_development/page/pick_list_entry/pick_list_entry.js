@@ -129,6 +129,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		} else {
 			$dnBtn.hide();
+			// Re-set Submit primary action — it gets cleared when navigating
+			// to a submitted PL (above), and on_page_load only fires once per
+			// page instance, so without this the Submit button stays missing.
+			page.set_primary_action('Submit', () => { page.save_pick_list(); });
 			// New PL → "Save as Draft" (creates the doc).
 			// Saved draft → "Save" (updates without submitting).
 			if (page.pick_list_name === 'New Pick List') {

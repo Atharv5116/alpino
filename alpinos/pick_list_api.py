@@ -107,14 +107,20 @@ def generate_pick_list_stickers(pick_list):
 
 	stickers = []
 	for row in (doc.locations or []):
-		total_box = int(flt(row.get("custom_box") or 0))
-		if total_box <= 0:
-			continue
+		source_table = row.get("custom_source_table") or "Items"
+		is_sample = source_table in SAMPLE_SOURCE_TABLES
+		# Items rows: use custom_box. Sample-table rows: use custom_sample_box,
+		# falling back to 1 sticker per row when the count is zero so the
+		# freebie/scheme/additional-unit gets at least one printed label.
+		if is_sample:
+			total_box = int(flt(row.get("custom_sample_box") or 0)) or 1
+		else:
+			total_box = int(flt(row.get("custom_box") or 0))
+			if total_box <= 0:
+				continue
 		sku_no = ""
 		if row.item_code:
 			sku_no = frappe.db.get_value("Item", row.item_code, "custom_sku_no") or ""
-		source_table = row.get("custom_source_table") or "Items"
-		is_sample = source_table in SAMPLE_SOURCE_TABLES
 		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
 		for box_idx in range(1, total_box + 1):
 			stickers.append({
