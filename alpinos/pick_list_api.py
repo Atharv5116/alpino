@@ -79,6 +79,49 @@ def get_box_conversion_factor(item_code):
 
 SAMPLE_SOURCE_TABLES = {"Marketing Freebies", "Scheme Table", "Additional Units"}
 
+# Display order of source tables on the pick_list_entry page — used to keep
+# sticker output in the same sequence the user sees on screen.
+SOURCE_TABLE_ORDER = ("Items", "Marketing Freebies", "Scheme Table", "Additional Units")
+
+
+def _ensure_batch_exists(item_code, batch_name, mfg_date=None, expiry_date=None):
+	"""Create the Batch master if it doesn't exist already.
+
+	Returns the batch name (string) on success, or None when:
+	  - item_code or batch_name is missing,
+	  - the Item is not batched (has_batch_no=0),
+	  - the insert raised — error is logged for follow-up.
+
+	Used when persisting custom_batch_code (free text) onto Delivery Note
+	Item.batch_no, which is a Link to Batch.
+	"""
+	if not item_code or not batch_name:
+		return None
+	if frappe.db.exists("Batch", batch_name):
+		return batch_name
+	if not frappe.db.get_value("Item", item_code, "has_batch_no"):
+		return None
+	try:
+		batch = frappe.get_doc(
+			{
+				"doctype": "Batch",
+				"batch_id": batch_name,
+				"item": item_code,
+				"manufacturing_date": mfg_date or None,
+				"expiry_date": expiry_date or None,
+			}
+		)
+		batch.flags.ignore_permissions = True
+		batch.flags.ignore_mandatory = True
+		batch.insert()
+		return batch.name
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(),
+			f"alpinos auto-create Batch failed: {batch_name} / {item_code}",
+		)
+		return None
+
 # Fixed Dispatch From address for all Delivery Notes (per spec).
 DEFAULT_DN_DISPATCH_FROM = (
 	"Laxmi incorporation campus 01, valthan punagam, "
@@ -105,8 +148,20 @@ def generate_pick_list_stickers(pick_list):
 	# read it once outside the row loop and apply it to every sticker.
 	gate = doc.get("custom_gate") or ""
 
+	# Match the page's section order (Items > Marketing Freebies > Scheme >
+	# Additional Units), then preserve the existing row sequence within each
+	# section. Stickers come out in the same order the user sees on screen.
+	def _row_sort_key(row):
+		src = row.get("custom_source_table") or "Items"
+		try:
+			src_idx = SOURCE_TABLE_ORDER.index(src)
+		except ValueError:
+			src_idx = len(SOURCE_TABLE_ORDER)
+		return (src_idx, row.idx or 0)
+
+	sorted_rows = sorted(doc.locations or [], key=_row_sort_key)
 	stickers = []
-	for row in (doc.locations or []):
+	for row in sorted_rows:
 		source_table = row.get("custom_source_table") or "Items"
 		is_sample = source_table in SAMPLE_SOURCE_TABLES
 		# Items rows: use custom_box. Sample-table rows: use custom_sample_box,
@@ -577,7 +632,17 @@ def create_delivery_note_from_pick_list(pick_list_name):
 			if not dn_item.get("custom_box") and pl_row.get("custom_box"):
 				dn_item.custom_box = pl_row.custom_box
 			if not dn_item.get("batch_no") and pl_row.get("custom_batch_code"):
-				dn_item.batch_no = pl_row.custom_batch_code
+				# custom_batch_code is free text; the standard batch_no link
+				# requires an actual Batch master. Auto-create the Batch when
+				# the Item is batched.
+				bn = _ensure_batch_exists(
+					dn_item.item_code,
+					pl_row.custom_batch_code,
+					pl_row.get("custom_mfg_date"),
+					pl_row.get("custom_expiry_date"),
+				)
+				if bn:
+					dn_item.batch_no = bn
 
 		# Dispatch From: fixed company address (per spec). Override blanks.
 		if not dn.get("custom_dispatch_from"):

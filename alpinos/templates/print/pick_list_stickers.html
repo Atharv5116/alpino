@@ -40,21 +40,23 @@
 	}
 	.sticker:last-child { page-break-after: auto; }
 
-	/* Left column — SKU# big, Gate/Total, Counter. */
+	/* Left column — SKU# big at the top, then a single
+	   "<gate> / <current> / <total>" line below it. */
 	.sku-no {
 		position: absolute;
 		top: 4mm; left: 5mm;
 		font-size: 44pt; font-weight: 900; line-height: 1; letter-spacing: 1px;
 	}
-	.gate-total {
+	.gate-counter {
 		position: absolute;
-		top: 30mm; left: 5mm;
-		font-size: 22pt; font-weight: 800; line-height: 1; letter-spacing: 0.5px;
+		top: 34mm; left: 5mm;
+		font-size: 26pt; font-weight: 900; line-height: 1; letter-spacing: 0.5px;
 	}
-	.counter {
-		position: absolute;
-		top: 44mm; left: 5mm;
-		font-size: 18pt; font-weight: 800; line-height: 1; color: #1f2937;
+	.gate-counter small {
+		display: block;
+		font-size: 7pt; font-weight: 500;
+		color: #6b7280; letter-spacing: 1.5px;
+		margin-bottom: 1mm;
 	}
 
 	/* Right column — SKU name, Batch (label above value), PO (label above value). */
@@ -128,12 +130,10 @@
 			{% endif %}
 
 			<div class="sku-no">{{ s.sku_no or "—" }}</div>
-			{% if s.dispatch_area %}
-				<div class="gate-total">{{ s.dispatch_area }} / {{ s.total_box }}</div>
-			{% else %}
-				<div class="gate-total">— / {{ s.total_box }}</div>
-			{% endif %}
-			<div class="counter">{{ s.box_index }} / {{ s.total_box }}</div>
+			<div class="gate-counter">
+				<small>GATE / BOX / TOTAL</small>
+				{{ s.dispatch_area or "—" }} / {{ s.box_index }} / {{ s.total_box }}
+			</div>
 
 			{% if s.sku_name %}<div class="sku-name">{{ s.sku_name }}</div>{% endif %}
 			{% if s.batch_no %}
