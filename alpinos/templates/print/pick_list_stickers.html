@@ -131,14 +131,12 @@
 
 			<div class="sku-no">{{ s.sku_no or "—" }}</div>
 			<div class="gate-counter">
-				<small>GATE / BOX / TOTAL</small>
 				{{ s.dispatch_area or "—" }} / {{ s.box_index }} / {{ s.total_box }}
 			</div>
 
 			{% if s.sku_name %}<div class="sku-name">{{ s.sku_name }}</div>{% endif %}
 			{% if s.batch_no %}
 			<div class="batch-block">
-				<span class="lbl">BATCH NO.</span>
 				<span class="val">{{ s.batch_no }}</span>
 			</div>
 			{% endif %}
