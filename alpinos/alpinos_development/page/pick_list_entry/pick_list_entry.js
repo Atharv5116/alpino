@@ -361,12 +361,18 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.find('[data-fieldname="custom_total_unit"]').val(flt(total_unit, 2));
 		};
 
-		// Validation and auto-calculation logic for Picked Qty
-		container.find('.qty-input').on('input change', function() {
+		// All per-row event handlers below use jQuery DELEGATION (container.on
+		// with a selector) so they also fire on rows added dynamically by the
+		// client-side Split action — direct .find().on() only catches rows
+		// that exist at render time.
+		container.off('.alpinosRowEvents');
+
+		// Picked Qty validation + box auto-calc.
+		container.on('input.alpinosRowEvents change.alpinosRowEvents', '.qty-input', function() {
 			let tr = $(this).closest('tr');
 			let ordered = flt(tr.find('.ordered-qty-cell').text());
 			let picked = flt($(this).val());
-			
+
 			if (picked < 0) {
 				picked = 0;
 				$(this).val(0);
@@ -374,21 +380,21 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			if (picked > ordered) {
 				frappe.msgprint(__("Picked Qty cannot be greater than Ordered Qty"));
 				picked = ordered;
-				$(this).val(ordered); // Reset to max allowed
+				$(this).val(ordered);
 			}
-			
+
 			let table_name = tr.closest('table').attr('data-table-name');
 			if (table_name === "Items") {
 				let factor = flt(tr.attr('data-conversion-factor')) || 1;
 				let box = Math.ceil(picked / factor);
 				tr.find('.box-input').val(box);
 			}
-			
+
 			page.recalculate_totals();
 		});
 
-		// Box manual input updates totals
-		container.find('.box-input').on('input change', function() {
+		// Box manual input updates totals.
+		container.on('input.alpinosRowEvents change.alpinosRowEvents', '.box-input', function() {
 			let val = $(this).val();
 			if (val && val.indexOf('.') !== -1) {
 				val = Math.round(parseFloat(val));
@@ -397,21 +403,20 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.recalculate_totals();
 		});
 
-		// Enforce maximum 4-digit year for date inputs to avoid invalid dates like year 275760
-		container.find('.mfg-input, .exp-input').on('input change', function() {
+		// Cap year at 4 digits on any date input to avoid bogus values like 275760.
+		container.on('input.alpinosRowEvents change.alpinosRowEvents', '.mfg-input, .exp-input', function() {
 			let val = $(this).val();
 			if (val) {
 				let parts = val.split('-');
 				if (parts.length === 3 && parts[0].length > 4) {
 					parts[0] = parts[0].substring(0, 4);
-					let fixed = parts.join('-');
-					$(this).val(fixed);
+					$(this).val(parts.join('-'));
 				}
 			}
 		});
 
 		// EXP must be >= MFG; clear exp if user enters an earlier date than mfg.
-		container.find('.exp-input').on('change', function() {
+		container.on('change.alpinosRowEvents', '.exp-input', function() {
 			let tr = $(this).closest('tr');
 			let mfg = tr.find('.mfg-input').val();
 			let exp = $(this).val();
@@ -420,7 +425,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				$(this).val('');
 			}
 		});
-		container.find('.mfg-input').on('change', function() {
+
+		// MFG change: validate EXP relationship, then auto-fill EXP from
+		// Item.shelf_life_in_days when EXP is blank.
+		container.on('change.alpinosRowEvents', '.mfg-input', function() {
 			let tr = $(this).closest('tr');
 			let mfg = $(this).val();
 			let exp_input = tr.find('.exp-input');
@@ -428,20 +436,16 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			if (mfg && exp && exp < mfg) {
 				frappe.msgprint(__('Expiry Date cannot be earlier than Manufacturing Date. Clearing expiry; re-enter it.'));
 				exp_input.val('');
+				exp = '';
 			}
-		});
-
-		// MFG -> Expiry auto-fill from Item.shelf_life_in_days when expiry is blank.
-		container.find('.mfg-input').on('change', function() {
-			let tr = $(this).closest('tr');
-			let mfg = $(this).val();
-			let exp_input = tr.find('.exp-input');
 			let shelf = cint(tr.attr('data-shelf-life')) || 0;
-			if (!mfg || !shelf || exp_input.val()) return;
-			let d = frappe.datetime.str_to_obj(mfg);
-			if (!d) return;
-			d.setDate(d.getDate() + shelf);
-			exp_input.val(frappe.datetime.obj_to_str(d).split(' ')[0]);
+			if (mfg && shelf && !exp) {
+				let d = frappe.datetime.str_to_obj(mfg);
+				if (d) {
+					d.setDate(d.getDate() + shelf);
+					exp_input.val(frappe.datetime.obj_to_str(d).split(' ')[0]);
+				}
+			}
 		});
 
 		// Header ACTUAL BOX or SAMPLE BOX changes update TOTAL BOX in real-time
@@ -456,8 +460,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.find('[data-fieldname="custom_total_box"]').val(actual + sample);
 		});
 		
-		// Setup Batch auto-fetch logic
-		container.find('.batch-input').on('change', function() {
+		// Setup Batch auto-fetch logic (delegated so split rows fire it too).
+		container.on('change.alpinosRowEvents', '.batch-input', function() {
 			let val = $(this).val();
 			let tr = $(this).closest('tr');
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
