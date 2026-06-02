@@ -101,6 +101,9 @@ def generate_pick_list_stickers(pick_list):
 
 	party_name = doc.get("custom_customer_name") or ""
 	po_no = doc.get("custom_po_no") or ""
+	# Gate now lives on the PL header (one value for the whole pick), so we
+	# read it once outside the row loop and apply it to every sticker.
+	gate = doc.get("custom_gate") or ""
 
 	stickers = []
 	for row in (doc.locations or []):
@@ -113,7 +116,6 @@ def generate_pick_list_stickers(pick_list):
 		source_table = row.get("custom_source_table") or "Items"
 		is_sample = source_table in SAMPLE_SOURCE_TABLES
 		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
-		gate = row.get("custom_gate") or ""
 		for box_idx in range(1, total_box + 1):
 			stickers.append({
 				"sku_no": sku_no,

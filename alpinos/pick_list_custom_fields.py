@@ -82,6 +82,14 @@ def setup_pick_list_custom_fields():
 				insert_after="custom_transporter",
 			),
 			dict(
+				fieldname="custom_gate",
+				label="Gate",
+				fieldtype="Data",
+				insert_after="custom_party_code",
+				length=20,
+				description="Dispatch gate / bay code printed on every sticker for this Pick List (e.g. A1).",
+			),
+			dict(
 				fieldname="custom_order_total_section",
 				label="Order Total",
 				fieldtype="Section Break",
@@ -221,14 +229,6 @@ def setup_pick_list_custom_fields():
 				label="Remark",
 				fieldtype="Data",
 				insert_after="custom_source_table",
-			),
-			dict(
-				fieldname="custom_gate",
-				label="Gate",
-				fieldtype="Data",
-				insert_after="custom_remark",
-				length=20,
-				description="Dispatch gate / bay code (printed on the sticker, e.g. A1).",
 			),
 		],
 	}

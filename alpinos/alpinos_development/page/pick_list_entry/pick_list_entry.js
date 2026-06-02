@@ -149,6 +149,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_total_unit"]').val(data.custom_total_unit);
 		page.main.find('[data-fieldname="custom_po_no"]').val(data.custom_po_no);
 		page.main.find('[data-fieldname="custom_transporter"]').val(data.custom_transporter);
+		page.main.find('[data-fieldname="custom_gate"]').val(data.custom_gate || '');
 		page.main.find('[data-fieldname="custom_customer_name"]').val(data.custom_customer_name);
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
@@ -202,7 +203,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							<th>BATCH CODE</th>
 							<th>MFG</th>
 							<th>EXP</th>
-							<th>GATE</th>
 							<th>REMARK</th>
 							<th>ACTIONS</th>
 						</tr>
@@ -237,7 +237,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					</td>
 					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_readonly}></td>
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
-					<td><input type="text" class="form-control input-sm gate-input" value="${row.custom_gate || ''}" ${batch_readonly} maxlength="20" placeholder="e.g. A1"></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
 						${data.docstatus !== 1 ? `
@@ -660,7 +659,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 								<td><input type="text" class="form-control input-sm batch-input" list="batch-list" value=""></td>
 								<td><input type="date" class="form-control input-sm mfg-input" value="" max="9999-12-31"></td>
 								<td><input type="date" class="form-control input-sm exp-input" value="" max="9999-12-31"></td>
-								<td><input type="text" class="form-control input-sm gate-input" value="${tr.find('.gate-input').val() || ''}" maxlength="20" placeholder="e.g. A1"></td>
 								<td><input type="text" class="form-control input-sm remark-input" value="[split]"></td>
 								<td class="row-actions-cell">
 									<button type="button" class="alpinos-row-icon-btn row-split-btn" aria-label="Split row" title="Split this row across multiple batches"><i class="fa fa-code-fork"></i></button>
@@ -708,6 +706,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_total_unit: page.main.find('[data-fieldname="custom_total_unit"]').val(),
 			custom_po_no: page.main.find('[data-fieldname="custom_po_no"]').val(),
 			custom_transporter: page.main.find('[data-fieldname="custom_transporter"]').val(),
+			custom_gate: page.main.find('[data-fieldname="custom_gate"]').val() || null,
 			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
 			custom_assigned_to: page.main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 			custom_dispatch_date: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
@@ -741,7 +740,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_source_table: table_name,
 				custom_remark: tr.find('.remark-input').val() || "",
-				custom_gate: tr.find('.gate-input').val() || "",
 				is_client_extra: tr.attr('data-client-extra') === '1' ? 1 : 0,
 				source_row: tr.attr('data-source-row') || null
 			});
@@ -806,6 +804,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_total_unit: page.main.find('[data-fieldname="custom_total_unit"]').val(),
 			custom_po_no: page.main.find('[data-fieldname="custom_po_no"]').val(),
 			custom_transporter: page.main.find('[data-fieldname="custom_transporter"]').val(),
+			custom_gate: page.main.find('[data-fieldname="custom_gate"]').val() || null,
 			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
 			custom_assigned_to: page.main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 			custom_dispatch_date: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
@@ -823,7 +822,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_remark: tr.find('.remark-input').val() || "",
-				custom_gate: tr.find('.gate-input').val() || "",
 			});
 		});
 		frappe.call({
@@ -861,6 +859,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_total_unit: page.main.find('[data-fieldname="custom_total_unit"]').val(),
 			custom_po_no: page.main.find('[data-fieldname="custom_po_no"]').val(),
 			custom_transporter: page.main.find('[data-fieldname="custom_transporter"]').val(),
+			custom_gate: page.main.find('[data-fieldname="custom_gate"]').val() || null,
 			custom_qc_attended_by: page.main.find('[data-fieldname="custom_qc_attended_by"]').val(),
 			custom_assigned_to: page.main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 			custom_dispatch_date: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
@@ -881,7 +880,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_source_table: table_name,
 				custom_remark: tr.find('.remark-input').val() || "",
-				custom_gate: tr.find('.gate-input').val() || "",
 				is_client_extra: tr.attr('data-client-extra') === '1' ? 1 : 0,
 				source_row: tr.attr('data-source-row') || null
 			});

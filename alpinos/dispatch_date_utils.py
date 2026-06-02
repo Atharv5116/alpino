@@ -23,9 +23,21 @@ def get_default_dispatch_date():
 
 @frappe.whitelist()
 def validate_dispatch_date(date):
-	"""Return {valid, message} for the chosen dispatch date."""
+	"""Return {valid, message} for the chosen dispatch date.
+
+	Two rejections:
+	  1. Any date before today is invalid.
+	  2. Today is invalid once the clock is past the cutoff (default 2:00 PM).
+	"""
+	chosen = getdate(date)
+	today_date = getdate(today())
+	if chosen < today_date:
+		return {
+			"valid": False,
+			"message": "Dispatch Date cannot be in the past.",
+		}
 	now = now_datetime()
-	if now.hour >= CUTOFF_HOUR and getdate(date) == getdate(today()):
+	if now.hour >= CUTOFF_HOUR and chosen == today_date:
 		return {
 			"valid": False,
 			"message": "After 2:00 PM, today's date cannot be selected as the dispatch date.",
