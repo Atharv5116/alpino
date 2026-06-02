@@ -79,6 +79,12 @@ def get_box_conversion_factor(item_code):
 
 SAMPLE_SOURCE_TABLES = {"Marketing Freebies", "Scheme Table", "Additional Units"}
 
+# Fixed Dispatch From address for all Delivery Notes (per spec).
+DEFAULT_DN_DISPATCH_FROM = (
+	"Laxmi incorporation campus 01, valthan punagam, "
+	"canal road, ladvi patiya surat. - 394325"
+)
+
 
 @frappe.whitelist()
 def generate_pick_list_stickers(pick_list):
@@ -539,16 +545,11 @@ def create_delivery_note_from_pick_list(pick_list_name):
 		dn.custom_dispatch_date = pick_list.custom_order_date or frappe.utils.now_datetime()
 		dn.custom_delivery_date = pick_list.custom_order_date or frappe.utils.now_datetime()
 
-		# Map transporter
-		pt = pick_list.custom_transporter
-		valid_transporters = ["Local", "Own Vehicle", "Third Party", "Other"]
-		if pt in valid_transporters:
-			dn.custom_transporter_name = pt
-		elif pt:
-			dn.custom_transporter_name = "Third Party"
-			dn.transporter = pt
-		else:
-			dn.custom_transporter_name = "Third Party"
+		# Transporter — copy verbatim from Pick List (custom_transporter_name is
+		# now a Data field; no Select-option matching needed).
+		dn.custom_transporter_name = pick_list.custom_transporter or ""
+		# Picklist PO No. lives in vehicle_no (re-labelled via Property Setter).
+		dn.vehicle_no = pick_list.custom_po_no or ""
 
 		# Copy custom_mfg_date / custom_expiry_date / custom_box from the matching
 		# Pick List Item rows — ERPNext's standard mapper drops these custom fields
@@ -567,12 +568,9 @@ def create_delivery_note_from_pick_list(pick_list_name):
 			if not dn_item.get("batch_no") and pl_row.get("custom_batch_code"):
 				dn_item.batch_no = pl_row.custom_batch_code
 
-		# Auto-populate Dispatch From / Dispatch To from the standard ERPNext
-		# address fields ERPNext already set on the DN during mapping.
+		# Dispatch From: fixed company address (per spec). Override blanks.
 		if not dn.get("custom_dispatch_from"):
-			dispatch_from = _format_address_text(dn.get("company_address"))
-			if dispatch_from:
-				dn.custom_dispatch_from = dispatch_from
+			dn.custom_dispatch_from = DEFAULT_DN_DISPATCH_FROM
 
 		if not (dn.get("custom_dispatch_to") or []):
 			dispatch_to = _format_address_text(dn.get("shipping_address_name"))

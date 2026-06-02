@@ -124,9 +124,9 @@ def _validate_dn_mandatory(doc):
 	if not doc.get("custom_delivery_date"):
 		frappe.throw("Delivery Date is mandatory.")
 	if not doc.get("custom_transporter_name"):
-		frappe.throw("Transporter Name is mandatory.")
+		frappe.throw("Transporter is mandatory.")
 	if not doc.get("vehicle_no"):
-		frappe.throw("Vehicle No. is mandatory.")
+		frappe.throw("Picklist PO No. is mandatory.")
 	if doc.docstatus == 1 and doc.get("custom_lr_gr_no") in (None, ""):
 		frappe.throw("LR No. (GR No.) is mandatory.")
 	if not doc.get("custom_dispatch_from"):

@@ -69,9 +69,11 @@ def get_delivery_note_data(name):
 _EDITABLE_HEADER_FIELDS = {
 	"custom_lr_gr_no",
 	"custom_dispatch_from",
-	"vehicle_no",
-	"custom_transporter_name",
 	"custom_assigned_to",
+	# vehicle_no (Picklist PO No.) and custom_transporter_name are now
+	# synced from Pick List during DN creation and rendered read-only on
+	# the entry page — intentionally omitted from this set so the page
+	# cannot overwrite them.
 }
 
 

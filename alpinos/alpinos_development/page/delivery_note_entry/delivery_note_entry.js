@@ -157,12 +157,13 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		var submitted = page.docstatus === 1;
 		var cancelled = page.docstatus === 2;
 
-		// Editable header fields — only when draft
+		// Editable header fields — only when draft.
+		// vehicle_no (Picklist PO No.) and custom_transporter_name are pulled
+		// from the linked Pick List on DN create and rendered read-only,
+		// so they're not in this list.
 		var editable_fields = [
 			'custom_lr_gr_no',
 			'custom_dispatch_from',
-			'custom_transporter_name',
-			'vehicle_no'
 		];
 		editable_fields.forEach(function(fn) {
 			var $el = $main.find('[data-fieldname="' + fn + '"]');
@@ -198,12 +199,13 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	};
 
 	page.collect_header = function() {
+		// vehicle_no (Picklist PO No.) and custom_transporter_name are synced
+		// from the linked Pick List during DN creation. They're read-only on
+		// the page and intentionally not included here.
 		var $main = page.main;
 		return {
 			custom_lr_gr_no: ($main.find('[data-fieldname="custom_lr_gr_no"]').val() || '').trim() || null,
 			custom_dispatch_from: ($main.find('[data-fieldname="custom_dispatch_from"]').val() || '').trim() || null,
-			custom_transporter_name: $main.find('[data-fieldname="custom_transporter_name"]').val() || null,
-			vehicle_no: ($main.find('[data-fieldname="vehicle_no"]').val() || '').trim() || null,
 			custom_assigned_to: $main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 		};
 	};
@@ -272,10 +274,11 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	};
 
 	page.validate_before_submit = function(header, dispatch_to) {
+		// vehicle_no (Picklist PO No.) and custom_transporter_name are server-
+		// synced from Pick List and not collected client-side anymore — the
+		// server validate still enforces them.
 		var missing = [];
 		if (!header.custom_dispatch_from) missing.push('Dispatch From');
-		if (!header.custom_transporter_name) missing.push('Transporter');
-		if (!header.vehicle_no) missing.push('Vehicle No.');
 		if (!header.custom_lr_gr_no) missing.push('LR No.');
 		if (!dispatch_to || !dispatch_to.length) missing.push('At least one Dispatch To row');
 		// Per-row qty

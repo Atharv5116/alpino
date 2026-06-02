@@ -73,13 +73,13 @@ def setup_delivery_note_alpinos():
 			),
 			dict(
 				fieldname="custom_transporter_name",
-				label="Transporter Name",
-				fieldtype="Select",
-				options="\nLocal\nOwn Vehicle\nThird Party\nOther",
+				label="Transporter",
+				fieldtype="Data",
 				insert_after="custom_transporter_section",
 				reqd=1,
 				depends_on="eval:!doc.is_return",
-				description="Select transporter (standard Link field Transporter remains available below if needed).",
+				read_only=1,
+				description="Fetched from the linked Pick List's Transporter — not editable on the Delivery Note.",
 			),
 			dict(
 				fieldname="custom_lr_gr_no",
@@ -205,6 +205,35 @@ def setup_delivery_note_alpinos():
 			"property": "label",
 			"value": "Quantity",
 			"property_type": "Data",
+		},
+		# vehicle_no is re-purposed to carry the Pick List PO No. value
+		# (fetched from Pick List.custom_po_no). Renaming the label keeps the
+		# data column in place — no migration needed.
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Delivery Note",
+			"field_name": "vehicle_no",
+			"property": "label",
+			"value": "Picklist PO No.",
+			"property_type": "Data",
+		},
+		# Transporter Name is now free text (mirrors Pick List.custom_transporter
+		# which is itself a Data field).
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Delivery Note",
+			"field_name": "custom_transporter_name",
+			"property": "fieldtype",
+			"value": "Data",
+			"property_type": "Select",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Delivery Note",
+			"field_name": "custom_transporter_name",
+			"property": "options",
+			"value": "",
+			"property_type": "Text",
 		},
 	]
 
