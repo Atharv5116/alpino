@@ -132,14 +132,17 @@ def generate_pick_list_stickers(pick_list):
 		{"stickers": stickers, "pick_list": doc.name},
 	)
 	from frappe.utils.pdf import get_pdf
+	# 100mm x 75mm landscape, zero margins so the @page CSS is honoured exactly.
+	# Smart-shrinking left ON (default) — disabling it was pushing overflow
+	# content onto a second page when the content barely exceeded 75mm.
 	pdf_options = {
 		"page-width": "100mm",
 		"page-height": "75mm",
+		"orientation": "Landscape",
 		"margin-top": "0mm",
 		"margin-bottom": "0mm",
 		"margin-left": "0mm",
 		"margin-right": "0mm",
-		"disable-smart-shrinking": "",
 	}
 	pdf = get_pdf(html, options=pdf_options)
 

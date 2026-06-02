@@ -1,20 +1,20 @@
 {# Pick List sticker sheet — 100mm x 75mm, one sticker per page.
 
-   Fields per sticker (set by alpinos.pick_list_api.generate_pick_list_stickers):
-     sku_no, sku_name, batch_no, box_index, total_box,
-     party_name, po_no, dispatch_area (Gate, e.g. A1), is_sample.
+   Layout (matches the spec sketch):
 
-   Layout (rough placement matching the spec sketch):
+	+--------------------------------------+
+	| 36                       NCR1KG      |  ← SKU no (big) | SKU name + Batch
+	|                          BATCH 03BC12|
+	|                                      |
+	| A1                                   |  ← Gate (big) | PO label/value
+	| 1 / 50                  PO  BZ       |
+	|                                      |
+	| ────────────────────────────────────  |
+	| AMAZON                               |  ← Party name across bottom
+	+--------------------------------------+
 
-	+----------------------------------------+
-	|   36                NCR1KG             |
-	|                     03BC12             |
-	|                                        |
-	|   A1                                   |
-	|   1 / 50            BZ                 |
-	|                                        |
-	|   XYZ SUPPLIMENT                       |
-	+----------------------------------------+
+   Uses absolute positioning inside a fixed-size .sticker box so the layout is
+   stable in older wkhtmltopdf versions (CSS grid support is patchy there).
 #}
 <!DOCTYPE html>
 <html>
@@ -23,129 +23,72 @@
 <style>
 	@page { size: 100mm 75mm; margin: 0; }
 	html, body { margin: 0; padding: 0; }
-	body { font-family: "Helvetica", "Arial", sans-serif; color: #111; }
+	body { font-family: "Helvetica", "Arial", sans-serif; color: #111; -webkit-print-color-adjust: exact; }
 	* { box-sizing: border-box; }
 	.sticker {
 		position: relative;
 		width: 100mm;
 		height: 75mm;
-		padding: 5mm 6mm;
+		padding: 4mm 5mm;
 		page-break-after: always;
 		page-break-inside: avoid;
 		overflow: hidden;
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		grid-template-rows: auto auto 1fr auto;
-		gap: 1mm 4mm;
+		border: 0.4mm solid #111;
 	}
 	.sticker:last-child { page-break-after: auto; }
-	.sticker .sku-no {
-		font-size: 40pt;
-		font-weight: 900;
-		line-height: 1;
-		letter-spacing: 1px;
-		grid-column: 1;
-		grid-row: 1;
+
+	/* Cells positioned absolutely (in mm) from the inner padding-box. */
+	.cell { position: absolute; }
+	.sku-no {
+		top: 3mm; left: 5mm;
+		font-size: 40pt; font-weight: 900; line-height: 1; letter-spacing: 1px;
 	}
-	.sticker .sku-name {
-		font-size: 14pt;
-		font-weight: 800;
-		text-align: right;
-		grid-column: 2;
-		grid-row: 1;
-		align-self: start;
+	.sku-name {
+		top: 4mm; right: 5mm; text-align: right;
+		font-size: 14pt; font-weight: 800; line-height: 1.1;
 	}
-	.sticker .batch-no {
-		font-size: 11pt;
-		font-weight: 600;
-		text-align: right;
-		grid-column: 2;
-		grid-row: 2;
-		color: #1f2937;
+	.batch {
+		top: 14mm; right: 5mm; text-align: right;
+		font-size: 10pt; font-weight: 600; line-height: 1.2;
 	}
-	.sticker .batch-no small {
-		display: block;
-		font-size: 7pt;
-		color: #6b7280;
-		letter-spacing: 1px;
-		font-weight: 500;
-		margin-bottom: 1px;
+	.batch .lbl { color: #6b7280; font-weight: 500; font-size: 7pt; letter-spacing: 1px; }
+	.gate {
+		top: 28mm; left: 5mm;
+		font-size: 26pt; font-weight: 900; line-height: 1;
 	}
-	.sticker .dispatch {
-		font-size: 26pt;
-		font-weight: 900;
-		line-height: 1;
-		grid-column: 1;
-		grid-row: 2 / 4;
-		align-self: start;
-		margin-top: 1mm;
+	.counter {
+		top: 42mm; left: 5mm;
+		font-size: 14pt; font-weight: 800; line-height: 1; color: #1f2937;
 	}
-	.sticker .dispatch .box-counter {
-		display: block;
-		font-size: 14pt;
-		font-weight: 800;
-		color: #1f2937;
-		margin-top: 2mm;
+	.po {
+		top: 40mm; right: 5mm; text-align: right;
+		font-size: 16pt; font-weight: 800; line-height: 1.1;
 	}
-	.sticker .dispatch small {
-		display: block;
-		font-size: 7pt;
-		color: #6b7280;
-		letter-spacing: 1px;
-		font-weight: 500;
+	.po .lbl { color: #6b7280; font-weight: 500; font-size: 7pt; letter-spacing: 1px; display: block; }
+	.party {
+		bottom: 4mm; left: 5mm; right: 5mm;
+		font-size: 10pt; font-weight: 700;
+		text-transform: uppercase; letter-spacing: 0.5px;
+		border-top: 0.2mm solid #111; padding-top: 1.5mm;
 	}
-	.sticker .po-no {
-		font-size: 16pt;
-		font-weight: 800;
-		text-align: right;
-		grid-column: 2;
-		grid-row: 3;
-		align-self: end;
+
+	/* SAMPLE styling */
+	.sample-flag {
+		position: absolute; top: 2mm; right: 2mm;
+		background: #dc2626; color: #fff;
+		padding: 0.5mm 2mm;
+		font-size: 8pt; font-weight: 800; letter-spacing: 1px;
+		border-radius: 1mm;
 	}
-	.sticker .po-no small {
-		display: block;
-		font-size: 7pt;
-		color: #6b7280;
-		letter-spacing: 1px;
-		font-weight: 500;
-	}
-	.sticker .party-name {
-		grid-column: 1 / 3;
-		grid-row: 4;
-		font-size: 10pt;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		border-top: 1px solid #d1d5db;
-		padding-top: 2mm;
-	}
-	.sticker.sticker-sample::before {
-		content: "SAMPLE";
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%) rotate(-20deg);
-		font-size: 48pt;
-		font-weight: 900;
-		color: rgba(220, 38, 38, 0.18);
+	.sample-watermark {
+		position: absolute; top: 50%; left: 50%;
+		transform: translate(-50%, -50%) rotate(-22deg);
+		font-size: 52pt; font-weight: 900;
+		color: rgba(220, 38, 38, 0.16);
 		letter-spacing: 6px;
 		pointer-events: none;
-		z-index: 0;
 	}
-	.sticker.sticker-sample .sample-flag {
-		position: absolute;
-		top: 3mm;
-		right: 3mm;
-		background: #dc2626;
-		color: #fff;
-		padding: 1px 6px;
-		font-size: 8pt;
-		font-weight: 800;
-		letter-spacing: 1px;
-		border-radius: 2px;
-		z-index: 2;
-	}
-	.sticker > * { position: relative; z-index: 1; }
+
 	.empty-state {
 		padding: 30px;
 		text-align: center;
@@ -159,17 +102,26 @@
 	<div class="empty-state">No items to print. The Pick List has no rows with a non-zero Box value.</div>
 {% else %}
 	{% for sticker in stickers %}
-		<div class="sticker {% if sticker.is_sample %}sticker-sample{% endif %}">
-			{% if sticker.is_sample %}<div class="sample-flag">SAMPLE</div>{% endif %}
-			<div class="sku-no">{{ sticker.sku_no or "—" }}</div>
-			<div class="sku-name">{{ sticker.sku_name or "" }}</div>
-			<div class="batch-no"><small>BATCH</small>{{ sticker.batch_no or "—" }}</div>
-			<div class="dispatch">
-				{{ sticker.dispatch_area or "—" }}
-				<span class="box-counter">{{ sticker.box_index }} / {{ sticker.total_box }}</span>
-			</div>
-			<div class="po-no"><small>PO</small>{{ sticker.po_no or "—" }}</div>
-			<div class="party-name">{{ sticker.party_name or "" }}</div>
+		<div class="sticker">
+			{% if sticker.is_sample %}
+				<div class="sample-watermark">SAMPLE</div>
+				<div class="sample-flag">SAMPLE</div>
+			{% endif %}
+			<div class="cell sku-no">{{ sticker.sku_no or "—" }}</div>
+			<div class="cell sku-name">{{ sticker.sku_name or "" }}</div>
+			{% if sticker.batch_no %}
+			<div class="cell batch"><span class="lbl">BATCH</span><br>{{ sticker.batch_no }}</div>
+			{% endif %}
+			{% if sticker.dispatch_area %}
+			<div class="cell gate">{{ sticker.dispatch_area }}</div>
+			{% endif %}
+			<div class="cell counter">{{ sticker.box_index }} / {{ sticker.total_box }}</div>
+			{% if sticker.po_no %}
+			<div class="cell po"><span class="lbl">PO</span>{{ sticker.po_no }}</div>
+			{% endif %}
+			{% if sticker.party_name %}
+			<div class="cell party">{{ sticker.party_name }}</div>
+			{% endif %}
 		</div>
 	{% endfor %}
 {% endif %}
