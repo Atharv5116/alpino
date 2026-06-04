@@ -287,19 +287,21 @@ def _offline_buyer_addresses_for_addresses_table(obm_doc):
 
 	if default_billing is None:
 		# If no primary row in OBM, try to find an existing ERPNext address of type 'Billing' for this customer
-		existing_billing = frappe.db.get_value(
-			"Address",
-			{
-				"links.link_doctype": "Customer",
-				"links.link_name": customer,
-				"address_type": "Billing",
-				"disabled": 0,
-			},
-			"name",
-			order_by="is_primary_address desc, creation desc",
+		existing = frappe.db.sql(
+			"""
+			SELECT a.name
+			FROM `tabAddress` a
+			INNER JOIN `tabDynamic Link` dl
+				ON dl.parent = a.name AND dl.parenttype = 'Address'
+				AND dl.link_doctype = 'Customer' AND dl.link_name = %(cust)s
+			WHERE a.address_type = 'Billing' AND IFNULL(a.disabled, 0) = 0
+			ORDER BY a.is_primary_address DESC, a.creation DESC
+			LIMIT 1
+			""",
+			{"cust": customer},
 		)
-		if existing_billing:
-			default_billing = existing_billing
+		if existing:
+			default_billing = existing[0][0]
 
 	if default_billing is None and results:
 		# Still nothing? Fall back to the first address created from OBM
@@ -463,12 +465,20 @@ def _ensure_contact_for_obm(obm_doc):
 
 	contact_name = frappe.db.get_value("Customer", customer, "customer_primary_contact")
 	if not contact_name:
-		contact_name = frappe.db.get_value(
-			"Contact",
-			{"links.link_doctype": "Customer", "links.link_name": customer},
-			"name",
-			order_by="creation asc",
+		existing_contact = frappe.db.sql(
+			"""
+			SELECT c.name
+			FROM `tabContact` c
+			INNER JOIN `tabDynamic Link` dl
+				ON dl.parent = c.name AND dl.parenttype = 'Contact'
+				AND dl.link_doctype = 'Customer' AND dl.link_name = %(cust)s
+			ORDER BY c.creation ASC
+			LIMIT 1
+			""",
+			{"cust": customer},
 		)
+		if existing_contact:
+			contact_name = existing_contact[0][0]
 
 	if contact_name and frappe.db.exists("Contact", contact_name):
 		contact = frappe.get_doc("Contact", contact_name)
@@ -544,8 +554,12 @@ def _customer_has_linked(doctype, customer):
 	"""True when an Address/Contact is linked to the Customer via Dynamic Link."""
 	return bool(
 		frappe.db.exists(
-			doctype,
-			{"links.link_doctype": "Customer", "links.link_name": customer},
+			"Dynamic Link",
+			{
+				"parenttype": doctype,
+				"link_doctype": "Customer",
+				"link_name": customer,
+			},
 		)
 	)
 
