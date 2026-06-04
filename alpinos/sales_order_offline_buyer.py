@@ -437,6 +437,226 @@ def _offline_buyer_address_sync(customer: str):
 	}
 
 
+def _ensure_contact_for_obm(obm_doc):
+	"""Create or refresh an ERPNext Contact linked to the OBM's Customer.
+
+	Pulls the contact person / email / phone numbers from the Offline Buyer
+	Master flat fields. Idempotent: reuses a Contact already linked to the
+	Customer (the customer's primary contact when present). Returns the Contact
+	name, or None when there is no meaningful contact data to store.
+	"""
+
+	customer = obm_doc.customer
+	if not customer:
+		return None
+
+	person = _nz(obm_doc.get("contact_person"))
+	email = _nz(obm_doc.get("email"))
+	phone = _nz(obm_doc.get("contact_no"))
+	alt_phone = _nz(obm_doc.get("alternate_no"))
+
+	# Nothing worth a Contact record — skip to avoid clutter.
+	if not (person or email or phone or alt_phone):
+		return None
+
+	first_name = (person or _nz(obm_doc.get("customer_business_name")) or _nz(customer))[:140]
+
+	contact_name = frappe.db.get_value("Customer", customer, "customer_primary_contact")
+	if not contact_name:
+		contact_name = frappe.db.get_value(
+			"Contact",
+			{"links.link_doctype": "Customer", "links.link_name": customer},
+			"name",
+			order_by="creation asc",
+		)
+
+	if contact_name and frappe.db.exists("Contact", contact_name):
+		contact = frappe.get_doc("Contact", contact_name)
+	else:
+		contact = frappe.new_doc("Contact")
+		contact.flags.ignore_permissions = True
+		contact.append("links", {"link_doctype": "Customer", "link_name": customer})
+
+	contact.first_name = first_name
+
+	if email and not any(_nz(e.email_id) == email for e in (contact.get("email_ids") or [])):
+		contact.append("email_ids", {"email_id": email, "is_primary": 1})
+
+	for ph, is_primary in ((phone, 1), (alt_phone, 0)):
+		if ph and not any(_nz(p.phone) == ph for p in (contact.get("phone_nos") or [])):
+			contact.append(
+				"phone_nos",
+				{"phone": ph, "is_primary_phone": is_primary, "is_primary_mobile_no": is_primary},
+			)
+
+	contact.save(ignore_permissions=True)
+	return contact.name
+
+
+def sync_obm_to_customer_party(obm_doc):
+	"""Create/refresh ERPNext Address + Contact for the OBM's Customer and set
+	them as the customer's primary address/contact.
+
+	Runs on every Offline Buyer Master save (via on_update) and from the
+	backfill job for existing customers. All underlying helpers are idempotent,
+	so repeated runs reuse existing Address/Contact records instead of
+	duplicating them.
+	"""
+
+	customer = obm_doc.customer
+	if not customer or not frappe.db.exists("Customer", customer):
+		return {"default_billing": None, "default_shipping": None, "contact": None}
+
+	mapped = _offline_buyer_addresses_for_addresses_table(obm_doc)
+	billing = mapped.get("billing_default")
+	shipping = _ensure_shipping_address_from_obm(obm_doc, billing) or billing
+	contact = _ensure_contact_for_obm(obm_doc)
+
+	# Link the defaults onto the Customer without re-running Customer.validate.
+	if billing:
+		frappe.db.set_value("Customer", customer, "customer_primary_address", billing, update_modified=False)
+	if contact:
+		frappe.db.set_value("Customer", customer, "customer_primary_contact", contact, update_modified=False)
+
+	return {"default_billing": billing, "default_shipping": shipping or billing, "contact": contact}
+
+
+@frappe.whitelist()
+def sync_single_offline_buyer_master(offline_buyer_master):
+	"""Re-sync one Offline Buyer Master's Address + Contact onto its Customer.
+
+	Administrator only — backs the "Sync to Customer" button on the OBM form.
+	"""
+
+	if frappe.session.user != "Administrator":
+		frappe.throw(_("Only the Administrator can run this action."), frappe.PermissionError)
+
+	doc = frappe.get_doc("Offline Buyer Master", offline_buyer_master)
+	if not doc.customer or not frappe.db.exists("Customer", doc.customer):
+		frappe.throw(_("This Offline Buyer Master has no linked Customer yet."))
+
+	result = sync_obm_to_customer_party(doc)
+	frappe.db.commit()
+	return result
+
+
+def _customer_has_linked(doctype, customer):
+	"""True when an Address/Contact is linked to the Customer via Dynamic Link."""
+	return bool(
+		frappe.db.exists(
+			doctype,
+			{"links.link_doctype": "Customer", "links.link_name": customer},
+		)
+	)
+
+
+@frappe.whitelist()
+def report_offline_buyers_missing_customer_party():
+	"""List customers whose Offline Buyer Master holds address/contact data but
+	whose Customer record is still missing the linked Address and/or Contact.
+
+	These are exactly the records the backfill would fix. Returns one row per
+	Offline Buyer Master with flags for what's missing.
+
+	Run with:
+	  bench --site <site> execute \
+	    alpinos.sales_order_offline_buyer.report_offline_buyers_missing_customer_party
+	"""
+
+	masters = frappe.get_all(
+		"Offline Buyer Master",
+		filters={"customer": ["is", "set"]},
+		fields=[
+			"name",
+			"customer",
+			"customer_business_name",
+			"email",
+			"contact_no",
+			"contact_person",
+			"alternate_no",
+			"address",
+		],
+	)
+
+	rows = []
+	for m in masters:
+		if not m.customer or not frappe.db.exists("Customer", m.customer):
+			continue
+
+		has_addr_rows = bool(
+			frappe.db.exists("Offline Buyer Address", {"parent": m.name})
+		)
+		obm_has_address = has_addr_rows or bool(_nz(m.address))
+		obm_has_contact = bool(
+			_nz(m.email) or _nz(m.contact_no) or _nz(m.contact_person) or _nz(m.alternate_no)
+		)
+
+		if not (obm_has_address or obm_has_contact):
+			continue
+
+		missing_address = obm_has_address and not _customer_has_linked("Address", m.customer)
+		missing_contact = obm_has_contact and not _customer_has_linked("Contact", m.customer)
+
+		if missing_address or missing_contact:
+			rows.append(
+				{
+					"offline_buyer_master": m.name,
+					"customer": m.customer,
+					"business_name": m.customer_business_name,
+					"missing_address": missing_address,
+					"missing_contact": missing_contact,
+				}
+			)
+
+	# Readable summary in the bench console.
+	print(f"\n{len(rows)} Offline Buyer Master record(s) need a Customer Address/Contact:\n")
+	if rows:
+		print(f"{'Customer':<24} {'Business Name':<32} {'Addr?':<7} {'Contact?':<8} OBM")
+		print("-" * 100)
+		for r in rows:
+			print(
+				f"{(r['customer'] or '')[:24]:<24} "
+				f"{(r['business_name'] or '')[:32]:<32} "
+				f"{('MISSING' if r['missing_address'] else 'ok'):<7} "
+				f"{('MISSING' if r['missing_contact'] else 'ok'):<8} "
+				f"{r['offline_buyer_master']}"
+			)
+
+	return rows
+
+
+@frappe.whitelist()
+def backfill_offline_buyer_addresses_and_contacts():
+	"""Maintenance job: create ERPNext Address + Contact for every existing
+	Offline Buyer Master that already has a linked Customer.
+
+	Run with:
+	  bench --site <site> execute \
+	    alpinos.sales_order_offline_buyer.backfill_offline_buyer_addresses_and_contacts
+	"""
+
+	names = frappe.get_all(
+		"Offline Buyer Master",
+		filters={"customer": ["is", "set"]},
+		pluck="name",
+	)
+
+	processed, errors = 0, []
+	for nm in names:
+		try:
+			doc = frappe.get_doc("Offline Buyer Master", nm)
+			if not doc.customer or not frappe.db.exists("Customer", doc.customer):
+				continue
+			sync_obm_to_customer_party(doc)
+			processed += 1
+		except Exception as e:
+			errors.append({"offline_buyer_master": nm, "error": str(e)})
+			frappe.log_error(frappe.get_traceback(), f"OBM party backfill failed: {nm}")
+
+	frappe.db.commit()
+	return {"processed": processed, "total": len(names), "errors": errors}
+
+
 @frappe.whitelist()
 def sync_offline_buyer_master_addresses(customer):
 	"""Lazy-sync Offline Buyer Address table + shipping panel into ERPNext Address (linked to Customer).

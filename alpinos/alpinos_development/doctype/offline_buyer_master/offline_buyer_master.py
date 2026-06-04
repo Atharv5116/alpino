@@ -142,6 +142,13 @@ class OfflineBuyerMaster(Document):
 			)
 			frappe.db.commit()
 
+	def on_update(self):
+		# Create/refresh the ERPNext Address + Contact for the linked Customer so they
+		# exist immediately on save (idempotent — safe to run on every save).
+		from alpinos.sales_order_offline_buyer import sync_obm_to_customer_party
+
+		sync_obm_to_customer_party(self)
+
 	def _migrate_legacy_address_if_empty(self):
 		if self.get("addresses"):
 			return
