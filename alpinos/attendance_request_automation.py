@@ -625,12 +625,11 @@ def create_attendance_request_client_script():
 frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
 		alp_toggle_date_fields(frm);
-		if (frm.doc.docstatus === 0 && frm.doc.reason === 'On Duty') {
-			frm.add_custom_button(__('Refresh Days from Check-ins'), function() {
-				alp_populate_details(frm, true);
-			});
+		// Auto-populate only on a brand-new form; re-opening a saved request must never
+		// re-dirty it.
+		if (frm.is_new()) {
+			alp_populate(frm, false);
 		}
-		alp_dispatch(frm, false);
 	},
 	onload: function(frm) {
 		alp_toggle_date_fields(frm);
@@ -638,62 +637,25 @@ frappe.ui.form.on('Attendance Request', {
 	reason: function(frm) {
 		alp_toggle_date_fields(frm);
 		alp_sync_single_date(frm);
-		alp_dispatch(frm, true);
+		alp_populate(frm, true);
 	},
 	custom_request_date: function(frm) {
 		alp_sync_single_date(frm);
-		alp_show_existing(frm);
+		alp_populate(frm, true);
 	},
 	from_date: function(frm) {
-		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, true);
+		if (frm.doc.reason === 'On Duty') alp_populate(frm, true);
 	},
 	to_date: function(frm) {
-		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, true);
+		if (frm.doc.reason === 'On Duty') alp_populate(frm, true);
 	},
 	employee: function(frm) {
-		alp_dispatch(frm, true);
+		alp_populate(frm, true);
 	},
 	show_attendance_warnings: function() {
 		// Suppress the standard HRMS attendance warnings section
 	}
 });
-
-function alp_dispatch(frm, force) {
-	// On Duty -> per-day grid; otherwise show the existing check-in/out headline bar.
-	if (frm.doc.reason === 'On Duty') {
-		alp_clear_headline(frm);
-		alp_populate_details(frm, force);
-	} else {
-		alp_show_existing(frm);
-	}
-}
-
-function alp_clear_headline(frm) {
-	if (frm.dashboard && frm.dashboard.clear_headline) frm.dashboard.clear_headline();
-}
-
-function alp_show_existing(frm) {
-	// Display-only headline bar at the top showing the day's existing check-in/out.
-	// Never calls set_value, so it can run on every refresh without dirtying the form.
-	if (frm.doc.reason === 'On Duty') { alp_clear_headline(frm); return; }
-	var date = frm.doc.custom_request_date;
-	if (!frm.doc.employee || !date) { alp_clear_headline(frm); return; }
-	frappe.call({
-		method: 'alpinos.attendance_request_automation.get_day_checkin',
-		args: { employee: frm.doc.employee, date: date },
-		callback: function(r) {
-			var m = r.message || {};
-			var inTxt = m.existing_in ? frappe.datetime.str_to_user(m.existing_in) : '—';
-			var outTxt = m.existing_out ? frappe.datetime.str_to_user(m.existing_out) : '—';
-			frm.dashboard.set_headline(
-				"<div style='font-size:12px;'>"
-				+ "<b>Existing check-in:</b> " + inTxt
-				+ " &nbsp;&nbsp;|&nbsp;&nbsp; <b>Existing check-out:</b> " + outTxt
-				+ "</div>"
-			);
-		}
-	});
-}
 
 function alp_toggle_date_fields(frm) {
 	var on_duty = frm.doc.reason === 'On Duty';
@@ -714,13 +676,13 @@ function alp_sync_single_date(frm) {
 	}
 }
 
-function alp_populate_details(frm, force) {
-	// Editable only on a draft. Without 'force' we do not overwrite rows the user is
-	// editing: we only fill when the grid is empty. Use the button to force a reload.
+function alp_populate(frm, force) {
+	// Build the two tables for the date range (draft only). 'force' (an explicit
+	// reason/date/employee change) rebuilds the editable Details table; otherwise we keep
+	// the rows the user is editing and only refresh the read-only Existing Logs + status.
 	if (frm.doc.docstatus !== 0) return;
 	alp_sync_single_date(frm);
 	if (!frm.doc.employee || !frm.doc.from_date || !frm.doc.to_date) return;
-	if (!force && (frm.doc.custom_attendance_details || []).length > 0) return;
 
 	frappe.call({
 		method: 'alpinos.attendance_request_automation.build_attendance_request_details',
@@ -731,19 +693,39 @@ function alp_populate_details(frm, force) {
 			reason: frm.doc.reason
 		},
 		callback: function(r) {
-			if (!r.message) return;
-			frm.clear_table('custom_attendance_details');
-			(r.message || []).forEach(function(row) {
-				var child = frm.add_child('custom_attendance_details');
-				child.attendance_date = row.attendance_date;
-				child.old_in_time = row.old_in_time;
-				child.old_out_time = row.old_out_time;
-				child.new_in_time = row.new_in_time;
-				child.new_out_time = row.new_out_time;
-				child.status = row.status;
-				child.old_in_checkin = row.old_in_checkin;
-				child.old_out_checkin = row.old_out_checkin;
+			var data = r.message || {};
+			var details = data.details || [];
+			var logs = data.logs || [];
+
+			// Existing Check-in Logs (read-only) — always rebuilt.
+			frm.clear_table('custom_existing_logs');
+			logs.forEach(function(row) {
+				var c = frm.add_child('custom_existing_logs');
+				c.attendance_date = row.attendance_date;
+				c.check_in = row.check_in;
+				c.check_out = row.check_out;
 			});
+			frm.refresh_field('custom_existing_logs');
+
+			// Check-in / Check-out Details (editable).
+			var emptyDetails = (frm.doc.custom_attendance_details || []).length === 0;
+			if (force || emptyDetails) {
+				frm.clear_table('custom_attendance_details');
+				details.forEach(function(row) {
+					var c = frm.add_child('custom_attendance_details');
+					c.attendance_date = row.attendance_date;
+					c.attendance_status = row.attendance_status;
+				});
+			} else {
+				// Keep the user's entered times; only refresh the status per date.
+				var statusByDate = {};
+				details.forEach(function(row) { statusByDate[row.attendance_date] = row.attendance_status; });
+				(frm.doc.custom_attendance_details || []).forEach(function(c) {
+					if (statusByDate[c.attendance_date] !== undefined) {
+						c.attendance_status = statusByDate[c.attendance_date];
+					}
+				});
+			}
 			frm.refresh_field('custom_attendance_details');
 		}
 	});
@@ -1045,57 +1027,38 @@ def gather_day_info(employee, date):
 
 @frappe.whitelist()
 def build_attendance_request_details(employee, from_date, to_date, reason=None):
-	"""Build per-day rows (old + default-new in/out) for the form's child grid.
+	"""Rows for the two Attendance Request tables, one entry per date in the range:
+	  - details: the editable Check-in/Check-out table — date + current attendance status
+	    (Check-in/Check-out left blank for the user to fill).
+	  - logs: the read-only Existing Check-in Logs table — date + existing in/out.
 
-	Read-only helper for the client script — it never mutates check-ins or attendance.
-
-	Visibility: HR Managers can load any employee's existing check-ins. Everyone else is
-	restricted to their OWN Employee record, so a regular employee only ever sees their
-	own check-in details (for visibility) and never another employee's "old logs".
+	Read-only helper for the client; it never mutates check-ins or attendance.
+	Visibility: non-HR-Manager callers are restricted to their own Employee record.
 	"""
 	if "HR Manager" not in frappe.get_roles():
-		own = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
-		# Ignore any other employee passed from the client; non-HR users see only their own.
-		employee = own
+		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
 	if not (employee and from_date and to_date):
-		return []
+		return {"details": [], "logs": []}
+
 	start = getdate(from_date)
 	end = getdate(to_date)
 	if end < start:
 		end = start
 
-	rows = []
+	details, logs = [], []
 	d = start
 	guard = 0  # cap to avoid pathological ranges
 	while d <= end and guard < 366:
 		info = gather_day_info(employee, d)
-		rows.append({
+		details.append({
 			"attendance_date": str(d),
-			"old_in_time": str(info["old_in_time"]) if info["old_in_time"] else None,
-			"old_out_time": str(info["old_out_time"]) if info["old_out_time"] else None,
-			"old_in_checkin": info["old_in_checkin"],
-			"old_out_checkin": info["old_out_checkin"],
-			"status": info["status"],
-			"new_in_time": str(info["default_in_time"]) if info["default_in_time"] else None,
-			"new_out_time": str(info["default_out_time"]) if info["default_out_time"] else None,
+			"attendance_status": info["status"],
+		})
+		logs.append({
+			"attendance_date": str(d),
+			"check_in": str(info["old_in_time"]) if info["old_in_time"] else None,
+			"check_out": str(info["old_out_time"]) if info["old_out_time"] else None,
 		})
 		d = add_days(d, 1)
 		guard += 1
-	return rows
-
-
-@frappe.whitelist()
-def get_day_checkin(employee, date):
-	"""Existing IN/OUT check-in for one day, for the single-day Check-in/out fields.
-
-	Visibility: non-HR-Manager callers are restricted to their own Employee record.
-	"""
-	if "HR Manager" not in frappe.get_roles():
-		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
-	if not (employee and date):
-		return {}
-	info = gather_day_info(employee, date)
-	return {
-		"existing_in": str(info["old_in_time"]) if info["old_in_time"] else None,
-		"existing_out": str(info["old_out_time"]) if info["old_out_time"] else None,
-	}
+	return {"details": details, "logs": logs}

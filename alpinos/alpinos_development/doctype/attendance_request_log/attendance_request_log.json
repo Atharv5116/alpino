@@ -1,15 +1,14 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-06-05 00:00:00.000000",
+ "creation": "2026-06-06 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "attendance_date",
   "check_in",
-  "check_out",
-  "attendance_status"
+  "check_out"
  ],
  "fields": [
   {
@@ -21,25 +20,19 @@
    "read_only": 1
   },
   {
-   "columns": 3,
+   "columns": 4,
    "fieldname": "check_in",
-   "fieldtype": "Time",
+   "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "Check-in"
+   "label": "Check-in",
+   "read_only": 1
   },
   {
-   "columns": 3,
+   "columns": 4,
    "fieldname": "check_out",
-   "fieldtype": "Time",
+   "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "Check-out"
-  },
-  {
-   "columns": 2,
-   "fieldname": "attendance_status",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Attendance Status",
+   "label": "Check-out",
    "read_only": 1
   }
  ],
@@ -50,7 +43,7 @@
  "modified": "2026-06-06 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
- "name": "Attendance Request Detail",
+ "name": "Attendance Request Log",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",

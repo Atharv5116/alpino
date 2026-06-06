@@ -20,7 +20,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self._enforce_request_window()       # Rule 2: only last 7 days
 		self._enforce_monthly_limit()        # Rule 1: max 4 per month
 		super().validate()
-		self._sync_attendance_details()      # Rules 5 & 8: per-day old vs new rows
+		self._sync_tables()                  # build the Details + Existing Logs tables
 
 	def on_submit(self):
 		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).
@@ -94,13 +94,8 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				title=_("Monthly Limit Reached"),
 			)
 
-	# ----- Rules 5 & 8: build/refresh the per-day old-vs-new rows -----
-	def _sync_attendance_details(self):
-		# Single-day requests use the simple Check-in/Check-out fields, not the grid.
-		if self.reason != "On Duty":
-			self.custom_attendance_details = []
-			return
-
+	# ----- Build/refresh the two tables (Details + Existing Logs) for the date range -----
+	def _sync_tables(self):
 		start = getdate(self.from_date)
 		end = getdate(self.to_date)
 		if end < start:
@@ -115,7 +110,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			guard += 1
 		date_set = set(dates)
 
-		# Drop rows outside the current range, keep the rest (preserves user edits).
+		# Editable Check-in/Check-out Details — keep the times the user entered.
 		kept = [
 			r
 			for r in (self.custom_attendance_details or [])
@@ -124,27 +119,30 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self.custom_attendance_details = kept
 		by_date = {getdate(r.attendance_date): r for r in kept}
 
+		# Read-only Existing Check-in Logs — rebuilt from current check-ins each time.
+		self.custom_existing_logs = []
+
 		for dt_ in dates:
 			info = gather_day_info(self.employee, dt_)
+
 			row = by_date.get(dt_)
 			if not row:
 				row = self.append("custom_attendance_details", {"attendance_date": dt_})
-			# Read-only snapshot of the existing punches.
-			row.old_in_time = info["old_in_time"]
-			row.old_out_time = info["old_out_time"]
-			row.old_in_checkin = info["old_in_checkin"]
-			row.old_out_checkin = info["old_out_checkin"]
-			row.status = info["status"]
-			# Default the requested times only when the user hasn't set them.
-			if not row.new_in_time:
-				row.new_in_time = info["default_in_time"]
-			if not row.new_out_time:
-				row.new_out_time = info["default_out_time"]
+			row.attendance_status = info["status"]
+
+			self.append(
+				"custom_existing_logs",
+				{
+					"attendance_date": dt_,
+					"check_in": info["old_in_time"],
+					"check_out": info["old_out_time"],
+				},
+			)
 
 	@staticmethod
 	def _time_on_date(date, t):
-		"""Combine the request date with an entered time-of-day so a single-day punch
-		always lands on the request date (Check-in/out are Time fields)."""
+		"""Combine a date with an entered time-of-day so a punch lands on that date
+		(Check-in/out are Time fields)."""
 		if not t:
 			return None
 		return get_datetime(f"{getdate(date)} {get_time(t)}")
@@ -153,34 +151,23 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 	def _apply_requested_checkins(self):
 		from alpinos.attendance_request_automation import get_assigned_shift_times
 
-		# Single-day: apply the simple Check-in / Check-out times on the request date.
-		if self.reason != "On Duty":
-			date = self.get("custom_request_date") or self.from_date
-			if date:
-				in_dt = self._time_on_date(date, self.get("custom_check_in_time"))
-				out_dt = self._time_on_date(date, self.get("custom_check_out_time"))
-				if in_dt:
-					self._upsert_checkin(date, "IN", in_dt, None)
-				if out_dt:
-					self._upsert_checkin(date, "OUT", out_dt, None)
-			return
-
-		# On Duty (multi-day): apply each grid row; a blank punch falls back to the shift.
+		on_duty = self.reason == "On Duty"
 		for row in (self.custom_attendance_details or []):
 			if not row.attendance_date:
 				continue
-			in_time = row.new_in_time
-			out_time = row.new_out_time
-			if not in_time or not out_time:
+			in_dt = self._time_on_date(row.attendance_date, row.check_in)
+			out_dt = self._time_on_date(row.attendance_date, row.check_out)
+			# On Duty: a blank punch falls back to the assigned shift.
+			if on_duty and (not in_dt or not out_dt):
 				shift_in, shift_out = get_assigned_shift_times(self.employee, row.attendance_date)
-				if not in_time:
-					in_time = shift_in
-				if not out_time:
-					out_time = shift_out
-			if in_time:
-				self._upsert_checkin(row.attendance_date, "IN", in_time, row.old_in_checkin)
-			if out_time:
-				self._upsert_checkin(row.attendance_date, "OUT", out_time, row.old_out_checkin)
+				if not in_dt:
+					in_dt = shift_in
+				if not out_dt:
+					out_dt = shift_out
+			if in_dt:
+				self._upsert_checkin(row.attendance_date, "IN", in_dt, None)
+			if out_dt:
+				self._upsert_checkin(row.attendance_date, "OUT", out_dt, None)
 
 	def _upsert_checkin(self, date, log_type, time, checkin_name=None):
 		time = get_datetime(time)

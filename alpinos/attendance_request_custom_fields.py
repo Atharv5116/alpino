@@ -59,45 +59,39 @@ def add_attendance_request_custom_fields():
 				mandatory_depends_on="eval:doc.reason!='On Duty'",
 				description="Single day of the request. For 'On Duty' use the From/To range instead.",
 			),
-			# --- Single-day check-in/out entry (every reason EXCEPT On Duty) ---
-			# Existing check-in/out for the day is shown as a headline bar at the top of
-			# the form (client script), not as fields here. These are TIME fields so only a
-			# time-of-day can be entered — the request Date supplies the date (no cross-date).
+			# --- Check-in / Check-out Details (editable, every reason) ---
+			# One row per date (single day = 1 row; On Duty = one per date). Check-in/out are
+			# TIME fields — the row Date supplies the date. Applied on approval.
 			dict(
 				fieldname="custom_checkin_section",
-				label="Check-in / Check-out",
+				label="Check-in / Check-out Details",
 				fieldtype="Section Break",
 				insert_after="explanation",
-				depends_on="eval:doc.reason!='On Duty'",
 			),
-			dict(
-				fieldname="custom_check_in_time",
-				label="Check-in Time",
-				fieldtype="Time",
-				insert_after="custom_checkin_section",
-				description="Requested check-in time for the day. Applied on approval.",
-			),
-			dict(
-				fieldname="custom_checkin_col_break",
-				fieldtype="Column Break",
-				insert_after="custom_check_in_time",
-			),
-			dict(
-				fieldname="custom_check_out_time",
-				label="Check-out Time",
-				fieldtype="Time",
-				insert_after="custom_checkin_col_break",
-				description="Requested check-out time for the day. Applied on approval.",
-			),
-			# --- Per-day grid: On Duty (multi-day) only ---
 			dict(
 				fieldname="custom_attendance_details",
-				label="Attendance Details (Old vs New)",
+				label="Check-in / Check-out",
 				fieldtype="Table",
 				options="Attendance Request Detail",
-				insert_after="custom_check_out_time",
-				depends_on="eval:doc.reason=='On Duty'",
-				description="Per-day existing vs requested in/out for On Duty ranges. Applied on approval.",
+				insert_after="custom_checkin_section",
+				description="Add/edit the requested check-in and check-out (time only) per date. Applied on approval; for On Duty a blank time falls back to the assigned shift.",
+			),
+			# --- Existing Check-in Logs (read-only, every reason) ---
+			dict(
+				fieldname="custom_existing_logs_section",
+				label="Existing Check-in Logs",
+				fieldtype="Section Break",
+				insert_after="custom_attendance_details",
+				collapsible=1,
+			),
+			dict(
+				fieldname="custom_existing_logs",
+				label="Existing Logs",
+				fieldtype="Table",
+				options="Attendance Request Log",
+				insert_after="custom_existing_logs_section",
+				read_only=1,
+				description="The employee's existing check-in/out logs for these dates (read-only).",
 			),
 		]
 	}
@@ -187,9 +181,16 @@ def set_attendance_request_date_visibility():
 
 
 def cleanup_attendance_request_legacy_fields():
-	"""Delete superseded Attendance Request custom fields (the read-only Existing
-	Check-in/out Datetime fields — existing data is now shown as a top headline bar)."""
-	for fieldname in ("custom_existing_check_in", "custom_existing_check_out"):
+	"""Delete superseded Attendance Request custom fields. The single-day Check-in/out
+	Time fields and the old Existing Datetime fields are replaced by the two tables
+	(editable Check-in/Check-out Details + read-only Existing Check-in Logs)."""
+	for fieldname in (
+		"custom_existing_check_in",
+		"custom_existing_check_out",
+		"custom_check_in_time",
+		"custom_check_out_time",
+		"custom_checkin_col_break",
+	):
 		cf = frappe.db.get_value(
 			"Custom Field", {"dt": "Attendance Request", "fieldname": fieldname}, "name"
 		)
