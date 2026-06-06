@@ -638,20 +638,20 @@ frappe.ui.form.on('Attendance Request', {
 	reason: function(frm) {
 		alp_toggle_date_fields(frm);
 		alp_sync_single_date(frm);
-		alp_populate_details(frm, false);
+		alp_populate_details(frm, true);
 	},
 	custom_request_date: function(frm) {
 		alp_sync_single_date(frm);
-		alp_populate_details(frm, false);
+		alp_populate_details(frm, true);
 	},
 	from_date: function(frm) {
-		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, false);
+		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, true);
 	},
 	to_date: function(frm) {
-		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, false);
+		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, true);
 	},
 	employee: function(frm) {
-		alp_populate_details(frm, false);
+		alp_populate_details(frm, true);
 	},
 	show_attendance_warnings: function() {
 		// Suppress the standard HRMS attendance warnings section
@@ -1011,7 +1011,15 @@ def build_attendance_request_details(employee, from_date, to_date, reason=None):
 	"""Build per-day rows (old + default-new in/out) for the form's child grid.
 
 	Read-only helper for the client script — it never mutates check-ins or attendance.
+
+	Visibility: HR Managers can load any employee's existing check-ins. Everyone else is
+	restricted to their OWN Employee record, so a regular employee only ever sees their
+	own check-in details (for visibility) and never another employee's "old logs".
 	"""
+	if "HR Manager" not in frappe.get_roles():
+		own = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+		# Ignore any other employee passed from the client; non-HR users see only their own.
+		employee = own
 	if not (employee and from_date and to_date):
 		return []
 	start = getdate(from_date)
