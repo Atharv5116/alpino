@@ -89,6 +89,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	# ----- Rules 5 & 8: build/refresh the per-day old-vs-new rows -----
 	def _sync_attendance_details(self):
+		# Single-day requests use the simple Check-in/Check-out fields, not the grid.
+		if self.reason != "On Duty":
+			self.custom_attendance_details = []
+			self._sync_single_day_existing()
+			return
+
 		start = getdate(self.from_date)
 		end = getdate(self.to_date)
 		if end < start:
@@ -129,19 +135,42 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if not row.new_out_time:
 				row.new_out_time = info["default_out_time"]
 
+	def _sync_single_day_existing(self):
+		"""Single-day: show the employee's existing check-in/out (read-only) for the day,
+		and default the editable Check-in/out times to those existing punches when blank.
+		"""
+		date = self.get("custom_request_date") or self.from_date
+		if not date:
+			return
+		info = gather_day_info(self.employee, date)
+		self.custom_existing_check_in = info["old_in_time"]
+		self.custom_existing_check_out = info["old_out_time"]
+		if not self.get("custom_check_in_time") and info["old_in_time"]:
+			self.custom_check_in_time = info["old_in_time"]
+		if not self.get("custom_check_out_time") and info["old_out_time"]:
+			self.custom_check_out_time = info["old_out_time"]
+
 	# ----- Rule 4: apply the requested punches on approval (submit) -----
 	def _apply_requested_checkins(self):
 		from alpinos.attendance_request_automation import get_assigned_shift_times
 
-		on_duty = self.reason == "On Duty"
+		# Single-day: apply the simple Check-in / Check-out fields for the request date.
+		if self.reason != "On Duty":
+			date = self.get("custom_request_date") or self.from_date
+			if date:
+				if self.get("custom_check_in_time"):
+					self._upsert_checkin(date, "IN", self.custom_check_in_time, None)
+				if self.get("custom_check_out_time"):
+					self._upsert_checkin(date, "OUT", self.custom_check_out_time, None)
+			return
+
+		# On Duty (multi-day): apply each grid row; a blank punch falls back to the shift.
 		for row in (self.custom_attendance_details or []):
 			if not row.attendance_date:
 				continue
 			in_time = row.new_in_time
 			out_time = row.new_out_time
-			# Rule 8: for On Duty, a punch left blank falls back to the assigned shift.
-			# This happens only here (on approval) — the form is never pre-filled with it.
-			if on_duty and (not in_time or not out_time):
+			if not in_time or not out_time:
 				shift_in, shift_out = get_assigned_shift_times(self.employee, row.attendance_date)
 				if not in_time:
 					in_time = shift_in

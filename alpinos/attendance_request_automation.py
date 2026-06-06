@@ -625,12 +625,12 @@ def create_attendance_request_client_script():
 frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
 		alp_toggle_date_fields(frm);
-		if (frm.doc.docstatus === 0) {
+		if (frm.doc.docstatus === 0 && frm.doc.reason === 'On Duty') {
 			frm.add_custom_button(__('Refresh Days from Check-ins'), function() {
 				alp_populate_details(frm, true);
 			});
 		}
-		alp_populate_details(frm, false);
+		alp_refresh(frm, false);
 	},
 	onload: function(frm) {
 		alp_toggle_date_fields(frm);
@@ -638,11 +638,11 @@ frappe.ui.form.on('Attendance Request', {
 	reason: function(frm) {
 		alp_toggle_date_fields(frm);
 		alp_sync_single_date(frm);
-		alp_populate_details(frm, true);
+		alp_refresh(frm, true);
 	},
 	custom_request_date: function(frm) {
 		alp_sync_single_date(frm);
-		alp_populate_details(frm, true);
+		alp_load_single_day(frm);
 	},
 	from_date: function(frm) {
 		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, true);
@@ -651,12 +651,44 @@ frappe.ui.form.on('Attendance Request', {
 		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, true);
 	},
 	employee: function(frm) {
-		alp_populate_details(frm, true);
+		alp_refresh(frm, true);
 	},
 	show_attendance_warnings: function() {
 		// Suppress the standard HRMS attendance warnings section
 	}
 });
+
+function alp_refresh(frm, force) {
+	if (frm.doc.reason === 'On Duty') {
+		alp_populate_details(frm, force);
+	} else {
+		alp_load_single_day(frm);
+	}
+}
+
+function alp_load_single_day(frm) {
+	// Non On-Duty: load the existing check-in/out for the single day into the read-only
+	// fields, and default the editable Check-in/out times when blank.
+	if (frm.doc.docstatus !== 0) return;
+	if (frm.doc.reason === 'On Duty') return;
+	var date = frm.doc.custom_request_date;
+	if (!frm.doc.employee || !date) return;
+	frappe.call({
+		method: 'alpinos.attendance_request_automation.get_day_checkin',
+		args: { employee: frm.doc.employee, date: date },
+		callback: function(r) {
+			if (!r.message) return;
+			frm.set_value('custom_existing_check_in', r.message.existing_in || null);
+			frm.set_value('custom_existing_check_out', r.message.existing_out || null);
+			if (!frm.doc.custom_check_in_time && r.message.existing_in) {
+				frm.set_value('custom_check_in_time', r.message.existing_in);
+			}
+			if (!frm.doc.custom_check_out_time && r.message.existing_out) {
+				frm.set_value('custom_check_out_time', r.message.existing_out);
+			}
+		}
+	});
+}
 
 function alp_toggle_date_fields(frm) {
 	var on_duty = frm.doc.reason === 'On Duty';
@@ -1045,3 +1077,20 @@ def build_attendance_request_details(employee, from_date, to_date, reason=None):
 		d = add_days(d, 1)
 		guard += 1
 	return rows
+
+
+@frappe.whitelist()
+def get_day_checkin(employee, date):
+	"""Existing IN/OUT check-in for one day, for the single-day Check-in/out fields.
+
+	Visibility: non-HR-Manager callers are restricted to their own Employee record.
+	"""
+	if "HR Manager" not in frappe.get_roles():
+		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+	if not (employee and date):
+		return {}
+	info = gather_day_info(employee, date)
+	return {
+		"existing_in": str(info["old_in_time"]) if info["old_in_time"] else None,
+		"existing_out": str(info["old_out_time"]) if info["old_out_time"] else None,
+	}

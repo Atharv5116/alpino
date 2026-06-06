@@ -29,7 +29,7 @@
    "fieldname": "old_in_time",
    "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "Old In",
+   "label": "Existing In",
    "read_only": 1
   },
   {
@@ -37,7 +37,7 @@
    "fieldname": "old_out_time",
    "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "Old Out",
+   "label": "Existing Out",
    "read_only": 1
   },
   {
@@ -45,14 +45,14 @@
    "fieldname": "new_in_time",
    "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "New In"
+   "label": "Check-in"
   },
   {
    "columns": 2,
    "fieldname": "new_out_time",
    "fieldtype": "Datetime",
    "in_list_view": 1,
-   "label": "New Out"
+   "label": "Check-out"
   },
   {
    "fieldname": "status",

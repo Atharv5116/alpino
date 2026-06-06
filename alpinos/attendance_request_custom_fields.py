@@ -55,15 +55,58 @@ def add_attendance_request_custom_fields():
 				mandatory_depends_on="eval:doc.reason!='On Duty'",
 				description="Single day of the request. For 'On Duty' use the From/To range instead.",
 			),
-			# Per-day old vs new in/out times. Edited on the draft; applied to Employee
-			# Checkin + Attendance only when the request is approved (submitted).
+			# --- Single-day check-in/out entry (every reason EXCEPT On Duty) ---
+			dict(
+				fieldname="custom_checkin_section",
+				label="Check-in / Check-out",
+				fieldtype="Section Break",
+				insert_after="explanation",
+				depends_on="eval:doc.reason!='On Duty'",
+			),
+			dict(
+				fieldname="custom_existing_check_in",
+				label="Existing Check-in",
+				fieldtype="Datetime",
+				read_only=1,
+				insert_after="custom_checkin_section",
+				description="Your existing check-in for this day, for reference (read-only).",
+			),
+			dict(
+				fieldname="custom_check_in_time",
+				label="Check-in Time",
+				fieldtype="Datetime",
+				insert_after="custom_existing_check_in",
+				description="Requested check-in time. Applied on approval.",
+			),
+			dict(
+				fieldname="custom_checkin_col_break",
+				fieldtype="Column Break",
+				insert_after="custom_check_in_time",
+			),
+			dict(
+				fieldname="custom_existing_check_out",
+				label="Existing Check-out",
+				fieldtype="Datetime",
+				read_only=1,
+				insert_after="custom_checkin_col_break",
+				description="Your existing check-out for this day, for reference (read-only).",
+			),
+			dict(
+				fieldname="custom_check_out_time",
+				label="Check-out Time",
+				fieldtype="Datetime",
+				insert_after="custom_existing_check_out",
+				description="Requested check-out time. Applied on approval.",
+			),
+			# --- Per-day old vs new grid: On Duty (multi-day) only ---
 			dict(
 				fieldname="custom_attendance_details",
 				label="Attendance Details (Old vs New)",
 				fieldtype="Table",
 				options="Attendance Request Detail",
-				insert_after="explanation",
-				description="Old (existing) and New (requested) in/out per day. Applied on approval.",
+				insert_after="custom_check_out_time",
+				depends_on="eval:doc.reason=='On Duty'",
+				description="Per-day existing vs requested in/out for On Duty ranges. Applied on approval.",
 			),
 		]
 	}
