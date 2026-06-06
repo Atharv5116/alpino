@@ -208,14 +208,15 @@ def hide_attendance_request_time_field():
 	try:
 		meta = frappe.get_meta("Attendance Request")
 		for fieldname in ("custom_time", "time"):
-			if not meta.has_field(fieldname):
-				continue
+			# If it's a Custom Field, hide it directly.
 			cf = frappe.db.get_value(
 				"Custom Field", {"dt": "Attendance Request", "fieldname": fieldname}, "name"
 			)
 			if cf:
 				frappe.db.set_value("Custom Field", cf, "hidden", 1)
-			else:
+			# Also set a hidden property setter (covers a standard field, and overrides any
+			# stale visible state) when the field is present on the doctype.
+			if meta.has_field(fieldname):
 				make_property_setter("Attendance Request", fieldname, "hidden", "1", "Check")
 		frappe.db.commit()
 		print("✅ Hid the Time field on Attendance Request")

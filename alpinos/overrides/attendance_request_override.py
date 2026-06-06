@@ -140,8 +140,16 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self.custom_attendance_details = kept
 		by_date = {getdate(r.attendance_date): r for r in kept}
 
-		# Read-only Existing Check-in Logs — rebuilt from current check-ins each time.
-		self.custom_existing_logs = []
+		# Read-only Existing Check-in Logs — snapshot the OLD punches ONCE per date and then
+		# preserve them, so the old -> new transition stays on record (the request applies
+		# new check-ins on approval; the old values must NOT be overwritten here).
+		kept_logs = [
+			r
+			for r in (self.custom_existing_logs or [])
+			if r.attendance_date and getdate(r.attendance_date) in date_set
+		]
+		self.custom_existing_logs = kept_logs
+		logged_dates = {getdate(r.attendance_date) for r in kept_logs}
 
 		for dt_ in dates:
 			info = gather_day_info(self.employee, dt_)
@@ -151,14 +159,16 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				row = self.append("custom_attendance_details", {"attendance_date": dt_})
 			row.attendance_status = info["status"]
 
-			self.append(
-				"custom_existing_logs",
-				{
-					"attendance_date": dt_,
-					"check_in": info["old_in_time"],
-					"check_out": info["old_out_time"],
-				},
-			)
+			# Only capture a date's existing log the first time; never overwrite it.
+			if dt_ not in logged_dates:
+				self.append(
+					"custom_existing_logs",
+					{
+						"attendance_date": dt_,
+						"check_in": info["old_in_time"],
+						"check_out": info["old_out_time"],
+					},
+				)
 
 	@staticmethod
 	def _time_on_date(date, t):

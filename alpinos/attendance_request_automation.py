@@ -971,6 +971,14 @@ def get_assigned_shift_times(employee, date):
 	if not shift_type:
 		shift_type = frappe.db.get_value("Employee", employee, "default_shift")
 	if not shift_type:
+		# Fall back to the shift on the employee's attendance for that date, if any
+		# (so On Duty blank punches still resolve to shift times and get created).
+		shift_type = frappe.db.get_value(
+			"Attendance",
+			{"employee": employee, "attendance_date": date, "docstatus": ["<", 2]},
+			"shift",
+		)
+	if not shift_type:
 		return None, None
 
 	st = frappe.db.get_value("Shift Type", shift_type, ["start_time", "end_time"], as_dict=True)
