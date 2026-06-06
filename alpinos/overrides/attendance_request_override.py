@@ -26,6 +26,27 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).
 		self._apply_requested_checkins()
 		super().on_submit()
+		# Sync in/out/working-hours onto the Attendance from the (now applied) check-ins.
+		# This runs last and reads ALL check-ins (no skip_auto_attendance filter), so the
+		# requested punches always land as In Time / Out Time on the Attendance.
+		self._refresh_attendance_times()
+
+	def _refresh_attendance_times(self):
+		from alpinos.attendance_request_automation import update_attendance_times
+
+		start = getdate(self.from_date)
+		end = getdate(self.to_date)
+		if end < start:
+			end = start
+		d = start
+		guard = 0
+		while d <= end and guard < 366:
+			try:
+				update_attendance_times(self.employee, d)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), "AR refresh attendance times")
+			d = add_days(d, 1)
+			guard += 1
 
 	def validate_no_attendance_to_create(self):
 		# Rule 6: allow the request even when attendance already exists with the same
