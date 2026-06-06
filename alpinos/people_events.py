@@ -183,7 +183,8 @@ def get_upcoming_employee_lifecycle(days=30):
 	except (TypeError, ValueError):
 		days = 30
 
-	if "HR Manager" not in frappe.get_roles():
+	roles = frappe.get_roles()
+	if not ({"HR Manager", "System Manager", "Administrator"} & set(roles)):
 		return {"allowed": False, "probation": [], "internship": [], "increment": []}
 
 	today = getdate(now_datetime())
