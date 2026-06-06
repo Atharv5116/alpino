@@ -945,16 +945,36 @@ def mark_half_day_absent_below_threshold(doc, method):
 # Attendance Request per-day detail helpers (old vs new in/out times)
 # ---------------------------------------------------------------------------
 
-def get_assigned_shift_times(employee, date):
-	"""Return (in_datetime, out_datetime) for the employee's assigned shift on `date`.
+def get_assigned_shift_times(employee, date, ar_shift=None):
+	"""Return (in_datetime, out_datetime) for the employee's shift on `date`.
 
-	Uses the Shift Assignment for the date, falling back to Employee.default_shift.
-	Returns (None, None) when no shift can be resolved.
+	Tries shift candidates in priority order and uses the first that resolves to a real
+	Shift Type with times: the request's own shift -> the attendance record's shift for the
+	date (same source the attendance uses) -> Employee.default_shift -> the Shift Assignment
+	(get_employee_shift). Returns (None, None) when nothing resolves.
 	"""
 	if not employee or not date:
 		return None, None
 	date = getdate(date)
-	shift_type = None
+
+	candidates = []
+	if ar_shift:
+		candidates.append(ar_shift)
+
+	# The shift already on the attendance for this date (what create_or_update_attendance
+	# uses) — ensures the created check-ins line up with the attendance times.
+	att_shift = frappe.db.get_value(
+		"Attendance",
+		{"employee": employee, "attendance_date": date, "docstatus": ["<", 2]},
+		"shift",
+	)
+	if att_shift:
+		candidates.append(att_shift)
+
+	default_shift = frappe.db.get_value("Employee", employee, "default_shift")
+	if default_shift:
+		candidates.append(default_shift)
+
 	try:
 		from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
 
@@ -963,31 +983,25 @@ def get_assigned_shift_times(employee, date):
 		)
 		if details:
 			st = details.get("shift_type")
-			# shift_type may be a Shift Type document or its name
-			shift_type = getattr(st, "name", st)
+			name = getattr(st, "name", st)  # may be a Shift Type doc or its name
+			if name:
+				candidates.append(name)
 	except Exception:
-		shift_type = None
+		pass
 
-	if not shift_type:
-		shift_type = frappe.db.get_value("Employee", employee, "default_shift")
-	if not shift_type:
-		# Fall back to the shift on the employee's attendance for that date, if any
-		# (so On Duty blank punches still resolve to shift times and get created).
-		shift_type = frappe.db.get_value(
-			"Attendance",
-			{"employee": employee, "attendance_date": date, "docstatus": ["<", 2]},
-			"shift",
-		)
-	if not shift_type:
-		return None, None
+	seen = set()
+	for shift_type in candidates:
+		if not shift_type or shift_type in seen:
+			continue
+		seen.add(shift_type)
+		st = frappe.db.get_value("Shift Type", shift_type, ["start_time", "end_time"], as_dict=True)
+		if not st or (st.start_time is None and st.end_time is None):
+			continue
+		in_dt = get_datetime(f"{date} {st.start_time}") if st.start_time is not None else None
+		out_dt = get_datetime(f"{date} {st.end_time}") if st.end_time is not None else None
+		return in_dt, out_dt
 
-	st = frappe.db.get_value("Shift Type", shift_type, ["start_time", "end_time"], as_dict=True)
-	if not st:
-		return None, None
-
-	in_dt = get_datetime(f"{date} {st.start_time}") if st.start_time is not None else None
-	out_dt = get_datetime(f"{date} {st.end_time}") if st.end_time is not None else None
-	return in_dt, out_dt
+	return None, None
 
 
 def gather_day_info(employee, date):

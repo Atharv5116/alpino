@@ -190,7 +190,9 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			out_dt = self._time_on_date(row.attendance_date, row.check_out)
 			# On Duty: a blank punch falls back to the assigned shift.
 			if on_duty and (not in_dt or not out_dt):
-				shift_in, shift_out = get_assigned_shift_times(self.employee, row.attendance_date)
+				shift_in, shift_out = get_assigned_shift_times(
+					self.employee, row.attendance_date, self.shift
+				)
 				if not in_dt:
 					in_dt = shift_in
 				if not out_dt:
