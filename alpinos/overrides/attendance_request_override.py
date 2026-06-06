@@ -21,6 +21,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self._enforce_monthly_limit()        # Rule 1: max 4 per month
 		super().validate()
 		self._sync_tables()                  # build the Details + Existing Logs tables
+		self._validate_detail_times()        # reject mistyped Check-in/Check-out times
 
 	def on_submit(self):
 		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).
@@ -177,11 +178,27 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	@staticmethod
 	def _time_on_date(date, t):
-		"""Combine a date with an entered time-of-day so a punch lands on that date
-		(Check-in/out are Time fields)."""
-		if not t:
+		"""Combine a date with an entered time-of-day (typed as text, e.g. '09:00') so the
+		punch lands on that date. Returns None for blank/unparseable input."""
+		if t in (None, ""):
 			return None
-		return get_datetime(f"{getdate(date)} {get_time(t)}")
+		try:
+			return get_datetime(f"{getdate(date)} {get_time(t)}")
+		except Exception:
+			return None
+
+	def _validate_detail_times(self):
+		"""Reject a Check-in/Check-out that was typed but can't be parsed as a time."""
+		for row in (self.custom_attendance_details or []):
+			for fieldname, label in (("check_in", "Check-in"), ("check_out", "Check-out")):
+				val = row.get(fieldname)
+				if val and self._time_on_date(row.attendance_date or getdate(), val) is None:
+					frappe.throw(
+						_("{0} time '{1}' for {2} is not valid. Use 24-hour HH:MM (e.g. 09:00).").format(
+							label, val, frappe.utils.formatdate(row.attendance_date)
+						),
+						title=_("Invalid Time"),
+					)
 
 	# ----- Rule 4: apply the requested punches on approval (submit) -----
 	def _apply_requested_checkins(self):

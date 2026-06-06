@@ -22,15 +22,17 @@
   },
   {
    "columns": 3,
+   "description": "24-hour HH:MM (e.g. 09:00). Leave blank to fall back to the assigned shift (On Duty).",
    "fieldname": "check_in",
-   "fieldtype": "Time",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Check-in"
   },
   {
    "columns": 3,
+   "description": "24-hour HH:MM (e.g. 18:00). Leave blank to fall back to the assigned shift (On Duty).",
    "fieldname": "check_out",
-   "fieldtype": "Time",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Check-out"
   },
