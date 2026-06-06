@@ -375,6 +375,16 @@ def add_shift_type_custom_fields():
 				insert_after="saturday_working_hours_threshold_for_half_day",
 				description="On Saturdays: if working hours are below this, the day is marked Absent. Leave 0 for the legacy two-way (Present/Absent) behaviour.",
 			),
+			# Late-entry deduction tiers (e.g. 15 min -> 0.5/4, 30 min -> 1/4). Used by the
+			# Attendance Summary report to deduct paid days for repeated late entries.
+			dict(
+				fieldname="custom_late_entry_thresholds",
+				label="Late Entry Deduction Thresholds",
+				fieldtype="Table",
+				options="Late Entry Threshold",
+				insert_after="saturday_working_hours_threshold_for_absent",
+				description="Per 4 late entries in a tier, deduct the given days. Classify each late by the highest 'Late By' it meets; leftover 15+30 lates that combine to 4 deduct 0.5.",
+			),
 		]
 	}
 	
