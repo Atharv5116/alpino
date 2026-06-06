@@ -19,8 +19,9 @@ def setup_attendance_request_custom_fields():
 	# Add custom fields to Attendance Request doctype
 	add_attendance_request_custom_fields()
 
-	# Remove superseded fields and hide the site-added "Time" field
+	# Remove superseded fields, clear stale depends_on, hide the site-added "Time" field
 	cleanup_attendance_request_legacy_fields()
+	clear_attendance_request_details_depends_on()
 	hide_attendance_request_time_field()
 	
 	# Add custom fields to Attendance doctype
@@ -200,23 +201,44 @@ def cleanup_attendance_request_legacy_fields():
 
 
 def hide_attendance_request_time_field():
-	"""Hide the site-added "Time" field on Attendance Request (not part of standard HRMS
-	or this app). Handles both a Custom Field and a standard field, only if present."""
+	"""Hide the site-added "Time" field on Attendance Request (fieldname custom_time, or a
+	plain "time"). Handles both a Custom Field and a standard field, only if present."""
 	try:
-		if not frappe.get_meta("Attendance Request").has_field("time"):
-			return
-		cf = frappe.db.get_value(
-			"Custom Field", {"dt": "Attendance Request", "fieldname": "time"}, "name"
-		)
-		if cf:
-			frappe.db.set_value("Custom Field", cf, "hidden", 1)
-		else:
-			make_property_setter("Attendance Request", "time", "hidden", "1", "Check")
+		meta = frappe.get_meta("Attendance Request")
+		for fieldname in ("custom_time", "time"):
+			if not meta.has_field(fieldname):
+				continue
+			cf = frappe.db.get_value(
+				"Custom Field", {"dt": "Attendance Request", "fieldname": fieldname}, "name"
+			)
+			if cf:
+				frappe.db.set_value("Custom Field", cf, "hidden", 1)
+			else:
+				make_property_setter("Attendance Request", fieldname, "hidden", "1", "Check")
 		frappe.db.commit()
 		print("✅ Hid the Time field on Attendance Request")
 	except Exception as e:
 		print(f"⚠️  Could not hide Attendance Request Time field: {str(e)}")
 		frappe.log_error(frappe.get_traceback(), "Hide AR Time Field")
+
+
+def clear_attendance_request_details_depends_on():
+	"""Force-clear stale depends_on on the two tables + their sections. Earlier versions
+	had reason-based depends_on (On Duty / not On Duty); create_custom_fields(update=True)
+	doesn't remove a depends_on that's no longer passed, so the editable Details table
+	stayed hidden. These fields must show for every reason."""
+	for fieldname in (
+		"custom_checkin_section",
+		"custom_attendance_details",
+		"custom_existing_logs_section",
+		"custom_existing_logs",
+	):
+		cf = frappe.db.get_value(
+			"Custom Field", {"dt": "Attendance Request", "fieldname": fieldname}, "name"
+		)
+		if cf:
+			frappe.db.set_value("Custom Field", cf, "depends_on", "")
+	frappe.db.commit()
 
 
 def add_attendance_custom_fields():
