@@ -56,7 +56,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		pass
 
 	def _is_hr_manager(self):
-		return "HR Manager" in frappe.get_roles()
+		"""Rules 1 & 2 don't apply to HR Managers. Check the request's EMPLOYEE's roles
+		(via their user), NOT the session user — otherwise an admin or an impersonated
+		session (which carries the HR Manager role) would bypass the limits for everyone.
+		"""
+		user = frappe.db.get_value("Employee", self.employee, "user_id") if self.employee else None
+		return bool(user) and "HR Manager" in frappe.get_roles(user)
 
 	# ----- Rules 3 & 7: single-day unless the reason is On Duty -----
 	def _apply_single_day_or_range(self):
