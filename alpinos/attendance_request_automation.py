@@ -312,11 +312,23 @@ def update_attendance_times(employee, date):
 			attendance_doc.save(ignore_permissions=True)
 		# If submitted, forcefully update the database to avoid destructive canceling and unlinking
 		elif attendance_doc.docstatus == 1:
-			frappe.db.set_value("Attendance", attendance_doc.name, {
+			update_values = {
 				"in_time": in_time,
 				"out_time": out_time,
-				"working_hours": working_hours
-			})
+				"working_hours": working_hours,
+			}
+			# For a half-day leave, reconcile the working ("other") half against the shift's
+			# half-day threshold here too, since this fast-path bypasses the validate hook.
+			half_day_status = half_day_status_from_threshold(
+				attendance_doc.shift,
+				attendance_doc.status,
+				working_hours,
+				bool(attendance_doc.leave_application or attendance_doc.leave_type),
+			)
+			if half_day_status:
+				update_values["half_day_status"] = half_day_status
+				update_values["modify_half_day_status"] = 0
+			frappe.db.set_value("Attendance", attendance_doc.name, update_values)
 			frappe.db.commit()
 
 
@@ -600,266 +612,107 @@ def populate_attendance_reason_after_submit(doc, method=None):
 
 
 def create_attendance_request_client_script():
-	"""Create client script to show check-in/check-out data after save"""
-	
+	"""Client script for Attendance Request.
+
+	- Shows From/To only for the 'On Duty' reason; otherwise a single Date field drives
+	  From/To (rules 3 & 7).
+	- Loads the per-day "Old vs New" in/out grid (old read-only, new editable).
+	- Does NOT mutate Employee Checkin / Attendance. Those are applied only when the
+	  request is approved (submitted), server-side (rule 4).
+	"""
+
 	script = """
 frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
-		// Clean up stale checkin sections (persisted from previously viewed docs)
-		if (frm.dashboard && frm.dashboard.parent) {
-			frm.dashboard.parent.find('.checkin-dashboard-section').remove();
+		alp_toggle_date_fields(frm);
+		if (frm.doc.docstatus === 0) {
+			frm.add_custom_button(__('Refresh Days from Check-ins'), function() {
+				alp_populate_details(frm, true);
+			});
 		}
-
-		if (!frm.is_new() && frm.doc.employee && frm.doc.from_date && frm.doc.to_date) {
-			show_checkin_data(frm);
-		}
+		alp_populate_details(frm, false);
+	},
+	onload: function(frm) {
+		alp_toggle_date_fields(frm);
+	},
+	reason: function(frm) {
+		alp_toggle_date_fields(frm);
+		alp_sync_single_date(frm);
+		alp_populate_details(frm, false);
+	},
+	custom_request_date: function(frm) {
+		alp_sync_single_date(frm);
+		alp_populate_details(frm, false);
+	},
+	from_date: function(frm) {
+		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, false);
+	},
+	to_date: function(frm) {
+		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, false);
+	},
+	employee: function(frm) {
+		alp_populate_details(frm, false);
 	},
 	show_attendance_warnings: function() {
 		// Suppress the standard HRMS attendance warnings section
 	}
 });
 
-function show_checkin_data(frm) {
+function alp_toggle_date_fields(frm) {
+	var on_duty = frm.doc.reason === 'On Duty';
+	frm.toggle_display('from_date', on_duty);
+	frm.toggle_display('to_date', on_duty);
+	frm.toggle_display('custom_request_date', !on_duty);
+}
+
+function alp_sync_single_date(frm) {
+	// For non On-Duty requests the single Date drives From/To.
+	if (frm.doc.reason !== 'On Duty' && frm.doc.custom_request_date) {
+		if (frm.doc.from_date !== frm.doc.custom_request_date) {
+			frm.set_value('from_date', frm.doc.custom_request_date);
+		}
+		if (frm.doc.to_date !== frm.doc.custom_request_date) {
+			frm.set_value('to_date', frm.doc.custom_request_date);
+		}
+	}
+}
+
+function alp_populate_details(frm, force) {
+	// Editable only on a draft. Without 'force' we do not overwrite rows the user is
+	// editing: we only fill when the grid is empty. Use the button to force a reload.
+	if (frm.doc.docstatus !== 0) return;
+	alp_sync_single_date(frm);
+	if (!frm.doc.employee || !frm.doc.from_date || !frm.doc.to_date) return;
+	if (!force && (frm.doc.custom_attendance_details || []).length > 0) return;
+
 	frappe.call({
-		method: 'alpinos.attendance_request_automation.get_checkin_data_for_dates',
+		method: 'alpinos.attendance_request_automation.build_attendance_request_details',
 		args: {
 			employee: frm.doc.employee,
 			from_date: frm.doc.from_date,
-			to_date: frm.doc.to_date
+			to_date: frm.doc.to_date,
+			reason: frm.doc.reason
 		},
 		callback: function(r) {
-			if (r.message) {
-				render_checkin_table(frm, r.message);
-			}
-		}
-	});
-}
-
-function render_checkin_table(frm, data) {
-	const dates = Object.keys(data).sort();
-	if (dates.length === 0) return;
-	
-	let html = `
-		<div class="checkin-data-section" style="margin-top: 20px;">
-			<div class="table-responsive">
-				<table class="table table-bordered table-hover" style="font-size: 12px;">
-					<thead>
-						<tr>
-							<th style="width: 20%;">Date</th>
-							<th style="width: 25%;">Check-in</th>
-							<th style="width: 25%;">Check-out</th>
-							<th style="width: 30%;">Attendance Status</th>
-						</tr>
-					</thead>
-					<tbody>
-	`;
-	
-	dates.forEach(function(date) {
-		const dateData = data[date];
-		const checkIn = dateData.check_in;
-		const checkOut = dateData.check_out;
-		const attendance = dateData.attendance;
-		
-		const checkInTime = checkIn ? format_datetime(checkIn.time) : '-';
-		const checkOutTime = checkOut ? format_datetime(checkOut.time) : '-';
-		const attendanceStatus = attendance ? attendance.status : '-';
-		
-		let statusBadgeClass = 'badge-secondary';
-		if (attendance) {
-			if (attendance.status === 'Present') statusBadgeClass = 'badge-success';
-			else if (attendance.status === 'Absent') statusBadgeClass = 'badge-danger';
-			else if (attendance.status === 'Half Day') statusBadgeClass = 'badge-warning';
-			else if (attendance.status === 'Work From Home') statusBadgeClass = 'badge-info';
-		}
-		
-		html += `
-			<tr data-date="${date}">
-				<td>${format_date(date)}</td>
-				<td class="text-center">
-					${checkIn ? 
-						`<span class="checkin-time">${checkInTime}</span>
-						<button class="btn btn-xs btn-link edit-checkin" data-type="IN" data-checkin-name="${checkIn.name}" data-date="${date}"><i class="fa fa-edit"></i></button>` :
-						`<button class="btn btn-xs btn-primary add-checkin" data-type="IN" data-date="${date}"><i class="fa fa-plus"></i> Add</button>`
-					}
-				</td>
-				<td class="text-center">
-					${checkOut ? 
-						`<span class="checkout-time">${checkOutTime}</span>
-						<button class="btn btn-xs btn-link edit-checkin" data-type="OUT" data-checkin-name="${checkOut.name}" data-date="${date}"><i class="fa fa-edit"></i></button>` :
-						`<button class="btn btn-xs btn-primary add-checkin" data-type="OUT" data-date="${date}"><i class="fa fa-plus"></i> Add</button>`
-					}
-				</td>
-				<td>${attendance ? `<span class="badge ${statusBadgeClass}">${attendanceStatus}</span>` : `<span class="badge badge-secondary">-</span>`}</td>
-			</tr>
-		`;
-	});
-	
-	html += `</tbody></table></div></div>`;
-	
-	// Remove any existing checkin section before adding new one
-	if (frm.dashboard && frm.dashboard.parent) {
-		frm.dashboard.parent.find('.checkin-dashboard-section').remove();
-	}
-	
-	frm.dashboard.add_section(html, __('Check-in/Check-out Details'), 'checkin-dashboard-section');
-	frm.dashboard.show();
-	
-	setTimeout(() => attach_checkin_handlers(frm), 100);
-}
-
-function attach_checkin_handlers(frm) {
-	$('.add-checkin').off('click').on('click', function() {
-		add_checkin(frm, $(this).data('date'), $(this).data('type'));
-	});
-	$('.edit-checkin').off('click').on('click', function() {
-		edit_checkin(frm, $(this).data('date'), $(this).data('type'), $(this).data('checkin-name'));
-	});
-}
-
-function add_checkin(frm, date, logType) {
-	const dialog = new frappe.ui.Dialog({
-		title: __('Add Check-' + (logType === 'IN' ? 'in' : 'out')),
-		fields: [
-			{label: __('Date'), fieldname: 'date', fieldtype: 'Date', default: date, read_only: 1},
-			{label: __('Time'), fieldname: 'time', fieldtype: 'Datetime', default: date + ' ' + (logType === 'IN' ? '09:00:00' : '18:00:00'), reqd: 1}
-		],
-		primary_action_label: __('Save'),
-		primary_action: function() {
-			const v = dialog.get_values();
-			if (!v.time) return;
-			
-			// CLIENT-SIDE VALIDATION: Prevent future dates
-			const selectedTime = new Date(v.time);
-			const currentTime = new Date();
-			if (selectedTime > currentTime) {
-				frappe.msgprint({
-					title: __('Future Date Not Allowed'),
-					message: __('Cannot create check-in records for future dates. Selected time: {0}, Current time: {1}', [v.time, currentTime.toISOString()]),
-					indicator: 'red'
-				});
-				return;
-			}
-			
-			// CLIENT-SIDE VALIDATION: Ensure date matches the attendance request date
-			const selectedDate = v.time.split(' ')[0];
-			if (selectedDate !== date) {
-				frappe.msgprint({
-					title: __('Invalid Date'),
-					message: __('Check-in date must match the attendance request date: {0}', [date]),
-					indicator: 'red'
-				});
-				return;
-			}
-			
-			frappe.call({
-				method: 'alpinos.attendance_request_automation.create_or_update_checkin',
-				args: { 
-					employee: frm.doc.employee, 
-					date: v.date, 
-					log_type: logType, 
-					time: v.time,
-					attendance_request: frm.doc.name
-				},
-				callback: function(r) {
-					if (r.message) {
-						frappe.show_alert({message: __('Saved'), indicator: 'green'});
-						dialog.hide();
-						show_checkin_data(frm);
-					}
-				}
+			if (!r.message) return;
+			frm.clear_table('custom_attendance_details');
+			(r.message || []).forEach(function(row) {
+				var child = frm.add_child('custom_attendance_details');
+				child.attendance_date = row.attendance_date;
+				child.old_in_time = row.old_in_time;
+				child.old_out_time = row.old_out_time;
+				child.new_in_time = row.new_in_time;
+				child.new_out_time = row.new_out_time;
+				child.status = row.status;
+				child.old_in_checkin = row.old_in_checkin;
+				child.old_out_checkin = row.old_out_checkin;
 			});
+			frm.refresh_field('custom_attendance_details');
 		}
 	});
-	dialog.show();
-}
-
-function edit_checkin(frm, date, logType, checkinName) {
-	frappe.db.get_value('Employee Checkin', checkinName, 'time').then(r => {
-		if (!r.message) return;
-		const dialog = new frappe.ui.Dialog({
-			title: __('Edit Check-' + (logType === 'IN' ? 'in' : 'out')),
-			fields: [
-				{label: __('Date'), fieldname: 'date', fieldtype: 'Date', default: date, read_only: 1},
-				{label: __('Time'), fieldname: 'time', fieldtype: 'Datetime', default: r.message.time, reqd: 1}
-			],
-			primary_action_label: __('Update'),
-			primary_action: function() {
-				const v = dialog.get_values();
-				
-				// CLIENT-SIDE VALIDATION: Prevent future dates
-				const selectedTime = new Date(v.time);
-				const currentTime = new Date();
-				if (selectedTime > currentTime) {
-					frappe.msgprint({
-						title: __('Future Date Not Allowed'),
-						message: __('Cannot create check-in records for future dates. Selected time: {0}, Current time: {1}', [v.time, currentTime.toISOString()]),
-						indicator: 'red'
-					});
-					return;
-				}
-				
-				// CLIENT-SIDE VALIDATION: Ensure date matches the attendance request date
-				const selectedDate = v.time.split(' ')[0];
-				if (selectedDate !== date) {
-					frappe.msgprint({
-						title: __('Invalid Date'),
-						message: __('Check-in date must match the attendance request date: {0}', [date]),
-						indicator: 'red'
-					});
-					return;
-				}
-				
-				frappe.call({
-					method: 'alpinos.attendance_request_automation.create_or_update_checkin',
-					args: { 
-						employee: frm.doc.employee, 
-						date: v.date, 
-						log_type: logType, 
-						time: v.time, 
-						checkin_name: checkinName,
-						attendance_request: frm.doc.name
-					},
-					callback: function(r) {
-						if (r.message) {
-							frappe.show_alert({message: __('Updated'), indicator: 'green'});
-							dialog.hide();
-							show_checkin_data(frm);
-						}
-					}
-				});
-			}
-		});
-		dialog.show();
-	});
-}
-
-function update_attendance_status(frm, date) {
-	const reason = $(`.attendance-reason-select[data-date="${date}"]`).val();
-	if (!reason) return;
-	frappe.call({
-		method: 'alpinos.attendance_request_automation.update_attendance_status',
-		args: { employee: frm.doc.employee, date: date, reason: reason, attendance_request: frm.doc.name },
-		callback: function(r) {
-			if (r.message) {
-				frm.set_value('reason', reason);
-				frappe.show_alert({message: __('Updated'), indicator: 'green'});
-				show_checkin_data(frm);
-			}
-		}
-	});
-}
-
-function format_datetime(s) {
-	if (!s) return '-';
-	return new Date(s).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
-}
-
-function format_date(s) {
-	if (!s) return '-';
-	return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 """
-	
+
 	# Create or update client script
 	try:
 		if frappe.db.exists("Client Script", "Attendance Request - Check-in/Check-out Management"):
@@ -959,14 +812,20 @@ frappe.ui.form.on('Employee Checkin', {
 
 def validate_saturday_attendance_threshold(doc, method):
 	"""
-	Check if Attendance is on a Saturday, and override status based on `saturday_working_hours_threshold`.
-	If finished required hours, mark Present, else Absent.
+	On a Saturday, override the attendance status using the Saturday-specific working-hour
+	thresholds on the Shift Type:
+	  - below `saturday_working_hours_threshold_for_absent`   -> Absent
+	  - below `saturday_working_hours_threshold_for_half_day` -> Half Day
+	  - otherwise                                             -> Present
+	When the absent threshold is left 0 it stays the legacy two-way behaviour
+	(below the Present threshold -> Absent, else Present). The half-day threshold falls
+	back to the legacy `saturday_working_hours_threshold` (Present) when not set.
 	"""
 	if doc.docstatus == 2:
 		return
-		
-	# Do not override approved Leaves or Holidays
-	if doc.status in ["On Leave", "Holiday"]:
+
+	# Do not override leaves (including half-day leave) or holidays
+	if doc.status in ["On Leave", "Holiday"] or doc.get("leave_application") or doc.get("leave_type"):
 		return
 		
 	# 0 is Monday, 5 is Saturday
@@ -977,14 +836,204 @@ def validate_saturday_attendance_threshold(doc, method):
 	if not doc.shift:
 		return
 		
-	threshold = frappe.db.get_value("Shift Type", doc.shift, "saturday_working_hours_threshold")
-	
-	threshold = flt(threshold)
-	if threshold > 0:
-		# Only apply Saturday override if working_hours is actually set (has checkins)
-		# If working_hours is 0/None, let HRMS auto-attendance handle it (will be Absent)
-		if flt(doc.working_hours) > 0:
-			if flt(doc.working_hours) >= threshold:
-				doc.status = "Present"
-			else:
-				doc.status = "Absent"
+	# Saturday-specific thresholds; half-day falls back to the legacy Present threshold.
+	half_day_threshold = flt(
+		frappe.db.get_value("Shift Type", doc.shift, "saturday_working_hours_threshold_for_half_day")
+	)
+	absent_threshold = flt(
+		frappe.db.get_value("Shift Type", doc.shift, "saturday_working_hours_threshold_for_absent")
+	)
+	if not half_day_threshold:
+		half_day_threshold = flt(
+			frappe.db.get_value("Shift Type", doc.shift, "saturday_working_hours_threshold")
+		)
+
+	if not (half_day_threshold or absent_threshold):
+		return
+
+	# Only override once check-ins have produced working hours; otherwise let HRMS
+	# auto-attendance handle the no-checkin case (Absent).
+	working_hours = flt(doc.working_hours)
+	if working_hours <= 0:
+		return
+
+	if absent_threshold:
+		# Three-way: below absent -> Absent, below half day -> Half Day, else Present.
+		if working_hours < absent_threshold:
+			doc.status = "Absent"
+		elif half_day_threshold and working_hours < half_day_threshold:
+			doc.status = "Half Day"
+			doc.half_day_status = "Absent"
+		else:
+			doc.status = "Present"
+	else:
+		# Legacy two-way: below the Present threshold -> Absent, else Present.
+		if half_day_threshold and working_hours < half_day_threshold:
+			doc.status = "Absent"
+		else:
+			doc.status = "Present"
+
+
+def half_day_status_from_threshold(shift, status, working_hours, has_leave):
+	"""Return the working ("other") half's status for a half-day *leave* attendance.
+
+	When an employee takes a half-day leave (first or second half), the remaining half
+	is a working half. If the hours actually worked fall short of the shift's
+	`working_hours_threshold_for_half_day`, the other half is "Absent"; otherwise
+	"Present". Returns None when the rule does not apply (not a half-day leave, no
+	shift, no threshold configured, or no working hours yet).
+
+	We only decide once check-ins have produced working hours (> 0), so the other half
+	is never marked Absent before the workday has actually happened. The genuine "never
+	checked in" case is still handled by HRMS's mark_absent_for_half_day_dates at sync.
+	"""
+	from frappe.utils import flt
+
+	if status != "Half Day" or not has_leave or not shift:
+		return None
+	if flt(working_hours) <= 0:
+		return None
+	threshold = flt(
+		frappe.db.get_value("Shift Type", shift, "working_hours_threshold_for_half_day")
+	)
+	if threshold <= 0:
+		return None
+	return "Absent" if flt(working_hours) < threshold else "Present"
+
+
+def mark_half_day_absent_below_threshold(doc, method):
+	"""Attendance `validate` hook: set half_day_status for half-day leave attendances.
+
+	Mirrors `validate_saturday_attendance_threshold`. Covers every path that saves the
+	Attendance document (draft saves, manual edits, HRMS reprocessing). The submitted
+	`frappe.db.set_value` fast-path in `update_attendance_times` bypasses validate, so it
+	applies the same helper directly.
+	"""
+	if doc.docstatus == 2:
+		return
+
+	has_leave = bool(doc.get("leave_application") or doc.get("leave_type"))
+	new_status = half_day_status_from_threshold(
+		doc.shift, doc.status, doc.working_hours, has_leave
+	)
+	if new_status:
+		doc.half_day_status = new_status
+		# Lock our decision so HRMS's mark_absent_for_half_day_dates won't flip it.
+		doc.modify_half_day_status = 0
+
+
+# ---------------------------------------------------------------------------
+# Attendance Request per-day detail helpers (old vs new in/out times)
+# ---------------------------------------------------------------------------
+
+def get_assigned_shift_times(employee, date):
+	"""Return (in_datetime, out_datetime) for the employee's assigned shift on `date`.
+
+	Uses the Shift Assignment for the date, falling back to Employee.default_shift.
+	Returns (None, None) when no shift can be resolved.
+	"""
+	if not employee or not date:
+		return None, None
+	date = getdate(date)
+	shift_type = None
+	try:
+		from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
+
+		details = get_employee_shift(
+			employee, get_datetime(f"{date} 00:00:00"), consider_default_shift=True
+		)
+		if details:
+			st = details.get("shift_type")
+			# shift_type may be a Shift Type document or its name
+			shift_type = getattr(st, "name", st)
+	except Exception:
+		shift_type = None
+
+	if not shift_type:
+		shift_type = frappe.db.get_value("Employee", employee, "default_shift")
+	if not shift_type:
+		return None, None
+
+	st = frappe.db.get_value("Shift Type", shift_type, ["start_time", "end_time"], as_dict=True)
+	if not st:
+		return None, None
+
+	in_dt = get_datetime(f"{date} {st.start_time}") if st.start_time is not None else None
+	out_dt = get_datetime(f"{date} {st.end_time}") if st.end_time is not None else None
+	return in_dt, out_dt
+
+
+def gather_day_info(employee, date):
+	"""Collect existing (old) in/out check-ins + names, the current attendance status,
+	and default new in/out (existing punch, else assigned-shift time) for one day.
+
+	Shared by the form populate method and the server-side row sync so both agree.
+	"""
+	date = getdate(date)
+	date_start = get_datetime(f"{date} 00:00:00")
+	date_end = get_datetime(f"{date} 23:59:59")
+
+	ins = frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": employee, "log_type": "IN", "time": ["between", [date_start, date_end]]},
+		fields=["name", "time"], order_by="time asc", limit=1,
+	)
+	outs = frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": employee, "log_type": "OUT", "time": ["between", [date_start, date_end]]},
+		fields=["name", "time"], order_by="time desc", limit=1,
+	)
+	old_in = ins[0].time if ins else None
+	old_out = outs[0].time if outs else None
+
+	status = frappe.db.get_value(
+		"Attendance",
+		{"employee": employee, "attendance_date": date, "docstatus": ["<", 2]},
+		"status",
+	)
+
+	return {
+		"old_in_time": old_in,
+		"old_out_time": old_out,
+		"old_in_checkin": ins[0].name if ins else None,
+		"old_out_checkin": outs[0].name if outs else None,
+		"status": status or "",
+		# New time starts from the existing punch only; a missing punch stays BLANK in
+		# the form (no shift pre-fill — still editable). The On Duty shift fallback is
+		# applied on submit, not pre-filled here.
+		"default_in_time": old_in,
+		"default_out_time": old_out,
+	}
+
+
+@frappe.whitelist()
+def build_attendance_request_details(employee, from_date, to_date, reason=None):
+	"""Build per-day rows (old + default-new in/out) for the form's child grid.
+
+	Read-only helper for the client script — it never mutates check-ins or attendance.
+	"""
+	if not (employee and from_date and to_date):
+		return []
+	start = getdate(from_date)
+	end = getdate(to_date)
+	if end < start:
+		end = start
+
+	rows = []
+	d = start
+	guard = 0  # cap to avoid pathological ranges
+	while d <= end and guard < 366:
+		info = gather_day_info(employee, d)
+		rows.append({
+			"attendance_date": str(d),
+			"old_in_time": str(info["old_in_time"]) if info["old_in_time"] else None,
+			"old_out_time": str(info["old_out_time"]) if info["old_out_time"] else None,
+			"old_in_checkin": info["old_in_checkin"],
+			"old_out_checkin": info["old_out_checkin"],
+			"status": info["status"],
+			"new_in_time": str(info["default_in_time"]) if info["default_in_time"] else None,
+			"new_out_time": str(info["default_out_time"]) if info["default_out_time"] else None,
+		})
+		d = add_days(d, 1)
+		guard += 1
+	return rows

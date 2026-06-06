@@ -117,6 +117,8 @@ fixtures = [
 
 patches = [
 	"alpinos.patches.create_attendance_widget",
+	"alpinos.patches.create_hr_lifecycle_widget",
+	"alpinos.patches.create_missing_checkin_widget",
 	"alpinos.patches.v1_0.delete_unused_employee_bank_fields",
 	"alpinos.patches.v1_0.remove_pick_list_batch_mandatory",
 	"alpinos.patches.v1_0.install_alpinos_removed_pick_list_item",
@@ -142,7 +144,11 @@ after_migrate = [
 	"alpinos.attendance_request_automation.create_attendance_request_client_script",
 	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
+	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
+	"alpinos.designation_branch_policy.setup_designation_branch_policy",
 	"alpinos.patches.create_attendance_widget.execute",
+	"alpinos.patches.create_hr_lifecycle_widget.execute",
+	"alpinos.patches.create_missing_checkin_widget.execute",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
@@ -347,7 +353,8 @@ doc_events = {
 	},
 	"Attendance": {
 		"validate": [
-			"alpinos.attendance_request_automation.validate_saturday_attendance_threshold"
+			"alpinos.attendance_request_automation.validate_saturday_attendance_threshold",
+			"alpinos.attendance_request_automation.mark_half_day_absent_below_threshold"
 		],
 		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
 		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
@@ -365,6 +372,9 @@ scheduler_events = {
 		"*/30 * * * *": [
 			"alpinos.essl_sync.sync_essl_logs",
 			"alpinos.attendance_scheduler.process_auto_attendance_periodic"
+		],
+		"30 11 * * *": [
+			"alpinos.attendance_alerts.notify_missing_checkins"
 		]
 	}
 }

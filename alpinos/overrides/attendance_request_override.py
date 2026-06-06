@@ -5,16 +5,187 @@ based on the reason field and populate custom fields in Attendance
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, date_diff
+from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, getdate, now_datetime
 from hrms.hr.doctype.attendance_request.attendance_request import AttendanceRequest as HRMSAttendanceRequest
-from alpinos.attendance_request_automation import sync_attendance_request_reason
+from alpinos.attendance_request_automation import gather_day_info, sync_attendance_request_reason
 
 
 class CustomAttendanceRequest(HRMSAttendanceRequest):
 	"""
 	Override Attendance Request to handle all attendance status options
 	"""
-	
+
+	def validate(self):
+		self._apply_single_day_or_range()   # Rules 3 & 7: single day, On Duty = range
+		self._enforce_request_window()       # Rule 2: only last 7 days
+		self._enforce_monthly_limit()        # Rule 1: max 4 per month
+		super().validate()
+		self._sync_attendance_details()      # Rules 5 & 8: per-day old vs new rows
+
+	def on_submit(self):
+		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).
+		self._apply_requested_checkins()
+		super().on_submit()
+
+	def _is_hr_manager(self):
+		return "HR Manager" in frappe.get_roles()
+
+	# ----- Rules 3 & 7: single-day unless the reason is On Duty -----
+	def _apply_single_day_or_range(self):
+		if self.reason == "On Duty":
+			# Range mode — use the standard From/To as entered.
+			if self.from_date and not self.to_date:
+				self.to_date = self.from_date
+			return
+		# Single-day mode — driven by the custom single Date field.
+		single = self.get("custom_request_date") or self.from_date
+		if not single:
+			frappe.throw(_("Please set the Date for this request."), title=_("Date Required"))
+		self.custom_request_date = single
+		self.from_date = single
+		self.to_date = single
+
+	# ----- Rule 2: only the last 7 days (HR Manager exempt) -----
+	def _enforce_request_window(self):
+		if self._is_hr_manager():
+			return
+		today = getdate(now_datetime())
+		earliest = add_days(today, -7)
+		start = getdate(self.from_date)
+		end = getdate(self.to_date)
+		if start > today or end > today:
+			frappe.throw(_("Attendance Request cannot be for a future date."), title=_("Invalid Date"))
+		if start < earliest:
+			frappe.throw(
+				_("Attendance Request can only be raised for the last 7 days (on or after {0}).").format(
+					formatdate(earliest)
+				),
+				title=_("Date Too Old"),
+			)
+
+	# ----- Rule 1: at most 4 requests per calendar month (HR Manager exempt) -----
+	def _enforce_monthly_limit(self):
+		if self._is_hr_manager():
+			return
+		month_start = getdate(self.from_date).replace(day=1)
+		next_month = add_months(month_start, 1)
+		count = frappe.db.count(
+			"Attendance Request",
+			filters=[
+				["employee", "=", self.employee],
+				["docstatus", "<", 2],
+				["from_date", ">=", month_start],
+				["from_date", "<", next_month],
+				["name", "!=", self.name or "new-attendance-request"],
+			],
+		)
+		if count >= 4:
+			frappe.throw(
+				_("Limit reached: at most 4 Attendance Requests per month. {0} already exist for {1}.").format(
+					count, formatdate(month_start, "MMMM yyyy")
+				),
+				title=_("Monthly Limit Reached"),
+			)
+
+	# ----- Rules 5 & 8: build/refresh the per-day old-vs-new rows -----
+	def _sync_attendance_details(self):
+		start = getdate(self.from_date)
+		end = getdate(self.to_date)
+		if end < start:
+			end = start
+
+		dates = []
+		d = start
+		guard = 0
+		while d <= end and guard < 366:
+			dates.append(d)
+			d = add_days(d, 1)
+			guard += 1
+		date_set = set(dates)
+
+		# Drop rows outside the current range, keep the rest (preserves user edits).
+		kept = [
+			r
+			for r in (self.custom_attendance_details or [])
+			if r.attendance_date and getdate(r.attendance_date) in date_set
+		]
+		self.custom_attendance_details = kept
+		by_date = {getdate(r.attendance_date): r for r in kept}
+
+		for dt_ in dates:
+			info = gather_day_info(self.employee, dt_)
+			row = by_date.get(dt_)
+			if not row:
+				row = self.append("custom_attendance_details", {"attendance_date": dt_})
+			# Read-only snapshot of the existing punches.
+			row.old_in_time = info["old_in_time"]
+			row.old_out_time = info["old_out_time"]
+			row.old_in_checkin = info["old_in_checkin"]
+			row.old_out_checkin = info["old_out_checkin"]
+			row.status = info["status"]
+			# Default the requested times only when the user hasn't set them.
+			if not row.new_in_time:
+				row.new_in_time = info["default_in_time"]
+			if not row.new_out_time:
+				row.new_out_time = info["default_out_time"]
+
+	# ----- Rule 4: apply the requested punches on approval (submit) -----
+	def _apply_requested_checkins(self):
+		from alpinos.attendance_request_automation import get_assigned_shift_times
+
+		on_duty = self.reason == "On Duty"
+		for row in (self.custom_attendance_details or []):
+			if not row.attendance_date:
+				continue
+			in_time = row.new_in_time
+			out_time = row.new_out_time
+			# Rule 8: for On Duty, a punch left blank falls back to the assigned shift.
+			# This happens only here (on approval) — the form is never pre-filled with it.
+			if on_duty and (not in_time or not out_time):
+				shift_in, shift_out = get_assigned_shift_times(self.employee, row.attendance_date)
+				if not in_time:
+					in_time = shift_in
+				if not out_time:
+					out_time = shift_out
+			if in_time:
+				self._upsert_checkin(row.attendance_date, "IN", in_time, row.old_in_checkin)
+			if out_time:
+				self._upsert_checkin(row.attendance_date, "OUT", out_time, row.old_out_checkin)
+
+	def _upsert_checkin(self, date, log_type, time, checkin_name=None):
+		time = get_datetime(time)
+		name = checkin_name
+		if not name:
+			day = getdate(date)
+			existing = frappe.get_all(
+				"Employee Checkin",
+				filters={
+					"employee": self.employee,
+					"log_type": log_type,
+					"time": ["between", [get_datetime(f"{day} 00:00:00"), get_datetime(f"{day} 23:59:59")]],
+				},
+				pluck="name",
+				limit=1,
+			)
+			name = existing[0] if existing else None
+
+		if name:
+			frappe.db.set_value(
+				"Employee Checkin",
+				name,
+				{"time": time, "from_attendance_request": 1, "is_manual": 1},
+			)
+		else:
+			checkin = frappe.new_doc("Employee Checkin")
+			checkin.employee = self.employee
+			checkin.log_type = log_type
+			checkin.time = time
+			checkin.from_attendance_request = 1
+			checkin.is_manual = 1
+			if self.shift:
+				checkin.shift = self.shift
+			checkin.insert(ignore_permissions=True)
+
 	def get_attendance_status(self, attendance_date: str) -> str:
 		"""
 		Override get_attendance_status to handle all status options based on reason field.

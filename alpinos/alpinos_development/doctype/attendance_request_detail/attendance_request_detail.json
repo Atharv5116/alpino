@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-05 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "attendance_date",
+  "old_in_time",
+  "old_out_time",
+  "new_in_time",
+  "new_out_time",
+  "status",
+  "old_in_checkin",
+  "old_out_checkin"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "attendance_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "old_in_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Old In",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "old_out_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Old Out",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "new_in_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "New In"
+  },
+  {
+   "columns": 2,
+   "fieldname": "new_out_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "New Out"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "label": "Current Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "old_in_checkin",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Old In Checkin",
+   "read_only": 1
+  },
+  {
+   "fieldname": "old_out_checkin",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Old Out Checkin",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Attendance Request Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

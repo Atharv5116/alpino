@@ -1,0 +1,146 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-06 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "branch",
+  "policy_assignment",
+  "leave_policy",
+  "document_policy",
+  "shift_policy",
+  "overtime_policy",
+  "holiday_policy",
+  "comp_off_policy",
+  "attendance_policy",
+  "wfh_policy",
+  "grace_policy",
+  "reimbursement_policy",
+  "geofencing_policy",
+  "other_policy"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Branch",
+   "options": "Branch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "policy_assignment",
+   "fieldtype": "Link",
+   "label": "Policy Assignment",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Policy Assignment\"]]",
+   "options": "Policy"
+  },
+  {
+   "columns": 2,
+   "fieldname": "leave_policy",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Leave Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Leave Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "document_policy",
+   "fieldtype": "Link",
+   "label": "Document Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Document Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "columns": 2,
+   "fieldname": "shift_policy",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Shift Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Shift Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "overtime_policy",
+   "fieldtype": "Link",
+   "label": "Overtime Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Overtime Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "holiday_policy",
+   "fieldtype": "Link",
+   "label": "Holiday Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Holiday Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "comp_off_policy",
+   "fieldtype": "Link",
+   "label": "Comp Off Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Comp Off Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "columns": 2,
+   "fieldname": "attendance_policy",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Attendance Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Attendance Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "wfh_policy",
+   "fieldtype": "Link",
+   "label": "Work From Home (WFH) Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Work From Home (WFH) Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "grace_policy",
+   "fieldtype": "Link",
+   "label": "Grace Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Grace Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "reimbursement_policy",
+   "fieldtype": "Link",
+   "label": "Reimbursement Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Reimbursement Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "geofencing_policy",
+   "fieldtype": "Link",
+   "label": "Geo-Fencing Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Geo-Fencing Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "other_policy",
+   "fieldtype": "Link",
+   "label": "Other Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Other Policy\"]]",
+   "options": "Policy"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Branch Policy Access",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
