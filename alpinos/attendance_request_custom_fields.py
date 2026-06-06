@@ -18,6 +18,10 @@ def setup_attendance_request_custom_fields():
 
 	# Add custom fields to Attendance Request doctype
 	add_attendance_request_custom_fields()
+
+	# Remove superseded fields and hide the site-added "Time" field
+	cleanup_attendance_request_legacy_fields()
+	hide_attendance_request_time_field()
 	
 	# Add custom fields to Attendance doctype
 	add_attendance_custom_fields()
@@ -56,6 +60,9 @@ def add_attendance_request_custom_fields():
 				description="Single day of the request. For 'On Duty' use the From/To range instead.",
 			),
 			# --- Single-day check-in/out entry (every reason EXCEPT On Duty) ---
+			# Existing check-in/out for the day is shown as a headline bar at the top of
+			# the form (client script), not as fields here. These are TIME fields so only a
+			# time-of-day can be entered — the request Date supplies the date (no cross-date).
 			dict(
 				fieldname="custom_checkin_section",
 				label="Check-in / Check-out",
@@ -64,19 +71,11 @@ def add_attendance_request_custom_fields():
 				depends_on="eval:doc.reason!='On Duty'",
 			),
 			dict(
-				fieldname="custom_existing_check_in",
-				label="Existing Check-in",
-				fieldtype="Datetime",
-				read_only=1,
-				insert_after="custom_checkin_section",
-				description="Your existing check-in for this day, for reference (read-only).",
-			),
-			dict(
 				fieldname="custom_check_in_time",
 				label="Check-in Time",
-				fieldtype="Datetime",
-				insert_after="custom_existing_check_in",
-				description="Requested check-in time. Applied on approval.",
+				fieldtype="Time",
+				insert_after="custom_checkin_section",
+				description="Requested check-in time for the day. Applied on approval.",
 			),
 			dict(
 				fieldname="custom_checkin_col_break",
@@ -84,21 +83,13 @@ def add_attendance_request_custom_fields():
 				insert_after="custom_check_in_time",
 			),
 			dict(
-				fieldname="custom_existing_check_out",
-				label="Existing Check-out",
-				fieldtype="Datetime",
-				read_only=1,
-				insert_after="custom_checkin_col_break",
-				description="Your existing check-out for this day, for reference (read-only).",
-			),
-			dict(
 				fieldname="custom_check_out_time",
 				label="Check-out Time",
-				fieldtype="Datetime",
-				insert_after="custom_existing_check_out",
-				description="Requested check-out time. Applied on approval.",
+				fieldtype="Time",
+				insert_after="custom_checkin_col_break",
+				description="Requested check-out time for the day. Applied on approval.",
 			),
-			# --- Per-day old vs new grid: On Duty (multi-day) only ---
+			# --- Per-day grid: On Duty (multi-day) only ---
 			dict(
 				fieldname="custom_attendance_details",
 				label="Attendance Details (Old vs New)",
@@ -193,6 +184,38 @@ def set_attendance_request_date_visibility():
 			f"Error setting AR date visibility: {str(e)}\nTraceback: {frappe.get_traceback()}",
 			"AR Date Visibility",
 		)
+
+
+def cleanup_attendance_request_legacy_fields():
+	"""Delete superseded Attendance Request custom fields (the read-only Existing
+	Check-in/out Datetime fields — existing data is now shown as a top headline bar)."""
+	for fieldname in ("custom_existing_check_in", "custom_existing_check_out"):
+		cf = frappe.db.get_value(
+			"Custom Field", {"dt": "Attendance Request", "fieldname": fieldname}, "name"
+		)
+		if cf:
+			frappe.delete_doc("Custom Field", cf, force=1, ignore_permissions=True)
+	frappe.db.commit()
+
+
+def hide_attendance_request_time_field():
+	"""Hide the site-added "Time" field on Attendance Request (not part of standard HRMS
+	or this app). Handles both a Custom Field and a standard field, only if present."""
+	try:
+		if not frappe.get_meta("Attendance Request").has_field("time"):
+			return
+		cf = frappe.db.get_value(
+			"Custom Field", {"dt": "Attendance Request", "fieldname": "time"}, "name"
+		)
+		if cf:
+			frappe.db.set_value("Custom Field", cf, "hidden", 1)
+		else:
+			make_property_setter("Attendance Request", "time", "hidden", "1", "Check")
+		frappe.db.commit()
+		print("✅ Hid the Time field on Attendance Request")
+	except Exception as e:
+		print(f"⚠️  Could not hide Attendance Request Time field: {str(e)}")
+		frappe.log_error(frappe.get_traceback(), "Hide AR Time Field")
 
 
 def add_attendance_custom_fields():

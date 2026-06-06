@@ -5,7 +5,7 @@ based on the reason field and populate custom fields in Attendance
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, get_time, getdate, now_datetime
 from hrms.hr.doctype.attendance_request.attendance_request import AttendanceRequest as HRMSAttendanceRequest
 from alpinos.attendance_request_automation import gather_day_info, sync_attendance_request_reason
 
@@ -26,6 +26,13 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).
 		self._apply_requested_checkins()
 		super().on_submit()
+
+	def validate_no_attendance_to_create(self):
+		# Rule 6: allow the request even when attendance already exists with the same
+		# status (e.g. already Present). We still re-apply the requested check-ins and
+		# update in/out/working hours on approval (see create_or_update_attendance), so
+		# we never block submission here the way standard HRMS does.
+		pass
 
 	def _is_hr_manager(self):
 		return "HR Manager" in frappe.get_roles()
@@ -92,7 +99,6 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# Single-day requests use the simple Check-in/Check-out fields, not the grid.
 		if self.reason != "On Duty":
 			self.custom_attendance_details = []
-			self._sync_single_day_existing()
 			return
 
 		start = getdate(self.from_date)
@@ -135,30 +141,28 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if not row.new_out_time:
 				row.new_out_time = info["default_out_time"]
 
-	def _sync_single_day_existing(self):
-		"""Single-day: record the employee's existing check-in/out (read-only) for the day
-		for reference. The editable Check-in/out times are managed on the form (client),
-		so we never overwrite them here.
-		"""
-		date = self.get("custom_request_date") or self.from_date
-		if not date:
-			return
-		info = gather_day_info(self.employee, date)
-		self.custom_existing_check_in = info["old_in_time"]
-		self.custom_existing_check_out = info["old_out_time"]
+	@staticmethod
+	def _time_on_date(date, t):
+		"""Combine the request date with an entered time-of-day so a single-day punch
+		always lands on the request date (Check-in/out are Time fields)."""
+		if not t:
+			return None
+		return get_datetime(f"{getdate(date)} {get_time(t)}")
 
 	# ----- Rule 4: apply the requested punches on approval (submit) -----
 	def _apply_requested_checkins(self):
 		from alpinos.attendance_request_automation import get_assigned_shift_times
 
-		# Single-day: apply the simple Check-in / Check-out fields for the request date.
+		# Single-day: apply the simple Check-in / Check-out times on the request date.
 		if self.reason != "On Duty":
 			date = self.get("custom_request_date") or self.from_date
 			if date:
-				if self.get("custom_check_in_time"):
-					self._upsert_checkin(date, "IN", self.custom_check_in_time, None)
-				if self.get("custom_check_out_time"):
-					self._upsert_checkin(date, "OUT", self.custom_check_out_time, None)
+				in_dt = self._time_on_date(date, self.get("custom_check_in_time"))
+				out_dt = self._time_on_date(date, self.get("custom_check_out_time"))
+				if in_dt:
+					self._upsert_checkin(date, "IN", in_dt, None)
+				if out_dt:
+					self._upsert_checkin(date, "OUT", out_dt, None)
 			return
 
 		# On Duty (multi-day): apply each grid row; a blank punch falls back to the shift.
