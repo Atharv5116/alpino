@@ -630,7 +630,11 @@ frappe.ui.form.on('Attendance Request', {
 				alp_populate_details(frm, true);
 			});
 		}
-		alp_refresh(frm, false);
+		// Only auto-load on a brand-new form. Never re-set values on an already-saved
+		// doc (that async set_value would re-dirty the form right after saving).
+		if (frm.is_new()) {
+			alp_refresh(frm, false);
+		}
 	},
 	onload: function(frm) {
 		alp_toggle_date_fields(frm);
@@ -642,7 +646,7 @@ frappe.ui.form.on('Attendance Request', {
 	},
 	custom_request_date: function(frm) {
 		alp_sync_single_date(frm);
-		alp_load_single_day(frm);
+		alp_load_single_day(frm, true);
 	},
 	from_date: function(frm) {
 		if (frm.doc.reason === 'On Duty') alp_populate_details(frm, true);
@@ -662,13 +666,14 @@ function alp_refresh(frm, force) {
 	if (frm.doc.reason === 'On Duty') {
 		alp_populate_details(frm, force);
 	} else {
-		alp_load_single_day(frm);
+		alp_load_single_day(frm, force);
 	}
 }
 
-function alp_load_single_day(frm) {
+function alp_load_single_day(frm, force) {
 	// Non On-Duty: load the existing check-in/out for the single day into the read-only
-	// fields, and default the editable Check-in/out times when blank.
+	// fields. On an explicit change (force) reset the editable Check-in/out to that day's
+	// existing punches; otherwise only fill them when blank.
 	if (frm.doc.docstatus !== 0) return;
 	if (frm.doc.reason === 'On Duty') return;
 	var date = frm.doc.custom_request_date;
@@ -677,14 +682,14 @@ function alp_load_single_day(frm) {
 		method: 'alpinos.attendance_request_automation.get_day_checkin',
 		args: { employee: frm.doc.employee, date: date },
 		callback: function(r) {
-			if (!r.message) return;
-			frm.set_value('custom_existing_check_in', r.message.existing_in || null);
-			frm.set_value('custom_existing_check_out', r.message.existing_out || null);
-			if (!frm.doc.custom_check_in_time && r.message.existing_in) {
-				frm.set_value('custom_check_in_time', r.message.existing_in);
+			var msg = r.message || {};
+			frm.set_value('custom_existing_check_in', msg.existing_in || null);
+			frm.set_value('custom_existing_check_out', msg.existing_out || null);
+			if (force || !frm.doc.custom_check_in_time) {
+				frm.set_value('custom_check_in_time', msg.existing_in || null);
 			}
-			if (!frm.doc.custom_check_out_time && r.message.existing_out) {
-				frm.set_value('custom_check_out_time', r.message.existing_out);
+			if (force || !frm.doc.custom_check_out_time) {
+				frm.set_value('custom_check_out_time', msg.existing_out || null);
 			}
 		}
 	});

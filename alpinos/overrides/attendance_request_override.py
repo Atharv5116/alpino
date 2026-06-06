@@ -136,8 +136,9 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				row.new_out_time = info["default_out_time"]
 
 	def _sync_single_day_existing(self):
-		"""Single-day: show the employee's existing check-in/out (read-only) for the day,
-		and default the editable Check-in/out times to those existing punches when blank.
+		"""Single-day: record the employee's existing check-in/out (read-only) for the day
+		for reference. The editable Check-in/out times are managed on the form (client),
+		so we never overwrite them here.
 		"""
 		date = self.get("custom_request_date") or self.from_date
 		if not date:
@@ -145,10 +146,6 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		info = gather_day_info(self.employee, date)
 		self.custom_existing_check_in = info["old_in_time"]
 		self.custom_existing_check_out = info["old_out_time"]
-		if not self.get("custom_check_in_time") and info["old_in_time"]:
-			self.custom_check_in_time = info["old_in_time"]
-		if not self.get("custom_check_out_time") and info["old_out_time"]:
-			self.custom_check_out_time = info["old_out_time"]
 
 	# ----- Rule 4: apply the requested punches on approval (submit) -----
 	def _apply_requested_checkins(self):
