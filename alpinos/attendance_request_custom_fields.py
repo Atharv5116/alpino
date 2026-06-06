@@ -55,7 +55,9 @@ def add_attendance_request_custom_fields():
 				fieldname="custom_request_date",
 				label="Date",
 				fieldtype="Date",
-				insert_after="reason",
+				# Sit right next to From/To (same top-right spot) so the date field doesn't
+				# jump columns when switching between Office (single day) and On Duty (range).
+				insert_after="to_date",
 				depends_on="eval:doc.reason!='On Duty'",
 				mandatory_depends_on="eval:doc.reason!='On Duty'",
 				description="Single day of the request. For 'On Duty' use the From/To range instead.",
