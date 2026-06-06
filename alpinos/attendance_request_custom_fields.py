@@ -23,6 +23,10 @@ def setup_attendance_request_custom_fields():
 	cleanup_attendance_request_legacy_fields()
 	clear_attendance_request_details_depends_on()
 	hide_attendance_request_time_field()
+
+	# Disable any stray Attendance Request client script (tied to custom_time) that fills
+	# the check-in/out cells — only this app's script should drive the form.
+	disable_conflicting_attendance_request_client_scripts()
 	
 	# Add custom fields to Attendance doctype
 	add_attendance_custom_fields()
@@ -223,6 +227,34 @@ def hide_attendance_request_time_field():
 	except Exception as e:
 		print(f"⚠️  Could not hide Attendance Request Time field: {str(e)}")
 		frappe.log_error(frappe.get_traceback(), "Hide AR Time Field")
+
+
+def disable_conflicting_attendance_request_client_scripts():
+	"""Disable any OTHER Attendance Request client script that touches the check-in/out
+	cells (a stale customization tied to the custom_time field was filling blank cells with
+	the current time on save). Only this app's script should drive the form."""
+	mine = "Attendance Request - Check-in/Check-out Management"
+	try:
+		others = frappe.get_all(
+			"Client Script",
+			filters={"dt": "Attendance Request", "name": ["!=", mine], "enabled": 1},
+			fields=["name", "script"],
+		)
+		disabled = []
+		for cs in others:
+			body = cs.get("script") or ""
+			if any(
+				tok in body
+				for tok in ("custom_time", "custom_attendance_details", "check_in", "check_out")
+			):
+				frappe.db.set_value("Client Script", cs.name, "enabled", 0)
+				disabled.append(cs.name)
+		if disabled:
+			frappe.db.commit()
+			print(f"⚠️  Disabled conflicting Attendance Request client script(s): {disabled}")
+	except Exception as e:
+		print(f"⚠️  Could not check Attendance Request client scripts: {str(e)}")
+		frappe.log_error(frappe.get_traceback(), "Disable AR Client Scripts")
 
 
 def clear_attendance_request_details_depends_on():
