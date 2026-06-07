@@ -88,6 +88,12 @@ def get_columns(from_date, to_date):
 			"width": 90
 		},
 		{
+			"label": _("Late Entries"),
+			"fieldname": "late_entries",
+			"fieldtype": "Data",
+			"width": 130
+		},
+		{
 			"label": _("Late Deduction (Days)"),
 			"fieldname": "late_deduction",
 			"fieldtype": "Float",
@@ -298,8 +304,10 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.penalty_count = stats["penalty_count"]
 	row.avg_working_hours = stats["avg_working_hours"]
 
-	# Late-entry deduction (reduces paid days) — see compute_late_deduction.
-	row.late_deduction = compute_late_deduction(attendance_map)
+	# Late-entry flags + deduction (reduces paid days) — see compute_late_deduction.
+	late_info = compute_late_deduction(attendance_map)
+	row.late_entries = late_info["summary"]
+	row.late_deduction = late_info["deduction"]
 	if row.late_deduction:
 		row.paid_days = flt(row.paid_days) - flt(row.late_deduction)
 
@@ -386,13 +394,15 @@ def _get_shift_late_config(shift_name, cache):
 
 
 def compute_late_deduction(attendance_map):
-	"""Days to deduct for repeated late entries, per the Shift Type late-entry tiers.
+	"""Late-entry flag counts and the days to deduct, per the Shift Type late-entry tiers.
 
 	Each late check-in is classified into the highest tier whose 'Late By' minutes it meets
 	(minutes late from the shift's start_time). Then, per tier, every full group of 4 lates
 	deducts that tier's days; any leftover lates across tiers that combine to 4 deduct the
 	smallest tier's days (0.5). Nothing deducts below a group of 4. Computed for the report's
 	period (month), so it resets each period.
+
+	Returns {"counts": {late_by: n}, "summary": "15m × 4, 30m × 2", "deduction": days}.
 	"""
 	cache = {}
 	counts = {}        # late_by -> number of late entries
@@ -421,8 +431,13 @@ def compute_late_deduction(attendance_map):
 		counts[tier[0]] = counts.get(tier[0], 0) + 1
 		ded_by_tier[tier[0]] = tier[1]
 
+	# Flag-count summary, e.g. "15m × 4, 30m × 2" (sorted by late_by ascending).
+	summary = ", ".join(
+		f"{lb}m × {counts[lb]}" for lb in sorted(counts)
+	)
+
 	if not counts:
-		return 0.0
+		return {"counts": {}, "summary": "", "deduction": 0.0}
 
 	min_ded = min(ded_by_tier.values())
 	total = 0.0
@@ -432,7 +447,7 @@ def compute_late_deduction(attendance_map):
 		leftover += cnt % 4                            # remainder carried to the combo
 	total += (leftover // 4) * min_ded                 # combined leftovers in groups of 4
 
-	return flt(total, 2)
+	return {"counts": counts, "summary": summary, "deduction": flt(total, 2)}
 
 
 def get_holiday_map(employee, from_date, to_date):
