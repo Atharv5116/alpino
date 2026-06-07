@@ -211,8 +211,8 @@ def get_data(filters, from_date, to_date):
 	from_date = getdate(from_date)
 	to_date = getdate(to_date)
 	
-	employees = get_employees(filters)
-	
+	employees = get_employees(filters, from_date, to_date)
+
 	if not employees:
 		return []
 	
@@ -226,16 +226,25 @@ def get_data(filters, from_date, to_date):
 	return data
 
 
-def get_employees(filters):
-	"""Get list of employees based on filters"""
+def get_employees(filters, from_date, to_date):
+	"""Get employees who were active within the report date range.
+
+	An employee is considered active for the period if they had joined on or before the
+	period end and were not relieved before the period start. This excludes employees who
+	joined after the month or who left before it.
+	"""
 	conditions = []
-	
+
 	if filters.get("employee"):
 		conditions.append(f"name = '{filters.employee}'")
-	
+
 	if filters.get("company"):
 		conditions.append(f"company = '{filters.company}'")
-	
+
+	# Active within the date range: joined on/before period end, not relieved before its start.
+	conditions.append(f"date_of_joining IS NOT NULL AND date_of_joining <= '{getdate(to_date)}'")
+	conditions.append(f"(relieving_date IS NULL OR relieving_date >= '{getdate(from_date)}')")
+
 	where_clause = " AND ".join(conditions) if conditions else "1=1"
 	
 	query = f"""
