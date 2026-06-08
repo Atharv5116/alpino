@@ -37,8 +37,39 @@ def delete_policy_fields():
 				print(f"✅ Deleted field: {fieldname}")
 		except Exception as e:
 			print(f"⚠️  Could not delete field {fieldname}: {str(e)}")
-	
+
 	frappe.db.commit()
+
+
+def delete_location_field_if_not_link():
+	"""Recreate `location` as Link -> Branch when it is still the old Select.
+
+	`location` was historically a Select. Frappe forbids changing a Custom Field's fieldtype
+	between Select and Link (ALLOWED_FIELDTYPE_CHANGE), so create_custom_fields(update=True)
+	cannot convert it — it stays a Select. Delete the stale field (and any Property Setter on
+	it) so it is recreated as Link -> Branch. The DB column is kept on delete, so existing
+	values (Branch names like 'Head Office') are preserved.
+	"""
+	cf = frappe.db.get_value(
+		"Custom Field",
+		{"dt": "Employee Onboarding", "fieldname": "location"},
+		["name", "fieldtype", "options"],
+		as_dict=True,
+	)
+	if not cf or (cf.fieldtype == "Link" and cf.options == "Branch"):
+		return
+	try:
+		for ps in frappe.get_all(
+			"Property Setter",
+			filters={"doc_type": "Employee Onboarding", "field_name": "location"},
+			pluck="name",
+		):
+			frappe.delete_doc("Property Setter", ps, force=1, ignore_permissions=True)
+		frappe.delete_doc("Custom Field", cf.name, force=1, ignore_permissions=True)
+		frappe.db.commit()
+		print(f"✅ Deleted stale 'location' field (was {cf.fieldtype}) to recreate as Link -> Branch")
+	except Exception as e:
+		print(f"⚠️  Could not delete stale 'location' field: {str(e)}")
 
 
 def delete_column_break_reset_qualification():
@@ -274,7 +305,10 @@ def setup_employee_onboarding_custom_fields():
 	
 	# Delete existing policy fields first to allow changing from Select to Link
 	delete_policy_fields()
-	
+
+	# Same Select -> Link problem for the office `location` field (must become Link -> Branch)
+	delete_location_field_if_not_link()
+
 	# Delete column_break_reset_qualification field
 	delete_column_break_reset_qualification()
 	
@@ -815,12 +849,14 @@ def setup_employee_onboarding_custom_fields():
 			dict(
 				fieldname="location",
 				label="Location",
-				fieldtype="Select",
-				options="\nHead Office",
+				fieldtype="Link",
+				options="Branch",
 				insert_after="designation_company_profile",  # Will be after department via field_order
 				reqd=1,
-				read_only=0,  # Editable select field
-				# Will be auto-populated from Job Applicant's job_requisition -> Job Opening -> Location
+				read_only=0,
+				# Auto-populated from Job Applicant's job_requisition -> Job Opening -> Location
+				# (Job Opening.location is itself a Link -> Branch). Also used as the Branch key
+				# to auto-fill the Policy section from Designation.branch_policy_access.
 			),
 			dict(
 				fieldname="reporting_manager",
@@ -903,11 +939,19 @@ def setup_employee_onboarding_custom_fields():
 				reqd=1,
 			),
 			dict(
+				fieldname="salary_category",
+				label="Salary Category",
+				fieldtype="Link",
+				options="Salary Category",
+				insert_after="ctc_monthly",
+				# Master-driven category; mapped 1:1 to Employee.salary_category on "Create Employee".
+			),
+			dict(
 				fieldname="salary_template",
 				label="Salary Template",
 				fieldtype="Select",
 				options="\nNA",
-				insert_after="ctc_monthly",
+				insert_after="salary_category",
 				reqd=1,
 			),
 			dict(
