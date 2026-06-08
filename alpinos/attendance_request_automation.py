@@ -784,8 +784,11 @@ function alp_show_ar_remaining(frm) {
 			current: (frm.doc.name && !frm.is_new()) ? frm.doc.name : null
 		},
 		callback: function(r) {
+			// set_intro() appends a new banner each time (it only clears on empty text), so
+			// always clear first — this guarantees exactly one banner, never a stack.
+			frm.set_intro('');
 			var d = r.message;
-			if (!d || !d.limit) { frm.set_intro(''); return; }
+			if (!d || !d.limit) { return; }
 			if (d.exempt) {
 				frm.set_intro(__('HR Manager — exempt from the monthly Attendance Request limit.'), 'blue');
 				return;
