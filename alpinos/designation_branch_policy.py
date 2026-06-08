@@ -2,11 +2,11 @@
 
 - Adds a "Branch Policy Access" child table to Designation (one row per Branch, holding
   the 13 Link->Policy values).
-- On Employee Onboarding, when `designation_company_profile` or `branch` changes, the 13
-  policy fields are auto-filled from the matching Designation/branch row. All values stay
-  editable and are not re-overwritten on a normal save. NOTE: designation_company_profile
-  is a free-text Data field, so a match requires its text to equal a Designation record's
-  name (get_branch_policy returns {} otherwise -> no fill).
+- On Employee Onboarding, when `onboarding_designation` or `location` (office Branch) changes,
+  the 13 policy fields are auto-filled from the matching Designation/branch row. All values stay
+  editable and are not re-overwritten on a normal save. NOTE: onboarding_designation is a
+  free-text Data field, so a match requires its text to equal a Designation record's name
+  (get_branch_policy returns {} otherwise -> no fill).
 
 Wired via the after_migrate hook (setup_designation_branch_policy).
 """
@@ -95,9 +95,9 @@ def autofill_onboarding_policy(doc, method=None):
 	preserved and a normal re-save does not overwrite them.
 	"""
 	designation = doc.get("designation")
-	# `designation_company_profile` is free text; fall back to matching it to a Designation name.
-	if not designation and doc.get("designation_company_profile"):
-		designation = frappe.db.exists("Designation", doc.get("designation_company_profile"))
+	# `onboarding_designation` is free text; fall back to matching it to a Designation name.
+	if not designation and doc.get("onboarding_designation"):
+		designation = frappe.db.exists("Designation", doc.get("onboarding_designation"))
 	branch = doc.get("location")
 	if not designation or not branch:
 		return
@@ -115,7 +115,7 @@ def _create_onboarding_client_script():
 	fields_js = str(POLICY_FIELDS).replace("'", '"')
 	script = """
 frappe.ui.form.on('Employee Onboarding', {
-	designation_company_profile: function(frm) { alp_fetch_branch_policy(frm); },
+	onboarding_designation: function(frm) { alp_fetch_branch_policy(frm); },
 	location: function(frm) { alp_fetch_branch_policy(frm); }
 });
 
@@ -123,10 +123,10 @@ function alp_fetch_branch_policy(frm) {
 	// `location` is the office Branch (Link -> Branch), matched against the Branch key
 	// in Designation.branch_policy_access. (The `branch` field on Onboarding is the bank
 	// branch and is intentionally NOT used here.)
-	if (!frm.doc.designation_company_profile || !frm.doc.location) return;
+	if (!frm.doc.onboarding_designation || !frm.doc.location) return;
 	frappe.call({
 		method: 'alpinos.designation_branch_policy.get_branch_policy',
-		args: { designation: frm.doc.designation_company_profile, branch: frm.doc.location },
+		args: { designation: frm.doc.onboarding_designation, branch: frm.doc.location },
 		callback: function(r) {
 			if (!r.message) return;
 			var p = r.message;

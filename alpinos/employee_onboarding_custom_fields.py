@@ -867,8 +867,11 @@ def setup_employee_onboarding_custom_fields():
 				label="Designation",
 				fieldtype="Data",
 				insert_after="date_of_joining_onboarding",
-				reqd=1,
-				# Designation field in Company Profile Details section
+				reqd=0,
+				hidden=1,
+				# Legacy "Designation" field — superseded by `onboarding_designation`. Kept hidden and
+				# auto-synced from it (see populate_from_job_applicant) so existing logic that reads
+				# this field still works.
 			),
 			# Note: department field (standard) is positioned after designation_company_profile via property setter
 			dict(
@@ -920,8 +923,10 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Data",
 				insert_after="category",
 				reqd=1,
-				read_only=1,
+				read_only=0,
 				fetch_from="job_applicant.designation",
+				# Single "Designation" field for onboarding. Auto-fills from the Job Applicant but is
+				# editable so HR can set/override it (incl. manual onboardings with no Job Applicant).
 			),
 			dict(
 				fieldname="resign_date",

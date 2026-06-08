@@ -130,14 +130,21 @@ def populate_from_job_applicant(doc, method=None):
 	
 	# Notice Period
 	
-	# Designation - from Job Applicant
-	if job_applicant.designation:
+	# Designation - `onboarding_designation` is the single source of truth (editable; auto-fills
+	# from the Job Applicant). Only seed it from the applicant when not already set/overridden.
+	if job_applicant.designation and not doc.onboarding_designation:
 		doc.onboarding_designation = job_applicant.designation
-	
-	# Auto-populate hidden standard 'designation' field (Link) from designation_company_profile
-	# This ensures the hidden field is populated for Employee creation
-	# Only populate if designation_company_profile exists and designation is empty
-	# If designation_company_profile is empty, ensure designation is also empty (not causing validation errors)
+
+	# Keep the now-hidden `designation_company_profile` mirrored to onboarding_designation, so the
+	# hidden standard `designation` Link resolution and the Employee mapping (which read it) keep
+	# working. Back-fill the other way for legacy records that only have designation_company_profile.
+	if doc.get("onboarding_designation"):
+		doc.designation_company_profile = doc.onboarding_designation
+	elif doc.get("designation_company_profile"):
+		doc.onboarding_designation = doc.designation_company_profile
+
+	# Auto-populate hidden standard 'designation' field (Link) from the (mirrored) designation text.
+	# This ensures the hidden field is populated for Employee creation.
 	if hasattr(doc, 'designation_company_profile') and doc.designation_company_profile:
 		# Try to find matching Designation record
 		# If designation_company_profile is a string, try to match it with Designation doctype
