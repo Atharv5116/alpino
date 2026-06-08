@@ -46,6 +46,27 @@ def get_current_employee_and_approver():
 	}
 
 
+def enforce_single_day(doc, method=None):
+	"""Work From Home is single-day only.
+
+	- Keep `to_date` equal to `date` so the request always covers exactly one day (the To Date
+	  field is hidden in the UI; this guards every save path).
+	- Require the Half Day Period when Half Day is ticked (mirrors the form's mandatory rule and
+	  the Leave Application validation; blocks any path that bypasses the UI).
+	"""
+	if doc.doctype != "Work From Home Request":
+		return
+
+	if doc.get("date"):
+		doc.to_date = doc.date
+
+	if doc.get("half_day") and not doc.get("custom_half_day_period"):
+		frappe.throw(
+			_("Please select the Half Day Period (First Half / Second Half) for a half-day request."),
+			title=_("Half Day Period Required"),
+		)
+
+
 def auto_populate_employee_and_approver(doc, method=None):
 	"""
 	Auto-populate employee and leave approver when creating a new Work From Home Request

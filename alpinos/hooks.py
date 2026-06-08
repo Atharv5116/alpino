@@ -145,6 +145,7 @@ after_migrate = [
 	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
+	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
 	"alpinos.designation_branch_policy.setup_designation_branch_policy",
 	"alpinos.patches.create_attendance_widget.execute",
 	"alpinos.patches.create_hr_lifecycle_widget.execute",
@@ -346,8 +347,14 @@ doc_events = {
 	},
 	"Work From Home Request": {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
-		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
-		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
+		"validate": [
+			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+			"alpinos.work_from_home_request_automation.enforce_single_day",
+		],
+		"before_save": [
+			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+			"alpinos.work_from_home_request_automation.enforce_single_day",
+		]
 	},
 	"Attendance Request": {
 		"validate": "alpinos.attendance_request_automation.set_reporting_person"
