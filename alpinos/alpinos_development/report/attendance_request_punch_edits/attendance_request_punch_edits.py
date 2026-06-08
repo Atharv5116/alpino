@@ -10,6 +10,8 @@ Only genuine edits are listed — dates that had no prior check-in (On Duty / mi
 requests) are excluded, because there is no "old" punch to compare against.
 """
 
+import datetime
+
 import frappe
 from frappe import _
 from frappe.utils import getdate, get_first_day, get_last_day, get_datetime, get_time
@@ -44,13 +46,23 @@ def get_columns():
 	]
 
 
-def _combine(date, text_time):
-	"""Combine a date with a typed time-of-day (the new punches are stored as text, e.g.
-	'09:00') into a datetime, so old and new punches are comparable. Blank/invalid -> None."""
-	if text_time in (None, ""):
+def _combine(date, val):
+	"""Combine a date with a time-of-day into a datetime, so old and new punches are comparable.
+
+	The new punch is a Time field, which the DB returns as a timedelta (or time/datetime); older
+	records may hold typed text. Handle all of these. Blank/unparseable -> None.
+	"""
+	if val in (None, ""):
 		return None
+	d = getdate(date)
+	if isinstance(val, datetime.datetime):
+		return get_datetime(datetime.datetime.combine(d, val.time()))
+	if isinstance(val, datetime.timedelta):
+		return get_datetime(datetime.datetime.combine(d, datetime.time()) + val)
+	if isinstance(val, datetime.time):
+		return get_datetime(datetime.datetime.combine(d, val))
 	try:
-		return get_datetime(f"{getdate(date)} {get_time(text_time)}")
+		return get_datetime(f"{d} {get_time(val)}")
 	except Exception:
 		return None
 

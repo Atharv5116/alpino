@@ -178,12 +178,23 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	@staticmethod
 	def _time_on_date(date, t):
-		"""Combine a date with an entered time-of-day (typed as text, e.g. '09:00') so the
-		punch lands on that date. Returns None for blank/unparseable input."""
+		"""Combine a date with a time-of-day so the punch lands on that date.
+
+		`check_in`/`check_out` are Time fields, which come through as a timedelta (or time/
+		datetime); older records may hold typed text. Handle all. Blank/unparseable -> None.
+		"""
 		if t in (None, ""):
 			return None
+		import datetime as _dt
+		d = getdate(date)
+		if isinstance(t, _dt.datetime):
+			return get_datetime(_dt.datetime.combine(d, t.time()))
+		if isinstance(t, _dt.timedelta):
+			return get_datetime(_dt.datetime.combine(d, _dt.time()) + t)
+		if isinstance(t, _dt.time):
+			return get_datetime(_dt.datetime.combine(d, t))
 		try:
-			return get_datetime(f"{getdate(date)} {get_time(t)}")
+			return get_datetime(f"{d} {get_time(t)}")
 		except Exception:
 			return None
 
