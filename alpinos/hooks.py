@@ -146,6 +146,7 @@ after_migrate = [
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
+	"alpinos.employee_probation_automation.setup_employee_probation",
 	"alpinos.designation_branch_policy.setup_designation_branch_policy",
 	"alpinos.patches.create_attendance_widget.execute",
 	"alpinos.patches.create_hr_lifecycle_widget.execute",
@@ -345,6 +346,9 @@ doc_events = {
 		"on_update": [
 			"alpinos.employee_onboarding_automation.handle_workflow_transition"
 		]
+	},
+	"Employee": {
+		"validate": "alpinos.employee_probation_automation.calculate_probation_end_date"
 	},
 	"Work From Home Request": {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
