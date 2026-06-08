@@ -72,6 +72,28 @@ def delete_location_field_if_not_link():
 		print(f"⚠️  Could not delete stale 'location' field: {str(e)}")
 
 
+def delete_salary_category_field_if_doctype_missing():
+	"""Remove the dangling `salary_category` field when its master doctype isn't present.
+
+	`salary_category` is a Link -> Salary Category, but the 'Salary Category' doctype is part of
+	an in-progress feature that is not in this repo. A Link field pointing at a non-existent
+	doctype makes the Employee Onboarding form raise "Missing DocType". Drop the field until the
+	master ships; this is a no-op once 'Salary Category' exists.
+	"""
+	if frappe.db.exists("DocType", "Salary Category"):
+		return
+	cf = frappe.db.get_value(
+		"Custom Field", {"dt": "Employee Onboarding", "fieldname": "salary_category"}, "name"
+	)
+	if cf:
+		try:
+			frappe.delete_doc("Custom Field", cf, force=1, ignore_permissions=True)
+			frappe.db.commit()
+			print("✅ Removed dangling 'salary_category' field (Salary Category doctype not present)")
+		except Exception as e:
+			print(f"⚠️  Could not delete 'salary_category' field: {str(e)}")
+
+
 def delete_column_break_reset_qualification():
 	"""Delete column_break_reset_qualification field from Employee Onboarding"""
 	try:
@@ -308,6 +330,9 @@ def setup_employee_onboarding_custom_fields():
 
 	# Same Select -> Link problem for the office `location` field (must become Link -> Branch)
 	delete_location_field_if_not_link()
+
+	# Drop the salary_category field while its 'Salary Category' master is not in the repo
+	delete_salary_category_field_if_doctype_missing()
 
 	# Delete column_break_reset_qualification field
 	delete_column_break_reset_qualification()
@@ -939,19 +964,11 @@ def setup_employee_onboarding_custom_fields():
 				reqd=1,
 			),
 			dict(
-				fieldname="salary_category",
-				label="Salary Category",
-				fieldtype="Link",
-				options="Salary Category",
-				insert_after="ctc_monthly",
-				# Master-driven category; mapped 1:1 to Employee.salary_category on "Create Employee".
-			),
-			dict(
 				fieldname="salary_template",
 				label="Salary Template",
 				fieldtype="Select",
 				options="\nNA",
-				insert_after="salary_category",
+				insert_after="ctc_monthly",
 				reqd=1,
 			),
 			dict(
