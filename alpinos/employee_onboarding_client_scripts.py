@@ -196,6 +196,17 @@ function toggle_mandatory_indicators(frm) {
 	}
 }
 
+function alp_calc_probation_end(frm) {
+	// Probation End Date = Date of Joining (DOJ) + Probation Period (days). The field is
+	// read-only; this gives a live preview as the days / DOJ are edited.
+	if (!frm.doc.date_of_joining_onboarding) return;
+	var days = parseInt(frm.doc.probation_period) || 0;
+	var end = frappe.datetime.add_days(frm.doc.date_of_joining_onboarding, days);
+	if (frm.doc.probation_end_date !== end) {
+		frm.set_value('probation_end_date', end);
+	}
+}
+
 frappe.ui.form.on('Employee Onboarding', {
 	setup: function(frm) {
 		// Remove status filter - show all job applicants
@@ -214,6 +225,9 @@ frappe.ui.form.on('Employee Onboarding', {
 			};
 		});
 	},
+
+	probation_period: function(frm) { alp_calc_probation_end(frm); },
+	date_of_joining_onboarding: function(frm) { alp_calc_probation_end(frm); },
 
 	refresh: function(frm) {
 		// Ensure status / boarding_status fields are visible

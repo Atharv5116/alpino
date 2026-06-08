@@ -332,6 +332,7 @@ doc_events = {
 		"validate": [
 			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
 			"alpinos.designation_branch_policy.autofill_onboarding_policy",
+			"alpinos.employee_onboarding_automation.calculate_probation_end_date",
 			"alpinos.employee_onboarding_automation.validate_date_of_birth"
 		],
 		"before_save": [

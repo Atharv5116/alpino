@@ -1020,10 +1020,11 @@ def setup_employee_onboarding_custom_fields():
 			),
 			dict(
 				fieldname="probation_period",
-				label="Probation Period",
+				label="Probation Period (Days)",
 				fieldtype="Int",
 				insert_after="notice_period_salary",
 				reqd=1,
+				description="Number of probation days. Probation End Date is calculated from this.",
 			),
 			dict(
 				fieldname="probation_end_date",
@@ -1031,6 +1032,8 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Date",
 				insert_after="probation_period",
 				reqd=1,
+				read_only=1,
+				description="Auto-calculated: Date of Joining + Probation Period (days).",
 			),
 			dict(
 				fieldname="salary_mode",

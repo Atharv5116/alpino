@@ -313,6 +313,19 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 
 
 
+def calculate_probation_end_date(doc, method=None):
+	"""Auto-calculate Probation End Date = Date of Joining (DOJ) + Probation Period (days).
+
+	The field is read-only on the form, so this is the source of truth (covers Job-Applicant
+	and web-form created onboardings where no client script runs). No DOJ -> leave it untouched.
+	"""
+	doj = doc.get("date_of_joining_onboarding")
+	if not doj:
+		return
+	days = int(doc.get("probation_period") or 0)
+	doc.probation_end_date = add_days(getdate(doj), days)
+
+
 def validate_date_of_birth(doc, method=None):
 	"""
 	Validate that date_of_birth is at least 18 years old
