@@ -85,19 +85,48 @@ def get_branch_policy(designation, branch):
 	return {f: row.get(f) for f in POLICY_FIELDS}
 
 
+def autofill_onboarding_policy(doc, method=None):
+	"""Server-side auto-fill of the Employee Onboarding Policy section.
+
+	Runs on validate (save) so it works regardless of how the onboarding was created — including
+	records auto-created from a Job Applicant, where the client-script field-change events never
+	fire. Fills the 13 policy fields from the Designation's Branch Policy Access row matching the
+	office Branch (`location`). Only EMPTY policy fields are filled, so manually entered values are
+	preserved and a normal re-save does not overwrite them.
+	"""
+	designation = doc.get("designation")
+	# `designation_company_profile` is free text; fall back to matching it to a Designation name.
+	if not designation and doc.get("designation_company_profile"):
+		designation = frappe.db.exists("Designation", doc.get("designation_company_profile"))
+	branch = doc.get("location")
+	if not designation or not branch:
+		return
+
+	policy = get_branch_policy(designation, branch)
+	if not policy:
+		return
+
+	for fieldname in POLICY_FIELDS:
+		if not doc.get(fieldname) and policy.get(fieldname):
+			doc.set(fieldname, policy.get(fieldname))
+
+
 def _create_onboarding_client_script():
 	fields_js = str(POLICY_FIELDS).replace("'", '"')
 	script = """
 frappe.ui.form.on('Employee Onboarding', {
 	designation_company_profile: function(frm) { alp_fetch_branch_policy(frm); },
-	branch: function(frm) { alp_fetch_branch_policy(frm); }
+	location: function(frm) { alp_fetch_branch_policy(frm); }
 });
 
 function alp_fetch_branch_policy(frm) {
-	if (!frm.doc.designation_company_profile || !frm.doc.branch) return;
+	// `location` is the office Branch (Link -> Branch), matched against the Branch key
+	// in Designation.branch_policy_access. (The `branch` field on Onboarding is the bank
+	// branch and is intentionally NOT used here.)
+	if (!frm.doc.designation_company_profile || !frm.doc.location) return;
 	frappe.call({
 		method: 'alpinos.designation_branch_policy.get_branch_policy',
-		args: { designation: frm.doc.designation_company_profile, branch: frm.doc.branch },
+		args: { designation: frm.doc.designation_company_profile, branch: frm.doc.location },
 		callback: function(r) {
 			if (!r.message) return;
 			var p = r.message;

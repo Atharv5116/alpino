@@ -145,6 +145,8 @@ after_migrate = [
 	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
+	"alpinos.employee_custom_fields.setup_employee_custom_fields",
+	"alpinos.confirmation_leave_allocation.ensure_leave_setup",
 	"alpinos.designation_branch_policy.setup_designation_branch_policy",
 	"alpinos.patches.create_attendance_widget.execute",
 	"alpinos.patches.create_hr_lifecycle_widget.execute",
@@ -330,6 +332,7 @@ doc_events = {
 		],
 		"validate": [
 			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
+			"alpinos.designation_branch_policy.autofill_onboarding_policy",
 			"alpinos.employee_onboarding_automation.validate_date_of_birth"
 		],
 		"before_save": [
@@ -358,6 +361,12 @@ doc_events = {
 		],
 		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
 		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
+	},
+	"Sales Invoice": {
+		"on_submit": "alpinos.fcm_notification.on_sales_invoice_submit",
+	},
+	"Employee": {
+		"on_update": "alpinos.employee_confirmation.on_employee_update"
 	}
 }
 
