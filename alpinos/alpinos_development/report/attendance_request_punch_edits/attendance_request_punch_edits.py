@@ -56,7 +56,14 @@ def _combine(date, text_time):
 
 
 def get_data(filters):
-	conditions = ["ar.docstatus = 1", "log.parenttype = 'Attendance Request'", "log.check_in IS NOT NULL"]
+	# An "edit" = there was a prior punch on that date. Require either old check-in OR old
+	# check-out (the snapshot can miss check-in when the original log wasn't IN-typed), so
+	# genuine edits aren't dropped. On Duty / missing-punch rows have both NULL and stay excluded.
+	conditions = [
+		"ar.docstatus = 1",
+		"log.parenttype = 'Attendance Request'",
+		"(log.check_in IS NOT NULL OR log.check_out IS NOT NULL)",
+	]
 	params = {"from_date": getdate(filters.from_date), "to_date": getdate(filters.to_date)}
 
 	conditions.append("log.attendance_date BETWEEN %(from_date)s AND %(to_date)s")
