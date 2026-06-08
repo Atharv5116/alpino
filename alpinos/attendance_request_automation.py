@@ -3,7 +3,7 @@ Automation for Attendance Request to manage check-in/check-out times
 """
 import frappe
 from frappe import _
-from frappe.utils import add_days, date_diff, get_datetime, getdate
+from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, getdate
 
 
 def set_reporting_person(doc, method=None):
@@ -611,6 +611,43 @@ def populate_attendance_reason_after_submit(doc, method=None):
 	sync_attendance_request_reason(doc)
 
 
+@frappe.whitelist()
+def get_monthly_request_status(employee, on_date=None, current=None):
+	"""Monthly Attendance Request allowance for the form banner.
+
+	Mirrors CustomAttendanceRequest._enforce_monthly_limit exactly: counts the employee's
+	non-cancelled requests whose from_date falls in the month of `on_date` (default: today),
+	excluding the request currently being edited. HR Managers are exempt (no limit).
+	"""
+	if not employee:
+		return {}
+	on_date = getdate(on_date) if on_date else getdate()
+	month_start = on_date.replace(day=1)
+	next_month = add_months(month_start, 1)
+
+	user = frappe.db.get_value("Employee", employee, "user_id")
+	exempt = bool(user) and "HR Manager" in frappe.get_roles(user)
+
+	used = frappe.db.count(
+		"Attendance Request",
+		filters=[
+			["employee", "=", employee],
+			["docstatus", "<", 2],
+			["from_date", ">=", month_start],
+			["from_date", "<", next_month],
+			["name", "!=", current or "new-attendance-request"],
+		],
+	)
+	limit = 4
+	return {
+		"exempt": exempt,
+		"used": used,
+		"limit": limit,
+		"remaining": max(0, limit - used),
+		"month": formatdate(month_start, "MMMM yyyy"),
+	}
+
+
 def create_attendance_request_client_script():
 	"""Client script for Attendance Request.
 
@@ -625,6 +662,7 @@ def create_attendance_request_client_script():
 frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
 		alp_toggle_date_fields(frm);
+		alp_show_ar_remaining(frm);
 		// Auto-populate only on a brand-new form; re-opening a saved request must never
 		// re-dirty it.
 		if (frm.is_new()) {
@@ -642,15 +680,18 @@ frappe.ui.form.on('Attendance Request', {
 	custom_request_date: function(frm) {
 		alp_sync_single_date(frm);
 		alp_populate(frm, true);
+		alp_show_ar_remaining(frm);
 	},
 	from_date: function(frm) {
 		if (frm.doc.reason === 'On Duty') alp_populate(frm, true);
+		alp_show_ar_remaining(frm);
 	},
 	to_date: function(frm) {
 		if (frm.doc.reason === 'On Duty') alp_populate(frm, true);
 	},
 	employee: function(frm) {
 		alp_populate(frm, true);
+		alp_show_ar_remaining(frm);
 	},
 	show_attendance_warnings: function() {
 		// Suppress the standard HRMS attendance warnings section
@@ -727,6 +768,34 @@ function alp_populate(frm, force) {
 				});
 			}
 			frm.refresh_field('custom_attendance_details');
+		}
+	});
+}
+
+function alp_show_ar_remaining(frm) {
+	// Banner at the top of the form: how many Attendance Requests the employee has left this
+	// month (max 4). HR Managers are exempt. Mirrors the server-side monthly-limit check.
+	if (!frm.doc.employee) { frm.set_intro(''); return; }
+	frappe.call({
+		method: 'alpinos.attendance_request_automation.get_monthly_request_status',
+		args: {
+			employee: frm.doc.employee,
+			on_date: frm.doc.custom_request_date || frm.doc.from_date || frappe.datetime.now_date(),
+			current: (frm.doc.name && !frm.is_new()) ? frm.doc.name : null
+		},
+		callback: function(r) {
+			var d = r.message;
+			if (!d || !d.limit) { frm.set_intro(''); return; }
+			if (d.exempt) {
+				frm.set_intro(__('HR Manager — exempt from the monthly Attendance Request limit.'), 'blue');
+				return;
+			}
+			var color = d.remaining > 1 ? 'green' : (d.remaining === 1 ? 'orange' : 'red');
+			frm.set_intro(
+				__('Attendance Requests for {0}: {1} of {2} used, {3} remaining this month.',
+				   [d.month, d.used, d.limit, d.remaining]),
+				color
+			);
 		}
 	});
 }
