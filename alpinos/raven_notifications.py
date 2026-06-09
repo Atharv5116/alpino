@@ -1,8 +1,11 @@
 """Raven notifications to the HR and RM channels for actions needing approval/involvement.
 
 Whenever a request is submitted for approval (and again when it is approved/rejected), a
-message is posted to the shared HR and RM Raven channels so the relevant upper authorities
-are informed.
+message is posted — as a dedicated Raven bot — to the shared HR and RM Raven channels so the
+relevant upper authorities are informed.
+
+The bot (default name "HR & RM Notifier", overridable via site_config `raven_notification_bot`)
+is created on migrate by setup_raven_notification_bot.
 
 Channel resolution (first match wins):
   1. site_config keys `raven_hr_channel` / `raven_rm_channel` — a Raven Channel id or name.
@@ -17,6 +20,48 @@ import frappe
 
 def _raven_installed():
 	return bool(frappe.db.exists("DocType", "Raven Message"))
+
+
+def _bot_name():
+	return frappe.conf.get("raven_notification_bot") or "HR & RM Notifier"
+
+
+def setup_raven_notification_bot():
+	"""Create the notification bot once (after_migrate). No-op without Raven."""
+	if not _raven_installed() or not frappe.db.exists("DocType", "Raven Bot"):
+		return
+	name = _bot_name()
+	if frappe.db.exists("Raven Bot", name):
+		return
+	try:
+		bot = frappe.get_doc(
+			{
+				"doctype": "Raven Bot",
+				"bot_name": name,
+				"description": "Posts HR / RM approval notifications for requests needing action.",
+			}
+		)
+		bot.insert(ignore_permissions=True)
+		frappe.db.commit()
+		print(f"✅ Created Raven notification bot '{name}'")
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Raven notification bot setup")
+
+
+def _get_bot():
+	"""The Raven Bot to post as, or None when Raven/the bot isn't available."""
+	if not _raven_installed():
+		return None
+	name = _bot_name()
+	if not frappe.db.exists("Raven Bot", name):
+		# Self-heal if the after_migrate setup hasn't run yet.
+		setup_raven_notification_bot()
+		if not frappe.db.exists("Raven Bot", name):
+			return None
+	try:
+		return frappe.get_doc("Raven Bot", name)
+	except Exception:
+		return None
 
 
 def _resolve_channel(kind):
@@ -42,8 +87,13 @@ def _doc_link(doc):
 
 
 def post_to_hr_rm(text, doc=None):
-	"""Post `text` to both the HR and RM channels (deduped). Silent no-op without Raven."""
-	if not _raven_installed():
+	"""Post `text` to the HR and RM channels as the notification bot (deduped).
+
+	Silent no-op when Raven isn't installed, the bot is unavailable, or a channel can't be
+	resolved — so it never blocks the underlying submit/approve.
+	"""
+	bot = _get_bot()
+	if not bot:
 		return
 	channels = []
 	for kind in ("hr", "rm"):
@@ -52,14 +102,12 @@ def post_to_hr_rm(text, doc=None):
 			channels.append(ch)
 	for channel_id in channels:
 		try:
-			msg = frappe.new_doc("Raven Message")
-			msg.channel_id = channel_id
-			msg.text = text
-			if doc is not None:
-				msg.link_doctype = doc.doctype
-				msg.link_document = doc.name
-			msg.flags.ignore_permissions = True
-			msg.insert(ignore_permissions=True)
+			bot.send_message(
+				channel_id=channel_id,
+				text=text,
+				link_doctype=doc.doctype if doc is not None else None,
+				link_document=doc.name if doc is not None else None,
+			)
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Raven HR/RM notification")
 

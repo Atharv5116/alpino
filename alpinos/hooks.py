@@ -148,6 +148,7 @@ after_migrate = [
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
 	"alpinos.employee_probation_automation.setup_employee_probation",
 	"alpinos.salary_visibility.setup_employee_salary_field_permissions",
+	"alpinos.raven_notifications.setup_raven_notification_bot",
 	"alpinos.designation_branch_policy.setup_designation_branch_policy",
 	"alpinos.patches.create_attendance_widget.execute",
 	"alpinos.patches.create_hr_lifecycle_widget.execute",
