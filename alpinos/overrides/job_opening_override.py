@@ -8,7 +8,34 @@ from hrms.hr.doctype.job_opening.job_opening import JobOpening
 
 class CustomJobOpening(JobOpening):
 	"""Custom Job Opening class that adds skills and languages from Job Requisition"""
-	
+
+	def validate(self):
+		super().validate()
+		self._sync_salary_range()
+
+	def _sync_salary_range(self):
+		"""Display the salary range (min–max) on the website.
+
+		The salary value range comes from the linked Job Requisition (expected_compensation =
+		lower, ctc_upper_range = upper). Inherit those when the opening doesn't already have them,
+		then enable Publish Salary Range so the website template renders the min–max.
+		"""
+		if self.job_requisition:
+			jr = frappe.db.get_value(
+				"Job Requisition",
+				self.job_requisition,
+				["expected_compensation", "ctc_upper_range"],
+				as_dict=True,
+			)
+			if jr:
+				if not self.lower_range and jr.expected_compensation:
+					self.lower_range = jr.expected_compensation
+				if not self.upper_range and jr.ctc_upper_range:
+					self.upper_range = jr.ctc_upper_range
+
+		if self.lower_range or self.upper_range:
+			self.publish_salary_range = 1
+
 	def get_context(self, context):
 		"""Override get_context to add skills and languages from Job Requisition"""
 		# Call parent method first
