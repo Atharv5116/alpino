@@ -264,8 +264,17 @@ doc_events = {
 		],
 		"on_update": [
 			"alpinos.job_requisition_automation.create_published_job_opening_on_live",
-			"alpinos.job_requisition_automation.sync_status_with_job_opening"
+			"alpinos.job_requisition_automation.sync_status_with_job_opening",
+			"alpinos.raven_notifications.notify_job_requisition"
 		]
+	},
+	"Leave Application": {
+		"on_submit": "alpinos.raven_notifications.notify_leave_application",
+		"on_update_after_submit": "alpinos.raven_notifications.notify_leave_application"
+	},
+	"Expense Claim": {
+		"on_submit": "alpinos.raven_notifications.notify_expense_claim",
+		"on_update_after_submit": "alpinos.raven_notifications.notify_expense_claim"
 	},
 	"Job Opening": {
 		"before_save": [
@@ -362,10 +371,12 @@ doc_events = {
 		"before_save": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
-		]
+		],
+		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},
 	"Attendance Request": {
-		"validate": "alpinos.attendance_request_automation.set_reporting_person"
+		"validate": "alpinos.attendance_request_automation.set_reporting_person",
+		"on_submit": "alpinos.raven_notifications.notify_attendance_request"
 	},
 	"Attendance": {
 		"validate": [
