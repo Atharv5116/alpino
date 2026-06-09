@@ -147,6 +147,7 @@ after_migrate = [
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
 	"alpinos.employee_probation_automation.setup_employee_probation",
+	"alpinos.salary_visibility.setup_employee_salary_field_permissions",
 	"alpinos.designation_branch_policy.setup_designation_branch_policy",
 	"alpinos.patches.create_attendance_widget.execute",
 	"alpinos.patches.create_hr_lifecycle_widget.execute",
@@ -203,11 +204,13 @@ after_migrate = [
 permission_query_conditions = {
 	"Pick List": "alpinos.assigned_visibility.pick_list_query_conditions",
 	"Delivery Note": "alpinos.assigned_visibility.delivery_note_query_conditions",
+	"Salary Slip": "alpinos.salary_visibility.salary_slip_query_conditions",
 }
 
 has_permission = {
 	"Pick List": "alpinos.assigned_visibility.pick_list_has_permission",
 	"Delivery Note": "alpinos.assigned_visibility.delivery_note_has_permission",
+	"Salary Slip": "alpinos.salary_visibility.salary_slip_has_permission",
 }
 
 # Raven permissions (override from Alpinos, without touching raven app)
