@@ -418,6 +418,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if working_hours is None and in_time and out_time:
 				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
 		
+		# An incomplete punch (check-in but no check-out) has zero working hours -> Absent, even
+		# when there's no shift / threshold configured (the calc branch never ran). WFH and Half
+		# Day keep their own status. Adding the check-out later recomputes the real status.
+		is_half_day = bool(self.half_day) and self.half_day_date and date_diff(getdate(self.half_day_date), getdate(date)) == 0
+		if in_time and not out_time and self.reason != "Work From Home" and not is_half_day:
+			status = "Absent"
 		# working_hours is a NOT NULL column; only a check-in (no check-out) leaves it None.
 		working_hours = working_hours or 0
 
