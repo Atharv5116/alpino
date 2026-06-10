@@ -207,9 +207,12 @@ function getExcMessage(exc) {
   return ((parsed && parsed.message) || String(parsed)).toLowerCase();
 }
 
-function doCheckOut(checkoutReason) {
+function doCheckOut(outside) {
   const args = { latitude: latitude, longitude: longitude };
-  if (checkoutReason) args.checkout_reason = checkoutReason;
+  if (outside && outside.reason) {
+    args.outside_reason = outside.reason;
+    if (outside.remarks) args.outside_remarks = outside.remarks;
+  }
   frappe.call({
     method: "alpinos.attendance_widget.check_out",
     args: args,
@@ -237,7 +240,7 @@ function handleCheckoutError(r) {
   const errMsg = getExcMessage(r.exc);
   if (errMsg.indexOf("provide a reason") !== -1 || errMsg.indexOf("outside the office location") !== -1) {
     frappe.hide_msgprint();
-    showCheckoutReasonDialog(function(reason) { doCheckOut(reason); });
+    showCheckoutReasonDialog(function(outside) { doCheckOut(outside); });
     btn("btn-out", false);
     return;
   }
@@ -250,13 +253,18 @@ function showCheckoutReasonDialog(onConfirm) {
     title: "Reason for Check Out (Outside Office)",
     primary_action_label: "Check Out",
     primary_action() {
-      const reason = (d.$body.find(".checkout-reason-input").val() || "").trim();
+      const reason = (d.$body.find(".checkout-reason-select").val() || "").trim();
+      const remarks = (d.$body.find(".checkout-remarks-input").val() || "").trim();
       if (!reason) {
-        frappe.msgprint("Please enter a reason for checking out from outside the office location.");
+        frappe.msgprint("Please select a reason for checking out from outside the office location.");
+        return;
+      }
+      if (reason === "Other" && !remarks) {
+        frappe.msgprint("Please add an explanation for 'Other'.");
         return;
       }
       d.hide();
-      onConfirm(reason);
+      onConfirm({ reason: reason, remarks: remarks });
     },
     secondary_action_label: "Cancel",
     secondary_action() {
@@ -266,10 +274,20 @@ function showCheckoutReasonDialog(onConfirm) {
   });
   d.$body.html(`
     <p style="color:#64748b;margin-bottom:12px;font-size:13px;">
-      You are checking out from outside the office location. Please provide a reason (e.g. client visit, travel, WFH).
+      You are checking out from outside the office location. Please select a reason.
     </p>
-    <textarea class="form-control checkout-reason-input" rows="3" placeholder="Enter reason..."></textarea>
+    <select class="form-control checkout-reason-select" style="margin-bottom:10px;">
+      <option value="">Select reason...</option>
+      <option value="Client/Vendor">Client/Vendor</option>
+      <option value="Shoot">Shoot</option>
+      <option value="Meeting">Meeting</option>
+      <option value="Other">Other</option>
+    </select>
+    <textarea class="form-control checkout-remarks-input" rows="2" placeholder="Explanation / remarks (required for 'Other')" style="display:none;"></textarea>
   `);
+  d.$body.find(".checkout-reason-select").on("change", function () {
+    d.$body.find(".checkout-remarks-input").toggle($(this).val() === "Other");
+  });
   d.show();
 }
 

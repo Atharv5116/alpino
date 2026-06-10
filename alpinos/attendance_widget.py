@@ -364,7 +364,7 @@ def save_wfh_tasks(wfh_request, tasks):
 
 
 @frappe.whitelist()
-def check_out(latitude=None, longitude=None, checkout_reason=None):
+def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reason=None, outside_remarks=None):
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check Out.")
 
@@ -386,7 +386,17 @@ def check_out(latitude=None, longitude=None, checkout_reason=None):
         values["latitude"] = flt(latitude)
     if longitude is not None:
         values["longitude"] = flt(longitude)
-    if checkout_reason is not None and str(checkout_reason).strip():
+
+    # Structured outside-location reason (Client/Vendor, Shoot, Meeting, Other + remarks).
+    reason = (str(outside_reason).strip() if outside_reason else "")
+    remarks = (str(outside_remarks).strip() if outside_remarks else "")
+    if reason:
+        values["custom_outside_reason"] = reason
+        if remarks:
+            values["custom_outside_remarks"] = remarks
+        # Also satisfy the geofence override's "reason required" check + keep a readable trail.
+        values["checkout_reason"] = f"{reason}: {remarks}" if (reason == "Other" and remarks) else reason
+    elif checkout_reason is not None and str(checkout_reason).strip():
         values["checkout_reason"] = str(checkout_reason).strip()
 
     doc = frappe.get_doc(values)
