@@ -418,6 +418,9 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if working_hours is None and in_time and out_time:
 				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
 		
+		# working_hours is a NOT NULL column; only a check-in (no check-out) leaves it None.
+		working_hours = working_hours or 0
+
 		if doc:
 			was_submitted = doc.docstatus == 1
 			needs_update = False
