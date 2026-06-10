@@ -28,6 +28,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self._clear_unticked_punches()       # blank punches stay blank (no Time auto-now)
 		self._validate_detail_times()        # reject mistyped Check-in/Check-out times
 
+	def validate_request_overlap(self):
+		# Allow multiple requests for the same date — e.g. add the check-in in one request and the
+		# check-out in another (each is a separate edit). _upsert_checkin keeps a single IN/OUT per
+		# date and the monthly edit limit caps the volume, so the hard hrms overlap block is dropped.
+		pass
+
 	def _clear_unticked_punches(self):
 		"""A Time field auto-fills a new row with the current time; clear any punch whose Edit
 		box is unticked so an unedited check-in/check-out is stored blank, not the auto-now value."""
@@ -371,12 +377,11 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				# Auto-calculate based on HRMS config (Absent, Half Day, Present bounds)
 				calc_status, working_hours, late_entry, early_exit, in_time, out_time = shift_doc.get_attendance(logs)
 				
-				# Only allow the calculated status to override if reason isn't forcing WFH or Half Day.
-				# A present check-in must not read as Absent: when only a check-in was added (no
-				# check-out -> 0 hours), keep the requested status (Present) instead of Absent.
+				# Use the shift's hours-based status (Absent/Half Day/Present) unless the reason is
+				# forcing WFH or Half Day. Only a check-in (no check-out) => 0 hours => Absent; the
+				# status changes once a check-out is added and the hours are recomputed.
 				if self.reason != "Work From Home" and not (self.half_day and frappe.utils.date_diff(frappe.utils.getdate(self.half_day_date), frappe.utils.getdate(date)) == 0):
-					if not (calc_status == "Absent" and in_time):
-						status = calc_status
+					status = calc_status
 		else:
 			# Fallback if no shift
 			in_log = next((l for l in logs if l.log_type == "IN"), None)
@@ -399,10 +404,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if in_time and out_time and working_hours is None:
 				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
 
-		# For Absent (or existing doc already Absent e.g. from workflow): set in_time/out_time from shift when missing so they are visible
+		# For a truly-missing Absent day (no check-ins at all): set in_time/out_time from shift so
+		# they are visible. When there ARE check-ins (e.g. only a check-in was added), keep the
+		# real times — don't backfill the missing check-out from the shift.
 		attendance_is_absent = status == "Absent" or (doc and getattr(doc, "status", None) == "Absent")
 		shift_for_times = self.shift or (doc and getattr(doc, "shift", None))
-		if attendance_is_absent and (in_time is None or out_time is None) and shift_for_times:
+		if attendance_is_absent and not logs and (in_time is None or out_time is None) and shift_for_times:
 			shift_doc = frappe.get_doc("Shift Type", shift_for_times)
 			if in_time is None:
 				in_time = get_datetime(f"{date} {shift_doc.start_time}")
