@@ -105,12 +105,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 	# Each check-in or check-out the employee fills counts as one edit, so a single request
 	# that sets both a check-in and a check-out uses 2 of the 4 monthly edits.
 	def _punch_edits_in_details(self):
-		"""Edits in THIS request: number of filled check-in/check-out values across its details."""
+		"""Edits in THIS request: number of ticked Edit Check-in / Edit Check-out boxes."""
 		n = 0
 		for row in (self.custom_attendance_details or []):
-			if row.get("check_in"):
+			if row.get("edit_check_in"):
 				n += 1
-			if row.get("check_out"):
+			if row.get("edit_check_out"):
 				n += 1
 		return n
 
@@ -221,9 +221,14 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			return None
 
 	def _validate_detail_times(self):
-		"""Reject a Check-in/Check-out that was typed but can't be parsed as a time."""
+		"""Reject a ticked Check-in/Check-out whose time can't be parsed (unticked rows ignored)."""
 		for row in (self.custom_attendance_details or []):
-			for fieldname, label in (("check_in", "Check-in"), ("check_out", "Check-out")):
+			for fieldname, label, box in (
+				("check_in", "Check-in", "edit_check_in"),
+				("check_out", "Check-out", "edit_check_out"),
+			):
+				if not row.get(box):
+					continue
 				val = row.get(fieldname)
 				if val and self._time_on_date(row.attendance_date or getdate(), val) is None:
 					frappe.throw(
@@ -241,9 +246,11 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		for row in (self.custom_attendance_details or []):
 			if not row.attendance_date:
 				continue
-			in_dt = self._time_on_date(row.attendance_date, row.check_in)
-			out_dt = self._time_on_date(row.attendance_date, row.check_out)
-			# On Duty: a blank punch falls back to the assigned shift.
+			# Only a ticked 'Edit' box is a real punch. An unticked Time field may carry the
+			# auto-now default, so it must be ignored.
+			in_dt = self._time_on_date(row.attendance_date, row.check_in) if row.get("edit_check_in") else None
+			out_dt = self._time_on_date(row.attendance_date, row.check_out) if row.get("edit_check_out") else None
+			# On Duty: a blank punch (box not ticked) falls back to the assigned shift, as before.
 			if on_duty and (not in_dt or not out_dt):
 				shift_in, shift_out = get_assigned_shift_times(
 					self.employee, row.attendance_date, self.shift

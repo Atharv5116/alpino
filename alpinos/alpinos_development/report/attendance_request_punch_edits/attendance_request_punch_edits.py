@@ -97,7 +97,9 @@ def get_data(filters):
 			log.check_in AS old_check_in,
 			log.check_out AS old_check_out,
 			det.check_in AS new_check_in_text,
-			det.check_out AS new_check_out_text
+			det.check_out AS new_check_out_text,
+			det.edit_check_in AS edit_check_in,
+			det.edit_check_out AS edit_check_out
 		FROM `tabAttendance Request Log` log
 		INNER JOIN `tabAttendance Request` ar ON ar.name = log.parent
 		LEFT JOIN `tabAttendance Request Detail` det
@@ -122,9 +124,9 @@ def get_data(filters):
 				"reason": r.reason,
 				"attendance_date": r.attendance_date,
 				"old_check_in": r.old_check_in,
-				"new_check_in": _combine(r.attendance_date, r.new_check_in_text),
+				"new_check_in": _combine(r.attendance_date, r.new_check_in_text) if r.get("edit_check_in") else None,
 				"old_check_out": r.old_check_out,
-				"new_check_out": _combine(r.attendance_date, r.new_check_out_text),
+				"new_check_out": _combine(r.attendance_date, r.new_check_out_text) if r.get("edit_check_out") else None,
 			}
 		)
 	return data

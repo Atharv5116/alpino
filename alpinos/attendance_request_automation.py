@@ -614,20 +614,20 @@ def populate_attendance_reason_after_submit(doc, method=None):
 def count_attendance_request_edits(parents):
 	"""Total punch edits across the given Attendance Requests.
 
-	An "edit" is one filled check-in or check-out in the request's details, so a request that
-	sets both a check-in and a check-out counts as 2.
+	An "edit" is a ticked 'Edit Check-in' or 'Edit Check-out' checkbox in the request's details,
+	so a request that edits both a check-in and a check-out counts as 2. A left-blank punch (box
+	unticked) is not an edit.
 	"""
 	if not parents:
 		return 0
 	total = 0
-	for field in ("check_in", "check_out"):
+	for field in ("edit_check_in", "edit_check_out"):
 		total += frappe.db.count(
 			"Attendance Request Detail",
 			filters=[
 				["parenttype", "=", "Attendance Request"],
 				["parent", "in", parents],
-				[field, "is", "set"],
-				[field, "!=", ""],
+				[field, "=", 1],
 			],
 		)
 	return total

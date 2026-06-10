@@ -7,7 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "attendance_date",
+  "edit_check_in",
   "check_in",
+  "edit_check_out",
   "check_out",
   "attendance_status"
  ],
@@ -21,18 +23,36 @@
    "read_only": 1
   },
   {
-   "columns": 3,
-   "description": "24-hour HH:MM (e.g. 09:00). Leave blank to fall back to the assigned shift (On Duty).",
+   "columns": 1,
+   "fieldname": "edit_check_in",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Edit Check-in",
+   "default": "0"
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.edit_check_in",
+   "description": "Shown when 'Edit Check-in' is ticked.",
    "fieldname": "check_in",
-   "fieldtype": "Data",
+   "fieldtype": "Time",
    "in_list_view": 1,
    "label": "Check-in"
   },
   {
-   "columns": 3,
-   "description": "24-hour HH:MM (e.g. 18:00). Leave blank to fall back to the assigned shift (On Duty).",
+   "columns": 1,
+   "fieldname": "edit_check_out",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Edit Check-out",
+   "default": "0"
+  },
+  {
+   "columns": 2,
+   "depends_on": "eval:doc.edit_check_out",
+   "description": "Shown when 'Edit Check-out' is ticked.",
    "fieldname": "check_out",
-   "fieldtype": "Data",
+   "fieldtype": "Time",
    "in_list_view": 1,
    "label": "Check-out"
   },
