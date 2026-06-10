@@ -25,7 +25,17 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self._enforce_monthly_limit()        # Rule 1: max 4 per month
 		super().validate()
 		self._sync_tables()                  # build the Details + Existing Logs tables
+		self._clear_unticked_punches()       # blank punches stay blank (no Time auto-now)
 		self._validate_detail_times()        # reject mistyped Check-in/Check-out times
+
+	def _clear_unticked_punches(self):
+		"""A Time field auto-fills a new row with the current time; clear any punch whose Edit
+		box is unticked so an unedited check-in/check-out is stored blank, not the auto-now value."""
+		for row in (self.custom_attendance_details or []):
+			if not row.get("edit_check_in"):
+				row.check_in = None
+			if not row.get("edit_check_out"):
+				row.check_out = None
 
 	def on_submit(self):
 		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).
@@ -361,9 +371,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				# Auto-calculate based on HRMS config (Absent, Half Day, Present bounds)
 				calc_status, working_hours, late_entry, early_exit, in_time, out_time = shift_doc.get_attendance(logs)
 				
-				# Only allow the calculated status to override if reason isn't forcing WFH or Half Day
+				# Only allow the calculated status to override if reason isn't forcing WFH or Half Day.
+				# A present check-in must not read as Absent: when only a check-in was added (no
+				# check-out -> 0 hours), keep the requested status (Present) instead of Absent.
 				if self.reason != "Work From Home" and not (self.half_day and frappe.utils.date_diff(frappe.utils.getdate(self.half_day_date), frappe.utils.getdate(date)) == 0):
-					status = calc_status
+					if not (calc_status == "Absent" and in_time):
+						status = calc_status
 		else:
 			# Fallback if no shift
 			in_log = next((l for l in logs if l.log_type == "IN"), None)
