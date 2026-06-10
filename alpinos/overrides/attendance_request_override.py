@@ -246,19 +246,15 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		for row in (self.custom_attendance_details or []):
 			if not row.attendance_date:
 				continue
-			# Only a ticked 'Edit' box is a real punch. An unticked Time field may carry the
-			# auto-now default, so it must be ignored.
-			in_dt = self._time_on_date(row.attendance_date, row.check_in) if row.get("edit_check_in") else None
-			out_dt = self._time_on_date(row.attendance_date, row.check_out) if row.get("edit_check_out") else None
-			# On Duty: a blank punch (box not ticked) falls back to the assigned shift, as before.
-			if on_duty and (not in_dt or not out_dt):
-				shift_in, shift_out = get_assigned_shift_times(
-					self.employee, row.attendance_date, self.shift
-				)
-				if not in_dt:
-					in_dt = shift_in
-				if not out_dt:
-					out_dt = shift_out
+			if on_duty:
+				# On Duty needs no edit checkboxes — it always uses the assigned shift times for
+				# the whole range (the per-row punch fields are not used).
+				in_dt, out_dt = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
+			else:
+				# Only a ticked 'Edit' box is a real punch. An unticked Time field may carry the
+				# auto-now default, so it must be ignored.
+				in_dt = self._time_on_date(row.attendance_date, row.check_in) if row.get("edit_check_in") else None
+				out_dt = self._time_on_date(row.attendance_date, row.check_out) if row.get("edit_check_out") else None
 			if in_dt:
 				self._upsert_checkin(row.attendance_date, "IN", in_dt, None)
 			if out_dt:

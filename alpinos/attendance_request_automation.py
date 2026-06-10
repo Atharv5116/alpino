@@ -727,6 +727,15 @@ function alp_toggle_date_fields(frm) {
 	frm.toggle_display('from_date', on_duty);
 	frm.toggle_display('to_date', on_duty);
 	frm.toggle_display('custom_request_date', !on_duty);
+	// On Duty uses the assigned shift for the whole range, so the per-punch Edit checkboxes
+	// and time fields are not needed — hide those grid columns.
+	var grid = frm.fields_dict.custom_attendance_details && frm.fields_dict.custom_attendance_details.grid;
+	if (grid) {
+		['edit_check_in', 'check_in', 'edit_check_out', 'check_out'].forEach(function (f) {
+			grid.update_docfield_property(f, 'hidden', on_duty ? 1 : 0);
+		});
+		grid.refresh();
+	}
 }
 
 function alp_sync_single_date(frm) {
