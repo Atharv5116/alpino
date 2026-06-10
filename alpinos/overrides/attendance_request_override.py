@@ -7,7 +7,11 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, get_time, getdate, now_datetime
 from hrms.hr.doctype.attendance_request.attendance_request import AttendanceRequest as HRMSAttendanceRequest
-from alpinos.attendance_request_automation import gather_day_info, sync_attendance_request_reason
+from alpinos.attendance_request_automation import (
+	count_attendance_request_edits,
+	gather_day_info,
+	sync_attendance_request_reason,
+)
 
 
 class CustomAttendanceRequest(HRMSAttendanceRequest):
@@ -97,13 +101,27 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				title=_("Date Too Old"),
 			)
 
-	# ----- Rule 1: at most 4 requests per calendar month (HR Manager exempt) -----
+	# ----- Rule 1: at most 4 punch EDITS per calendar month (HR Manager exempt) -----
+	# Each check-in or check-out the employee fills counts as one edit, so a single request
+	# that sets both a check-in and a check-out uses 2 of the 4 monthly edits.
+	def _punch_edits_in_details(self):
+		"""Edits in THIS request: number of filled check-in/check-out values across its details."""
+		n = 0
+		for row in (self.custom_attendance_details or []):
+			if row.get("check_in"):
+				n += 1
+			if row.get("check_out"):
+				n += 1
+		return n
+
 	def _enforce_monthly_limit(self):
 		if self._is_hr_manager():
 			return
 		month_start = getdate(self.from_date).replace(day=1)
 		next_month = add_months(month_start, 1)
-		count = frappe.db.count(
+
+		# Edits already used this month by the employee's other requests.
+		others = frappe.get_all(
 			"Attendance Request",
 			filters=[
 				["employee", "=", self.employee],
@@ -112,13 +130,17 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				["from_date", "<", next_month],
 				["name", "!=", self.name or "new-attendance-request"],
 			],
+			pluck="name",
 		)
-		if count >= 4:
+		used = count_attendance_request_edits(others)
+		current = self._punch_edits_in_details()
+		if used + current > 4:
 			frappe.throw(
-				_("Limit reached: at most 4 Attendance Requests per month. {0} already exist for {1}.").format(
-					count, formatdate(month_start, "MMMM yyyy")
-				),
-				title=_("Monthly Limit Reached"),
+				_(
+					"Limit reached: at most 4 check-in/check-out edits per month. "
+					"{0} already used in {1} and this request adds {2}."
+				).format(used, formatdate(month_start, "MMMM yyyy"), current),
+				title=_("Monthly Edit Limit Reached"),
 			)
 
 	# ----- Build/refresh the two tables (Details + Existing Logs) for the date range -----

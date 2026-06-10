@@ -611,12 +611,34 @@ def populate_attendance_reason_after_submit(doc, method=None):
 	sync_attendance_request_reason(doc)
 
 
+def count_attendance_request_edits(parents):
+	"""Total punch edits across the given Attendance Requests.
+
+	An "edit" is one filled check-in or check-out in the request's details, so a request that
+	sets both a check-in and a check-out counts as 2.
+	"""
+	if not parents:
+		return 0
+	total = 0
+	for field in ("check_in", "check_out"):
+		total += frappe.db.count(
+			"Attendance Request Detail",
+			filters=[
+				["parenttype", "=", "Attendance Request"],
+				["parent", "in", parents],
+				[field, "is", "set"],
+				[field, "!=", ""],
+			],
+		)
+	return total
+
+
 @frappe.whitelist()
 def get_monthly_request_status(employee, on_date=None, current=None):
-	"""Monthly Attendance Request allowance for the form banner.
+	"""Monthly check-in/check-out edit allowance for the form banner.
 
-	Mirrors CustomAttendanceRequest._enforce_monthly_limit exactly: counts the employee's
-	non-cancelled requests whose from_date falls in the month of `on_date` (default: today),
+	Mirrors CustomAttendanceRequest._enforce_monthly_limit: counts the punch EDITS (each filled
+	check-in or check-out) across the employee's non-cancelled requests in the month of `on_date`,
 	excluding the request currently being edited. HR Managers are exempt (no limit).
 	"""
 	if not employee:
@@ -628,7 +650,7 @@ def get_monthly_request_status(employee, on_date=None, current=None):
 	user = frappe.db.get_value("Employee", employee, "user_id")
 	exempt = bool(user) and "HR Manager" in frappe.get_roles(user)
 
-	used = frappe.db.count(
+	others = frappe.get_all(
 		"Attendance Request",
 		filters=[
 			["employee", "=", employee],
@@ -637,7 +659,9 @@ def get_monthly_request_status(employee, on_date=None, current=None):
 			["from_date", "<", next_month],
 			["name", "!=", current or "new-attendance-request"],
 		],
+		pluck="name",
 	)
+	used = count_attendance_request_edits(others)
 	limit = 4
 	return {
 		"exempt": exempt,
@@ -795,7 +819,7 @@ function alp_show_ar_remaining(frm) {
 			}
 			var color = d.remaining > 1 ? 'green' : (d.remaining === 1 ? 'orange' : 'red');
 			frm.set_intro(
-				__('Attendance Requests for {0}: {1} of {2} used, {3} remaining this month.',
+				__('Check-in/Check-out edits for {0}: {1} of {2} used, {3} remaining this month.',
 				   [d.month, d.used, d.limit, d.remaining]),
 				color
 			);
