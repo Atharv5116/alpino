@@ -514,14 +514,14 @@ function formatDuration(ms){
         <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#EC4899;flex-shrink:0;"></span>Upcoming Birthdays</span>
         <span style="font-size:10px;color:#6b7280;">Next 30 days</span>
       </div>
-      <div id="alp-birthdays-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+      <div id="alp-birthdays-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
     </div>
     <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
         <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#6366F1;flex-shrink:0;"></span>Work Anniversaries</span>
         <span style="font-size:10px;color:#6b7280;">Next 30 days</span>
       </div>
-      <div id="alp-anniversaries-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+      <div id="alp-anniversaries-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
     </div>
   </div>
 
@@ -531,14 +531,14 @@ function formatDuration(ms){
         <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#F59E0B;flex-shrink:0;"></span>Employees on Leave Today</span>
         <span style="font-size:10px;color:#6b7280;">Today</span>
       </div>
-      <div id="alp-on-leave-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+      <div id="alp-on-leave-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
     </div>
     <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
         <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#10B981;flex-shrink:0;"></span>Employees on Work From Home Today</span>
         <span style="font-size:10px;color:#6b7280;">Today</span>
       </div>
-      <div id="alp-on-wfh-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+      <div id="alp-on-wfh-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
     </div>
   </div>
 </div>
@@ -929,14 +929,14 @@ loadMonth(current.getFullYear(), current.getMonth() + 1);
       <span style="font-size:13px;font-weight:600;color:#111827;">Upcoming Birthdays</span>
       <span style="font-size:10px;color:#9ca3af;">Next 30 days</span>
     </div>
-    <div id="alp-birthdays-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+    <div id="alp-birthdays-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
   </div>
   <div style="border-radius:14px;border:1px solid #e5e7eb;background:#f9fafb;padding:16px;min-height:140px;box-sizing:border-box;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
       <span style="font-size:13px;font-weight:600;color:#111827;">Work Anniversaries</span>
       <span style="font-size:10px;color:#9ca3af;">Next 30 days</span>
     </div>
-    <div id="alp-anniversaries-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+    <div id="alp-anniversaries-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
   </div>
 </div>
 """
