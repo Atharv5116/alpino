@@ -848,6 +848,14 @@ frappe.ui.form.on('Attendance Request Detail', {
 	},
 	edit_check_out: function (frm, cdt, cdn) {
 		if (!locals[cdt][cdn].edit_check_out) frappe.model.set_value(cdt, cdn, 'check_out', null);
+	},
+	check_in: function (frm, cdt, cdn) {
+		// Entering a time is itself the edit — keep the Edit box in sync so the punch is never
+		// silently dropped (and a cleared time unticks it).
+		frappe.model.set_value(cdt, cdn, 'edit_check_in', locals[cdt][cdn].check_in ? 1 : 0);
+	},
+	check_out: function (frm, cdt, cdn) {
+		frappe.model.set_value(cdt, cdn, 'edit_check_out', locals[cdt][cdn].check_out ? 1 : 0);
 	}
 });
 
