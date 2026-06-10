@@ -254,6 +254,9 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		if distance <= checkin_radius:
 			return
 
+		# Outside radius — flag it so HR can review outside-location check-ins.
+		self.custom_outside_location = 1
+
 		# Outside radius
 		if self.log_type == "IN":
 			# Allow check-in from outside only if employee has applied for Work From Home for this day

@@ -337,6 +337,30 @@ def add_employee_checkin_custom_fields():
 				hidden=1,
 				default=0
 			),
+			# Outside assigned geo-location: flag + the reason the employee gave.
+			dict(
+				fieldname="custom_outside_location",
+				label="Outside Assigned Location",
+				fieldtype="Check",
+				insert_after="is_manual",
+				read_only=1,
+				default=0,
+			),
+			dict(
+				fieldname="custom_outside_reason",
+				label="Outside Location Reason",
+				fieldtype="Select",
+				options="\nClient/Vendor\nShoot\nMeeting\nOther",
+				insert_after="custom_outside_location",
+				depends_on="eval:doc.custom_outside_location",
+			),
+			dict(
+				fieldname="custom_outside_remarks",
+				label="Explanation / Remarks",
+				fieldtype="Small Text",
+				insert_after="custom_outside_reason",
+				depends_on="eval:doc.custom_outside_reason=='Other'",
+			),
 		]
 	}
 	
