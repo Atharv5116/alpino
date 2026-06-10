@@ -39,10 +39,13 @@ frappe.call({
     var data = r.message || {};
     if (!data.allowed) { if (widget) widget.style.display = "none"; return; }
     var items = data.employees || [];
+    var sub = root.querySelector("#alp-missing-checkin-sub");
     if (!items.length) {
+      if (sub) sub.textContent = "By 11:30 AM \\u00b7 no approved leave";
       body.innerHTML = "<span style='color:#16a34a;'>Everyone has checked in (or is on leave). \\u2705</span>";
       return;
     }
+    if (sub) sub.textContent = "By 11:30 AM \\u00b7 no approved leave \\u00b7 " + items.length + " total";
     function esc(s) {
       return (s == null ? "" : String(s)).replace(/[&<>\"']/g, function (c) {
         return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
@@ -50,24 +53,38 @@ frappe.call({
     }
     var th = "padding:6px 10px;border:1px solid #e5e7eb;text-align:left;background:#f9fafb;font-weight:600;color:#374151;";
     var td = "padding:6px 10px;border:1px solid #e5e7eb;";
-    var html = "<table style='border-collapse:collapse;font-size:12px;width:100%;'>"
-      + "<thead><tr>"
-      + "<th style='" + th + "'>Sr No.</th>"
-      + "<th style='" + th + "'>Employee ID/Name</th>"
-      + "<th style='" + th + "'>Date</th>"
-      + "<th style='" + th + "'>Department</th>"
-      + "</tr></thead><tbody>";
-    items.forEach(function (it, i) {
-      var idName = it.employee + (it.employee_name ? " \\u2014 " + it.employee_name : "");
-      html += "<tr>"
-        + "<td style='" + td + "'>" + (i + 1) + "</td>"
-        + "<td style='" + td + "'>" + esc(idName) + "</td>"
-        + "<td style='" + td + "'>" + esc(it.date) + "</td>"
-        + "<td style='" + td + "'>" + esc(it.department) + "</td>"
-        + "</tr>";
-    });
-    html += "</tbody></table>";
-    body.innerHTML = html;
+    var PAGE = 8;
+    var shown = PAGE;
+    function render() {
+      var n = Math.min(shown, items.length);
+      var html = "<table style='border-collapse:collapse;font-size:12px;width:100%;'>"
+        + "<thead><tr>"
+        + "<th style='" + th + "'>Sr No.</th>"
+        + "<th style='" + th + "'>Employee ID/Name</th>"
+        + "<th style='" + th + "'>Date</th>"
+        + "<th style='" + th + "'>Department</th>"
+        + "</tr></thead><tbody>";
+      for (var i = 0; i < n; i++) {
+        var it = items[i];
+        var idName = it.employee + (it.employee_name ? " \\u2014 " + it.employee_name : "");
+        html += "<tr>"
+          + "<td style='" + td + "'>" + (i + 1) + "</td>"
+          + "<td style='" + td + "'>" + esc(idName) + "</td>"
+          + "<td style='" + td + "'>" + esc(it.date) + "</td>"
+          + "<td style='" + td + "'>" + esc(it.department) + "</td>"
+          + "</tr>";
+      }
+      html += "</tbody></table>";
+      if (items.length > n) {
+        html += "<div style='margin-top:10px;text-align:center;'>"
+          + "<button id='alp-mc-more' style='padding:6px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;color:#374151;cursor:pointer;'>Load more (" + (items.length - n) + ")</button>"
+          + "</div>";
+      }
+      body.innerHTML = html;
+      var btn = root.querySelector("#alp-mc-more");
+      if (btn) btn.onclick = function () { shown += PAGE; render(); };
+    }
+    render();
   },
 });
 """
