@@ -789,6 +789,11 @@ function alp_populate(frm, force) {
 					var c = frm.add_child('custom_attendance_details');
 					c.attendance_date = row.attendance_date;
 					c.attendance_status = row.attendance_status;
+					// Clear the Time auto-now defaults so an unedited punch starts blank.
+					c.edit_check_in = 0;
+					c.edit_check_out = 0;
+					c.check_in = null;
+					c.check_out = null;
 				});
 			} else {
 				// Keep the user's entered times; only refresh the status per date.
@@ -835,6 +840,24 @@ function alp_show_ar_remaining(frm) {
 		}
 	});
 }
+
+frappe.ui.form.on('Attendance Request Detail', {
+	edit_check_in: function (frm, cdt, cdn) {
+		// Unticking clears the punch so it stays blank (no Time auto-now value left behind).
+		if (!locals[cdt][cdn].edit_check_in) frappe.model.set_value(cdt, cdn, 'check_in', null);
+	},
+	edit_check_out: function (frm, cdt, cdn) {
+		if (!locals[cdt][cdn].edit_check_out) frappe.model.set_value(cdt, cdn, 'check_out', null);
+	}
+});
+
+frappe.ui.form.on('Attendance Request', {
+	custom_attendance_details_add: function (frm, cdt, cdn) {
+		// New row from "Add Row": clear the Time auto-now defaults so it starts blank.
+		frappe.model.set_value(cdt, cdn, 'check_in', null);
+		frappe.model.set_value(cdt, cdn, 'check_out', null);
+	}
+});
 """
 
 	# Create or update client script
