@@ -1179,6 +1179,25 @@ def get_assigned_shift_times(employee, date, ar_shift=None):
 	except Exception:
 		pass
 
+	# Direct Shift Assignment lookup covering the date — catches assignments that the above
+	# miss: an open-ended one (no end_date, which HRMS's get_active_shifts skips) or one that
+	# has expired to status Inactive (which get_employee_shift skips). This lets a backdated
+	# On Duty still resolve the employee's shift.
+	sa = frappe.get_all(
+		"Shift Assignment",
+		filters=[
+			["employee", "=", employee],
+			["docstatus", "=", 1],
+			["start_date", "<=", date],
+		],
+		or_filters=[["end_date", ">=", date], ["end_date", "is", "not set"]],
+		fields=["shift_type"],
+		order_by="start_date desc",
+		limit=1,
+	)
+	if sa:
+		candidates.append(sa[0].shift_type)
+
 	seen = set()
 	for shift_type in candidates:
 		if not shift_type or shift_type in seen:
