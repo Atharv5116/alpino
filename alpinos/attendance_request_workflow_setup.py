@@ -4,20 +4,23 @@ Flow:
   - MISSING request (no prior punch on record): Reporting Manager approves -> done.
   - EDIT request  (a prior punch exists)       : Reporting Manager approves -> HR Manager approves -> done.
 
-"Missing vs edit" is decided from the request's Existing Check-in Logs snapshot: if any
-logged check-in/check-out is set, a prior punch existed (edit); otherwise it's missing.
-The branch happens at the Reporting Manager step via two same-action transitions whose
-conditions are mutually exclusive (only one is ever valid).
+Everything below is enforced from this setup script — there is nothing to configure by
+hand:
+
+  * "Missing vs edit" is decided from the request's Existing Check-in Logs snapshot: if
+    any logged check-in/check-out is set, a prior punch existed (edit); otherwise it's
+    missing. The branch happens at the Reporting Manager step via two same-action
+    transitions whose conditions are mutually exclusive (only one is ever valid).
+
+  * Only the employee's OWN reporting person may act on the Reporting Manager step — not
+    any reporting manager. The request stores that person's user in `reporting_person`
+    (set on validate from Employee.reports_to -> user_id), so the condition is simply
+    `frappe.session.user == doc.reporting_person`.
 
 Approved = submitted (doc_status 1), which is when the app applies the requested
 check-ins (Attendance Request on_submit). HR Manager is also allowed on the Reporting
-Manager step as a safety valve so a request can never get stuck if a manager is
-unavailable.
-
-Reporting Manager role visibility is handled by alpinos.approval_access (granted to any
-user with direct reports). To restrict each approval to the employee's OWN manager,
-append to the two RM 'Approve' conditions (with ` and `):
-    frappe.session.user == frappe.db.get_value('Employee', frappe.db.get_value('Employee', doc.employee, 'reports_to'), 'user_id')
+Manager step as a safety valve so a request can never get stuck if the employee has no
+reporting person on record.
 """
 
 import frappe
@@ -41,6 +44,15 @@ EDIT_COND = (
 )
 MISSING_COND = f"not ({EDIT_COND})"
 
+# Only the employee's OWN reporting person (reporting_person holds their user) may act.
+RM_IS_OWN_MANAGER = "frappe.session.user == doc.reporting_person"
+
+
+def _and(*conds):
+	"""Join non-empty condition fragments with AND (each parenthesised)."""
+	return " and ".join(f"({c})" for c in conds if c)
+
+
 WORKFLOW_ACTIONS = ("Submit for Approval", "Approve", "Reject", "Resubmit")
 
 # (state, doc_status, allow_edit)
@@ -55,11 +67,11 @@ STATES = (
 # (state, action, next_state, allowed_role, condition)
 TRANSITIONS = (
 	(S_DRAFT, "Submit for Approval", S_RM, "Employee", ""),
-	# Reporting Manager step — branch on missing vs edit.
-	(S_RM, "Approve", S_APPROVED, "Reporting Manager", MISSING_COND),
-	(S_RM, "Approve", S_HR, "Reporting Manager", EDIT_COND),
-	(S_RM, "Reject", S_REJECTED, "Reporting Manager", ""),
-	# HR Manager safety valve on the RM step (same branching).
+	# Reporting Manager step — only the employee's OWN reporting person; branch missing vs edit.
+	(S_RM, "Approve", S_APPROVED, "Reporting Manager", _and(MISSING_COND, RM_IS_OWN_MANAGER)),
+	(S_RM, "Approve", S_HR, "Reporting Manager", _and(EDIT_COND, RM_IS_OWN_MANAGER)),
+	(S_RM, "Reject", S_REJECTED, "Reporting Manager", RM_IS_OWN_MANAGER),
+	# HR Manager safety valve on the RM step (same branching, no own-manager restriction).
 	(S_RM, "Approve", S_APPROVED, "HR Manager", MISSING_COND),
 	(S_RM, "Approve", S_HR, "HR Manager", EDIT_COND),
 	(S_RM, "Reject", S_REJECTED, "HR Manager", ""),
