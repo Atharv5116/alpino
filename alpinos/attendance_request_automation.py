@@ -832,6 +832,7 @@ function alp_populate(frm, force) {
 			frm.refresh_field('custom_existing_logs');
 
 			// Check-in / Check-out Details (editable).
+			var on_duty = frm.doc.reason === 'On Duty';
 			var emptyDetails = (frm.doc.custom_attendance_details || []).length === 0;
 			if (force || emptyDetails) {
 				frm.clear_table('custom_attendance_details');
@@ -839,9 +840,11 @@ function alp_populate(frm, force) {
 					var c = frm.add_child('custom_attendance_details');
 					c.attendance_date = row.attendance_date;
 					c.attendance_status = row.attendance_status;
-					// Clear the Time auto-now defaults so an unedited punch starts blank.
-					c.edit_check_in = 0;
-					c.edit_check_out = 0;
+					// Clear the Time auto-now defaults so an unedited punch starts blank. On Duty
+					// has no visible Edit boxes, so pre-tick them to keep its time fields editable
+					// (read_only_depends_on gates on the box); non On-Duty stays gated/blank.
+					c.edit_check_in = on_duty ? 1 : 0;
+					c.edit_check_out = on_duty ? 1 : 0;
 					c.check_in = null;
 					c.check_out = null;
 				});
@@ -908,6 +911,11 @@ frappe.ui.form.on('Attendance Request', {
 		// New row from "Add Row": clear the Time auto-now defaults so it starts blank.
 		frappe.model.set_value(cdt, cdn, 'check_in', null);
 		frappe.model.set_value(cdt, cdn, 'check_out', null);
+		// On Duty has no visible Edit boxes — pre-tick so the time fields are editable.
+		if (frm.doc.reason === 'On Duty') {
+			frappe.model.set_value(cdt, cdn, 'edit_check_in', 1);
+			frappe.model.set_value(cdt, cdn, 'edit_check_out', 1);
+		}
 	}
 });
 """
