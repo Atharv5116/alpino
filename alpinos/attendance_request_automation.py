@@ -900,6 +900,16 @@ frappe.ui.form.on('Attendance Request Detail', {
 	edit_check_out: function (frm, cdt, cdn) {
 		// Unticking clears the CHECK-OUT only (the check-in is left untouched).
 		if (!locals[cdt][cdn].edit_check_out) frappe.model.set_value(cdt, cdn, 'check_out', null);
+	},
+	check_in: function (frm, cdt, cdn) {
+		// A time only counts when its Edit box is ticked. Drop any value (including the Time
+		// field's auto-"now") that lands on an UNticked check-in, so it never shows or applies.
+		var row = locals[cdt][cdn];
+		if (!row.edit_check_in && row.check_in) frappe.model.set_value(cdt, cdn, 'check_in', null);
+	},
+	check_out: function (frm, cdt, cdn) {
+		var row = locals[cdt][cdn];
+		if (!row.edit_check_out && row.check_out) frappe.model.set_value(cdt, cdn, 'check_out', null);
 	}
 });
 
