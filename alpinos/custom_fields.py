@@ -472,6 +472,17 @@ def setup_custom_fields():
 		),
 	],
 	"Employee": [
+		# Internship duration in months (e.g. 1 = 1 month, 4 = 4 months).
+		# Used by the HR dashboard to compute internship completion = Date of Joining + N months.
+		dict(
+			fieldname="custom_internship_duration",
+			label="Internship Duration (Months)",
+			fieldtype="Int",
+			insert_after="probation_end_date",
+			non_negative=1,
+			description="Internship duration in months (e.g. 1 = 1 month, 4 = 4 months). Internship end = Date of Joining + this many months.",
+		),
+
 		# Welcome Formalities Section Break (below Company Details section)
 		dict(
 			fieldname="todo_checklist_section",

@@ -13,6 +13,13 @@ def setup_item_custom_fields():
 	custom_fields = {
 		"Item": [
 			dict(
+				fieldname="custom_sequence",
+				label="Sequence",
+				fieldtype="Int",
+				insert_after="item_code",
+				in_list_view=1,
+			),
+			dict(
 				fieldname="custom_sku_no",
 				label="SKU No",
 				fieldtype="Data",
@@ -44,6 +51,13 @@ def setup_item_custom_fields():
 				fieldtype="Check",
 				insert_after="has_expiry_date",
 				default=0,
+			),
+			dict(
+				fieldname="custom_gross_weight",
+				label="Gross Weight (per Box)",
+				fieldtype="Float",
+				insert_after="weight_uom",
+				description="Used by Pick List as Std Weight / Box and for gross weight totals.",
 			),
 		]
 	}
@@ -94,6 +108,14 @@ def _setup_item_property_setters():
 			property="label",
 			value="Default Purchase UOM",
 			property_type="Data",
+		),
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Item",
+			field_name="shelf_life_in_days",
+			property="hidden",
+			value="0",
+			property_type="Check",
 		),
 	]
 

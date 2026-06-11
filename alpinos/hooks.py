@@ -117,8 +117,13 @@ fixtures = [
 
 patches = [
 	"alpinos.patches.create_attendance_widget",
+	"alpinos.patches.create_hr_lifecycle_widget",
+	"alpinos.patches.create_missing_checkin_widget",
+	"alpinos.patches.create_approvals_widget",
+	"alpinos.patches.create_outside_geo_widget",
 	"alpinos.patches.v1_0.delete_unused_employee_bank_fields",
 	"alpinos.patches.v1_0.remove_pick_list_batch_mandatory",
+	"alpinos.patches.v1_0.install_alpinos_removed_pick_list_item",
 ]
 
 after_migrate = [
@@ -141,12 +146,24 @@ after_migrate = [
 	"alpinos.attendance_request_automation.create_attendance_request_client_script",
 	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
+	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
+	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
+	"alpinos.employee_probation_automation.setup_employee_probation",
+	"alpinos.salary_visibility.setup_employee_salary_field_permissions",
+	"alpinos.raven_notifications.setup_raven_notification_bot",
+	"alpinos.designation_branch_policy.setup_designation_branch_policy",
 	"alpinos.patches.create_attendance_widget.execute",
+	"alpinos.patches.create_hr_lifecycle_widget.execute",
+	"alpinos.patches.create_missing_checkin_widget.execute",
+	"alpinos.patches.create_approvals_widget.execute",
+	"alpinos.patches.create_outside_geo_widget.execute",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
 	"alpinos.sales_order_scheme_damage_migration.run_sales_order_scheme_damage_split_migration",
 	"alpinos.item_custom_fields.setup_item_custom_fields",
+	"alpinos.offline_buyer_api.seed_customer_types",
+	"alpinos.assigned_visibility.setup_visibility_roles",
 	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
 	"alpinos.pick_list_custom_fields.setup_pick_list_custom_fields",
 	"alpinos.sales_order_client_script.create_sales_order_client_script",
@@ -189,7 +206,17 @@ after_migrate = [
 # -----------
 # Permissions evaluated in scripted ways
 
-permission_query_conditions = {}
+permission_query_conditions = {
+	"Pick List": "alpinos.assigned_visibility.pick_list_query_conditions",
+	"Delivery Note": "alpinos.assigned_visibility.delivery_note_query_conditions",
+	"Salary Slip": "alpinos.salary_visibility.salary_slip_query_conditions",
+}
+
+has_permission = {
+	"Pick List": "alpinos.assigned_visibility.pick_list_has_permission",
+	"Delivery Note": "alpinos.assigned_visibility.delivery_note_has_permission",
+	"Salary Slip": "alpinos.salary_visibility.salary_slip_has_permission",
+}
 
 # Raven permissions (override from Alpinos, without touching raven app)
 # Ensures Raven can list channels/messages by membership (helps imports + visibility).
@@ -242,8 +269,17 @@ doc_events = {
 		],
 		"on_update": [
 			"alpinos.job_requisition_automation.create_published_job_opening_on_live",
-			"alpinos.job_requisition_automation.sync_status_with_job_opening"
+			"alpinos.job_requisition_automation.sync_status_with_job_opening",
+			"alpinos.raven_notifications.notify_job_requisition"
 		]
+	},
+	"Leave Application": {
+		"on_submit": "alpinos.raven_notifications.notify_leave_application",
+		"on_update_after_submit": "alpinos.raven_notifications.notify_leave_application"
+	},
+	"Expense Claim": {
+		"on_submit": "alpinos.raven_notifications.notify_expense_claim",
+		"on_update_after_submit": "alpinos.raven_notifications.notify_expense_claim"
 	},
 	"Job Opening": {
 		"before_save": [
@@ -280,16 +316,30 @@ doc_events = {
 	},
 	"Pick List": {
 		"before_validate": "alpinos.pick_list_hooks.before_validate_pick_list",
-		"validate": "alpinos.pick_list_hooks.validate_pick_list",
+		"validate": [
+			"alpinos.pick_list_hooks.validate_pick_list",
+			"alpinos.expiry_validation.validate_expiry_on_pick_list",
+		],
 	},
 	"Delivery Note": {
-		"validate": "alpinos.delivery_note_hooks.validate_delivery_note",
+		"validate": [
+			"alpinos.delivery_note_hooks.validate_delivery_note",
+			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
+		],
+	},
+	"Batch": {
+		"before_validate": "alpinos.batch_hooks.compute_expiry_from_shelf_life",
+	},
+	"Item": {
+		"before_insert": "alpinos.item_sequence.reorder_on_insert",
+		"before_save": "alpinos.item_sequence.reorder_on_save",
 	},
 	"Sales Order": {
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
+			"alpinos.dispatch_date_utils.validate_dispatch_date_on_save",
 		],
 	},
 	"Employee Onboarding": {
@@ -299,6 +349,8 @@ doc_events = {
 		],
 		"validate": [
 			"alpinos.employee_onboarding_automation.populate_from_job_applicant",
+			"alpinos.designation_branch_policy.autofill_onboarding_policy",
+			"alpinos.employee_onboarding_automation.calculate_probation_end_date",
 			"alpinos.employee_onboarding_automation.validate_date_of_birth"
 		],
 		"before_save": [
@@ -312,17 +364,29 @@ doc_events = {
 			"alpinos.employee_onboarding_automation.handle_workflow_transition"
 		]
 	},
+	"Employee": {
+		"validate": "alpinos.employee_probation_automation.calculate_probation_end_date"
+	},
 	"Work From Home Request": {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
-		"validate": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
-		"before_save": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver"
+		"validate": [
+			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+			"alpinos.work_from_home_request_automation.enforce_single_day",
+		],
+		"before_save": [
+			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
+			"alpinos.work_from_home_request_automation.enforce_single_day",
+		],
+		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},
 	"Attendance Request": {
-		"validate": "alpinos.attendance_request_automation.set_reporting_person"
+		"validate": "alpinos.attendance_request_automation.set_reporting_person",
+		"on_submit": "alpinos.raven_notifications.notify_attendance_request"
 	},
 	"Attendance": {
 		"validate": [
-			"alpinos.attendance_request_automation.validate_saturday_attendance_threshold"
+			"alpinos.attendance_request_automation.validate_saturday_attendance_threshold",
+			"alpinos.attendance_request_automation.mark_half_day_absent_below_threshold"
 		],
 		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
 		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
@@ -340,6 +404,9 @@ scheduler_events = {
 		"*/30 * * * *": [
 			"alpinos.essl_sync.sync_essl_logs",
 			"alpinos.attendance_scheduler.process_auto_attendance_periodic"
+		],
+		"30 11 * * *": [
+			"alpinos.attendance_alerts.notify_missing_checkins"
 		]
 	}
 }

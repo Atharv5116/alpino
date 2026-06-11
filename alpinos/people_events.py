@@ -1,7 +1,7 @@
 """Upcoming birthdays and work anniversaries for workspace widgets."""
 
 import frappe
-from frappe.utils import add_days, getdate, now_datetime
+from frappe.utils import add_days, add_months, getdate, now_datetime
 
 
 def _format_day_label(d):
@@ -158,3 +158,118 @@ def get_on_leave_and_wfh_today():
 		})
 
 	return {"allowed": True, "on_leave": on_leave, "on_wfh": on_wfh}
+
+
+def _format_ddmmyyyy(d):
+	"""Format a date as DD/MM/YYYY (empty string for falsy input)."""
+	if not d:
+		return ""
+	return getdate(d).strftime("%d/%m/%Y")
+
+
+@frappe.whitelist()
+def get_upcoming_employee_lifecycle(days=30):
+	"""Upcoming probation completions, internship completions and salary increments
+	for active employees within the next `days` days. Visible to HR Manager only.
+
+	- Probation : Employee.probation_end_date falling within the window.
+	- Internship: date_of_joining + custom_internship_duration (months) within the window.
+	- Increment : next date_of_joining anniversary (yearly) within the window.
+
+	Dates are returned pre-formatted as DD/MM/YYYY in the `date` field.
+	"""
+	try:
+		days = int(days)
+	except (TypeError, ValueError):
+		days = 30
+
+	roles = frappe.get_roles()
+	if not ({"HR Manager", "System Manager", "Administrator"} & set(roles)):
+		return {"allowed": False, "probation": [], "internship": [], "increment": []}
+
+	today = getdate(now_datetime())
+	end_date = add_days(today, days)
+
+	# Only fetch custom fields that actually exist (robust across sites/migration order).
+	meta = frappe.get_meta("Employee")
+	has_probation = meta.has_field("probation_end_date")
+	has_internship = meta.has_field("custom_internship_duration")
+
+	fields = ["name", "employee_name", "company", "date_of_joining"]
+	if has_probation:
+		fields.append("probation_end_date")
+	if has_internship:
+		fields.append("custom_internship_duration")
+
+	employees = frappe.get_all("Employee", filters={"status": "Active"}, fields=fields)
+
+	probation = []
+	internship = []
+	increment = []
+
+	for emp in employees:
+		company = emp.get("company")
+		emp_name = emp.get("employee_name")
+
+		# Probation completion — explicit probation_end_date within the window.
+		pend = emp.get("probation_end_date")
+		if pend:
+			pend = getdate(pend)
+			if today <= pend <= end_date:
+				probation.append({
+					"employee_name": emp_name,
+					"date": _format_ddmmyyyy(pend),
+					"company": company,
+					"_sort": pend.strftime("%Y-%m-%d"),
+				})
+
+		doj = emp.get("date_of_joining")
+
+		# Internship completion — date_of_joining + duration (months) within the window.
+		months = emp.get("custom_internship_duration")
+		if doj and months:
+			try:
+				months = int(months)
+			except (TypeError, ValueError):
+				months = 0
+			if months > 0:
+				iend = getdate(add_months(getdate(doj), months))
+				if today <= iend <= end_date:
+					internship.append({
+						"employee_name": emp_name,
+						"date": _format_ddmmyyyy(iend),
+						"company": company,
+						"_sort": iend.strftime("%Y-%m-%d"),
+					})
+
+		# Salary increment — next date_of_joining anniversary (yearly) within the window.
+		if doj:
+			doj = getdate(doj)
+			if doj <= today:
+				next_year = today.year
+				this_year_anniv = _date_in_year(doj, today.year)
+				if this_year_anniv < today:
+					next_year += 1
+				next_anniv = _date_in_year(doj, next_year)
+				if today <= next_anniv <= end_date:
+					years = max(next_year - doj.year, 1)
+					increment.append({
+						"employee_name": emp_name,
+						"date": _format_ddmmyyyy(next_anniv),
+						"years": years,
+						"company": company,
+						"_sort": next_anniv.strftime("%Y-%m-%d"),
+					})
+
+	def _top(rows):
+		rows = sorted(rows, key=lambda x: x["_sort"])[:10]
+		for r in rows:
+			r.pop("_sort", None)
+		return rows
+
+	return {
+		"allowed": True,
+		"probation": _top(probation),
+		"internship": _top(internship),
+		"increment": _top(increment),
+	}

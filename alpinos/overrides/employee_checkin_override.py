@@ -254,20 +254,39 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		if distance <= checkin_radius:
 			return
 
+		# Outside radius — flag it so HR can review outside-location check-ins.
+		self.custom_outside_location = 1
+
 		# Outside radius
 		if self.log_type == "IN":
 			# Allow check-in from outside only if employee has applied for Work From Home for this day
 			checkin_date = getdate(self.time)
-			wfh_exists = frappe.db.exists(
+			wfh = frappe.db.get_value(
 				"Work From Home Request",
 				{
 					"employee": self.employee,
 					"date": checkin_date,
 					"status": ["in", ["Draft", "Approved", "Live"]],
 				},
+				["name", "half_day", "custom_half_day_period"],
+				as_dict=True,
 			)
-			if wfh_exists:
-				return
+			if wfh:
+				# Full-day WFH: outside check-in allowed all day. Half-day WFH: the outside
+				# check-in must fall within the covered half (the "leverage" is only for that half).
+				if not wfh.half_day or self._checkin_within_wfh_half(checkin_date, wfh.custom_half_day_period):
+					return
+				frappe.throw(
+					_(
+						"Your Work From Home for {0} is a half-day ({1}). Check-in from outside the "
+						"office is only allowed during that half — this check-in at {2} is outside it."
+					).format(
+						checkin_date,
+						wfh.custom_half_day_period or _("half day"),
+						get_datetime(self.time).strftime("%H:%M"),
+					),
+					exc=CheckinRadiusExceededError,
+				)
 			frappe.throw(
 				_(
 					"You are checking in from outside the office location. "
@@ -279,6 +298,26 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 
 		# OUT: require reason when checking out from outside office
 		self._require_checkout_reason_if_outside()
+
+	def _checkin_within_wfh_half(self, date, period):
+		"""For a half-day WFH, is this check-IN within the covered half?
+
+		The day is split at the shift midpoint: First Half = shift start..midpoint, Second Half =
+		midpoint..shift end. Fail-open (allow) when the period is unknown or the shift/midpoint
+		can't be resolved, so a legitimate check-in is never blocked for lack of data.
+		"""
+		if not period:
+			return True
+		from alpinos.attendance_request_automation import get_assigned_shift_times
+
+		start, end = get_assigned_shift_times(self.employee, date, self.shift)
+		if not start or not end or end <= start:
+			return True
+		midpoint = start + (end - start) / 2
+		t = get_datetime(self.time)
+		if period == "Second Half":
+			return t >= midpoint
+		return t <= midpoint  # First Half (default)
 
 
 def patch_mark_attendance_and_link_log(bootinfo=None):

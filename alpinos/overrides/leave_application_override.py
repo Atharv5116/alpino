@@ -8,11 +8,32 @@ Ledger and attendance are only created when status is Approved (base class no-op
 
 import frappe
 from frappe import _
+from frappe.utils import flt
 from hrms.hr.doctype.leave_application.leave_application import LeaveApplication as HRMSLeaveApplication
 
 
 class CustomLeaveApplication(HRMSLeaveApplication):
 	"""Allow submitting Leave Application when status is Open (e.g. Send for Approval)."""
+
+	def validate(self):
+		super().validate()
+		self.validate_supporting_document()
+
+	def validate_supporting_document(self):
+		"""Require a supporting document when the leave is longer than 3 days.
+
+		total_leave_days is set by the base validate() above, so it is reliable here.
+		The same rule is mirrored on the field via mandatory_depends_on so the form
+		shows the field as required; this guard blocks any path that bypasses the UI.
+		"""
+		if flt(self.total_leave_days) > 3 and not self.get("custom_supporting_document"):
+			frappe.throw(
+				_(
+					"A Supporting Document is mandatory for leave longer than 3 days "
+					"(this application is {0} days)."
+				).format(self.total_leave_days),
+				title=_("Proof Required"),
+			)
 
 	def on_submit(self):
 		self.validate_back_dated_application()

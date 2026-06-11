@@ -39,6 +39,21 @@ frappe.ui.form.on('Delivery Note Item', {
 			frappe.model.set_value(cdt, cdn, 'custom_mfg_date', d.manufacturing_date || null);
 			frappe.model.set_value(cdt, cdn, 'custom_expiry_date', d.expiry_date || null);
 			recalc_dn_totals(frm);
+			if (d.expiry_date && row.against_sales_order) {
+				frappe.call({
+					method: 'alpinos.expiry_validation.check_row_expiry_warning',
+					args: {
+						expiry_date: d.expiry_date,
+						sales_order: row.against_sales_order,
+						dispatch_date: frm.doc.custom_dispatch_date || null,
+					},
+				}).then((res) => {
+					const m = res.message || {};
+					if (!m.ok && m.message) {
+						frappe.show_alert({ message: `Row #${row.idx}: ${m.message}`, indicator: 'orange' }, 7);
+					}
+				});
+			}
 		});
 	},
 

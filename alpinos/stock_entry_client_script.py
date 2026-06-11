@@ -1,7 +1,8 @@
 """
 Client Script for Stock Entry customizations:
 - Auto set Entry By to logged-in user
-- Keep qty in Nos and synchronize Box <-> Qty
+- Default item UOM to Nos
+- Material Transfer warehouse rules
 """
 
 import frappe
@@ -44,49 +45,8 @@ frappe.ui.form.on('Stock Entry Detail', {
 
         // Qty should be treated as Nos by default.
         frappe.model.set_value(cdt, cdn, 'uom', 'Nos');
-
-        get_conversion_factor(row.item_code, function(factor) {
-            if (!factor || !row.qty) return;
-            const boxes = Math.ceil(flt(row.qty) / flt(factor));
-            frappe.model.set_value(cdt, cdn, 'custom_box', boxes);
-            frappe.model.set_value(cdt, cdn, 'qty', flt(boxes * factor, 2));
-        });
-    },
-
-    qty: function(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.item_code || !row.qty) return;
-
-        get_conversion_factor(row.item_code, function(factor) {
-            if (!factor) return;
-            const boxes = Math.ceil(flt(row.qty) / flt(factor));
-            frappe.model.set_value(cdt, cdn, 'custom_box', boxes);
-            frappe.model.set_value(cdt, cdn, 'qty', flt(boxes * factor, 2));
-        });
-    },
-
-    custom_box: function(frm, cdt, cdn) {
-        const row = locals[cdt][cdn];
-        if (!row.item_code || !row.custom_box) return;
-
-        get_conversion_factor(row.item_code, function(factor) {
-            if (!factor) return;
-            const boxes = Math.ceil(flt(row.custom_box));
-            frappe.model.set_value(cdt, cdn, 'custom_box', boxes);
-            frappe.model.set_value(cdt, cdn, 'qty', flt(boxes * factor, 2));
-        });
     }
 });
-
-function get_conversion_factor(item_code, callback) {
-    frappe.call({
-        method: 'alpinos.sales_order_api.get_box_conversion_factor',
-        args: { item_code: item_code },
-        callback: function(r) {
-            callback(r.message || null);
-        }
-    });
-}
 
 function is_material_transfer(frm) {
     return frm.doc.stock_entry_type === 'Material Transfer';

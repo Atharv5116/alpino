@@ -65,8 +65,16 @@ def setup_sales_order_custom_fields():
 		# SALES ORDER: Main form fields
 		# ============================================================
 		"Sales Order": [
-			# Order Type (already exists as standard field, we override its options via Property Setter)
-			# Cash Discount in totals section
+			# Dispatch Date — mandatory, defaults set via client script (before/after 2 PM logic)
+			dict(
+				fieldname="custom_dispatch_date",
+				label="Dispatch Date",
+				fieldtype="Date",
+				insert_after="transaction_date",
+				reqd=1,
+				in_list_view=1,
+				description="Auto-set: today if before 2 PM, next working day if after 2 PM.",
+			),
 			# Cash Discount section (visible in Totals area)
 			dict(
 				fieldname="custom_cash_discount_section",

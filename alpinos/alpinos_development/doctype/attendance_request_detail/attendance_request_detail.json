@@ -1,0 +1,82 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-05 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "attendance_date",
+  "edit_check_in",
+  "check_in",
+  "edit_check_out",
+  "check_out",
+  "attendance_status"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "attendance_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "edit_check_in",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Edit Check-in",
+   "default": "0"
+  },
+  {
+   "columns": 2,
+   "read_only_depends_on": "eval:!doc.edit_check_in",
+   "description": "Editable when 'Edit Check-in' is ticked.",
+   "fieldname": "check_in",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "Check-in"
+  },
+  {
+   "columns": 1,
+   "fieldname": "edit_check_out",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Edit Check-out",
+   "default": "0"
+  },
+  {
+   "columns": 2,
+   "read_only_depends_on": "eval:!doc.edit_check_out",
+   "description": "Editable when 'Edit Check-out' is ticked.",
+   "fieldname": "check_out",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "Check-out"
+  },
+  {
+   "columns": 2,
+   "fieldname": "attendance_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Attendance Status",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Attendance Request Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

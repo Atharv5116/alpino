@@ -307,6 +307,36 @@ class SalesOrderEntry {
 			render_input: true
 		});
 
+		this.dispatch_date_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Date', label: 'Dispatch Date', fieldname: 'custom_dispatch_date', reqd: 1 },
+			parent: header.find('.field-dispatch-date'),
+			render_input: true
+		});
+		// Set default using 2pm cutoff logic for new SOs
+		frappe.call({
+			method: 'alpinos.dispatch_date_utils.get_default_dispatch_date',
+			callback: function(r) {
+				if (r.message && me.dispatch_date_field && !me.dispatch_date_field.get_value()) {
+					me.dispatch_date_field.set_value(r.message.date);
+				}
+			}
+		});
+		// Validate on change
+		this.dispatch_date_field.$input && this.dispatch_date_field.$input.on('change', function() {
+			let val = me.dispatch_date_field.get_value();
+			if (!val) return;
+			frappe.call({
+				method: 'alpinos.dispatch_date_utils.validate_dispatch_date',
+				args: { date: val },
+				callback: function(r) {
+					if (r.message && !r.message.valid) {
+						frappe.msgprint({ title: __('Invalid Dispatch Date'), message: r.message.message, indicator: 'red' });
+						me.dispatch_date_field.set_value('');
+					}
+				}
+			});
+		});
+
 		this.billing_address_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Autocomplete', label: 'Billing Address', fieldname: 'billing_address' },
 			parent: header.find('.field-billing-address'),
@@ -1250,6 +1280,7 @@ class SalesOrderEntry {
 				order_type: order_type,
 				company: (me.company_field && me.company_field.get_value()) || me.default_company || me._get_default_company(),
 				delivery_date: delivery_date,
+				dispatch_date: me.dispatch_date_field ? me.dispatch_date_field.get_value() : '',
 				billing_address: billing_address,
 				shipping_address: shipping_address,
 				taxes_and_charges: me.tax_template_field ? me.tax_template_field.get_value() : '',
@@ -1352,6 +1383,7 @@ class SalesOrderEntry {
 		this.customer_field.set_value('');
 		this.order_type_field.set_value('');
 		this.delivery_date_field.set_value('');
+		this.dispatch_date_field && this.dispatch_date_field.set_value('');
 		this.billing_address_field && this.billing_address_field.set_value('');
 		this.shipping_address_field && this.shipping_address_field.set_value('');
 		this.items = [];

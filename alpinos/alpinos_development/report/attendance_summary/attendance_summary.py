@@ -3,7 +3,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_day, cint, flt, formatdate, format_time
+from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_day, cint, flt, formatdate, format_time, get_datetime
 from datetime import datetime, timedelta
 import calendar
 from alpinos.alpinos_development.report.attendance_summary.attendance_summary_helpers import (
@@ -86,6 +86,18 @@ def get_columns(from_date, to_date):
 			"fieldname": "paid_days",
 			"fieldtype": "Float",
 			"width": 90
+		},
+		{
+			"label": _("Late Entries"),
+			"fieldname": "late_entries",
+			"fieldtype": "Data",
+			"width": 130
+		},
+		{
+			"label": _("Late Deduction (Days)"),
+			"fieldname": "late_deduction",
+			"fieldtype": "Float",
+			"width": 120
 		},
 		{
 			"label": _("Working Days"),
@@ -199,8 +211,8 @@ def get_data(filters, from_date, to_date):
 	from_date = getdate(from_date)
 	to_date = getdate(to_date)
 	
-	employees = get_employees(filters)
-	
+	employees = get_employees(filters, from_date, to_date)
+
 	if not employees:
 		return []
 	
@@ -214,16 +226,25 @@ def get_data(filters, from_date, to_date):
 	return data
 
 
-def get_employees(filters):
-	"""Get list of employees based on filters"""
+def get_employees(filters, from_date, to_date):
+	"""Get employees who were active within the report date range.
+
+	An employee is considered active for the period if they had joined on or before the
+	period end and were not relieved before the period start. This excludes employees who
+	joined after the month or who left before it.
+	"""
 	conditions = []
-	
+
 	if filters.get("employee"):
 		conditions.append(f"name = '{filters.employee}'")
-	
+
 	if filters.get("company"):
 		conditions.append(f"company = '{filters.company}'")
-	
+
+	# Active within the date range: joined on/before period end, not relieved before its start.
+	conditions.append(f"date_of_joining IS NOT NULL AND date_of_joining <= '{getdate(to_date)}'")
+	conditions.append(f"(relieving_date IS NULL OR relieving_date >= '{getdate(from_date)}')")
+
 	where_clause = " AND ".join(conditions) if conditions else "1=1"
 	
 	query = f"""
@@ -291,7 +312,14 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.missing_attendance = stats["missing_attendance"]
 	row.penalty_count = stats["penalty_count"]
 	row.avg_working_hours = stats["avg_working_hours"]
-	
+
+	# Late-entry flags + deduction (reduces paid days) — see compute_late_deduction.
+	late_info = compute_late_deduction(attendance_map)
+	row.late_entries = late_info["summary"]
+	row.late_deduction = late_info["deduction"]
+	if row.late_deduction:
+		row.paid_days = flt(row.paid_days) - flt(row.late_deduction)
+
 	# Loop through each day of the month
 	current_date = getdate(from_date)
 	end_date = getdate(to_date)
@@ -341,8 +369,94 @@ def get_attendance_map(employee, from_date, to_date):
 	for att in attendance_records:
 		date_str = att.attendance_date.strftime("%Y-%m-%d")
 		attendance_map[date_str] = att
-	
+
 	return attendance_map
+
+
+def _get_shift_late_config(shift_name, cache):
+	"""Return {start_time, tiers:[(late_by, deduction), ...] sorted desc} for a Shift Type,
+	or None when there is no shift / no configured Late Entry Thresholds."""
+	if shift_name in cache:
+		return cache[shift_name]
+	cfg = None
+	if shift_name:
+		start_time = frappe.db.get_value("Shift Type", shift_name, "start_time")
+		rows = frappe.get_all(
+			"Late Entry Threshold",
+			filters={
+				"parent": shift_name,
+				"parenttype": "Shift Type",
+				"parentfield": "custom_late_entry_thresholds",
+			},
+			fields=["late_by", "deduction"],
+			order_by="late_by desc",
+		)
+		tiers = [
+			(cint(r.late_by), flt(r.deduction))
+			for r in rows
+			if cint(r.late_by) > 0 and flt(r.deduction) > 0
+		]
+		if start_time is not None and tiers:
+			cfg = {"start_time": start_time, "tiers": tiers}
+	cache[shift_name] = cfg
+	return cfg
+
+
+def compute_late_deduction(attendance_map):
+	"""Late-entry flag counts and the days to deduct, per the Shift Type late-entry tiers.
+
+	Each late check-in is classified into the highest tier whose 'Late By' minutes it meets
+	(minutes late from the shift's start_time). Then, per tier, every full group of 4 lates
+	deducts that tier's days; any leftover lates across tiers that combine to 4 deduct the
+	smallest tier's days (0.5). Nothing deducts below a group of 4. Computed for the report's
+	period (month), so it resets each period.
+
+	Returns {"counts": {late_by: n}, "summary": "15m × 4, 30m × 2", "deduction": days}.
+	"""
+	cache = {}
+	counts = {}        # late_by -> number of late entries
+	ded_by_tier = {}   # late_by -> deduction days for that tier
+
+	for att in attendance_map.values():
+		in_time = att.get("in_time")
+		shift = att.get("shift")
+		att_date = att.get("attendance_date")
+		if not in_time or not shift or not att_date:
+			continue
+		cfg = _get_shift_late_config(shift, cache)
+		if not cfg:
+			continue
+		try:
+			shift_start = get_datetime(f"{getdate(att_date)} {cfg['start_time']}")
+			minutes_late = (get_datetime(in_time) - shift_start).total_seconds() / 60.0
+		except Exception:
+			continue
+		if minutes_late <= 0:
+			continue
+		# Highest tier whose threshold the lateness meets (tiers are sorted desc by late_by).
+		tier = next(((lb, dd) for lb, dd in cfg["tiers"] if minutes_late >= lb), None)
+		if not tier:
+			continue
+		counts[tier[0]] = counts.get(tier[0], 0) + 1
+		ded_by_tier[tier[0]] = tier[1]
+
+	# Flag-count summary, e.g. "15m × 4, 30m × 2" (sorted by late_by ascending).
+	summary = ", ".join(
+		f"{lb}m × {counts[lb]}" for lb in sorted(counts)
+	)
+
+	if not counts:
+		return {"counts": {}, "summary": "", "deduction": 0.0}
+
+	min_ded = min(ded_by_tier.values())
+	total = 0.0
+	leftover = 0
+	for late_by, cnt in counts.items():
+		total += (cnt // 4) * ded_by_tier[late_by]   # full groups of 4 in this tier
+		leftover += cnt % 4                            # remainder carried to the combo
+	total += (leftover // 4) * min_ded                 # combined leftovers in groups of 4
+
+	return {"counts": counts, "summary": summary, "deduction": flt(total, 2)}
 
 
 def get_holiday_map(employee, from_date, to_date):

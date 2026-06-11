@@ -9,13 +9,29 @@ def validate_pick_list(doc, method=None):
 	"""Server-side enforcement for Alpinos Pick List business rules."""
 	_set_defaults(doc)
 	_sync_order_information(doc)
+	_block_post_submit_row_removal(doc)
 	_sync_rows_and_totals(doc)
 	_validate_mandatory_rows(doc)
 
 
+def _block_post_submit_row_removal(doc):
+	"""Once a Pick List is submitted, locations rows cannot be deleted."""
+	if doc.docstatus != 1:
+		return
+	prev = doc.get_doc_before_save()
+	if not prev:
+		return
+	prev_count = len(prev.locations or [])
+	curr_count = len(doc.locations or [])
+	if curr_count < prev_count:
+		frappe.throw(
+			"Cannot remove rows from a submitted Pick List. Cancel the document first."
+		)
+
+
 def _set_defaults(doc):
 	if not doc.custom_qc_attended_by:
-		doc.custom_qc_attended_by = frappe.session.user
+		doc.custom_qc_attended_by = doc.get("custom_assigned_to") or frappe.session.user
 	if not doc.custom_order_date:
 		doc.custom_order_date = now_datetime()
 
@@ -42,6 +58,11 @@ def _sync_rows_and_totals(doc):
 		factor = flt(get_box_conversion_factor(row.item_code)) if row.item_code else 0
 		factor = factor or 1
 
+		if row.item_code and not flt(row.custom_weight_per_box):
+			row.custom_weight_per_box = flt(
+				frappe.db.get_value("Item", row.item_code, "custom_gross_weight")
+			)
+
 		table_name = row.custom_source_table or "Items"
 		if not flt(row.custom_box):
 			if table_name == "Items":
@@ -66,11 +87,11 @@ def _sync_rows_and_totals(doc):
 
 		if table_name == "Items":
 			actual_box += row_box
+			gross_weight += row_box * row_weight_per_box
 		else:
 			sample_box += row_box
 			sample_weight += row_box * row_weight_per_box
 
-		gross_weight += row_box * row_weight_per_box
 		total_unit += qty
 
 	doc.custom_actual_box = int(round(actual_box))
@@ -105,13 +126,21 @@ def _validate_mandatory_rows(doc):
 	for row in doc.locations or []:
 		if not row.item_code:
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")
-			
+
 		# Quantity validations
 		qty = flt(row.qty)
 		ordered = flt(row.custom_ordered_qty)
-		
+
 		if ordered and qty > ordered:
 			frappe.throw(f"Row #{row.idx} ({row.item_code}): Picked Qty ({qty}) cannot be greater than Ordered Qty ({ordered}).")
+
+		# Expiry must be on or after manufacturing (applies whenever both are present).
+		if row.custom_mfg_date and row.custom_expiry_date:
+			from frappe.utils import getdate
+			if getdate(row.custom_expiry_date) < getdate(row.custom_mfg_date):
+				frappe.throw(
+					f"Row #{row.idx} ({row.item_code}): Expiry Date ({row.custom_expiry_date}) cannot be earlier than Manufacturing Date ({row.custom_mfg_date})."
+				)
 
 		if doc.docstatus == 1:
 			if not row.qty:

@@ -124,9 +124,9 @@ def _validate_dn_mandatory(doc):
 	if not doc.get("custom_delivery_date"):
 		frappe.throw("Delivery Date is mandatory.")
 	if not doc.get("custom_transporter_name"):
-		frappe.throw("Transporter Name is mandatory.")
+		frappe.throw("Transporter is mandatory.")
 	if not doc.get("vehicle_no"):
-		frappe.throw("Vehicle No. is mandatory.")
+		frappe.throw("Picklist PO No. is mandatory.")
 	if doc.docstatus == 1 and doc.get("custom_lr_gr_no") in (None, ""):
 		frappe.throw("LR No. (GR No.) is mandatory.")
 	if not doc.get("custom_dispatch_from"):
@@ -151,3 +151,10 @@ def _validate_dn_mandatory(doc):
 				frappe.throw(f"Row #{row.idx}: MFG Date is mandatory.")
 			if meta_dn_item.get_field("custom_expiry_date") and not row.get("custom_expiry_date"):
 				frappe.throw(f"Row #{row.idx}: Expiry Date is mandatory.")
+		# Expiry must be on or after MFG whenever both are present (catches manual entry on the page).
+		if row.get("custom_mfg_date") and row.get("custom_expiry_date"):
+			from frappe.utils import getdate
+			if getdate(row.custom_expiry_date) < getdate(row.custom_mfg_date):
+				frappe.throw(
+					f"Row #{row.idx} ({row.item_code}): Expiry Date ({row.custom_expiry_date}) cannot be earlier than Manufacturing Date ({row.custom_mfg_date})."
+				)

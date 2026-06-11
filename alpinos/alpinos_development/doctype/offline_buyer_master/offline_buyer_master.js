@@ -18,6 +18,23 @@ frappe.ui.form.on("Offline Buyer Master", {
 				name: ["!=", frm.doc.name || ""],
 			},
 		}));
+
+		// Administrator-only: re-create/refresh the Customer's Address + Contact from this record.
+		if (!frm.is_new() && frm.doc.customer && frappe.session.user === "Administrator") {
+			frm.add_custom_button(__("Sync to Customer"), () => {
+				frappe.call({
+					method: "alpinos.sales_order_offline_buyer.sync_single_offline_buyer_master",
+					args: { offline_buyer_master: frm.doc.name },
+					freeze: true,
+					freeze_message: __("Syncing Address & Contact to Customer..."),
+					callback(r) {
+						if (!r.exc) {
+							frappe.show_alert({ message: __("Synced to Customer."), indicator: "green" });
+						}
+					},
+				});
+			});
+		}
 	},
 
 	payment_term(frm) {

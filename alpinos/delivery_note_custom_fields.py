@@ -54,6 +54,17 @@ def setup_delivery_note_alpinos():
 				depends_on="eval:!doc.is_return",
 			),
 			dict(
+				fieldname="custom_assigned_to",
+				label="Assigned To",
+				fieldtype="Link",
+				options="User",
+				insert_after="custom_delivery_date",
+				in_list_view=1,
+				in_standard_filter=1,
+				depends_on="eval:!doc.is_return",
+				allow_on_submit=1,
+			),
+			dict(
 				fieldname="custom_transporter_section",
 				label="Transporter Information",
 				fieldtype="Section Break",
@@ -62,13 +73,13 @@ def setup_delivery_note_alpinos():
 			),
 			dict(
 				fieldname="custom_transporter_name",
-				label="Transporter Name",
-				fieldtype="Select",
-				options="\nLocal\nOwn Vehicle\nThird Party\nOther",
+				label="Transporter",
+				fieldtype="Data",
 				insert_after="custom_transporter_section",
 				reqd=1,
 				depends_on="eval:!doc.is_return",
-				description="Select transporter (standard Link field Transporter remains available below if needed).",
+				read_only=1,
+				description="Fetched from the linked Pick List's Transporter — not editable on the Delivery Note.",
 			),
 			dict(
 				fieldname="custom_lr_gr_no",
@@ -150,12 +161,20 @@ def setup_delivery_note_alpinos():
 				reqd=1,
 			),
 			dict(
+				fieldname="custom_batch_code",
+				label="Batch Code",
+				fieldtype="Data",
+				insert_after="batch_no",
+				read_only=1,
+				description="Pick List batch code (free text) — mirrored from Pick List Item so manually-entered batch numbers persist even when no Batch master exists.",
+			),
+			dict(
 				fieldname="custom_mfg_date",
 				label="MFG Date",
 				fieldtype="Datetime",
-				insert_after="batch_no",
+				insert_after="custom_batch_code",
 				read_only=1,
-				reqd=1,
+				reqd=0,
 			),
 			dict(
 				fieldname="custom_expiry_date",
@@ -163,7 +182,7 @@ def setup_delivery_note_alpinos():
 				fieldtype="Datetime",
 				insert_after="custom_mfg_date",
 				read_only=1,
-				reqd=1,
+				reqd=0,
 			),
 		],
 	}
@@ -194,6 +213,35 @@ def setup_delivery_note_alpinos():
 			"property": "label",
 			"value": "Quantity",
 			"property_type": "Data",
+		},
+		# vehicle_no is re-purposed to carry the Pick List PO No. value
+		# (fetched from Pick List.custom_po_no). Renaming the label keeps the
+		# data column in place — no migration needed.
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Delivery Note",
+			"field_name": "vehicle_no",
+			"property": "label",
+			"value": "Picklist PO No.",
+			"property_type": "Data",
+		},
+		# Transporter Name is now free text (mirrors Pick List.custom_transporter
+		# which is itself a Data field).
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Delivery Note",
+			"field_name": "custom_transporter_name",
+			"property": "fieldtype",
+			"value": "Data",
+			"property_type": "Select",
+		},
+		{
+			"doctype_or_field": "DocField",
+			"doc_type": "Delivery Note",
+			"field_name": "custom_transporter_name",
+			"property": "options",
+			"value": "",
+			"property_type": "Text",
 		},
 	]
 

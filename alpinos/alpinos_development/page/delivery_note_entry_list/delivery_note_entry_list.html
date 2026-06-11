@@ -1,0 +1,101 @@
+<style>
+	.dnl-container {
+		background-color: #fff;
+		border-radius: 4px;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+	}
+	.dnl-filters {
+		padding: 15px;
+		border-bottom: 1px solid #d1d8dd;
+		background: #f8f9fa;
+	}
+	.dnl-filters-title {
+		font-weight: bold;
+		margin-bottom: 10px;
+		color: #333;
+	}
+	.dnl-filter-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 15px;
+		align-items: flex-end;
+	}
+	.dnl-filter-item {
+		flex: 1;
+		min-width: 200px;
+	}
+	.dnl-filter-actions {
+		display: flex;
+		gap: 10px;
+	}
+	.dnl-table-wrapper {
+		overflow-x: auto;
+	}
+	.dnl-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+	.dnl-table th, .dnl-table td {
+		padding: 10px 15px;
+		border-bottom: 1px solid #edf0f2;
+	}
+	.dnl-table th {
+		font-weight: bold;
+		background: #f8f9fa;
+		color: #8D99A6;
+		text-transform: uppercase;
+		font-size: 11px;
+	}
+	.dnl-row:hover {
+		background-color: #f4f5f6;
+	}
+	.dnl-pager {
+		padding: 15px;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		background: #fff;
+		border-top: 1px solid #d1d8dd;
+	}
+</style>
+
+<div class="dnl-container">
+	<div class="dnl-filters">
+		<div class="dnl-filters-title">Filters</div>
+		<div class="dnl-filter-row">
+			<div class="dnl-filter-item fld-search"></div>
+			<div class="dnl-filter-item fld-status"></div>
+			<div class="dnl-filter-item fld-company"></div>
+			<div class="dnl-filter-actions">
+				<button class="btn btn-primary btn-sm btn-dnl-apply">Apply</button>
+				<button class="btn btn-default btn-sm btn-dnl-clear">Clear</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="dnl-table-wrapper">
+		<table class="dnl-table">
+			<thead>
+				<tr>
+					<th>ID</th>
+					<th>Customer</th>
+					<th>Date</th>
+					<th>Dispatch Date</th>
+					<th>Company</th>
+					<th>Status</th>
+				</tr>
+			</thead>
+			<tbody>
+				<!-- Rows -->
+			</tbody>
+		</table>
+	</div>
+
+	<div class="dnl-pager">
+		<div class="dnl-count text-muted"></div>
+		<div class="dnl-nav">
+			<button class="btn btn-default btn-sm btn-dnl-prev">Previous</button>
+			<button class="btn btn-default btn-sm btn-dnl-next">Next</button>
+		</div>
+	</div>
+</div>

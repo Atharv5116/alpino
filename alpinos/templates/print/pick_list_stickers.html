@@ -1,0 +1,156 @@
+{# Pick List sticker — 100mm x 75mm, one per page.
+
+   Mirrors the spec sketch's two-column layout:
+
+	+----------------------------------------------+
+	|                                              |
+	|   36                              NCR1KG     |  ← SKU# (huge) | SKU name
+	|                                              |
+	|   A1/50                           03BC12     |  ← Gate/Total | Batch
+	|                                   BATCH      |
+	|   1/50                            BZ         |  ← Counter | PO
+	|                                   PO         |
+	|   ──────────────────────────────────────     |
+	|   XYZ SUPPLIMENT                             |  ← Party (bottom)
+	+----------------------------------------------+
+
+   Every cell positioned absolutely in mm so wkhtmltopdf can't shift it.
+#}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+	@page { size: 100mm 75mm; margin: 0; }
+	html, body { margin: 0; padding: 0; }
+	body {
+		font-family: "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+		color: #111;
+		-webkit-print-color-adjust: exact;
+	}
+	* { box-sizing: border-box; }
+	.sticker {
+		position: relative;
+		width: 100mm;
+		height: 75mm;
+		page-break-after: always;
+		page-break-inside: avoid;
+		overflow: hidden;
+		border: 0.4mm solid #111;
+	}
+	.sticker:last-child { page-break-after: auto; }
+
+	/* Left column — SKU# big at the top, then a single
+	   "<gate> / <current> / <total>" line below it. */
+	.sku-no {
+		position: absolute;
+		top: 4mm; left: 5mm;
+		font-size: 44pt; font-weight: 900; line-height: 1; letter-spacing: 1px;
+	}
+	.gate-counter {
+		position: absolute;
+		top: 34mm; left: 5mm;
+		font-size: 26pt; font-weight: 900; line-height: 1; letter-spacing: 0.5px;
+	}
+	.gate-counter small {
+		display: block;
+		font-size: 7pt; font-weight: 500;
+		color: #6b7280; letter-spacing: 1.5px;
+		margin-bottom: 1mm;
+	}
+
+	/* Right column — SKU name, Batch (label above value), PO (label above value). */
+	.sku-name {
+		position: absolute;
+		top: 5mm; right: 5mm;
+		font-size: 16pt; font-weight: 800; line-height: 1.1; text-align: right;
+	}
+	.batch-block {
+		position: absolute;
+		top: 25mm; right: 5mm; text-align: right;
+	}
+	.batch-block .lbl { display: block; font-size: 7pt; font-weight: 600; color: #6b7280; letter-spacing: 1.5px; margin-bottom: 1mm; }
+	.batch-block .val { font-size: 13pt; font-weight: 800; line-height: 1; }
+	.po-block {
+		position: absolute;
+		top: 42mm; right: 5mm; text-align: right;
+	}
+	.po-block .lbl { display: block; font-size: 7pt; font-weight: 600; color: #6b7280; letter-spacing: 1.5px; margin-bottom: 1mm; }
+	.po-block .val { font-size: 22pt; font-weight: 900; line-height: 1; }
+
+	/* Party — bottom band */
+	.divider {
+		position: absolute;
+		left: 5mm; right: 5mm; bottom: 9mm;
+		border-top: 0.3mm solid #111;
+	}
+	.party {
+		position: absolute;
+		left: 5mm; right: 5mm; bottom: 3mm;
+		font-size: 12pt; font-weight: 800;
+		text-transform: uppercase; letter-spacing: 1px;
+	}
+
+	/* SAMPLE styling */
+	.sample-flag {
+		position: absolute; top: 2mm; left: 2mm;
+		background: #dc2626; color: #fff;
+		padding: 0.5mm 2mm;
+		font-size: 8pt; font-weight: 800; letter-spacing: 1px;
+		border-radius: 1mm;
+		z-index: 5;
+	}
+	.sample-watermark {
+		position: absolute; top: 50%; left: 50%;
+		transform: translate(-50%, -50%) rotate(-22deg);
+		font-size: 60pt; font-weight: 900;
+		color: rgba(220, 38, 38, 0.14);
+		letter-spacing: 8px;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.empty-state {
+		padding: 30px;
+		text-align: center;
+		color: #6b7280;
+		font-size: 11pt;
+	}
+</style>
+</head>
+<body>
+{% if not stickers %}
+	<div class="empty-state">No items to print. The Pick List has no rows with a non-zero Box value.</div>
+{% else %}
+	{% for s in stickers %}
+		<div class="sticker">
+			{% if s.is_sample %}
+				<div class="sample-watermark">SAMPLE</div>
+				<div class="sample-flag">SAMPLE</div>
+			{% endif %}
+
+			<div class="sku-no">{{ s.sku_no or "—" }}</div>
+			<div class="gate-counter">
+				{{ s.dispatch_area or "—" }} / {{ s.box_index }} / {{ s.total_box }}
+			</div>
+
+			{% if s.sku_name %}<div class="sku-name">{{ s.sku_name }}</div>{% endif %}
+			{% if s.batch_no %}
+			<div class="batch-block">
+				<span class="val">{{ s.batch_no }}</span>
+			</div>
+			{% endif %}
+			{% if s.po_no %}
+			<div class="po-block">
+				<span class="lbl">PO NO.</span>
+				<span class="val">{{ s.po_no }}</span>
+			</div>
+			{% endif %}
+
+			<div class="divider"></div>
+			{% if s.party_name %}<div class="party">{{ s.party_name }}</div>{% endif %}
+		</div>
+	{% endfor %}
+{% endif %}
+</body>
+</html>

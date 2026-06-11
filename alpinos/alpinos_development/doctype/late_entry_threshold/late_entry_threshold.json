@@ -1,0 +1,49 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-06 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "late_by",
+  "deduction"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "description": "Minutes late (from shift start) at or above which this tier applies.",
+   "fieldname": "late_by",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Late By (Minutes)",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "description": "Days deducted per 4 such late entries (e.g. 0.5 or 1).",
+   "fieldname": "deduction",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Deduction (Days) per 4",
+   "non_negative": 1,
+   "precision": "2",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Late Entry Threshold",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

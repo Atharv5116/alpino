@@ -7,7 +7,10 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "customer_type"
+  "customer_type",
+  "abbreviation",
+  "sequence",
+  "min_expiry_days"
  ],
  "fields": [
   {
@@ -16,11 +19,33 @@
    "label": "Customer Type",
    "unique": 1,
    "in_list_view": 1
+  },
+  {
+   "fieldname": "abbreviation",
+   "fieldtype": "Data",
+   "label": "Abbreviation",
+   "in_list_view": 1,
+   "length": 10
+  },
+  {
+   "fieldname": "sequence",
+   "fieldtype": "Int",
+   "label": "Sequence",
+   "in_list_view": 1,
+   "non_negative": 1
+  },
+  {
+   "fieldname": "min_expiry_days",
+   "fieldtype": "Int",
+   "label": "Minimum Expiry Days",
+   "in_list_view": 1,
+   "non_negative": 1,
+   "description": "Batches selected on Pick List / Delivery Note for this customer type must have at least this many days remaining to expiry from the dispatch date. Leave blank to disable the check."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-13 12:00:00.000000",
+ "modified": "2026-05-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Offline Buyer Customer Type",
