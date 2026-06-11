@@ -81,7 +81,7 @@ def add_attendance_request_custom_fields():
 				fieldtype="Table",
 				options="Attendance Request Detail",
 				insert_after="custom_checkin_section",
-				description="Add/edit the requested check-in and check-out (time only) per date. Applied on approval; for On Duty a blank time falls back to the assigned shift.",
+				description="Tick Edit Check-in / Edit Check-out to set the requested time (24-hour) per date; applied on approval. On Duty needs no times here — it uses the assigned shift start/end for each date.",
 			),
 			# --- Existing Check-in Logs (read-only, every reason) ---
 			dict(

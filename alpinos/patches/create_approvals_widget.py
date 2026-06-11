@@ -12,12 +12,12 @@ LABEL = "Pending Approvals"
 WORKSPACE = "Approvals"
 
 HTML = """
-<div id="alp-approvals-widget" style="padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#ffffff;width:100%;max-width:100%;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+<div id="alp-approvals-widget" style="padding:20px;border:1px solid var(--border-color);border-radius:16px;background:var(--card-bg);width:100%;max-width:100%;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
-    <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#6366f1;flex-shrink:0;"></span>Pending Approvals</span>
-    <span id="alp-approvals-sub" style="font-size:11px;color:#9ca3af;">Requests awaiting your action</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--heading-color);"><span style="width:8px;height:8px;border-radius:50%;background:#6366f1;flex-shrink:0;"></span>Pending Approvals</span>
+    <span id="alp-approvals-sub" style="font-size:11px;color:var(--text-muted);">Requests awaiting your action</span>
   </div>
-  <div id="alp-approvals-body" style="font-size:12px;color:#4b5563;overflow-x:auto;"></div>
+  <div id="alp-approvals-body" style="font-size:12px;color:var(--text-color);overflow-x:auto;"></div>
 </div>
 """
 
@@ -26,7 +26,7 @@ var root = root_element;
 var widget = root.querySelector("#alp-approvals-widget");
 var body = root.querySelector("#alp-approvals-body");
 var sub = root.querySelector("#alp-approvals-sub");
-if (body) body.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
+if (body) body.innerHTML = "<span style='color:var(--text-muted);'>Loading...</span>";
 
 frappe.call({
   method: "alpinos.approval_dashboard.get_pending_approvals",
@@ -47,8 +47,8 @@ frappe.call({
         return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
       });
     }
-    var th = "padding:6px 10px;border:1px solid #e5e7eb;text-align:left;background:#f9fafb;font-weight:600;color:#374151;";
-    var td = "padding:6px 10px;border:1px solid #e5e7eb;";
+    var th = "padding:6px 10px;border:1px solid var(--border-color);text-align:left;background:var(--bg-color);font-weight:600;color:var(--text-color);";
+    var td = "padding:6px 10px;border:1px solid var(--border-color);";
     var PAGE = 10;
     var shown = PAGE;
     function render() {
@@ -68,13 +68,13 @@ frappe.call({
           + "<td style='" + td + "'><span style='font-weight:600;'>" + esc(it.type) + "</span></td>"
           + "<td style='" + td + "'>" + esc(emp) + "</td>"
           + "<td style='" + td + "'>" + esc(it.date) + "</td>"
-          + "<td style='" + td + "'><a href='" + url + "'>" + esc(it.name) + "</a></td>"
+          + "<td style='" + td + "'><a href='" + url + "' style='color:var(--text-color);text-decoration:underline;'>" + esc(it.name) + "</a></td>"
           + "</tr>";
       }
       html += "</tbody></table>";
       if (items.length > n) {
         html += "<div style='margin-top:10px;text-align:center;'>"
-          + "<button id='alp-appr-more' style='padding:6px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;color:#374151;cursor:pointer;'>Load more (" + (items.length - n) + ")</button>"
+          + "<button id='alp-appr-more' style='padding:6px 14px;font-size:12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-color);color:var(--text-color);cursor:pointer;'>Load more (" + (items.length - n) + ")</button>"
           + "</div>";
       }
       body.innerHTML = html;
