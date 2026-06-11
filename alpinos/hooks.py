@@ -146,6 +146,7 @@ after_migrate = [
 	"alpinos.attendance_request_automation.create_attendance_request_client_script",
 	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
+	"alpinos.attendance_request_workflow_setup.execute",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
 	"alpinos.employee_probation_automation.setup_employee_probation",
