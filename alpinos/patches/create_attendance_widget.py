@@ -620,10 +620,11 @@ function getStatusIcon(status) {
 
 function getDayStyle(status, isToday) {
   var bg = "#f9fafb";
-  if (status === "Present" || status === "Work From Home") bg = "#ecfdf5";
+  if (status === "Present") bg = "#ecfdf5";
+  else if (status === "Work From Home") bg = "#dbeafe";
   else if (status === "Absent") bg = "#fef2f2";
   else if (status === "Half Day") bg = "#fffbeb";
-  else if (status === "On Leave") bg = "#eff6ff";
+  else if (status === "On Leave") bg = "#ede9fe";
   else if (status === "Holiday") bg = "#f3f4f6";
   var border = isToday ? "2px solid #3b82f6" : "1px solid #e5e7eb";
   var shadow = isToday ? "0 0 0 1px rgba(59,130,246,0.25)" : "none";
