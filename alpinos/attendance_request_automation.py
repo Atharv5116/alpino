@@ -611,6 +611,40 @@ def populate_attendance_reason_after_submit(doc, method=None):
 	sync_attendance_request_reason(doc)
 
 
+# Workflow states in which an Attendance Request has "reserved" its monthly edit count:
+# it has been sent for approval (or already approved). A Draft (still being prepared) or a
+# Rejected request reserves nothing — rejecting releases the count.
+RESERVED_EDIT_STATES = ("Pending RM Approval", "Pending HR Approval", "Approved")
+
+
+def get_reserved_request_names(employee, month_start, next_month, exclude=None):
+	"""Names of the employee's requests in the month whose edits are reserved against the
+	monthly limit. A request counts once it is sent for approval or approved; Draft and
+	Rejected/Cancelled do not. Pre-workflow requests (no workflow_state) fall back to
+	docstatus — a submitted one counts, a draft does not.
+	"""
+	candidates = frappe.get_all(
+		"Attendance Request",
+		filters=[
+			["employee", "=", employee],
+			["docstatus", "<", 2],
+			["from_date", ">=", month_start],
+			["from_date", "<", next_month],
+			["name", "!=", exclude or "new-attendance-request"],
+		],
+		fields=["name", "workflow_state", "docstatus"],
+	)
+	names = []
+	for c in candidates:
+		state = c.get("workflow_state")
+		if state:
+			if state in RESERVED_EDIT_STATES:
+				names.append(c.name)
+		elif c.docstatus == 1:  # legacy pre-workflow submitted request
+			names.append(c.name)
+	return names
+
+
 def count_attendance_request_edits(parents):
 	"""Total punch edits across the given Attendance Requests.
 
@@ -657,17 +691,9 @@ def get_monthly_request_status(employee, on_date=None, current=None):
 	user = frappe.db.get_value("Employee", employee, "user_id")
 	exempt = bool(user) and "HR Manager" in frappe.get_roles(user)
 
-	others = frappe.get_all(
-		"Attendance Request",
-		filters=[
-			["employee", "=", employee],
-			["docstatus", "<", 2],
-			["from_date", ">=", month_start],
-			["from_date", "<", next_month],
-			["name", "!=", current or "new-attendance-request"],
-		],
-		pluck="name",
-	)
+	# Only requests already sent for approval (or approved) reserve the count; Drafts and
+	# Rejected requests don't.
+	others = get_reserved_request_names(employee, month_start, next_month, current)
 	used = count_attendance_request_edits(others)
 	limit = 4
 	return {
@@ -694,6 +720,7 @@ frappe.ui.form.on('Attendance Request', {
 	refresh: function(frm) {
 		alp_toggle_date_fields(frm);
 		alp_show_ar_remaining(frm);
+		alp_normalize_punches(frm);
 		// Auto-populate only on a brand-new form; re-opening a saved request must never
 		// re-dirty it.
 		if (frm.is_new()) {
@@ -744,6 +771,21 @@ function alp_toggle_date_fields(frm) {
 		});
 		grid.refresh();
 	}
+}
+
+function alp_normalize_punches(frm) {
+	// The Edit checkbox is the gate: a Check-in/Check-out time only counts when its box is ticked.
+	// Frappe's grid shares one column definition across rows, so per-row inline read-only can't be
+	// trusted — instead we hard-clear any punch whose Edit box is unticked, so an untouched row (or
+	// a Time field's auto-"now" default) is always blank. On Duty enters times directly with no
+	// boxes (blank = assigned shift), so skip it.
+	if (frm.doc.reason === 'On Duty') return;
+	var changed = false;
+	(frm.doc.custom_attendance_details || []).forEach(function (row) {
+		if (!row.edit_check_in && row.check_in) { row.check_in = null; changed = true; }
+		if (!row.edit_check_out && row.check_out) { row.check_out = null; changed = true; }
+	});
+	if (changed) frm.refresh_field('custom_attendance_details');
 }
 
 function alp_sync_single_date(frm) {
@@ -814,6 +856,7 @@ function alp_populate(frm, force) {
 				});
 			}
 			frm.refresh_field('custom_attendance_details');
+			alp_normalize_punches(frm);
 		}
 	});
 }
@@ -851,19 +894,12 @@ function alp_show_ar_remaining(frm) {
 
 frappe.ui.form.on('Attendance Request Detail', {
 	edit_check_in: function (frm, cdt, cdn) {
-		// Unticking clears the punch so it stays blank (no Time auto-now value left behind).
+		// Unticking clears the CHECK-IN only (never the check-out) so it stays blank.
 		if (!locals[cdt][cdn].edit_check_in) frappe.model.set_value(cdt, cdn, 'check_in', null);
 	},
 	edit_check_out: function (frm, cdt, cdn) {
+		// Unticking clears the CHECK-OUT only (the check-in is left untouched).
 		if (!locals[cdt][cdn].edit_check_out) frappe.model.set_value(cdt, cdn, 'check_out', null);
-	},
-	check_in: function (frm, cdt, cdn) {
-		// Entering a time is itself the edit — keep the Edit box in sync so the punch is never
-		// silently dropped (and a cleared time unticks it).
-		frappe.model.set_value(cdt, cdn, 'edit_check_in', locals[cdt][cdn].check_in ? 1 : 0);
-	},
-	check_out: function (frm, cdt, cdn) {
-		frappe.model.set_value(cdt, cdn, 'edit_check_out', locals[cdt][cdn].check_out ? 1 : 0);
 	}
 });
 

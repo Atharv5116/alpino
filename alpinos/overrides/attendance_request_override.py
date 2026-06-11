@@ -8,8 +8,10 @@ from frappe import _
 from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, get_time, getdate, now_datetime
 from hrms.hr.doctype.attendance_request.attendance_request import AttendanceRequest as HRMSAttendanceRequest
 from alpinos.attendance_request_automation import (
+	RESERVED_EDIT_STATES,
 	count_attendance_request_edits,
 	gather_day_info,
+	get_reserved_request_names,
 	sync_attendance_request_reason,
 )
 
@@ -36,7 +38,12 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	def _clear_unticked_punches(self):
 		"""A Time field auto-fills a new row with the current time; clear any punch whose Edit
-		box is unticked so an unedited check-in/check-out is stored blank, not the auto-now value."""
+		box is unticked so an unedited check-in/check-out is stored blank, not the auto-now value.
+
+		On Duty has no Edit boxes (the times are entered directly, blank = assigned shift), so its
+		rows are left as-is — _sync_tables already blanks the Time auto-now on the rows it builds."""
+		if self.reason == "On Duty":
+			return
 		for row in (self.custom_attendance_details or []):
 			if not row.get("edit_check_in"):
 				row.check_in = None
@@ -137,21 +144,17 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 	def _enforce_monthly_limit(self):
 		if self._is_hr_manager():
 			return
+		# The count is reserved only when the request is sent for approval (or approved); while
+		# it is still a Draft (being prepared) or has been Rejected it consumes nothing. So only
+		# enforce once it enters a reserved state. (No workflow_state -> legacy/no workflow -> enforce.)
+		state = self.get("workflow_state")
+		if state and state not in RESERVED_EDIT_STATES:
+			return
 		month_start = getdate(self.from_date).replace(day=1)
 		next_month = add_months(month_start, 1)
 
-		# Edits already used this month by the employee's other requests.
-		others = frappe.get_all(
-			"Attendance Request",
-			filters=[
-				["employee", "=", self.employee],
-				["docstatus", "<", 2],
-				["from_date", ">=", month_start],
-				["from_date", "<", next_month],
-				["name", "!=", self.name or "new-attendance-request"],
-			],
-			pluck="name",
-		)
+		# Edits already reserved this month by the employee's other requests.
+		others = get_reserved_request_names(self.employee, month_start, next_month, self.name)
 		used = count_attendance_request_edits(others)
 		current = self._punch_edits_in_details()
 		if used + current > 4:
@@ -205,6 +208,10 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			row = by_date.get(dt_)
 			if not row:
 				row = self.append("custom_attendance_details", {"attendance_date": dt_})
+				# A new child row's Time fields auto-fill with the current time; blank them so an
+				# unedited punch starts empty (not a stray "now" value).
+				row.check_in = None
+				row.check_out = None
 			row.attendance_status = info["status"]
 
 			# Only capture a date's existing log the first time; never overwrite it.
