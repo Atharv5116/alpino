@@ -156,6 +156,7 @@ after_migrate = [
 	"alpinos.patches.create_hr_lifecycle_widget.execute",
 	"alpinos.patches.create_missing_checkin_widget.execute",
 	"alpinos.patches.create_approvals_widget.execute",
+	"alpinos.approval_access.setup_approvals_access",
 	"alpinos.patches.create_outside_geo_widget.execute",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
@@ -365,7 +366,8 @@ doc_events = {
 		]
 	},
 	"Employee": {
-		"validate": "alpinos.employee_probation_automation.calculate_probation_end_date"
+		"validate": "alpinos.employee_probation_automation.calculate_probation_end_date",
+		"on_update": "alpinos.approval_access.grant_rm_role_for_employee"
 	},
 	"Work From Home Request": {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
@@ -398,7 +400,8 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails"
+		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
+		"alpinos.approval_access.sync_reporting_manager_roles"
 	],
 	"cron": {
 		"*/30 * * * *": [

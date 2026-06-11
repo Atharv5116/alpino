@@ -40,6 +40,11 @@ frappe.call({
     if (!data.allowed) { if (widget) widget.style.display = "none"; return; }
     var items = data.employees || [];
     var sub = root.querySelector("#alp-missing-checkin-sub");
+    if (data.before_cutoff) {
+      if (sub) sub.textContent = "Available after 11:30 AM";
+      body.innerHTML = "<span style='color:#9ca3af;'>The 11:30 AM cutoff hasn't passed yet \\u2014 check back after 11:30 AM.</span>";
+      return;
+    }
     if (!items.length) {
       if (sub) sub.textContent = "By 11:30 AM \\u00b7 no approved leave";
       body.innerHTML = "<span style='color:#16a34a;'>Everyone has checked in (or is on leave). \\u2705</span>";

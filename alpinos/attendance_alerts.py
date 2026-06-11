@@ -78,6 +78,18 @@ def get_missing_checkins_today():
 	if not allowed:
 		return {"allowed": False, "date": "", "employees": []}
 
+	# The list only makes sense once the 11:30 AM cutoff has passed; before then an
+	# employee may still check in, so show nothing (flag it so the widget can say so).
+	now = now_datetime()
+	cutoff_today = getdate(now)
+	if now < get_datetime(f"{cutoff_today} {CHECKIN_CUTOFF}"):
+		return {
+			"allowed": True,
+			"date": format_date(cutoff_today),
+			"employees": [],
+			"before_cutoff": True,
+		}
+
 	today, flagged = get_flagged_employees()
 	allowed_ids = None if is_hr_manager else set(direct_reports)
 	date_str = format_date(today)
