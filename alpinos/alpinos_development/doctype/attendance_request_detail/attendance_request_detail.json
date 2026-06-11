@@ -32,8 +32,8 @@
   },
   {
    "columns": 2,
-   "read_only_depends_on": "eval:!doc.edit_check_in",
-   "description": "Editable when 'Edit Check-in' is ticked.",
+   "read_only_depends_on": "eval:!doc.edit_check_in && parent.reason != 'On Duty'",
+   "description": "Editable when 'Edit Check-in' is ticked (always editable for On Duty).",
    "fieldname": "check_in",
    "fieldtype": "Time",
    "in_list_view": 1,
@@ -49,8 +49,8 @@
   },
   {
    "columns": 2,
-   "read_only_depends_on": "eval:!doc.edit_check_out",
-   "description": "Editable when 'Edit Check-out' is ticked.",
+   "read_only_depends_on": "eval:!doc.edit_check_out && parent.reason != 'On Duty'",
+   "description": "Editable when 'Edit Check-out' is ticked (always editable for On Duty).",
    "fieldname": "check_out",
    "fieldtype": "Time",
    "in_list_view": 1,

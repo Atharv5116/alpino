@@ -620,6 +620,13 @@ def count_attendance_request_edits(parents):
 	"""
 	if not parents:
 		return 0
+	# On Duty specifies duty times, not missing-punch edits — exclude those requests.
+	parents = [
+		p for p in parents
+		if frappe.db.get_value("Attendance Request", p, "reason") != "On Duty"
+	]
+	if not parents:
+		return 0
 	total = 0
 	for field in ("edit_check_in", "edit_check_out"):
 		total += frappe.db.count(
@@ -727,11 +734,12 @@ function alp_toggle_date_fields(frm) {
 	frm.toggle_display('from_date', on_duty);
 	frm.toggle_display('to_date', on_duty);
 	frm.toggle_display('custom_request_date', !on_duty);
-	// On Duty uses the assigned shift for the whole range, so the per-punch Edit checkboxes
-	// and time fields are not needed — hide those grid columns.
+	// On Duty doesn't use the per-punch Edit checkboxes — the Check-in/Check-out times are
+	// edited directly (a blank time falls back to the assigned shift). Hide just the two Edit
+	// columns for On Duty; the time fields stay editable via read_only_depends_on (parent.reason).
 	var grid = frm.fields_dict.custom_attendance_details && frm.fields_dict.custom_attendance_details.grid;
 	if (grid) {
-		['edit_check_in', 'check_in', 'edit_check_out', 'check_out'].forEach(function (f) {
+		['edit_check_in', 'edit_check_out'].forEach(function (f) {
 			grid.update_docfield_property(f, 'hidden', on_duty ? 1 : 0);
 		});
 		grid.refresh();

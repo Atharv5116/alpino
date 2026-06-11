@@ -121,7 +121,11 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 	# Each check-in or check-out the employee fills counts as one edit, so a single request
 	# that sets both a check-in and a check-out uses 2 of the 4 monthly edits.
 	def _punch_edits_in_details(self):
-		"""Edits in THIS request: number of ticked Edit Check-in / Edit Check-out boxes."""
+		"""Edits in THIS request: number of ticked Edit Check-in / Edit Check-out boxes.
+		On Duty specifies duty times (a whole range, blank = assigned shift), not missing-punch
+		edits, so it never counts toward the monthly limit."""
+		if self.reason == "On Duty":
+			return 0
 		n = 0
 		for row in (self.custom_attendance_details or []):
 			if row.get("edit_check_in"):
@@ -263,9 +267,11 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if not row.attendance_date:
 				continue
 			if on_duty:
-				# On Duty needs no edit checkboxes — it always uses the assigned shift times for
-				# the whole range (the per-row punch fields are not used).
-				in_dt, out_dt = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
+				# On Duty needs no edit checkboxes — an entered time is used as-is; a blank time
+				# falls back to the assigned shift for that date.
+				shift_in, shift_out = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
+				in_dt = self._time_on_date(row.attendance_date, row.check_in) or shift_in
+				out_dt = self._time_on_date(row.attendance_date, row.check_out) or shift_out
 			else:
 				# Only a ticked 'Edit' box is a real punch. An unticked Time field may carry the
 				# auto-now default, so it must be ignored.
