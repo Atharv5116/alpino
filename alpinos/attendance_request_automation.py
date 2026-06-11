@@ -761,12 +761,11 @@ function alp_toggle_date_fields(frm) {
 	frm.toggle_display('from_date', on_duty);
 	frm.toggle_display('to_date', on_duty);
 	frm.toggle_display('custom_request_date', !on_duty);
-	// On Duty doesn't use the per-punch Edit checkboxes — the Check-in/Check-out times are
-	// edited directly (a blank time falls back to the assigned shift). Hide just the two Edit
-	// columns for On Duty; the time fields stay editable via read_only_depends_on (parent.reason).
+	// On Duty always uses the employee's assigned shift start/end per date — there is no manual
+	// check-in/check-out, so hide all four punch columns for On Duty.
 	var grid = frm.fields_dict.custom_attendance_details && frm.fields_dict.custom_attendance_details.grid;
 	if (grid) {
-		['edit_check_in', 'edit_check_out'].forEach(function (f) {
+		['edit_check_in', 'check_in', 'edit_check_out', 'check_out'].forEach(function (f) {
 			grid.update_docfield_property(f, 'hidden', on_duty ? 1 : 0);
 		});
 		grid.refresh();
@@ -831,8 +830,8 @@ function alp_populate(frm, force) {
 			});
 			frm.refresh_field('custom_existing_logs');
 
-			// Check-in / Check-out Details (editable).
-			var on_duty = frm.doc.reason === 'On Duty';
+			// Check-in / Check-out Details (editable). On Duty uses the assigned shift and hides
+			// these columns, so every row just starts blank and gated.
 			var emptyDetails = (frm.doc.custom_attendance_details || []).length === 0;
 			if (force || emptyDetails) {
 				frm.clear_table('custom_attendance_details');
@@ -840,11 +839,9 @@ function alp_populate(frm, force) {
 					var c = frm.add_child('custom_attendance_details');
 					c.attendance_date = row.attendance_date;
 					c.attendance_status = row.attendance_status;
-					// Clear the Time auto-now defaults so an unedited punch starts blank. On Duty
-					// has no visible Edit boxes, so pre-tick them to keep its time fields editable
-					// (read_only_depends_on gates on the box); non On-Duty stays gated/blank.
-					c.edit_check_in = on_duty ? 1 : 0;
-					c.edit_check_out = on_duty ? 1 : 0;
+					// Clear the Time auto-now defaults so an unedited punch starts blank.
+					c.edit_check_in = 0;
+					c.edit_check_out = 0;
 					c.check_in = null;
 					c.check_out = null;
 				});
@@ -911,11 +908,6 @@ frappe.ui.form.on('Attendance Request', {
 		// New row from "Add Row": clear the Time auto-now defaults so it starts blank.
 		frappe.model.set_value(cdt, cdn, 'check_in', null);
 		frappe.model.set_value(cdt, cdn, 'check_out', null);
-		// On Duty has no visible Edit boxes — pre-tick so the time fields are editable.
-		if (frm.doc.reason === 'On Duty') {
-			frappe.model.set_value(cdt, cdn, 'edit_check_in', 1);
-			frappe.model.set_value(cdt, cdn, 'edit_check_out', 1);
-		}
 	}
 });
 """

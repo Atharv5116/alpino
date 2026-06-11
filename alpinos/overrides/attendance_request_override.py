@@ -39,11 +39,8 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 	def _clear_unticked_punches(self):
 		"""A Time field auto-fills a new row with the current time; clear any punch whose Edit
 		box is unticked so an unedited check-in/check-out is stored blank, not the auto-now value.
-
-		On Duty has no Edit boxes (the times are entered directly, blank = assigned shift), so its
-		rows are left as-is — _sync_tables already blanks the Time auto-now on the rows it builds."""
-		if self.reason == "On Duty":
-			return
+		On Duty rows carry no manual times (the assigned shift is used on approval), so their
+		unticked punches are blanked here too."""
 		for row in (self.custom_attendance_details or []):
 			if not row.get("edit_check_in"):
 				row.check_in = None
@@ -106,8 +103,11 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self.from_date = single
 		self.to_date = single
 
-	# ----- Rule 2: only the last 7 days (HR Manager exempt) -----
+	# ----- Rule 2: only the last 7 days (On Duty and HR Manager exempt) -----
 	def _enforce_request_window(self):
+		# On Duty is a duty assignment, not a missing-punch edit — no date window at all.
+		if self.reason == "On Duty":
+			return
 		if self._is_hr_manager():
 			return
 		today = getdate(now_datetime())
@@ -142,6 +142,9 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		return n
 
 	def _enforce_monthly_limit(self):
+		# On Duty never consumes the monthly edit balance.
+		if self.reason == "On Duty":
+			return
 		if self._is_hr_manager():
 			return
 		# The count is reserved only when the request is sent for approval (or approved); while
@@ -274,11 +277,9 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if not row.attendance_date:
 				continue
 			if on_duty:
-				# On Duty needs no edit checkboxes — an entered time is used as-is; a blank time
-				# falls back to the assigned shift for that date.
-				shift_in, shift_out = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
-				in_dt = self._time_on_date(row.attendance_date, row.check_in) or shift_in
-				out_dt = self._time_on_date(row.attendance_date, row.check_out) or shift_out
+				# On Duty always uses the employee's assigned shift start/end for each date —
+				# there is no manual check-in/check-out entry.
+				in_dt, out_dt = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
 			else:
 				# Only a ticked 'Edit' box is a real punch. An unticked Time field may carry the
 				# auto-now default, so it must be ignored.
