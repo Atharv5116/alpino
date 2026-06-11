@@ -498,14 +498,15 @@ function formatDuration(ms){
   <div id="alp-att-cal-grid" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;max-width:760px;margin-left:auto;margin-right:auto;"></div>
 
   <div style="margin-top:16px;font-size:10px;color:#9ca3af;display:flex;flex-wrap:wrap;gap:12px 16px;padding-top:14px;border-top:1px solid #f3f4f6;">
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#10003;</span> Present</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#127968;</span> WFH</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#10007;</span> Absent</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#189;</span> Half Day</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#127746;</span> Leave</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#9728;</span> Holiday</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#128340;</span> Late</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;opacity:0.9;">&#9201;</span> Early out</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#86efac;flex-shrink:0;display:inline-block;"></span> Present (8h+)</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fdba74;flex-shrink:0;display:inline-block;"></span> Hours short / No checkout</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#93c5fd;flex-shrink:0;display:inline-block;"></span> WFH</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fca5a5;flex-shrink:0;display:inline-block;"></span> Absent</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fcd34d;flex-shrink:0;display:inline-block;"></span> Half Day</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#c4b5fd;flex-shrink:0;display:inline-block;"></span> On Leave</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#d1d5db;flex-shrink:0;display:inline-block;"></span> Holiday</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#fef3c7;color:#92400e;font-weight:500;">&#128340; Late</span></span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#ede9fe;color:#5b21b6;font-weight:500;">&#9201; Early</span></span>
   </div>
 
   <div id="alp-people-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:20px;padding:18px 18px 12px;border-radius:18px;background:#f9fafb;border:1px solid #e5e7eb;">
@@ -618,9 +619,9 @@ function getStatusIcon(status) {
   return "&#8212;";
 }
 
-function getDayStyle(status, isToday) {
+function getDayStyle(status, isToday, workedMinutes, hasCheckout) {
   var bg = "#f9fafb";
-  if (status === "Present") bg = "#ecfdf5";
+  if (status === "Present") bg = (workedMinutes != null && workedMinutes >= 480 && hasCheckout) ? "#ecfdf5" : "#fff7ed";
   else if (status === "Work From Home") bg = "#dbeafe";
   else if (status === "Absent") bg = "#fef2f2";
   else if (status === "Half Day") bg = "#fffbeb";
@@ -656,7 +657,7 @@ function renderCalendar(days, year, month) {
     var isToday = key === todayKey;
 
     var cell = document.createElement("div");
-    cell.setAttribute("style", getDayStyle(status, isToday));
+    cell.setAttribute("style", getDayStyle(status, isToday, item.worked_minutes, !!item.check_out));
 
     var head = document.createElement("div");
     head.setAttribute("style", "display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0;");
