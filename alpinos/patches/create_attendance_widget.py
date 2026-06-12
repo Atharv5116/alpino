@@ -900,12 +900,22 @@ loadMonth(current.getFullYear(), current.getMonth() + 1);
         }
         blocks.insert(1, custom_block_item)
 
-    # ensure calendar widget also present
-    has_calendar = any(
-        block.get("type") == "custom_block"
-        and block.get("data", {}).get("custom_block_name") == cal_label
-        for block in blocks
-    )
+    # Ensure exactly one calendar. Treat the workspace as already having a calendar if OUR
+    # block is present OR any other custom block renders the calendar grid (a site-side manual
+    # calendar with a different block name). This stops a second calendar being added on every
+    # migrate next to one that's already there.
+    def _renders_calendar(block):
+        if block.get("type") != "custom_block":
+            return False
+        nm = (block.get("data") or {}).get("custom_block_name")
+        if not nm:
+            return False
+        if nm == cal_label:
+            return True
+        block_html = frappe.db.get_value("Custom HTML Block", nm, "html") or ""
+        return "alp-att-cal-grid" in block_html
+
+    has_calendar = any(_renders_calendar(b) for b in blocks)
 
     if not has_calendar:
         blocks.insert(
