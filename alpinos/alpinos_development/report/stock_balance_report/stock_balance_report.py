@@ -14,25 +14,30 @@ def execute(filters=None):
 	if not filters:
 		filters = {}
 	
-	# Prepare filters for core report (frappe._dict for attribute access)
+	# The report is an "as on To Date" snapshot. Opening Qty must be the PREVIOUS day's closing
+	# (i.e. the balance at the start of the To Date), and Available/Closing the balance as on the
+	# To Date. Running the core report with from_date = to_date = the To Date gives exactly that:
+	# its opening_qty = balance before the To Date (yesterday's closing) and bal_qty = balance as
+	# on the To Date (today's closing).
+	report_date = getdate(filters.get("date") or getdate())
 	core_filters = frappe._dict({
 		"company": filters.get("company"),
-		"from_date": filters.get("from_date") or getdate(),
-		"to_date": filters.get("date") or getdate(),
+		"from_date": report_date,
+		"to_date": report_date,
 		"warehouse": [filters.get("warehouse")] if filters.get("warehouse") else None,
 		"item_code": [filters.get("item_code")] if filters.get("item_code") else None,
 		"valuation_field_type": "Currency",
 		"include_zero_stock_items": 0,
 	})
-	
+
 	# Run core stock balance report
 	core_report = StockBalanceReport(core_filters)
 	core_columns, core_data = core_report.run()
-	
+
 	# Transform to our custom format
 	columns = get_columns()
-	data = transform_data(core_data, filters.get("date") or getdate())
-	
+	data = transform_data(core_data, report_date)
+
 	return columns, data
 
 
