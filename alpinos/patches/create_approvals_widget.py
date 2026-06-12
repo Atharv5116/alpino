@@ -15,7 +15,12 @@ HTML = """
 <div id="alp-approvals-widget" style="padding:20px;border:1px solid var(--border-color);border-radius:16px;background:var(--card-bg);width:100%;max-width:100%;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
     <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--heading-color);"><span style="width:8px;height:8px;border-radius:50%;background:#6366f1;flex-shrink:0;"></span>Pending Approvals</span>
-    <span id="alp-approvals-sub" style="font-size:11px;color:var(--text-muted);">Requests awaiting your action</span>
+    <div style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <input id="alp-appr-from" type="date" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-color);color:var(--text-color);">
+      <span style="font-size:11px;color:var(--text-muted);">to</span>
+      <input id="alp-appr-to" type="date" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-color);color:var(--text-color);">
+      <span id="alp-approvals-sub" style="font-size:11px;color:var(--text-muted);margin-left:4px;">awaiting your action</span>
+    </div>
   </div>
   <div id="alp-approvals-body" style="font-size:12px;color:var(--text-color);overflow-x:auto;"></div>
 </div>
@@ -26,19 +31,33 @@ var root = root_element;
 var widget = root.querySelector("#alp-approvals-widget");
 var body = root.querySelector("#alp-approvals-body");
 var sub = root.querySelector("#alp-approvals-sub");
-if (body) body.innerHTML = "<span style='color:var(--text-muted);'>Loading...</span>";
+var fromEl = root.querySelector("#alp-appr-from");
+var toEl = root.querySelector("#alp-appr-to");
 
-frappe.call({
-  method: "alpinos.approval_dashboard.get_pending_approvals",
-  freeze: false,
-  callback: function (r) {
+// Default the date range to the current month.
+function pad(n){ return String(n).padStart(2, "0"); }
+function ymd(x){ return x.getFullYear() + "-" + pad(x.getMonth() + 1) + "-" + pad(x.getDate()); }
+var nowStr = (frappe.datetime && frappe.datetime.now_date) ? frappe.datetime.now_date() : ymd(new Date());
+var nowD = new Date(nowStr);
+if (fromEl && !fromEl.value) fromEl.value = ymd(new Date(nowD.getFullYear(), nowD.getMonth(), 1));
+if (toEl && !toEl.value) toEl.value = ymd(new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0));
+if (fromEl) fromEl.addEventListener("change", load);
+if (toEl) toEl.addEventListener("change", load);
+
+function load() {
+  if (body) body.innerHTML = "<span style='color:var(--text-muted);'>Loading...</span>";
+  frappe.call({
+    method: "alpinos.approval_dashboard.get_pending_approvals",
+    args: { from_date: fromEl ? fromEl.value : null, to_date: toEl ? toEl.value : null },
+    freeze: false,
+    callback: function (r) {
     if (r.exc) { if (widget) widget.style.display = "none"; return; }
     var data = r.message || {};
     if (!data.allowed) { if (widget) widget.style.display = "none"; return; }
     var items = data.items || [];
     if (!items.length) {
       if (sub) sub.textContent = "Nothing pending \\u2705";
-      body.innerHTML = "<span style='color:#16a34a;'>No requests are waiting for your approval.</span>";
+      body.innerHTML = "<span style='color:#16a34a;'>No requests are waiting for your approval in this range.</span>";
       return;
     }
     if (sub) sub.textContent = items.length + " pending";
@@ -82,8 +101,10 @@ frappe.call({
       if (btn) btn.onclick = function () { shown += PAGE; render(); };
     }
     render();
-  },
-});
+    }
+  });
+}
+load();
 """
 
 
