@@ -664,11 +664,21 @@ function renderCalendar(days, year, month) {
     var dayEl = document.createElement("span");
     dayEl.setAttribute("style", "font-weight:600;font-size:13px;color:#111827;");
     dayEl.textContent = String(day);
+    var rightEl = document.createElement("span");
+    rightEl.setAttribute("style", "display:inline-flex;align-items:center;gap:3px;flex-shrink:0;");
+    if (item.wfh) {
+      var wfhEl = document.createElement("span");
+      wfhEl.setAttribute("style", "font-size:12px;line-height:1;");
+      wfhEl.setAttribute("title", "Work From Home");
+      wfhEl.innerHTML = "&#127968;";
+      rightEl.appendChild(wfhEl);
+    }
     var iconEl = document.createElement("span");
-    iconEl.setAttribute("style", "font-size:13px;line-height:1;color:#6b7280;flex-shrink:0;");
+    iconEl.setAttribute("style", "font-size:13px;line-height:1;color:#6b7280;");
     iconEl.innerHTML = getStatusIcon(status);
+    rightEl.appendChild(iconEl);
     head.appendChild(dayEl);
-    head.appendChild(iconEl);
+    head.appendChild(rightEl);
     cell.appendChild(head);
 
     var ci = timeToHHMM(item.check_in);
