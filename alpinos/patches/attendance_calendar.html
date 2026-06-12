@@ -1,0 +1,79 @@
+<div id="alp-att-cal-widget">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+    <h4 style="margin:0;font-size:17px;font-weight:600;color:#111827;letter-spacing:-0.02em;">My Attendance Calendar</h4>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span id="cal-prev-month" style="width:36px;height:36px;min-width:36px;border-radius:10px;border:1px solid #e5e7eb;background:#fafafa;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:#6b7280;line-height:1;">&#8249;</span>
+      <span id="cal-month-label" style="font-size:14px;font-weight:500;color:#374151;min-width:140px;text-align:center;">Loading...</span>
+      <span id="cal-next-month" style="width:36px;height:36px;min-width:36px;border-radius:10px;border:1px solid #e5e7eb;background:#fafafa;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:#6b7280;line-height:1;">&#8250;</span>
+    </div>
+  </div>
+
+  <!-- Weekday headers -->
+  <div id="alp-att-cal-weekdays" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;text-align:center;font-size:10px;font-weight:500;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;max-width:760px;margin-left:auto;margin-right:auto;">
+    <div style="padding:4px 2px;">Sun</div>
+    <div style="padding:4px 2px;">Mon</div>
+    <div style="padding:4px 2px;">Tue</div>
+    <div style="padding:4px 2px;">Wed</div>
+    <div style="padding:4px 2px;">Thu</div>
+    <div style="padding:4px 2px;">Fri</div>
+    <div style="padding:4px 2px;">Sat</div>
+  </div>
+
+  <!-- Calendar grid — populated by JS -->
+  <div id="alp-att-cal-grid" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;max-width:760px;margin-left:auto;margin-right:auto;"></div>
+
+  <!-- Legend -->
+  <div style="margin-top:16px;font-size:10px;color:#9ca3af;display:flex;flex-wrap:wrap;gap:12px 16px;padding-top:14px;border-top:1px solid #f3f4f6;">
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#86efac;flex-shrink:0;display:inline-block;"></span> Present (8h+)</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#93c5fd;flex-shrink:0;display:inline-block;"></span> WFH</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fca5a5;flex-shrink:0;display:inline-block;"></span> Absent</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fcd34d;flex-shrink:0;display:inline-block;"></span> Half Day</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#c4b5fd;flex-shrink:0;display:inline-block;"></span> On Leave</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#d1d5db;flex-shrink:0;display:inline-block;"></span> Holiday</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fdba74;flex-shrink:0;display:inline-block;"></span> Hours short / No checkout</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#fef3c7;color:#92400e;font-weight:500;">&#128340; Late</span></span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#ede9fe;color:#5b21b6;font-weight:500;">&#9201; Early</span></span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#fce7f3;color:#9d174d;font-weight:500;">&#128205; Geo</span></span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#d1fae5;color:#065f46;font-weight:500;">&#128336; 8h+</span></span>
+    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:12px;">&#127968;</span> WFH applied</span>
+  </div>
+
+  <!-- Birthdays & Anniversaries -->
+  <div id="alp-people-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:20px;padding:18px 18px 12px;border-radius:18px;background:#f9fafb;border:1px solid #e5e7eb;">
+    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease,transform 0.15s ease,box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#EC4899;flex-shrink:0;"></span>Upcoming Birthdays</span>
+        <span style="font-size:10px;color:#6b7280;">Next 30 days</span>
+      </div>
+      <div id="alp-birthdays-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+    </div>
+    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease,transform 0.15s ease,box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#6366F1;flex-shrink:0;"></span>Work Anniversaries</span>
+        <span style="font-size:10px;color:#6b7280;">Next 30 days</span>
+      </div>
+      <div id="alp-anniversaries-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+    </div>
+  </div>
+
+  <!-- On Leave Today & WFH Today -->
+  <div id="alp-on-leave-wfh-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:20px;padding:18px 18px 12px;border-radius:18px;background:#f9fafb;border:1px solid #e5e7eb;">
+    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease,transform 0.15s ease,box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#F59E0B;flex-shrink:0;"></span>Employees on Leave Today</span>
+        <span style="font-size:10px;color:#6b7280;">Today</span>
+      </div>
+      <div id="alp-on-leave-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+    </div>
+    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease,transform 0.15s ease,box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#10B981;flex-shrink:0;"></span>Employees on Work From Home Today</span>
+        <span style="font-size:10px;color:#6b7280;">Today</span>
+      </div>
+      <div id="alp-on-wfh-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;"></div>
+    </div>
+  </div>
+
+</div>

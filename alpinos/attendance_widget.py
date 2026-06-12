@@ -136,6 +136,7 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 	attendance_times = _get_attendance_times_map(employee, start_date, end_date)
 	checkins = _get_checkins_map(employee, start_date, end_date)
 	holidays = set(_get_holidays(employee, start_date, end_date))
+	wfh_dates = _get_wfh_dates(employee, start_date, end_date)
 
 	# Optional: late/early vs shift (requires hrms)
 	try:
@@ -203,6 +204,7 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 			"check_in": check_in_str,
 			"check_out": check_out_str,
 			"holiday": 1 if current in holidays else 0,
+			"wfh": 1 if current in wfh_dates else 0,
 			"worked_minutes": worked_minutes,
 			"late_coming": late_coming,
 			"early_leaving": early_leaving,
@@ -301,6 +303,23 @@ def _get_holidays(employee, from_date, to_date):
 		filters={"parent": holiday_list, "holiday_date": ["between", [from_date, to_date]]},
 		pluck="holiday_date",
 	)
+
+
+def _get_wfh_dates(employee, from_date, to_date):
+	"""Dates the employee has an applied/approved Work From Home Request for. Used to flag a
+	day as WFH on the calendar even when its attendance status is Present (check-ins from home)."""
+	if not frappe.db.exists("DocType", "Work From Home Request"):
+		return set()
+	rows = frappe.get_all(
+		"Work From Home Request",
+		filters={
+			"employee": employee,
+			"date": ["between", [from_date, to_date]],
+			"status": ["in", ["Approved", "Live"]],
+		},
+		pluck="date",
+	)
+	return {getdate(d) for d in rows}
 
 
 @frappe.whitelist()

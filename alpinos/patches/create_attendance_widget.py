@@ -1,4 +1,5 @@
 import json
+import os
 
 import frappe
 
@@ -482,366 +483,11 @@ function formatDuration(ms){
     # My Attendance Calendar widget
     # -----------------------------
     cal_label = "My Attendance Calendar"
-    cal_html = """
-<div id="alp-att-cal-widget" style="padding:22px 22px 18px;border-radius:20px;background:linear-gradient(135deg,#f3f4ff,#ffffff);min-height:340px;width:100%;max-width:980px;margin:0 auto;box-sizing:border-box;border:1px solid #e5e7eb;box-shadow:0 18px 45px rgba(15,23,42,0.06);">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
-    <h4 style="margin:0;font-size:17px;font-weight:600;color:#111827;letter-spacing:-0.02em;">My Attendance Calendar</h4>
-    <div style="display:flex;align-items:center;gap:8px;">
-      <span id="cal-prev-month" style="width:36px;height:36px;min-width:36px;border-radius:10px;border:1px solid #e5e7eb;background:#fafafa;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:#6b7280;line-height:1;">&#8249;</span>
-      <span id="cal-month-label" style="font-size:14px;font-weight:500;color:#374151;min-width:140px;text-align:center;">Loading...</span>
-      <span id="cal-next-month" style="width:36px;height:36px;min-width:36px;border-radius:10px;border:1px solid #e5e7eb;background:#fafafa;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:#6b7280;line-height:1;">&#8250;</span>
-    </div>
-  </div>
-  <div id="alp-att-cal-weekdays" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;text-align:center;font-size:10px;font-weight:500;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;max-width:760px;margin-left:auto;margin-right:auto;">
-    <div style="padding:4px 2px;">Sun</div><div style="padding:4px 2px;">Mon</div><div style="padding:4px 2px;">Tue</div><div style="padding:4px 2px;">Wed</div><div style="padding:4px 2px;">Thu</div><div style="padding:4px 2px;">Fri</div><div style="padding:4px 2px;">Sat</div>
-  </div>
-  <div id="alp-att-cal-grid" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;max-width:760px;margin-left:auto;margin-right:auto;"></div>
-
-  <div style="margin-top:16px;font-size:10px;color:#9ca3af;display:flex;flex-wrap:wrap;gap:12px 16px;padding-top:14px;border-top:1px solid #f3f4f6;">
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#86efac;flex-shrink:0;display:inline-block;"></span> Present (8h+)</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fdba74;flex-shrink:0;display:inline-block;"></span> Hours short / No checkout</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#93c5fd;flex-shrink:0;display:inline-block;"></span> WFH</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fca5a5;flex-shrink:0;display:inline-block;"></span> Absent</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#fcd34d;flex-shrink:0;display:inline-block;"></span> Half Day</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#c4b5fd;flex-shrink:0;display:inline-block;"></span> On Leave</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#d1d5db;flex-shrink:0;display:inline-block;"></span> Holiday</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#fef3c7;color:#92400e;font-weight:500;">&#128340; Late</span></span>
-    <span style="display:inline-flex;align-items:center;gap:5px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#ede9fe;color:#5b21b6;font-weight:500;">&#9201; Early</span></span>
-  </div>
-
-  <div id="alp-people-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:20px;padding:18px 18px 12px;border-radius:18px;background:#f9fafb;border:1px solid #e5e7eb;">
-    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#EC4899;flex-shrink:0;"></span>Upcoming Birthdays</span>
-        <span style="font-size:10px;color:#6b7280;">Next 30 days</span>
-      </div>
-      <div id="alp-birthdays-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
-    </div>
-    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#6366F1;flex-shrink:0;"></span>Work Anniversaries</span>
-        <span style="font-size:10px;color:#6b7280;">Next 30 days</span>
-      </div>
-      <div id="alp-anniversaries-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
-    </div>
-  </div>
-
-  <div id="alp-on-leave-wfh-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:20px;padding:18px 18px 12px;border-radius:18px;background:#f9fafb;border:1px solid #e5e7eb;">
-    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#F59E0B;flex-shrink:0;"></span>Employees on Leave Today</span>
-        <span style="font-size:10px;color:#6b7280;">Today</span>
-      </div>
-      <div id="alp-on-leave-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
-    </div>
-    <div class="alp-dash-card" style="border-radius:12px;border:1px solid #E5E7EB;background:#FFFFFF;padding:16px;min-height:140px;box-sizing:border-box;transition:background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;" onmouseover="this.style.background='#F9FAFB';this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 14px rgba(0,0,0,0.06)';" onmouseout="this.style.background='#FFFFFF';this.style.transform='translateY(0)';this.style.boxShadow='none';">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#10B981;flex-shrink:0;"></span>Employees on Work From Home Today</span>
-        <span style="font-size:10px;color:#6b7280;">Today</span>
-      </div>
-      <div id="alp-on-wfh-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
-    </div>
-  </div>
-</div>
-"""
-
-    cal_script = """
-const root = root_element;
-const monthLabel = root.querySelector("#cal-month-label");
-const grid = root.querySelector("#alp-att-cal-grid");
-const prevBtn = root.querySelector("#cal-prev-month");
-const nextBtn = root.querySelector("#cal-next-month");
-
-let current = new Date();
-
-function changeMonth(delta) {
-  const year = current.getFullYear();
-  const month = current.getMonth() + 1 + delta;
-  const d = new Date(year, month - 1, 1);
-  loadMonth(d.getFullYear(), d.getMonth() + 1);
-}
-
-prevBtn.addEventListener("click", function () {
-  changeMonth(-1);
-});
-
-nextBtn.addEventListener("click", function () {
-  changeMonth(1);
-});
-
-function loadMonth(year, month) {
-  current = new Date(year, month - 1, 1);
-  monthLabel.innerText = current.toLocaleString("default", { month: "long", year: "numeric" });
-
-  frappe.call({
-    method: "alpinos.attendance_widget.get_monthly_attendance",
-    args: { year: year, month: month },
-    freeze: true,
-    freeze_message: "Loading attendance...",
-    callback: function (r) {
-      if (r.exc) {
-        frappe.msgprint("Could not load attendance calendar. Please try again.");
-        return;
-      }
-      const data = r.message || {};
-      renderCalendar(data.days || {}, year, month);
-    },
-  });
-}
-
-function timeToHHMM(t) {
-  if (t == null || t === undefined || t === "") return "—";
-  var s = String(t).trim();
-  if (s === "—") return "—";
-  if (s.indexOf("T") !== -1) s = s.split("T")[1] || s;
-  if (s.indexOf(" ") !== -1) s = s.split(" ")[s.split(" ").length - 1] || s;
-  var parts = s.split(":");
-  if (parts.length >= 2) return parts[0] + ":" + parts[1];
-  return s || "—";
-}
-
-function formatWorked(minutes) {
-  if (minutes == null || minutes < 0) return "";
-  var h = Math.floor(minutes / 60);
-  var m = minutes % 60;
-  if (h > 0 && m > 0) return h + "h " + m + "m";
-  if (h > 0) return h + "h";
-  return m + "m";
-}
-
-function getStatusIcon(status) {
-  if (status === "Present") return "&#10003;";
-  if (status === "Work From Home") return "&#127968;";
-  if (status === "Absent") return "&#10007;";
-  if (status === "Half Day") return "&#189;";
-  if (status === "On Leave") return "&#127746;";
-  if (status === "Holiday") return "&#9728;";
-  return "&#8212;";
-}
-
-function getDayStyle(status, isToday, workedMinutes, hasCheckout) {
-  var bg = "#f9fafb";
-  if (status === "Present") bg = (workedMinutes != null && workedMinutes >= 480 && hasCheckout) ? "#ecfdf5" : "#fff7ed";
-  else if (status === "Work From Home") bg = "#dbeafe";
-  else if (status === "Absent") bg = "#fef2f2";
-  else if (status === "Half Day") bg = "#fffbeb";
-  else if (status === "On Leave") bg = "#ede9fe";
-  else if (status === "Holiday") bg = "#f3f4f6";
-  var border = isToday ? "2px solid #3b82f6" : "1px solid #e5e7eb";
-  var shadow = isToday ? "0 0 0 1px rgba(59,130,246,0.25)" : "none";
-  return "border-radius:12px;padding:6px 6px;min-height:56px;display:flex;flex-direction:column;gap:2px;justify-content:center;align-items:flex-start;background:" + bg + ";border:" + border + ";box-shadow:" + shadow + ";box-sizing:border-box;cursor:pointer;";
-}
-
-function renderCalendar(days, year, month) {
-  var first = new Date(year, month - 1, 1);
-  var last = new Date(year, month, 0);
-  var startWeekday = first.getDay();
-  var totalDays = last.getDate();
-
-  grid.innerHTML = "";
-  grid.setAttribute("style", "display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;max-width:760px;margin-left:auto;margin-right:auto;");
-
-  for (var i = 0; i < startWeekday; i++) {
-    var emptyCell = document.createElement("div");
-    emptyCell.setAttribute("style", "min-height:56px;box-sizing:border-box;");
-    grid.appendChild(emptyCell);
-  }
-
-  var today = new Date();
-  var todayKey = formatDateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
-
-  for (var day = 1; day <= totalDays; day++) {
-    var key = formatDateKey(year, month, day);
-    var item = days[key] || {};
-    var status = item.status || null;
-    var isToday = key === todayKey;
-
-    var cell = document.createElement("div");
-    cell.setAttribute("style", getDayStyle(status, isToday, item.worked_minutes, !!item.check_out));
-
-    var head = document.createElement("div");
-    head.setAttribute("style", "display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0;");
-    var dayEl = document.createElement("span");
-    dayEl.setAttribute("style", "font-weight:600;font-size:13px;color:#111827;");
-    dayEl.textContent = String(day);
-    var iconEl = document.createElement("span");
-    iconEl.setAttribute("style", "font-size:13px;line-height:1;color:#6b7280;flex-shrink:0;");
-    iconEl.innerHTML = getStatusIcon(status);
-    head.appendChild(dayEl);
-    head.appendChild(iconEl);
-    cell.appendChild(head);
-
-    var ci = timeToHHMM(item.check_in);
-    var co = timeToHHMM(item.check_out);
-    var worked = formatWorked(item.worked_minutes);
-
-    var badges = [];
-    if (item.late_coming) badges.push("&#128340; Late");
-    if (item.early_leaving) badges.push("&#9201; Early");
-
-    var badgeText = badges.join(" ");
-
-    cell.setAttribute(
-      "title",
-      key +
-        " — " +
-        (status || "Not Marked") +
-        " — In: " +
-        (item.check_in || "—") +
-        " Out: " +
-        (item.check_out || "—") +
-        (worked ? " — " + worked + " worked" : "") +
-        (badgeText ? " — " + badgeText.replace(/&#128340;/g, \"Late\").replace(/&#9201;/g, \"Early\") : \"\")
-    );
-
-    grid.appendChild(cell);
-  }
-}
-
-function formatDateKey(year, month, day) {
-  const m = String(month).padStart(2, "0");
-  const d = String(day).padStart(2, "0");
-  return `${year}-${m}-${d}`;
-}
-
-// initial load
-loadMonth(current.getFullYear(), current.getMonth() + 1);
-
-// Load Birthdays & Anniversaries (embedded in same block)
-(function () {
-  var birthdaysList = root.querySelector("#alp-birthdays-list");
-  var anniversariesList = root.querySelector("#alp-anniversaries-list");
-  if (!birthdaysList && !anniversariesList) return;
-  if (birthdaysList) birthdaysList.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
-  if (anniversariesList) anniversariesList.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
-  frappe.call({
-    method: "alpinos.people_events.get_upcoming_birthdays_and_anniversaries",
-    args: { days: 30 },
-    freeze: false,
-    callback: function (r) {
-      if (r.exc) {
-        if (birthdaysList) birthdaysList.innerHTML = "<span style='color:#9ca3af;'>Unable to load</span>";
-        if (anniversariesList) anniversariesList.innerHTML = "<span style='color:#9ca3af;'>Unable to load</span>";
-        return;
-      }
-      var data = r.message || {};
-      function renderList(container, items, emptyText, isAnniv) {
-        if (!container) return;
-        container.innerHTML = "";
-        if (!items || !items.length) {
-          container.innerHTML = "<span style='color:#9ca3af;'>" + emptyText + "</span>";
-          return;
-        }
-        items.forEach(function (item) {
-          var row = document.createElement("div");
-          row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
-          var left = document.createElement("div");
-          left.style.cssText = "display:flex;flex-direction:column;gap:2px;min-width:0;";
-          var name = document.createElement("div");
-          name.style.cssText = "font-size:11px;font-weight:500;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-          name.textContent = item.employee_name || "";
-          left.appendChild(name);
-          if (item.company) {
-            var company = document.createElement("div");
-            company.style.cssText = "font-size:10px;color:#9ca3af;";
-            company.textContent = item.company;
-            left.appendChild(company);
-          }
-          var right = document.createElement("div");
-          right.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;";
-          var day = document.createElement("div");
-          day.style.cssText = "font-size:10px;color:#4b5563;";
-          day.textContent = item.day || "";
-          right.appendChild(day);
-          if (isAnniv && item.years) {
-            var years = document.createElement("div");
-            years.style.cssText = "font-size:10px;color:#2563eb;font-weight:500;";
-            years.textContent = item.years + " yr";
-            right.appendChild(years);
-          }
-          row.appendChild(left);
-          row.appendChild(right);
-          container.appendChild(row);
-        });
-      }
-      renderList(birthdaysList, data.birthdays || [], "No upcoming birthdays", false);
-      renderList(anniversariesList, data.anniversaries || [], "No upcoming anniversaries", true);
-    },
-  });
-})();
-
-// On Leave Today & On WFH Today (visible to HR Manager or reporting managers only)
-(function () {
-  var onLeaveList = root.querySelector("#alp-on-leave-list");
-  var onWfhList = root.querySelector("#alp-on-wfh-list");
-  var widget = root.querySelector("#alp-on-leave-wfh-widget");
-  if (!widget) return;
-  if (onLeaveList) onLeaveList.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
-  if (onWfhList) onWfhList.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
-  frappe.call({
-    method: "alpinos.people_events.get_on_leave_and_wfh_today",
-    freeze: false,
-    callback: function (r) {
-      if (r.exc) {
-        widget.style.display = "none";
-        return;
-      }
-      var data = r.message || {};
-      if (!data.allowed) {
-        widget.style.display = "none";
-        return;
-      }
-      function renderOnLeave(containerEl, items) {
-        if (!containerEl) return;
-        containerEl.innerHTML = "";
-        if (!items || !items.length) {
-          containerEl.innerHTML = "<span style='color:#9ca3af;'>No one on leave today</span>";
-          return;
-        }
-        items.forEach(function (item) {
-          var row = document.createElement("div");
-          row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
-          var left = document.createElement("div");
-          left.style.cssText = "display:flex;flex-direction:column;gap:2px;min-width:0;";
-          var name = document.createElement("div");
-          name.style.cssText = "font-size:11px;font-weight:500;color:#111827;";
-          name.textContent = item.employee_name || item.employee || "";
-          left.appendChild(name);
-          var leaveType = document.createElement("div");
-          leaveType.style.cssText = "font-size:10px;color:#6b7280;";
-          leaveType.textContent = (item.leave_type || "") + (item.half_day ? " (Half day)" : "");
-          left.appendChild(leaveType);
-          var right = document.createElement("div");
-          right.style.cssText = "font-size:10px;color:#4b5563;flex-shrink:0;";
-          right.textContent = (item.from_date || "") + " to " + (item.to_date || "");
-          row.appendChild(left);
-          row.appendChild(right);
-          containerEl.appendChild(row);
-        });
-      }
-      function renderOnWfh(containerEl, items) {
-        if (!containerEl) return;
-        containerEl.innerHTML = "";
-        if (!items || !items.length) {
-          containerEl.innerHTML = "<span style='color:#9ca3af;'>No one on WFH today</span>";
-          return;
-        }
-        items.forEach(function (item) {
-          var row = document.createElement("div");
-          row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
-          var name = document.createElement("div");
-          name.style.cssText = "font-size:11px;font-weight:500;color:#111827;";
-          name.textContent = item.employee_name || item.employee || "";
-          row.appendChild(name);
-          containerEl.appendChild(row);
-        });
-      }
-      renderOnLeave(onLeaveList, data.on_leave || []);
-      renderOnWfh(onWfhList, data.on_wfh || []);
-    },
-  });
-})();
-"""
+    _wdir = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(_wdir, "attendance_calendar.html"), encoding="utf-8") as _f:
+        cal_html = _f.read()
+    with open(os.path.join(_wdir, "attendance_calendar.js"), encoding="utf-8") as _f:
+        cal_script = _f.read()
 
     if frappe.db.exists("Custom HTML Block", cal_label):
         cal_block = frappe.get_doc("Custom HTML Block", cal_label)
@@ -900,11 +546,30 @@ loadMonth(current.getFullYear(), current.getMonth() + 1);
         }
         blocks.insert(1, custom_block_item)
 
-    # ensure calendar widget also present
+    # Keep exactly one calendar: ours (cal_label). Remove any OTHER block that renders the
+    # calendar grid (a leftover site-side manual calendar with a different name), then make sure
+    # ours is present. This self-heals the "two calendars" case on every migrate — no manual
+    # cleanup needed.
+    def _is_other_calendar(block):
+        if block.get("type") != "custom_block":
+            return False
+        nm = (block.get("data") or {}).get("custom_block_name")
+        if not nm or nm == cal_label:
+            return False
+        block_html = frappe.db.get_value("Custom HTML Block", nm, "html") or ""
+        return "alp-att-cal-grid" in block_html
+
+    for stale in [b for b in blocks if _is_other_calendar(b)]:
+        nm = stale["data"]["custom_block_name"]
+        for wcb in frappe.get_all(
+            "Workspace Custom Block", filters={"parent": workspace, "custom_block_name": nm}, pluck="name"
+        ):
+            frappe.delete_doc("Workspace Custom Block", wcb, force=1, ignore_permissions=True)
+        blocks.remove(stale)
+
     has_calendar = any(
-        block.get("type") == "custom_block"
-        and block.get("data", {}).get("custom_block_name") == cal_label
-        for block in blocks
+        b.get("type") == "custom_block" and (b.get("data") or {}).get("custom_block_name") == cal_label
+        for b in blocks
     )
 
     if not has_calendar:
