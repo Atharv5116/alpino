@@ -26,6 +26,12 @@ def setup_item_custom_fields():
 				insert_after="item_name",
 			),
 			dict(
+				fieldname="custom_tally_item_name",
+				label="Tally Item Name",
+				fieldtype="Data",
+				insert_after="custom_sku_no",
+			),
+			dict(
 				fieldname="custom_pack_type",
 				label="Pack Type",
 				fieldtype="Select",
@@ -58,6 +64,30 @@ def setup_item_custom_fields():
 				fieldtype="Float",
 				insert_after="weight_uom",
 				description="Used by Pick List as Std Weight / Box and for gross weight totals.",
+			),
+			# --- Product Bundle ---
+			dict(
+				fieldname="custom_product_bundle_section",
+				label="Product Bundle",
+				fieldtype="Section Break",
+				insert_after="custom_gross_weight",
+				collapsible=1,
+			),
+			dict(
+				fieldname="custom_is_bundle",
+				label="Is Bundle",
+				fieldtype="Check",
+				insert_after="custom_product_bundle_section",
+				default=0,
+				description="This SKU is a bundle/combo. Stock moves on its component items (Product Mapping), not on this SKU.",
+			),
+			dict(
+				fieldname="custom_product_mapping",
+				label="Product Mapping",
+				fieldtype="Table",
+				options="Product Bundle Mapping",
+				insert_after="custom_is_bundle",
+				depends_on="eval:doc.custom_is_bundle",
 			),
 		]
 	}
