@@ -292,6 +292,7 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 			"use_serial_batch_fields": 0,
 			"custom_mfg_date": ui_item.get('custom_mfg_date') or None,
 			"custom_expiry_date": ui_item.get('custom_expiry_date') or None,
+			"custom_batch_code": ui_item.get('custom_batch_code') or None,
 			"batch_no": None,
 			"custom_remark": ui_item.get('custom_remark') or None,
 		})
@@ -320,6 +321,7 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 			"use_serial_batch_fields": 0,
 			"custom_mfg_date": extra.get('custom_mfg_date') or None,
 			"custom_expiry_date": extra.get('custom_expiry_date') or None,
+			"custom_batch_code": extra.get('custom_batch_code') or None,
 			"batch_no": None,
 			"custom_remark": extra.get('custom_remark') or None,
 		})
