@@ -220,21 +220,26 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let batch_readonly = data.docstatus === 1 ? 'readonly' : '';
 			let input_disabled = data.docstatus === 1 ? 'disabled' : '';
 			
+			// Exploded bundle component: qty & box are derived from the combo order,
+			// so both are locked; the row is tinted and tagged with its bundle SKU.
+			let is_bundle_comp = !!row.custom_bundle_parent;
+			let comp_lock = is_bundle_comp ? 'readonly tabindex="-1"' : '';
+
 			let box_val = "";
 			if (title === "Items") {
 				box_val = (row.custom_box !== undefined && row.custom_box !== null) ? cint(row.custom_box) : 0;
 			} else {
 				box_val = (row.custom_box !== undefined && row.custom_box !== null && cint(row.custom_box) !== 0) ? cint(row.custom_box) : "";
 			}
-			let box_readonly = title === "Items" ? '' : 'readonly tabindex="-1"';
-			
+			let box_readonly = (title === "Items" && !is_bundle_comp) ? '' : 'readonly tabindex="-1"';
+
 			let row_html = `
-				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}">
+				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:#f5f3ff;"' : ''}>
 					<td>${idx + 1}</td>
-					<td data-item-code="${row.item_code}">${row.item_code}</td>
+					<td data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#7c3aed;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}</td>
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
-					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled}/></td>
+					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
 					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="1" min="0" ${input_disabled} ${box_readonly}/></td>
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
@@ -264,6 +269,54 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		create_table("Marketing Freebies", groups["Marketing Freebies"]);
 		create_table("Scheme Table", groups["Scheme Table"]);
 		create_table("Additional Units", groups["Additional Units"]);
+
+		// COMBO mapping table — one row per component, each combo shaded distinctly so
+		// multiple combos in one order are easy to tell apart. Read-only reference: it
+		// tells the picker how the exploded component qtys above pack back into combos.
+		const COMBO_SHADES = ['#eef6ff', '#fff7ed', '#f0fdf4', '#fdf2f8', '#f1f5f9'];
+		const create_combo_table = (combos) => {
+			if (!combos || !combos.length) return;
+			let html = `
+				<div class="table-section-title">Combos</div>
+				<div class="sku-table-wrapper">
+				<table class="sku-table" data-table-name="Combos">
+					<thead>
+						<tr>
+							<th>SR.</th>
+							<th>COMBO SKU</th>
+							<th>ORDERED QTY</th>
+							<th>COMPONENT SKU</th>
+							<th>COMPONENT</th>
+							<th>BASE QTY</th>
+							<th>TOTAL QTY</th>
+						</tr>
+					</thead>
+					<tbody>
+			`;
+			let sr = 0;
+			combos.forEach((combo, ci) => {
+				let comps = combo.components || [];
+				if (!comps.length) return;
+				let shade = COMBO_SHADES[ci % COMBO_SHADES.length];
+				comps.forEach((c, j) => {
+					sr++;
+					html += `<tr style="background:${shade};">`;
+					html += `<td>${sr}</td>`;
+					if (j === 0) {
+						html += `<td rowspan="${comps.length}" style="vertical-align:middle;font-weight:600;">${frappe.utils.escape_html(combo.combo_sku || '')}<div style="font-weight:400;color:#6b7280;font-size:11px;">${frappe.utils.escape_html(combo.combo_name || '')}</div></td>`;
+						html += `<td rowspan="${comps.length}" style="vertical-align:middle;">${flt(combo.ordered_qty || 0)}</td>`;
+					}
+					html += `<td data-item-code="${c.item_code}">${frappe.utils.escape_html(c.item_code || '')}</td>`;
+					html += `<td style="text-align:left;">${frappe.utils.escape_html(c.item_name || '')}</td>`;
+					html += `<td>${flt(c.base_qty || 0)}</td>`;
+					html += `<td style="font-weight:600;">${flt(c.total_qty || 0)}</td>`;
+					html += `</tr>`;
+				});
+			});
+			html += `</tbody></table></div>`;
+			container.append(html);
+		};
+		create_combo_table(data.combos);
 
 		// Removed Items audit table — server-persisted rows for saved PLs,
 		// plus any pending client-side removals on a new (unsaved) PL.

@@ -626,6 +626,75 @@ def _item_name_for_item_code(item_code):
 	return frappe.db.get_value("Item", item_code, "item_name") or ""
 
 
+def _bundle_components(item_code):
+	"""Return the Product Bundle Mapping rows for a bundle SKU, else None.
+
+	None means "not a bundle (or no mapping)" — callers treat the SKU as a normal
+	item. A bundle with an empty mapping therefore falls back to itself, never
+	silently vanishing from the pick list.
+	"""
+	if not item_code or not frappe.db.get_value("Item", item_code, "custom_is_bundle"):
+		return None
+	rows = frappe.get_all(
+		"Product Bundle Mapping",
+		filters={"parent": item_code, "parenttype": "Item", "parentfield": "custom_product_mapping"},
+		fields=["item", "base_qty"],
+		order_by="idx",
+	)
+	return rows or None
+
+
+def _explode_bundle_line(so, item):
+	"""Components for a bundle SO line, as [(item_code, qty, product_bundle_item, base_qty)].
+
+	Prefers the SO's NATIVE Packed Items (produced by the synced Product Bundle) so pick-list
+	rows line up 1:1 with what the Delivery Note packs — `product_bundle_item` is the real
+	Packed Item row name, which is exactly what ERPNext's pick-list->DN mapper keys on
+	(skips the component as a normal DN line, adds the bundle line + packed_items, and updates
+	the packed item's picked_qty). Falls back to the Item's custom mapping (display-only, no DN
+	bundling) only if a bundle SO line somehow has no packed items.
+	"""
+	if not frappe.db.get_value("Item", item.item_code, "custom_is_bundle"):
+		return None
+	ordered = flt(item.qty)
+	packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == item.name]
+	if packed:
+		return [
+			(p.item_code, flt(p.qty), p.name, (flt(p.qty) / ordered if ordered else flt(p.qty)))
+			for p in packed
+		]
+	comps = _bundle_components(item.item_code)
+	if comps:
+		return [(c.item, flt(c.base_qty) * ordered, None, flt(c.base_qty)) for c in comps]
+	return None
+
+
+def get_bundle_combos(sales_order):
+	"""One combo entry per bundle SO line, for the Pick List COMBO table.
+
+	[{combo_sku, combo_name, ordered_qty, components:[{item_code, item_name,
+	base_qty, total_qty}]}].
+	"""
+	so = frappe.get_doc("Sales Order", sales_order)
+	combos = []
+	for item in so.get("items") or []:
+		exploded = _explode_bundle_line(so, item)
+		if not exploded:
+			continue
+		combos.append({
+			"combo_sku": item.item_code,
+			"combo_name": _item_name_for_item_code(item.item_code) or item.item_code,
+			"ordered_qty": flt(item.qty),
+			"components": [{
+				"item_code": ic,
+				"item_name": _item_name_for_item_code(ic) or ic,
+				"base_qty": base,
+				"total_qty": qty,
+			} for (ic, qty, _pbi, base) in exploded],
+		})
+	return combos
+
+
 @frappe.whitelist()
 def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
@@ -1057,16 +1126,19 @@ def get_pick_list_mapping_data(sales_order):
 		"locations": []
 	})
 	
-	def add_item_to_pick_list(item_row, source_table):
+	def add_item_to_pick_list(item_row, source_table, sales_order_item=None, bundle_parent=None, box_override=None, product_bundle_item=None):
 		if not item_row.item_code:
 			return
-		
+
 		# Box conversion logic
 		box = flt(item_row.get("custom_box"), 2)
 		factor = get_box_conversion_factor(item_row.item_code) or 1
 		if source_table in ["Marketing Freebies", "Scheme Table", "Additional Units"]:
 			box = 0.0
-				
+		# Exploded bundle components: box is derived from the component qty, not entered.
+		if box_override is not None:
+			box = flt(box_override, 2)
+
 		warehouse = item_row.get("warehouse")
 		if not warehouse:
 			warehouse = _resolve_item_warehouse(item_row.item_code, so.company, _resolve_default_warehouse(so.company))
@@ -1082,21 +1154,62 @@ def get_pick_list_mapping_data(sales_order):
 		)
 		pick_list["locations"].append({
 			"name": item_row.name, # Stable unique ID from SO Child Table Row
+			"sales_order_item": sales_order_item or item_row.name,
+			"product_bundle_item": product_bundle_item or "",
 			"item_code": item_row.item_code,
 			"custom_ordered_qty": item_row.qty,
 			"qty": item_row.qty,
 			"custom_box": box,
 			"custom_source_table": source_table,
 			"custom_conversion_factor": factor,
+			"custom_bundle_parent": bundle_parent or "",
 			"custom_sku_no": item_info.get("custom_sku_no") or "",
 			"custom_weight_per_box": flt(item_info.get("custom_gross_weight")) or 0,
 			"shelf_life_in_days": item_info.get("shelf_life_in_days") or 0,
 			"warehouse": warehouse
 		})
-		
+
+	combos = []
 	for item in so.get("items") or []:
-		add_item_to_pick_list(item, "Items")
-		
+		exploded = _explode_bundle_line(so, item)
+		if exploded:
+			# Bundle SKU: explode into its component items (from the SO's native packed
+			# items). The bundle SKU itself is NOT a pickable row — it only appears in the
+			# COMBO table; each component row carries custom_bundle_parent (UI), the real
+			# bundle SO line, and product_bundle_item (the Packed Item name) so the
+			# Delivery Note maps it natively as a bundle.
+			ordered = flt(item.qty)
+			combo = {
+				"combo_sku": item.item_code,
+				"combo_name": _item_name_for_item_code(item.item_code) or item.item_code,
+				"ordered_qty": ordered,
+				"components": [],
+			}
+			for (comp_item, total, pbi, base) in exploded:
+				comp_factor = get_box_conversion_factor(comp_item) or 1
+				comp_box = flt(total / comp_factor, 2) if comp_factor else 0.0
+				add_item_to_pick_list(
+					frappe._dict({
+						"name": "%s::bundle::%s" % (item.name, pbi or comp_item),
+						"item_code": comp_item,
+						"qty": total,
+					}),
+					"Items",
+					sales_order_item=item.name,
+					bundle_parent=item.item_code,
+					box_override=comp_box,
+					product_bundle_item=pbi,
+				)
+				combo["components"].append({
+					"item_code": comp_item,
+					"item_name": _item_name_for_item_code(comp_item) or comp_item,
+					"base_qty": base,
+					"total_qty": total,
+				})
+			combos.append(combo)
+		else:
+			add_item_to_pick_list(item, "Items")
+
 	for freebie in so.get("custom_marketing_freebies") or []:
 		add_item_to_pick_list(freebie, "Marketing Freebies")
 		
@@ -1105,7 +1218,8 @@ def get_pick_list_mapping_data(sales_order):
 		
 	for additional in so.get("custom_additional_units_damage_items") or []:
 		add_item_to_pick_list(additional, "Additional Units")
-		
+
+	pick_list["combos"] = combos
 	return pick_list
 
 
