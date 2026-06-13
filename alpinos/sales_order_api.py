@@ -644,6 +644,41 @@ def _bundle_components(item_code):
 	return rows or None
 
 
+def _ensure_so_packed_items(so):
+	"""Make sure a bundle SO has its native Packed Items.
+
+	A Sales Order created BEFORE the bundle's native Product Bundle existed (e.g. before
+	this feature was migrated) has no packed_items — but the native pick-list -> Delivery
+	Note bundle flow needs them (they carry the real `product_bundle_item` and let the DN
+	pack + deduct component stock). Regenerate and persist them for any bundle line that
+	is missing them. Returns the (reloaded) SO. No-op for non-bundle / already-packed SOs.
+	"""
+	bundle_lines = [
+		i for i in (so.get("items") or [])
+		if i.item_code and frappe.db.get_value("Item", i.item_code, "custom_is_bundle")
+	]
+	if not bundle_lines:
+		return so
+	packed_for = {p.parent_detail_docname for p in (so.get("packed_items") or [])}
+	if all(i.name in packed_for for i in bundle_lines):
+		return so
+
+	# Clear any stale/partial packed rows first so a rebuild can't duplicate them, then
+	# regenerate the whole table from the native Product Bundle definition.
+	from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
+	frappe.db.delete("Packed Item", {"parent": so.name, "parenttype": "Sales Order"})
+	so.set("packed_items", [])
+	make_packing_list(so)
+	for idx, p in enumerate(so.get("packed_items") or [], start=1):
+		p.parent = so.name
+		p.parenttype = "Sales Order"
+		p.parentfield = "packed_items"
+		p.idx = idx
+		p.db_insert()
+	frappe.db.commit()
+	return frappe.get_doc("Sales Order", so.name)
+
+
 def _explode_bundle_line(so, item):
 	"""Components for a bundle SO line, as [(item_code, qty, product_bundle_item, base_qty)].
 
@@ -675,7 +710,7 @@ def get_bundle_combos(sales_order):
 	[{combo_sku, combo_name, ordered_qty, components:[{item_code, item_name,
 	base_qty, total_qty}]}].
 	"""
-	so = frappe.get_doc("Sales Order", sales_order)
+	so = _ensure_so_packed_items(frappe.get_doc("Sales Order", sales_order))
 	combos = []
 	for item in so.get("items") or []:
 		exploded = _explode_bundle_line(so, item)
@@ -1111,8 +1146,8 @@ def get_sales_order_entry_list(
 
 @frappe.whitelist()
 def get_pick_list_mapping_data(sales_order):
-	so = frappe.get_doc("Sales Order", sales_order)
-	
+	so = _ensure_so_packed_items(frappe.get_doc("Sales Order", sales_order))
+
 	pick_list = frappe._dict({
 		"company": so.company,
 		"purpose": "Delivery",
@@ -1190,7 +1225,9 @@ def get_pick_list_mapping_data(sales_order):
 				comp_box = flt(total / comp_factor, 2) if comp_factor else 0.0
 				add_item_to_pick_list(
 					frappe._dict({
-						"name": "%s::bundle::%s" % (item.name, pbi or comp_item),
+						# Stable id from SO line + component (NOT the volatile packed-item
+						# name) so render and save always agree and rows aren't dropped.
+						"name": "%s::bundle::%s" % (item.name, comp_item),
 						"item_code": comp_item,
 						"qty": total,
 					}),

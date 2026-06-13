@@ -779,6 +779,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('.sku-table tbody tr').each(function() {
 			let tr = $(this);
 			let table_name = tr.closest('table').attr('data-table-name');
+			// The Combos table is a read-only reference (shares .sku-table styling) —
+			// never collect its rows as pick-list items, and never let them break the loop.
+			if (table_name === 'Combos') return;
 			let qty_val = flt(tr.find('.qty-input').val());
 			let ordered_qty = flt(tr.find('.ordered-qty-cell').text());
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
