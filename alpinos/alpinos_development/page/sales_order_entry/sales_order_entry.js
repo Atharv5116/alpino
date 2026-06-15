@@ -409,12 +409,10 @@ class SalesOrderEntry {
 		});
 		// Main order lines: all saleable variants (no customer filter on SKU). Other tables: any item.
 		if (filterType === 'variants') {
+			// Variants OR bundles (bundle SKUs have an empty variant_of, so a plain
+			// variant_of filter would drop them); templates stay hidden.
 			field.get_query = () => ({
-				filters: {
-					disabled: 0,
-					is_sales_item: 1,
-					variant_of: ['!=', ''],
-				},
+				query: 'alpinos.offline_buyer_api.sellable_item_link_query',
 			});
 		} else if (filterType === 'nonTemplates') {
 			field.get_query = () => ({
