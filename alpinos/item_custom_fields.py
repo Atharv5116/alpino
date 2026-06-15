@@ -79,7 +79,7 @@ def setup_item_custom_fields():
 				fieldtype="Check",
 				insert_after="custom_product_bundle_section",
 				default=0,
-				description="This SKU is a bundle/combo. Stock moves on its component items (Product Mapping), not on this SKU.",
+				description="This SKU is a bundle/combo. On save it is automatically set as a non-stock item (ERPNext requires bundles to be non-stock), so the Inventory tab is hidden — stock moves on the component items in Product Mapping below, not on this SKU. Batches, expiry, Box UOM etc. live on those component items.",
 			),
 			dict(
 				fieldname="custom_product_mapping",
