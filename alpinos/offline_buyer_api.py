@@ -70,8 +70,11 @@ def get_buyer_items(record_name):
 		filters={
 			"disabled": 0,
 			"is_sales_item": 1,
-			"variant_of": ["!=", ""],
 		},
+		# Sellable SKUs = variants OR bundles. Bundles have an empty variant_of, so the
+		# plain variant_of filter would wrongly drop them; templates (variant_of empty,
+		# not a bundle) still fall out.
+		or_filters=[["variant_of", "!=", ""], ["custom_is_bundle", "=", 1]],
 		fields=["name", "item_name", "item_group", "valuation_rate", "variant_of"],
 		order_by="item_group, item_name",
 	)
@@ -303,12 +306,39 @@ def get_variant_items_for_group(item_group):
 		"Item",
 		filters={
 			"disabled": 0,
-			"variant_of": ["!=", ""],
 			"item_group": ["in", group_names],
 		},
+		# Variants OR bundles (bundles have an empty variant_of); templates fall out.
+		or_filters=[["variant_of", "!=", ""], ["custom_is_bundle", "=", 1]],
 		fields=["name", "item_name", "item_group", "variant_of"],
 		order_by="item_group asc, item_name asc",
 		limit_page_length=2000,
+	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def sellable_item_link_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link-field query for SO / Quotation / Opportunity item selection.
+
+	Same intent as the `variant_of != ''` filter (show variants, hide templates) but ALSO
+	lets bundle SKUs through (they have an empty variant_of). A plain filter dict can't
+	express the OR, so the forms point their item get_query at this method instead.
+	"""
+	like = "%{0}%".format(txt or "")
+	return frappe.db.sql(
+		"""
+		SELECT name, item_name, item_group
+		FROM `tabItem`
+		WHERE disabled = 0
+			AND is_sales_item = 1
+			AND has_variants = 0
+			AND (IFNULL(variant_of, '') != '' OR IFNULL(custom_is_bundle, 0) = 1)
+			AND (name LIKE %(txt)s OR item_name LIKE %(txt)s)
+		ORDER BY name
+		LIMIT %(start)s, %(page_len)s
+		""",
+		{"txt": like, "start": int(start or 0), "page_len": int(page_len or 20)},
 	)
 
 

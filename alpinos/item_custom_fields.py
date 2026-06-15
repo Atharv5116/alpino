@@ -66,11 +66,14 @@ def setup_item_custom_fields():
 				description="Used by Pick List as Std Weight / Box and for gross weight totals.",
 			),
 			# --- Product Bundle ---
+			# Anchored in the Details tab (after `description`), NOT the Inventory tab —
+			# a bundle is forced non-stock, which hides the Inventory tab, so the section
+			# must live outside it or it would vanish the moment Is Bundle is ticked.
 			dict(
 				fieldname="custom_product_bundle_section",
 				label="Product Bundle",
 				fieldtype="Section Break",
-				insert_after="custom_gross_weight",
+				insert_after="description",
 				collapsible=1,
 			),
 			dict(

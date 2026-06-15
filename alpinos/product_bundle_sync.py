@@ -28,6 +28,22 @@ def _existing_bundle(item_code):
 	return frappe.db.get_value("Product Bundle", {"new_item_code": item_code}, "name")
 
 
+def _product_bundle_in_use(item_code):
+	"""True if the bundle SKU is on any submitted transaction — mirrors ERPNext's Product
+	Bundle on_trash check, so we can skip a delete that would only raise 'linked with ...'.
+	"""
+	for item_dt in (
+		"Sales Order Item",
+		"Delivery Note Item",
+		"Sales Invoice Item",
+		"POS Invoice Item",
+		"Quotation Item",
+	):
+		if frappe.db.exists(item_dt, {"item_code": item_code, "docstatus": 1}):
+			return True
+	return False
+
+
 def force_bundle_non_stock(doc, method=None):
 	"""Item validate hook: a bundle SKU must be a non-stock item.
 
@@ -44,10 +60,19 @@ def sync_item_product_bundle(doc, method=None):
 	is_bundle = bool(doc.get("custom_is_bundle"))
 	mapping = [m for m in (doc.get("custom_product_mapping") or []) if m.get("item") and flt(m.get("base_qty"))]
 	existing = _existing_bundle(doc.name)
+	desired = [(m.item, flt(m.base_qty)) for m in mapping]
 
 	if is_bundle and mapping:
-		pb = frappe.get_doc("Product Bundle", existing) if existing else frappe.new_doc("Product Bundle")
-		pb.new_item_code = doc.name
+		if existing:
+			pb = frappe.get_doc("Product Bundle", existing)
+			current = [(i.item_code, flt(i.qty)) for i in pb.items]
+			# Nothing about the bundle changed — do NOT re-save the Product Bundle. Editing
+			# unrelated Item fields must never touch (and risk erroring on) a linked bundle.
+			if pb.new_item_code == doc.name and current == desired:
+				return
+		else:
+			pb = frappe.new_doc("Product Bundle")
+			pb.new_item_code = doc.name
 		if not pb.get("description"):
 			pb.description = doc.get("item_name") or doc.name
 		pb.set("items", [])
@@ -56,12 +81,14 @@ def sync_item_product_bundle(doc, method=None):
 		pb.flags.ignore_permissions = True
 		pb.save()
 	elif existing:
-		# No longer a bundle (or mapping emptied) — drop the native bundle.
-		# Best-effort: if it's locked by existing transactions, leave it and log.
-		try:
-			frappe.delete_doc("Product Bundle", existing, force=1, ignore_permissions=True)
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), f"Could not remove Product Bundle {existing}")
+		# No longer a bundle (or mapping emptied) — drop the native bundle, but only if no
+		# submitted transaction references it (else ERPNext's on_trash raises "linked with
+		# ..." and would block the Item save). Leave it in place otherwise.
+		if not _product_bundle_in_use(doc.name):
+			try:
+				frappe.delete_doc("Product Bundle", existing, force=1, ignore_permissions=True)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), f"Could not remove Product Bundle {existing}")
 
 
 def backfill_product_bundles():
