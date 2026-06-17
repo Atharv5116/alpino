@@ -91,11 +91,11 @@ def get_pending_approvals(from_date=None, to_date=None):
 			fields=["name", "employee", "from_date", "status", "leave_approver"],
 			order_by="modified desc", limit=200,
 		):
-			# RM stage -> the employee's reporting manager (leave_approver or reports_to);
-			# any HR Manager sees all (covers the HR stage + the HR-sees-all rule).
+			# RM stage -> the employee's OWN reporting manager: the named leave_approver
+			# AND the employee's reports_to. Any HR Manager sees all (HR stage + HR-sees-all).
 			pending_me = (
 				(r.status == "Pending Reporting Manager Approval"
-					and (r.leave_approver == user or _user_is_rm_of(r.employee, user)))
+					and r.leave_approver == user and _user_is_rm_of(r.employee, user))
 				or is_hr
 			)
 			if pending_me:
@@ -111,9 +111,9 @@ def get_pending_approvals(from_date=None, to_date=None):
 			fields=["name", "employee", "posting_date", "expense_approver"],
 			order_by="modified desc", limit=200,
 		):
-			# RM stage -> the employee's reporting manager (expense_approver or reports_to);
-			# any HR Manager sees all.
-			if r.expense_approver == user or _user_is_rm_of(r.employee, user) or is_hr:
+			# RM stage -> the employee's OWN reporting manager: the named expense_approver
+			# AND the employee's reports_to. Any HR Manager sees all.
+			if (r.expense_approver == user and _user_is_rm_of(r.employee, user)) or is_hr:
 				add("Expense Claim", "Expense", r.name, r.employee, r.posting_date, "expense-claim")
 
 	# --- Attendance Request: RM step -> reporting_person; HR step -> HR ---
