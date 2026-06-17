@@ -101,15 +101,37 @@ def _role_users(role):
 	)
 
 
+def _hod_users(doc):
+	"""Users with the HOD role who belong to the SAME department as the applicant — so an HOD
+	is only notified about their own department's requests."""
+	dept = doc.get("department") or frappe.db.get_value("Employee", doc.get("employee"), "department")
+	if not dept:
+		return []
+	return frappe.db.sql_list(
+		"""
+		SELECT DISTINCT e.user_id
+		FROM `tabEmployee` e
+		JOIN `tabHas Role` hr ON hr.parent = e.user_id AND hr.parenttype = 'User'
+		JOIN `tabUser` u ON u.name = e.user_id AND u.enabled = 1
+		WHERE hr.role = 'HOD' AND e.department = %s AND e.status = 'Active'
+			AND IFNULL(e.user_id, '') != '' AND e.user_id NOT IN ('Administrator', 'Guest')
+		""",
+		dept,
+	)
+
+
 def _approvers_for_state(doc, state):
-	"""Users who need to ACT at this stage. Pending RM -> the reporting manager;
-	Pending HOD -> HODs; Pending HR -> HR Managers. Outcomes -> nobody (applicant only)."""
+	"""Users who need to ACT at this stage, scoped to the applicant:
+	  Pending RM  -> the employee's OWN reporting manager (reports_to),
+	  Pending HOD -> the HOD(s) of the employee's OWN department,
+	  Pending HR  -> all HR Managers (HR acts company-wide).
+	Outcomes -> nobody (only the applicant is told)."""
 	s = (state or "").lower()
 	if "reporting manager" in s or "rm approval" in s:
 		rm = _rm_user(doc)
 		return [rm] if rm else []
 	if "hod" in s:
-		return _role_users("HOD")
+		return _hod_users(doc)
 	if "hr approval" in s or "pending hr" in s:
 		return _role_users("HR Manager")
 	return []
