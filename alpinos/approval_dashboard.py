@@ -30,6 +30,11 @@ def _user_is_rm_of(employee, user):
 	return bool(rm_emp) and frappe.db.get_value("Employee", rm_emp, "user_id") == user
 
 
+def _wf_state_field(doctype):
+	"""Field an active Workflow stores its state in for `doctype` (None if no workflow)."""
+	return frappe.db.get_value("Workflow", {"document_type": doctype, "is_active": 1}, "workflow_state_field")
+
+
 @frappe.whitelist()
 def get_pending_approvals(from_date=None, to_date=None):
 	user = frappe.session.user
@@ -78,25 +83,29 @@ def get_pending_approvals(from_date=None, to_date=None):
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Approvals dashboard")
 
-	# --- Leave Application: pending the leave approver ---
+	# --- Leave Application: pending the reporting manager / HR ---
 	def _leave():
 		if not frappe.db.exists("DocType", "Leave Application"):
 			return
+		# The "Leave Application 1.0" workflow keeps its state in its own state field
+		# (the `status` field stays Open until Approved/Rejected), so read whatever field
+		# that workflow uses rather than assuming `status`.
+		sf = _wf_state_field("Leave Application") or "status"
 		for r in frappe.get_all(
 			"Leave Application",
 			filters=[
-				["status", "in", ["Pending Reporting Manager Approval", "Pending HR Approval"]],
+				[sf, "in", ["Pending Reporting Manager Approval", "Pending HR Approval"]],
 				["docstatus", "<", 2],
 			] + created_range,
-			fields=["name", "employee", "from_date", "status", "leave_approver"],
+			fields=["name", "employee", "from_date", sf],
 			order_by="modified desc", limit=200,
 		):
-			# RM stage -> the employee's OWN reporting manager: the Leave Application 1.0
-			# workflow approves this stage by the "Reporting Manager" role, restricted to the
-			# employee's own manager (reports_to) — NOT the leave_approver field. So require
-			# both. Any HR Manager sees all (HR stage + HR-sees-all).
+			state = r.get(sf)
+			# RM stage -> the employee's OWN reporting manager (reports_to) holding the
+			# "Reporting Manager" role (how the workflow gates it) — NOT the leave_approver
+			# field. Any HR Manager sees all (HR stage + HR-sees-all).
 			pending_me = (
-				(r.status == "Pending Reporting Manager Approval"
+				(state == "Pending Reporting Manager Approval"
 					and _user_is_rm_of(r.employee, user)
 					and "Reporting Manager" in roles)
 				or is_hr
