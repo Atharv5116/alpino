@@ -26,6 +26,12 @@ def setup_item_custom_fields():
 				insert_after="item_name",
 			),
 			dict(
+				fieldname="custom_tally_item_name",
+				label="Tally Item Name",
+				fieldtype="Data",
+				insert_after="custom_sku_no",
+			),
+			dict(
 				fieldname="custom_pack_type",
 				label="Pack Type",
 				fieldtype="Select",
@@ -59,6 +65,33 @@ def setup_item_custom_fields():
 				insert_after="weight_uom",
 				description="Used by Pick List as Std Weight / Box and for gross weight totals.",
 			),
+			# --- Product Bundle ---
+			# Anchored in the Details tab (after `description`), NOT the Inventory tab —
+			# a bundle is forced non-stock, which hides the Inventory tab, so the section
+			# must live outside it or it would vanish the moment Is Bundle is ticked.
+			dict(
+				fieldname="custom_product_bundle_section",
+				label="Product Bundle",
+				fieldtype="Section Break",
+				insert_after="description",
+				collapsible=1,
+			),
+			dict(
+				fieldname="custom_is_bundle",
+				label="Is Bundle",
+				fieldtype="Check",
+				insert_after="custom_product_bundle_section",
+				default=0,
+				description="This SKU is a bundle/combo. On save it is automatically set as a non-stock item (ERPNext requires bundles to be non-stock), so the Inventory tab is hidden — stock moves on the component items in Product Mapping below, not on this SKU. Batches, expiry, Box UOM etc. live on those component items.",
+			),
+			dict(
+				fieldname="custom_product_mapping",
+				label="Product Mapping",
+				fieldtype="Table",
+				options="Product Bundle Mapping",
+				insert_after="custom_is_bundle",
+				depends_on="eval:doc.custom_is_bundle",
+			),
 		]
 	}
 
@@ -75,6 +108,17 @@ def _setup_item_property_setters():
 			field_name="item_code",
 			property="label",
 			value="SKU",
+			property_type="Data",
+		),
+		# Valuation Rate is the default price the Sales Order falls back to (when the buyer
+		# has no Offline Buyer catalogue MRP). ERPNext hides it for non-stock items, but a
+		# bundle is forced non-stock — so show it for bundles too, giving them a default price.
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Item",
+			field_name="valuation_rate",
+			property="depends_on",
+			value="eval:doc.is_stock_item || doc.custom_is_bundle",
 			property_type="Data",
 		),
 		dict(

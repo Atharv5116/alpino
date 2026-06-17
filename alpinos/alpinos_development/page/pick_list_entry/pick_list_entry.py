@@ -42,6 +42,16 @@ def get_pick_list_data(name):
 		"parent",
 	)
 
+	# COMBO table — recomputed from the SO bundle lines (source of truth) so it
+	# survives reload of a saved pick list, where rows are already exploded.
+	doc_dict["combos"] = []
+	if doc.get("custom_sales_order_id"):
+		from alpinos.sales_order_api import get_bundle_combos
+		try:
+			doc_dict["combos"] = get_bundle_combos(doc.custom_sales_order_id)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Pick List combo recompute failed")
+
 	return doc_dict
 
 @frappe.whitelist()
@@ -265,7 +275,8 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 		qty = float(ui_item.get('qty') or 0)
 		pick_list.append("locations", {
 			"sales_order": so_name,
-			"sales_order_item": mapped_row.get("name"),
+			"sales_order_item": mapped_row.get("sales_order_item") or mapped_row.get("name"),
+			"product_bundle_item": mapped_row.get("product_bundle_item") or None,
 			"item_code": mapped_row.get("item_code"),
 			"custom_ordered_qty": mapped_row.get("custom_ordered_qty"),
 			"qty": qty,
@@ -276,10 +287,12 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 			"custom_box": float(ui_item.get('custom_box') or 0),
 			"custom_sample_quantity": 0,
 			"custom_source_table": mapped_row.get("custom_source_table"),
+			"custom_bundle_parent": mapped_row.get("custom_bundle_parent") or None,
 			"has_batch_no": 0,
 			"use_serial_batch_fields": 0,
 			"custom_mfg_date": ui_item.get('custom_mfg_date') or None,
 			"custom_expiry_date": ui_item.get('custom_expiry_date') or None,
+			"custom_batch_code": ui_item.get('custom_batch_code') or None,
 			"batch_no": None,
 			"custom_remark": ui_item.get('custom_remark') or None,
 		})
@@ -291,7 +304,8 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 		qty = float(extra.get('qty') or 0)
 		pick_list.append("locations", {
 			"sales_order": so_name,
-			"sales_order_item": source.get("name") or extra.get("source_row"),
+			"sales_order_item": source.get("sales_order_item") or source.get("name") or extra.get("source_row"),
+			"product_bundle_item": source.get("product_bundle_item") or None,
 			"item_code": extra.get("item_code") or source.get("item_code"),
 			"custom_ordered_qty": source.get("custom_ordered_qty"),
 			"qty": qty,
@@ -302,10 +316,12 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 			"custom_box": float(extra.get('custom_box') or 0),
 			"custom_sample_quantity": 0,
 			"custom_source_table": extra.get("custom_source_table") or source.get("custom_source_table"),
+			"custom_bundle_parent": source.get("custom_bundle_parent") or None,
 			"has_batch_no": 0,
 			"use_serial_batch_fields": 0,
 			"custom_mfg_date": extra.get('custom_mfg_date') or None,
 			"custom_expiry_date": extra.get('custom_expiry_date') or None,
+			"custom_batch_code": extra.get('custom_batch_code') or None,
 			"batch_no": None,
 			"custom_remark": extra.get('custom_remark') or None,
 		})

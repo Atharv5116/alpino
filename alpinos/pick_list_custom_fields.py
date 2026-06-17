@@ -225,10 +225,19 @@ def setup_pick_list_custom_fields():
 				hidden=1,
 			),
 			dict(
+				fieldname="custom_bundle_parent",
+				label="Bundle SKU",
+				fieldtype="Data",
+				insert_after="custom_source_table",
+				read_only=1,
+				hidden=1,
+				description="If set, this row is an exploded component of the named bundle SKU; its qty/box are derived from the bundle order.",
+			),
+			dict(
 				fieldname="custom_remark",
 				label="Remark",
 				fieldtype="Data",
-				insert_after="custom_source_table",
+				insert_after="custom_bundle_parent",
 			),
 		],
 	}

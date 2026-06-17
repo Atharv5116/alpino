@@ -164,6 +164,7 @@ after_migrate = [
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
 	"alpinos.sales_order_scheme_damage_migration.run_sales_order_scheme_damage_split_migration",
 	"alpinos.item_custom_fields.setup_item_custom_fields",
+	"alpinos.product_bundle_sync.backfill_product_bundles",
 	"alpinos.offline_buyer_api.seed_customer_types",
 	"alpinos.assigned_visibility.setup_visibility_roles",
 	"alpinos.stock_entry_custom_fields.setup_stock_entry_custom_fields",
@@ -335,6 +336,8 @@ doc_events = {
 	"Item": {
 		"before_insert": "alpinos.item_sequence.reorder_on_insert",
 		"before_save": "alpinos.item_sequence.reorder_on_save",
+		"validate": "alpinos.product_bundle_sync.force_bundle_non_stock",
+		"on_update": "alpinos.product_bundle_sync.sync_item_product_bundle",
 	},
 	"Sales Order": {
 		"validate": [

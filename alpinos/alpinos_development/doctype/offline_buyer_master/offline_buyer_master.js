@@ -224,10 +224,8 @@ function set_margin_queries(frm) {
 	}));
 
 	frm.set_query("sku", "margins", () => ({
-		filters: {
-			disabled: 0,
-			variant_of: ["!=", ""],
-		},
+		// Variants OR bundles (bundles have empty variant_of); templates stay hidden.
+		query: "alpinos.offline_buyer_api.sellable_item_link_query",
 	}));
 }
 
@@ -266,10 +264,10 @@ frappe.ui.form.on("Offline Buyer Margin", {
 		const row = locals[cdt][cdn];
 		if (!row.sku) return;
 
-		frappe.db.get_value("Item", row.sku, ["variant_of", "item_name"], (r) => {
+		frappe.db.get_value("Item", row.sku, ["variant_of", "item_name", "custom_is_bundle"], (r) => {
 			if (!r) return;
-			if (!r.variant_of) {
-				frappe.msgprint("Only variant items are allowed in SKU.");
+			if (!r.variant_of && !r.custom_is_bundle) {
+				frappe.msgprint("Only variant or bundle items are allowed in SKU.");
 				frappe.model.set_value(cdt, cdn, "sku", "");
 				frappe.model.set_value(cdt, cdn, "product_name", "");
 				return;

@@ -444,6 +444,25 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	if existing_dn:
 		return existing_dn
 
+	# Bundle components are packed by ERPNext's native make_packing_list, which copies
+	# the batch/warehouse onto each packed item via update_packed_item_with_pick_list_info
+	# — but it reads the STANDARD batch_no field on the Pick List Item. The custom flow
+	# stores the picker's batch in custom_batch_code (free text) and leaves batch_no blank,
+	# so resolve it to a real Batch and stamp batch_no on the bundle-component rows first.
+	# (Native picks the single largest-qty batch per component; a component split across
+	# several batches keeps only the dominant one in the packed item.)
+	for loc in pick_list.locations or []:
+		if loc.get("product_bundle_item") and not loc.get("batch_no") and loc.get("custom_batch_code"):
+			bn = _ensure_batch_exists(
+				loc.item_code,
+				loc.custom_batch_code,
+				loc.get("custom_mfg_date"),
+				loc.get("custom_expiry_date"),
+			)
+			if bn:
+				frappe.db.set_value("Pick List Item", loc.name, "batch_no", bn, update_modified=False)
+				loc.batch_no = bn
+
 	# Suppress the default ERPNext msgprint during DN creation
 	_original_msgprint = frappe.msgprint
 	def _silent_msgprint(*args, **kwargs):

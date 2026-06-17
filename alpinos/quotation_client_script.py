@@ -466,12 +466,9 @@ function set_variant_item_queries(frm) {
         };
     };
     const q_variants = function() {
+        // Variants OR bundles (bundles have empty variant_of); templates stay hidden.
         return {
-            filters: {
-                disabled: 0,
-                is_sales_item: 1,
-                variant_of: ['!=', '']
-            }
+            query: 'alpinos.offline_buyer_api.sellable_item_link_query'
         };
     };
     frm.set_query('item_code', 'items', q_variants);
