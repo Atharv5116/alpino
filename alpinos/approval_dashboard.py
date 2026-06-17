@@ -34,6 +34,11 @@ def get_pending_approvals(from_date=None, to_date=None):
 	from_date = getdate(from_date) if from_date else get_first_day(today)
 	to_date = getdate(to_date) if to_date else get_last_day(today)
 
+	# Pending items are filtered by WHEN THEY WERE APPLIED (creation), not by the leave /
+	# expense / attendance event date — so a still-pending request isn't hidden just because
+	# its event date falls outside the selected month.
+	created_range = [["creation", ">=", str(from_date)], ["creation", "<=", str(to_date) + " 23:59:59"]]
+
 	allowed = is_hr or is_hod or is_rm
 	result = {
 		"allowed": allowed,
@@ -70,11 +75,12 @@ def get_pending_approvals(from_date=None, to_date=None):
 			return
 		for r in frappe.get_all(
 			"Leave Application",
-			filters={"status": "Open", "docstatus": ["<", 2], "from_date": ["between", [from_date, to_date]]},
+			filters=[["status", "=", "Open"], ["docstatus", "<", 2]] + created_range,
 			fields=["name", "employee", "from_date", "leave_approver"],
 			order_by="modified desc", limit=200,
 		):
-			if r.leave_approver == user:
+			# Named approver sees their own; any HR Manager sees all (like Attendance).
+			if r.leave_approver == user or is_hr:
 				add("Leave Application", "Leave", r.name, r.employee, r.from_date, "leave-application")
 
 	# --- Expense Claim: pending the expense approver ---
@@ -83,11 +89,12 @@ def get_pending_approvals(from_date=None, to_date=None):
 			return
 		for r in frappe.get_all(
 			"Expense Claim",
-			filters={"approval_status": "Draft", "docstatus": 0, "posting_date": ["between", [from_date, to_date]]},
+			filters=[["approval_status", "=", "Draft"], ["docstatus", "=", 0]] + created_range,
 			fields=["name", "employee", "posting_date", "expense_approver"],
 			order_by="modified desc", limit=200,
 		):
-			if r.expense_approver == user:
+			# Named approver sees their own; any HR Manager sees all (like Attendance).
+			if r.expense_approver == user or is_hr:
 				add("Expense Claim", "Expense", r.name, r.employee, r.posting_date, "expense-claim")
 
 	# --- Attendance Request: RM step -> reporting_person; HR step -> HR ---
@@ -96,11 +103,10 @@ def get_pending_approvals(from_date=None, to_date=None):
 			return
 		for r in frappe.get_all(
 			"Attendance Request",
-			filters={
-				"docstatus": 0,
-				"workflow_state": ["in", ["Pending RM Approval", "Pending HR Approval"]],
-				"from_date": ["between", [from_date, to_date]],
-			},
+			filters=[
+				["docstatus", "=", 0],
+				["workflow_state", "in", ["Pending RM Approval", "Pending HR Approval"]],
+			] + created_range,
 			fields=["name", "employee", "from_date", "workflow_state", "reporting_person"],
 			order_by="modified desc", limit=200,
 		):
@@ -117,10 +123,9 @@ def get_pending_approvals(from_date=None, to_date=None):
 			return
 		for r in frappe.get_all(
 			"Work From Home Request",
-			filters={
-				"status": ["in", ["Pending Reporting Manager Approval", "Pending HOD Approval", "Pending HR Approval"]],
-				"date": ["between", [from_date, to_date]],
-			},
+			filters=[
+				["status", "in", ["Pending Reporting Manager Approval", "Pending HOD Approval", "Pending HR Approval"]],
+			] + created_range,
 			fields=["name", "employee", "date", "status", "leave_approver"],
 			order_by="modified desc", limit=200,
 		):
