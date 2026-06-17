@@ -48,19 +48,35 @@ def setup_raven_notification_bot():
 	_ensure_hr_rm_channels()
 
 
+CHANNEL_KINDS = ("hr", "hod", "rm")
+
+
+def _main_workspace():
+	"""The workspace that actually holds the org's channels (most non-DM channels), so
+	auto-created channels land where people are — not an arbitrary/stray workspace."""
+	rows = frappe.db.sql(
+		"""
+		SELECT workspace, COUNT(*) c FROM `tabRaven Channel`
+		WHERE IFNULL(is_direct_message, 0) = 0 AND IFNULL(workspace, '') != ''
+		GROUP BY workspace ORDER BY c DESC LIMIT 1
+		"""
+	)
+	return (rows[0][0] if rows else None) or frappe.db.get_value("Raven Workspace", {}, "name")
+
+
 def _ensure_hr_rm_channels():
-	"""Create the 'HR' and 'RM' channels (Open) if missing, so the bot has somewhere to
-	post — you only add members afterwards. Best-effort; never blocks migrate. Skipped for
-	a kind whose channel is pinned via site_config (raven_hr_channel / raven_rm_channel)."""
+	"""Create the HR / HOD / RM channels (Open) in the main workspace if missing, so the bot
+	has somewhere to post. Best-effort; never blocks migrate. Skips a kind pinned via
+	site_config (raven_hr_channel / raven_hod_channel / raven_rm_channel)."""
 	if not frappe.db.exists("DocType", "Raven Channel"):
 		return
-	# A channel needs a workspace; use whatever workspace exists (else let the user create it).
-	workspace = frappe.db.get_value("Raven Workspace", {}, "name")
-	for kind, label in (("hr", "HR"), ("rm", "RM")):
+	workspace = _main_workspace()
+	for kind in CHANNEL_KINDS:
 		if frappe.conf.get(f"raven_{kind}_channel"):
 			continue  # pinned to a specific channel in site_config
 		if _resolve_channel(kind):
 			continue  # already exists
+		label = kind.upper()
 		try:
 			ch = frappe.get_doc(
 				{
@@ -94,7 +110,11 @@ def _get_bot():
 
 
 def _resolve_channel(kind):
-	"""Return the Raven Channel id for kind 'hr' or 'rm', or None."""
+	"""Return the Raven Channel id for kind 'hr', 'hod' or 'rm', or None.
+
+	Prefers site_config raven_<kind>_channel (a channel id or name); falls back to a channel
+	named after the kind (HR / HOD / RM).
+	"""
 	configured = frappe.conf.get(f"raven_{kind}_channel")
 	if configured:
 		if frappe.db.exists("Raven Channel", configured):
@@ -104,10 +124,22 @@ def _resolve_channel(kind):
 		)
 		if by_name:
 			return by_name
-	label = "HR" if kind == "hr" else "RM"
 	return frappe.db.get_value(
-		"Raven Channel", {"channel_name": label, "is_direct_message": 0}, "name"
+		"Raven Channel", {"channel_name": kind.upper(), "is_direct_message": 0}, "name"
 	)
+
+
+def _channels_for_state(state):
+	"""Which channel kind(s) a given stage/state should notify:
+	Reporting-Manager stage -> RM, HOD stage -> HOD, HR stage / outcomes -> HR."""
+	s = (state or "").lower()
+	if "reporting manager" in s or "rm approval" in s:
+		return ["rm"]
+	if "hod" in s:
+		return ["hod"]
+	if "hr approval" in s or "pending hr" in s:
+		return ["hr"]
+	return ["hr"]  # Approved / Rejected / Paid / anything else -> HR record
 
 
 def _doc_link(doc):
@@ -115,17 +147,17 @@ def _doc_link(doc):
 	return f"{frappe.utils.get_url()}/app/{route}/{doc.name}"
 
 
-def post_to_hr_rm(text, doc=None):
-	"""Post `text` to the HR and RM channels as the notification bot (deduped).
+def post_to_channels(kinds, text, doc=None):
+	"""Post `text` to the given channel kinds (hr/hod/rm) as the notification bot.
 
-	Silent no-op when Raven isn't installed, the bot is unavailable, or a channel can't be
-	resolved — so it never blocks the underlying submit/approve.
+	Silent no-op when Raven isn't installed, the bot is unavailable, or no channel resolves —
+	so it never blocks the underlying submit/approve.
 	"""
 	bot = _get_bot()
 	if not bot:
 		return
 	channels = []
-	for kind in ("hr", "rm"):
+	for kind in kinds:
 		ch = _resolve_channel(kind)
 		if ch and ch not in channels:
 			channels.append(ch)
@@ -138,7 +170,12 @@ def post_to_hr_rm(text, doc=None):
 				link_document=doc.name if doc is not None else None,
 			)
 		except Exception:
-			frappe.log_error(frappe.get_traceback(), "Raven HR/RM notification")
+			frappe.log_error(frappe.get_traceback(), "Raven HR/HOD/RM notification")
+
+
+def post_to_hr_rm(text, doc=None):
+	"""Back-compat: post to both HR and RM channels."""
+	post_to_channels(["hr", "rm"], text, doc)
 
 
 # --------------------------------------------------------------------------- helpers
@@ -149,7 +186,9 @@ def _emp(doc):
 
 
 def _submitted(label, who, detail, doc):
-	post_to_hr_rm(
+	# A fresh submission is pending the first approver (the reporting manager).
+	post_to_channels(
+		["rm"],
 		f"🔔 <b>{label}</b> {doc.name} submitted by <b>{who}</b>{detail} — pending approval.<br>{_doc_link(doc)}",
 		doc,
 	)
@@ -157,7 +196,8 @@ def _submitted(label, who, detail, doc):
 
 def _outcome(label, who, status, doc):
 	icon = "✅" if status and status.lower() in ("approved", "live", "completed") else "❌"
-	post_to_hr_rm(
+	post_to_channels(
+		["hr"],
 		f"{icon} <b>{label}</b> {doc.name} for <b>{who}</b> was <b>{status}</b>.<br>{_doc_link(doc)}",
 		doc,
 	)
@@ -173,9 +213,10 @@ def _stage_icon(state):
 
 
 def _notify_stage(label, doc, state, detail=""):
-	"""Post a per-stage 'is now <state>' message to the HR & RM channels, with an icon
-	picked from the state (✅ approved/paid, ❌ rejected, 🔔 pending stages)."""
-	post_to_hr_rm(
+	"""Post a per-stage 'is now <state>' message to the channel for that stage:
+	Pending RM -> RM, Pending HOD -> HOD, Pending HR / outcome -> HR."""
+	post_to_channels(
+		_channels_for_state(state),
 		f"{_stage_icon(state)} <b>{label}</b> {doc.name} for <b>{_emp(doc)}</b>{detail} "
 		f"is now <b>{state}</b>.<br>{_doc_link(doc)}",
 		doc,
@@ -212,27 +253,16 @@ def notify_work_from_home(doc, method=None):
 		status = doc.get("status")
 		if not status or status == "Draft":
 			return
-		if status in ("Approved", "Live", "Rejected"):
-			_outcome("Work From Home", _emp(doc), status, doc)
-		else:
-			post_to_hr_rm(
-				f"🔔 <b>Work From Home</b> {doc.name} for <b>{_emp(doc)}</b> "
-				f"({doc.get('date')}) is now <b>{status}</b>.<br>{_doc_link(doc)}",
-				doc,
-			)
+		_notify_stage("Work From Home", doc, status, f" ({doc.get('date')})")
 
 
 def notify_job_requisition(doc, method=None):
-	# Workflow-driven: notify on each state change so the next approver (RM/HOD/HR) is informed.
+	# Workflow-driven: notify the next approver's channel (RM/HOD/HR) on each state change.
 	if method == "on_update" and doc.has_value_changed("workflow_state"):
 		state = doc.get("workflow_state")
-		if not state:
+		if not state or state == "Draft":
 			return
-		post_to_hr_rm(
-			f"🔔 <b>Job Requisition</b> {doc.name} ({doc.get('designation') or ''}) is now "
-			f"<b>{state}</b>.<br>{_doc_link(doc)}",
-			doc,
-		)
+		_notify_stage("Job Requisition", doc, state, f" ({doc.get('designation') or ''})")
 
 
 def notify_expense_claim(doc, method=None):
