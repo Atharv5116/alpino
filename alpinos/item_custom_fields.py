@@ -110,6 +110,17 @@ def _setup_item_property_setters():
 			value="SKU",
 			property_type="Data",
 		),
+		# Valuation Rate is the default price the Sales Order falls back to (when the buyer
+		# has no Offline Buyer catalogue MRP). ERPNext hides it for non-stock items, but a
+		# bundle is forced non-stock — so show it for bundles too, giving them a default price.
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Item",
+			field_name="valuation_rate",
+			property="depends_on",
+			value="eval:doc.is_stock_item || doc.custom_is_bundle",
+			property_type="Data",
+		),
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Item",
