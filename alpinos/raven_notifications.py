@@ -27,25 +27,54 @@ def _bot_name():
 
 
 def setup_raven_notification_bot():
-	"""Create the notification bot once (after_migrate). No-op without Raven."""
+	"""Create the notification bot + HR/RM channels (after_migrate). No-op without Raven."""
 	if not _raven_installed() or not frappe.db.exists("DocType", "Raven Bot"):
 		return
 	name = _bot_name()
-	if frappe.db.exists("Raven Bot", name):
+	if not frappe.db.exists("Raven Bot", name):
+		try:
+			bot = frappe.get_doc(
+				{
+					"doctype": "Raven Bot",
+					"bot_name": name,
+					"description": "Posts HR / RM approval notifications for requests needing action.",
+				}
+			)
+			bot.insert(ignore_permissions=True)
+			frappe.db.commit()
+			print(f"✅ Created Raven notification bot '{name}'")
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Raven notification bot setup")
+	_ensure_hr_rm_channels()
+
+
+def _ensure_hr_rm_channels():
+	"""Create the 'HR' and 'RM' channels (Open) if missing, so the bot has somewhere to
+	post — you only add members afterwards. Best-effort; never blocks migrate. Skipped for
+	a kind whose channel is pinned via site_config (raven_hr_channel / raven_rm_channel)."""
+	if not frappe.db.exists("DocType", "Raven Channel"):
 		return
-	try:
-		bot = frappe.get_doc(
-			{
-				"doctype": "Raven Bot",
-				"bot_name": name,
-				"description": "Posts HR / RM approval notifications for requests needing action.",
-			}
-		)
-		bot.insert(ignore_permissions=True)
-		frappe.db.commit()
-		print(f"✅ Created Raven notification bot '{name}'")
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "Raven notification bot setup")
+	# A channel needs a workspace; use whatever workspace exists (else let the user create it).
+	workspace = frappe.db.get_value("Raven Workspace", {}, "name")
+	for kind, label in (("hr", "HR"), ("rm", "RM")):
+		if frappe.conf.get(f"raven_{kind}_channel"):
+			continue  # pinned to a specific channel in site_config
+		if _resolve_channel(kind):
+			continue  # already exists
+		try:
+			ch = frappe.get_doc(
+				{
+					"doctype": "Raven Channel",
+					"channel_name": label,
+					"type": "Open",
+					"workspace": workspace,
+				}
+			)
+			ch.insert(ignore_permissions=True)
+			frappe.db.commit()
+			print(f"✅ Created Raven '{label}' channel")
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"Raven {label} channel setup")
 
 
 def _get_bot():
@@ -134,18 +163,41 @@ def _outcome(label, who, status, doc):
 	)
 
 
+def _stage_icon(state):
+	s = (state or "").lower()
+	if any(k in s for k in ("approved", "live", "completed", "paid")):
+		return "✅"
+	if any(k in s for k in ("rejected", "returned", "cancelled", "hold")):
+		return "❌"
+	return "🔔"
+
+
+def _notify_stage(label, doc, state, detail=""):
+	"""Post a per-stage 'is now <state>' message to the HR & RM channels, with an icon
+	picked from the state (✅ approved/paid, ❌ rejected, 🔔 pending stages)."""
+	post_to_hr_rm(
+		f"{_stage_icon(state)} <b>{label}</b> {doc.name} for <b>{_emp(doc)}</b>{detail} "
+		f"is now <b>{state}</b>.<br>{_doc_link(doc)}",
+		doc,
+	)
+
+
 # --------------------------------------------------------------------------- doc events
 
 
 def notify_leave_application(doc, method=None):
-	if method == "on_submit":
-		detail = f" ({doc.get('leave_type')}, {doc.get('from_date')} to {doc.get('to_date')})"
-		_submitted("Leave Application", _emp(doc), detail, doc)
-	elif method == "on_update_after_submit" and doc.has_value_changed("status") and doc.get("status") in (
-		"Approved",
-		"Rejected",
-	):
-		_outcome("Leave Application", _emp(doc), doc.get("status"), doc)
+	# Per-stage, workflow-driven via `workflow_state`
+	# (Draft -> Pending Reporting Manager Approval -> HOD -> HR -> Approved/Rejected).
+	# Pending stages are docstatus 0 (on_update); Approved/Rejected submit (on_submit).
+	if method == "on_update" and not doc.has_value_changed("workflow_state"):
+		return
+	state = doc.get("workflow_state")
+	if not state or state == "Draft":
+		return
+	when = doc.get("from_date")
+	if doc.get("to_date") and doc.get("to_date") != doc.get("from_date"):
+		when = f"{doc.get('from_date')} to {doc.get('to_date')}"
+	_notify_stage("Leave Application", doc, state, f" ({doc.get('leave_type')}, {when})")
 
 
 def notify_attendance_request(doc, method=None):
@@ -184,11 +236,14 @@ def notify_job_requisition(doc, method=None):
 
 
 def notify_expense_claim(doc, method=None):
-	if method == "on_submit":
-		_submitted(
-			"Expense Claim", _emp(doc), f" (₹{doc.get('total_claimed_amount') or doc.get('grand_total') or 0})", doc
-		)
-	elif method == "on_update_after_submit":
-		status = doc.get("approval_status") or doc.get("workflow_state")
-		if (doc.has_value_changed("approval_status") or doc.has_value_changed("workflow_state")) and status:
-			_outcome("Expense Claim", _emp(doc), status, doc)
+	# Per-stage via approval_status / workflow_state
+	# (Draft -> Pending RM Approval -> Approved by RM -> Submitted to Payroll -> Paid / Rejected).
+	if method in ("on_update", "on_update_after_submit") and not (
+		doc.has_value_changed("approval_status") or doc.has_value_changed("workflow_state")
+	):
+		return
+	state = doc.get("approval_status") or doc.get("workflow_state")
+	if not state or state == "Draft":
+		return
+	amt = doc.get("total_claimed_amount") or doc.get("grand_total") or 0
+	_notify_stage("Expense Claim", doc, state, f" (₹{amt})")

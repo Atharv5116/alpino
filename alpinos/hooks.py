@@ -175,6 +175,8 @@ after_migrate = [
 	"alpinos.quotation_client_script.create_quotation_client_script",
 	"alpinos.pick_list_client_script.create_pick_list_client_script",
 	"alpinos.web_form_update.execute",
+	"alpinos.confirmation_leave_allocation.ensure_leave_setup",
+	"alpinos.full_and_final_leave_recovery.setup_leave_type_recovery_field",
 ]
 
 # Uninstallation
@@ -277,10 +279,11 @@ doc_events = {
 		]
 	},
 	"Leave Application": {
-		"on_submit": "alpinos.raven_notifications.notify_leave_application",
-		"on_update_after_submit": "alpinos.raven_notifications.notify_leave_application"
+		"on_update": "alpinos.raven_notifications.notify_leave_application",
+		"on_submit": "alpinos.raven_notifications.notify_leave_application"
 	},
 	"Expense Claim": {
+		"on_update": "alpinos.raven_notifications.notify_expense_claim",
 		"on_submit": "alpinos.raven_notifications.notify_expense_claim",
 		"on_update_after_submit": "alpinos.raven_notifications.notify_expense_claim"
 	},
@@ -371,7 +374,13 @@ doc_events = {
 	},
 	"Employee": {
 		"validate": "alpinos.employee_probation_automation.calculate_probation_end_date",
-		"on_update": "alpinos.approval_access.grant_rm_role_for_employee"
+		"on_update": [
+			"alpinos.approval_access.grant_rm_role_for_employee",
+			"alpinos.employee_confirmation.on_employee_update"
+		]
+	},
+	"Full and Final Statement": {
+		"validate": "alpinos.full_and_final_leave_recovery.add_excess_leave_recovery"
 	},
 	"Work From Home Request": {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
