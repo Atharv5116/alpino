@@ -5,10 +5,11 @@ where the user is the approver the request is pending on right now (not requests
 someone else, and not requests already past this user). Filtered to a date range that
 defaults to the current month.
 
-Per doctype, "pending this user" means:
-  - Leave Application (status Open): leave_approver == user
-  - Expense Claim (Draft): expense_approver == user
-  - Attendance Request: Pending RM Approval -> reporting_person == user; Pending HR Approval -> user is HR
+Per doctype, "pending this user" means (named approver / RM sees their own; any HR sees all):
+  - Leave Application: status Pending Reporting Manager Approval -> reporting manager;
+                       status Pending HR Approval -> HR
+  - Expense Claim: approval_status Pending RM Approval -> reporting manager
+  - Attendance Request: Pending RM Approval -> reporting_person == user; Pending HR Approval -> HR
   - Work From Home Request: Pending Reporting Manager Approval -> leave_approver == user;
                             Pending HOD Approval -> user has HOD; Pending HR Approval -> user is HR
 
@@ -19,6 +20,14 @@ import frappe
 from frappe.utils import get_first_day, get_last_day, getdate
 
 HR_ROLES = ("HR Manager", "HR User")
+
+
+def _user_is_rm_of(employee, user):
+	"""True if `user` is the reporting manager (Employee.reports_to) of `employee`."""
+	if not employee:
+		return False
+	rm_emp = frappe.db.get_value("Employee", employee, "reports_to")
+	return bool(rm_emp) and frappe.db.get_value("Employee", rm_emp, "user_id") == user
 
 
 @frappe.whitelist()
@@ -75,12 +84,21 @@ def get_pending_approvals(from_date=None, to_date=None):
 			return
 		for r in frappe.get_all(
 			"Leave Application",
-			filters=[["status", "=", "Open"], ["docstatus", "<", 2]] + created_range,
-			fields=["name", "employee", "from_date", "leave_approver"],
+			filters=[
+				["status", "in", ["Pending Reporting Manager Approval", "Pending HR Approval"]],
+				["docstatus", "<", 2],
+			] + created_range,
+			fields=["name", "employee", "from_date", "status", "leave_approver"],
 			order_by="modified desc", limit=200,
 		):
-			# Named approver sees their own; any HR Manager sees all (like Attendance).
-			if r.leave_approver == user or is_hr:
+			# RM stage -> the employee's OWN reporting manager: the named leave_approver
+			# AND the employee's reports_to. Any HR Manager sees all (HR stage + HR-sees-all).
+			pending_me = (
+				(r.status == "Pending Reporting Manager Approval"
+					and r.leave_approver == user and _user_is_rm_of(r.employee, user))
+				or is_hr
+			)
+			if pending_me:
 				add("Leave Application", "Leave", r.name, r.employee, r.from_date, "leave-application")
 
 	# --- Expense Claim: pending the expense approver ---
@@ -89,12 +107,13 @@ def get_pending_approvals(from_date=None, to_date=None):
 			return
 		for r in frappe.get_all(
 			"Expense Claim",
-			filters=[["approval_status", "=", "Draft"], ["docstatus", "=", 0]] + created_range,
+			filters=[["approval_status", "=", "Pending RM Approval"], ["docstatus", "<", 2]] + created_range,
 			fields=["name", "employee", "posting_date", "expense_approver"],
 			order_by="modified desc", limit=200,
 		):
-			# Named approver sees their own; any HR Manager sees all (like Attendance).
-			if r.expense_approver == user or is_hr:
+			# RM stage -> the employee's OWN reporting manager: the named expense_approver
+			# AND the employee's reports_to. Any HR Manager sees all.
+			if (r.expense_approver == user and _user_is_rm_of(r.employee, user)) or is_hr:
 				add("Expense Claim", "Expense", r.name, r.employee, r.posting_date, "expense-claim")
 
 	# --- Attendance Request: RM step -> reporting_person; HR step -> HR ---
