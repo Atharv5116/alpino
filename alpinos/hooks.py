@@ -174,6 +174,7 @@ after_migrate = [
 	"alpinos.stock_entry_client_script.create_stock_entry_client_script",
 	"alpinos.quotation_client_script.create_quotation_client_script",
 	"alpinos.pick_list_client_script.create_pick_list_client_script",
+	"alpinos.workflow_role_access.execute",
 	"alpinos.web_form_update.execute",
 ]
 
@@ -324,12 +325,19 @@ doc_events = {
 			"alpinos.pick_list_hooks.validate_pick_list",
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
 		],
+		"after_insert": "alpinos.workflow_engine.pick_list_after_insert",
+		"on_update": "alpinos.workflow_engine.pick_list_on_update",
+		"on_submit": "alpinos.workflow_engine.pick_list_on_submit",
+		"on_cancel": "alpinos.workflow_engine.pick_list_on_cancel",
 	},
 	"Delivery Note": {
 		"validate": [
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 		],
+		"after_insert": "alpinos.workflow_engine.delivery_note_after_insert",
+		"on_submit": "alpinos.workflow_engine.delivery_note_on_submit",
+		"on_cancel": "alpinos.workflow_engine.delivery_note_on_cancel",
 	},
 	"Batch": {
 		"before_validate": "alpinos.batch_hooks.compute_expiry_from_shelf_life",
@@ -346,7 +354,10 @@ doc_events = {
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
 			"alpinos.dispatch_date_utils.validate_dispatch_date_on_save",
+			"alpinos.workflow_engine.sales_order_validate",
 		],
+		"on_submit": "alpinos.workflow_engine.sales_order_on_submit",
+		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",
 	},
 	"Employee Onboarding": {
 		"before_validate": [

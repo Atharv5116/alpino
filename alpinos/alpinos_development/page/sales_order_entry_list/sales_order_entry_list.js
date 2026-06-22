@@ -39,6 +39,59 @@ class SalesOrderEntryListPage {
 			);
 		}
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
+		this.btn_download_pdf = this.page.add_inner_button(__('Download PDF'), () =>
+			this.download_selected_pdfs()
+		);
+		if (this.btn_download_pdf) this.btn_download_pdf.hide();
+	}
+
+	_selected_names() {
+		const names = [];
+		this.wrapper.find('.so-list-row-select:checked').each((i, el) => {
+			names.push($(el).data('name'));
+		});
+		return names;
+	}
+
+	update_selection() {
+		const all_boxes = this.wrapper.find('.so-list-row-select');
+		const checked = this.wrapper.find('.so-list-row-select:checked');
+		this.wrapper
+			.find('.so-list-select-all')
+			.prop('checked', all_boxes.length > 0 && checked.length === all_boxes.length);
+
+		if (checked.length > 0) {
+			if (this.btn_download_pdf) this.btn_download_pdf.show();
+			if (this.page.set_indicator) {
+				this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
+			}
+		} else {
+			if (this.btn_download_pdf) this.btn_download_pdf.hide();
+			if (this.page.clear_indicator) this.page.clear_indicator();
+		}
+	}
+
+	download_selected_pdfs() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		frappe.model.with_doctype('Sales Order', () => {
+			const meta = frappe.get_meta('Sales Order');
+			const format_name = (meta.default_print_format || '').trim() || 'Standard';
+			const url =
+				'/api/method/frappe.utils.print_format.download_multi_pdf?' +
+				'doctype=' +
+				encodeURIComponent('Sales Order') +
+				'&name=' +
+				encodeURIComponent(JSON.stringify(names)) +
+				'&format=' +
+				encodeURIComponent(format_name) +
+				'&no_letterhead=0';
+			const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+			if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF.'));
+		});
 	}
 
 	setup_filters() {
@@ -125,11 +178,17 @@ class SalesOrderEntryListPage {
 			}
 		});
 		this.wrapper.on('click', '.so-list-row', (e) => {
-			if ($(e.target).closest('a,button').length) return;
+			if ($(e.target).closest('a,button,input[type="checkbox"]').length) return;
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
 			frappe.set_route('sales-order-entry-view', name);
 		});
+		this.wrapper.on('change', '.so-list-select-all', (e) => {
+			const checked = $(e.target).prop('checked');
+			this.wrapper.find('.so-list-row-select').prop('checked', checked);
+			this.update_selection();
+		});
+		this.wrapper.on('change', '.so-list-row-select', () => this.update_selection());
 	}
 
 	_args() {
@@ -153,6 +212,9 @@ class SalesOrderEntryListPage {
 
 	load_list() {
 		const me = this;
+		me.wrapper.find('.so-list-select-all').prop('checked', false);
+		if (me.btn_download_pdf) me.btn_download_pdf.hide();
+		if (me.page.clear_indicator) me.page.clear_indicator();
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_sales_order_entry_list',
 			args: me._args(),
@@ -176,7 +238,7 @@ class SalesOrderEntryListPage {
 		const tb = this.wrapper.find('.so-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="9" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
+				`<tr><td colspan="10" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
 			);
 			return;
 		}
@@ -195,6 +257,7 @@ class SalesOrderEntryListPage {
 				: '—';
 			const augClass = hasAug && cint(d.custom_additional_units_damage) ? 'green' : 'gray';
 			tb.append(`<tr class="so-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
+				<td style="text-align: center;"><input type="checkbox" class="so-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
 				<td>${esc(d.customer)}</td>
 				<td>${esc(d.customer_name)}</td>

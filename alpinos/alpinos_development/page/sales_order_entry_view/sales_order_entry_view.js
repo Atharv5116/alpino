@@ -29,6 +29,89 @@ class SalesOrderEntryView {
 		});
 		this.page.add_inner_button(__('Print'), () => this.open_default_print_preview());
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
+		this.btn_future_dispatch = this.page.add_inner_button(__('Mark as Future Dispatch'), () =>
+			this.do_future_dispatch()
+		);
+		this.btn_delivered = this.page.add_inner_button(__('Mark Delivered'), () =>
+			this.do_mark_delivered()
+		);
+		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
+		if (this.btn_delivered) this.btn_delivered.hide();
+	}
+
+	_has_any_role(roles) {
+		const mine = frappe.user_roles || [];
+		return roles.some((r) => mine.includes(r));
+	}
+
+	/** Show workflow actions based on the loaded order's current stage + role. */
+	update_workflow_buttons() {
+		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
+		if (this.btn_delivered) this.btn_delivered.hide();
+		if (!this._so_name) return;
+		frappe.db
+			.get_value('Sales Order', this._so_name, 'custom_workflow_status')
+			.then((r) => {
+				const status = (r.message && r.message.custom_workflow_status) || '';
+				const warehouse = ['Warehouse Admin', 'Warehouse Manager', 'System Manager'];
+				const sales = ['Sales Admin', 'Sales Manager', 'System Manager'];
+				if (
+					this.btn_future_dispatch &&
+					this._has_any_role(warehouse) &&
+					['Warehouse Approval Pending', 'Future Dispatch'].includes(status)
+				) {
+					this.btn_future_dispatch.show();
+				}
+				if (this.btn_delivered && this._has_any_role(sales) && status === 'Dispatched') {
+					this.btn_delivered.show();
+				}
+			});
+	}
+
+	do_future_dispatch() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.prompt(
+			[
+				{
+					fieldname: 'expected_date',
+					fieldtype: 'Date',
+					label: __('Expected Dispatch Date'),
+					reqd: 1,
+				},
+			],
+			(values) => {
+				frappe.call({
+					method: 'alpinos.workflow_engine.mark_future_dispatch',
+					args: { sales_order: me._so_name, expected_date: values.expected_date },
+					freeze: true,
+					callback(r) {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Marked as Future Dispatch'), indicator: 'orange' });
+						me.load_order(me._so_name);
+					},
+				});
+			},
+			__('Future Dispatch'),
+			__('Confirm')
+		);
+	}
+
+	do_mark_delivered() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.confirm(__('Confirm delivery received by customer and mark this order Completed?'), () => {
+			frappe.call({
+				method: 'alpinos.workflow_engine.mark_delivered',
+				args: { sales_order: me._so_name },
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({ message: __('Order marked Completed'), indicator: 'green' });
+					me.load_order(me._so_name);
+				},
+			});
+		});
 	}
 
 	_ensure_loaded_name() {
@@ -273,6 +356,8 @@ class SalesOrderEntryView {
 		const p = payload.parent || {};
 		const w = this.wrapper;
 		const currency = p.currency || frappe.boot?.sysdefaults?.currency || '';
+
+		this.update_workflow_buttons();
 
 		// Customer block — order matches template
 		w.find('.v-customer-name').text(

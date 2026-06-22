@@ -129,19 +129,13 @@ DEFAULT_DN_DISPATCH_FROM = (
 )
 
 
-@frappe.whitelist()
-def generate_pick_list_stickers(pick_list):
-	"""Return a PDF stream of pick-list stickers — one per box per row.
+def _collect_pick_list_stickers(doc):
+	"""Build the flat list of sticker dicts for one Pick List doc.
 
-	Sticker layout fields (per sticker dict): see templates/print/pick_list_stickers.html.
-	Rows whose custom_source_table is in SAMPLE_SOURCE_TABLES are marked
-	is_sample=1 so the template overlays a SAMPLE watermark + flag.
-	Box index is 1..N within the SKU; total_box is N (per-row, per spec answer).
-	Dispatch area is left blank until that source is confirmed.
+	One sticker per box per row, ordered to match the page's section order.
+	Shared by the single-pick-list download and the bulk-download endpoint so
+	both produce identical stickers.
 	"""
-	doc = frappe.get_doc("Pick List", pick_list)
-	doc.check_permission("read")
-
 	party_name = doc.get("custom_customer_name") or ""
 	po_no = doc.get("custom_po_no") or ""
 	# Gate now lives on the PL header (one value for the whole pick), so we
@@ -190,9 +184,14 @@ def generate_pick_list_stickers(pick_list):
 				"is_sample": is_sample,
 			})
 
+	return stickers
+
+
+def _render_stickers_pdf(stickers, label):
+	"""Render a flat list of sticker dicts into a single sticker-sized PDF."""
 	html = frappe.render_template(
 		"alpinos/templates/print/pick_list_stickers.html",
-		{"stickers": stickers, "pick_list": doc.name},
+		{"stickers": stickers, "pick_list": label},
 	)
 	from frappe.utils.pdf import get_pdf
 	# 100mm x 75mm landscape, zero margins so the @page CSS is honoured exactly.
@@ -207,10 +206,57 @@ def generate_pick_list_stickers(pick_list):
 		"margin-left": "0mm",
 		"margin-right": "0mm",
 	}
-	pdf = get_pdf(html, options=pdf_options)
+	return get_pdf(html, options=pdf_options)
+
+
+@frappe.whitelist()
+def generate_pick_list_stickers(pick_list):
+	"""Return a PDF stream of pick-list stickers — one per box per row.
+
+	Sticker layout fields (per sticker dict): see templates/print/pick_list_stickers.html.
+	Rows whose custom_source_table is in SAMPLE_SOURCE_TABLES are marked
+	is_sample=1 so the template overlays a SAMPLE watermark + flag.
+	Box index is 1..N within the SKU; total_box is N (per-row, per spec answer).
+	Dispatch area is left blank until that source is confirmed.
+	"""
+	doc = frappe.get_doc("Pick List", pick_list)
+	doc.check_permission("read")
+
+	stickers = _collect_pick_list_stickers(doc)
+
+	# Printing stickers advances a draft Pick List to "Submission Pending".
+	from alpinos.workflow_engine import mark_sticker_printed
+	mark_sticker_printed(doc.name)
 
 	frappe.local.response.filename = "stickers-{0}.pdf".format(pick_list)
-	frappe.local.response.filecontent = pdf
+	frappe.local.response.filecontent = _render_stickers_pdf(stickers, doc.name)
+	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
+def generate_pick_list_stickers_bulk(pick_lists):
+	"""Return a single PDF of stickers for several Pick Lists at once.
+
+	`pick_lists` is a JSON list of Pick List names (sent by the list page's
+	bulk "Download Stickers" action). Stickers are concatenated in the given
+	order; each sticker is its own page (page-break CSS lives in the template).
+	"""
+	if isinstance(pick_lists, str):
+		import json
+		pick_lists = json.loads(pick_lists)
+
+	if not pick_lists:
+		frappe.throw(frappe._("Please select at least one Pick List."))
+
+	stickers = []
+	for name in pick_lists:
+		doc = frappe.get_doc("Pick List", name)
+		doc.check_permission("read")
+		stickers.extend(_collect_pick_list_stickers(doc))
+
+	label = pick_lists[0] if len(pick_lists) == 1 else "{0}-lists".format(len(pick_lists))
+	frappe.local.response.filename = "stickers-{0}.pdf".format(label)
+	frappe.local.response.filecontent = _render_stickers_pdf(stickers, label)
 	frappe.local.response.type = "download"
 
 

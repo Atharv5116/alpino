@@ -26,6 +26,31 @@ class PickListListPage {
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
 		this.btn_bulk_edit = this.page.add_inner_button(__('Edit'), () => this.bulk_edit_fields());
 		if (this.btn_bulk_edit) this.btn_bulk_edit.hide();
+		this.btn_download_stickers = this.page.add_inner_button(__('Download Stickers'), () =>
+			this.download_stickers()
+		);
+		if (this.btn_download_stickers) this.btn_download_stickers.hide();
+	}
+
+	_selected_names() {
+		const names = [];
+		this.wrapper.find('.pl-list-row-select:checked').each((i, el) => {
+			names.push($(el).data('name'));
+		});
+		return names;
+	}
+
+	download_stickers() {
+		const pick_lists = this._selected_names();
+		if (!pick_lists.length) {
+			frappe.msgprint(__('Please select at least one Pick List.'));
+			return;
+		}
+		const url =
+			'/api/method/alpinos.pick_list_api.generate_pick_list_stickers_bulk?pick_lists=' +
+			encodeURIComponent(JSON.stringify(pick_lists));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the stickers PDF.'));
 	}
 
 	setup_filters() {
@@ -112,6 +137,7 @@ class PickListListPage {
 		const me = this;
 		me.wrapper.find('.pl-list-select-all').prop('checked', false);
 		if (me.btn_bulk_edit) me.btn_bulk_edit.hide();
+		if (me.btn_download_stickers) me.btn_download_stickers.hide();
 		if (me.page && me.page.clear_indicator) me.page.clear_indicator();
 
 		frappe.call({
@@ -185,11 +211,13 @@ class PickListListPage {
 
 		if (checked_count > 0) {
 			if (this.btn_bulk_edit) this.btn_bulk_edit.show();
+			if (this.btn_download_stickers) this.btn_download_stickers.show();
 			if (this.page && this.page.set_indicator) {
 				this.page.set_indicator(__('{0} selected', [checked_count]), 'orange');
 			}
 		} else {
 			if (this.btn_bulk_edit) this.btn_bulk_edit.hide();
+			if (this.btn_download_stickers) this.btn_download_stickers.hide();
 			if (this.page && this.page.clear_indicator) this.page.clear_indicator();
 		}
 	}

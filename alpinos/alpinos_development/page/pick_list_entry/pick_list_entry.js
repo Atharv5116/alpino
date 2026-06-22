@@ -32,6 +32,24 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				page.save_pick_list_keep_draft();
 			});
 
+			page.main.find('#btn-start-picking').on('click', function() {
+				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
+					frappe.msgprint(__('Save the Pick List first, then start picking.'));
+					return;
+				}
+				frappe.call({
+					method: 'alpinos.workflow_engine.start_picking',
+					args: { pick_list: page.pick_list_name },
+					freeze: true,
+					freeze_message: __('Starting picking...'),
+					callback: function(r) {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Picking started'), indicator: 'blue' });
+						page.load_data();
+					}
+				});
+			});
+
 			page.main.find('#btn-generate-sticker').on('click', function() {
 				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
 					frappe.msgprint(__('Save the Pick List first, then generate stickers.'));
@@ -112,11 +130,20 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		const $draftBtn = page.main.find('#btn-save-draft');
 		const $saveDraftUpdate = page.main.find('#btn-save-draft-update');
 		const $stickerBtn = page.main.find('#btn-generate-sticker');
+		const $startPicking = page.main.find('#btn-start-picking');
 		// Sticker generation needs a persisted PL — show on saved drafts + submitted, hide on new.
 		if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
 			$stickerBtn.show();
 		} else {
 			$stickerBtn.hide();
+		}
+		// Start Picking: only on a saved draft that has not started picking yet.
+		const isSavedDraft =
+			data.docstatus === 0 && page.pick_list_name && page.pick_list_name !== 'New Pick List';
+		if (isSavedDraft && !cint(data.custom_picking_started)) {
+			$startPicking.show();
+		} else {
+			$startPicking.hide();
 		}
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
