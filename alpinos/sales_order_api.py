@@ -452,6 +452,53 @@ def validate_sales_order_pricing(doc, method=None):
 
 
 @frappe.whitelist()
+def download_sales_orders_zip(names, no_letterhead=0):
+	"""Bulk export: one PDF per Sales Order, bundled into a single ZIP download.
+
+	`names` is a JSON list (or list) of Sales Order names sent from the list
+	page's bulk action. Each order is rendered with the Sales Order default
+	print format and added to the zip as <name>.pdf, so the user gets separate
+	PDFs (not one merged document).
+	"""
+	import json
+	import zipfile
+	from io import BytesIO
+
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		frappe.throw(_("Please select at least one Sales Order."))
+
+	meta = frappe.get_meta("Sales Order")
+	format_name = (meta.default_print_format or "").strip() or "Standard"
+	no_letterhead = cint(no_letterhead)
+
+	buf = BytesIO()
+	failed = []
+	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+		for name in names:
+			# get_print enforces read permission on each document.
+			try:
+				pdf = frappe.get_print(
+					"Sales Order", name, format_name, as_pdf=True, no_letterhead=no_letterhead
+				)
+				safe = str(name).replace("/", "-")
+				zf.writestr("{0}.pdf".format(safe), pdf)
+			except frappe.PermissionError:
+				failed.append(name)
+			except Exception:
+				frappe.log_error(title="Bulk SO PDF failed for {0}".format(name))
+				failed.append(name)
+
+	if failed and len(failed) == len(names):
+		frappe.throw(_("Could not generate PDFs for the selected Sales Orders: {0}").format(", ".join(failed)))
+
+	frappe.local.response.filename = "sales-orders-{0}.zip".format(len(names))
+	frappe.local.response.filecontent = buf.getvalue()
+	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
 def get_customer_item_mrp(customer, item_code):
 	"""Fetch MRP for an item from Customer's Item MRP table"""
 	if not customer or not item_code:

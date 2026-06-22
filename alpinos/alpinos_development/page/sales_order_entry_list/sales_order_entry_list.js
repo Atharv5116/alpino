@@ -39,7 +39,7 @@ class SalesOrderEntryListPage {
 			);
 		}
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
-		this.btn_download_pdf = this.page.add_inner_button(__('Download PDF'), () =>
+		this.btn_download_pdf = this.page.add_inner_button(__('Download PDFs'), () =>
 			this.download_selected_pdfs()
 		);
 		if (this.btn_download_pdf) this.btn_download_pdf.hide();
@@ -77,21 +77,12 @@ class SalesOrderEntryListPage {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
-		frappe.model.with_doctype('Sales Order', () => {
-			const meta = frappe.get_meta('Sales Order');
-			const format_name = (meta.default_print_format || '').trim() || 'Standard';
-			const url =
-				'/api/method/frappe.utils.print_format.download_multi_pdf?' +
-				'doctype=' +
-				encodeURIComponent('Sales Order') +
-				'&name=' +
-				encodeURIComponent(JSON.stringify(names)) +
-				'&format=' +
-				encodeURIComponent(format_name) +
-				'&no_letterhead=0';
-			const w = window.open(frappe.urllib.get_full_url(url), '_blank');
-			if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF.'));
-		});
+		// One PDF per order, bundled into a single ZIP download.
+		const url =
+			'/api/method/alpinos.sales_order_api.download_sales_orders_zip?names=' +
+			encodeURIComponent(JSON.stringify(names));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDFs.'));
 	}
 
 	setup_filters() {
