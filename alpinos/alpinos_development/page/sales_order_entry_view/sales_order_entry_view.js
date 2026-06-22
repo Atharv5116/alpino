@@ -24,23 +24,18 @@ class SalesOrderEntryView {
 	}
 
 	setup_toolbar() {
-		this.page.add_inner_button(__('Back to Sales Order List'), () => {
-			frappe.set_route('sales-order-entry-list');
-		});
-		this.page.add_inner_button(__('Print'), () => this.open_default_print_preview());
-		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
-		this.btn_submit = this.page.add_inner_button(__('Send for Warehouse Approval'), () =>
-			this.do_submit_order()
+		// Utility actions live in the "⋯" menu to keep the action bar uncluttered.
+		this.page.add_menu_item(__('Print'), () => this.open_default_print_preview());
+		this.page.add_menu_item(__('Download PDF'), () => this.download_default_print_pdf());
+		this.page.add_menu_item(__('Back to Sales Order List'), () =>
+			frappe.set_route('sales-order-entry-list')
 		);
+		// The main "next stage" action is set as the page primary action by
+		// update_actions(). This is the only stage-secondary inline button.
 		this.btn_future_dispatch = this.page.add_inner_button(__('Mark as Future Dispatch'), () =>
 			this.do_future_dispatch()
 		);
-		this.btn_delivered = this.page.add_inner_button(__('Mark Delivered'), () =>
-			this.do_mark_delivered()
-		);
-		if (this.btn_submit) this.btn_submit.hide();
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
-		if (this.btn_delivered) this.btn_delivered.hide();
 	}
 
 	_has_any_role(roles) {
@@ -48,58 +43,85 @@ class SalesOrderEntryView {
 		return roles.some((r) => mine.includes(r));
 	}
 
-	/** Show workflow actions based on the loaded order's current stage + role. */
-	update_workflow_buttons() {
-		if (this.btn_submit) this.btn_submit.hide();
+	/** One coherent action bar: a prominent primary "next stage" button + at
+	 * most one contextual secondary button + the status badge. Folds in the
+	 * Pick List create/continue logic so nothing is scattered. */
+	update_actions() {
+		this.page.clear_primary_action();
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
-		if (this.btn_delivered) this.btn_delivered.hide();
+		this.page.remove_inner_button(__('Create'), __('Pick List'));
+		this.page.remove_inner_button(__('Edit'), __('Pick List'));
 		if (!this._so_name) return;
-		frappe.db
-			.get_value('Sales Order', this._so_name, 'custom_workflow_status')
-			.then((r) => {
-				const status = (r.message && r.message.custom_workflow_status) || '';
-				// Show the current workflow stage as a coloured badge by the title.
-				const colorMap = {
-					Draft: 'gray',
-					'Warehouse Approval Pending': 'orange',
-					'Future Dispatch': 'yellow',
-					'Warehouse Approved': 'blue',
-					'Picking In Progress': 'blue',
-					'Ready For Dispatch': 'blue',
-					'Delivery Note Created': 'blue',
-					Dispatched: 'green',
-					Completed: 'green',
-					Cancelled: 'red',
-				};
-				if (status && this.page.set_indicator) {
-					this.page.set_indicator(status, colorMap[status] || 'gray');
-				} else if (this.page.clear_indicator) {
-					this.page.clear_indicator();
-				}
-				const warehouse = ['Warehouse Admin', 'Warehouse Manager', 'System Manager'];
-				const sales = ['Sales Admin', 'Sales Manager', 'System Manager'];
-				// Draft order -> Sales can submit it for warehouse approval.
-				if (this.btn_submit && this._has_any_role(sales) && status === 'Draft') {
-					this.btn_submit.show();
-				}
-				if (
-					this.btn_future_dispatch &&
-					this._has_any_role(warehouse) &&
-					['Warehouse Approval Pending', 'Future Dispatch'].includes(status)
-				) {
-					// Same action, clearer label once the order is already parked:
-					// at Future Dispatch this just updates the Expected Dispatch Date.
-					this.btn_future_dispatch.text(
-						status === 'Future Dispatch'
-							? __('Update Dispatch Date')
-							: __('Mark as Future Dispatch')
-					);
-					this.btn_future_dispatch.show();
-				}
-				if (this.btn_delivered && this._has_any_role(sales) && status === 'Dispatched') {
-					this.btn_delivered.show();
-				}
+		const me = this;
+		const plStatus = new Promise((resolve) => {
+			frappe.call({
+				method: 'alpinos.sales_order_api.get_so_pick_list_status',
+				args: { sales_order: this._so_name },
+				callback: (r) => resolve(r.message || {}),
 			});
+		});
+		Promise.all([
+			frappe.db.get_value('Sales Order', this._so_name, 'custom_workflow_status'),
+			plStatus,
+		]).then(([sv, pl]) => {
+			const status = (sv && sv.message && sv.message.custom_workflow_status) || '';
+			// Status badge next to the title.
+			const colorMap = {
+				Draft: 'gray',
+				'Warehouse Approval Pending': 'orange',
+				'Future Dispatch': 'yellow',
+				'Warehouse Approved': 'blue',
+				'Picking In Progress': 'blue',
+				'Ready For Dispatch': 'blue',
+				'Delivery Note Created': 'blue',
+				Dispatched: 'green',
+				Completed: 'green',
+				Cancelled: 'red',
+			};
+			if (status && me.page.set_indicator) {
+				me.page.set_indicator(status, colorMap[status] || 'gray');
+			} else if (me.page.clear_indicator) {
+				me.page.clear_indicator();
+			}
+
+			const isWarehouse = me._has_any_role(['Warehouse Admin', 'Warehouse Manager', 'System Manager']);
+			const isSales = me._has_any_role(['Sales Admin', 'Sales Manager', 'System Manager']);
+
+			// PRIMARY action = the clear "next stage" step for this stage + role.
+			if (status === 'Draft' && isSales) {
+				me.page.set_primary_action(__('Send for Warehouse Approval'), () => me.do_submit_order());
+			} else if (['Warehouse Approval Pending', 'Future Dispatch'].includes(status) && isWarehouse) {
+				if (pl.has_draft) {
+					me.page.set_primary_action(__('Continue Pick List'), () =>
+						frappe.set_route('pick_list_entry', pl.draft_name)
+					);
+				} else if (!pl.has_pick_list) {
+					me.page.set_primary_action(__('Create Pick List'), () => {
+						frappe.route_options = { so_name: me._so_name };
+						frappe.set_route('pick_list_entry', 'New Pick List');
+					});
+				}
+			} else if (status === 'Dispatched' && isSales) {
+				me.page.set_primary_action(__('Mark Delivered'), () => me.do_mark_delivered());
+			} else if (pl.has_draft && isWarehouse) {
+				// Mid-flow (Warehouse Approved / Picking) — jump back into the Pick List.
+				me.page.set_primary_action(__('Continue Pick List'), () =>
+					frappe.set_route('pick_list_entry', pl.draft_name)
+				);
+			}
+
+			// SECONDARY: park / update the dispatch date (warehouse, early stages).
+			if (
+				me.btn_future_dispatch &&
+				isWarehouse &&
+				['Warehouse Approval Pending', 'Future Dispatch'].includes(status)
+			) {
+				me.btn_future_dispatch.text(
+					status === 'Future Dispatch' ? __('Update Dispatch Date') : __('Mark as Future Dispatch')
+				);
+				me.btn_future_dispatch.show();
+			}
+		});
 	}
 
 	do_submit_order() {
@@ -297,52 +319,9 @@ class SalesOrderEntryView {
 				}
 				this.page.set_title(__('Sales Order View — {0}', [name]));
 				this.render(r.message);
-				this.update_pick_list_button();
 			},
 		});
 	}
-
-	update_pick_list_button() {
-		// Remove any previously added Pick List group buttons
-		this.page.remove_inner_button(__('Create'), __('Pick List'));
-		this.page.remove_inner_button(__('Edit'), __('Pick List'));
-		// Also remove the group itself if it exists by clearing its children
-		const $plGroup = this.page.inner_toolbar && this.page.inner_toolbar.find('.btn-group');
-		if ($plGroup) {
-			$plGroup.each(function() {
-				const $g = $(this);
-				if ($g.find('[data-label="Pick List"]').length) {
-					$g.remove();
-				}
-			});
-		}
-
-		frappe.call({
-			method: 'alpinos.sales_order_api.get_so_pick_list_status',
-			args: { sales_order: this._so_name },
-			callback: (r) => {
-				const status = r.message || {};
-				if (status.fully_picked) {
-					// Fully picked — no button needed
-					return;
-				}
-				if (status.has_draft) {
-					// Draft pick list exists — allow editing it
-					this.page.add_inner_button(__('Edit'), () => {
-						frappe.set_route('pick_list_entry', status.draft_name);
-					}, __('Pick List'));
-				} else if (!status.has_pick_list) {
-					// No pick list at all — allow creating
-					this.page.add_inner_button(__('Create'), () => {
-						frappe.route_options = { "so_name": this._so_name };
-						frappe.set_route('pick_list_entry', 'New Pick List');
-					}, __('Pick List'));
-				}
-				// If has_pick_list but not draft and not fully_picked: submitted PL exists, no new create allowed
-			}
-		});
-	}
-
 
 	_has(parent, key) {
 		return parent && Object.prototype.hasOwnProperty.call(parent, key);
@@ -412,7 +391,7 @@ class SalesOrderEntryView {
 		const w = this.wrapper;
 		const currency = p.currency || frappe.boot?.sysdefaults?.currency || '';
 
-		this.update_workflow_buttons();
+		this.update_actions();
 
 		// Customer block — order matches template
 		w.find('.v-customer-name').text(
