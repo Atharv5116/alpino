@@ -87,6 +87,13 @@ class SalesOrderEntryView {
 					this._has_any_role(warehouse) &&
 					['Warehouse Approval Pending', 'Future Dispatch'].includes(status)
 				) {
+					// Same action, clearer label once the order is already parked:
+					// at Future Dispatch this just updates the Expected Dispatch Date.
+					this.btn_future_dispatch.text(
+						status === 'Future Dispatch'
+							? __('Update Dispatch Date')
+							: __('Mark as Future Dispatch')
+					);
 					this.btn_future_dispatch.show();
 				}
 				if (this.btn_delivered && this._has_any_role(sales) && status === 'Dispatched') {
