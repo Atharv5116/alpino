@@ -326,6 +326,20 @@ def delivery_note_on_cancel(doc, method=None):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
+def submit_sales_order(sales_order):
+	"""Submit a draft Sales Order -> Warehouse Approval Pending.
+
+	Used by the 'Send for Warehouse Approval' button on the Sales Order view
+	page (the page now saves new orders as Draft, then this advances them)."""
+	doc = frappe.get_doc("Sales Order", sales_order)
+	if doc.docstatus != 0:
+		frappe.throw(frappe._("This Sales Order is already submitted."))
+	# Frappe enforces the submit permission inside doc.submit().
+	doc.submit()
+	return frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
+
+
+@frappe.whitelist()
 def mark_future_dispatch(sales_order, expected_date):
 	"""Warehouse parks an order awaiting stock, with an expected dispatch date."""
 	_require_roles(WAREHOUSE_ROLES)

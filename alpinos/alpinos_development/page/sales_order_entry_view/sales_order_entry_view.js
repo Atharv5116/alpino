@@ -29,12 +29,16 @@ class SalesOrderEntryView {
 		});
 		this.page.add_inner_button(__('Print'), () => this.open_default_print_preview());
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
+		this.btn_submit = this.page.add_inner_button(__('Send for Warehouse Approval'), () =>
+			this.do_submit_order()
+		);
 		this.btn_future_dispatch = this.page.add_inner_button(__('Mark as Future Dispatch'), () =>
 			this.do_future_dispatch()
 		);
 		this.btn_delivered = this.page.add_inner_button(__('Mark Delivered'), () =>
 			this.do_mark_delivered()
 		);
+		if (this.btn_submit) this.btn_submit.hide();
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
 		if (this.btn_delivered) this.btn_delivered.hide();
 	}
@@ -46,6 +50,7 @@ class SalesOrderEntryView {
 
 	/** Show workflow actions based on the loaded order's current stage + role. */
 	update_workflow_buttons() {
+		if (this.btn_submit) this.btn_submit.hide();
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
 		if (this.btn_delivered) this.btn_delivered.hide();
 		if (!this._so_name) return;
@@ -53,8 +58,30 @@ class SalesOrderEntryView {
 			.get_value('Sales Order', this._so_name, 'custom_workflow_status')
 			.then((r) => {
 				const status = (r.message && r.message.custom_workflow_status) || '';
+				// Show the current workflow stage as a coloured badge by the title.
+				const colorMap = {
+					Draft: 'gray',
+					'Warehouse Approval Pending': 'orange',
+					'Future Dispatch': 'yellow',
+					'Warehouse Approved': 'blue',
+					'Picking In Progress': 'blue',
+					'Ready For Dispatch': 'blue',
+					'Delivery Note Created': 'blue',
+					Dispatched: 'green',
+					Completed: 'green',
+					Cancelled: 'red',
+				};
+				if (status && this.page.set_indicator) {
+					this.page.set_indicator(status, colorMap[status] || 'gray');
+				} else if (this.page.clear_indicator) {
+					this.page.clear_indicator();
+				}
 				const warehouse = ['Warehouse Admin', 'Warehouse Manager', 'System Manager'];
 				const sales = ['Sales Admin', 'Sales Manager', 'System Manager'];
+				// Draft order -> Sales can submit it for warehouse approval.
+				if (this.btn_submit && this._has_any_role(sales) && status === 'Draft') {
+					this.btn_submit.show();
+				}
 				if (
 					this.btn_future_dispatch &&
 					this._has_any_role(warehouse) &&
@@ -66,6 +93,27 @@ class SalesOrderEntryView {
 					this.btn_delivered.show();
 				}
 			});
+	}
+
+	do_submit_order() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.confirm(
+			__('Submit this Sales Order for warehouse approval? It becomes read-only after this.'),
+			() => {
+				frappe.call({
+					method: 'alpinos.workflow_engine.submit_sales_order',
+					args: { sales_order: me._so_name },
+					freeze: true,
+					freeze_message: __('Submitting...'),
+					callback(r) {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Sent for Warehouse Approval'), indicator: 'green' });
+						me.load_order(me._so_name);
+					},
+				});
+			}
+		);
 	}
 
 	do_future_dispatch() {

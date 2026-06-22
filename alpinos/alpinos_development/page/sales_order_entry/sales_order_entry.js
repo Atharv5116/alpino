@@ -1288,16 +1288,16 @@ class SalesOrderEntry {
 				scheme_items: scheme_items,
 				additional_units_items: additional_units_items,
 				additional_units_damage: me.additional_units_damage_field.get_value() ? 1 : 0,
-				submit_now: 1
+				submit_now: 0
 			},
 			freeze: true,
 			freeze_message: 'Creating Sales Order...',
 			callback: function(r) {
 				if (r.message && r.message.name) {
 					frappe.show_alert({
-						message: `Sales Order <b>${r.message.name}</b> created successfully!`,
+						message: `Sales Order <b>${r.message.name}</b> saved as Draft. Review it, then click "Send for Warehouse Approval".`,
 						indicator: 'green'
-					}, 5);
+					}, 6);
 					frappe.set_route('sales-order-entry-view', r.message.name);
 				}
 			}
