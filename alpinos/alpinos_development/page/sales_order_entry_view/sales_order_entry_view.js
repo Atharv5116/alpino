@@ -148,30 +148,42 @@ class SalesOrderEntryView {
 	do_future_dispatch() {
 		if (!this._so_name) return;
 		const me = this;
-		frappe.prompt(
-			[
-				{
-					fieldname: 'expected_date',
-					fieldtype: 'Date',
-					label: __('Expected Dispatch Date'),
-					reqd: 1,
-				},
-			],
-			(values) => {
-				frappe.call({
-					method: 'alpinos.workflow_engine.mark_future_dispatch',
-					args: { sales_order: me._so_name, expected_date: values.expected_date },
-					freeze: true,
-					callback(r) {
-						if (r.exc) return;
-						frappe.show_alert({ message: __('Marked as Future Dispatch'), indicator: 'orange' });
-						me.load_order(me._so_name);
+		// Prefill the date: the existing expected date if already parked, else
+		// fall back to the Sales Order's own dispatch date.
+		frappe.db
+			.get_value('Sales Order', this._so_name, [
+				'custom_expected_dispatch_date',
+				'custom_dispatch_date',
+			])
+			.then((r) => {
+				const m = (r && r.message) || {};
+				const default_date = m.custom_expected_dispatch_date || m.custom_dispatch_date || '';
+				frappe.prompt(
+					[
+						{
+							fieldname: 'expected_date',
+							fieldtype: 'Date',
+							label: __('Expected Dispatch Date'),
+							reqd: 1,
+							default: default_date,
+						},
+					],
+					(values) => {
+						frappe.call({
+							method: 'alpinos.workflow_engine.mark_future_dispatch',
+							args: { sales_order: me._so_name, expected_date: values.expected_date },
+							freeze: true,
+							callback(rr) {
+								if (rr.exc) return;
+								frappe.show_alert({ message: __('Marked as Future Dispatch'), indicator: 'orange' });
+								me.load_order(me._so_name);
+							},
+						});
 					},
-				});
-			},
-			__('Future Dispatch'),
-			__('Confirm')
-		);
+					__('Future Dispatch'),
+					__('Confirm')
+				);
+			});
 	}
 
 	do_mark_delivered() {
