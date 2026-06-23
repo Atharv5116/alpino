@@ -38,9 +38,16 @@ def _set_defaults(doc):
 
 def _sync_order_information(doc):
 	first_so = next((row.sales_order for row in (doc.locations or []) if row.sales_order), None)
+	if not first_so:
+		first_so = doc.get("custom_sales_order_id")
 	if first_so:
 		doc.custom_sales_order_id = first_so
 		doc.custom_customer_name = frappe.db.get_value("Sales Order", first_so, "customer_name") or ""
+		# Dispatch Date always mirrors the Sales Order (set by warehouse via
+		# Future Dispatch / Update Dispatch Date on the order).
+		so_dispatch = frappe.db.get_value("Sales Order", first_so, "custom_dispatch_date")
+		if so_dispatch:
+			doc.custom_dispatch_date = so_dispatch
 
 
 def _sync_rows_and_totals(doc):

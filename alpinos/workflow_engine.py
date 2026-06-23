@@ -361,10 +361,11 @@ def mark_future_dispatch(sales_order, expected_date):
 	if not expected_date:
 		frappe.throw(frappe._("Expected Dispatch Date is mandatory for Future Dispatch."))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
+	# Allowed while the order is still in the warehouse queue (a submitted Pick
+	# List moves the SO to Ready For Dispatch, which is not in this set, so it's
+	# naturally blocked). A *draft* Pick List is fine — we re-sync its date below.
 	if cur not in (SO_WAREHOUSE_PENDING, SO_FUTURE_DISPATCH, SO_TODAYS_DISPATCH):
-		frappe.throw(frappe._("Future Dispatch can only be set while the order is awaiting warehouse approval."))
-	if _active_pick_lists_for_so(sales_order):
-		frappe.throw(frappe._("A Pick List already exists for this order; it cannot be moved to Future Dispatch."))
+		frappe.throw(frappe._("The dispatch date can only be changed while the order is awaiting warehouse dispatch."))
 	# Picking today -> "Today's Dispatch"; a future date -> "Future Dispatch".
 	new_status = SO_TODAYS_DISPATCH if getdate(expected_date) == getdate(today()) else SO_FUTURE_DISPATCH
 	# Move the visible Dispatch Date to the chosen date too (and record it as the
@@ -379,6 +380,10 @@ def mark_future_dispatch(sales_order, expected_date):
 		},
 		update_modified=False,
 	)
+	# Keep any linked draft Pick List's dispatch date in sync with the order.
+	for pl in _active_pick_lists_for_so(sales_order):
+		if frappe.db.get_value("Pick List", pl, "docstatus") == 0:
+			frappe.db.set_value("Pick List", pl, "custom_dispatch_date", expected_date, update_modified=False)
 	frappe.db.commit()
 	return new_status
 

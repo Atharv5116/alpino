@@ -662,6 +662,16 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						assigned_select.val(data.custom_assigned_to);
 					}
 
+					// Assigned To is read-only for PL Users — only the warehouse
+					// can (re)assign a picker.
+					const _roles = frappe.user_roles || [];
+					const _canAssign = _roles.some((r) =>
+						['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'DN Manager'].includes(r)
+					);
+					if (_roles.includes('PL User') && !_canAssign) {
+						assigned_select.prop('disabled', true);
+					}
+
 					// When Assigned To changes:
 					//   - sync QC Attended By if QC is blank (Task 5 auto-fetch).
 					//   - persist immediately via update_pick_list_assignment so the

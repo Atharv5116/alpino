@@ -55,11 +55,30 @@ def _is_full_access(user):
 	return _has_role(user, FULL_ACCESS_ROLE)
 
 
+# Per-doctype roles that are restricted to their own assigned documents
+# (in addition to the explicit "Alpinos Assigned Only" role).
+_DT_ASSIGNED_ROLES = {
+	"Pick List": {"PL User"},
+}
+# Roles that always see everything for these doctypes (override the restriction).
+_DT_FULL_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager"}
+
+
+def _is_assigned_only(user, doctype):
+	"""True if this user should be limited to documents assigned to them."""
+	if _is_full_access(user):
+		return False
+	roles = set(frappe.get_roles(user))
+	if roles & _DT_FULL_ROLES:
+		return False
+	if ASSIGNED_ONLY_ROLE in roles:
+		return True
+	return bool(roles & _DT_ASSIGNED_ROLES.get(doctype, set()))
+
+
 def _filter_for_doctype(user, doctype):
 	"""Return a SQL fragment (or '') used by permission_query_conditions."""
-	if _is_full_access(user):
-		return ""
-	if not _has_role(user, ASSIGNED_ONLY_ROLE):
+	if not _is_assigned_only(user, doctype):
 		return ""
 	u = frappe.db.escape(user)
 	return (
@@ -69,9 +88,7 @@ def _filter_for_doctype(user, doctype):
 
 
 def _row_visible(doc, user):
-	if _is_full_access(user):
-		return True
-	if not _has_role(user, ASSIGNED_ONLY_ROLE):
+	if not _is_assigned_only(user, getattr(doc, "doctype", None)):
 		return True
 	return (
 		doc.get("custom_assigned_to") == user

@@ -203,6 +203,13 @@ def get_pick_list_entry_list(
 		filters["status"] = status
 	if company:
 		filters["company"] = company
+
+	# A dedicated PL User only sees Pick Lists assigned to them. Warehouse
+	# admins/managers (and System Manager) keep full visibility.
+	_roles = set(frappe.get_roles())
+	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "DN Manager"}
+	if "PL User" in _roles and not (_roles & _override):
+		filters["custom_assigned_to"] = frappe.session.user
 		
 	or_filters = []
 	if search:

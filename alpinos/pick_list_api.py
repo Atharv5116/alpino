@@ -273,6 +273,10 @@ def update_pick_list_assignment(pick_list, assigned_to):
 	if not frappe.db.exists("Pick List", pick_list):
 		frappe.throw(f"Pick List {pick_list} not found.")
 	frappe.has_permission("Pick List", "write", doc=pick_list, throw=True)
+	# A PL User cannot (re)assign — only the warehouse manages assignment.
+	_roles = set(frappe.get_roles())
+	if "PL User" in _roles and not (_roles & {"Warehouse Admin", "Warehouse Manager", "System Manager", "DN Manager"}):
+		frappe.throw(frappe._("You are not permitted to change the assigned picker."))
 	value = (assigned_to or "").strip() or None
 	frappe.db.set_value("Pick List", pick_list, "custom_assigned_to", value)
 	frappe.db.commit()
