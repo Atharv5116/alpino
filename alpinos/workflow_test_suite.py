@@ -209,12 +209,13 @@ def _test_lifecycle(R):
 		d.save()
 		R.check("PL -> Picking Pending after assignment", _wf("Pick List", pl) == "Picking Pending", _wf("Pick List", pl))
 
-		# PL User starts picking — PL advances; SO still date-driven (Today's Dispatch)
+		# PL User starts picking — PL advances and the SO mirrors the picking stage
 		frappe.set_user(_u("pluser"))
 		start_picking(pl)
 		R.check("Start Picking by PL User (no access error)",
 				_wf("Pick List", pl) in ("Picking In Progress", "Sticker Pending"), _wf("Pick List", pl))
-		R.check("SO stays Today's Dispatch during picking", _wf("Sales Order", so) == "Today's Dispatch", _wf("Sales Order", so))
+		R.check("SO mirrors picking stage after Start Picking",
+				_wf("Sales Order", so) in ("Picking In Progress", "Sticker Pending"), _wf("Sales Order", so))
 
 		# Sticker -> Submission Pending (PDF render needs wkhtmltopdf on server)
 		frappe.set_user(_u("wadmin"))
@@ -224,6 +225,8 @@ def _test_lifecycle(R):
 			R.check("Sticker generation (env note)", "wkhtmltopdf" in str(oe), str(oe)[:60])
 		R.check("PL -> Submission Pending after sticker",
 				_wf("Pick List", pl) == "Submission Pending", _wf("Pick List", pl))
+		R.check("SO -> Submission Pending (mirrors PL)",
+				_wf("Sales Order", so) == "Submission Pending", _wf("Sales Order", so))
 
 		# Submit PL -> Ready To Dispatch / SO Ready For Dispatch
 		frappe.set_user(_u("wadmin"))

@@ -29,6 +29,8 @@ SO_FUTURE_DISPATCH = "Future Dispatch"
 SO_TODAYS_DISPATCH = "Today's Dispatch"
 SO_WAREHOUSE_APPROVED = "Warehouse Approved"
 SO_PICKING = "Picking In Progress"
+SO_STICKER_PENDING = "Sticker Pending"
+SO_SUBMISSION_PENDING = "Submission Pending"
 SO_READY = "Ready For Dispatch"
 SO_DN_CREATED = "Delivery Note Created"
 SO_DISPATCHED = "Dispatched"
@@ -44,6 +46,8 @@ SO_EARLY_STAGES = {
 	SO_TODAYS_DISPATCH,
 	SO_WAREHOUSE_APPROVED,
 	SO_PICKING,
+	SO_STICKER_PENDING,
+	SO_SUBMISSION_PENDING,
 }
 
 PL_DRAFT = "Draft"
@@ -55,8 +59,15 @@ PL_READY = "Ready To Dispatch"
 PL_DISPATCHED = "Dispatched"
 PL_CANCELLED = "Cancelled"
 
-# PL stages that mean "actively being worked" -> SO should read Picking In Progress.
+# PL stages that mean "actively being worked" -> the Sales Order mirrors them.
 PL_ACTIVE_STAGES = {PL_PICKING, PL_STICKER_PENDING, PL_SUBMISSION_PENDING}
+
+# A Pick List picking stage -> the Sales Order status it should reflect.
+PL_TO_SO_STATUS = {
+	PL_PICKING: SO_PICKING,
+	PL_STICKER_PENDING: SO_STICKER_PENDING,
+	PL_SUBMISSION_PENDING: SO_SUBMISSION_PENDING,
+}
 
 WAREHOUSE_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager"}
 SALES_ROLES = {"Sales Admin", "Sales Manager", "System Manager"}
@@ -268,16 +279,32 @@ def _guard_sales_order_cancellation(doc):
 # Pick List events
 # ---------------------------------------------------------------------------
 
+def _sync_so_from_pick_list(so, pl_status):
+	"""Mirror the Pick List's picking stage onto the Sales Order:
+	Picking In Progress / Sticker Pending / Submission Pending. A Draft or
+	Picking Pending PL leaves the SO at its date-driven status (Today's
+	Dispatch / Warehouse queue). Never regress past Ready For Dispatch."""
+	if not so:
+		return
+	cur = frappe.db.get_value("Sales Order", so, "custom_workflow_status")
+	if cur not in SO_EARLY_STAGES:
+		return
+	target = PL_TO_SO_STATUS.get(pl_status)
+	if target:
+		_set_status("Sales Order", so, target)
+
+
 def pick_list_after_insert(doc, method=None):
-	# Only set the Pick List's own status. The Sales Order status stays
-	# date-driven (Today's Dispatch / warehouse queue) until the PL is submitted.
-	_apply_pick_list_status(doc)
+	# Set the Pick List's own status; mirror any active picking stage onto the SO.
+	status = _apply_pick_list_status(doc)
+	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
 
 
 def pick_list_on_update(doc, method=None):
 	if doc.docstatus != 0:
 		return
-	_apply_pick_list_status(doc)
+	status = _apply_pick_list_status(doc)
+	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
 
 
 def pick_list_on_submit(doc, method=None):
@@ -419,6 +446,7 @@ def start_picking(pick_list):
 	frappe.db.set_value("Pick List", pick_list, "custom_picking_started", 1, update_modified=False)
 	doc.reload()
 	status = _apply_pick_list_status(doc)
+	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
 	frappe.db.commit()
 	return status
 
@@ -446,7 +474,8 @@ def mark_sticker_printed(pick_list):
 		return
 	frappe.db.set_value("Pick List", pick_list, "custom_sticker_printed", 1, update_modified=False)
 	doc = frappe.get_doc("Pick List", pick_list)
-	_apply_pick_list_status(doc)
+	status = _apply_pick_list_status(doc)
+	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
 
 
 # ---------------------------------------------------------------------------
@@ -524,7 +553,14 @@ def _recompute_so_status(so):
 		return SO_DN_CREATED
 	if frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 1}, limit=1):
 		return SO_READY
-	# No submitted Pick List yet — the warehouse-queue status is date-driven:
+	# A draft Pick List that is being picked mirrors its stage onto the SO.
+	draft_pls = frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 0}, pluck="name")
+	if draft_pls:
+		statuses = [frappe.db.get_value("Pick List", p, "custom_workflow_status") for p in draft_pls]
+		for stage in (PL_SUBMISSION_PENDING, PL_STICKER_PENDING, PL_PICKING):  # most advanced first
+			if stage in statuses:
+				return PL_TO_SO_STATUS[stage]
+	# Otherwise the warehouse-queue status is date-driven:
 	# due today (or overdue) -> Today's Dispatch; future -> waiting / parked.
 	dd = frappe.db.get_value("Sales Order", so, "custom_dispatch_date")
 	if dd and getdate(dd) <= getdate(today()):

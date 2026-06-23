@@ -239,6 +239,8 @@ SALES_ORDER_STATUSES = "\n".join(
 		"Today's Dispatch",
 		"Warehouse Approved",
 		"Picking In Progress",
+		"Sticker Pending",
+		"Submission Pending",
 		"Ready For Dispatch",
 		"Delivery Note Created",
 		"Dispatched",

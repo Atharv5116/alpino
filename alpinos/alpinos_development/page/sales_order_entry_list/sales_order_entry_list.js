@@ -13,7 +13,8 @@ const SO_STATUS_OPTIONS =
 
 const SO_WORKFLOW_STATUS_OPTIONS =
 	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
-	'\nPicking In Progress\nReady For Dispatch\nDelivery Note Created\nDispatched\nCompleted\nCancelled';
+	'\nPicking In Progress\nSticker Pending\nSubmission Pending\nReady For Dispatch' +
+	'\nDelivery Note Created\nDispatched\nCompleted\nCancelled';
 
 const SO_WF_COLORS = {
 	Draft: 'gray',
@@ -22,6 +23,8 @@ const SO_WF_COLORS = {
 	"Today's Dispatch": 'purple',
 	'Warehouse Approved': 'blue',
 	'Picking In Progress': 'blue',
+	'Sticker Pending': 'yellow',
+	'Submission Pending': 'orange',
 	'Ready For Dispatch': 'blue',
 	'Delivery Note Created': 'blue',
 	Dispatched: 'green',
