@@ -407,6 +407,7 @@ class SalesOrderEntryView {
 		w.find('.v-date').text(this._fmt_date(p, 'transaction_date'));
 		w.find('.v-po-no').text(this._has(p, 'po_no') ? this._plain_text(p.po_no) : '—');
 		w.find('.v-tax-id').text(this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—');
+		w.find('.v-dispatch-date').text(this._fmt_date(p, 'custom_dispatch_date'));
 		w.find('.v-delivery-date').text(this._fmt_date(p, 'delivery_date'));
 
 		// Hide customer rows where field not permitted
@@ -418,6 +419,7 @@ class SalesOrderEntryView {
 			['transaction_date', '.v-date'],
 			['po_no', '.v-po-no'],
 			['tax_id', '.v-tax-id'],
+			['custom_dispatch_date', '.v-dispatch-date'],
 			['delivery_date', '.v-delivery-date'],
 		].forEach(([key, sel]) => {
 			const $tr = w.find(sel).closest('tr');
