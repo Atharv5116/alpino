@@ -355,10 +355,16 @@ def mark_future_dispatch(sales_order, expected_date):
 		frappe.throw(frappe._("A Pick List already exists for this order; it cannot be moved to Future Dispatch."))
 	# Picking today -> "Today's Dispatch"; a future date -> "Future Dispatch".
 	new_status = SO_TODAYS_DISPATCH if getdate(expected_date) == getdate(today()) else SO_FUTURE_DISPATCH
+	# Move the visible Dispatch Date to the chosen date too (and record it as the
+	# expected dispatch date), so the order reschedules to when it will go out.
 	frappe.db.set_value(
 		"Sales Order",
 		sales_order,
-		{"custom_workflow_status": new_status, "custom_expected_dispatch_date": expected_date},
+		{
+			"custom_workflow_status": new_status,
+			"custom_expected_dispatch_date": expected_date,
+			"custom_dispatch_date": expected_date,
+		},
 		update_modified=False,
 	)
 	frappe.db.commit()

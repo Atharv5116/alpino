@@ -11,6 +11,24 @@ frappe.pages['sales-order-entry-list'].on_page_load = function (wrapper) {
 const SO_STATUS_OPTIONS =
 	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
 
+const SO_WORKFLOW_STATUS_OPTIONS =
+	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
+	'\nPicking In Progress\nReady For Dispatch\nDelivery Note Created\nDispatched\nCompleted\nCancelled';
+
+const SO_WF_COLORS = {
+	Draft: 'gray',
+	'Warehouse Approval Pending': 'orange',
+	'Future Dispatch': 'yellow',
+	"Today's Dispatch": 'purple',
+	'Warehouse Approved': 'blue',
+	'Picking In Progress': 'blue',
+	'Ready For Dispatch': 'blue',
+	'Delivery Note Created': 'blue',
+	Dispatched: 'green',
+	Completed: 'green',
+	Cancelled: 'red',
+};
+
 class SalesOrderEntryListPage {
 	constructor(page) {
 		this.page = page;
@@ -106,6 +124,16 @@ class SalesOrderEntryListPage {
 			parent: w.find('.fld-status'),
 			render_input: true,
 		});
+		this._filter_fields.workflow_status = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Select',
+				fieldname: 'workflow_status',
+				label: __('Workflow Status'),
+				options: SO_WORKFLOW_STATUS_OPTIONS,
+			},
+			parent: w.find('.fld-workflow-status'),
+			render_input: true,
+		});
 		this._filter_fields.company = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Link',
@@ -193,6 +221,7 @@ class SalesOrderEntryListPage {
 			page_length: this.page_length,
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
+			workflow_status: f.workflow_status.get_value() || '',
 			company: f.company.get_value() || '',
 			customer: f.customer.get_value() || '',
 			from_date: f.from_date.get_value() || '',
@@ -229,7 +258,7 @@ class SalesOrderEntryListPage {
 		const tb = this.wrapper.find('.so-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="10" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
+				`<tr><td colspan="11" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
 			);
 			return;
 		}
@@ -247,6 +276,11 @@ class SalesOrderEntryListPage {
 					: __('No')
 				: '—';
 			const augClass = hasAug && cint(d.custom_additional_units_damage) ? 'green' : 'gray';
+			const wf = d.custom_workflow_status || '';
+			const wfColor = SO_WF_COLORS[wf] || 'gray';
+			const wfCell = wf
+				? `<span class="indicator-pill ${wfColor}">${esc(wf)}</span>`
+				: '—';
 			tb.append(`<tr class="so-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="so-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
@@ -255,6 +289,7 @@ class SalesOrderEntryListPage {
 				<td>${esc(td)}</td>
 				<td>${esc(dd)}</td>
 				<td>${esc(d.company)}</td>
+				<td>${wfCell}</td>
 				<td><span class="indicator-pill blue">${esc(d.status)}</span></td>
 				<td class="text-center"><span class="indicator-pill ${augClass}">${esc(augLabel)}</span></td>
 				<td class="text-right">${gt}</td>

@@ -1104,6 +1104,7 @@ def get_sales_order_entry_list(
 	page_length=20,
 	search=None,
 	status=None,
+	workflow_status=None,
 	company=None,
 	customer=None,
 	from_date=None,
@@ -1120,6 +1121,8 @@ def get_sales_order_entry_list(
 	filters = {}
 	if status:
 		filters["status"] = str(status).strip()
+	if workflow_status:
+		filters["custom_workflow_status"] = str(workflow_status).strip()
 	if company:
 		filters["company"] = str(company).strip()
 	if customer:
@@ -1183,6 +1186,7 @@ def get_sales_order_entry_list(
 		"delivery_date",
 		"company",
 		"status",
+		"custom_workflow_status",
 		"order_type",
 		"grand_total",
 		"currency",
