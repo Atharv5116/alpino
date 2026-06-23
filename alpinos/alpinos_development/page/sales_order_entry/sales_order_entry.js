@@ -337,6 +337,12 @@ class SalesOrderEntry {
 			});
 		});
 
+		this.customer_po_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', label: 'Customer PO No.', fieldname: 'po_no' },
+			parent: header.find('.field-customer-po'),
+			render_input: true
+		});
+
 		this.billing_address_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Autocomplete', label: 'Billing Address', fieldname: 'billing_address' },
 			parent: header.find('.field-billing-address'),
@@ -1278,6 +1284,7 @@ class SalesOrderEntry {
 				order_type: order_type,
 				company: (me.company_field && me.company_field.get_value()) || me.default_company || me._get_default_company(),
 				delivery_date: delivery_date,
+				po_no: me.customer_po_field ? me.customer_po_field.get_value() : '',
 				dispatch_date: me.dispatch_date_field ? me.dispatch_date_field.get_value() : '',
 				billing_address: billing_address,
 				shipping_address: shipping_address,
@@ -1382,6 +1389,7 @@ class SalesOrderEntry {
 		this.order_type_field.set_value('');
 		this.delivery_date_field.set_value('');
 		this.dispatch_date_field && this.dispatch_date_field.set_value('');
+		this.customer_po_field && this.customer_po_field.set_value('');
 		this.billing_address_field && this.billing_address_field.set_value('');
 		this.shipping_address_field && this.shipping_address_field.set_value('');
 		this.items = [];

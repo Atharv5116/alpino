@@ -782,7 +782,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
                        additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
-                       taxes_and_charges=None,
+                       taxes_and_charges=None, po_no=None,
                        submit_now=1):
 	"""Create a Sales Order from the custom entry page"""
 	import json
@@ -804,6 +804,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so.company = _resolve_company(company)
 	default_warehouse = _resolve_default_warehouse(so.company)
 	so.delivery_date = delivery_date
+	if po_no:
+		so.po_no = po_no
 	if dispatch_date:
 		so.custom_dispatch_date = dispatch_date
 	so.ignore_pricing_rule = 1
