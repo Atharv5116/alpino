@@ -248,9 +248,33 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 		}
 
+		// --- Edit-permission gating ---
+		const _roles = frappe.user_roles || [];
+		const _isPLUser = _roles.includes('PL User') &&
+			!_roles.some((r) => ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'DN Manager'].includes(r));
+		const pickingStarted = cint(data.custom_picking_started);
+		const isSubmitted = data.docstatus === 1;
+		// Item fields are editable only when not submitted AND (not a PL User, or
+		// the PL User has clicked Start Picking).
+		const itemsLocked = isSubmitted || (_isPLUser && !pickingStarted);
+
+		// PO No / Transporter / Gate: read-only for PL Users, and after submit.
+		const lockHeader = isSubmitted || _isPLUser;
+		['custom_po_no', 'custom_transporter', 'custom_gate'].forEach((fn) => {
+			page.main.find(`[data-fieldname="${fn}"]`).prop('readonly', lockHeader);
+		});
+		// After submit, nothing on the page is editable.
+		if (isSubmitted) {
+			['custom_actual_box', 'custom_sample_box', 'custom_dispatch_date'].forEach((fn) => {
+				page.main.find(`[data-fieldname="${fn}"]`).prop('readonly', true);
+			});
+			page.main.find('[data-fieldname="custom_assigned_to"]').prop('disabled', true);
+			page.main.find('[data-fieldname="custom_qc_attended_by"]').prop('disabled', true);
+		}
+
 		let container = page.main.find('#tables-container');
 		container.empty();
-		
+
 		let groups = {
 			"Items": [],
 			"Scheme Table": [],
@@ -292,8 +316,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			rows.forEach((row, idx) => {
 			let src = row.custom_source_table || "Items";
 			
-			let batch_readonly = data.docstatus === 1 ? 'readonly' : '';
-			let input_disabled = data.docstatus === 1 ? 'disabled' : '';
+			let batch_readonly = itemsLocked ? 'readonly' : '';
+			let input_disabled = itemsLocked ? 'disabled' : '';
 			
 			// Exploded bundle component: qty & box are derived from the combo order,
 			// so both are locked; the row is tinted and tagged with its bundle SKU.
@@ -307,8 +331,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				box_val = (row.custom_box !== undefined && row.custom_box !== null && cint(row.custom_box) !== 0) ? cint(row.custom_box) : "";
 			}
 			// Box is editable for Items (including exploded combo/bundle components)
-			// and for Marketing Freebies; locked for Scheme / Additional Units.
-			let box_readonly = (title === "Items" || title === "Marketing Freebies") ? '' : 'readonly tabindex="-1"';
+			// and for Marketing Freebies; locked for Scheme / Additional Units, and
+			// whenever items are locked (submitted, or PL User before Start Picking).
+			let box_readonly = (!itemsLocked && (title === "Items" || title === "Marketing Freebies")) ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
 				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:#f5f3ff;"' : ''}>
