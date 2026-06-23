@@ -241,6 +241,7 @@ override_whitelisted_methods = {
 }
 
 override_doctype_class = {
+	"Pick List": "alpinos.overrides.pick_list_override.CustomPickList",
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
 	"Interview": "alpinos.overrides.interview_override.CustomInterview",
@@ -325,10 +326,16 @@ doc_events = {
 			"alpinos.pick_list_hooks.validate_pick_list",
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
 		],
-		"after_insert": "alpinos.workflow_engine.pick_list_after_insert",
+		"after_insert": [
+			"alpinos.workflow_engine.pick_list_after_insert",
+			"alpinos.stock_reservation.reserve_for_pick_list",
+		],
 		"on_update": "alpinos.workflow_engine.pick_list_on_update",
 		"on_submit": "alpinos.workflow_engine.pick_list_on_submit",
-		"on_cancel": "alpinos.workflow_engine.pick_list_on_cancel",
+		"on_cancel": [
+			"alpinos.workflow_engine.pick_list_on_cancel",
+			"alpinos.stock_reservation.release_for_cancelled_pick_list",
+		],
 	},
 	"Delivery Note": {
 		"validate": [
@@ -336,7 +343,10 @@ doc_events = {
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 		],
 		"after_insert": "alpinos.workflow_engine.delivery_note_after_insert",
-		"on_submit": "alpinos.workflow_engine.delivery_note_on_submit",
+		"on_submit": [
+			"alpinos.workflow_engine.delivery_note_on_submit",
+			"alpinos.stock_reservation.release_leftover_after_delivery_note",
+		],
 		"on_cancel": "alpinos.workflow_engine.delivery_note_on_cancel",
 	},
 	"Batch": {

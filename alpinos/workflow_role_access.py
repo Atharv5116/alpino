@@ -354,4 +354,8 @@ def execute():
 	from alpinos.workflow_engine import backfill_workflow_statuses
 
 	backfill_workflow_statuses()
+	# Turn on native stock reservation so Pick List -> reserve, DN -> deduct.
+	from alpinos.stock_reservation import enable_stock_reservation
+
+	enable_stock_reservation()
 	frappe.db.commit()
