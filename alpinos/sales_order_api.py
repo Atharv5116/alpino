@@ -1151,6 +1151,19 @@ def get_sales_order_entry_list(
 	elif td:
 		filters["transaction_date"] = ["<=", td]
 
+	# A dedicated Warehouse Manager only sees orders waiting for their approval.
+	# Users who also hold a broad/sales/admin role keep full visibility.
+	_roles = set(frappe.get_roles())
+	_override_roles = {
+		"System Manager",
+		"Administrator",
+		"Sales Admin",
+		"Sales Manager",
+		"Sales User",
+	}
+	if "Warehouse Manager" in _roles and not (_roles & _override_roles):
+		filters["custom_workflow_status"] = "Warehouse Approval Pending"
+
 	or_filters = None
 	search = (search or "").strip()
 	if search:
