@@ -150,6 +150,22 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		const wfs = data.custom_workflow_status || '';
 		// Picking is "active" once started, until the picker stops (Submission Pending).
 		const pickingActive = wfs === 'Picking In Progress' || wfs === 'Sticker Pending';
+		// Show the Pick List workflow status as a coloured badge by the title.
+		const PL_WF_COLORS = {
+			'Draft': 'red',
+			'Picking Pending': 'orange',
+			'Picking In Progress': 'blue',
+			'Sticker Pending': 'yellow',
+			'Submission Pending': 'orange',
+			'Ready To Dispatch': 'blue',
+			'Dispatched': 'green',
+			'Cancelled': 'red',
+		};
+		if (wfs && page.set_indicator) {
+			page.set_indicator(wfs, PL_WF_COLORS[wfs] || 'gray');
+		} else if (page.clear_indicator) {
+			page.clear_indicator();
+		}
 		// Sticker generation needs a persisted PL — show on saved drafts + submitted, hide on new.
 		if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
 			$stickerBtn.show();
