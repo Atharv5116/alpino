@@ -290,7 +290,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			} else {
 				box_val = (row.custom_box !== undefined && row.custom_box !== null && cint(row.custom_box) !== 0) ? cint(row.custom_box) : "";
 			}
-			let box_readonly = (title === "Items" && !is_bundle_comp) ? '' : 'readonly tabindex="-1"';
+			// Box is editable for Items (including exploded combo/bundle components)
+			// and for Marketing Freebies; locked for Scheme / Additional Units.
+			let box_readonly = (title === "Items" || title === "Marketing Freebies") ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
 				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:#f5f3ff;"' : ''}>
