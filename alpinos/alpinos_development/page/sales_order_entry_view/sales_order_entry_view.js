@@ -70,6 +70,7 @@ class SalesOrderEntryView {
 				Draft: 'gray',
 				'Warehouse Approval Pending': 'orange',
 				'Future Dispatch': 'yellow',
+				"Today's Dispatch": 'purple',
 				'Warehouse Approved': 'blue',
 				'Picking In Progress': 'blue',
 				'Ready For Dispatch': 'blue',
@@ -90,7 +91,10 @@ class SalesOrderEntryView {
 			// PRIMARY action = the clear "next stage" step for this stage + role.
 			if (status === 'Draft' && isSales) {
 				me.page.set_primary_action(__('Send for Warehouse Approval'), () => me.do_submit_order());
-			} else if (['Warehouse Approval Pending', 'Future Dispatch'].includes(status) && isWarehouse) {
+			} else if (
+				['Warehouse Approval Pending', 'Future Dispatch', "Today's Dispatch"].includes(status) &&
+				isWarehouse
+			) {
 				if (pl.has_draft) {
 					me.page.set_primary_action(__('Continue Pick List'), () =>
 						frappe.set_route('pick_list_entry', pl.draft_name)
@@ -114,10 +118,12 @@ class SalesOrderEntryView {
 			if (
 				me.btn_future_dispatch &&
 				isWarehouse &&
-				['Warehouse Approval Pending', 'Future Dispatch'].includes(status)
+				['Warehouse Approval Pending', 'Future Dispatch', "Today's Dispatch"].includes(status)
 			) {
 				me.btn_future_dispatch.text(
-					status === 'Future Dispatch' ? __('Update Dispatch Date') : __('Mark as Future Dispatch')
+					['Future Dispatch', "Today's Dispatch"].includes(status)
+						? __('Update Dispatch Date')
+						: __('Mark as Future Dispatch')
 				);
 				me.btn_future_dispatch.show();
 			}

@@ -18,7 +18,7 @@ by separate stock ledger entries.
 """
 
 import frappe
-from frappe.utils import flt, today
+from frappe.utils import flt, getdate, today
 
 
 # --- SO / PL status vocab ---------------------------------------------------
@@ -26,6 +26,7 @@ from frappe.utils import flt, today
 SO_DRAFT = "Draft"
 SO_WAREHOUSE_PENDING = "Warehouse Approval Pending"
 SO_FUTURE_DISPATCH = "Future Dispatch"
+SO_TODAYS_DISPATCH = "Today's Dispatch"
 SO_WAREHOUSE_APPROVED = "Warehouse Approved"
 SO_PICKING = "Picking In Progress"
 SO_READY = "Ready For Dispatch"
@@ -40,6 +41,7 @@ SO_CANCELLED = "Cancelled"
 SO_EARLY_STAGES = {
 	SO_WAREHOUSE_PENDING,
 	SO_FUTURE_DISPATCH,
+	SO_TODAYS_DISPATCH,
 	SO_WAREHOUSE_APPROVED,
 	SO_PICKING,
 }
@@ -208,7 +210,8 @@ def _sync_so_from_pick_list(so, pl_status):
 	if pl_status in PL_ACTIVE_STAGES:
 		_set_status("Sales Order", so, SO_PICKING)
 	else:
-		_set_status("Sales Order", so, SO_WAREHOUSE_APPROVED)
+		# A Pick List exists -> the order is being dispatched today.
+		_set_status("Sales Order", so, SO_TODAYS_DISPATCH)
 
 
 # ---------------------------------------------------------------------------
@@ -253,9 +256,9 @@ def _guard_sales_order_cancellation(doc):
 # ---------------------------------------------------------------------------
 
 def pick_list_after_insert(doc, method=None):
-	# A Pick List existing == warehouse approved the order.
+	# Creating a Pick List means the warehouse is dispatching the order today.
 	so = _so_of_pick_list(doc)
-	_set_status("Sales Order", so, SO_WAREHOUSE_APPROVED)
+	_set_status("Sales Order", so, SO_TODAYS_DISPATCH)
 	status = _apply_pick_list_status(doc)
 	_sync_so_from_pick_list(so, status)
 
@@ -346,18 +349,20 @@ def mark_future_dispatch(sales_order, expected_date):
 	if not expected_date:
 		frappe.throw(frappe._("Expected Dispatch Date is mandatory for Future Dispatch."))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
-	if cur not in (SO_WAREHOUSE_PENDING, SO_FUTURE_DISPATCH):
+	if cur not in (SO_WAREHOUSE_PENDING, SO_FUTURE_DISPATCH, SO_TODAYS_DISPATCH):
 		frappe.throw(frappe._("Future Dispatch can only be set while the order is awaiting warehouse approval."))
 	if _active_pick_lists_for_so(sales_order):
 		frappe.throw(frappe._("A Pick List already exists for this order; it cannot be moved to Future Dispatch."))
+	# Picking today -> "Today's Dispatch"; a future date -> "Future Dispatch".
+	new_status = SO_TODAYS_DISPATCH if getdate(expected_date) == getdate(today()) else SO_FUTURE_DISPATCH
 	frappe.db.set_value(
 		"Sales Order",
 		sales_order,
-		{"custom_workflow_status": SO_FUTURE_DISPATCH, "custom_expected_dispatch_date": expected_date},
+		{"custom_workflow_status": new_status, "custom_expected_dispatch_date": expected_date},
 		update_modified=False,
 	)
 	frappe.db.commit()
-	return SO_FUTURE_DISPATCH
+	return new_status
 
 
 @frappe.whitelist()
@@ -489,9 +494,11 @@ def _recompute_so_status(so):
 		statuses = [frappe.db.get_value("Pick List", p, "custom_workflow_status") for p in draft_pls]
 		if any(s in PL_ACTIVE_STAGES for s in statuses):
 			return SO_PICKING
-		return SO_WAREHOUSE_APPROVED
-	# Submitted with no Pick List yet.
-	return SO_FUTURE_DISPATCH if cur == SO_FUTURE_DISPATCH else SO_WAREHOUSE_PENDING
+		return SO_TODAYS_DISPATCH
+	# Submitted with no Pick List yet — keep an explicit Future / Today's Dispatch.
+	if cur in (SO_FUTURE_DISPATCH, SO_TODAYS_DISPATCH):
+		return cur
+	return SO_WAREHOUSE_PENDING
 
 
 def backfill_workflow_statuses():

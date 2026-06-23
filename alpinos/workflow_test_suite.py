@@ -25,7 +25,8 @@ CUSTOMER = "Test Combo Buyer"
 COMPANY = "Alpinos Health Foods"
 ITEM = "CA"
 ORDER_TYPE = "GENERAL TRADE"
-DISPATCH_DATE = "2026-06-22"
+# A few days out so the dispatch-date "not in the past" rule always passes.
+DISPATCH_DATE = frappe.utils.add_days(frappe.utils.today(), 3)
 
 USERS = {
 	"sm": ("wf_sales_manager@test.com", ["Sales Manager"]),
@@ -195,7 +196,7 @@ def _test_lifecycle(R):
 		frappe.set_user(_u("wadmin"))
 		pl = _create_pl(so)
 		R.check("PL created by Warehouse Admin (no access error)", bool(pl))
-		R.check("SO -> Warehouse Approved", _wf("Sales Order", so) == "Warehouse Approved", _wf("Sales Order", so))
+		R.check("SO -> Today's Dispatch after PL", _wf("Sales Order", so) == "Today's Dispatch", _wf("Sales Order", so))
 		R.check("PL status Draft", _wf("Pick List", pl) == "Draft", _wf("Pick List", pl))
 
 		# Assign picker + transporter -> Picking Pending
