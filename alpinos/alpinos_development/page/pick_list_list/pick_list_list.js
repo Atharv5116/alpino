@@ -163,23 +163,39 @@ class PickListListPage {
 		const tb = this.wrapper.find('.pl-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="6" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
+				`<tr><td colspan="7" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
 			);
 			return;
 		}
+		const PL_WF_COLORS = {
+			'Draft': 'red',
+			'Picking Pending': 'orange',
+			'Picking In Progress': 'blue',
+			'Sticker Pending': 'yellow',
+			'Submission Pending': 'orange',
+			'Ready To Dispatch': 'blue',
+			'Dispatched': 'green',
+			'Cancelled': 'red',
+		};
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
 		rows.forEach((d) => {
 			const td = d.custom_order_date || '—';
 			let status_color = 'blue';
 			if (d.status === 'Draft') status_color = 'red';
 			else if (d.status === 'Completed' || d.status === 'Submitted') status_color = 'green';
-			
+
+			const wf = d.custom_workflow_status || '';
+			const wfCell = wf
+				? `<span class="indicator-pill ${PL_WF_COLORS[wf] || 'gray'}">${esc(wf)}</span>`
+				: '—';
+
 			tb.append(`<tr class="pl-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="pl-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
 				<td>${esc(d.custom_customer_name)}</td>
 				<td>${esc(td)}</td>
 				<td>${esc(d.company)}</td>
+				<td>${wfCell}</td>
 				<td><span class="indicator-pill ${status_color}">${esc(d.status)}</span></td>
 			</tr>`);
 		});

@@ -63,9 +63,11 @@ PL_CANCELLED = "Cancelled"
 PL_ACTIVE_STAGES = {PL_PICKING, PL_STICKER_PENDING, PL_SUBMISSION_PENDING}
 
 # A Pick List picking stage -> the Sales Order status it should reflect.
+# Note: "Sticker Pending" is a Pick-List-only stage; while the PL is at Sticker
+# Pending the Sales Order stays at "Picking In Progress".
 PL_TO_SO_STATUS = {
 	PL_PICKING: SO_PICKING,
-	PL_STICKER_PENDING: SO_STICKER_PENDING,
+	PL_STICKER_PENDING: SO_PICKING,
 	PL_SUBMISSION_PENDING: SO_SUBMISSION_PENDING,
 }
 

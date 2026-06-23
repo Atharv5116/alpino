@@ -214,8 +214,8 @@ def _test_lifecycle(R):
 		start_picking(pl)
 		R.check("Start Picking by PL User (no access error)",
 				_wf("Pick List", pl) in ("Picking In Progress", "Sticker Pending"), _wf("Pick List", pl))
-		R.check("SO mirrors picking stage after Start Picking",
-				_wf("Sales Order", so) in ("Picking In Progress", "Sticker Pending"), _wf("Sales Order", so))
+		R.check("SO -> Picking In Progress after Start Picking",
+				_wf("Sales Order", so) == "Picking In Progress", _wf("Sales Order", so))
 
 		# Sticker -> Submission Pending (PDF render needs wkhtmltopdf on server)
 		frappe.set_user(_u("wadmin"))

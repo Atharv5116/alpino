@@ -73,7 +73,6 @@ class SalesOrderEntryView {
 				"Today's Dispatch": 'purple',
 				'Warehouse Approved': 'blue',
 				'Picking In Progress': 'blue',
-				'Sticker Pending': 'yellow',
 				'Submission Pending': 'orange',
 				'Ready For Dispatch': 'blue',
 				'Delivery Note Created': 'blue',
