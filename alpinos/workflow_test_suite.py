@@ -187,16 +187,19 @@ def _test_lifecycle(R):
 		R.check("SO submit -> Warehouse Approval Pending",
 				_wf("Sales Order", so) == "Warehouse Approval Pending", _wf("Sales Order", so))
 
-		# Warehouse Admin marks Future Dispatch
+		# Warehouse parks it for a FUTURE date -> Future Dispatch
 		frappe.set_user(_u("wadmin"))
-		mark_future_dispatch(so, "2026-07-01")
-		R.check("Future Dispatch by Warehouse Admin", _wf("Sales Order", so) == "Future Dispatch", _wf("Sales Order", so))
+		mark_future_dispatch(so, frappe.utils.add_days(frappe.utils.today(), 10))
+		R.check("Future date -> Future Dispatch", _wf("Sales Order", so) == "Future Dispatch", _wf("Sales Order", so))
+		# Re-set the dispatch date to TODAY -> Today's Dispatch (date-driven)
+		mark_future_dispatch(so, frappe.utils.today())
+		R.check("Today's date -> Today's Dispatch", _wf("Sales Order", so) == "Today's Dispatch", _wf("Sales Order", so))
 
-		# Warehouse Admin creates Pick List
+		# Warehouse Admin creates Pick List — SO stays Today's Dispatch (date-driven)
 		frappe.set_user(_u("wadmin"))
 		pl = _create_pl(so)
 		R.check("PL created by Warehouse Admin (no access error)", bool(pl))
-		R.check("SO -> Today's Dispatch after PL", _wf("Sales Order", so) == "Today's Dispatch", _wf("Sales Order", so))
+		R.check("SO stays Today's Dispatch after PL create", _wf("Sales Order", so) == "Today's Dispatch", _wf("Sales Order", so))
 		R.check("PL status Draft", _wf("Pick List", pl) == "Draft", _wf("Pick List", pl))
 
 		# Assign picker + transporter -> Picking Pending
@@ -206,12 +209,12 @@ def _test_lifecycle(R):
 		d.save()
 		R.check("PL -> Picking Pending after assignment", _wf("Pick List", pl) == "Picking Pending", _wf("Pick List", pl))
 
-		# PL User starts picking
+		# PL User starts picking — PL advances; SO still date-driven (Today's Dispatch)
 		frappe.set_user(_u("pluser"))
 		start_picking(pl)
 		R.check("Start Picking by PL User (no access error)",
 				_wf("Pick List", pl) in ("Picking In Progress", "Sticker Pending"), _wf("Pick List", pl))
-		R.check("SO -> Picking In Progress", _wf("Sales Order", so) == "Picking In Progress", _wf("Sales Order", so))
+		R.check("SO stays Today's Dispatch during picking", _wf("Sales Order", so) == "Today's Dispatch", _wf("Sales Order", so))
 
 		# Sticker -> Submission Pending (PDF render needs wkhtmltopdf on server)
 		frappe.set_user(_u("wadmin"))

@@ -199,19 +199,28 @@ def _apply_pick_list_status(doc):
 	return status
 
 
-def _sync_so_from_pick_list(so, pl_status):
-	"""Reflect Pick List progress onto the Sales Order, without regressing the
-	SO past stages it has already moved beyond (DN created / dispatched / etc.)."""
-	if not so:
-		return
-	cur = frappe.db.get_value("Sales Order", so, "custom_workflow_status")
-	if cur not in SO_EARLY_STAGES:
-		return
-	if pl_status in PL_ACTIVE_STAGES:
-		_set_status("Sales Order", so, SO_PICKING)
-	else:
-		# A Pick List exists -> the order is being dispatched today.
-		_set_status("Sales Order", so, SO_TODAYS_DISPATCH)
+def refresh_todays_dispatch():
+	"""Daily scheduled job: flip submitted Sales Orders whose dispatch date has
+	arrived (<= today) to "Today's Dispatch", as long as they are still in the
+	warehouse queue (no submitted Pick List yet). This is what makes the status
+	date-driven — an order parked for a future date becomes Today's Dispatch on
+	its day automatically."""
+	rows = frappe.get_all(
+		"Sales Order",
+		filters={
+			"docstatus": 1,
+			"custom_workflow_status": ["in", [SO_WAREHOUSE_PENDING, SO_FUTURE_DISPATCH]],
+		},
+		fields=["name", "custom_dispatch_date"],
+	)
+	flipped = 0
+	for so in rows:
+		dd = so.get("custom_dispatch_date")
+		if dd and getdate(dd) <= getdate(today()):
+			_set_status("Sales Order", so.name, SO_TODAYS_DISPATCH)
+			flipped += 1
+	frappe.db.commit()
+	return flipped
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +233,12 @@ def sales_order_validate(doc, method=None):
 
 
 def sales_order_on_submit(doc, method=None):
-	# Submitting the SO drops it into the warehouse queue.
-	doc.db_set("custom_workflow_status", SO_WAREHOUSE_PENDING, update_modified=False)
+	# Date-driven: an order already due today (dispatch date <= today) shows as
+	# Today's Dispatch; otherwise it waits in the warehouse queue until its
+	# dispatch date arrives (the daily job flips it then).
+	dd = doc.get("custom_dispatch_date")
+	status = SO_TODAYS_DISPATCH if (dd and getdate(dd) <= getdate(today())) else SO_WAREHOUSE_PENDING
+	doc.db_set("custom_workflow_status", status, update_modified=False)
 	_notify(lambda: _notify_so_submitted(doc))
 
 
@@ -256,18 +269,15 @@ def _guard_sales_order_cancellation(doc):
 # ---------------------------------------------------------------------------
 
 def pick_list_after_insert(doc, method=None):
-	# Creating a Pick List means the warehouse is dispatching the order today.
-	so = _so_of_pick_list(doc)
-	_set_status("Sales Order", so, SO_TODAYS_DISPATCH)
-	status = _apply_pick_list_status(doc)
-	_sync_so_from_pick_list(so, status)
+	# Only set the Pick List's own status. The Sales Order status stays
+	# date-driven (Today's Dispatch / warehouse queue) until the PL is submitted.
+	_apply_pick_list_status(doc)
 
 
 def pick_list_on_update(doc, method=None):
 	if doc.docstatus != 0:
 		return
-	status = _apply_pick_list_status(doc)
-	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
+	_apply_pick_list_status(doc)
 
 
 def pick_list_on_submit(doc, method=None):
@@ -279,8 +289,10 @@ def pick_list_on_submit(doc, method=None):
 def pick_list_on_cancel(doc, method=None):
 	_guard_pick_list_cancellation(doc)
 	doc.db_set("custom_workflow_status", PL_CANCELLED, update_modified=False)
-	# Reservation released — SO returns to the warehouse queue for a fresh PL.
-	_set_status("Sales Order", _so_of_pick_list(doc), SO_WAREHOUSE_PENDING)
+	# Reservation released — recompute the SO back to its date-driven queue.
+	so = _so_of_pick_list(doc)
+	if so:
+		_set_status("Sales Order", so, _recompute_so_status(so))
 
 
 def _guard_pick_list_cancellation(doc):
@@ -402,7 +414,6 @@ def start_picking(pick_list):
 	frappe.db.set_value("Pick List", pick_list, "custom_picking_started", 1, update_modified=False)
 	doc.reload()
 	status = _apply_pick_list_status(doc)
-	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
 	frappe.db.commit()
 	return status
 
@@ -416,8 +427,7 @@ def mark_sticker_printed(pick_list):
 		return
 	frappe.db.set_value("Pick List", pick_list, "custom_sticker_printed", 1, update_modified=False)
 	doc = frappe.get_doc("Pick List", pick_list)
-	status = _apply_pick_list_status(doc)
-	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
+	_apply_pick_list_status(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -495,16 +505,12 @@ def _recompute_so_status(so):
 		return SO_DN_CREATED
 	if frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 1}, limit=1):
 		return SO_READY
-	draft_pls = frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 0}, pluck="name")
-	if draft_pls:
-		statuses = [frappe.db.get_value("Pick List", p, "custom_workflow_status") for p in draft_pls]
-		if any(s in PL_ACTIVE_STAGES for s in statuses):
-			return SO_PICKING
+	# No submitted Pick List yet — the warehouse-queue status is date-driven:
+	# due today (or overdue) -> Today's Dispatch; future -> waiting / parked.
+	dd = frappe.db.get_value("Sales Order", so, "custom_dispatch_date")
+	if dd and getdate(dd) <= getdate(today()):
 		return SO_TODAYS_DISPATCH
-	# Submitted with no Pick List yet — keep an explicit Future / Today's Dispatch.
-	if cur in (SO_FUTURE_DISPATCH, SO_TODAYS_DISPATCH):
-		return cur
-	return SO_WAREHOUSE_PENDING
+	return SO_FUTURE_DISPATCH if cur == SO_FUTURE_DISPATCH else SO_WAREHOUSE_PENDING
 
 
 def backfill_workflow_statuses():

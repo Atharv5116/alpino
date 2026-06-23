@@ -419,7 +419,8 @@ doc_events = {
 scheduler_events = {
 	"daily": [
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
-		"alpinos.approval_access.sync_reporting_manager_roles"
+		"alpinos.approval_access.sync_reporting_manager_roles",
+		"alpinos.workflow_engine.refresh_todays_dispatch"
 	],
 	"cron": {
 		"*/30 * * * *": [
