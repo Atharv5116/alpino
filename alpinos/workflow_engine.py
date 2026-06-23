@@ -418,6 +418,20 @@ def start_picking(pick_list):
 	return status
 
 
+@frappe.whitelist()
+def stop_picking(pick_list):
+	"""Picker presses Stop at the sticker-generation point -> Submission Pending
+	(picking finished; the Pick List is now ready to submit)."""
+	_require_roles(PICKER_ROLES)
+	if frappe.db.get_value("Pick List", pick_list, "docstatus") != 0:
+		frappe.throw(frappe._("Picking can only be stopped on a draft Pick List."))
+	if not frappe.db.get_value("Pick List", pick_list, "custom_picking_started"):
+		frappe.throw(frappe._("Start picking before stopping."))
+	mark_sticker_printed(pick_list)  # sets the flag -> Submission Pending
+	frappe.db.commit()
+	return frappe.db.get_value("Pick List", pick_list, "custom_workflow_status")
+
+
 def mark_sticker_printed(pick_list):
 	"""Flip the sticker-printed flag and advance to Submission Pending. Called
 	from the sticker-generation endpoint (not whitelisted directly)."""

@@ -50,6 +50,21 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				});
 			});
 
+			page.main.find('#btn-stop-picking').on('click', function() {
+				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') return;
+				frappe.call({
+					method: 'alpinos.workflow_engine.stop_picking',
+					args: { pick_list: page.pick_list_name },
+					freeze: true,
+					freeze_message: __('Stopping picking...'),
+					callback: function(r) {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Picking stopped — ready for submission'), indicator: 'blue' });
+						page.load_data();
+					}
+				});
+			});
+
 			page.main.find('#btn-generate-sticker').on('click', function() {
 				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
 					frappe.msgprint(__('Save the Pick List first, then generate stickers.'));
@@ -131,6 +146,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		const $saveDraftUpdate = page.main.find('#btn-save-draft-update');
 		const $stickerBtn = page.main.find('#btn-generate-sticker');
 		const $startPicking = page.main.find('#btn-start-picking');
+		const $stopPicking = page.main.find('#btn-stop-picking');
+		const wfs = data.custom_workflow_status || '';
+		// Picking is "active" once started, until the picker stops (Submission Pending).
+		const pickingActive = wfs === 'Picking In Progress' || wfs === 'Sticker Pending';
 		// Sticker generation needs a persisted PL — show on saved drafts + submitted, hide on new.
 		if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
 			$stickerBtn.show();
@@ -145,6 +164,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		} else {
 			$startPicking.hide();
 		}
+		// Stop Picking: appears once picking reaches the sticker-generation point.
+		if (isSavedDraft && wfs === 'Sticker Pending') {
+			$stopPicking.show();
+		} else {
+			$stopPicking.hide();
+		}
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
 			$draftBtn.hide();
@@ -156,10 +181,17 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		} else {
 			$dnBtn.hide();
-			// Re-set Submit primary action — it gets cleared when navigating
-			// to a submitted PL (above), and on_page_load only fires once per
-			// page instance, so without this the Submit button stays missing.
-			page.set_primary_action('Submit', () => { page.save_pick_list(); });
+			// During picking (after Start Picking, before Stop Picking) the Submit
+			// option is hidden — the picker must Stop Picking first (-> Submission
+			// Pending), then Submit re-appears.
+			if (pickingActive) {
+				page.clear_primary_action();
+			} else {
+				// Re-set Submit primary action — it gets cleared when navigating
+				// to a submitted PL (above), and on_page_load only fires once per
+				// page instance, so without this the Submit button stays missing.
+				page.set_primary_action('Submit', () => { page.save_pick_list(); });
+			}
 			// New PL → "Save as Draft" (creates the doc).
 			// Saved draft → "Save" (updates without submitting).
 			if (page.pick_list_name === 'New Pick List') {
