@@ -318,6 +318,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let batch_readonly = itemsLocked ? 'readonly' : '';
 			let input_disabled = itemsLocked ? 'disabled' : '';
+			// Batch Code / MFG / Expiry are only enterable for batch-tracked items.
+			let no_batch = !cint(row.has_batch_no);
+			let batch_lock = (itemsLocked || no_batch) ? 'readonly tabindex="-1"' : '';
 			
 			// Exploded bundle component: qty & box are derived from the combo order,
 			// so both are locked; the row is tinted and tagged with its bundle SKU.
@@ -344,10 +347,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
 					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="1" min="0" ${input_disabled} ${box_readonly}/></td>
 					<td>
-						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
+						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock} placeholder="${no_batch ? 'No batch tracking' : ''}">
 					</td>
-					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_readonly}></td>
-					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
+					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_lock}></td>
+					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_lock}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
 						${data.docstatus !== 1 ? `

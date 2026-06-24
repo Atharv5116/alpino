@@ -24,7 +24,7 @@ def get_pick_list_data(name):
 			frappe.db.get_value(
 				"Item",
 				row.get("item_code"),
-				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days"],
+				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days", "has_batch_no"],
 				as_dict=True,
 			)
 			or {}
@@ -33,6 +33,7 @@ def get_pick_list_data(name):
 		if not row.get("custom_weight_per_box"):
 			row["custom_weight_per_box"] = item_info.get("custom_gross_weight") or 0
 		row["shelf_life_in_days"] = item_info.get("shelf_life_in_days") or 0
+		row["has_batch_no"] = item_info.get("has_batch_no") or 0
 
 	# Surface any existing (non-cancelled) DN against this pick list so the UI
 	# can hide the Create Delivery Note button.
