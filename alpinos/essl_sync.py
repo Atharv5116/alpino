@@ -90,9 +90,16 @@ def sync_essl_logs(from_date=None, to_date=None, force=False, serial_numbers=Non
 		frappe.logger().info(f"Fetching eSSL logs for SN: {sn} ({device.category}) from {from_date} to {to_date}")
 		response_text = fetch_logs_from_api(sn, from_date, to_date, api_url, username, password)
 		if response_text:
-			synced = process_logs(response_text, sn, device.category)
-			total_synced += synced
-			results.append(f"SN {sn} ({device.category}): {synced} logs synced")
+			stats = process_logs(response_text, sn, device.category)
+			total_synced += stats["synced"]
+			line = f"SN {sn} ({device.category}): {stats['synced']} synced of {stats['fetched']} fetched"
+			if stats.get("duplicate"):
+				line += f", {stats['duplicate']} already existed"
+			if stats.get("unauthorised"):
+				line += " — UNAUTHORISED (check username/password)"
+			if stats.get("unmatched"):
+				line += f" — no matching employee for ID(s): {', '.join(stats['unmatched'])}"
+			results.append(line)
 		else:
 			results.append(f"SN {sn} ({device.category}): Failed to fetch or no response")
 
@@ -147,7 +154,7 @@ def process_logs(response_text, serial_number, category=None):
 		# Check for error message in response result first
 		if "Unathorised User" in response_text:
 			frappe.log_error(f"eSSL API Unauthorised for SN {serial_number}", "eSSL Sync Error")
-			return 0
+			return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": [], "unauthorised": True}
 
 		root = ET.fromstring(response_text)
 		# SOAP 1.2 namespace
@@ -155,7 +162,7 @@ def process_logs(response_text, serial_number, category=None):
 
 		data_list_node = root.find('.//tns:strDataList', ns)
 		if data_list_node is None or not data_list_node.text:
-			return 0
+			return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": []}
 
 		logs_text = data_list_node.text.strip()
 		lines = logs_text.split('\n')
@@ -175,14 +182,26 @@ def process_logs(response_text, serial_number, category=None):
 		parsed_logs.sort(key=lambda x: x["timestamp_str"])
 
 		synced_count = 0
+		duplicate_count = 0
+		unmatched = set()
 		for log in parsed_logs:
-			if create_employee_checkin(log["device_id"], log["timestamp_str"], serial_number, category):
+			status = create_employee_checkin(log["device_id"], log["timestamp_str"], serial_number, category)
+			if status == "created":
 				synced_count += 1
+			elif status == "duplicate":
+				duplicate_count += 1
+			elif status == "no_employee":
+				unmatched.add(log["device_id"])
 
-		return synced_count
+		return {
+			"synced": synced_count,
+			"fetched": len(parsed_logs),
+			"duplicate": duplicate_count,
+			"unmatched": sorted(unmatched),
+		}
 	except Exception as e:
 		frappe.log_error(f"Error parsing eSSL logs (SN: {serial_number}): {str(e)}\n\nResponse was: {response_text[:500]}", "eSSL Sync Error")
-		return 0
+		return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": []}
 
 def create_employee_checkin(device_id, timestamp_str, device_name, category=None):
 	try:
@@ -212,16 +231,16 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 				pass
 
 		if not employee:
-			return False
+			return "no_employee"
 
 		try:
 			timestamp = get_datetime(timestamp_str)
 		except Exception:
-			return False
+			return "bad_time"
 
 		# Prevent duplicates
 		if frappe.db.exists("Employee Checkin", {"employee": employee, "time": timestamp}):
-			return False
+			return "duplicate"
 
 		# Determine log_type (Alternating IN/OUT day-wise)
 		log_date = timestamp.date()
@@ -262,6 +281,7 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 
 		checkin.insert(ignore_permissions=True)
 		frappe.db.commit()
-		return True
+		return "created"
 	except Exception as e:
-		return False
+		frappe.log_error(f"eSSL create checkin failed (device_id={device_id}): {str(e)}", "eSSL Sync Error")
+		return "error"
