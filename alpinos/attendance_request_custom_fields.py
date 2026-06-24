@@ -53,6 +53,20 @@ def add_attendance_request_custom_fields():
 				read_only=1,
 				allow_on_submit=1,
 			),
+			# Set on validate (CustomAttendanceRequest._set_punch_edit_flag): 1 only when the
+			# request OVERWRITES a punch already on record (a ticked Edit Check-in/Check-out on a
+			# side the Existing Logs snapshot already has). The approval workflow reads this to
+			# branch the Reporting Manager step: edit -> HR Manager, missing -> approved by RM.
+			dict(
+				fieldname="custom_is_punch_edit",
+				label="Is Punch Edit",
+				fieldtype="Check",
+				insert_after="reporting_person",
+				read_only=1,
+				hidden=1,
+				allow_on_submit=1,
+				default="0",
+			),
 			# Single date used for non "On Duty" requests (From/To are hidden then and
 			# auto-set from this). For "On Duty" the standard From/To range is shown instead.
 			dict(
@@ -360,6 +374,16 @@ def add_employee_checkin_custom_fields():
 				fieldtype="Small Text",
 				insert_after="custom_outside_reason",
 				depends_on="eval:doc.custom_outside_reason=='Other'",
+			),
+			# Location category of the device that produced this punch (HO / Warehouse).
+			dict(
+				fieldname="category",
+				label="Category",
+				fieldtype="Select",
+				options="\nHO\nWarehouse",
+				insert_after="custom_outside_remarks",
+				read_only=1,
+				description="Location of the eSSL device this punch came from (set automatically during sync).",
 			),
 		]
 	}

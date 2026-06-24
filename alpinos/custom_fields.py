@@ -472,6 +472,17 @@ def setup_custom_fields():
 		),
 	],
 	"Employee": [
+		# Work location category (HO / Warehouse). Used by the eSSL biometric
+		# integration to distinguish which location an employee belongs to.
+		dict(
+			fieldname="category",
+			label="Category",
+			fieldtype="Select",
+			options="\nHO\nWarehouse",
+			insert_after="employment_type",
+			description="Work location category of the employee (Head Office / Warehouse).",
+		),
+
 		# Internship duration in months (e.g. 1 = 1 month, 4 = 4 months).
 		# Used by the HR dashboard to compute internship completion = Date of Joining + N months.
 		dict(
