@@ -67,10 +67,12 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		from frappe.utils import now_datetime
 		checkin_time = get_datetime(self.time)
 		current_time = now_datetime()
-		
+
 		if checkin_time > current_time:
-			# Allow Administrator to create future checkins (for testing/debugging)
-			if frappe.session.user != "Administrator":
+			# Allow Administrator to create future checkins (for testing/debugging).
+			# Biometric device punches (device_id set) are trusted real punches and must
+			# never be dropped due to device/server clock skew or timezone offset.
+			if frappe.session.user != "Administrator" and not self.get("device_id"):
 				frappe.throw(
 					_("Cannot create check-in records for future dates. Check-in time: {0}, Current time: {1}").format(
 						checkin_time, current_time
