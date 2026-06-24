@@ -236,6 +236,13 @@ def get_delivery_note_list(
 	if company:
 		filters["company"] = company
 
+	# A dedicated DN User only sees Delivery Notes assigned to them. Warehouse
+	# admins/managers (and System Manager) keep full visibility.
+	_roles = set(frappe.get_roles())
+	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "PL Manager"}
+	if "DN User" in _roles and not (_roles & _override):
+		filters["custom_assigned_to"] = frappe.session.user
+
 	or_filters = []
 	if search:
 		or_filters = [

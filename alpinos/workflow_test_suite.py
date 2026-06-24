@@ -241,6 +241,9 @@ def _test_lifecycle(R):
 		R.check("DN created by Warehouse Admin (no access error)", bool(dn))
 		R.check("SO -> Delivery Note Created", _wf("Sales Order", so) == "Delivery Note Created", _wf("Sales Order", so))
 
+		# Warehouse assigns the DN to a DN User (DN Users only see assigned DNs)
+		frappe.db.set_value("Delivery Note", dn, "custom_assigned_to", _u("dnuser"))
+
 		# DN User enters logistics + submits -> Dispatched
 		frappe.set_user(_u("dnuser"))
 		d = frappe.get_doc("Delivery Note", dn)

@@ -59,6 +59,7 @@ def _is_full_access(user):
 # (in addition to the explicit "Alpinos Assigned Only" role).
 _DT_ASSIGNED_ROLES = {
 	"Pick List": {"PL User"},
+	"Delivery Note": {"DN User"},
 }
 # Roles that always see everything for these doctypes (override the restriction).
 _DT_FULL_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager"}
