@@ -173,7 +173,7 @@ class OfflineBuyerCatalogPage {
 					{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master' },
 					{
 						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
-						options: 'Offline Buyer Customer Type',
+						options: 'Alpino Customer Type',
 						reqd: 1,
 					},
 					{
@@ -875,7 +875,7 @@ class OfflineBuyerCatalogPage {
 				{ fieldtype: 'Column Break' },
 				{
 					label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
-					options: 'Offline Buyer Customer Type',
+					options: 'Alpino Customer Type',
 					reqd: 1, default: obm.customer_type,
 				},
 				{

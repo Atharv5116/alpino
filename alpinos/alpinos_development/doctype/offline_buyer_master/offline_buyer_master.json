@@ -94,7 +94,7 @@
    "fieldname": "customer_type",
    "fieldtype": "Link",
    "label": "Customer Type",
-   "options": "Offline Buyer Customer Type",
+   "options": "Alpino Customer Type",
    "reqd": 1
   },
   {

@@ -306,7 +306,7 @@ def _setup_quotation_property_setters():
 			doc_type="Quotation",
 			field_name="order_type",
 			property="options",
-			value="Offline Buyer Customer Type",
+			value="Alpino Customer Type",
 			property_type="Text",
 		),
 		dict(
@@ -512,7 +512,7 @@ def _force_quotation_fieldtype_sync():
 		"property": "options"
 	}, "name")
 	if ps_opts:
-		frappe.db.set_value("Property Setter", ps_opts, "value", "Offline Buyer Customer Type", update_modified=False)
+		frappe.db.set_value("Property Setter", ps_opts, "value", "Alpino Customer Type", update_modified=False)
 
 	frappe.db.commit()
 

@@ -21,7 +21,7 @@ def setup_opportunity_custom_fields():
 				fieldname="custom_order_type",
 				label="Customer Type",
 				fieldtype="Link",
-				options="Offline Buyer Customer Type",
+				options="Alpino Customer Type",
 				insert_after="party_name",
 				reqd=1,
 			),
@@ -410,7 +410,7 @@ def _force_opportunity_fieldtype_sync():
 	if cf_name:
 		frappe.db.set_value("Custom Field", cf_name, {
 			"fieldtype": "Link",
-			"options": "Offline Buyer Customer Type"
+			"options": "Alpino Customer Type"
 		}, update_modified=False)
 	frappe.db.commit()
 

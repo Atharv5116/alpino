@@ -180,7 +180,7 @@ SUPPORTING_READ_DOCTYPES = [
 	"Contact",
 	"Company",
 	"Offline Buyer Master",
-	"Offline Buyer Customer Type",
+	"Alpino Customer Type",
 	"Sales Taxes and Charges Template",
 	"Tax Category",
 	"Item Tax Template",

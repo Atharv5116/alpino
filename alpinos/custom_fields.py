@@ -482,6 +482,17 @@ def setup_custom_fields():
 			insert_after="employment_type",
 			description="Work location category of the employee (Head Office / Warehouse).",
 		),
+		# Per-employee biometric preference (companies have a mix). When ticked, this
+		# employee checks in/out via the workspace dialog (live photo + location)
+		# instead of a biometric device.
+		dict(
+			fieldname="custom_no_biometric",
+			label="No Biometric",
+			fieldtype="Check",
+			insert_after="category",
+			default=0,
+			description="When ticked, this employee checks in/out via the workspace dialog (live photo + location) instead of a biometric device.",
+		),
 
 		# Internship duration in months (e.g. 1 = 1 month, 4 = 4 months).
 		# Used by the HR dashboard to compute internship completion = Date of Joining + N months.
@@ -625,16 +636,6 @@ def setup_custom_fields():
 			description="Reason entered for a web/mobile check-in of type 'Other' (letters only).",
 		),
 	],
-	"Company": [
-		dict(
-			fieldname="custom_no_biometric",
-			label="No Biometric",
-			fieldtype="Check",
-			insert_after="company_name",
-			default=0,
-			description="When ticked, this company's employees check in/out via the workspace dialog (live photo + location) instead of a biometric device.",
-		),
-	],
 	"Attendance": [
 		dict(
 			fieldname="checkout_reason",
@@ -667,7 +668,7 @@ def setup_custom_fields():
 			fieldname="custom_offline_buyer_customer_type",
 			label="Customer Type (Offline Buyer)",
 			fieldtype="Link",
-			options="Offline Buyer Customer Type",
+			options="Alpino Customer Type",
 			insert_after="custom_offline_buyer_master",
 			read_only=1,
 			allow_on_submit=1,
@@ -750,7 +751,7 @@ def _force_offline_buyer_fieldtype_sync():
 		if current_type == "Data":
 			frappe.db.set_value("Custom Field", cf_name, {
 				"fieldtype": "Link",
-				"options": "Offline Buyer Customer Type"
+				"options": "Alpino Customer Type"
 			}, update_modified=False)
 			frappe.db.commit()
 

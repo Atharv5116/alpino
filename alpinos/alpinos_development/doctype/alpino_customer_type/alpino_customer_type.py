@@ -1,5 +1,6 @@
 import frappe
 from frappe.model.document import Document
 
-class OfflineBuyerCustomerType(Document):
+
+class AlpinoCustomerType(Document):
 	pass

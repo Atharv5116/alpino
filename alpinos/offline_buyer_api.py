@@ -579,7 +579,7 @@ def quick_create_offline_buyer(
 
 @frappe.whitelist()
 def seed_customer_types():
-	"""Seed the Offline Buyer Customer Type master with default values and expiry thresholds.
+	"""Seed the Alpino Customer Type master with default values and expiry thresholds.
 
 	Threshold semantics: rows with `min_expiry_days` set drive batch-expiry warnings on
 	Pick List / Delivery Note (see alpinos.expiry_validation). Rows left blank (e.g. OTHERS)
@@ -602,10 +602,10 @@ def seed_customer_types():
 		("Other E-commerce", 190),
 	]
 	for name, min_days in types:
-		if not frappe.db.exists("Offline Buyer Customer Type", name):
+		if not frappe.db.exists("Alpino Customer Type", name):
 			doc = frappe.get_doc(
 				{
-					"doctype": "Offline Buyer Customer Type",
+					"doctype": "Alpino Customer Type",
 					"customer_type": name,
 					"name": name,
 					"min_expiry_days": min_days,
@@ -614,7 +614,7 @@ def seed_customer_types():
 			doc.insert(ignore_permissions=True)
 		elif min_days is not None:
 			frappe.db.set_value(
-				"Offline Buyer Customer Type", name, "min_expiry_days", min_days
+				"Alpino Customer Type", name, "min_expiry_days", min_days
 			)
 	frappe.db.commit()
 	return "Seeded"

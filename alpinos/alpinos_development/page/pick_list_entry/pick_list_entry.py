@@ -83,7 +83,7 @@ def create_stock_entry_field():
 			"fieldname": "custom_customer_type",
 			"fieldtype": "Link",
 			"label": "Customer Type",
-			"options": "Offline Buyer Customer Type",
+			"options": "Alpino Customer Type",
 			"insert_after": "company"
 		}).insert()
 		frappe.db.commit()

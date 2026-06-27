@@ -323,7 +323,7 @@
   "name": "Stock Entry-custom_customer_type",
   "no_copy": 0,
   "non_negative": 0,
-  "options": "Offline Buyer Customer Type",
+  "options": "Alpino Customer Type",
   "permlevel": 0,
   "placeholder": null,
   "precision": "",

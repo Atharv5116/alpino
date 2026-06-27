@@ -40,7 +40,7 @@ def setup_sales_order_custom_fields():
 				fieldname="custom_order_type",
 				label="Order Type",
 				fieldtype="Link",
-				options="Offline Buyer Customer Type",
+				options="Alpino Customer Type",
 				insert_after="customer_group",
 				description="Auto-fetched into Sales Order",
 			),
@@ -300,7 +300,7 @@ def _setup_property_setters():
 			"doc_type": "Sales Order",
 			"field_name": "order_type",
 			"property": "options",
-			"value": "Offline Buyer Customer Type",
+			"value": "Alpino Customer Type",
 			"property_type": "Text",
 		},
 		{
@@ -409,14 +409,14 @@ def _force_fieldtype_sync():
 		"property": "options"
 	}, "name")
 	if ps_opts:
-		frappe.db.set_value("Property Setter", ps_opts, "value", "Offline Buyer Customer Type", update_modified=False)
+		frappe.db.set_value("Property Setter", ps_opts, "value", "Alpino Customer Type", update_modified=False)
 
 	# 2. Custom field custom_order_type on Customer
 	cf_name = frappe.db.get_value("Custom Field", {"dt": "Customer", "fieldname": "custom_order_type"}, "name")
 	if cf_name:
 		frappe.db.set_value("Custom Field", cf_name, {
 			"fieldtype": "Link",
-			"options": "Offline Buyer Customer Type"
+			"options": "Alpino Customer Type"
 		}, update_modified=False)
 
 	frappe.db.commit()

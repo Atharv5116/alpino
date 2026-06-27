@@ -14,14 +14,12 @@ def _get_employee_for_user(user):
 
 
 def _employee_no_biometric(employee):
-    """True when the employee's Company has 'No Biometric' ticked → self check-in via
-    the workspace dialog (live photo + location) instead of a biometric device."""
+    """True when the Employee has 'No Biometric' ticked → self check-in via the workspace
+    dialog (live photo + location) instead of a biometric device. Preference is per-employee
+    (employees of the same company can differ)."""
     if not employee:
         return False
-    company = frappe.db.get_value("Employee", employee, "company")
-    if not company:
-        return False
-    return bool(frappe.db.get_value("Company", company, "custom_no_biometric"))
+    return bool(frappe.db.get_value("Employee", employee, "custom_no_biometric"))
 
 
 def _web_checkin_config():

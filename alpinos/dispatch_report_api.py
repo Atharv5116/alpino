@@ -6,7 +6,7 @@ Returns all data needed to render the daily dispatch report:
 - Pending dispatch: Sales Orders with custom_dispatch_date = report date, not fully delivered
 - Today's stock: Bin.actual_qty for the selected warehouse
 - Inward date approx: nearest upcoming date from Inward Planning
-- Customer type breakdown via Sales Order.order_type → Offline Buyer Customer Type
+- Customer type breakdown via Sales Order.order_type → Alpino Customer Type
 """
 
 import frappe
@@ -77,7 +77,7 @@ def _get_customer_types():
 	rows = frappe.db.sql(
 		"""
 		SELECT name, abbreviation, sequence
-		FROM `tabOffline Buyer Customer Type`
+		FROM `tabAlpino Customer Type`
 		ORDER BY
 			CASE WHEN COALESCE(sequence, 0) = 0 THEN 1 ELSE 0 END,
 			sequence ASC,

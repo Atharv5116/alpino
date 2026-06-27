@@ -296,7 +296,7 @@ class SalesOrderEntry {
 		this.customer_field.$input.on('awesomplete-selectcomplete', on_customer_change);
 
 		this.order_type_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Link', options: 'Offline Buyer Customer Type', label: 'Customer Type', fieldname: 'order_type', reqd: 1 },
+			df: { fieldtype: 'Link', options: 'Alpino Customer Type', label: 'Customer Type', fieldname: 'order_type', reqd: 1 },
 			parent: header.find('.field-order-type'),
 			render_input: true
 		});
