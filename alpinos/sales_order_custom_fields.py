@@ -165,13 +165,23 @@ def setup_sales_order_custom_fields():
 				insert_after="qty",
 				description="Number of boxes. Auto-calculated from Qty using Item UOM conversion.",
 			),
-			# Customer MRP (after price_list_rate)
+			# MRP (read-only, from Item valuation_rate) — reference only, after price_list_rate
 			dict(
-				fieldname="custom_customer_mrp",
+				fieldname="custom_item_mrp",
 				label="MRP",
 				fieldtype="Currency",
 				insert_after="price_list_rate",
-				description="MRP (Incl. GST). Editable.",
+				fetch_from="item_code.valuation_rate",
+				read_only=1,
+				description="MRP from Item master (read-only reference).",
+			),
+			# Valuation Rate (after MRP) — editable price that drives all amount calculation
+			dict(
+				fieldname="custom_customer_mrp",
+				label="Valuation Rate",
+				fieldtype="Currency",
+				insert_after="custom_item_mrp",
+				description="Valuation Rate (Incl. GST). Defaults to MRP; buyer-specific value wins. Editable — all amounts are calculated on this.",
 			),
 			# GST % (from Item)
 			dict(

@@ -460,6 +460,7 @@ class SalesOrderEntry {
 				item_image: '',
 				qty: 0,
 				box: 0,
+				item_mrp: 0,
 				mrp: 0,
 				gst_percent: 0,
 				flat_discount: 0,
@@ -485,6 +486,7 @@ class SalesOrderEntry {
 				<td class="item-name"><span class="item-name-text text-muted" style="font-size: 12px;">-</span></td>
 				<td class="item-qty"></td>
 				<td class="item-box"></td>
+				<td class="item-item-mrp text-right text-muted" style="vertical-align: middle;">—</td>
 				<td class="item-mrp"></td>
 				<td class="item-gst"></td>
 				<td class="item-flat-discount"></td>
@@ -658,8 +660,8 @@ class SalesOrderEntry {
 		let me = this;
 		let customer = this.customer_field.get_value();
 
-		// Fetch item name + image + GST %
-		frappe.db.get_value('Item', item_code, ['item_name', 'image', 'custom_gst_percent'], function(r) {
+		// Fetch item name + image + GST % + MRP (read-only, from Item valuation_rate)
+		frappe.db.get_value('Item', item_code, ['item_name', 'image', 'custom_gst_percent', 'valuation_rate'], function(r) {
 			if (r) {
 				if (r.item_name) {
 					me.items[idx].item_name = r.item_name;
@@ -669,6 +671,8 @@ class SalesOrderEntry {
 				me._set_row_image($row, r.image || '');
 				me.items[idx].gst_percent = flt(r.custom_gst_percent);
 				if (me.items[idx]._gst_field) me.items[idx]._gst_field.set_value(me.items[idx].gst_percent);
+				me.items[idx].item_mrp = flt(r.valuation_rate);
+				$row.find('.item-item-mrp').text(me.items[idx].item_mrp > 0 ? format_currency(me.items[idx].item_mrp) : '—');
 				me.calc_row_amount(idx, $row);
 			}
 		});
@@ -1246,6 +1250,7 @@ class SalesOrderEntry {
 			description: item.description || '',
 			warehouse: item.warehouse || '',
 			custom_box: item.box,
+			custom_item_mrp: item.item_mrp,
 			custom_customer_mrp: item.mrp,
 			custom_gst_percent: flt(item.gst_percent),
 			custom_flat_discount: item.flat_discount,

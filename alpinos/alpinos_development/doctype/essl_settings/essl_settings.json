@@ -8,7 +8,10 @@
  "engine": "InnoDB",
  "field_order": [
   "api_url",
-  "devices"
+  "devices",
+  "web_checkin_section",
+  "enable_web_checkin_rules",
+  "web_checkin_radius_km"
  ],
  "fields": [
   {
@@ -24,6 +27,26 @@
    "fieldtype": "Table",
    "label": "Devices",
    "options": "eSSL Device"
+  },
+  {
+   "fieldname": "web_checkin_section",
+   "fieldtype": "Section Break",
+   "label": "Web / Mobile Check-in (Biometric companies)"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, employees of companies WITHOUT 'No Biometric' can self check-in from the workspace only within the radius below (else they must use the eSSL device), and must pick a type/reason.",
+   "fieldname": "enable_web_checkin_rules",
+   "fieldtype": "Check",
+   "label": "Enable Web/Mobile Check-in Rules"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.enable_web_checkin_rules",
+   "description": "Maximum distance (km) from the employee's Shift Location within which web/mobile check-in is allowed.",
+   "fieldname": "web_checkin_radius_km",
+   "fieldtype": "Float",
+   "label": "Web Check-in Radius (km)"
   }
  ],
  "index_web_pages_for_search": 1,

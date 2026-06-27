@@ -198,9 +198,11 @@ def _ensure_address_doc(
 	country: str,
 	pincode: str,
 	address_title=None,
+	site_name=None,
 ):
 
 	line1_u = _nz(line1)[:240] or _("Address")
+	site_name = _nz(site_name)
 
 	country_name = None
 	if country:
@@ -220,12 +222,17 @@ def _ensure_address_doc(
 
 	existing = _find_customer_address(customer, line1_u, city, pincode)
 	if existing:
+		# Keep the site name on the existing Address in sync with the OBM row.
+		if site_name and frappe.db.get_value("Address", existing, "custom_site_name") != site_name:
+			frappe.db.set_value("Address", existing, "custom_site_name", site_name, update_modified=False)
 		return existing
 
 	addr = frappe.new_doc("Address")
 	addr.flags.ignore_permissions = True
 	ti = address_title if address_title else (line1_u[:40] if line1_u else _nz(customer))
 	addr.address_title = (ti or customer)[:140]
+	if site_name:
+		addr.custom_site_name = site_name
 	addr.address_type = address_type or "Billing"
 	addr.address_line1 = line1_u
 	addr.city = _nz(city) or _("N/A")
@@ -256,6 +263,8 @@ def _offline_buyer_addresses_for_addresses_table(obm_doc):
 		else:
 			addr_type = "Billing"  # all OBM addresses are usable as billing
 		addr_title_parts = []
+		if _nz(obrow.get("site_name")):
+			addr_title_parts.append(_nz(obrow.get("site_name")))
 		if _nz(obrow.get("address_label")):
 			addr_title_parts.append(_nz(obrow.get("address_label")))
 		if is_primary:
@@ -273,6 +282,7 @@ def _offline_buyer_addresses_for_addresses_table(obm_doc):
 			country=obrow.get("country"),
 			pincode=obrow.get("pincode"),
 			address_title=address_title[:140],
+			site_name=obrow.get("site_name"),
 		)
 
 	results = []
@@ -358,11 +368,12 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 			if not line1:
 				continue
 			label = _nz(sh_row.get("address_label"))
+			site = _nz(sh_row.get("site_name"))
 			title_parts = [_("Shipping")]
-			if label:
+			if site:
+				title_parts.append(site)
+			elif label:
 				title_parts.append(label)
-			elif obm_doc.get("site_name"):
-				title_parts.append(_nz(obm_doc.site_name))
 			addr_name = _ensure_address_doc(
 				customer,
 				address_type="Shipping",
@@ -372,6 +383,7 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 				country=sh_row.get("country"),
 				pincode=sh_row.get("pincode"),
 				address_title=" — ".join(title_parts)[:140],
+				site_name=sh_row.get("site_name"),
 			)
 			if default_shipping is None:
 				default_shipping = addr_name
@@ -386,9 +398,10 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 	if not sh_line and not sh_city_link:
 		return billing_default_name or None
 
+	sh_site = _nz(primary.get("site_name"))
 	addr_title_parts = [_("Shipping")]
-	if obm_doc.get("site_name"):
-		addr_title_parts.append(_nz(obm_doc.site_name))
+	if sh_site:
+		addr_title_parts.append(sh_site)
 	address_title = " — ".join(addr_title_parts)[:140]
 
 	city_txt = _nz(sh_city_link) if sh_city_link else _nz(primary.get("city"))
@@ -409,6 +422,7 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 		country=country_txt,
 		pincode=pincode_txt,
 		address_title=address_title,
+		site_name=primary.get("site_name"),
 	)
 
 

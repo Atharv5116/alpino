@@ -14,7 +14,6 @@
   "is_parent",
   "parent_buyer",
   "parent_business_name",
-  "site_name",
   "customer_id",
   "customer_type",
   "gst_type",
@@ -84,11 +83,6 @@
    "fieldtype": "Data",
    "label": "Parent Business Name",
    "read_only": 1
-  },
-  {
-   "fieldname": "site_name",
-   "fieldtype": "Data",
-   "label": "Site Name"
   },
   {
    "fieldname": "customer_id",

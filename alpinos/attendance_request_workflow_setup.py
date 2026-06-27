@@ -35,14 +35,13 @@ S_HR = "Pending HR Approval"
 S_APPROVED = "Approved"
 S_REJECTED = "Rejected"
 
-# Truthy when the request's Existing Check-in Logs hold a prior punch -> it is an EDIT.
-EDIT_COND = (
-	"frappe.db.get_value('Attendance Request Log', "
-	"{'parent': doc.name, 'parentfield': 'custom_existing_logs', 'check_in': ['is','set']}, 'name') "
-	"or frappe.db.get_value('Attendance Request Log', "
-	"{'parent': doc.name, 'parentfield': 'custom_existing_logs', 'check_out': ['is','set']}, 'name')"
-)
-MISSING_COND = f"not ({EDIT_COND})"
+# EDIT = the request OVERWRITES a punch already on record; MISSING = it only fills a
+# genuinely-missing side. This is decided per-side (a ticked Edit Check-in/Check-out on a
+# side the Existing Logs snapshot already holds) and stamped onto `custom_is_punch_edit`
+# during validate — see CustomAttendanceRequest._set_punch_edit_flag. A day that already has
+# the OTHER side punched does NOT, by itself, make the request an edit.
+EDIT_COND = "doc.custom_is_punch_edit"
+MISSING_COND = "not doc.custom_is_punch_edit"
 
 # Only the employee's OWN reporting person (reporting_person holds their user) may act.
 RM_IS_OWN_MANAGER = "frappe.session.user == doc.reporting_person"

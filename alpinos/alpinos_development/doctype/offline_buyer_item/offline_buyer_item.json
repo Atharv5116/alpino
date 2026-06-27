@@ -8,6 +8,7 @@
   "item_code",
   "item_name",
   "item_group",
+  "item_mrp",
   "mrp",
   "margin_percent",
   "selling_rate"
@@ -43,10 +44,21 @@
   },
   {
    "columns": 2,
+   "fetch_from": "item_code.valuation_rate",
+   "fieldname": "item_mrp",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "MRP",
+   "read_only": 1,
+   "description": "MRP from Item master (read-only reference)."
+  },
+  {
+   "columns": 2,
    "fieldname": "mrp",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "MRP"
+   "label": "Valuation Rate",
+   "description": "Editable buyer valuation rate. Defaults to MRP; drives Selling Rate."
   },
   {
    "columns": 2,

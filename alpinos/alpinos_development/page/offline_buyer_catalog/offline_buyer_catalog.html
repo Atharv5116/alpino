@@ -61,7 +61,8 @@
 .col-code { width:140px; font-family:monospace; font-size:12px; }
 .col-name { min-width:200px; }
 .col-group{ width:150px; font-size:12px; color:#666; }
-.col-mrp,.col-margin,.col-rate { width:130px; }
+.col-item-mrp,.col-mrp,.col-margin,.col-rate { width:130px; }
+.col-item-mrp { color:#666; }
 .obi-footer { margin-top:8px; min-height:20px; display:flex; align-items:center; gap:12px; }
 .obi-status { font-size:12px; color:#888; }
 
@@ -163,7 +164,7 @@
     <!-- bulk apply -->
     <div class="obi-bulk-bar">
       <span>Apply to selected →</span>
-      <input type="number" class="form-control obi-bulk-mrp"    placeholder="MRP"      min="0" step="0.01" />
+      <input type="number" class="form-control obi-bulk-mrp"    placeholder="Valuation Rate" min="0" step="0.01" />
       <input type="number" class="form-control obi-bulk-margin" placeholder="Margin %" min="0" max="100" step="0.01" />
       <button class="btn btn-xs btn-default obi-btn-apply-bulk">Apply</button>
     </div>
@@ -180,7 +181,8 @@
             <th class="col-code">Item Code</th>
             <th class="col-name">Item Name</th>
             <th class="col-group">Item Group</th>
-            <th class="col-mrp">MRP (₹)</th>
+            <th class="col-item-mrp">MRP (₹)</th>
+            <th class="col-mrp">Valuation Rate (₹)</th>
             <th class="col-margin">Margin %</th>
             <th class="col-rate">Selling Rate (₹)</th>
           </tr>

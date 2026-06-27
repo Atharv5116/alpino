@@ -13,6 +13,83 @@ def _get_employee_for_user(user):
     return frappe.db.get_value("Employee", {"user_id": user}, "name")
 
 
+def _employee_no_biometric(employee):
+    """True when the employee's Company has 'No Biometric' ticked → self check-in via
+    the workspace dialog (live photo + location) instead of a biometric device."""
+    if not employee:
+        return False
+    company = frappe.db.get_value("Employee", employee, "company")
+    if not company:
+        return False
+    return bool(frappe.db.get_value("Company", company, "custom_no_biometric"))
+
+
+def _web_checkin_config():
+    """(enabled, radius_km) for the eSSL Settings web/mobile check-in rules."""
+    enabled = frappe.db.get_single_value("eSSL Settings", "enable_web_checkin_rules")
+    radius = flt(frappe.db.get_single_value("eSSL Settings", "web_checkin_radius_km")) or 1.0
+    return bool(enabled), radius
+
+
+def _web_checkin_rules_active(employee):
+    """Web check-in rules apply to BIOMETRIC companies (No Biometric un-ticked) when the
+    eSSL Settings toggle is on. No-Biometric employees use the photo flow instead."""
+    if not employee or _employee_no_biometric(employee):
+        return False
+    enabled, _ = _web_checkin_config()
+    return enabled
+
+
+def _shift_location_coords(employee, when):
+    """Latitude/longitude of the employee's active Shift Location for `when` (or None)."""
+    rows = frappe.db.sql(
+        """
+        SELECT shift_location FROM `tabShift Assignment`
+        WHERE employee = %(emp)s AND docstatus = 1 AND status = 'Active'
+            AND IFNULL(shift_location, '') != ''
+            AND start_date <= %(d)s AND (end_date >= %(d)s OR end_date IS NULL)
+        ORDER BY start_date DESC LIMIT 1
+        """,
+        {"emp": employee, "d": getdate(when)},
+    )
+    if not rows:
+        return None
+    return frappe.db.get_value("Shift Location", rows[0][0], ["latitude", "longitude"], as_dict=True)
+
+
+def _validate_letters_only(value, field_label="Reason"):
+    """Reason must be letters only — no digits, spaces or special characters."""
+    import re
+
+    if not re.fullmatch(r"[A-Za-z]+", value or ""):
+        frappe.throw(
+            f"{field_label} must contain letters only (no numbers, spaces or special characters)."
+        )
+
+
+def _save_checkin_image(checkin_name, image):
+    """Decode a base64 data-URL captured from the camera and attach it to the checkin."""
+    if not image:
+        return
+    import base64
+
+    data = image
+    if "," in data:
+        data = data.split(",", 1)[1]
+    try:
+        content = base64.b64decode(data)
+    except Exception:
+        return
+    from frappe.utils.file_manager import save_file
+
+    _file = save_file(
+        f"checkin_{checkin_name}.jpg", content, "Employee Checkin", checkin_name, is_private=1
+    )
+    frappe.db.set_value(
+        "Employee Checkin", checkin_name, "custom_checkin_image", _file.file_url, update_modified=False
+    )
+
+
 def _get_today_range():
     today = getdate(now_datetime())
     start = get_datetime(today)
@@ -56,18 +133,21 @@ def _get_today_last_checkout(employee):
 @frappe.whitelist()
 def get_status():
     employee = _get_employee_for_user(frappe.session.user)
+    no_bio = _employee_no_biometric(employee)
+    web_rules = _web_checkin_rules_active(employee)
+    base = {"no_biometric": no_bio, "web_checkin_rules": web_rules}
     if not employee:
-        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
     today_in = _get_today_first_checkin(employee)
     if not today_in:
-        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
 
     in_time = today_in[0]["time"]
     last = _get_today_last_checkin(employee)
     last_out = _get_today_last_checkout(employee)
 
     if last and last[0]["log_type"] == "IN":
-        return {"status": "IN", "last_time": in_time, "elapsed_seconds": None}
+        return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, **base}
 
     if last_out:
         elapsed_seconds = int((last_out[0]["time"] - in_time).total_seconds())
@@ -75,9 +155,10 @@ def get_status():
             "status": "OUT",
             "last_time": last_out[0]["time"],
             "elapsed_seconds": max(elapsed_seconds, 0),
+            **base,
         }
 
-    return {"status": "NONE", "last_time": None, "elapsed_seconds": 0}
+    return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
 
 
 @frappe.whitelist()
@@ -323,7 +404,7 @@ def _get_wfh_dates(employee, from_date, to_date):
 
 
 @frappe.whitelist()
-def check_in(latitude=None, longitude=None):
+def check_in(latitude=None, longitude=None, image=None, checkin_type=None, checkin_reason=None):
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check In.")
 
@@ -334,6 +415,10 @@ def check_in(latitude=None, longitude=None):
     if today_last:
         frappe.throw("You can only Check In once per day.")
 
+    # No-Biometric companies must capture a live photo at check-in.
+    if _employee_no_biometric(employee) and not image:
+        frappe.throw("A live photo is required to Check In.")
+
     values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "IN"}
 
     # Pass optional geolocation data if provided (coerce to float to avoid str/float TypeError in distance calc)
@@ -342,8 +427,37 @@ def check_in(latitude=None, longitude=None):
     if longitude is not None:
         values["longitude"] = flt(longitude)
 
+    # Biometric companies with web check-in rules enabled: restrict to Shift Location radius
+    # and require a type (+ reason for 'Other').
+    if _web_checkin_rules_active(employee):
+        enabled, radius_km = _web_checkin_config()
+        coords = _shift_location_coords(employee, now_datetime())
+        if coords and coords.get("latitude") is not None and (latitude is not None and longitude is not None):
+            from hrms.hr.utils import get_distance_between_coordinates
+
+            distance_m = get_distance_between_coordinates(
+                flt(coords.latitude), flt(coords.longitude), flt(latitude), flt(longitude)
+            )
+            if distance_m > radius_km * 1000.0:
+                frappe.throw(
+                    f"You are outside the {radius_km} km web check-in range "
+                    f"({round(distance_m / 1000.0, 2)} km away). Please use the biometric device to check in."
+                )
+
+        checkin_type = (checkin_type or "").strip()
+        if checkin_type not in ("Client/Vendor", "Shoot", "Meeting", "Other"):
+            frappe.throw("Please select a valid check-in type.")
+        values["custom_checkin_type"] = checkin_type
+        if checkin_type == "Other":
+            checkin_reason = (checkin_reason or "").strip()
+            if not checkin_reason:
+                frappe.throw("A reason is required when the check-in type is 'Other'.")
+            _validate_letters_only(checkin_reason, "Reason")
+            values["custom_checkin_reason"] = checkin_reason
+
     doc = frappe.get_doc(values)
     doc.insert()
+    _save_checkin_image(doc.name, image)
     return {"status": "IN", "time": doc.time}
 
 
@@ -383,7 +497,7 @@ def save_wfh_tasks(wfh_request, tasks):
 
 
 @frappe.whitelist()
-def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reason=None, outside_remarks=None):
+def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reason=None, outside_remarks=None, image=None):
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check Out.")
 
@@ -393,6 +507,10 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
     today_last = _get_today_last_checkin(employee)
     if not today_last or today_last[0]["log_type"] != "IN":
         frappe.throw("You must Check In today before Check Out.")
+
+    # No-Biometric companies must capture a live photo at check-out.
+    if _employee_no_biometric(employee) and not image:
+        frappe.throw("A live photo is required to Check Out.")
 
     last_out = _get_today_last_checkout(employee)
     if last_out:
@@ -420,6 +538,7 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
 
     doc = frappe.get_doc(values)
     doc.insert()
+    _save_checkin_image(doc.name, image)
     in_time = _get_today_first_checkin(employee)[0]["time"]
     elapsed_seconds = int((doc.time - in_time).total_seconds())
     

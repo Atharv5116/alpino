@@ -36,6 +36,11 @@ let startTime = null;
 let timer = null;
 let latitude = null;
 let longitude = null;
+let noBiometric = false;
+let capturedImage = null;
+let webCheckinRules = false;
+let checkinType = null;
+let checkinReason = null;
 
 const statusEl = root.querySelector("#att-status");
 const timerEl = root.querySelector("#att-timer");
@@ -57,6 +62,8 @@ function loadStatus(){
         return;
       }
       let status = r.message ? r.message.status : "NONE";
+      noBiometric = !!(r.message && r.message.no_biometric);
+      webCheckinRules = !!(r.message && r.message.web_checkin_rules);
   if(status === "IN"){
     setStatusBadge("Checked In", "in");
     btn("btn-in",true);
@@ -118,6 +125,59 @@ function fetchLocation(callback) {
   );
 }
 
+// Live camera capture dialog. Gallery upload is intentionally NOT offered — only a live
+// webcam frame can be captured. Requires HTTPS (or localhost) for getUserMedia to work.
+function openCameraDialog(onCapture, onCancel){
+  let stream = null;
+  function stopStream(){
+    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
+  }
+  const d = new frappe.ui.Dialog({
+    title: "Capture Live Photo",
+    primary_action_label: "Capture",
+    primary_action(){
+      const video = d.$body.find("video.cam-video")[0];
+      const canvas = d.$body.find("canvas.cam-canvas")[0];
+      if(!video || !video.videoWidth){
+        frappe.msgprint("Camera is not ready yet. Please wait a moment and try again.");
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+      stopStream();
+      d.hide();
+      onCapture(dataUrl);
+    },
+    secondary_action_label: "Cancel",
+    secondary_action(){ stopStream(); d.hide(); if(onCancel) onCancel(); }
+  });
+  d.$body.html(`
+    <p style="color:#64748b;font-size:13px;margin-bottom:8px;">
+      Position your face in the frame and click <b>Capture</b>. Live camera only — uploading from gallery is not allowed.
+    </p>
+    <video class="cam-video" autoplay playsinline muted style="width:100%;border-radius:8px;background:#000;max-height:340px;object-fit:contain;"></video>
+    <canvas class="cam-canvas" style="display:none;"></canvas>
+    <div class="cam-error" style="color:#b91c1c;font-size:13px;margin-top:8px;display:none;"></div>
+  `);
+  d.onhide = function(){ stopStream(); };
+  d.show();
+  const video = d.$body.find("video.cam-video")[0];
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    d.$body.find(".cam-error").text("Live camera is not supported by this browser/device.").show();
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+    .then(function(s){ stream = s; video.srcObject = s; })
+    .catch(function(err){
+      d.$body.find(".cam-error").text(
+        "Unable to access the camera: " + ((err && err.message) || err) +
+        ". The camera needs permission and an HTTPS (or localhost) connection."
+      ).show();
+    });
+}
+
 function checkIn(){
   frappe.call({
     method:"alpinos.attendance_widget.log_frontend_action",
@@ -125,24 +185,89 @@ function checkIn(){
     silent: true
   });
   btn("btn-in", true);
-  fetchLocation(function () {
-    frappe.call({
-      method:"alpinos.attendance_widget.check_in",
-      args: {
-        latitude: latitude,
-        longitude: longitude,
-      },
-      callback(r){
-        if(r.exc){
-          showError(r.exc);
-          btn("btn-in", false);
+  const proceed = function(){
+    fetchLocation(function () {
+      frappe.call({
+        method:"alpinos.attendance_widget.check_in",
+        args: {
+          latitude: latitude,
+          longitude: longitude,
+          image: capturedImage,
+          checkin_type: checkinType,
+          checkin_reason: checkinReason,
+        },
+        callback(r){
+          capturedImage = null;
+          checkinType = null;
+          checkinReason = null;
+          if(r.exc){
+            showError(r.exc);
+            btn("btn-in", false);
+            return;
+          }
+          frappe.show_alert({message:"Checked In",indicator:"green"});
+          loadStatus();
+        }
+      });
+    });
+  };
+  if(noBiometric){
+    openCameraDialog(function(img){ capturedImage = img; proceed(); }, function(){ btn("btn-in", false); });
+  } else if(webCheckinRules){
+    showCheckinTypeDialog(function(sel){ checkinType = sel.type; checkinReason = sel.reason; proceed(); }, function(){ btn("btn-in", false); });
+  } else {
+    proceed();
+  }
+}
+
+// Check-in type/reason dialog for biometric companies (web check-in rules enabled).
+// Reason box appears only for "Other" and accepts letters only.
+function showCheckinTypeDialog(onConfirm, onCancel){
+  const d = new frappe.ui.Dialog({
+    title: "Check In",
+    primary_action_label: "Check In",
+    primary_action(){
+      const type = (d.$body.find(".checkin-type-select").val() || "").trim();
+      const reason = (d.$body.find(".checkin-reason-input").val() || "").trim();
+      if(!type){
+        frappe.msgprint("Please select a check-in type.");
+        return;
+      }
+      if(type === "Other"){
+        if(!reason){
+          frappe.msgprint("Please enter a reason for 'Other'.");
           return;
         }
-        frappe.show_alert({message:"Checked In",indicator:"green"});
-        loadStatus();
+        if(!/^[A-Za-z]+$/.test(reason)){
+          frappe.msgprint("Reason must contain letters only (no numbers, spaces or special characters).");
+          return;
+        }
       }
-    });
+      d.hide();
+      onConfirm({ type: type, reason: type === "Other" ? reason : null });
+    },
+    secondary_action_label: "Cancel",
+    secondary_action(){ d.hide(); if(onCancel) onCancel(); }
   });
+  d.$body.html(`
+    <p style="color:#64748b;margin-bottom:12px;font-size:13px;">Select the type of check-in.</p>
+    <select class="form-control checkin-type-select" style="margin-bottom:10px;">
+      <option value="">Select type...</option>
+      <option value="Client/Vendor">Client/Vendor</option>
+      <option value="Shoot">Shoot</option>
+      <option value="Meeting">Meeting</option>
+      <option value="Other">Other</option>
+    </select>
+    <textarea class="form-control checkin-reason-input" rows="2" placeholder="Reason (letters only — required for 'Other')" style="display:none;"></textarea>
+  `);
+  d.$body.find(".checkin-type-select").on("change", function(){
+    d.$body.find(".checkin-reason-input").toggle($(this).val() === "Other");
+  });
+  // Block disallowed characters as the user types (letters only).
+  d.$body.find(".checkin-reason-input").on("input", function(){
+    this.value = this.value.replace(/[^A-Za-z]/g, "");
+  });
+  d.show();
 }
 
 function checkOut(){
@@ -155,6 +280,7 @@ function checkOut(){
     "Are you sure you want to check out?",
     function () {
       btn("btn-out", true);
+      const afterCapture = function () {
       fetchLocation(function () {
         frappe.call({
           method: "alpinos.attendance_widget.get_today_wfh_request",
@@ -187,6 +313,12 @@ function checkOut(){
           }
         });
       });
+      };
+      if(noBiometric){
+        openCameraDialog(function(img){ capturedImage = img; afterCapture(); }, function(){ btn("btn-out", false); });
+      } else {
+        afterCapture();
+      }
     },
     function () {
       // user cancelled
@@ -210,6 +342,7 @@ function getExcMessage(exc) {
 
 function doCheckOut(outside) {
   const args = { latitude: latitude, longitude: longitude };
+  if (capturedImage) args.image = capturedImage;
   if (outside && outside.reason) {
     args.outside_reason = outside.reason;
     if (outside.remarks) args.outside_remarks = outside.remarks;
@@ -223,6 +356,7 @@ function doCheckOut(outside) {
         handleCheckoutError(r);
         return;
       }
+      capturedImage = null;
       frappe.show_alert({ message: "Checked Out", indicator: "green" });
       stopTimer();
       setStatusBadge("Checked Out", "out");

@@ -273,11 +273,16 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 		except Exception:
 			pass
 
-		# Fetch Warehouse Location coordinates
-		warehouse_location = frappe.db.get_value("Shift Location", "Warehouse", ["latitude", "longitude"], as_dict=True)
-		if warehouse_location:
-			checkin.latitude = warehouse_location.latitude
-			checkin.longitude = warehouse_location.longitude
+		# Fetch coordinates of the Shift Location matching THIS device's category
+		# (HO / Warehouse). Each category maps to a Shift Location of the same name,
+		# so punches are tagged with the location they actually came from.
+		if category:
+			device_location = frappe.db.get_value(
+				"Shift Location", category, ["latitude", "longitude"], as_dict=True
+			)
+			if device_location:
+				checkin.latitude = device_location.latitude
+				checkin.longitude = device_location.longitude
 
 		checkin.insert(ignore_permissions=True)
 		frappe.db.commit()

@@ -201,6 +201,8 @@ def process_webform_submission_async(temp_doc_name, employee_onboarding_name):
 			new_exp.designation = exp_row.get('designation')
 			new_exp.city = exp_row.get('city')
 	
+	# Notify HR only on the first 0 -> 1 transition.
+	was_submitted = bool(onboarding_doc.get("webform_submitted"))
 	onboarding_doc.webform_submitted = 1
 	onboarding_doc.webform_submitted_on = now()
 
@@ -220,7 +222,11 @@ def process_webform_submission_async(temp_doc_name, employee_onboarding_name):
 		onboarding_doc.flags.ignore_mandatory = True
 		onboarding_doc.save(ignore_permissions=True)
 		frappe.db.commit()
-		
+
+		# Notify HR that the joinee has completed and submitted their onboarding details.
+		if not was_submitted:
+			_notify_hr_webform_submitted(onboarding_doc)
+
 		try:
 			_delete_temp_onboarding(temp_doc_name, employee_onboarding_name)
 			frappe.db.commit()
@@ -233,6 +239,51 @@ def process_webform_submission_async(temp_doc_name, employee_onboarding_name):
 		frappe.log_error(
 			f"Error updating Employee Onboarding async: {str(e)}\n\n{frappe.get_traceback()}",
 			"Employee Onboarding Webform Error",
+		)
+
+
+def _notify_hr_webform_submitted(onboarding_doc):
+	"""Email HR Managers that a joinee has submitted their onboarding details web form."""
+	try:
+		from frappe.utils import get_url
+		from alpinos.attendance_alerts import _get_hr_manager_recipients
+
+		recipients = _get_hr_manager_recipients() or []
+		if "hr@alpinohealthfoods.com" not in recipients:
+			recipients.append("hr@alpinohealthfoods.com")
+		recipients = [r for r in recipients if r]
+		if not recipients:
+			return
+
+		candidate = (
+			onboarding_doc.get("full_name_display")
+			or onboarding_doc.get("employee_name")
+			or onboarding_doc.name
+		)
+		desk_link = get_url(f"/app/employee-onboarding/{onboarding_doc.name}")
+		joining = onboarding_doc.get("date_of_joining_onboarding") or ""
+
+		subject = f"Onboarding details submitted: {candidate}"
+		message = (
+			f"<p><b>{frappe.utils.escape_html(str(candidate))}</b> has submitted their "
+			f"onboarding details web form.</p>"
+			f"<p>Joining date: {frappe.utils.escape_html(str(joining)) or '—'}</p>"
+			f"<p>Please review and complete the HR section: "
+			f"<a href='{desk_link}'>{onboarding_doc.name}</a></p>"
+		)
+
+		frappe.sendmail(
+			recipients=recipients,
+			subject=subject,
+			message=message,
+			reference_doctype="Employee Onboarding",
+			reference_name=onboarding_doc.name,
+			now=True,
+		)
+	except Exception:
+		frappe.log_error(
+			f"Failed to notify HR of web form submission for {getattr(onboarding_doc, 'name', '?')}\n{frappe.get_traceback()}",
+			"Employee Onboarding Webform HR Notify",
 		)
 
 

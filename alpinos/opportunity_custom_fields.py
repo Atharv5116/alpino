@@ -113,10 +113,20 @@ def setup_opportunity_custom_fields():
 				insert_after="qty",
 			),
 			dict(
-				fieldname="custom_mrp",
+				fieldname="custom_item_mrp",
 				label="MRP",
 				fieldtype="Currency",
 				insert_after="rate",
+				fetch_from="item_code.valuation_rate",
+				read_only=1,
+				description="MRP from Item master (read-only reference).",
+			),
+			dict(
+				fieldname="custom_mrp",
+				label="Valuation Rate",
+				fieldtype="Currency",
+				insert_after="custom_item_mrp",
+				description="Valuation Rate. Defaults to MRP; buyer-specific value wins. Editable — all amounts are calculated on this.",
 			),
 			dict(
 				fieldname="custom_buyer_margin_percent",

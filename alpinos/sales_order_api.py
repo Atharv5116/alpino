@@ -883,6 +883,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			"delivery_date": item.get("delivery_date") or delivery_date,
 			"description": item.get("description") or "",
 			"custom_box": custom_box,
+			"custom_item_mrp": flt(item.get("custom_item_mrp"))
+			or flt(frappe.db.get_value("Item", item_code, "valuation_rate")),
 			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
 			"custom_gst_percent": flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0),
 			"custom_flat_discount": calc["flat_discount"],

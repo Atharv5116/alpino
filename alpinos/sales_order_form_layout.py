@@ -315,6 +315,7 @@ def _apply_sales_order_item_grid():
 		"item_name",
 		"qty",
 		"custom_box",
+		"custom_item_mrp",
 		"custom_customer_mrp",
 		"custom_flat_discount",
 		"custom_offer",
@@ -333,7 +334,8 @@ def _apply_sales_order_item_grid():
 		"custom_flat_discount": "Flat Disc.%",
 		"custom_offer": "Offer Disc.%",
 		"custom_additional_discount": "Add. Disc.%",
-		"custom_customer_mrp": "MRP",
+		"custom_item_mrp": "MRP",
+		"custom_customer_mrp": "Valuation Rate",
 	}
 	meta = frappe.get_meta("Sales Order Item")
 	for fname, lbl in label_map.items():

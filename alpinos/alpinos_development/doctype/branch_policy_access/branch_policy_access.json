@@ -7,23 +7,29 @@
  "engine": "InnoDB",
  "field_order": [
   "branch",
-  "policy_assignment",
-  "leave_policy",
-  "document_policy",
+  "sec_attendance_shift",
   "shift_policy",
-  "overtime_policy",
-  "holiday_policy",
-  "comp_off_policy",
   "attendance_policy",
-  "wfh_policy",
   "grace_policy",
-  "reimbursement_policy",
+  "col_attendance_shift",
+  "overtime_policy",
   "geofencing_policy",
+  "sec_leave_wfh",
+  "leave_policy",
+  "comp_off_policy",
+  "col_leave_wfh",
+  "wfh_policy",
+  "holiday_policy",
+  "sec_other",
+  "policy_assignment",
+  "document_policy",
+  "col_other",
+  "reimbursement_policy",
   "other_policy"
  ],
  "fields": [
   {
-   "columns": 2,
+   "columns": 4,
    "fieldname": "branch",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -32,72 +38,22 @@
    "reqd": 1
   },
   {
-   "fieldname": "policy_assignment",
-   "fieldtype": "Link",
-   "label": "Policy Assignment",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Policy Assignment\"]]",
-   "options": "Policy"
+   "fieldname": "sec_attendance_shift",
+   "fieldtype": "Section Break",
+   "label": "Attendance & Shift"
   },
   {
-   "columns": 2,
-   "fieldname": "leave_policy",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Leave Policy",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Leave Policy\"]]",
-   "options": "Policy"
-  },
-  {
-   "fieldname": "document_policy",
-   "fieldtype": "Link",
-   "label": "Document Policy",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Document Policy\"]]",
-   "options": "Policy"
-  },
-  {
-   "columns": 2,
    "fieldname": "shift_policy",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Shift Policy",
    "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Shift Policy\"]]",
    "options": "Policy"
   },
   {
-   "fieldname": "overtime_policy",
-   "fieldtype": "Link",
-   "label": "Overtime Policy",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Overtime Policy\"]]",
-   "options": "Policy"
-  },
-  {
-   "fieldname": "holiday_policy",
-   "fieldtype": "Link",
-   "label": "Holiday Policy",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Holiday Policy\"]]",
-   "options": "Policy"
-  },
-  {
-   "fieldname": "comp_off_policy",
-   "fieldtype": "Link",
-   "label": "Comp Off Policy",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Comp Off Policy\"]]",
-   "options": "Policy"
-  },
-  {
-   "columns": 2,
    "fieldname": "attendance_policy",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Attendance Policy",
    "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Attendance Policy\"]]",
-   "options": "Policy"
-  },
-  {
-   "fieldname": "wfh_policy",
-   "fieldtype": "Link",
-   "label": "Work From Home (WFH) Policy",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Work From Home (WFH) Policy\"]]",
    "options": "Policy"
   },
   {
@@ -108,10 +64,14 @@
    "options": "Policy"
   },
   {
-   "fieldname": "reimbursement_policy",
+   "fieldname": "col_attendance_shift",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "overtime_policy",
    "fieldtype": "Link",
-   "label": "Reimbursement Policy",
-   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Reimbursement Policy\"]]",
+   "label": "Overtime Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Overtime Policy\"]]",
    "options": "Policy"
   },
   {
@@ -119,6 +79,73 @@
    "fieldtype": "Link",
    "label": "Geo-Fencing Policy",
    "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Geo-Fencing Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "sec_leave_wfh",
+   "fieldtype": "Section Break",
+   "label": "Leave & WFH"
+  },
+  {
+   "fieldname": "leave_policy",
+   "fieldtype": "Link",
+   "label": "Leave Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Leave Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "comp_off_policy",
+   "fieldtype": "Link",
+   "label": "Comp Off Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Comp Off Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "col_leave_wfh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "wfh_policy",
+   "fieldtype": "Link",
+   "label": "Work From Home (WFH) Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Work From Home (WFH) Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "holiday_policy",
+   "fieldtype": "Link",
+   "label": "Holiday Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Holiday Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "sec_other",
+   "fieldtype": "Section Break",
+   "label": "Other"
+  },
+  {
+   "fieldname": "policy_assignment",
+   "fieldtype": "Link",
+   "label": "Policy Assignment",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Policy Assignment\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "document_policy",
+   "fieldtype": "Link",
+   "label": "Document Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Document Policy\"]]",
+   "options": "Policy"
+  },
+  {
+   "fieldname": "col_other",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reimbursement_policy",
+   "fieldtype": "Link",
+   "label": "Reimbursement Policy",
+   "link_filters": "[[\"Policy\",\"policy_type\",\"=\",\"Reimbursement Policy\"]]",
    "options": "Policy"
   },
   {
@@ -133,7 +160,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-06 00:00:00.000000",
+ "modified": "2026-06-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Branch Policy Access",

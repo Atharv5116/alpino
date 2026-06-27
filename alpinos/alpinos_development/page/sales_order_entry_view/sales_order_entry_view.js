@@ -467,6 +467,9 @@ class SalesOrderEntryView {
 				const qty = this._has(it, 'qty') ? flt(it.qty) : null;
 				const box = this._has(it, 'custom_box') ? flt(it.custom_box) : null;
 				const rowCur = it.currency || currency;
+				const item_mrp = this._has(it, 'custom_item_mrp')
+					? format_currency(flt(it.custom_item_mrp), rowCur)
+					: '—';
 				const mrp = this._has(it, 'custom_customer_mrp')
 					? format_currency(flt(it.custom_customer_mrp), rowCur)
 					: '—';
@@ -486,6 +489,7 @@ class SalesOrderEntryView {
 					<td>${nm}</td>
 					<td class="text-right">${qty != null ? qty : '—'}</td>
 					<td class="text-right">${box != null ? box : '—'}</td>
+					<td class="text-right">${item_mrp}</td>
 					<td class="text-right">${mrp}</td>
 					<td class="text-right">${fd != null ? fd : '—'}</td>
 					<td class="text-right">${of != null ? of : '—'}</td>

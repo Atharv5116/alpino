@@ -171,7 +171,6 @@ class OfflineBuyerCatalogPage {
 				fields: [
 					{ label: 'Business Name', fieldname: 'business_name', fieldtype: 'Data', reqd: 1 },
 					{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master' },
-					{ label: 'Site Name / Trade Name', fieldname: 'site_name', fieldtype: 'Data' },
 					{
 						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
 						options: 'Offline Buyer Customer Type',
@@ -188,6 +187,16 @@ class OfflineBuyerCatalogPage {
 						reqd: 1,
 					},
 					{
+						label: 'GST No', fieldname: 'gst_no', fieldtype: 'Data',
+						depends_on: 'eval:doc.gst_type=="Registered Business"',
+						mandatory_depends_on: 'eval:doc.gst_type=="Registered Business"',
+					},
+					{
+						label: 'PAN No', fieldname: 'pan_no', fieldtype: 'Data',
+						depends_on: 'eval:doc.gst_type=="Unregistered Business"',
+						mandatory_depends_on: 'eval:doc.gst_type=="Unregistered Business"',
+					},
+					{
 						label: 'Payment Term', fieldname: 'payment_term', fieldtype: 'Select',
 						options: '\nAdvance\nCredit\nPartial\nNA', default: 'Advance', reqd: 1,
 					},
@@ -196,6 +205,7 @@ class OfflineBuyerCatalogPage {
 					{ label: 'Contact No', fieldname: 'contact_no', fieldtype: 'Data', options: 'Phone', reqd: 1 },
 					{ label: 'Contact Person', fieldname: 'contact_person', fieldtype: 'Data', reqd: 1 },
 					{ fieldtype: 'Section Break', label: 'Primary Address' },
+					{ label: 'Site Name / Trade Name', fieldname: 'site_name', fieldtype: 'Data' },
 					{ label: 'Address Line', fieldname: 'address_line', fieldtype: 'Data', reqd: 1 },
 					{ label: 'Country', fieldname: 'country', fieldtype: 'Link', options: 'Country', reqd: 1, default: 'India' },
 					{ label: 'State', fieldname: 'state', fieldtype: 'Link', options: 'State', reqd: 1 },
@@ -214,6 +224,8 @@ class OfflineBuyerCatalogPage {
 							customer_type: v.customer_type,
 							level: v.level,
 							gst_type: v.gst_type,
+							gst_no: v.gst_no || '',
+							pan_no: v.pan_no || '',
 							payment_term: v.payment_term,
 							email: v.email,
 							contact_no: v.contact_no,
@@ -470,6 +482,7 @@ class OfflineBuyerCatalogPage {
 		this.visible_rows.forEach((row, idx) => {
 			const chk  = row.selected ? 'checked' : '';
 			const sel  = row.selected ? 'obi-selected' : '';
+			const item_mrp = row.item_mrp > 0 ? flt(row.item_mrp, 2) : '';
 			const mrp  = row.mrp          > 0 ? row.mrp          : '';
 			const mrgn = row.margin_percent > 0 ? row.margin_percent : '';
 			const rate = row.selling_rate  > 0 ? flt(row.selling_rate, 2) : '';
@@ -481,6 +494,7 @@ class OfflineBuyerCatalogPage {
   <td class="col-code">${row.item_code}</td>
   <td class="col-name">${row.item_name}</td>
   <td class="col-group">${row.item_group || ''}</td>
+  <td class="col-item-mrp text-muted obi-item-mrp">${item_mrp !== '' ? item_mrp : '—'}</td>
   <td class="col-mrp">
     <input type="number" class="form-control obi-mrp"
            value="${mrp}" min="0" step="0.01" placeholder="0.00" />
@@ -749,6 +763,7 @@ class OfflineBuyerCatalogPage {
 				<table class="obi-addr-table">
 					<thead>
 						<tr>
+							<th style="width:110px;">Site Name</th>
 							<th style="width:90px;">Label</th>
 							<th style="min-width:160px;">Address Line *</th>
 							<th style="width:75px;">Pincode</th>
@@ -781,6 +796,7 @@ class OfflineBuyerCatalogPage {
 		const add_addr_row = (data) => {
 			const idx = addr_rows.length;
 			const row = {
+				site_name: data.site_name || '',
 				address_label: data.address_label || '',
 				address_line: data.address_line || '',
 				pincode: data.pincode || '',
@@ -796,7 +812,8 @@ class OfflineBuyerCatalogPage {
 
 			const $tr = $(`
 				<tr data-addr-idx="${idx}">
-					<td><input type="text" class="addr-label" value="${frappe.utils.escape_html(row.address_label)}" placeholder="e.g. Warehouse" /></td>
+					<td><input type="text" class="addr-site" value="${frappe.utils.escape_html(row.site_name)}" placeholder="e.g. Mumbai DC" /></td>
+						<td><input type="text" class="addr-label" value="${frappe.utils.escape_html(row.address_label)}" placeholder="e.g. Warehouse" /></td>
 					<td><input type="text" class="addr-line" value="${frappe.utils.escape_html(row.address_line)}" placeholder="Street / Building" /></td>
 					<td><input type="text" class="addr-pincode" value="${frappe.utils.escape_html(row.pincode)}" placeholder="400001" style="width:70px;" /></td>
 					<td><input type="text" class="addr-country" value="${frappe.utils.escape_html(row.country)}" placeholder="India" /></td>
@@ -829,6 +846,7 @@ class OfflineBuyerCatalogPage {
 			$('.obi-addr-tbody tr').each((_, tr) => {
 				const $tr = $(tr);
 				result.push({
+					site_name: $tr.find('.addr-site').val().trim(),
 					address_label: $tr.find('.addr-label').val().trim(),
 					address_line: $tr.find('.addr-line').val().trim(),
 					pincode: $tr.find('.addr-pincode').val().trim(),
@@ -854,7 +872,6 @@ class OfflineBuyerCatalogPage {
 				{ label: 'Business Name', fieldname: 'customer_business_name', fieldtype: 'Data', reqd: 1, default: obm.customer_business_name },
 				{ label: 'Is Parent', fieldname: 'is_parent', fieldtype: 'Check', default: obm.is_parent },
 				{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master', default: obm.parent_buyer },
-				{ label: 'Site / Trade Name', fieldname: 'site_name', fieldtype: 'Data', default: obm.site_name },
 				{ fieldtype: 'Column Break' },
 				{
 					label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
@@ -915,7 +932,6 @@ class OfflineBuyerCatalogPage {
 
 				const updates = {
 					customer_business_name: values.customer_business_name,
-					site_name: values.site_name || '',
 					customer_type: values.customer_type,
 					level: values.level || '',
 					gst_type: values.gst_type,

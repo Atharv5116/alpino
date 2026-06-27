@@ -7,6 +7,7 @@
  "field_order": [
   "is_primary",
   "is_shipping",
+  "site_name",
   "address_line",
   "city",
   "state",
@@ -30,6 +31,13 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Shipping"
+  },
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site Name",
+   "description": "Site / trade name for this location. Shown on the Sales Order print for the chosen shipping address."
   },
   {
    "fieldname": "address_line",

@@ -37,7 +37,13 @@ def get_all_records():
 				WHERE obil.parent = obi.name
 			) AS item_count,
 			obm.name AS offline_buyer_master,
-			obm.site_name,
+			(
+				SELECT oba.site_name
+				FROM `tabOffline Buyer Address` oba
+				WHERE oba.parent = obm.name AND oba.parenttype = 'Offline Buyer Master'
+				ORDER BY oba.is_primary DESC, oba.idx ASC
+				LIMIT 1
+			) AS site_name,
 			obm.customer,
 			obm.customer_business_name,
 			obm.customer_type,
@@ -110,6 +116,9 @@ def get_buyer_items(record_name):
 		if allowed_skus is not None and item.name not in allowed_skus:
 			continue
 		row = saved.get(item.name)
+		# MRP is the read-only list price straight from the Item; Valuation Rate is the
+		# editable buyer price (saved row wins, else defaults to MRP).
+		item_mrp = flt(item.valuation_rate)
 		mrp = flt(row.mrp if row else item.valuation_rate)
 		if row:
 			margin_pct = flt(row.margin_percent)
@@ -122,6 +131,7 @@ def get_buyer_items(record_name):
 				"item_code": item.name,
 				"item_name": item.item_name,
 				"item_group": item.item_group or "",
+				"item_mrp": item_mrp,
 				"mrp": mrp,
 				"margin_percent": margin_pct,
 				"selling_rate": selling_rate,
@@ -150,6 +160,10 @@ def save_buyer_items(record_name, items):
 		mrp = flt(item.get("mrp", 0))
 		margin_pct = flt(item.get("margin_percent", 0))
 		selling_rate = flt(mrp * (1 - margin_pct / 100), 2) if mrp else 0
+		# Read-only MRP reference from the Item; fall back to the live Item value.
+		item_mrp = flt(item.get("item_mrp")) or flt(
+			frappe.db.get_value("Item", item["item_code"], "valuation_rate")
+		)
 
 		doc.append(
 			"items",
@@ -157,6 +171,7 @@ def save_buyer_items(record_name, items):
 				"item_code": item["item_code"],
 				"item_name": item.get("item_name", ""),
 				"item_group": item.get("item_group", ""),
+				"item_mrp": item_mrp,
 				"mrp": mrp,
 				"margin_percent": margin_pct,
 				"selling_rate": selling_rate,
@@ -391,7 +406,6 @@ def get_offline_buyer_master_details(obm_name):
 	return {
 		"customer_business_name": doc.customer_business_name,
 		"level": doc.level or "",
-		"site_name": doc.site_name or "",
 		"customer_type": doc.customer_type or "",
 		"gst_type": doc.gst_type or "",
 		"gst_no": doc.gst_no or "",
@@ -407,6 +421,7 @@ def get_offline_buyer_master_details(obm_name):
 		"parent_buyer": doc.parent_buyer or "",
 		"addresses": [
 			{
+				"site_name": r.get("site_name") or "",
 				"address_label": r.get("address_label") or "",
 				"address_line": r.address_line or "",
 				"pincode": r.pincode or "",
@@ -436,7 +451,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 	doc = frappe.get_doc("Offline Buyer Master", obm_name)
 
 	editable = [
-		"customer_business_name", "site_name", "customer_type", "level", "gst_type",
+		"customer_business_name", "customer_type", "level", "gst_type",
 		"gst_no", "pan_no", "payment_term", "payment_term_days",
 		"email", "contact_no", "alternate_no", "contact_person",
 		"shipping_same_as_profile", "is_parent", "parent_buyer",
@@ -449,6 +464,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 	doc.addresses = []
 	for addr in addresses:
 		doc.append("addresses", {
+			"site_name": addr.get("site_name") or "",
 			"address_label": addr.get("address_label") or "",
 			"address_line": addr.get("address_line") or "",
 			"pincode": addr.get("pincode") or "",
@@ -485,6 +501,8 @@ def quick_create_offline_buyer(
 	level=None,
 	is_parent=0,
 	parent_buyer=None,
+	gst_no=None,
+	pan_no=None,
 ):
 	"""Create a minimal Offline Buyer Master from the Catalog quick-create dialog.
 
@@ -523,10 +541,14 @@ def quick_create_offline_buyer(
 
 	obm = frappe.new_doc("Offline Buyer Master")
 	obm.customer_business_name = biz_name_stripped
-	obm.site_name = (site_name or "").strip()
 	obm.customer_type = customer_type
 	obm.level = level or ""
 	obm.gst_type = gst_type
+	# GST No (Registered) / PAN No (Unregistered) distinguish the child Customer name.
+	if gst_type == "Registered Business":
+		obm.gst_no = (gst_no or "").strip()
+	elif gst_type == "Unregistered Business":
+		obm.pan_no = (pan_no or "").strip()
 	obm.payment_term = payment_term
 	obm.email = email
 	obm.contact_no = contact_no
@@ -538,6 +560,7 @@ def quick_create_offline_buyer(
 		"addresses",
 		{
 			"is_primary": 1,
+			"site_name": (site_name or "").strip(),
 			"address_line": address_line,
 			"pincode": pincode,
 			"country": country,

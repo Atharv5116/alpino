@@ -31,9 +31,11 @@ def _map_customer_type(obm_customer_type):
 def _ensure_customer_for_obm(doc):
 	"""Create or refresh ERPNext Customer from business name (no manual Customer pick list)."""
 	biz_name = (doc.customer_business_name or "").strip()
-	name = biz_name
-	if doc.site_name:
-		name = f"{biz_name} - {doc.site_name}"
+	# A buyer now holds multiple sites under one record, so site no longer names the
+	# Customer. Children (different GST entities under a parent) are distinguished by
+	# GST No (Registered) / PAN No (Unregistered); Overseas falls back to business name.
+	tax_id = (doc.gst_no or doc.pan_no or "").strip()
+	name = f"{biz_name} - {tax_id}" if tax_id else biz_name
 
 	if not name:
 		frappe.throw(_("Customer (Business Name) is required."), title=_("Missing business name"))

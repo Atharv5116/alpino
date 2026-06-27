@@ -4,6 +4,7 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+alpinos.patches.fix_onboarding_location_to_link
 alpinos.patches.v1_0.update_job_requisition_fields
 alpinos.patches.v1_0.setup_job_applicant_workflow
 alpinos.patches.create_attendance_widget
@@ -21,3 +22,4 @@ alpinos.patches.v1_0.fix_sales_order_additional_units_item_doctype
 alpinos.patches.v1_0.refresh_sales_order_scheme_damage_grids
 alpinos.patches.v1_0.enable_guest_file_uploads
 alpinos.patches.backfill_attendance_request_edits
+alpinos.patches.v1_0.migrate_obm_site_name_to_address
