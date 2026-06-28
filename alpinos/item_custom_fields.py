@@ -31,6 +31,36 @@ def setup_item_custom_fields():
 				fieldtype="Data",
 				insert_after="custom_sku_no",
 			),
+			# Accounts/Tally billing export fields
+			dict(
+				fieldname="custom_tally_sku",
+				label="Tally SKU",
+				fieldtype="Data",
+				insert_after="custom_tally_item_name",
+				description="SKU code as per Tally; used in the Accounts Format (billing export) report.",
+			),
+			dict(
+				fieldname="custom_ean_no",
+				label="EAN No.",
+				fieldtype="Data",
+				insert_after="custom_tally_sku",
+				description="EAN barcode. Used for Amazon billing exports.",
+			),
+			dict(
+				fieldname="custom_fsn_no",
+				label="FSN No.",
+				fieldtype="Data",
+				insert_after="custom_ean_no",
+				description="Flipkart FSN. Used for Flipkart billing exports.",
+			),
+			dict(
+				fieldname="custom_is_billable",
+				label="Is Billable",
+				fieldtype="Check",
+				insert_after="custom_is_freebie",
+				default=1,
+				description="Whether this item is billable (shown as Yes/No in the Accounts Format report).",
+			),
 			dict(
 				fieldname="custom_pack_type",
 				label="Pack Type",
@@ -91,6 +121,38 @@ def setup_item_custom_fields():
 				options="Product Bundle Mapping",
 				insert_after="custom_is_bundle",
 				depends_on="eval:doc.custom_is_bundle",
+			),
+			# --- Allowed Customer Types (new tab) ---
+			# Channel-grouped selection of which Alpino Customer Types may use this item.
+			# Empty selection = available to ALL customer types (default). The grouped
+			# checkbox widget is rendered into the HTML field by the Item client script.
+			dict(
+				fieldname="custom_customer_access_tab",
+				label="Allowed Customer Types",
+				fieldtype="Tab Break",
+				insert_after="custom_product_mapping",
+			),
+			dict(
+				fieldname="custom_customer_access_html",
+				label="Customer Type Access",
+				fieldtype="HTML",
+				insert_after="custom_customer_access_tab",
+			),
+			dict(
+				fieldname="custom_allowed_channels",
+				label="Allowed Channels",
+				fieldtype="Table",
+				options="Item Allowed Channel",
+				insert_after="custom_customer_access_html",
+				hidden=1,
+			),
+			dict(
+				fieldname="custom_allowed_customer_types",
+				label="Allowed Customer Types",
+				fieldtype="Table",
+				options="Item Allowed Customer Type",
+				insert_after="custom_allowed_channels",
+				hidden=1,
 			),
 		]
 	}

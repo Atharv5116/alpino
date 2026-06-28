@@ -228,8 +228,11 @@ function set_variant_item_queries(frm) {
     };
     const q_variants = function() {
         // Variants OR bundles (bundles have empty variant_of); templates stay hidden.
+        // Gate by the order's customer type so only items that allow it appear.
+        const ct = frm.doc.custom_offline_buyer_customer_type;
         return {
-            query: 'alpinos.offline_buyer_api.sellable_item_link_query'
+            query: 'alpinos.offline_buyer_api.sellable_item_link_query',
+            filters: ct ? { customer_type: ct } : {}
         };
     };
     frm.set_query('item_code', 'items', q_variants);

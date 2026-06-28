@@ -28,6 +28,10 @@
   "column_break_payment_terms",
   "payment_term_days",
   "party_owner",
+  "tally_section",
+  "tally_buyer_name",
+  "tally_pl_name",
+  "custom_tally_warehouse_id",
   "address_section",
   "addresses",
   "contact_section",
@@ -174,6 +178,31 @@
    "fieldtype": "Link",
    "label": "Party Owner",
    "options": "User"
+  },
+  {
+   "fieldname": "tally_section",
+   "fieldtype": "Section Break",
+   "label": "Tally / Accounts"
+  },
+  {
+   "fieldname": "tally_buyer_name",
+   "fieldtype": "Data",
+   "label": "Tally Buyer Name",
+   "description": "If set, used as the Customer name in the Accounts Format (billing export) report instead of the ERPNext customer name."
+  },
+  {
+   "fieldname": "tally_pl_name",
+   "fieldtype": "Data",
+   "label": "Tally P&L Name",
+   "description": "P&L / Voucher name as per Tally. If blank, the report derives the voucher type from GST registration + state."
+  },
+  {
+   "default": "T24",
+   "fieldname": "custom_tally_warehouse_id",
+   "fieldtype": "Select",
+   "label": "Tally Warehouse Id",
+   "options": "T24\nB24",
+   "description": "Tally warehouse identifier used in the Accounts Format report."
   },
   {
    "description": "The row marked Primary is used as the Billing Address. Rows with Shipping checked are used as Shipping Addresses.",

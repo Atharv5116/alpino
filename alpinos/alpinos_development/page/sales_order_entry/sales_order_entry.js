@@ -413,13 +413,19 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		// Main order lines: all saleable variants (no customer filter on SKU). Other tables: any item.
+		const me = this;
+		// Main order lines: saleable variants, gated by the selected Customer Type so only
+		// items that allow it appear. Other tables: any item.
 		if (filterType === 'variants') {
 			// Variants OR bundles (bundle SKUs have an empty variant_of, so a plain
 			// variant_of filter would drop them); templates stay hidden.
-			field.get_query = () => ({
-				query: 'alpinos.offline_buyer_api.sellable_item_link_query',
-			});
+			field.get_query = () => {
+				const ct = me.order_type_field && me.order_type_field.get_value();
+				return {
+					query: 'alpinos.offline_buyer_api.sellable_item_link_query',
+					filters: ct ? { customer_type: ct } : {},
+				};
+			};
 		} else if (filterType === 'nonTemplates') {
 			field.get_query = () => ({
 				filters: {

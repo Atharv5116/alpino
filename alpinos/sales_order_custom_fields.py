@@ -12,10 +12,28 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
+def _ensure_company_default():
+	"""Set a default on the hidden+mandatory Sales Order Company field (site default company)."""
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	default_company = (
+		frappe.db.get_default("company")
+		or frappe.db.get_value("Company", {}, "name", order_by="creation asc")
+	)
+	if default_company:
+		make_property_setter(
+			"Sales Order", "company", "default", default_company, "Text",
+			validate_fields_for_doctype=False,
+		)
+
+
 def setup_sales_order_custom_fields():
 	"""Create all custom fields for Sales Order customization"""
 	# Force field type changes in DB to bypass Select -> Link validation
 	_force_fieldtype_sync()
+	# Company is hidden + mandatory on the SO form; give it a default BEFORE create_custom_fields
+	# (which saves the doctype) or the save fails with HiddenAndMandatoryWithoutDefaultError.
+	_ensure_company_default()
 
 	custom_fields = {
 		# ============================================================
@@ -74,6 +92,31 @@ def setup_sales_order_custom_fields():
 				reqd=1,
 				in_list_view=1,
 				description="Auto-set: today if before 2 PM, next working day if after 2 PM.",
+			),
+			# Invoice (external) — populated by the Invoice PDF sync; shown only once Dispatched.
+			dict(
+				fieldname="custom_invoice_section",
+				label="Invoice",
+				fieldtype="Section Break",
+				insert_after="custom_dispatch_date",
+				depends_on="eval:doc.custom_workflow_status=='Dispatched'",
+				collapsible=0,
+			),
+			dict(
+				fieldname="custom_invoice_no",
+				label="Invoice No",
+				fieldtype="Data",
+				insert_after="custom_invoice_section",
+				read_only=1,
+				description="Invoice number mapped from the accounts Google Sheet.",
+			),
+			dict(
+				fieldname="custom_invoice_pdf",
+				label="Invoice PDF",
+				fieldtype="Attach",
+				insert_after="custom_invoice_no",
+				read_only=1,
+				description="External invoice PDF fetched from the Drive folder (filename = Invoice No).",
 			),
 			# Cash Discount section (visible in Totals area)
 			dict(

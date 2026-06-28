@@ -7,7 +7,8 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "channel_name"
+  "channel_name",
+  "club_product_bundles_in_invoice"
  ],
  "fields": [
   {
@@ -17,6 +18,14 @@
    "unique": 1,
    "reqd": 1,
    "in_list_view": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "club_product_bundles_in_invoice",
+   "fieldtype": "Check",
+   "label": "Club Product Bundles in Invoice",
+   "in_list_view": 1,
+   "description": "When ticked, on the invoice an item added both as a Product Bundle component and as a standalone line is merged into one line with combined quantity. When unticked, they show separately."
   }
  ],
  "index_web_pages_for_search": 1,

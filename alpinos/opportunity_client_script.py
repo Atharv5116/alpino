@@ -408,8 +408,11 @@ function set_variant_item_queries(frm) {
 	};
 	const q_variants = function() {
 		// Variants OR bundles (bundles have empty variant_of); templates stay hidden.
+		// Gate by the opportunity's customer type so only items that allow it appear.
+		const ct = frm.doc.custom_order_type;
 		return {
-			query: 'alpinos.offline_buyer_api.sellable_item_link_query'
+			query: 'alpinos.offline_buyer_api.sellable_item_link_query',
+			filters: ct ? { customer_type: ct } : {}
 		};
 	};
 	console.log("Setting item queries for Opportunity");

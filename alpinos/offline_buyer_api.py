@@ -341,20 +341,57 @@ def sellable_item_link_query(doctype, txt, searchfield, start, page_len, filters
 	express the OR, so the forms point their item get_query at this method instead.
 	"""
 	like = "%{0}%".format(txt or "")
-	return frappe.db.sql(
+	params = {"txt": like, "start": int(start or 0), "page_len": int(page_len or 20)}
+
+	# Optional customer-type gate: only items that allow this Alpino Customer Type.
+	# An item allows a type when it has NO restriction (both tables empty), OR the type is
+	# granted directly, OR the type's Channel is granted. Empty restriction = all allowed.
+	ct_clause = ""
+	customer_type = (filters or {}).get("customer_type") if filters else None
+	if customer_type:
+		params["ct"] = customer_type
+		params["chan"] = frappe.db.get_value("Alpino Customer Type", customer_type, "channel")
+		ct_clause = """
+			AND (
+				(
+					NOT EXISTS (SELECT 1 FROM `tabItem Allowed Customer Type` t WHERE t.parent = i.name)
+					AND NOT EXISTS (SELECT 1 FROM `tabItem Allowed Channel` c WHERE c.parent = i.name)
+				)
+				OR EXISTS (SELECT 1 FROM `tabItem Allowed Customer Type` t WHERE t.parent = i.name AND t.customer_type = %(ct)s)
+				OR EXISTS (SELECT 1 FROM `tabItem Allowed Channel` c WHERE c.parent = i.name AND c.channel = %(chan)s)
+			)
 		"""
-		SELECT name, item_name, item_group
-		FROM `tabItem`
-		WHERE disabled = 0
-			AND is_sales_item = 1
-			AND has_variants = 0
-			AND (IFNULL(variant_of, '') != '' OR IFNULL(custom_is_bundle, 0) = 1)
-			AND (name LIKE %(txt)s OR item_name LIKE %(txt)s)
-		ORDER BY name
+
+	return frappe.db.sql(
+		f"""
+		SELECT i.name, i.item_name, i.item_group
+		FROM `tabItem` i
+		WHERE i.disabled = 0
+			AND i.is_sales_item = 1
+			AND i.has_variants = 0
+			AND (IFNULL(i.variant_of, '') != '' OR IFNULL(i.custom_is_bundle, 0) = 1)
+			AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
+			{ct_clause}
+		ORDER BY i.name
 		LIMIT %(start)s, %(page_len)s
 		""",
-		{"txt": like, "start": int(start or 0), "page_len": int(page_len or 20)},
+		params,
 	)
+
+
+@frappe.whitelist()
+def get_item_channel_tree():
+	"""Channels with their Alpino Customer Types (for the Item 'Allowed Customer Types' widget).
+	A trailing group with channel='' holds customer types that have no channel assigned."""
+	channels = frappe.get_all("Channel", pluck="name", order_by="name")
+	types = frappe.get_all("Alpino Customer Type", fields=["name", "channel"], order_by="name")
+	by_channel = {}
+	for t in types:
+		by_channel.setdefault(t.channel or "", []).append(t.name)
+	tree = [{"channel": ch, "types": by_channel.get(ch, [])} for ch in channels]
+	if by_channel.get(""):
+		tree.append({"channel": "", "types": by_channel[""]})
+	return tree
 
 
 @frappe.whitelist()
