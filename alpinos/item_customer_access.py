@@ -25,8 +25,9 @@ function alpinos_render_customer_access(frm) {
             const tree = r.message || [];
             $host.empty();
 
-            const selTypes = new Set((frm.doc.custom_allowed_customer_types || []).map(d => d.customer_type));
-            const selChannels = new Set((frm.doc.custom_allowed_channels || []).map(d => d.channel));
+            const selTypes = new Set((frm.doc.custom_allowed_customer_types || []).map(d => d.customer_type).filter(Boolean));
+            const selChannels = new Set((frm.doc.custom_allowed_channels || []).map(d => d.channel).filter(Boolean));
+            // No real selection stored => no restriction => default ALL ticked (selected = allowed).
             const noRestriction = selTypes.size === 0 && selChannels.size === 0;
             let totalTypes = 0;
             tree.forEach(g => totalTypes += (g.types || []).length);
