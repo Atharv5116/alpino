@@ -250,15 +250,15 @@ function showCheckinTypeDialog(onConfirm, onCancel){
     secondary_action(){ d.hide(); if(onCancel) onCancel(); }
   });
   d.$body.html(`
-    <p style="color:#64748b;margin-bottom:12px;font-size:13px;">Select the type of check-in.</p>
+    <p style="color:#64748b;margin-bottom:12px;font-size:13px;">Select the reason for check-in.</p>
     <select class="form-control checkin-type-select" style="margin-bottom:10px;">
-      <option value="">Select type...</option>
+      <option value="">Select the reason</option>
       <option value="Client/Vendor">Client/Vendor</option>
       <option value="Shoot">Shoot</option>
       <option value="Meeting">Meeting</option>
       <option value="Other">Other</option>
     </select>
-    <textarea class="form-control checkin-reason-input" rows="2" placeholder="Reason (letters only — required for 'Other')" style="display:none;"></textarea>
+    <textarea class="form-control checkin-reason-input" rows="2" placeholder="Enter the reason (letters only)" style="display:none;"></textarea>
   `);
   d.$body.find(".checkin-type-select").on("change", function(){
     d.$body.find(".checkin-reason-input").toggle($(this).val() === "Other");
