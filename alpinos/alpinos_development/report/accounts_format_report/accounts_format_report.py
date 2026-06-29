@@ -217,7 +217,7 @@ def _get_data(filters):
 		pl_map = _picklist_map(so.name)
 		has_pl = bool(pl_map)
 
-		def emit(item_code, fallback_qty, fallback_box, selling_price, flat, offer, additional, is_priced):
+		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced):
 			it = item_info(item_code)
 			# UNIT / Box come from the submitted Pick List (picked qty). If the SO has a
 			# submitted pick list but this item isn't in it, it wasn't picked → 0; if there
@@ -231,17 +231,20 @@ def _get_data(filters):
 
 			gst_pct = flt(it.get("custom_gst_percent"))
 			gst_rate = 100 + gst_pct
-			mrp = flt(it.get("valuation_rate"))
-			base = flt(selling_price) or mrp
+			
 			if not is_priced:
-				base, selling_price = 0, 0
-			final_total = flt(
-				flt(base) * flt(unit)
-				* (1 - flt(flat) / 100.0)
-				* (1 - flt(offer) / 100.0)
-				* (1 - flt(additional) / 100.0),
-				2,
-			)
+				mrp, selling_price = 0, 0
+			
+			if selling_price:
+				final_total = flt(flt(selling_price) * flt(unit) * (1 - flt(additional) / 100.0), 2)
+			else:
+				final_total = flt(
+					flt(mrp) * flt(unit)
+					* (1 - flt(flat) / 100.0)
+					* (1 - flt(offer) / 100.0)
+					* (1 - flt(additional) / 100.0),
+					2,
+				)
 			final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
 			igst = flt(final_total - final_taxable, 2)
 			cgst = flt(igst / 2.0, 2)
@@ -279,23 +282,92 @@ def _get_data(filters):
 			})
 			data.append(row)
 
+		# Check if product bundles should be combined/exploded
+		combine_product_bundles = True
+		if cust_type:
+			val = frappe.db.get_value("Alpino Customer Type", cust_type, "combine_product_bundles")
+			if val is not None:
+				combine_product_bundles = bool(val)
+
 		# Main item lines (priced)
-		for r in so.items:
-			emit(
-				r.item_code, r.qty, r.get("custom_box"),
-				r.get("custom_customer_mrp"), r.get("custom_flat_discount"),
-				r.get("custom_offer"), r.get("custom_additional_discount"),
-				is_priced=True,
-			)
+		if not combine_product_bundles:
+			for r in so.items:
+				emit(
+					r.item_code, r.qty, r.get("custom_box"),
+					r.get("custom_customer_mrp"), r.get("custom_selling_price"),
+					r.get("custom_flat_discount"), r.get("custom_offer"),
+					r.get("custom_additional_discount"), is_priced=True,
+				)
+		else:
+			import math
+			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
+			from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor
+
+			exploded_items = {}
+
+			def add_item_to_exploded(item_code, qty, parent_offer, parent_additional):
+				mrp_val = 0
+				flat_val = 0
+				sp_val = 0
+				
+				res = get_offline_buyer_item_rate(so.customer, item_code)
+				if res and flt(res.get("mrp")) > 0:
+					mrp_val = flt(res.get("mrp"))
+					flat_val = flt(res.get("margin_percent"))
+					sp_val = flt(res.get("rate"))
+				else:
+					res_mrp = get_customer_item_mrp(so.customer, item_code)
+					if res_mrp:
+						mrp_val = flt(res_mrp)
+					else:
+						mrp_val = flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
+					sp_val = mrp_val * (1 - flat_val / 100.0)
+
+				if item_code not in exploded_items:
+					exploded_items[item_code] = {
+						"item_code": item_code,
+						"qty": 0.0,
+						"mrp": mrp_val,
+						"flat_discount": flat_val,
+						"offer": parent_offer,
+						"additional_discount": parent_additional,
+						"selling_price": sp_val,
+					}
+				exploded_items[item_code]["qty"] += qty
+
+			for r in so.items:
+				packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
+				if packed:
+					for p in packed:
+						add_item_to_exploded(p.item_code, flt(p.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+				else:
+					pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
+					if pb_name:
+						pb_items = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
+						for p in pb_items:
+							add_item_to_exploded(p.item_code, flt(p.qty) * flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+					else:
+						add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+
+			for code, item_dict in exploded_items.items():
+				cf = flt(get_box_conversion_factor(code))
+				box = math.ceil(item_dict["qty"] / cf) if cf else 0
+				emit(
+					code, item_dict["qty"], box,
+					item_dict["mrp"], item_dict["selling_price"],
+					item_dict["flat_discount"], item_dict["offer"],
+					item_dict["additional_discount"], is_priced=True,
+				)
+
 		# Marketing freebies / scheme items / additional-unit (damage) items — selling rate 0
 		for r in (so.get("custom_marketing_freebies") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
 		for r in (so.get("custom_scheme_item_table") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
 		for r in (so.get("custom_additional_units_damage_items") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
 
 	return data

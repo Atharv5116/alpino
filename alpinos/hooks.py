@@ -83,10 +83,9 @@ doctype_list_js = {
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "alpinos.utils.jinja_methods",
-# 	"filters": "alpinos.utils.jinja_filters"
-# }
+jinja = {
+	"methods": "alpinos.utils.jinja_methods",
+}
 
 # Installation
 # ------------

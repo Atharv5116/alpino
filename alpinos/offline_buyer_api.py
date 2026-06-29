@@ -116,9 +116,6 @@ def get_buyer_items(record_name):
 		if allowed_skus is not None and item.name not in allowed_skus:
 			continue
 		row = saved.get(item.name)
-		# MRP is the read-only list price straight from the Item; Valuation Rate is the
-		# editable buyer price (saved row wins, else defaults to MRP).
-		item_mrp = flt(item.valuation_rate)
 		mrp = flt(row.mrp if row else item.valuation_rate)
 		if row:
 			margin_pct = flt(row.margin_percent)
@@ -131,7 +128,6 @@ def get_buyer_items(record_name):
 				"item_code": item.name,
 				"item_name": item.item_name,
 				"item_group": item.item_group or "",
-				"item_mrp": item_mrp,
 				"mrp": mrp,
 				"margin_percent": margin_pct,
 				"selling_rate": selling_rate,
@@ -160,10 +156,6 @@ def save_buyer_items(record_name, items):
 		mrp = flt(item.get("mrp", 0))
 		margin_pct = flt(item.get("margin_percent", 0))
 		selling_rate = flt(mrp * (1 - margin_pct / 100), 2) if mrp else 0
-		# Read-only MRP reference from the Item; fall back to the live Item value.
-		item_mrp = flt(item.get("item_mrp")) or flt(
-			frappe.db.get_value("Item", item["item_code"], "valuation_rate")
-		)
 
 		doc.append(
 			"items",
@@ -171,7 +163,6 @@ def save_buyer_items(record_name, items):
 				"item_code": item["item_code"],
 				"item_name": item.get("item_name", ""),
 				"item_group": item.get("item_group", ""),
-				"item_mrp": item_mrp,
 				"mrp": mrp,
 				"margin_percent": margin_pct,
 				"selling_rate": selling_rate,

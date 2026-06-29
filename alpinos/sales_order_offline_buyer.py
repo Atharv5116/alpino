@@ -55,7 +55,7 @@ def get_offline_buyer_item_rate(customer, item_code):
 
 	catalog = frappe.db.sql(
 		"""
-		SELECT obil.mrp, IFNULL(obil.margin_percent, 0) AS margin_percent
+		SELECT obil.mrp, IFNULL(obil.margin_percent, 0) AS margin_percent, IFNULL(obil.selling_rate, 0) AS selling_rate
 		FROM `tabOffline Buyer Item` obil
 		INNER JOIN `tabOffline Buyer Items` obi
 			ON obi.name = obil.parent AND obil.parenttype = 'Offline Buyer Items'
@@ -72,7 +72,7 @@ def get_offline_buyer_item_rate(customer, item_code):
 	if catalog:
 		mrp = flt(catalog[0].mrp) or std_mrp
 		pct = flt(catalog[0].margin_percent)
-		rate = flt(mrp * (1 - pct / 100), 2) if mrp else 0.0
+		rate = flt(catalog[0].selling_rate) if flt(catalog[0].selling_rate) > 0 else (flt(mrp * (1 - pct / 100), 2) if mrp else 0.0)
 		return {
 			"rate": rate,
 			"margin_percent": pct,

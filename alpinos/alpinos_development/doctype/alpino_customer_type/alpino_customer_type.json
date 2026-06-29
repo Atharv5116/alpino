@@ -11,7 +11,8 @@
   "channel",
   "abbreviation",
   "sequence",
-  "min_expiry_days"
+  "min_expiry_days",
+  "combine_product_bundles"
  ],
  "fields": [
   {
@@ -50,6 +51,14 @@
    "in_list_view": 1,
    "non_negative": 1,
    "description": "Batches selected on Pick List / Delivery Note for this customer type must have at least this many days remaining to expiry from the dispatch date. Leave blank to disable the check."
+  },
+  {
+   "default": "1",
+   "fieldname": "combine_product_bundles",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Combine Product Bundles",
+   "description": "If ticked, product bundles will be exploded and combined in PDFs and Tally billing export reports."
   }
  ],
  "index_web_pages_for_search": 1,

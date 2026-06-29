@@ -58,7 +58,7 @@ def setup_item_custom_fields():
 				label="Is Billable",
 				fieldtype="Check",
 				insert_after="custom_is_freebie",
-				default=1,
+				default="1",
 				description="Whether this item is billable (shown as Yes/No in the Accounts Format report).",
 			),
 			dict(
@@ -73,7 +73,7 @@ def setup_item_custom_fields():
 				label="Is Freebie",
 				fieldtype="Check",
 				insert_after="is_sales_item",
-				default=0,
+				default="0",
 			),
 			dict(
 				fieldname="custom_color",
@@ -86,7 +86,7 @@ def setup_item_custom_fields():
 				label="Retain Sample",
 				fieldtype="Check",
 				insert_after="has_expiry_date",
-				default=0,
+				default="0",
 			),
 			dict(
 				fieldname="custom_gross_weight",
@@ -111,7 +111,7 @@ def setup_item_custom_fields():
 				label="Is Bundle",
 				fieldtype="Check",
 				insert_after="custom_product_bundle_section",
-				default=0,
+				default="0",
 				description="This SKU is a bundle/combo. On save it is automatically set as a non-stock item (ERPNext requires bundles to be non-stock), so the Inventory tab is hidden — stock moves on the component items in Product Mapping below, not on this SKU. Batches, expiry, Box UOM etc. live on those component items.",
 			),
 			dict(

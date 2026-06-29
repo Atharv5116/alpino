@@ -315,8 +315,8 @@ def _apply_sales_order_item_grid():
 		"item_name",
 		"qty",
 		"custom_box",
-		"custom_item_mrp",
 		"custom_customer_mrp",
+		"custom_selling_price",
 		"custom_flat_discount",
 		"custom_offer",
 		"custom_additional_discount",
@@ -334,8 +334,8 @@ def _apply_sales_order_item_grid():
 		"custom_flat_discount": "Flat Disc.%",
 		"custom_offer": "Offer Disc.%",
 		"custom_additional_discount": "Add. Disc.%",
-		"custom_item_mrp": "MRP",
-		"custom_customer_mrp": "Valuation Rate",
+		"custom_customer_mrp": "MRP",
+		"custom_selling_price": "Selling Price",
 	}
 	meta = frappe.get_meta("Sales Order Item")
 	for fname, lbl in label_map.items():
@@ -385,7 +385,7 @@ def _apply_sales_order_item_grid():
 
 
 def _apply_marketing_freebie_grid():
-	view = frozenset({"item_code", "item_name", "qty", "remarks"})
+	view = frozenset({"item_code", "item_name", "qty", "custom_selling_price", "remarks"})
 	meta = frappe.get_meta("Sales Order Marketing Freebie")
 	_upsert_docfield_prop("Sales Order Marketing Freebie", "item_code", "label", "SKU", property_type="Data")
 	for df in meta.fields:
@@ -401,7 +401,7 @@ def _apply_marketing_freebie_grid():
 
 
 def _apply_scheme_item_grid():
-	view = frozenset({"item_code", "item_name", "qty", "scheme"})
+	view = frozenset({"item_code", "item_name", "qty", "custom_selling_price", "scheme"})
 	meta = frappe.get_meta("Sales Order Scheme Item")
 	_upsert_docfield_prop("Sales Order Scheme Item", "item_code", "label", "SKU", property_type="Data")
 	for df in meta.fields:
@@ -417,7 +417,7 @@ def _apply_scheme_item_grid():
 
 
 def _apply_additional_units_damage_item_grid():
-	view = frozenset({"item_code", "item_name", "qty", "previous_order_id", "remarks"})
+	view = frozenset({"item_code", "item_name", "qty", "custom_selling_price", "previous_order_id", "remarks"})
 	if not frappe.db.exists("DocType", "Sales Order Additional Units Item"):
 		return
 	meta = frappe.get_meta("Sales Order Additional Units Item")

@@ -182,21 +182,11 @@ def setup_quotation_custom_fields():
 				reqd=1,
 			),
 			dict(
-				fieldname="custom_item_mrp",
+				fieldname="custom_mrp",
 				label="MRP",
 				fieldtype="Currency",
 				insert_after="rate",
-				fetch_from="item_code.valuation_rate",
-				read_only=1,
-				description="MRP from Item master (read-only reference).",
-			),
-			dict(
-				fieldname="custom_mrp",
-				label="Valuation Rate",
-				fieldtype="Currency",
-				insert_after="custom_item_mrp",
 				reqd=1,
-				description="Valuation Rate. Defaults to MRP; buyer-specific value wins. Editable — all amounts are calculated on this.",
 			),
 			dict(
 				fieldname="custom_buyer_margin_percent",
@@ -486,11 +476,12 @@ def _delete_obsolete_quotation_custom_fields():
 	obsolete = [
 		("Quotation", "custom_order_type"),
 		("Quotation Item", "custom_sku_with_name"),
+		("Quotation Item", "custom_item_mrp"),
 	]
 	for doctype, fieldname in obsolete:
 		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
 		if name:
-			frappe.db.delete("Custom Field", {"name": name})
+			frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
 	frappe.db.commit()
 	print("✅ Quotation: obsolete fields deleted")
 

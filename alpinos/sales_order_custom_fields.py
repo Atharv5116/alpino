@@ -31,6 +31,8 @@ def setup_sales_order_custom_fields():
 	"""Create all custom fields for Sales Order customization"""
 	# Force field type changes in DB to bypass Select -> Link validation
 	_force_fieldtype_sync()
+	# Delete obsolete fields
+	_delete_obsolete_sales_order_custom_fields()
 	# Company is hidden + mandatory on the SO form; give it a default BEFORE create_custom_fields
 	# (which saves the doctype) or the save fails with HiddenAndMandatoryWithoutDefaultError.
 	_ensure_company_default()
@@ -208,23 +210,14 @@ def setup_sales_order_custom_fields():
 				insert_after="qty",
 				description="Number of boxes. Auto-calculated from Qty using Item UOM conversion.",
 			),
-			# MRP (read-only, from Item valuation_rate) — reference only, after price_list_rate
+			# Customer MRP (after price_list_rate)
 			dict(
-				fieldname="custom_item_mrp",
+				fieldname="custom_customer_mrp",
 				label="MRP",
 				fieldtype="Currency",
 				insert_after="price_list_rate",
-				fetch_from="item_code.valuation_rate",
 				read_only=1,
-				description="MRP from Item master (read-only reference).",
-			),
-			# Valuation Rate (after MRP) — editable price that drives all amount calculation
-			dict(
-				fieldname="custom_customer_mrp",
-				label="Valuation Rate",
-				fieldtype="Currency",
-				insert_after="custom_item_mrp",
-				description="Valuation Rate (Incl. GST). Defaults to MRP; buyer-specific value wins. Editable — all amounts are calculated on this.",
+				description="MRP (Incl. GST). Read-only.",
 			),
 			# GST % (from Item)
 			dict(
@@ -235,6 +228,14 @@ def setup_sales_order_custom_fields():
 				fetch_from="item_code.custom_gst_percent",
 				read_only=1,
 				description="GST percentage pulled from Item master.",
+			),
+			# Selling Price (editable)
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="custom_customer_mrp",
+				read_only=0,
 			),
 			# Flat Discount % (after discount_amount)
 			dict(
@@ -266,6 +267,33 @@ def setup_sales_order_custom_fields():
 				fieldtype="Currency",
 				insert_after="custom_additional_discount",
 				description="Auto-calculated or editable tax amount per item.",
+			),
+		],
+		"Sales Order Marketing Freebie": [
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="item_name",
+				read_only=1,
+			),
+		],
+		"Sales Order Scheme Item": [
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="item_name",
+				read_only=1,
+			),
+		],
+		"Sales Order Additional Units Item": [
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="item_name",
+				read_only=1,
 			),
 		],
 	}
@@ -463,3 +491,17 @@ def _force_fieldtype_sync():
 		}, update_modified=False)
 
 	frappe.db.commit()
+
+
+def _delete_obsolete_sales_order_custom_fields():
+	"""Drop legacy fields that duplicated standard behaviour (safe if missing)."""
+	obsolete = [
+		("Sales Order Item", "custom_item_mrp"),
+	]
+	for doctype, fieldname in obsolete:
+		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
+		if name:
+			frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
+	frappe.db.commit()
+	print("✅ Sales Order: obsolete fields deleted")
+

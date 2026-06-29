@@ -360,19 +360,22 @@ def _calculate_sales_order_line_values(item):
 	additional_discount_pct = flt(item.get("custom_additional_discount"))
 	gst_pct = flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0)
 
-	if not qty or not mrp:
+	selling_price = flt(item.get("custom_selling_price") or item.get("selling_price"))
+	if not selling_price and mrp:
+		selling_price = mrp * (1 - flat_discount / 100.0) * (1 - offer_pct / 100.0)
+
+	if not qty or not selling_price:
 		return {
 			"rate": flt(item.get("rate")),
 			"amount": flt(item.get("amount")),
 			"flat_discount": flat_discount,
 			"gst_amount": flt(item.get("custom_item_tax")),
+			"selling_price": selling_price,
 		}
 
-	# MRP is GST-inclusive
-	gross_incl = mrp * qty
-	after_flat = gross_incl - (gross_incl * flat_discount / 100.0)
-	after_offer = after_flat - (after_flat * offer_pct / 100.0)
-	final_incl = after_offer - (after_offer * additional_discount_pct / 100.0)
+	# Apply additional discount directly on selling price
+	gross_incl = selling_price * qty
+	final_incl = gross_incl - (gross_incl * additional_discount_pct / 100.0)
 	final_incl = max(final_incl, 0)
 
 	div = 1 + (gst_pct / 100.0)
@@ -381,10 +384,11 @@ def _calculate_sales_order_line_values(item):
 
 	return {
 		# Store net values in rate/amount; GST can be calculated by Taxes & Charges template.
-		"rate": flt(net_amount / qty, 2),
+		"rate": flt(net_amount / qty, 2) if qty else 0,
 		"amount": flt(net_amount, 2),
 		"flat_discount": flat_discount,
 		"gst_amount": flt(gst_amount, 2),
+		"selling_price": flt(selling_price, 2),
 	}
 
 
@@ -883,9 +887,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			"delivery_date": item.get("delivery_date") or delivery_date,
 			"description": item.get("description") or "",
 			"custom_box": custom_box,
-			"custom_item_mrp": flt(item.get("custom_item_mrp"))
-			or flt(frappe.db.get_value("Item", item_code, "valuation_rate")),
 			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
+			"custom_selling_price": flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0),
 			"custom_gst_percent": flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0),
 			"custom_flat_discount": calc["flat_discount"],
 			"custom_offer": item.get("custom_offer") or "",
@@ -911,6 +914,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			{
 				"item_code": ic,
 				"item_name": iname,
+				"custom_selling_price": flt(freebie.get("custom_selling_price") or freebie.get("selling_price") or 0),
 				"qty": flt(freebie.get("qty")),
 				"remarks": freebie.get("remarks") or "",
 			},
@@ -928,6 +932,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			{
 				"item_code": ic,
 				"item_name": iname,
+				"custom_selling_price": flt(scheme.get("custom_selling_price") or scheme.get("selling_price") or 0),
 				"qty": flt(scheme.get("qty")),
 				"scheme": sch_txt,
 			},
@@ -946,6 +951,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 				{
 					"item_code": ic,
 					"item_name": iname,
+					"custom_selling_price": flt(row.get("custom_selling_price") or row.get("selling_price") or 0),
 					"qty": flt(row.get("qty")),
 					"previous_order_id": row.get("previous_order_id") or "",
 					"remarks": row.get("remarks") or "",
@@ -1062,7 +1068,7 @@ def get_sales_order_entry_view_payload(sales_order):
 	if not scheme_rows and frappe.db.has_table("Sales Order Scheme Item"):
 		raw_scheme = frappe.db.sql(
 			"""
-			SELECT item_code, item_name, qty, scheme
+			SELECT item_code, item_name, custom_selling_price, qty, scheme
 			FROM `tabSales Order Scheme Item`
 			WHERE parent=%s
 				AND parenttype='Sales Order'

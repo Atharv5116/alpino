@@ -482,7 +482,6 @@ class OfflineBuyerCatalogPage {
 		this.visible_rows.forEach((row, idx) => {
 			const chk  = row.selected ? 'checked' : '';
 			const sel  = row.selected ? 'obi-selected' : '';
-			const item_mrp = row.item_mrp > 0 ? flt(row.item_mrp, 2) : '';
 			const mrp  = row.mrp          > 0 ? row.mrp          : '';
 			const mrgn = row.margin_percent > 0 ? row.margin_percent : '';
 			const rate = row.selling_rate  > 0 ? flt(row.selling_rate, 2) : '';
@@ -494,7 +493,6 @@ class OfflineBuyerCatalogPage {
   <td class="col-code">${row.item_code}</td>
   <td class="col-name">${row.item_name}</td>
   <td class="col-group">${row.item_group || ''}</td>
-  <td class="col-item-mrp text-muted obi-item-mrp">${item_mrp !== '' ? item_mrp : '—'}</td>
   <td class="col-mrp">
     <input type="number" class="form-control obi-mrp"
            value="${mrp}" min="0" step="0.01" placeholder="0.00" />

@@ -106,9 +106,10 @@ frappe.ui.form.on('Sales Order Item', {
         let row = locals[cdt][cdn];
         if (!row.item_code) return;
 
-        const apply_pricing = function(mrp, margin_percent) {
+        const apply_pricing = function(mrp, margin_percent, rate) {
             frappe.model.set_value(cdt, cdn, 'custom_customer_mrp', flt(mrp));
             frappe.model.set_value(cdt, cdn, 'custom_flat_discount', flt(margin_percent || 0));
+            frappe.model.set_value(cdt, cdn, 'custom_selling_price', flt(rate || (mrp * (1 - (margin_percent || 0) / 100))));
             calculate_item_values(frm, cdt, cdn);
         };
 
@@ -119,7 +120,7 @@ frappe.ui.form.on('Sales Order Item', {
                 args: { customer: frm.doc.customer, item_code: row.item_code },
                 callback: function(r) {
                     if (r.message && flt(r.message.mrp) > 0) {
-                        apply_pricing(r.message.mrp, r.message.margin_percent);
+                        apply_pricing(r.message.mrp, r.message.margin_percent, r.message.rate);
                         return;
                     }
 
@@ -189,6 +190,10 @@ frappe.ui.form.on('Sales Order Item', {
         calculate_item_values(frm, cdt, cdn);
     },
 
+    custom_selling_price: function(frm, cdt, cdn) {
+        calculate_item_values(frm, cdt, cdn, true);
+    },
+
     custom_flat_discount: function(frm, cdt, cdn) {
         calculate_item_values(frm, cdt, cdn);
     },
@@ -241,7 +246,7 @@ function set_variant_item_queries(frm) {
     frm.set_query('item_code', 'custom_additional_units_damage_items', q_variants);
 }
 
-function calculate_item_values(frm, cdt, cdn) {
+function calculate_item_values(frm, cdt, cdn, selling_price_edited) {
     let row = locals[cdt][cdn];
     let mrp = flt(row.custom_customer_mrp);
     let qty = flt(row.qty);
@@ -249,15 +254,19 @@ function calculate_item_values(frm, cdt, cdn) {
     let offer_pct = flt(row.custom_offer);
     let additional_discount_pct = flt(row.custom_additional_discount);
 
-    if (mrp > 0 && qty > 0) {
-        // Apply offer/additional discounts after flat discount, as percentages on running amount.
-        let gross_amount = mrp * qty;
-        let flat_discount_amount = gross_amount * flat_discount / 100;
-        let after_flat = gross_amount - flat_discount_amount;
-        let offer_amount = after_flat * offer_pct / 100;
-        let after_offer = after_flat - offer_amount;
-        let additional_discount_amount = after_offer * additional_discount_pct / 100;
-        let net_amount = after_offer - additional_discount_amount;
+    let selling_price = flt(row.custom_selling_price);
+
+    if (!selling_price_edited) {
+        // Recalculate Selling Price (price after flat and offer discounts)
+        selling_price = mrp * (1 - flat_discount / 100) * (1 - offer_pct / 100);
+        frappe.model.set_value(cdt, cdn, 'custom_selling_price', flt(selling_price, 2));
+    }
+
+    if (selling_price > 0 && qty > 0) {
+        // Apply additional discount directly on selling price
+        let gross_amount = selling_price * qty;
+        let additional_discount_amount = gross_amount * additional_discount_pct / 100;
+        let net_amount = gross_amount - additional_discount_amount;
         if (net_amount < 0) net_amount = 0;
         let effective_rate = net_amount / qty;
         frappe.model.set_value(cdt, cdn, 'rate', flt(effective_rate, 2));

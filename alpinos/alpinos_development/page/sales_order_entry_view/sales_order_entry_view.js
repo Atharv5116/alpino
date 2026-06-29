@@ -454,7 +454,7 @@ class SalesOrderEntryView {
 		const tb = w.find('.v-items tbody').empty();
 		if (!items.length) {
 			tb.append(
-				`<tr><td colspan="11" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
+				`<tr><td colspan="10" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
 			);
 		} else {
 			items.forEach((it, i) => {
@@ -467,11 +467,11 @@ class SalesOrderEntryView {
 				const qty = this._has(it, 'qty') ? flt(it.qty) : null;
 				const box = this._has(it, 'custom_box') ? flt(it.custom_box) : null;
 				const rowCur = it.currency || currency;
-				const item_mrp = this._has(it, 'custom_item_mrp')
-					? format_currency(flt(it.custom_item_mrp), rowCur)
-					: '—';
 				const mrp = this._has(it, 'custom_customer_mrp')
 					? format_currency(flt(it.custom_customer_mrp), rowCur)
+					: '—';
+				const sp = this._has(it, 'custom_selling_price')
+					? format_currency(flt(it.custom_selling_price), rowCur)
 					: '—';
 				const fd = this._has(it, 'custom_flat_discount') ? flt(it.custom_flat_discount) : null;
 				const of = this._has(it, 'custom_offer') ? flt(it.custom_offer) : null;
@@ -489,8 +489,8 @@ class SalesOrderEntryView {
 					<td>${nm}</td>
 					<td class="text-right">${qty != null ? qty : '—'}</td>
 					<td class="text-right">${box != null ? box : '—'}</td>
-					<td class="text-right">${item_mrp}</td>
 					<td class="text-right">${mrp}</td>
+					<td class="text-right">${sp}</td>
 					<td class="text-right">${fd != null ? fd : '—'}</td>
 					<td class="text-right">${of != null ? of : '—'}</td>
 					<td class="text-right">${ad != null ? ad : '—'}</td>
@@ -504,9 +504,13 @@ class SalesOrderEntryView {
 			w.find('.sec-marketing-freebies').show();
 			const fb = w.find('.v-freebies tbody').empty();
 			freebies.forEach((row) => {
+				const sp = this._has(row, 'custom_selling_price')
+					? format_currency(flt(row.custom_selling_price), currency)
+					: '—';
 				fb.append(`<tr>
 					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
 					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+					<td class="text-right">${sp}</td>
 					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
 					<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
 				</tr>`);
@@ -524,9 +528,13 @@ class SalesOrderEntryView {
 			const sb = w.find('.v-scheme tbody').empty();
 			schemeRows.forEach((row) => {
 				const sch = row.scheme != null && String(row.scheme).trim() !== '' ? String(row.scheme) : '';
+				const sp = this._has(row, 'custom_selling_price')
+					? format_currency(flt(row.custom_selling_price), currency)
+					: '—';
 				sb.append(`<tr>
 					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
 					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+					<td class="text-right">${sp}</td>
 					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
 					<td>${sch ? this._esc(sch) : '—'}</td>
 				</tr>`);
@@ -544,9 +552,13 @@ class SalesOrderEntryView {
 				);
 			} else {
 				damageItemRows.forEach((row) => {
+					const sp = this._has(row, 'custom_selling_price')
+						? format_currency(flt(row.custom_selling_price), currency)
+						: '—';
 					db.append(`<tr>
 						<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
 						<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+						<td class="text-right">${sp}</td>
 						<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
 						<td>${this._has(row, 'previous_order_id') ? this._esc(row.previous_order_id) : '—'}</td>
 						<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
