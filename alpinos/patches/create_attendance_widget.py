@@ -226,7 +226,7 @@ function checkIn(){
         callback(r) {
           if (r.message && r.message.within_location) {
             frappe.dom.unfreeze();
-            frappe.throw("Within 1 km of the office, please check in using the biometric device.");
+            frappe.throw("Please use biometric device to checkin");
             btn("btn-in", false);
           } else {
             showCheckinTypeDialog(function(sel){ checkinType = sel.type; checkinReason = sel.reason; submitCheckin(); }, function(){ btn("btn-in", false); });

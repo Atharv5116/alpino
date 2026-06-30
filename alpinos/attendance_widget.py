@@ -442,7 +442,7 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
             )
             if distance_m <= radius_km * 1000.0:
                 frappe.throw(
-                    f"You are within the {radius_km} km office range. Please use the biometric device to check in."
+                    "Please use biometric device to checkin"
                 )
 
         checkin_type = (checkin_type or "").strip()
