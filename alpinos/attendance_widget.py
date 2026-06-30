@@ -141,7 +141,25 @@ def get_status():
         return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
 
     in_time = today_in[0]["time"]
-    return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, **base}
+    if no_bio:
+        last = _get_today_last_checkin(employee)
+        last_out = _get_today_last_checkout(employee)
+
+        if last and last[0]["log_type"] == "IN":
+            return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, **base}
+
+        if last_out:
+            elapsed_seconds = int((last_out[0]["time"] - in_time).total_seconds())
+            return {
+                "status": "OUT",
+                "last_time": last_out[0]["time"],
+                "elapsed_seconds": max(elapsed_seconds, 0),
+                **base,
+            }
+
+        return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
+    else:
+        return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, **base}
 
 
 @frappe.whitelist()
@@ -392,8 +410,12 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
     if not employee:
         frappe.throw("No Employee linked to this user.")
     today_last = _get_today_last_checkin(employee)
-    if today_last and today_last[0]["log_type"] == "IN":
-        frappe.throw("You are already Checked In.")
+    if _employee_no_biometric(employee):
+        if today_last:
+            frappe.throw("You can only Check In once per day.")
+    else:
+        if today_last and today_last[0]["log_type"] == "IN":
+            frappe.throw("You are already Checked In.")
 
     # No-Biometric companies must capture a live photo at check-in.
     if _employee_no_biometric(employee) and not image:
@@ -489,8 +511,12 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
         frappe.throw("You must Check In today before Check Out.")
 
     # No-Biometric companies must capture a live photo at check-out.
-    if _employee_no_biometric(employee) and not image:
-        frappe.throw("A live photo is required to Check Out.")
+    if _employee_no_biometric(employee):
+        if not image:
+            frappe.throw("A live photo is required to Check Out.")
+        last_out = _get_today_last_checkout(employee)
+        if last_out:
+            frappe.throw("You have already Checked Out today.")
 
     values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "OUT"}
 
