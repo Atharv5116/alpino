@@ -234,13 +234,10 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 
 		ci = checkins.get(current, {})
 		check_in_str = ci.get("check_in")
-		check_out_str = ci.get("check_out")
-		if not check_in_str or not check_out_str:
-			fallback = attendance_times.get(current, {})
-			if not check_in_str:
-				check_in_str = fallback.get("in_time")
-			if not check_out_str:
-				check_out_str = fallback.get("out_time")
+		fallback = attendance_times.get(current, {})
+		if not check_in_str:
+			check_in_str = fallback.get("in_time")
+		check_out_str = fallback.get("out_time")
 
 		worked_minutes = None
 		late_coming = 0
