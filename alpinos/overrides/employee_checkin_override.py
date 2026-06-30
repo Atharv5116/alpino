@@ -44,6 +44,24 @@ def _apply_checkout_reason_patch():
 		return attendance
 
 	ec_module.mark_attendance_and_link_log = _mark_attendance_and_link_log
+
+	_orig_calc = ec_module.calculate_working_hours
+
+	def custom_calculate_working_hours(logs, check_in_out_type, working_hours_calc_type):
+		if not logs:
+			return 0, None, None
+
+		if check_in_out_type == "Alternating entries as IN and OUT during the same shift":
+			in_time = logs[0].time
+			out_time = logs[-1].time if len(logs) >= 2 else None
+			total_hours = 0
+			if in_time and out_time:
+				total_hours = round(float((out_time - in_time).total_seconds()) / 3600, 2)
+			return total_hours, in_time, out_time
+
+		return _orig_calc(logs, check_in_out_type, working_hours_calc_type)
+
+	ec_module.calculate_working_hours = custom_calculate_working_hours
 	_patch_applied = True
 
 
