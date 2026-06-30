@@ -407,8 +407,8 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
     if not employee:
         frappe.throw("No Employee linked to this user.")
     today_last = _get_today_last_checkin(employee)
-    if today_last:
-        frappe.throw("You can only Check In once per day.")
+    if today_last and today_last[0]["log_type"] == "IN":
+        frappe.throw("You are already Checked In.")
 
     # No-Biometric companies must capture a live photo at check-in.
     if _employee_no_biometric(employee) and not image:
@@ -506,10 +506,6 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
     # No-Biometric companies must capture a live photo at check-out.
     if _employee_no_biometric(employee) and not image:
         frappe.throw("A live photo is required to Check Out.")
-
-    last_out = _get_today_last_checkout(employee)
-    if last_out:
-        frappe.throw("You have already Checked Out today.")
 
     values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "OUT"}
 
