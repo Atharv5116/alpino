@@ -185,39 +185,58 @@ function checkIn(){
     silent: true
   });
   btn("btn-in", true);
-  const proceed = function(){
-    fetchLocation(function () {
-      frappe.call({
-        method:"alpinos.attendance_widget.check_in",
-        args: {
-          latitude: latitude,
-          longitude: longitude,
-          image: capturedImage,
-          checkin_type: checkinType,
-          checkin_reason: checkinReason,
-        },
-        callback(r){
-          capturedImage = null;
-          checkinType = null;
-          checkinReason = null;
-          if(r.exc){
-            showError(r.exc);
-            btn("btn-in", false);
-            return;
-          }
-          frappe.show_alert({message:"Checked In",indicator:"green"});
-          loadStatus();
+
+  const submitCheckin = function(){
+    frappe.call({
+      method:"alpinos.attendance_widget.check_in",
+      args: {
+        latitude: latitude,
+        longitude: longitude,
+        image: capturedImage,
+        checkin_type: checkinType,
+        checkin_reason: checkinReason,
+      },
+      callback(r){
+        capturedImage = null;
+        checkinType = null;
+        checkinReason = null;
+        if(r.exc){
+          showError(r.exc);
+          btn("btn-in", false);
+          return;
         }
-      });
+        frappe.show_alert({message:"Checked In",indicator:"green"});
+        loadStatus();
+      }
     });
   };
-  if(noBiometric){
-    openCameraDialog(function(img){ capturedImage = img; proceed(); }, function(){ btn("btn-in", false); });
-  } else if(webCheckinRules){
-    showCheckinTypeDialog(function(sel){ checkinType = sel.type; checkinReason = sel.reason; proceed(); }, function(){ btn("btn-in", false); });
-  } else {
-    proceed();
-  }
+
+  fetchLocation(function () {
+    if (!latitude || !longitude) {
+      btn("btn-in", false);
+      return;
+    }
+
+    if(noBiometric){
+      openCameraDialog(function(img){ capturedImage = img; submitCheckin(); }, function(){ btn("btn-in", false); });
+    } else if(webCheckinRules){
+      frappe.call({
+        method: "alpinos.attendance_widget.is_within_shift_location",
+        args: { latitude: latitude, longitude: longitude },
+        callback(r) {
+          if (r.message && r.message.within_location) {
+            frappe.dom.unfreeze();
+            frappe.throw("Within 1 km of the office, please check in using the biometric device.");
+            btn("btn-in", false);
+          } else {
+            showCheckinTypeDialog(function(sel){ checkinType = sel.type; checkinReason = sel.reason; submitCheckin(); }, function(){ btn("btn-in", false); });
+          }
+        }
+      });
+    } else {
+      submitCheckin();
+    }
+  });
 }
 
 // Check-in type/reason dialog for biometric companies (web check-in rules enabled).

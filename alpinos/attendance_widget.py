@@ -440,10 +440,9 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
             distance_m = get_distance_between_coordinates(
                 flt(coords.latitude), flt(coords.longitude), flt(latitude), flt(longitude)
             )
-            if distance_m > radius_km * 1000.0:
+            if distance_m <= radius_km * 1000.0:
                 frappe.throw(
-                    f"You are outside the {radius_km} km web check-in range "
-                    f"({round(distance_m / 1000.0, 2)} km away). Please use the biometric device to check in."
+                    f"You are within the {radius_km} km office range. Please use the biometric device to check in."
                 )
 
         checkin_type = (checkin_type or "").strip()
@@ -461,6 +460,30 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
     doc.insert()
     _save_checkin_image(doc.name, image)
     return {"status": "IN", "time": doc.time}
+
+
+@frappe.whitelist()
+def is_within_shift_location(latitude, longitude):
+    employee = _get_employee_for_user(frappe.session.user)
+    if not employee:
+        return {"within_location": False}
+
+    if _employee_no_biometric(employee):
+        return {"within_location": False}
+
+    if _web_checkin_rules_active(employee):
+        enabled, radius_km = _web_checkin_config()
+        coords = _shift_location_coords(employee, now_datetime())
+        if coords and coords.get("latitude") is not None and (latitude is not None and longitude is not None):
+            from hrms.hr.utils import get_distance_between_coordinates
+
+            distance_m = get_distance_between_coordinates(
+                flt(coords.latitude), flt(coords.longitude), flt(latitude), flt(longitude)
+            )
+            if distance_m <= radius_km * 1000.0:
+                return {"within_location": True}
+
+    return {"within_location": False}
 
 
 @frappe.whitelist()
