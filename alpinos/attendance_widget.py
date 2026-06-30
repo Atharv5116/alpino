@@ -141,22 +141,7 @@ def get_status():
         return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
 
     in_time = today_in[0]["time"]
-    last = _get_today_last_checkin(employee)
-    last_out = _get_today_last_checkout(employee)
-
-    if last and last[0]["log_type"] == "IN":
-        return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, **base}
-
-    if last_out:
-        elapsed_seconds = int((last_out[0]["time"] - in_time).total_seconds())
-        return {
-            "status": "OUT",
-            "last_time": last_out[0]["time"],
-            "elapsed_seconds": max(elapsed_seconds, 0),
-            **base,
-        }
-
-    return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
+    return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, **base}
 
 
 @frappe.whitelist()
