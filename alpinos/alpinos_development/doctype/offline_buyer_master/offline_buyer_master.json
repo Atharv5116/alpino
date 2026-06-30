@@ -32,6 +32,7 @@
   "tally_buyer_name",
   "tally_pl_name",
   "custom_tally_warehouse_id",
+  "combine_product_bundles",
   "address_section",
   "addresses",
   "contact_section",
@@ -203,6 +204,13 @@
    "label": "Tally Warehouse Id",
    "options": "T24\nB24",
    "description": "Tally warehouse identifier used in the Accounts Format report."
+  },
+  {
+   "default": "1",
+   "fieldname": "combine_product_bundles",
+   "fieldtype": "Check",
+   "label": "Combine Product Bundles",
+   "description": "If ticked, product bundles will be exploded and combined in PDFs and Tally billing export reports for this buyer."
   },
   {
    "description": "The row marked Primary is used as the Billing Address. Rows with Shipping checked are used as Shipping Addresses.",

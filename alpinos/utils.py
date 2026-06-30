@@ -3,11 +3,14 @@ from frappe.utils import flt
 import math
 
 def get_combined_items(doc):
-	"""Explodes product bundles and groups items if combine_product_bundles is checked on the customer type."""
-	cust_type = doc.get("custom_offline_buyer_customer_type")
+	"""Explodes product bundles and groups items if combine_product_bundles is checked on the Offline Buyer Master."""
+	obm_name = doc.get("custom_offline_buyer_master")
+	if not obm_name and doc.get("customer"):
+		obm_name = frappe.db.get_value("Offline Buyer Master", {"customer": doc.customer}, "name")
+	
 	combine_product_bundles = True
-	if cust_type:
-		val = frappe.db.get_value("Alpino Customer Type", cust_type, "combine_product_bundles")
+	if obm_name:
+		val = frappe.db.get_value("Offline Buyer Master", obm_name, "combine_product_bundles")
 		if val is not None:
 			combine_product_bundles = bool(val)
 

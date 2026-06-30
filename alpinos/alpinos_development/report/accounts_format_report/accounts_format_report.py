@@ -152,7 +152,7 @@ def _get_data(filters):
 			obm_cache[customer] = frappe.db.get_value(
 				"Offline Buyer Master", {"customer": customer},
 				["tally_buyer_name", "tally_pl_name", "gst_type", "gst_no", "contact_no",
-				 "custom_tally_warehouse_id", "customer_type"],
+				 "custom_tally_warehouse_id", "customer_type", "combine_product_bundles"],
 				as_dict=True,
 			) or {}
 		return obm_cache[customer]
@@ -284,10 +284,9 @@ def _get_data(filters):
 
 		# Check if product bundles should be combined/exploded
 		combine_product_bundles = True
-		if cust_type:
-			val = frappe.db.get_value("Alpino Customer Type", cust_type, "combine_product_bundles")
-			if val is not None:
-				combine_product_bundles = bool(val)
+		val = obm.get("combine_product_bundles")
+		if val is not None:
+			combine_product_bundles = bool(val)
 
 		# Main item lines (priced)
 		if not combine_product_bundles:
