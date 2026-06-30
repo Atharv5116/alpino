@@ -200,6 +200,10 @@ class OfflineBuyerCatalogPage {
 						label: 'Payment Term', fieldname: 'payment_term', fieldtype: 'Select',
 						options: '\nAdvance\nCredit\nPartial\nNA', default: 'Advance', reqd: 1,
 					},
+					{
+						label: 'Combine Product Bundles', fieldname: 'combine_product_bundles', fieldtype: 'Check',
+						default: 1,
+					},
 					{ fieldtype: 'Section Break', label: 'Contact' },
 					{ label: 'Email', fieldname: 'email', fieldtype: 'Data', options: 'Email', reqd: 1 },
 					{ label: 'Contact No', fieldname: 'contact_no', fieldtype: 'Data', options: 'Phone', reqd: 1 },
@@ -238,6 +242,7 @@ class OfflineBuyerCatalogPage {
 							area: v.area,
 							is_parent: 0,
 							parent_buyer: v.parent_buyer,
+							combine_product_bundles: v.combine_product_bundles,
 						},
 						freeze: true,
 						freeze_message: __('Creating offline buyer...'),
@@ -900,6 +905,10 @@ class OfflineBuyerCatalogPage {
 				{ label: 'Days', fieldname: 'payment_term_days', fieldtype: 'Data',
 				  default: obm.payment_term_days,
 				  depends_on: 'eval:doc.payment_term=="Credit"||doc.payment_term=="Partial"' },
+				{
+					label: 'Combine Product Bundles', fieldname: 'combine_product_bundles', fieldtype: 'Check',
+					default: obm.combine_product_bundles,
+				},
 				// Contact
 				{ fieldtype: 'Section Break', label: 'Contact' },
 				{ label: 'Email', fieldname: 'email', fieldtype: 'Data', options: 'Email', reqd: 1, default: obm.email },
@@ -943,6 +952,7 @@ class OfflineBuyerCatalogPage {
 					contact_person: values.contact_person,
 					is_parent: values.is_parent,
 					parent_buyer: values.parent_buyer,
+					combine_product_bundles: values.combine_product_bundles,
 				};
 
 				frappe.call({

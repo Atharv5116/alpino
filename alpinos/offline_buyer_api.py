@@ -483,6 +483,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 		"gst_no", "pan_no", "payment_term", "payment_term_days",
 		"email", "contact_no", "alternate_no", "contact_person",
 		"shipping_same_as_profile", "is_parent", "parent_buyer",
+		"combine_product_bundles",
 	]
 	for f in editable:
 		if f in updates:
@@ -531,6 +532,7 @@ def quick_create_offline_buyer(
 	parent_buyer=None,
 	gst_no=None,
 	pan_no=None,
+	combine_product_bundles=1,
 ):
 	"""Create a minimal Offline Buyer Master from the Catalog quick-create dialog.
 
@@ -564,6 +566,7 @@ def quick_create_offline_buyer(
 			parent_obm.email = email
 			parent_obm.contact_no = contact_no
 			parent_obm.contact_person = contact_person
+			parent_obm.combine_product_bundles = combine_product_bundles
 			parent_obm.insert(ignore_permissions=True)
 			actual_parent = parent_obm.name
 
@@ -581,6 +584,7 @@ def quick_create_offline_buyer(
 	obm.email = email
 	obm.contact_no = contact_no
 	obm.contact_person = contact_person
+	obm.combine_product_bundles = combine_product_bundles
 	obm.is_parent = 0 # Children are not parents by default
 	obm.parent_buyer = actual_parent or ""
 
