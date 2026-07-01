@@ -436,7 +436,7 @@ class SalesOrderEntry {
 			});
 		}
 		if (field.$input) {
-			field.$input.css('min-width', '140px');
+			field.$input.css('min-width', '118px');
 		}
 		// Dropdown styling handled via CSS in template
 		return field;
@@ -486,7 +486,7 @@ class SalesOrderEntry {
 		let $row = $(`
 			<tr data-idx="${idx}">
 				<td class="text-center" style="vertical-align: middle;">${idx + 1}</td>
-				<td class="item-image text-center" style="vertical-align: middle;"><img class="item-image-preview" src="" style="max-height: 36px; max-width: 70px; display: none;" /></td>
+				<td class="item-image text-center" style="vertical-align: middle;"><img class="item-image-preview" src="" style="max-height: 32px; max-width: 44px; display: none;" /></td>
 				<td class="item-sku"></td>
 				<td class="item-name"><span class="item-name-text text-muted" style="font-size: 12px;">-</span></td>
 				<td class="item-qty"></td>
@@ -537,7 +537,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		qty_field.$input && qty_field.$input.css('width', '70px');
+		qty_field.$input && qty_field.$input.css('width', '56px');
 		qty_field.$input.on('change', function() {
 			me.items[idx].qty = flt(qty_field.get_value());
 			me.calc_box_from_qty(idx, $row);
@@ -552,7 +552,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		box_field.$input && box_field.$input.css('width', '70px');
+		box_field.$input && box_field.$input.css('width', '56px');
 		box_field.$input.on('change', function() {
 			me.items[idx].box = flt(box_field.get_value());
 			me.calc_qty_from_box(idx, $row);
@@ -567,7 +567,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		mrp_field.$input && mrp_field.$input.css('width', '90px');
+		mrp_field.$input && mrp_field.$input.css('width', '76px');
 		mrp_field.$input && mrp_field.$input.prop('readonly', true);
 		row_data._mrp_field = mrp_field;
 
@@ -578,7 +578,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		selling_price_field.$input && selling_price_field.$input.css('width', '90px');
+		selling_price_field.$input && selling_price_field.$input.css('width', '78px');
 		selling_price_field.$input.on('change', function() {
 			me.items[idx].custom_selling_price = flt(selling_price_field.get_value());
 			me.calc_row_amount(idx, $row, true);
@@ -592,7 +592,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		gst_field.$input && gst_field.$input.css('width', '70px');
+		gst_field.$input && gst_field.$input.css('width', '56px');
 		gst_field.$input && gst_field.$input.prop('readonly', true);
 		if (row_data.gst_percent) gst_field.set_value(row_data.gst_percent);
 		row_data._gst_field = gst_field;
@@ -604,7 +604,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		flat_disc_field.$input && flat_disc_field.$input.css('width', '80px');
+		flat_disc_field.$input && flat_disc_field.$input.css('width', '66px');
 		flat_disc_field.$input.on('change', function() {
 			me.items[idx].flat_discount = flt(flat_disc_field.get_value());
 			me.calc_row_amount(idx, $row);
@@ -618,7 +618,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		offer_field.$input && offer_field.$input.css('width', '80px');
+		offer_field.$input && offer_field.$input.css('width', '66px');
 		offer_field.$input.on('change', function() {
 			me.items[idx].offer = flt(offer_field.get_value());
 			me.calc_row_amount(idx, $row);
@@ -632,7 +632,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		add_disc_field.$input && add_disc_field.$input.css('width', '80px');
+		add_disc_field.$input && add_disc_field.$input.css('width', '66px');
 		add_disc_field.$input.on('change', function() {
 			me.items[idx].additional_discount = flt(add_disc_field.get_value());
 			me.calc_row_amount(idx, $row);
