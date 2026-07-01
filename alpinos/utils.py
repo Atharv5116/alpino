@@ -19,7 +19,7 @@ def get_combined_items(doc):
 		return doc.items
 
 	from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
-	from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor
+	from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
 
 	combined = {}
 	
@@ -75,7 +75,16 @@ def get_combined_items(doc):
 				for p in pb_items:
 					add_item_to_combined(p.item_code, flt(p.qty) * flt(r.qty), r)
 			else:
-				add_item_to_combined(r.item_code, flt(r.qty), r)
+				# Alpino bundles are defined via Item.custom_is_bundle + Product Bundle Mapping,
+				# which can exist WITHOUT a native Product Bundle (and the SO may have no packed
+				# items). Fall back to that mapping — the same source the pick list / DN use — so
+				# the bundle still explodes when "Combine Product Bundles" is on.
+				comps = _bundle_components(r.item_code)
+				if comps:
+					for c in comps:
+						add_item_to_combined(c.get("item"), flt(c.get("base_qty")) * flt(r.qty), r)
+				else:
+					add_item_to_combined(r.item_code, flt(r.qty), r)
 
 	# Convert back to a list of row-like dict objects (using frappe._dict to support dot notation in Jinja)
 	result = []
