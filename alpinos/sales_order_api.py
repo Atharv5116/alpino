@@ -1038,9 +1038,16 @@ def get_sales_order_entry_view_payload(sales_order):
 
 	# Table fields (items, child tables) are excluded from get_permitted_fieldnames but SO read
 	# implies line visibility; still filter each child row by Sales Order *Item* field perms.
+	# Explode/combine product bundles per the buyer's 'Combine Product Bundles' flag
+	# (get_combined_items returns the raw SO items unchanged when the flag is off).
+	from alpinos.utils import get_combined_items
+
 	items = []
-	for row in doc.get("items") or []:
-		rd = _so_view_filter_dict_by_read_perm("Sales Order Item", row.as_dict(), parenttype="Sales Order")
+	for row in get_combined_items(doc):
+		if isinstance(row, dict):  # exploded/combined synthetic row (frappe._dict, flag on)
+			rd = dict(row)
+		else:  # real Sales Order Item document (flag off)
+			rd = _so_view_filter_dict_by_read_perm("Sales Order Item", row.as_dict(), parenttype="Sales Order")
 		img = rd.get("custom_product_image") or ""
 		if img:
 			rd["custom_product_image_url"] = _so_view_abs_url(img)

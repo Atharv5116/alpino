@@ -83,6 +83,15 @@ def get_combined_items(doc):
 		cf = flt(get_box_conversion_factor(code))
 		item_dict["custom_box"] = math.ceil(item_dict["qty"] / cf) if cf else 0
 		item_dict["idx"] = idx
+		# Line amount (GST-inclusive, like the source rows). custom_item_tax kept 0 so callers
+		# that add amount + tax (the SO view) show the correct total.
+		item_dict["amount"] = flt(
+			flt(item_dict.get("custom_selling_price")) * flt(item_dict["qty"])
+			* (1 - flt(item_dict.get("custom_offer")) / 100.0)
+			* (1 - flt(item_dict.get("custom_additional_discount")) / 100.0),
+			2,
+		)
+		item_dict["custom_item_tax"] = 0
 		result.append(frappe._dict(item_dict))
 
 	return result

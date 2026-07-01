@@ -30,6 +30,8 @@ class SalesOrderEntryView {
 		this.page.add_menu_item(__('Back to Sales Order List'), () =>
 			frappe.set_route('sales-order-entry-list')
 		);
+		// Always-visible Download PDF button (every Sales Order, any status).
+		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
 		// The main "next stage" action is set as the page primary action by
 		// update_actions(). This is the only stage-secondary inline button.
 		this.btn_future_dispatch = this.page.add_inner_button(__('Mark as Future Dispatch'), () =>
