@@ -439,8 +439,10 @@ scheduler_events = {
 		"alpinos.workflow_engine.refresh_todays_dispatch"
 	],
 	"cron": {
+		"*/5 * * * *": [
+			"alpinos.essl_sync.sync_essl_logs"
+		],
 		"*/30 * * * *": [
-			"alpinos.essl_sync.sync_essl_logs",
 			"alpinos.attendance_scheduler.process_auto_attendance_periodic"
 		],
 		"30 11 * * *": [
