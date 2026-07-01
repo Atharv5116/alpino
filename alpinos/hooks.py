@@ -83,8 +83,12 @@ doctype_list_js = {
 # ----------
 
 # add methods and filters to jinja environment
+# NOTE: each entry must be a dotted path to a FUNCTION (exposed under its own name).
+# Pointing at a dict (alpinos.utils.jinja_methods) does NOT expose its members to Jinja.
 jinja = {
-	"methods": "alpinos.utils.jinja_methods",
+	"methods": [
+		"alpinos.utils.get_combined_items",
+	],
 }
 
 # Installation
