@@ -43,7 +43,7 @@ def get_combined_items(doc):
 			sp = mrp * (1 - flat / 100.0)
 
 		# Fetch item UOM and name safely
-		res_item = frappe.db.get_value("Item", item_code, ["item_name", "stock_uom"], as_dict=True)
+		res_item = frappe.db.get_value("Item", item_code, ["item_name", "stock_uom", "valuation_rate"], as_dict=True)
 		item_name = res_item.get("item_name") if res_item else item_code
 		uom = res_item.get("stock_uom") if res_item else "Nos"
 
@@ -53,6 +53,7 @@ def get_combined_items(doc):
 				"item_name": item_name,
 				"uom": uom,
 				"qty": 0.0,
+				"custom_item_mrp": flt(res_item.get("valuation_rate")) if res_item else 0,
 				"custom_customer_mrp": mrp,
 				"custom_flat_discount": flat,
 				"custom_offer": flt(parent_row.get("custom_offer") or 0),
