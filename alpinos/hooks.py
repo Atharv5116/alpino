@@ -181,6 +181,7 @@ after_migrate = [
 	"alpinos.item_customer_access.create_item_customer_access_client_script",
 	"alpinos.workflow_role_access.execute",
 	"alpinos.web_form_update.execute",
+	"alpinos.sales_order_print_format_patch.execute",
 ]
 
 # Uninstallation
