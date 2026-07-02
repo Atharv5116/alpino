@@ -189,6 +189,23 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('.dn-dispatch-to-input').prop('readonly', !draft);
 		$main.find('.dn-dispatch-to-remove').toggle(draft);
 
+		// DN Users can only enter the LR/AWB and submit — they cannot edit the
+		// product qty, Dispatch From / To, or the assignment.
+		var _roles = frappe.user_roles || [];
+		var _isDNUser = _roles.indexOf('DN User') !== -1 &&
+			!_roles.some(function (r) {
+				return ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'].indexOf(r) !== -1;
+			});
+		if (_isDNUser) {
+			$main.find('.dn-item-qty').prop('readonly', true);
+			$main.find('.dn-item-remove').hide();
+			$main.find('.dn-dispatch-to-input').prop('readonly', true);
+			$main.find('#btn-dn-dispatch-to-add').hide();
+			$main.find('.dn-dispatch-to-remove').hide();
+			$main.find('[data-fieldname="custom_dispatch_from"]').prop('readonly', true);
+			$main.find('[data-fieldname="custom_assigned_to"]').prop('disabled', true);
+		}
+
 		// Status banner
 		var $banner = $main.find('#dn-status-banner');
 		if (submitted) {

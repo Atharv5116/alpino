@@ -1,6 +1,6 @@
 """Customer-type-driven batch expiry warnings for Pick List and Delivery Note.
 
-The Offline Buyer Customer Type master carries a `min_expiry_days` threshold.
+The Alpino Customer Type master carries a `min_expiry_days` threshold.
 When a Pick List or Delivery Note is saved (or a batch is selected in the
 client), rows whose batch expires within fewer than `min_expiry_days` of the
 dispatch date raise a soft `frappe.msgprint` warning. Submission is never
@@ -16,7 +16,7 @@ def _resolve_threshold(customer_type):
 	if not customer_type:
 		return None
 	days = frappe.db.get_value(
-		"Offline Buyer Customer Type", customer_type, "min_expiry_days"
+		"Alpino Customer Type", customer_type, "min_expiry_days"
 	)
 	days = int(days) if days else 0
 	return days or None

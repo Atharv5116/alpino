@@ -23,12 +23,16 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	def validate(self):
 		self._apply_single_day_or_range()   # Rules 3 & 7: single day, On Duty = range
-		self._enforce_request_window()       # Rule 2: only last 7 days
+		if self.is_new():
+			# Rule 2: only last 7 days — enforced at request creation only, NOT on approval/submit
+			# (an approver acting a few days later must not be blocked by the window).
+			self._enforce_request_window()
 		self._enforce_monthly_limit()        # Rule 1: max 4 per month
 		super().validate()
 		self._sync_tables()                  # build the Details + Existing Logs tables
 		self._clear_unticked_punches()       # blank punches stay blank (no Time auto-now)
 		self._validate_detail_times()        # reject mistyped Check-in/Check-out times
+		self._set_punch_edit_flag()          # edit (overwrites a recorded punch) vs missing
 
 	def validate_request_overlap(self):
 		# Allow multiple requests for the same date — e.g. add the check-in in one request and the
@@ -46,6 +50,38 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				row.check_in = None
 			if not row.get("edit_check_out"):
 				row.check_out = None
+
+	def _set_punch_edit_flag(self):
+		"""Decide EDIT vs MISSING for the approval workflow's Reporting-Manager branch.
+
+		An EDIT *overwrites a punch that is already on record*: a ticked Edit Check-in /
+		Edit Check-out whose side the Existing Logs snapshot already holds a value for. A
+		request that only fills a genuinely-missing side stays MISSING — even on a day that
+		already has the OTHER side punched (e.g. adding a missing check-out to a day whose
+		check-in came from the device). MISSING is approved by the Reporting Manager alone;
+		EDIT additionally needs HR Manager approval.
+
+		On Duty carries no ticked punch edits (its times come from the assigned shift on
+		approval), so it is never an edit here — it stays a Reporting-Manager-only approval.
+		"""
+		existing = {
+			getdate(r.attendance_date): r
+			for r in (self.custom_existing_logs or [])
+			if r.attendance_date
+		}
+		is_edit = False
+		for row in (self.custom_attendance_details or []):
+			if not row.attendance_date:
+				continue
+			snap = existing.get(getdate(row.attendance_date))
+			if not snap:
+				continue
+			if (row.get("edit_check_in") and snap.check_in) or (
+				row.get("edit_check_out") and snap.check_out
+			):
+				is_edit = True
+				break
+		self.custom_is_punch_edit = 1 if is_edit else 0
 
 	def on_submit(self):
 		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).

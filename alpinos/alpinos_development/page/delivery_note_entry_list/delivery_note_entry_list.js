@@ -127,10 +127,16 @@ class DeliveryNoteListPage {
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
 		rows.forEach((d) => {
-			let status_color = 'blue';
-			if (d.docstatus === 0) status_color = 'red';
-			else if (d.status === 'Completed') status_color = 'green';
-			else if (d.status === 'Cancelled') status_color = 'darkgrey';
+			// Show the workflow-aligned status: Draft -> Dispatched -> Cancelled.
+			let wf = 'Draft';
+			let status_color = 'red';
+			if (d.docstatus === 2) {
+				wf = 'Cancelled';
+				status_color = 'darkgrey';
+			} else if (d.docstatus === 1) {
+				wf = 'Dispatched';
+				status_color = 'green';
+			}
 			const customer = d.custom_dn_so_customer_name || d.customer_name || '';
 			tb.append(`<tr class="dnl-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td><strong>${esc(d.name)}</strong></td>
@@ -138,7 +144,7 @@ class DeliveryNoteListPage {
 				<td>${esc(d.posting_date || '—')}</td>
 				<td>${esc(d.custom_dispatch_date || '—')}</td>
 				<td>${esc(d.company)}</td>
-				<td><span class="indicator-pill ${status_color}">${esc(d.status || '')}</span></td>
+				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
 			</tr>`);
 		});
 	}

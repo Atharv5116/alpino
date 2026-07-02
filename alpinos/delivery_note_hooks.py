@@ -6,6 +6,22 @@ import frappe
 from frappe.utils import flt
 
 
+def strip_non_batch_item_batches(doc, method=None):
+	"""Runs on before_validate (i.e. before ERPNext validates batches): a
+	non-batch-tracked item must not carry a batch_no, otherwise the Delivery
+	Note fails on submit with "Could not find Batch No: ...". Free-text batch
+	codes entered on the Pick List for such items are cleared here."""
+	if doc.get("is_return"):
+		return
+	for row in doc.get("items") or []:
+		if (
+			row.get("batch_no")
+			and row.get("item_code")
+			and not frappe.db.get_value("Item", row.item_code, "has_batch_no")
+		):
+			row.batch_no = None
+
+
 def validate_delivery_note(doc, method=None):
 	if doc.get("is_return"):
 		return
@@ -68,6 +84,18 @@ def _sync_items_from_pick_list(doc):
 		elif row.item_code and row.qty:
 			f = _box_factor(row.item_code) or 1
 			row.custom_box = ceil(flt(row.qty) / f) if flt(row.qty) else 0
+
+		# Only carry batch/dates for batch-tracked items. Non-batch items must
+		# not have a batch_no (otherwise the DN fails batch validation on submit
+		# with "Could not find Batch No: ..."). Clear any stray values.
+		has_batch = row.item_code and frappe.db.get_value("Item", row.item_code, "has_batch_no")
+		if not has_batch:
+			row.batch_no = None
+			if meta_dn_item.get_field("custom_mfg_date"):
+				row.custom_mfg_date = None
+			if meta_dn_item.get_field("custom_expiry_date"):
+				row.custom_expiry_date = None
+			continue
 
 		if pli.get("batch_no"):
 			row.batch_no = pli.get("batch_no")

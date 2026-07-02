@@ -360,19 +360,22 @@ def _calculate_sales_order_line_values(item):
 	additional_discount_pct = flt(item.get("custom_additional_discount"))
 	gst_pct = flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0)
 
-	if not qty or not mrp:
+	selling_price = flt(item.get("custom_selling_price") or item.get("selling_price"))
+	if not selling_price and mrp:
+		selling_price = mrp * (1 - flat_discount / 100.0) * (1 - offer_pct / 100.0)
+
+	if not qty or not selling_price:
 		return {
 			"rate": flt(item.get("rate")),
 			"amount": flt(item.get("amount")),
 			"flat_discount": flat_discount,
 			"gst_amount": flt(item.get("custom_item_tax")),
+			"selling_price": selling_price,
 		}
 
-	# MRP is GST-inclusive
-	gross_incl = mrp * qty
-	after_flat = gross_incl - (gross_incl * flat_discount / 100.0)
-	after_offer = after_flat - (after_flat * offer_pct / 100.0)
-	final_incl = after_offer - (after_offer * additional_discount_pct / 100.0)
+	# Apply additional discount directly on selling price
+	gross_incl = selling_price * qty
+	final_incl = gross_incl - (gross_incl * additional_discount_pct / 100.0)
 	final_incl = max(final_incl, 0)
 
 	div = 1 + (gst_pct / 100.0)
@@ -381,10 +384,11 @@ def _calculate_sales_order_line_values(item):
 
 	return {
 		# Store net values in rate/amount; GST can be calculated by Taxes & Charges template.
-		"rate": flt(net_amount / qty, 2),
+		"rate": flt(net_amount / qty, 2) if qty else 0,
 		"amount": flt(net_amount, 2),
 		"flat_discount": flat_discount,
 		"gst_amount": flt(gst_amount, 2),
+		"selling_price": flt(selling_price, 2),
 	}
 
 
@@ -449,6 +453,53 @@ def validate_sales_order_pricing(doc, method=None):
 		doc.get("total_taxes_and_charges"),
 		doc.get("grand_total"),
 	)
+
+
+@frappe.whitelist()
+def download_sales_orders_zip(names, no_letterhead=0):
+	"""Bulk export: one PDF per Sales Order, bundled into a single ZIP download.
+
+	`names` is a JSON list (or list) of Sales Order names sent from the list
+	page's bulk action. Each order is rendered with the Sales Order default
+	print format and added to the zip as <name>.pdf, so the user gets separate
+	PDFs (not one merged document).
+	"""
+	import json
+	import zipfile
+	from io import BytesIO
+
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		frappe.throw(_("Please select at least one Sales Order."))
+
+	meta = frappe.get_meta("Sales Order")
+	format_name = (meta.default_print_format or "").strip() or "Standard"
+	no_letterhead = cint(no_letterhead)
+
+	buf = BytesIO()
+	failed = []
+	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+		for name in names:
+			# get_print enforces read permission on each document.
+			try:
+				pdf = frappe.get_print(
+					"Sales Order", name, format_name, as_pdf=True, no_letterhead=no_letterhead
+				)
+				safe = str(name).replace("/", "-")
+				zf.writestr("{0}.pdf".format(safe), pdf)
+			except frappe.PermissionError:
+				failed.append(name)
+			except Exception:
+				frappe.log_error(title="Bulk SO PDF failed for {0}".format(name))
+				failed.append(name)
+
+	if failed and len(failed) == len(names):
+		frappe.throw(_("Could not generate PDFs for the selected Sales Orders: {0}").format(", ".join(failed)))
+
+	frappe.local.response.filename = "sales-orders-{0}.zip".format(len(names))
+	frappe.local.response.filecontent = buf.getvalue()
+	frappe.local.response.type = "download"
 
 
 @frappe.whitelist()
@@ -735,7 +786,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
                        additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
-                       taxes_and_charges=None,
+                       taxes_and_charges=None, po_no=None,
                        submit_now=1):
 	"""Create a Sales Order from the custom entry page"""
 	import json
@@ -757,6 +808,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so.company = _resolve_company(company)
 	default_warehouse = _resolve_default_warehouse(so.company)
 	so.delivery_date = delivery_date
+	if po_no:
+		so.po_no = po_no
 	if dispatch_date:
 		so.custom_dispatch_date = dispatch_date
 	so.ignore_pricing_rule = 1
@@ -835,6 +888,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			"description": item.get("description") or "",
 			"custom_box": custom_box,
 			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
+			"custom_selling_price": flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0),
 			"custom_gst_percent": flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0),
 			"custom_flat_discount": calc["flat_discount"],
 			"custom_offer": item.get("custom_offer") or "",
@@ -860,6 +914,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			{
 				"item_code": ic,
 				"item_name": iname,
+				"custom_selling_price": flt(freebie.get("custom_selling_price") or freebie.get("selling_price") or 0),
 				"qty": flt(freebie.get("qty")),
 				"remarks": freebie.get("remarks") or "",
 			},
@@ -877,6 +932,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			{
 				"item_code": ic,
 				"item_name": iname,
+				"custom_selling_price": flt(scheme.get("custom_selling_price") or scheme.get("selling_price") or 0),
 				"qty": flt(scheme.get("qty")),
 				"scheme": sch_txt,
 			},
@@ -895,6 +951,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 				{
 					"item_code": ic,
 					"item_name": iname,
+					"custom_selling_price": flt(row.get("custom_selling_price") or row.get("selling_price") or 0),
 					"qty": flt(row.get("qty")),
 					"previous_order_id": row.get("previous_order_id") or "",
 					"remarks": row.get("remarks") or "",
@@ -981,8 +1038,11 @@ def get_sales_order_entry_view_payload(sales_order):
 
 	# Table fields (items, child tables) are excluded from get_permitted_fieldnames but SO read
 	# implies line visibility; still filter each child row by Sales Order *Item* field perms.
+	# NOTE: the view page (and pick list) always show the raw order lines (combos stay as combos).
+	# Bundle explosion/combining per 'Combine Product Bundles' happens ONLY in the PDF print and
+	# the Tally (Accounts Format) report.
 	items = []
-	for row in doc.get("items") or []:
+	for row in doc.items:
 		rd = _so_view_filter_dict_by_read_perm("Sales Order Item", row.as_dict(), parenttype="Sales Order")
 		img = rd.get("custom_product_image") or ""
 		if img:
@@ -1011,7 +1071,7 @@ def get_sales_order_entry_view_payload(sales_order):
 	if not scheme_rows and frappe.db.has_table("Sales Order Scheme Item"):
 		raw_scheme = frappe.db.sql(
 			"""
-			SELECT item_code, item_name, qty, scheme
+			SELECT item_code, item_name, custom_selling_price, qty, scheme
 			FROM `tabSales Order Scheme Item`
 			WHERE parent=%s
 				AND parenttype='Sales Order'
@@ -1055,6 +1115,7 @@ def get_sales_order_entry_list(
 	page_length=20,
 	search=None,
 	status=None,
+	workflow_status=None,
 	company=None,
 	customer=None,
 	from_date=None,
@@ -1071,6 +1132,8 @@ def get_sales_order_entry_list(
 	filters = {}
 	if status:
 		filters["status"] = str(status).strip()
+	if workflow_status:
+		filters["custom_workflow_status"] = str(workflow_status).strip()
 	if company:
 		filters["company"] = str(company).strip()
 	if customer:
@@ -1102,6 +1165,19 @@ def get_sales_order_entry_list(
 	elif td:
 		filters["transaction_date"] = ["<=", td]
 
+	# A dedicated Warehouse Manager only sees orders waiting for their approval.
+	# Users who also hold a broad/sales/admin role keep full visibility.
+	_roles = set(frappe.get_roles())
+	_override_roles = {
+		"System Manager",
+		"Administrator",
+		"Sales Admin",
+		"Sales Manager",
+		"Sales User",
+	}
+	if "Warehouse Manager" in _roles and not (_roles & _override_roles):
+		filters["custom_workflow_status"] = "Warehouse Approval Pending"
+
 	or_filters = None
 	search = (search or "").strip()
 	if search:
@@ -1121,6 +1197,7 @@ def get_sales_order_entry_list(
 		"delivery_date",
 		"company",
 		"status",
+		"custom_workflow_status",
 		"order_type",
 		"grand_total",
 		"currency",

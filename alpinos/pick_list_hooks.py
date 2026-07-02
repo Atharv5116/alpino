@@ -38,9 +38,16 @@ def _set_defaults(doc):
 
 def _sync_order_information(doc):
 	first_so = next((row.sales_order for row in (doc.locations or []) if row.sales_order), None)
+	if not first_so:
+		first_so = doc.get("custom_sales_order_id")
 	if first_so:
 		doc.custom_sales_order_id = first_so
 		doc.custom_customer_name = frappe.db.get_value("Sales Order", first_so, "customer_name") or ""
+		# Dispatch Date always mirrors the Sales Order (set by warehouse via
+		# Future Dispatch / Update Dispatch Date on the order).
+		so_dispatch = frappe.db.get_value("Sales Order", first_so, "custom_dispatch_date")
+		if so_dispatch:
+			doc.custom_dispatch_date = so_dispatch
 
 
 def _sync_rows_and_totals(doc):
@@ -54,7 +61,7 @@ def _sync_rows_and_totals(doc):
 		qty = flt(row.qty)
 		row.custom_sample_quantity = 0.0
 		row.custom_sample_box = 0.0
-		
+
 		factor = flt(get_box_conversion_factor(row.item_code)) if row.item_code else 0
 		factor = factor or 1
 
@@ -110,6 +117,17 @@ def before_validate_pick_list(doc, method):
 	df = meta.get_field("batch_no")
 	if df and df.reqd:
 		df.reqd = 0
+
+	# Non-batch-tracked items must not carry a batch / MFG / Expiry. Clear them
+	# here (before link validation) so a stray free-text code can't be saved and
+	# later break the Delivery Note's batch validation on submit.
+	for row in doc.get("locations") or []:
+		if row.get("item_code") and not frappe.db.get_value("Item", row.item_code, "has_batch_no"):
+			row.batch_no = None
+			if hasattr(row, "custom_batch_code"):
+				row.custom_batch_code = None
+			row.custom_mfg_date = None
+			row.custom_expiry_date = None
 
 
 def _validate_mandatory_rows(doc):

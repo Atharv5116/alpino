@@ -24,7 +24,7 @@ def get_pick_list_data(name):
 			frappe.db.get_value(
 				"Item",
 				row.get("item_code"),
-				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days"],
+				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days", "has_batch_no"],
 				as_dict=True,
 			)
 			or {}
@@ -33,6 +33,7 @@ def get_pick_list_data(name):
 		if not row.get("custom_weight_per_box"):
 			row["custom_weight_per_box"] = item_info.get("custom_gross_weight") or 0
 		row["shelf_life_in_days"] = item_info.get("shelf_life_in_days") or 0
+		row["has_batch_no"] = item_info.get("has_batch_no") or 0
 
 	# Surface any existing (non-cancelled) DN against this pick list so the UI
 	# can hide the Create Delivery Note button.
@@ -82,7 +83,7 @@ def create_stock_entry_field():
 			"fieldname": "custom_customer_type",
 			"fieldtype": "Link",
 			"label": "Customer Type",
-			"options": "Offline Buyer Customer Type",
+			"options": "Alpino Customer Type",
 			"insert_after": "company"
 		}).insert()
 		frappe.db.commit()
@@ -203,6 +204,13 @@ def get_pick_list_entry_list(
 		filters["status"] = status
 	if company:
 		filters["company"] = company
+
+	# A dedicated PL User only sees Pick Lists assigned to them. Warehouse
+	# admins/managers (and System Manager) keep full visibility.
+	_roles = set(frappe.get_roles())
+	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "DN Manager"}
+	if "PL User" in _roles and not (_roles & _override):
+		filters["custom_assigned_to"] = frappe.session.user
 		
 	or_filters = []
 	if search:
@@ -215,7 +223,7 @@ def get_pick_list_entry_list(
 		"Pick List",
 		filters=filters,
 		or_filters=or_filters,
-		fields=["name", "custom_customer_name", "custom_order_date", "company", "status"],
+		fields=["name", "custom_customer_name", "custom_order_date", "company", "status", "custom_workflow_status"],
 		order_by="creation desc",
 		limit_start=start,
 		limit_page_length=page_length + 1

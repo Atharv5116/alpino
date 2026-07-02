@@ -21,7 +21,7 @@ def setup_opportunity_custom_fields():
 				fieldname="custom_order_type",
 				label="Customer Type",
 				fieldtype="Link",
-				options="Offline Buyer Customer Type",
+				options="Alpino Customer Type",
 				insert_after="party_name",
 				reqd=1,
 			),
@@ -384,11 +384,12 @@ def _delete_obsolete_opportunity_custom_fields():
 	"""Drop legacy fields that duplicated standard behaviour (safe if missing)."""
 	obsolete = [
 		("Opportunity Item", "custom_sku_with_name"),
+		("Opportunity Item", "custom_item_mrp"),
 	]
 	for doctype, fieldname in obsolete:
 		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
 		if name:
-			frappe.db.delete("Custom Field", {"name": name})
+			frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
 	frappe.db.commit()
 	print("✅ Opportunity: obsolete fields deleted")
 
@@ -400,7 +401,7 @@ def _force_opportunity_fieldtype_sync():
 	if cf_name:
 		frappe.db.set_value("Custom Field", cf_name, {
 			"fieldtype": "Link",
-			"options": "Offline Buyer Customer Type"
+			"options": "Alpino Customer Type"
 		}, update_modified=False)
 	frappe.db.commit()
 

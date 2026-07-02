@@ -83,10 +83,13 @@ doctype_list_js = {
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "alpinos.utils.jinja_methods",
-# 	"filters": "alpinos.utils.jinja_filters"
-# }
+# NOTE: each entry must be a dotted path to a FUNCTION (exposed under its own name).
+# Pointing at a dict (alpinos.utils.jinja_methods) does NOT expose its members to Jinja.
+jinja = {
+	"methods": [
+		"alpinos.utils.get_combined_items",
+	],
+}
 
 # Installation
 # ------------
@@ -145,6 +148,7 @@ after_migrate = [
 	"alpinos.work_from_home_request_automation.create_work_from_home_client_script",
 	"alpinos.attendance_request_automation.create_attendance_request_client_script",
 	"alpinos.attendance_request_automation.create_employee_checkin_client_script",
+	"alpinos.essl_sync.get_essl_settings",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.attendance_request_workflow_setup.execute",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
@@ -174,7 +178,10 @@ after_migrate = [
 	"alpinos.stock_entry_client_script.create_stock_entry_client_script",
 	"alpinos.quotation_client_script.create_quotation_client_script",
 	"alpinos.pick_list_client_script.create_pick_list_client_script",
+	"alpinos.item_customer_access.create_item_customer_access_client_script",
+	"alpinos.workflow_role_access.execute",
 	"alpinos.web_form_update.execute",
+	"alpinos.sales_order_print_format_patch.execute",
 ]
 
 # Uninstallation
@@ -240,6 +247,7 @@ override_whitelisted_methods = {
 }
 
 override_doctype_class = {
+	"Pick List": "alpinos.overrides.pick_list_override.CustomPickList",
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
 	"Interview": "alpinos.overrides.interview_override.CustomInterview",
@@ -277,10 +285,11 @@ doc_events = {
 		]
 	},
 	"Leave Application": {
-		"on_submit": "alpinos.raven_notifications.notify_leave_application",
-		"on_update_after_submit": "alpinos.raven_notifications.notify_leave_application"
+		"on_update": "alpinos.raven_notifications.notify_leave_application",
+		"on_submit": "alpinos.raven_notifications.notify_leave_application"
 	},
 	"Expense Claim": {
+		"on_update": "alpinos.raven_notifications.notify_expense_claim",
 		"on_submit": "alpinos.raven_notifications.notify_expense_claim",
 		"on_update_after_submit": "alpinos.raven_notifications.notify_expense_claim"
 	},
@@ -323,12 +332,29 @@ doc_events = {
 			"alpinos.pick_list_hooks.validate_pick_list",
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
 		],
+		"after_insert": [
+			"alpinos.workflow_engine.pick_list_after_insert",
+			"alpinos.stock_reservation.reserve_for_pick_list",
+		],
+		"on_update": "alpinos.workflow_engine.pick_list_on_update",
+		"on_submit": "alpinos.workflow_engine.pick_list_on_submit",
+		"on_cancel": [
+			"alpinos.workflow_engine.pick_list_on_cancel",
+			"alpinos.stock_reservation.release_for_cancelled_pick_list",
+		],
 	},
 	"Delivery Note": {
+		"before_validate": "alpinos.delivery_note_hooks.strip_non_batch_item_batches",
 		"validate": [
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 		],
+		"after_insert": "alpinos.workflow_engine.delivery_note_after_insert",
+		"on_submit": [
+			"alpinos.workflow_engine.delivery_note_on_submit",
+			"alpinos.stock_reservation.release_leftover_after_delivery_note",
+		],
+		"on_cancel": "alpinos.workflow_engine.delivery_note_on_cancel",
 	},
 	"Batch": {
 		"before_validate": "alpinos.batch_hooks.compute_expiry_from_shelf_life",
@@ -345,7 +371,10 @@ doc_events = {
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
 			"alpinos.dispatch_date_utils.validate_dispatch_date_on_save",
+			"alpinos.workflow_engine.sales_order_validate",
 		],
+		"on_submit": "alpinos.workflow_engine.sales_order_on_submit",
+		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",
 	},
 	"Employee Onboarding": {
 		"before_validate": [
@@ -371,7 +400,9 @@ doc_events = {
 	},
 	"Employee": {
 		"validate": "alpinos.employee_probation_automation.calculate_probation_end_date",
-		"on_update": "alpinos.approval_access.grant_rm_role_for_employee"
+		"on_update": [
+			"alpinos.approval_access.grant_rm_role_for_employee",
+		]
 	},
 	"Work From Home Request": {
 		"before_insert": "alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
@@ -405,11 +436,14 @@ doc_events = {
 scheduler_events = {
 	"daily": [
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
-		"alpinos.approval_access.sync_reporting_manager_roles"
+		"alpinos.approval_access.sync_reporting_manager_roles",
+		"alpinos.workflow_engine.refresh_todays_dispatch"
 	],
 	"cron": {
+		"*/5 * * * *": [
+			"alpinos.essl_sync.sync_essl_logs"
+		],
 		"*/30 * * * *": [
-			"alpinos.essl_sync.sync_essl_logs",
 			"alpinos.attendance_scheduler.process_auto_attendance_periodic"
 		],
 		"30 11 * * *": [

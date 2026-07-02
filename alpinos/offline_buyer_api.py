@@ -37,7 +37,13 @@ def get_all_records():
 				WHERE obil.parent = obi.name
 			) AS item_count,
 			obm.name AS offline_buyer_master,
-			obm.site_name,
+			(
+				SELECT oba.site_name
+				FROM `tabOffline Buyer Address` oba
+				WHERE oba.parent = obm.name AND oba.parenttype = 'Offline Buyer Master'
+				ORDER BY oba.is_primary DESC, oba.idx ASC
+				LIMIT 1
+			) AS site_name,
 			obm.customer,
 			obm.customer_business_name,
 			obm.customer_type,
@@ -326,20 +332,57 @@ def sellable_item_link_query(doctype, txt, searchfield, start, page_len, filters
 	express the OR, so the forms point their item get_query at this method instead.
 	"""
 	like = "%{0}%".format(txt or "")
-	return frappe.db.sql(
+	params = {"txt": like, "start": int(start or 0), "page_len": int(page_len or 20)}
+
+	# Optional customer-type gate: only items that allow this Alpino Customer Type.
+	# An item allows a type when it has NO restriction (both tables empty), OR the type is
+	# granted directly, OR the type's Channel is granted. Empty restriction = all allowed.
+	ct_clause = ""
+	customer_type = (filters or {}).get("customer_type") if filters else None
+	if customer_type:
+		params["ct"] = customer_type
+		params["chan"] = frappe.db.get_value("Alpino Customer Type", customer_type, "channel")
+		ct_clause = """
+			AND (
+				(
+					NOT EXISTS (SELECT 1 FROM `tabItem Allowed Customer Type` t WHERE t.parent = i.name)
+					AND NOT EXISTS (SELECT 1 FROM `tabItem Allowed Channel` c WHERE c.parent = i.name)
+				)
+				OR EXISTS (SELECT 1 FROM `tabItem Allowed Customer Type` t WHERE t.parent = i.name AND t.customer_type = %(ct)s)
+				OR EXISTS (SELECT 1 FROM `tabItem Allowed Channel` c WHERE c.parent = i.name AND c.channel = %(chan)s)
+			)
 		"""
-		SELECT name, item_name, item_group
-		FROM `tabItem`
-		WHERE disabled = 0
-			AND is_sales_item = 1
-			AND has_variants = 0
-			AND (IFNULL(variant_of, '') != '' OR IFNULL(custom_is_bundle, 0) = 1)
-			AND (name LIKE %(txt)s OR item_name LIKE %(txt)s)
-		ORDER BY name
+
+	return frappe.db.sql(
+		f"""
+		SELECT i.name, i.item_name, i.item_group
+		FROM `tabItem` i
+		WHERE i.disabled = 0
+			AND i.is_sales_item = 1
+			AND i.has_variants = 0
+			AND (IFNULL(i.variant_of, '') != '' OR IFNULL(i.custom_is_bundle, 0) = 1)
+			AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
+			{ct_clause}
+		ORDER BY i.name
 		LIMIT %(start)s, %(page_len)s
 		""",
-		{"txt": like, "start": int(start or 0), "page_len": int(page_len or 20)},
+		params,
 	)
+
+
+@frappe.whitelist()
+def get_item_channel_tree():
+	"""Channels with their Alpino Customer Types (for the Item 'Allowed Customer Types' widget).
+	A trailing group with channel='' holds customer types that have no channel assigned."""
+	channels = frappe.get_all("Channel", pluck="name", order_by="name")
+	types = frappe.get_all("Alpino Customer Type", fields=["name", "channel"], order_by="name")
+	by_channel = {}
+	for t in types:
+		by_channel.setdefault(t.channel or "", []).append(t.name)
+	tree = [{"channel": ch, "types": by_channel.get(ch, [])} for ch in channels]
+	if by_channel.get(""):
+		tree.append({"channel": "", "types": by_channel[""]})
+	return tree
 
 
 @frappe.whitelist()
@@ -391,7 +434,6 @@ def get_offline_buyer_master_details(obm_name):
 	return {
 		"customer_business_name": doc.customer_business_name,
 		"level": doc.level or "",
-		"site_name": doc.site_name or "",
 		"customer_type": doc.customer_type or "",
 		"gst_type": doc.gst_type or "",
 		"gst_no": doc.gst_no or "",
@@ -407,6 +449,7 @@ def get_offline_buyer_master_details(obm_name):
 		"parent_buyer": doc.parent_buyer or "",
 		"addresses": [
 			{
+				"site_name": r.get("site_name") or "",
 				"address_label": r.get("address_label") or "",
 				"address_line": r.address_line or "",
 				"pincode": r.pincode or "",
@@ -436,10 +479,11 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 	doc = frappe.get_doc("Offline Buyer Master", obm_name)
 
 	editable = [
-		"customer_business_name", "site_name", "customer_type", "level", "gst_type",
+		"customer_business_name", "customer_type", "level", "gst_type",
 		"gst_no", "pan_no", "payment_term", "payment_term_days",
 		"email", "contact_no", "alternate_no", "contact_person",
 		"shipping_same_as_profile", "is_parent", "parent_buyer",
+		"combine_product_bundles",
 	]
 	for f in editable:
 		if f in updates:
@@ -449,6 +493,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 	doc.addresses = []
 	for addr in addresses:
 		doc.append("addresses", {
+			"site_name": addr.get("site_name") or "",
 			"address_label": addr.get("address_label") or "",
 			"address_line": addr.get("address_line") or "",
 			"pincode": addr.get("pincode") or "",
@@ -485,6 +530,9 @@ def quick_create_offline_buyer(
 	level=None,
 	is_parent=0,
 	parent_buyer=None,
+	gst_no=None,
+	pan_no=None,
+	combine_product_bundles=1,
 ):
 	"""Create a minimal Offline Buyer Master from the Catalog quick-create dialog.
 
@@ -518,19 +566,25 @@ def quick_create_offline_buyer(
 			parent_obm.email = email
 			parent_obm.contact_no = contact_no
 			parent_obm.contact_person = contact_person
+			parent_obm.combine_product_bundles = combine_product_bundles
 			parent_obm.insert(ignore_permissions=True)
 			actual_parent = parent_obm.name
 
 	obm = frappe.new_doc("Offline Buyer Master")
 	obm.customer_business_name = biz_name_stripped
-	obm.site_name = (site_name or "").strip()
 	obm.customer_type = customer_type
 	obm.level = level or ""
 	obm.gst_type = gst_type
+	# GST No (Registered) / PAN No (Unregistered) distinguish the child Customer name.
+	if gst_type == "Registered Business":
+		obm.gst_no = (gst_no or "").strip()
+	elif gst_type == "Unregistered Business":
+		obm.pan_no = (pan_no or "").strip()
 	obm.payment_term = payment_term
 	obm.email = email
 	obm.contact_no = contact_no
 	obm.contact_person = contact_person
+	obm.combine_product_bundles = combine_product_bundles
 	obm.is_parent = 0 # Children are not parents by default
 	obm.parent_buyer = actual_parent or ""
 
@@ -538,6 +592,7 @@ def quick_create_offline_buyer(
 		"addresses",
 		{
 			"is_primary": 1,
+			"site_name": (site_name or "").strip(),
 			"address_line": address_line,
 			"pincode": pincode,
 			"country": country,
@@ -556,7 +611,7 @@ def quick_create_offline_buyer(
 
 @frappe.whitelist()
 def seed_customer_types():
-	"""Seed the Offline Buyer Customer Type master with default values and expiry thresholds.
+	"""Seed the Alpino Customer Type master with default values and expiry thresholds.
 
 	Threshold semantics: rows with `min_expiry_days` set drive batch-expiry warnings on
 	Pick List / Delivery Note (see alpinos.expiry_validation). Rows left blank (e.g. OTHERS)
@@ -579,10 +634,10 @@ def seed_customer_types():
 		("Other E-commerce", 190),
 	]
 	for name, min_days in types:
-		if not frappe.db.exists("Offline Buyer Customer Type", name):
+		if not frappe.db.exists("Alpino Customer Type", name):
 			doc = frappe.get_doc(
 				{
-					"doctype": "Offline Buyer Customer Type",
+					"doctype": "Alpino Customer Type",
 					"customer_type": name,
 					"name": name,
 					"min_expiry_days": min_days,
@@ -591,7 +646,7 @@ def seed_customer_types():
 			doc.insert(ignore_permissions=True)
 		elif min_days is not None:
 			frappe.db.set_value(
-				"Offline Buyer Customer Type", name, "min_expiry_days", min_days
+				"Alpino Customer Type", name, "min_expiry_days", min_days
 			)
 	frappe.db.commit()
 	return "Seeded"

@@ -796,8 +796,12 @@ def send_pre_onboarding_email(doc, applicant_email):
 			f"  Recipient: {applicant_email}"
 		)
 
+		# CC HR on the reminder so they can see who is still pending (de-duped vs the joinee).
+		cc = [hr_email] if hr_email and hr_email != applicant_email else None
+
 		frappe.sendmail(
 			recipients=[applicant_email],
+			cc=cc,
 			subject=formatted["subject"],
 			message=formatted["message"],
 			reference_doctype="Employee Onboarding",
@@ -837,14 +841,18 @@ def send_scheduled_pre_onboarding_emails():
 		},
 		fields=["name", "job_applicant", "date_of_joining_onboarding", "full_name_display"]
 	)
-	
+
 	for doc_data in onboarding_docs:
 		try:
 			doc = frappe.get_doc("Employee Onboarding", doc_data.name)
-			
+
+			# Skip if the joinee has already submitted the onboarding web form.
+			if doc.get("webform_submitted"):
+				continue
+
 			if not doc.job_applicant:
 				continue
-			
+
 			# Get job applicant email
 			job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
 			applicant_email = job_applicant.email_id if hasattr(job_applicant, 'email_id') else None

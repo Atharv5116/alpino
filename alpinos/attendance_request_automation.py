@@ -947,9 +947,9 @@ frappe.ui.form.on('Attendance Request', {
 
 
 @frappe.whitelist()
-def sync_logs_now():
+def sync_logs_now(serial_numbers=None, category=None):
     from alpinos.essl_sync import sync_essl_logs
-    return sync_essl_logs()
+    return sync_essl_logs(serial_numbers=serial_numbers, category=category)
 
 def create_employee_checkin_client_script():
     """Create client script to add Sync eSSL Logs button and hide manual Add buttons"""
@@ -959,16 +959,70 @@ frappe.listview_settings['Employee Checkin'] = {
         // Add Sync Button for System Managers only
         if (frappe.user_roles.includes('System Manager') || frappe.session.user === 'Administrator') {
             listview.page.add_inner_button(__('Sync eSSL Logs'), function() {
+                // Load configured devices, then ask which to sync (by category / serial).
                 frappe.call({
-                    method: 'alpinos.attendance_request_automation.sync_logs_now',
-                    callback: function(r) {
-                        if (r.message && r.message.status === 'success') {
-                            frappe.show_alert({
-                                message: __('Sync complete: ') + r.message.total_synced + __(' logs synced.'),
-                                indicator: 'green'
-                            });
-                            listview.refresh();
+                    method: 'alpinos.essl_sync.get_essl_devices',
+                    callback: function(res) {
+                        const devices = (res.message || []);
+                        if (!devices.length) {
+                            frappe.msgprint(__('No eSSL devices configured. Add them in eSSL Settings first.'));
+                            return;
                         }
+
+                        const serial_options = devices.map(function(d) {
+                            return { label: d.serial_number + ' (' + (d.category || '-') + ')', value: d.serial_number };
+                        });
+
+                        const d = new frappe.ui.Dialog({
+                            title: __('Sync eSSL Logs'),
+                            fields: [
+                                {
+                                    fieldname: 'category',
+                                    label: __('Category'),
+                                    fieldtype: 'Select',
+                                    options: ['All', 'HO', 'Warehouse'],
+                                    default: 'All',
+                                    description: __('Sync devices of this location. Leave on "All" or tick specific serial numbers below.')
+                                },
+                                { fieldname: 'serial_sb', fieldtype: 'Section Break', label: __('Serial Numbers (optional)') },
+                                {
+                                    fieldname: 'serial_numbers',
+                                    label: __('Serial Numbers'),
+                                    fieldtype: 'MultiCheck',
+                                    options: serial_options,
+                                    description: __('If none are ticked, all serial numbers matching the category above are synced.')
+                                }
+                            ],
+                            primary_action_label: __('Sync'),
+                            primary_action: function(values) {
+                                d.hide();
+                                frappe.dom.freeze(__('Syncing eSSL logs...'));
+                                frappe.call({
+                                    method: 'alpinos.attendance_request_automation.sync_logs_now',
+                                    args: {
+                                        category: values.category,
+                                        serial_numbers: (values.serial_numbers && values.serial_numbers.length)
+                                            ? JSON.stringify(values.serial_numbers) : null
+                                    },
+                                    callback: function(r) {
+                                        frappe.dom.unfreeze();
+                                        if (r.message && r.message.status === 'success') {
+                                            frappe.msgprint({
+                                                title: __('Sync Complete'),
+                                                indicator: 'green',
+                                                message: __('Total {0} logs synced.', [r.message.total_synced]) +
+                                                    '<br><br>' + (r.message.details || []).join('<br>')
+                                            });
+                                            listview.refresh();
+                                        }
+                                    },
+                                    error: function() {
+                                        frappe.dom.unfreeze();
+                                    }
+                                });
+                            }
+                        });
+                        d.show();
                     }
                 });
             });

@@ -472,6 +472,28 @@ def setup_custom_fields():
 		),
 	],
 	"Employee": [
+		# Work location category (HO / Warehouse). Used by the eSSL biometric
+		# integration to distinguish which location an employee belongs to.
+		dict(
+			fieldname="category",
+			label="Category",
+			fieldtype="Select",
+			options="\nHO\nWarehouse",
+			insert_after="employment_type",
+			description="Work location category of the employee (Head Office / Warehouse).",
+		),
+		# Per-employee biometric preference (companies have a mix). When ticked, this
+		# employee checks in/out via the workspace dialog (live photo + location)
+		# instead of a biometric device.
+		dict(
+			fieldname="custom_no_biometric",
+			label="No Biometric",
+			fieldtype="Check",
+			insert_after="category",
+			default=0,
+			description="When ticked, this employee checks in/out via the workspace dialog (live photo + location) instead of a biometric device.",
+		),
+
 		# Internship duration in months (e.g. 1 = 1 month, 4 = 4 months).
 		# Used by the HR dashboard to compute internship completion = Date of Joining + N months.
 		dict(
@@ -588,6 +610,31 @@ def setup_custom_fields():
 			hidden=1,
 			description="Set when check-in/check-out is created from Attendance Request; skips location validation.",
 		),
+		dict(
+			fieldname="custom_checkin_image",
+			label="Check-in Photo",
+			fieldtype="Attach Image",
+			insert_after="from_attendance_request",
+			read_only=1,
+			description="Live photo captured at check-in/out for No-Biometric companies.",
+		),
+		dict(
+			fieldname="custom_checkin_type",
+			label="Check-in Type",
+			fieldtype="Select",
+			options="\nClient/Vendor\nShoot\nMeeting\nOther",
+			insert_after="custom_checkin_image",
+			read_only=1,
+			description="Type chosen on web/mobile check-in (biometric companies, when web check-in rules are enabled).",
+		),
+		dict(
+			fieldname="custom_checkin_reason",
+			label="Check-in Reason",
+			fieldtype="Small Text",
+			insert_after="custom_checkin_type",
+			read_only=1,
+			description="Reason entered for a web/mobile check-in of type 'Other' (letters only).",
+		),
 	],
 	"Attendance": [
 		dict(
@@ -621,12 +668,23 @@ def setup_custom_fields():
 			fieldname="custom_offline_buyer_customer_type",
 			label="Customer Type (Offline Buyer)",
 			fieldtype="Link",
-			options="Offline Buyer Customer Type",
+			options="Alpino Customer Type",
 			insert_after="custom_offline_buyer_master",
 			read_only=1,
 			allow_on_submit=1,
 		),
 	],
+		"Address": [
+			# Site / trade name for this address, carried from the Offline Buyer Address
+			# row it was synced from. Used by the Sales Order print (shipping address site).
+			dict(
+				fieldname="custom_site_name",
+				label="Site Name",
+				fieldtype="Data",
+				insert_after="address_title",
+				description="Site / trade name for this location (synced from Offline Buyer Master address).",
+			),
+		],
 	# Delete qualification table field if it exists (references non-existent Qualification DocType)
 	# This is handled separately to avoid validation errors
 	}
@@ -693,7 +751,7 @@ def _force_offline_buyer_fieldtype_sync():
 		if current_type == "Data":
 			frappe.db.set_value("Custom Field", cf_name, {
 				"fieldtype": "Link",
-				"options": "Offline Buyer Customer Type"
+				"options": "Alpino Customer Type"
 			}, update_modified=False)
 			frappe.db.commit()
 

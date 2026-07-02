@@ -1,0 +1,81 @@
+{
+ "actions": [],
+ "creation": "2026-06-27 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_google",
+  "service_account_json",
+  "column_break_cfg",
+  "drive_root_folder_id",
+  "fy_label",
+  "pdf_extension"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "description": "Turn on once credentials and folder/sheet are configured."
+  },
+  {
+   "fieldname": "section_google",
+   "fieldtype": "Section Break",
+   "label": "Google Sheets / Drive"
+  },
+  {
+   "fieldname": "service_account_json",
+   "fieldtype": "Code",
+   "label": "Service Account JSON",
+   "description": "Paste the Google service-account credentials JSON (Sheets + Drive scopes). Share the target Sheet and Drive folder with this service account's email."
+  },
+  {
+   "fieldname": "column_break_cfg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "drive_root_folder_id",
+   "fieldtype": "Data",
+   "label": "Drive Root Folder ID",
+   "description": "Google Drive folder ID (from the folder URL) that DIRECTLY contains the month sub-folders (April/May/June...). For the shared F.Y.26-27 folder, use its ID and leave F.Y. Label blank."
+  },
+  {
+   "fieldname": "fy_label",
+   "fieldtype": "Data",
+   "label": "F.Y. Folder Label (optional)",
+   "description": "Leave blank when the Drive Root Folder already contains the months. Only set this if your root has an extra F.Y. sub-folder (e.g. 'F.Y.26-27') above the months."
+  },
+  {
+   "default": ".pdf",
+   "fieldname": "pdf_extension",
+   "fieldtype": "Data",
+   "label": "PDF File Extension"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-27 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Invoice Sync Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

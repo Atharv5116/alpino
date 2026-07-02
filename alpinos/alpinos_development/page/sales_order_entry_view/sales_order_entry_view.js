@@ -24,11 +24,192 @@ class SalesOrderEntryView {
 	}
 
 	setup_toolbar() {
-		this.page.add_inner_button(__('Back to Sales Order List'), () => {
-			frappe.set_route('sales-order-entry-list');
-		});
-		this.page.add_inner_button(__('Print'), () => this.open_default_print_preview());
+		// Utility actions live in the "⋯" menu to keep the action bar uncluttered.
+		this.page.add_menu_item(__('Print'), () => this.open_default_print_preview());
+		this.page.add_menu_item(__('Download PDF'), () => this.download_default_print_pdf());
+		this.page.add_menu_item(__('Back to Sales Order List'), () =>
+			frappe.set_route('sales-order-entry-list')
+		);
+		// Always-visible Download PDF button (every Sales Order, any status).
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
+		// The main "next stage" action is set as the page primary action by
+		// update_actions(). This is the only stage-secondary inline button.
+		this.btn_future_dispatch = this.page.add_inner_button(__('Mark as Future Dispatch'), () =>
+			this.do_future_dispatch()
+		);
+		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
+	}
+
+	_has_any_role(roles) {
+		const mine = frappe.user_roles || [];
+		return roles.some((r) => mine.includes(r));
+	}
+
+	/** One coherent action bar: a prominent primary "next stage" button + at
+	 * most one contextual secondary button + the status badge. Folds in the
+	 * Pick List create/continue logic so nothing is scattered. */
+	update_actions() {
+		this.page.clear_primary_action();
+		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
+		this.page.remove_inner_button(__('Create'), __('Pick List'));
+		this.page.remove_inner_button(__('Edit'), __('Pick List'));
+		if (!this._so_name) return;
+		const me = this;
+		const plStatus = new Promise((resolve) => {
+			frappe.call({
+				method: 'alpinos.sales_order_api.get_so_pick_list_status',
+				args: { sales_order: this._so_name },
+				callback: (r) => resolve(r.message || {}),
+			});
+		});
+		Promise.all([
+			frappe.db.get_value('Sales Order', this._so_name, 'custom_workflow_status'),
+			plStatus,
+		]).then(([sv, pl]) => {
+			const status = (sv && sv.message && sv.message.custom_workflow_status) || '';
+			// Status badge next to the title.
+			const colorMap = {
+				Draft: 'gray',
+				'Warehouse Approval Pending': 'orange',
+				'Future Dispatch': 'yellow',
+				"Today's Dispatch": 'purple',
+				'Warehouse Approved': 'blue',
+				'Picking In Progress': 'blue',
+				'Submission Pending': 'orange',
+				'Ready For Dispatch': 'blue',
+				'Delivery Note Created': 'blue',
+				Dispatched: 'green',
+				Completed: 'green',
+				Cancelled: 'red',
+			};
+			if (status && me.page.set_indicator) {
+				me.page.set_indicator(status, colorMap[status] || 'gray');
+			} else if (me.page.clear_indicator) {
+				me.page.clear_indicator();
+			}
+
+			const isWarehouse = me._has_any_role(['Warehouse Admin', 'Warehouse Manager', 'System Manager']);
+			const isSales = me._has_any_role(['Sales Admin', 'Sales Manager', 'System Manager']);
+
+			// PRIMARY action = the clear "next stage" step for this stage + role.
+			if (status === 'Draft' && isSales) {
+				me.page.set_primary_action(__('Send for Warehouse Approval'), () => me.do_submit_order());
+			} else if (
+				['Warehouse Approval Pending', 'Future Dispatch', "Today's Dispatch"].includes(status) &&
+				isWarehouse
+			) {
+				if (pl.has_draft) {
+					me.page.set_primary_action(__('Continue Pick List'), () =>
+						frappe.set_route('pick_list_entry', pl.draft_name)
+					);
+				} else if (!pl.has_pick_list) {
+					me.page.set_primary_action(__('Create Pick List'), () => {
+						frappe.route_options = { so_name: me._so_name };
+						frappe.set_route('pick_list_entry', 'New Pick List');
+					});
+				}
+			} else if (status === 'Dispatched' && isSales) {
+				me.page.set_primary_action(__('Mark Delivered'), () => me.do_mark_delivered());
+			} else if (pl.has_draft && isWarehouse) {
+				// Mid-flow (Warehouse Approved / Picking) — jump back into the Pick List.
+				me.page.set_primary_action(__('Continue Pick List'), () =>
+					frappe.set_route('pick_list_entry', pl.draft_name)
+				);
+			}
+
+			// SECONDARY: park / update the dispatch date (warehouse, early stages).
+			if (
+				me.btn_future_dispatch &&
+				isWarehouse &&
+				['Warehouse Approval Pending', 'Future Dispatch', "Today's Dispatch"].includes(status)
+			) {
+				me.btn_future_dispatch.text(
+					['Future Dispatch', "Today's Dispatch"].includes(status)
+						? __('Update Dispatch Date')
+						: __('Mark as Future Dispatch')
+				);
+				me.btn_future_dispatch.show();
+			}
+		});
+	}
+
+	do_submit_order() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.confirm(
+			__('Submit this Sales Order for warehouse approval? It becomes read-only after this.'),
+			() => {
+				frappe.call({
+					method: 'alpinos.workflow_engine.submit_sales_order',
+					args: { sales_order: me._so_name },
+					freeze: true,
+					freeze_message: __('Submitting...'),
+					callback(r) {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Sent for Warehouse Approval'), indicator: 'green' });
+						me.load_order(me._so_name);
+					},
+				});
+			}
+		);
+	}
+
+	do_future_dispatch() {
+		if (!this._so_name) return;
+		const me = this;
+		// Prefill the date: the existing expected date if already parked, else
+		// fall back to the Sales Order's own dispatch date.
+		frappe.db
+			.get_value('Sales Order', this._so_name, [
+				'custom_expected_dispatch_date',
+				'custom_dispatch_date',
+			])
+			.then((r) => {
+				const m = (r && r.message) || {};
+				const default_date = m.custom_expected_dispatch_date || m.custom_dispatch_date || '';
+				frappe.prompt(
+					[
+						{
+							fieldname: 'expected_date',
+							fieldtype: 'Date',
+							label: __('Expected Dispatch Date'),
+							reqd: 1,
+							default: default_date,
+						},
+					],
+					(values) => {
+						frappe.call({
+							method: 'alpinos.workflow_engine.mark_future_dispatch',
+							args: { sales_order: me._so_name, expected_date: values.expected_date },
+							freeze: true,
+							callback(rr) {
+								if (rr.exc) return;
+								frappe.show_alert({ message: __('Marked as Future Dispatch'), indicator: 'orange' });
+								me.load_order(me._so_name);
+							},
+						});
+					},
+					__('Future Dispatch'),
+					__('Confirm')
+				);
+			});
+	}
+
+	do_mark_delivered() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.confirm(__('Confirm delivery received by customer and mark this order Completed?'), () => {
+			frappe.call({
+				method: 'alpinos.workflow_engine.mark_delivered',
+				args: { sales_order: me._so_name },
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({ message: __('Order marked Completed'), indicator: 'green' });
+					me.load_order(me._so_name);
+				},
+			});
+		});
 	}
 
 	_ensure_loaded_name() {
@@ -159,52 +340,9 @@ class SalesOrderEntryView {
 				}
 				this.page.set_title(__('Sales Order View — {0}', [name]));
 				this.render(r.message);
-				this.update_pick_list_button();
 			},
 		});
 	}
-
-	update_pick_list_button() {
-		// Remove any previously added Pick List group buttons
-		this.page.remove_inner_button(__('Create'), __('Pick List'));
-		this.page.remove_inner_button(__('Edit'), __('Pick List'));
-		// Also remove the group itself if it exists by clearing its children
-		const $plGroup = this.page.inner_toolbar && this.page.inner_toolbar.find('.btn-group');
-		if ($plGroup) {
-			$plGroup.each(function() {
-				const $g = $(this);
-				if ($g.find('[data-label="Pick List"]').length) {
-					$g.remove();
-				}
-			});
-		}
-
-		frappe.call({
-			method: 'alpinos.sales_order_api.get_so_pick_list_status',
-			args: { sales_order: this._so_name },
-			callback: (r) => {
-				const status = r.message || {};
-				if (status.fully_picked) {
-					// Fully picked — no button needed
-					return;
-				}
-				if (status.has_draft) {
-					// Draft pick list exists — allow editing it
-					this.page.add_inner_button(__('Edit'), () => {
-						frappe.set_route('pick_list_entry', status.draft_name);
-					}, __('Pick List'));
-				} else if (!status.has_pick_list) {
-					// No pick list at all — allow creating
-					this.page.add_inner_button(__('Create'), () => {
-						frappe.route_options = { "so_name": this._so_name };
-						frappe.set_route('pick_list_entry', 'New Pick List');
-					}, __('Pick List'));
-				}
-				// If has_pick_list but not draft and not fully_picked: submitted PL exists, no new create allowed
-			}
-		});
-	}
-
 
 	_has(parent, key) {
 		return parent && Object.prototype.hasOwnProperty.call(parent, key);
@@ -274,6 +412,8 @@ class SalesOrderEntryView {
 		const w = this.wrapper;
 		const currency = p.currency || frappe.boot?.sysdefaults?.currency || '';
 
+		this.update_actions();
+
 		// Customer block — order matches template
 		w.find('.v-customer-name').text(
 			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'
@@ -288,6 +428,7 @@ class SalesOrderEntryView {
 		w.find('.v-date').text(this._fmt_date(p, 'transaction_date'));
 		w.find('.v-po-no').text(this._has(p, 'po_no') ? this._plain_text(p.po_no) : '—');
 		w.find('.v-tax-id').text(this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—');
+		w.find('.v-dispatch-date').text(this._fmt_date(p, 'custom_dispatch_date'));
 		w.find('.v-delivery-date').text(this._fmt_date(p, 'delivery_date'));
 
 		// Hide customer rows where field not permitted
@@ -299,6 +440,7 @@ class SalesOrderEntryView {
 			['transaction_date', '.v-date'],
 			['po_no', '.v-po-no'],
 			['tax_id', '.v-tax-id'],
+			['custom_dispatch_date', '.v-dispatch-date'],
 			['delivery_date', '.v-delivery-date'],
 		].forEach(([key, sel]) => {
 			const $tr = w.find(sel).closest('tr');
@@ -314,7 +456,7 @@ class SalesOrderEntryView {
 		const tb = w.find('.v-items tbody').empty();
 		if (!items.length) {
 			tb.append(
-				`<tr><td colspan="11" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
+				`<tr><td colspan="10" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
 			);
 		} else {
 			items.forEach((it, i) => {
@@ -329,6 +471,9 @@ class SalesOrderEntryView {
 				const rowCur = it.currency || currency;
 				const mrp = this._has(it, 'custom_customer_mrp')
 					? format_currency(flt(it.custom_customer_mrp), rowCur)
+					: '—';
+				const sp = this._has(it, 'custom_selling_price')
+					? format_currency(flt(it.custom_selling_price), rowCur)
 					: '—';
 				const fd = this._has(it, 'custom_flat_discount') ? flt(it.custom_flat_discount) : null;
 				const of = this._has(it, 'custom_offer') ? flt(it.custom_offer) : null;
@@ -347,6 +492,7 @@ class SalesOrderEntryView {
 					<td class="text-right">${qty != null ? qty : '—'}</td>
 					<td class="text-right">${box != null ? box : '—'}</td>
 					<td class="text-right">${mrp}</td>
+					<td class="text-right">${sp}</td>
 					<td class="text-right">${fd != null ? fd : '—'}</td>
 					<td class="text-right">${of != null ? of : '—'}</td>
 					<td class="text-right">${ad != null ? ad : '—'}</td>
@@ -360,9 +506,13 @@ class SalesOrderEntryView {
 			w.find('.sec-marketing-freebies').show();
 			const fb = w.find('.v-freebies tbody').empty();
 			freebies.forEach((row) => {
+				const sp = this._has(row, 'custom_selling_price')
+					? format_currency(flt(row.custom_selling_price), currency)
+					: '—';
 				fb.append(`<tr>
 					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
 					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+					<td class="text-right">${sp}</td>
 					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
 					<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>
 				</tr>`);
@@ -380,9 +530,13 @@ class SalesOrderEntryView {
 			const sb = w.find('.v-scheme tbody').empty();
 			schemeRows.forEach((row) => {
 				const sch = row.scheme != null && String(row.scheme).trim() !== '' ? String(row.scheme) : '';
+				const sp = this._has(row, 'custom_selling_price')
+					? format_currency(flt(row.custom_selling_price), currency)
+					: '—';
 				sb.append(`<tr>
 					<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
 					<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+					<td class="text-right">${sp}</td>
 					<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
 					<td>${sch ? this._esc(sch) : '—'}</td>
 				</tr>`);
@@ -400,9 +554,13 @@ class SalesOrderEntryView {
 				);
 			} else {
 				damageItemRows.forEach((row) => {
+					const sp = this._has(row, 'custom_selling_price')
+						? format_currency(flt(row.custom_selling_price), currency)
+						: '—';
 					db.append(`<tr>
 						<td>${this._has(row, 'item_code') ? this._esc(row.item_code) : '—'}</td>
 						<td>${this._has(row, 'item_name') ? this._esc(row.item_name) : '—'}</td>
+						<td class="text-right">${sp}</td>
 						<td class="text-right">${this._has(row, 'qty') ? flt(row.qty) : '—'}</td>
 						<td>${this._has(row, 'previous_order_id') ? this._esc(row.previous_order_id) : '—'}</td>
 						<td>${this._has(row, 'remarks') ? this._esc(row.remarks) : '—'}</td>

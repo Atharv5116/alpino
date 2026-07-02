@@ -11,6 +11,26 @@ frappe.pages['sales-order-entry-list'].on_page_load = function (wrapper) {
 const SO_STATUS_OPTIONS =
 	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
 
+const SO_WORKFLOW_STATUS_OPTIONS =
+	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
+	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch' +
+	'\nDelivery Note Created\nDispatched\nCompleted\nCancelled';
+
+const SO_WF_COLORS = {
+	Draft: 'gray',
+	'Warehouse Approval Pending': 'orange',
+	'Future Dispatch': 'yellow',
+	"Today's Dispatch": 'purple',
+	'Warehouse Approved': 'blue',
+	'Picking In Progress': 'blue',
+	'Submission Pending': 'orange',
+	'Ready For Dispatch': 'blue',
+	'Delivery Note Created': 'blue',
+	Dispatched: 'green',
+	Completed: 'green',
+	Cancelled: 'red',
+};
+
 class SalesOrderEntryListPage {
 	constructor(page) {
 		this.page = page;
@@ -39,6 +59,50 @@ class SalesOrderEntryListPage {
 			);
 		}
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
+		this.btn_download_pdf = this.page.add_inner_button(__('Download PDFs'), () =>
+			this.download_selected_pdfs()
+		);
+		if (this.btn_download_pdf) this.btn_download_pdf.hide();
+	}
+
+	_selected_names() {
+		const names = [];
+		this.wrapper.find('.so-list-row-select:checked').each((i, el) => {
+			names.push($(el).data('name'));
+		});
+		return names;
+	}
+
+	update_selection() {
+		const all_boxes = this.wrapper.find('.so-list-row-select');
+		const checked = this.wrapper.find('.so-list-row-select:checked');
+		this.wrapper
+			.find('.so-list-select-all')
+			.prop('checked', all_boxes.length > 0 && checked.length === all_boxes.length);
+
+		if (checked.length > 0) {
+			if (this.btn_download_pdf) this.btn_download_pdf.show();
+			if (this.page.set_indicator) {
+				this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
+			}
+		} else {
+			if (this.btn_download_pdf) this.btn_download_pdf.hide();
+			if (this.page.clear_indicator) this.page.clear_indicator();
+		}
+	}
+
+	download_selected_pdfs() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		// One PDF per order, bundled into a single ZIP download.
+		const url =
+			'/api/method/alpinos.sales_order_api.download_sales_orders_zip?names=' +
+			encodeURIComponent(JSON.stringify(names));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDFs.'));
 	}
 
 	setup_filters() {
@@ -60,6 +124,16 @@ class SalesOrderEntryListPage {
 				options: SO_STATUS_OPTIONS,
 			},
 			parent: w.find('.fld-status'),
+			render_input: true,
+		});
+		this._filter_fields.workflow_status = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Select',
+				fieldname: 'workflow_status',
+				label: __('Workflow Status'),
+				options: SO_WORKFLOW_STATUS_OPTIONS,
+			},
+			parent: w.find('.fld-workflow-status'),
 			render_input: true,
 		});
 		this._filter_fields.company = frappe.ui.form.make_control({
@@ -125,11 +199,17 @@ class SalesOrderEntryListPage {
 			}
 		});
 		this.wrapper.on('click', '.so-list-row', (e) => {
-			if ($(e.target).closest('a,button').length) return;
+			if ($(e.target).closest('a,button,input[type="checkbox"]').length) return;
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
 			frappe.set_route('sales-order-entry-view', name);
 		});
+		this.wrapper.on('change', '.so-list-select-all', (e) => {
+			const checked = $(e.target).prop('checked');
+			this.wrapper.find('.so-list-row-select').prop('checked', checked);
+			this.update_selection();
+		});
+		this.wrapper.on('change', '.so-list-row-select', () => this.update_selection());
 	}
 
 	_args() {
@@ -143,6 +223,7 @@ class SalesOrderEntryListPage {
 			page_length: this.page_length,
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
+			workflow_status: f.workflow_status.get_value() || '',
 			company: f.company.get_value() || '',
 			customer: f.customer.get_value() || '',
 			from_date: f.from_date.get_value() || '',
@@ -153,6 +234,9 @@ class SalesOrderEntryListPage {
 
 	load_list() {
 		const me = this;
+		me.wrapper.find('.so-list-select-all').prop('checked', false);
+		if (me.btn_download_pdf) me.btn_download_pdf.hide();
+		if (me.page.clear_indicator) me.page.clear_indicator();
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_sales_order_entry_list',
 			args: me._args(),
@@ -176,7 +260,7 @@ class SalesOrderEntryListPage {
 		const tb = this.wrapper.find('.so-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="9" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
+				`<tr><td colspan="11" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
 			);
 			return;
 		}
@@ -194,13 +278,20 @@ class SalesOrderEntryListPage {
 					: __('No')
 				: '—';
 			const augClass = hasAug && cint(d.custom_additional_units_damage) ? 'green' : 'gray';
+			const wf = d.custom_workflow_status || '';
+			const wfColor = SO_WF_COLORS[wf] || 'gray';
+			const wfCell = wf
+				? `<span class="indicator-pill ${wfColor}">${esc(wf)}</span>`
+				: '—';
 			tb.append(`<tr class="so-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
+				<td style="text-align: center;"><input type="checkbox" class="so-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
 				<td>${esc(d.customer)}</td>
 				<td>${esc(d.customer_name)}</td>
 				<td>${esc(td)}</td>
 				<td>${esc(dd)}</td>
 				<td>${esc(d.company)}</td>
+				<td>${wfCell}</td>
 				<td><span class="indicator-pill blue">${esc(d.status)}</span></td>
 				<td class="text-center"><span class="indicator-pill ${augClass}">${esc(augLabel)}</span></td>
 				<td class="text-right">${gt}</td>

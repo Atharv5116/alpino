@@ -12,10 +12,30 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
+def _ensure_company_default():
+	"""Set a default on the hidden+mandatory Sales Order Company field (site default company)."""
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	default_company = (
+		frappe.db.get_default("company")
+		or frappe.db.get_value("Company", {}, "name", order_by="creation asc")
+	)
+	if default_company:
+		make_property_setter(
+			"Sales Order", "company", "default", default_company, "Text",
+			validate_fields_for_doctype=False,
+		)
+
+
 def setup_sales_order_custom_fields():
 	"""Create all custom fields for Sales Order customization"""
 	# Force field type changes in DB to bypass Select -> Link validation
 	_force_fieldtype_sync()
+	# Delete obsolete fields
+	_delete_obsolete_sales_order_custom_fields()
+	# Company is hidden + mandatory on the SO form; give it a default BEFORE create_custom_fields
+	# (which saves the doctype) or the save fails with HiddenAndMandatoryWithoutDefaultError.
+	_ensure_company_default()
 
 	custom_fields = {
 		# ============================================================
@@ -40,7 +60,7 @@ def setup_sales_order_custom_fields():
 				fieldname="custom_order_type",
 				label="Order Type",
 				fieldtype="Link",
-				options="Offline Buyer Customer Type",
+				options="Alpino Customer Type",
 				insert_after="customer_group",
 				description="Auto-fetched into Sales Order",
 			),
@@ -74,6 +94,31 @@ def setup_sales_order_custom_fields():
 				reqd=1,
 				in_list_view=1,
 				description="Auto-set: today if before 2 PM, next working day if after 2 PM.",
+			),
+			# Invoice (external) — populated by the Invoice PDF sync; shown only once Dispatched.
+			dict(
+				fieldname="custom_invoice_section",
+				label="Invoice",
+				fieldtype="Section Break",
+				insert_after="custom_dispatch_date",
+				depends_on="eval:doc.custom_workflow_status=='Dispatched'",
+				collapsible=0,
+			),
+			dict(
+				fieldname="custom_invoice_no",
+				label="Invoice No",
+				fieldtype="Data",
+				insert_after="custom_invoice_section",
+				read_only=1,
+				description="Invoice number mapped from the accounts Google Sheet.",
+			),
+			dict(
+				fieldname="custom_invoice_pdf",
+				label="Invoice PDF",
+				fieldtype="Attach",
+				insert_after="custom_invoice_no",
+				read_only=1,
+				description="External invoice PDF fetched from the Drive folder (filename = Invoice No).",
 			),
 			# Cash Discount section (visible in Totals area)
 			dict(
@@ -171,7 +216,8 @@ def setup_sales_order_custom_fields():
 				label="MRP",
 				fieldtype="Currency",
 				insert_after="price_list_rate",
-				description="MRP (Incl. GST). Editable.",
+				read_only=1,
+				description="MRP (Incl. GST). Read-only.",
 			),
 			# GST % (from Item)
 			dict(
@@ -182,6 +228,14 @@ def setup_sales_order_custom_fields():
 				fetch_from="item_code.custom_gst_percent",
 				read_only=1,
 				description="GST percentage pulled from Item master.",
+			),
+			# Selling Price (editable)
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="custom_customer_mrp",
+				read_only=0,
 			),
 			# Flat Discount % (after discount_amount)
 			dict(
@@ -213,6 +267,33 @@ def setup_sales_order_custom_fields():
 				fieldtype="Currency",
 				insert_after="custom_additional_discount",
 				description="Auto-calculated or editable tax amount per item.",
+			),
+		],
+		"Sales Order Marketing Freebie": [
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="item_name",
+				read_only=1,
+			),
+		],
+		"Sales Order Scheme Item": [
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="item_name",
+				read_only=1,
+			),
+		],
+		"Sales Order Additional Units Item": [
+			dict(
+				fieldname="custom_selling_price",
+				label="Selling Price",
+				fieldtype="Currency",
+				insert_after="item_name",
+				read_only=1,
 			),
 		],
 	}
@@ -290,7 +371,7 @@ def _setup_property_setters():
 			"doc_type": "Sales Order",
 			"field_name": "order_type",
 			"property": "options",
-			"value": "Offline Buyer Customer Type",
+			"value": "Alpino Customer Type",
 			"property_type": "Text",
 		},
 		{
@@ -399,14 +480,28 @@ def _force_fieldtype_sync():
 		"property": "options"
 	}, "name")
 	if ps_opts:
-		frappe.db.set_value("Property Setter", ps_opts, "value", "Offline Buyer Customer Type", update_modified=False)
+		frappe.db.set_value("Property Setter", ps_opts, "value", "Alpino Customer Type", update_modified=False)
 
 	# 2. Custom field custom_order_type on Customer
 	cf_name = frappe.db.get_value("Custom Field", {"dt": "Customer", "fieldname": "custom_order_type"}, "name")
 	if cf_name:
 		frappe.db.set_value("Custom Field", cf_name, {
 			"fieldtype": "Link",
-			"options": "Offline Buyer Customer Type"
+			"options": "Alpino Customer Type"
 		}, update_modified=False)
 
 	frappe.db.commit()
+
+
+def _delete_obsolete_sales_order_custom_fields():
+	"""Drop legacy fields that duplicated standard behaviour (safe if missing)."""
+	obsolete = [
+		("Sales Order Item", "custom_item_mrp"),
+	]
+	for doctype, fieldname in obsolete:
+		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
+		if name:
+			frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
+	frappe.db.commit()
+	print("✅ Sales Order: obsolete fields deleted")
+

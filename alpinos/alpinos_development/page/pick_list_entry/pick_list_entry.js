@@ -32,6 +32,39 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				page.save_pick_list_keep_draft();
 			});
 
+			page.main.find('#btn-start-picking').on('click', function() {
+				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
+					frappe.msgprint(__('Save the Pick List first, then start picking.'));
+					return;
+				}
+				frappe.call({
+					method: 'alpinos.workflow_engine.start_picking',
+					args: { pick_list: page.pick_list_name },
+					freeze: true,
+					freeze_message: __('Starting picking...'),
+					callback: function(r) {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Picking started'), indicator: 'blue' });
+						page.load_data();
+					}
+				});
+			});
+
+			page.main.find('#btn-stop-picking').on('click', function() {
+				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') return;
+				frappe.call({
+					method: 'alpinos.workflow_engine.stop_picking',
+					args: { pick_list: page.pick_list_name },
+					freeze: true,
+					freeze_message: __('Stopping picking...'),
+					callback: function(r) {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Picking stopped — ready for submission'), indicator: 'blue' });
+						page.load_data();
+					}
+				});
+			});
+
 			page.main.find('#btn-generate-sticker').on('click', function() {
 				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
 					frappe.msgprint(__('Save the Pick List first, then generate stickers.'));
@@ -112,11 +145,46 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		const $draftBtn = page.main.find('#btn-save-draft');
 		const $saveDraftUpdate = page.main.find('#btn-save-draft-update');
 		const $stickerBtn = page.main.find('#btn-generate-sticker');
+		const $startPicking = page.main.find('#btn-start-picking');
+		const $stopPicking = page.main.find('#btn-stop-picking');
+		const wfs = data.custom_workflow_status || '';
+		// Picking is "active" once started, until the picker stops (Submission Pending).
+		const pickingActive = wfs === 'Picking In Progress' || wfs === 'Sticker Pending';
+		// Show the Pick List workflow status as a coloured badge by the title.
+		const PL_WF_COLORS = {
+			'Draft': 'red',
+			'Picking Pending': 'orange',
+			'Picking In Progress': 'blue',
+			'Sticker Pending': 'yellow',
+			'Submission Pending': 'orange',
+			'Ready To Dispatch': 'blue',
+			'Dispatched': 'green',
+			'Cancelled': 'red',
+		};
+		if (wfs && page.set_indicator) {
+			page.set_indicator(wfs, PL_WF_COLORS[wfs] || 'gray');
+		} else if (page.clear_indicator) {
+			page.clear_indicator();
+		}
 		// Sticker generation needs a persisted PL — show on saved drafts + submitted, hide on new.
 		if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
 			$stickerBtn.show();
 		} else {
 			$stickerBtn.hide();
+		}
+		// Start Picking: only on a saved draft that has not started picking yet.
+		const isSavedDraft =
+			data.docstatus === 0 && page.pick_list_name && page.pick_list_name !== 'New Pick List';
+		if (isSavedDraft && !cint(data.custom_picking_started)) {
+			$startPicking.show();
+		} else {
+			$startPicking.hide();
+		}
+		// Stop Picking: appears once picking reaches the sticker-generation point.
+		if (isSavedDraft && wfs === 'Sticker Pending') {
+			$stopPicking.show();
+		} else {
+			$stopPicking.hide();
 		}
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
@@ -129,10 +197,17 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		} else {
 			$dnBtn.hide();
-			// Re-set Submit primary action — it gets cleared when navigating
-			// to a submitted PL (above), and on_page_load only fires once per
-			// page instance, so without this the Submit button stays missing.
-			page.set_primary_action('Submit', () => { page.save_pick_list(); });
+			// During picking (after Start Picking, before Stop Picking) the Submit
+			// option is hidden — the picker must Stop Picking first (-> Submission
+			// Pending), then Submit re-appears.
+			if (pickingActive) {
+				page.clear_primary_action();
+			} else {
+				// Re-set Submit primary action — it gets cleared when navigating
+				// to a submitted PL (above), and on_page_load only fires once per
+				// page instance, so without this the Submit button stays missing.
+				page.set_primary_action('Submit', () => { page.save_pick_list(); });
+			}
 			// New PL → "Save as Draft" (creates the doc).
 			// Saved draft → "Save" (updates without submitting).
 			if (page.pick_list_name === 'New Pick List') {
@@ -173,9 +248,33 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 		}
 
+		// --- Edit-permission gating ---
+		const _roles = frappe.user_roles || [];
+		const _isPLUser = _roles.includes('PL User') &&
+			!_roles.some((r) => ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'DN Manager'].includes(r));
+		const pickingStarted = cint(data.custom_picking_started);
+		const isSubmitted = data.docstatus === 1;
+		// Item fields are editable only when not submitted AND (not a PL User, or
+		// the PL User has clicked Start Picking).
+		const itemsLocked = isSubmitted || (_isPLUser && !pickingStarted);
+
+		// PO No / Transporter / Gate: read-only for PL Users, and after submit.
+		const lockHeader = isSubmitted || _isPLUser;
+		['custom_po_no', 'custom_transporter', 'custom_gate'].forEach((fn) => {
+			page.main.find(`[data-fieldname="${fn}"]`).prop('readonly', lockHeader);
+		});
+		// After submit, nothing on the page is editable.
+		if (isSubmitted) {
+			['custom_actual_box', 'custom_sample_box', 'custom_dispatch_date'].forEach((fn) => {
+				page.main.find(`[data-fieldname="${fn}"]`).prop('readonly', true);
+			});
+			page.main.find('[data-fieldname="custom_assigned_to"]').prop('disabled', true);
+			page.main.find('[data-fieldname="custom_qc_attended_by"]').prop('disabled', true);
+		}
+
 		let container = page.main.find('#tables-container');
 		container.empty();
-		
+
 		let groups = {
 			"Items": [],
 			"Scheme Table": [],
@@ -217,8 +316,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			rows.forEach((row, idx) => {
 			let src = row.custom_source_table || "Items";
 			
-			let batch_readonly = data.docstatus === 1 ? 'readonly' : '';
-			let input_disabled = data.docstatus === 1 ? 'disabled' : '';
+			let batch_readonly = itemsLocked ? 'readonly' : '';
+			let input_disabled = itemsLocked ? 'disabled' : '';
+			// Batch Code / MFG / Expiry are only enterable for batch-tracked items.
+			let no_batch = !cint(row.has_batch_no);
+			let batch_lock = (itemsLocked || no_batch) ? 'readonly tabindex="-1"' : '';
 			
 			// Exploded bundle component: qty & box are derived from the combo order,
 			// so both are locked; the row is tinted and tagged with its bundle SKU.
@@ -231,7 +333,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			} else {
 				box_val = (row.custom_box !== undefined && row.custom_box !== null && cint(row.custom_box) !== 0) ? cint(row.custom_box) : "";
 			}
-			let box_readonly = (title === "Items" && !is_bundle_comp) ? '' : 'readonly tabindex="-1"';
+			// Box is editable for Items (including exploded combo/bundle components)
+			// and for Marketing Freebies; locked for Scheme / Additional Units, and
+			// whenever items are locked (submitted, or PL User before Start Picking).
+			let box_readonly = (!itemsLocked && (title === "Items" || title === "Marketing Freebies")) ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
 				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:#f5f3ff;"' : ''}>
@@ -242,10 +347,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
 					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="1" min="0" ${input_disabled} ${box_readonly}/></td>
 					<td>
-						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_readonly}>
+						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock} placeholder="${no_batch ? 'No batch tracking' : ''}">
 					</td>
-					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_readonly}></td>
-					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_readonly}></td>
+					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_lock}></td>
+					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_lock}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
 						${data.docstatus !== 1 ? `
@@ -601,6 +706,16 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					});
 					if (data.custom_assigned_to) {
 						assigned_select.val(data.custom_assigned_to);
+					}
+
+					// Assigned To is read-only for PL Users — only the warehouse
+					// can (re)assign a picker.
+					const _roles = frappe.user_roles || [];
+					const _canAssign = _roles.some((r) =>
+						['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'DN Manager'].includes(r)
+					);
+					if (_roles.includes('PL User') && !_canAssign) {
+						assigned_select.prop('disabled', true);
 					}
 
 					// When Assigned To changes:

@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "customer_type",
+  "channel",
   "abbreviation",
   "sequence",
   "min_expiry_days"
@@ -19,6 +20,14 @@
    "label": "Customer Type",
    "unique": 1,
    "in_list_view": 1
+  },
+  {
+   "fieldname": "channel",
+   "fieldtype": "Link",
+   "label": "Channel",
+   "options": "Channel",
+   "in_list_view": 1,
+   "description": "Channel this customer type belongs to."
   },
   {
    "fieldname": "abbreviation",
@@ -45,10 +54,10 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-30 12:00:00.000000",
+ "modified": "2026-06-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
- "name": "Offline Buyer Customer Type",
+ "name": "Alpino Customer Type",
  "owner": "Administrator",
  "permissions": [
   {

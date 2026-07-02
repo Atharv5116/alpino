@@ -1,18 +1,16 @@
-"""Raven notifications to the HR and RM channels for actions needing approval/involvement.
+"""Raven approval notifications — sent as DIRECT MESSAGES to the people who need them.
 
-Whenever a request is submitted for approval (and again when it is approved/rejected), a
-message is posted — as a dedicated Raven bot — to the shared HR and RM Raven channels so the
-relevant upper authorities are informed.
+Whenever an approval request moves through its workflow, the dedicated Raven bot DMs:
+  * the **applicant** — a status update on their own request, and
+  * the **approver(s) for the current stage** — Pending Reporting Manager -> the employee's
+    reporting manager; Pending HOD -> users with the HOD role; Pending HR -> HR Managers.
 
-The bot (default name "HR & RM Notifier", overridable via site_config `raven_notification_bot`)
+So each person sees only what's relevant to them (no broadcast channels). The bot
+(default name "HR & RM Notifier", overridable via site_config `raven_notification_bot`)
 is created on migrate by setup_raven_notification_bot.
 
-Channel resolution (first match wins):
-  1. site_config keys `raven_hr_channel` / `raven_rm_channel` — a Raven Channel id or name.
-  2. otherwise a non-DM Raven Channel whose channel_name is "HR" / "RM".
-
-Everything is defensive: if Raven is not installed, or a channel can't be resolved, it is a
-silent no-op (never blocks the underlying submit/approve).
+Everything is defensive: if Raven isn't installed or a recipient/bot can't be resolved, it
+is a silent no-op — it never blocks the underlying submit/approve.
 """
 
 import frappe
@@ -27,7 +25,11 @@ def _bot_name():
 
 
 def setup_raven_notification_bot():
-	"""Create the notification bot once (after_migrate). No-op without Raven."""
+	"""Create the notification bot (after_migrate). No-op without Raven.
+
+	Notifications are DMs to the relevant people (applicant, reporting manager, HOD, HR),
+	so no broadcast channels are created — only the bot is needed.
+	"""
 	if not _raven_installed() or not frappe.db.exists("DocType", "Raven Bot"):
 		return
 	name = _bot_name()
@@ -38,7 +40,7 @@ def setup_raven_notification_bot():
 			{
 				"doctype": "Raven Bot",
 				"bot_name": name,
-				"description": "Posts HR / RM approval notifications for requests needing action.",
+				"description": "DMs approval notifications to the people who need to act + the applicant.",
 			}
 		)
 		bot.insert(ignore_permissions=True)
@@ -49,13 +51,12 @@ def setup_raven_notification_bot():
 
 
 def _get_bot():
-	"""The Raven Bot to post as, or None when Raven/the bot isn't available."""
+	"""The Raven Bot to DM as, or None when Raven/the bot isn't available."""
 	if not _raven_installed():
 		return None
 	name = _bot_name()
 	if not frappe.db.exists("Raven Bot", name):
-		# Self-heal if the after_migrate setup hasn't run yet.
-		setup_raven_notification_bot()
+		setup_raven_notification_bot()  # self-heal if after_migrate hasn't run yet
 		if not frappe.db.exists("Raven Bot", name):
 			return None
 	try:
@@ -64,52 +65,76 @@ def _get_bot():
 		return None
 
 
-def _resolve_channel(kind):
-	"""Return the Raven Channel id for kind 'hr' or 'rm', or None."""
-	configured = frappe.conf.get(f"raven_{kind}_channel")
-	if configured:
-		if frappe.db.exists("Raven Channel", configured):
-			return configured
-		by_name = frappe.db.get_value(
-			"Raven Channel", {"channel_name": configured, "is_direct_message": 0}, "name"
-		)
-		if by_name:
-			return by_name
-	label = "HR" if kind == "hr" else "RM"
-	return frappe.db.get_value(
-		"Raven Channel", {"channel_name": label, "is_direct_message": 0}, "name"
-	)
-
-
 def _doc_link(doc):
 	route = doc.doctype.lower().replace(" ", "-")
 	return f"{frappe.utils.get_url()}/app/{route}/{doc.name}"
 
 
-def post_to_hr_rm(text, doc=None):
-	"""Post `text` to the HR and RM channels as the notification bot (deduped).
+# --------------------------------------------------------------------------- recipients
 
-	Silent no-op when Raven isn't installed, the bot is unavailable, or a channel can't be
-	resolved — so it never blocks the underlying submit/approve.
-	"""
-	bot = _get_bot()
-	if not bot:
-		return
-	channels = []
-	for kind in ("hr", "rm"):
-		ch = _resolve_channel(kind)
-		if ch and ch not in channels:
-			channels.append(ch)
-	for channel_id in channels:
-		try:
-			bot.send_message(
-				channel_id=channel_id,
-				text=text,
-				link_doctype=doc.doctype if doc is not None else None,
-				link_document=doc.name if doc is not None else None,
-			)
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), "Raven HR/RM notification")
+
+def _applicant_user(doc):
+	"""User id of the person the request is FOR (gets updates on their own request)."""
+	emp = doc.get("employee")
+	return frappe.db.get_value("Employee", emp, "user_id") if emp else None
+
+
+def _rm_user(doc):
+	"""User id of the employee's reporting manager (Employee.reports_to)."""
+	emp = doc.get("employee")
+	if not emp:
+		return None
+	rm = frappe.db.get_value("Employee", emp, "reports_to")
+	return frappe.db.get_value("Employee", rm, "user_id") if rm else None
+
+
+def _role_users(role):
+	"""Enabled users holding `role` (excludes Administrator/Guest)."""
+	return frappe.db.sql_list(
+		"""
+		SELECT DISTINCT hr.parent FROM `tabHas Role` hr
+		JOIN `tabUser` u ON u.name = hr.parent
+		WHERE hr.role = %s AND hr.parenttype = 'User' AND u.enabled = 1
+			AND u.name NOT IN ('Administrator', 'Guest')
+		""",
+		role,
+	)
+
+
+def _hod_users(doc):
+	"""Users with the HOD role who belong to the SAME department as the applicant — so an HOD
+	is only notified about their own department's requests."""
+	dept = doc.get("department") or frappe.db.get_value("Employee", doc.get("employee"), "department")
+	if not dept:
+		return []
+	return frappe.db.sql_list(
+		"""
+		SELECT DISTINCT e.user_id
+		FROM `tabEmployee` e
+		JOIN `tabHas Role` hr ON hr.parent = e.user_id AND hr.parenttype = 'User'
+		JOIN `tabUser` u ON u.name = e.user_id AND u.enabled = 1
+		WHERE hr.role = 'HOD' AND e.department = %s AND e.status = 'Active'
+			AND IFNULL(e.user_id, '') != '' AND e.user_id NOT IN ('Administrator', 'Guest')
+		""",
+		dept,
+	)
+
+
+def _approvers_for_state(doc, state):
+	"""Users who need to ACT at this stage, scoped to the applicant:
+	  Pending RM  -> the employee's OWN reporting manager (reports_to),
+	  Pending HOD -> the HOD(s) of the employee's OWN department,
+	  Pending HR  -> all HR Managers (HR acts company-wide).
+	Outcomes -> nobody (only the applicant is told)."""
+	s = (state or "").lower()
+	if "reporting manager" in s or "rm approval" in s:
+		rm = _rm_user(doc)
+		return [rm] if rm else []
+	if "hod" in s:
+		return _hod_users(doc)
+	if "hr approval" in s or "pending hr" in s:
+		return _role_users("HR Manager")
+	return []
 
 
 # --------------------------------------------------------------------------- helpers
@@ -119,33 +144,92 @@ def _emp(doc):
 	return doc.get("employee_name") or doc.get("employee") or doc.get("requested_by") or "—"
 
 
+def _stage_icon(state):
+	s = (state or "").lower()
+	if any(k in s for k in ("approved", "live", "completed", "paid")):
+		return "✅"
+	if any(k in s for k in ("rejected", "returned", "cancelled", "hold")):
+		return "❌"
+	return "🔔"
+
+
+def _send_dm(bot, user, text, doc=None):
+	"""DM one user as the bot. Silent no-op on any failure — never blocks submit/approve."""
+	if not (bot and user):
+		return
+	try:
+		bot.send_direct_message(
+			user,
+			text=text,
+			link_doctype=doc.doctype if doc is not None else None,
+			link_document=doc.name if doc is not None else None,
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Raven approval DM")
+
+
+def _notify_stage(label, doc, state, detail=""):
+	"""Targeted DMs for a stage change: the applicant gets a status update on their own
+	request; the stage's approver(s) get an action ping."""
+	bot = _get_bot()
+	if not bot:
+		return
+	applicant = _applicant_user(doc)
+	_send_dm(
+		bot,
+		applicant,
+		f"{_stage_icon(state)} Your <b>{label}</b> {doc.name}{detail} is now <b>{state}</b>.<br>{_doc_link(doc)}",
+		doc,
+	)
+	for user in _approvers_for_state(doc, state):
+		if user and user != applicant:
+			_send_dm(
+				bot,
+				user,
+				f"🔔 <b>{label}</b> {doc.name} from <b>{_emp(doc)}</b>{detail} needs your approval "
+				f"(<b>{state}</b>).<br>{_doc_link(doc)}",
+				doc,
+			)
+
+
 def _submitted(label, who, detail, doc):
-	post_to_hr_rm(
-		f"🔔 <b>{label}</b> {doc.name} submitted by <b>{who}</b>{detail} — pending approval.<br>{_doc_link(doc)}",
+	"""A fresh submission: tell the applicant + ping the reporting manager."""
+	bot = _get_bot()
+	if not bot:
+		return
+	applicant = _applicant_user(doc)
+	_send_dm(
+		bot,
+		applicant,
+		f"🔔 Your <b>{label}</b> {doc.name}{detail} was submitted — pending approval.<br>{_doc_link(doc)}",
 		doc,
 	)
-
-
-def _outcome(label, who, status, doc):
-	icon = "✅" if status and status.lower() in ("approved", "live", "completed") else "❌"
-	post_to_hr_rm(
-		f"{icon} <b>{label}</b> {doc.name} for <b>{who}</b> was <b>{status}</b>.<br>{_doc_link(doc)}",
-		doc,
-	)
+	rm = _rm_user(doc)
+	if rm and rm != applicant:
+		_send_dm(
+			bot,
+			rm,
+			f"🔔 <b>{label}</b> {doc.name} from <b>{who}</b>{detail} needs your approval.<br>{_doc_link(doc)}",
+			doc,
+		)
 
 
 # --------------------------------------------------------------------------- doc events
 
 
 def notify_leave_application(doc, method=None):
-	if method == "on_submit":
-		detail = f" ({doc.get('leave_type')}, {doc.get('from_date')} to {doc.get('to_date')})"
-		_submitted("Leave Application", _emp(doc), detail, doc)
-	elif method == "on_update_after_submit" and doc.has_value_changed("status") and doc.get("status") in (
-		"Approved",
-		"Rejected",
-	):
-		_outcome("Leave Application", _emp(doc), doc.get("status"), doc)
+	# Per-stage, workflow-driven via `workflow_state`
+	# (Draft -> Pending Reporting Manager Approval -> HOD -> HR -> Approved/Rejected).
+	# Pending stages are docstatus 0 (on_update); Approved/Rejected submit (on_submit).
+	if method == "on_update" and not doc.has_value_changed("workflow_state"):
+		return
+	state = doc.get("workflow_state")
+	if not state or state == "Draft":
+		return
+	when = doc.get("from_date")
+	if doc.get("to_date") and doc.get("to_date") != doc.get("from_date"):
+		when = f"{doc.get('from_date')} to {doc.get('to_date')}"
+	_notify_stage("Leave Application", doc, state, f" ({doc.get('leave_type')}, {when})")
 
 
 def notify_attendance_request(doc, method=None):
@@ -160,35 +244,27 @@ def notify_work_from_home(doc, method=None):
 		status = doc.get("status")
 		if not status or status == "Draft":
 			return
-		if status in ("Approved", "Live", "Rejected"):
-			_outcome("Work From Home", _emp(doc), status, doc)
-		else:
-			post_to_hr_rm(
-				f"🔔 <b>Work From Home</b> {doc.name} for <b>{_emp(doc)}</b> "
-				f"({doc.get('date')}) is now <b>{status}</b>.<br>{_doc_link(doc)}",
-				doc,
-			)
+		_notify_stage("Work From Home", doc, status, f" ({doc.get('date')})")
 
 
 def notify_job_requisition(doc, method=None):
-	# Workflow-driven: notify on each state change so the next approver (RM/HOD/HR) is informed.
+	# Workflow-driven: notify the next approver (RM/HOD/HR) on each state change.
 	if method == "on_update" and doc.has_value_changed("workflow_state"):
 		state = doc.get("workflow_state")
-		if not state:
+		if not state or state == "Draft":
 			return
-		post_to_hr_rm(
-			f"🔔 <b>Job Requisition</b> {doc.name} ({doc.get('designation') or ''}) is now "
-			f"<b>{state}</b>.<br>{_doc_link(doc)}",
-			doc,
-		)
+		_notify_stage("Job Requisition", doc, state, f" ({doc.get('designation') or ''})")
 
 
 def notify_expense_claim(doc, method=None):
-	if method == "on_submit":
-		_submitted(
-			"Expense Claim", _emp(doc), f" (₹{doc.get('total_claimed_amount') or doc.get('grand_total') or 0})", doc
-		)
-	elif method == "on_update_after_submit":
-		status = doc.get("approval_status") or doc.get("workflow_state")
-		if (doc.has_value_changed("approval_status") or doc.has_value_changed("workflow_state")) and status:
-			_outcome("Expense Claim", _emp(doc), status, doc)
+	# Per-stage via approval_status / workflow_state
+	# (Draft -> Pending RM Approval -> Approved by RM -> Submitted to Payroll -> Paid / Rejected).
+	if method in ("on_update", "on_update_after_submit") and not (
+		doc.has_value_changed("approval_status") or doc.has_value_changed("workflow_state")
+	):
+		return
+	state = doc.get("approval_status") or doc.get("workflow_state")
+	if not state or state == "Draft":
+		return
+	amt = doc.get("total_claimed_amount") or doc.get("grand_total") or 0
+	_notify_stage("Expense Claim", doc, state, f" (₹{amt})")

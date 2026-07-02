@@ -19,6 +19,10 @@ def update_delivery_note_assignment(delivery_note, assigned_to):
 	if not frappe.db.exists("Delivery Note", delivery_note):
 		frappe.throw(f"Delivery Note {delivery_note} not found.")
 	frappe.has_permission("Delivery Note", "write", doc=delivery_note, throw=True)
+	# A DN User cannot (re)assign — only the warehouse manages assignment.
+	_roles = set(frappe.get_roles())
+	if "DN User" in _roles and not (_roles & {"Warehouse Admin", "Warehouse Manager", "System Manager", "PL Manager"}):
+		frappe.throw(frappe._("You are not permitted to change the assigned person."))
 	value = (assigned_to or "").strip() or None
 	frappe.db.set_value("Delivery Note", delivery_note, "custom_assigned_to", value)
 	frappe.db.commit()

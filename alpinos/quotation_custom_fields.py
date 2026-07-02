@@ -296,7 +296,7 @@ def _setup_quotation_property_setters():
 			doc_type="Quotation",
 			field_name="order_type",
 			property="options",
-			value="Offline Buyer Customer Type",
+			value="Alpino Customer Type",
 			property_type="Text",
 		),
 		dict(
@@ -476,11 +476,12 @@ def _delete_obsolete_quotation_custom_fields():
 	obsolete = [
 		("Quotation", "custom_order_type"),
 		("Quotation Item", "custom_sku_with_name"),
+		("Quotation Item", "custom_item_mrp"),
 	]
 	for doctype, fieldname in obsolete:
 		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
 		if name:
-			frappe.db.delete("Custom Field", {"name": name})
+			frappe.delete_doc("Custom Field", name, force=1, ignore_permissions=True)
 	frappe.db.commit()
 	print("✅ Quotation: obsolete fields deleted")
 
@@ -502,7 +503,7 @@ def _force_quotation_fieldtype_sync():
 		"property": "options"
 	}, "name")
 	if ps_opts:
-		frappe.db.set_value("Property Setter", ps_opts, "value", "Offline Buyer Customer Type", update_modified=False)
+		frappe.db.set_value("Property Setter", ps_opts, "value", "Alpino Customer Type", update_modified=False)
 
 	frappe.db.commit()
 
