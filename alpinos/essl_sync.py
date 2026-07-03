@@ -99,6 +99,10 @@ def sync_essl_logs(from_date=None, to_date=None, force=False, serial_numbers=Non
 				line += " — UNAUTHORISED (check username/password)"
 			if stats.get("unmatched"):
 				line += f" — no matching employee for ID(s): {', '.join(stats['unmatched'])}"
+			if stats.get("errors"):
+				line += f" — {len(stats['errors'])} FAILED to save (see Error Log): " + "; ".join(stats["errors"][:5])
+				if len(stats["errors"]) > 5:
+					line += f" … (+{len(stats['errors']) - 5} more)"
 			results.append(line)
 		else:
 			results.append(f"SN {sn} ({device.category}): Failed to fetch or no response")
@@ -184,24 +188,30 @@ def process_logs(response_text, serial_number, category=None):
 		synced_count = 0
 		duplicate_count = 0
 		unmatched = set()
+		errors = []
 		for log in parsed_logs:
-			status = create_employee_checkin(log["device_id"], log["timestamp_str"], serial_number, category)
+			status, detail = create_employee_checkin(log["device_id"], log["timestamp_str"], serial_number, category)
 			if status == "created":
 				synced_count += 1
 			elif status == "duplicate":
 				duplicate_count += 1
 			elif status == "no_employee":
-				unmatched.add(log["device_id"])
+				unmatched.add(detail or log["device_id"])
+			else:
+				# "error" / "bad_time" — previously swallowed silently; surface them so a
+				# fetched-but-not-created punch is never invisible. Full trace is in Error Log.
+				errors.append(detail or f"ID {log['device_id']} @ {log['timestamp_str']}")
 
 		return {
 			"synced": synced_count,
 			"fetched": len(parsed_logs),
 			"duplicate": duplicate_count,
 			"unmatched": sorted(unmatched),
+			"errors": errors,
 		}
 	except Exception as e:
 		frappe.log_error(f"Error parsing eSSL logs (SN: {serial_number}): {str(e)}\n\nResponse was: {response_text[:500]}", "eSSL Sync Error")
-		return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": []}
+		return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": [], "errors": []}
 
 def create_employee_checkin(device_id, timestamp_str, device_name, category=None):
 	try:
@@ -231,16 +241,16 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 				pass
 
 		if not employee:
-			return "no_employee"
+			return ("no_employee", device_id)
 
 		try:
 			timestamp = get_datetime(timestamp_str)
 		except Exception:
-			return "bad_time"
+			return ("bad_time", f"ID {device_id} @ {timestamp_str}: unparseable time")
 
 		# Prevent duplicates
 		if frappe.db.exists("Employee Checkin", {"employee": employee, "time": timestamp}):
-			return "duplicate"
+			return ("duplicate", None)
 
 		# Determine log_type (Alternating IN/OUT day-wise)
 		log_date = timestamp.date()
@@ -286,7 +296,7 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 
 		checkin.insert(ignore_permissions=True)
 		frappe.db.commit()
-		return "created"
+		return ("created", None)
 	except Exception as e:
 		frappe.log_error(f"eSSL create checkin failed (device_id={device_id}): {str(e)}", "eSSL Sync Error")
-		return "error"
+		return ("error", f"ID {device_id} @ {timestamp_str}: {str(e)}")
