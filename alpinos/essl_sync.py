@@ -148,16 +148,16 @@ def fetch_logs_from_api(serial_number, from_date, to_date, api_url=None, usernam
 		if response.status_code == 200:
 			return response.text
 		else:
-			frappe.log_error(f"eSSL API Status Code {response.status_code} for SN {serial_number}", "eSSL Sync Error")
+			frappe.log_error(title="eSSL Sync Error", message=f"eSSL API Status Code {response.status_code} for SN {serial_number}")
 	except Exception as e:
-		frappe.log_error(f"eSSL Sync Network Error (SN: {serial_number}): {str(e)}", "eSSL Sync Error")
+		frappe.log_error(title="eSSL Sync Error", message=f"eSSL Sync Network Error (SN: {serial_number}): {str(e)}")
 	return None
 
 def process_logs(response_text, serial_number, category=None):
 	try:
 		# Check for error message in response result first
 		if "Unathorised User" in response_text:
-			frappe.log_error(f"eSSL API Unauthorised for SN {serial_number}", "eSSL Sync Error")
+			frappe.log_error(title="eSSL Sync Error", message=f"eSSL API Unauthorised for SN {serial_number}")
 			return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": [], "unauthorised": True}
 
 		root = ET.fromstring(response_text)
@@ -210,7 +210,7 @@ def process_logs(response_text, serial_number, category=None):
 			"errors": errors,
 		}
 	except Exception as e:
-		frappe.log_error(f"Error parsing eSSL logs (SN: {serial_number}): {str(e)}\n\nResponse was: {response_text[:500]}", "eSSL Sync Error")
+		frappe.log_error(title="eSSL Sync Error", message=f"Error parsing eSSL logs (SN: {serial_number}): {str(e)}\n\nResponse was: {response_text[:500]}")
 		return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": [], "errors": []}
 
 def create_employee_checkin(device_id, timestamp_str, device_name, category=None):
@@ -298,5 +298,5 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 		frappe.db.commit()
 		return ("created", None)
 	except Exception as e:
-		frappe.log_error(f"eSSL create checkin failed (device_id={device_id}): {str(e)}", "eSSL Sync Error")
+		frappe.log_error(title="eSSL Sync Error", message=f"eSSL create checkin failed (device_id={device_id}): {str(e)}")
 		return ("error", f"ID {device_id} @ {timestamp_str}: {str(e)}")
