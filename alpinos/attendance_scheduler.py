@@ -39,6 +39,13 @@ def process_auto_attendance_periodic():
     
     # Trigger HRMS standard auto-attendance processing
     try:
+        # Ensure the Alpinos attendance patch (first-log -> in-time, last-log -> out-time,
+        # regardless of log type) is active in THIS process. Auto-attendance runs in a
+        # background worker that may not have imported the override module, so applying it
+        # explicitly here guarantees shift_type.calculate_working_hours is our custom version.
+        from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
+        _apply_checkout_reason_patch()
+
         from hrms.hr.doctype.shift_type.shift_type import process_auto_attendance_for_all_shifts
         process_auto_attendance_for_all_shifts()
     except Exception as e:

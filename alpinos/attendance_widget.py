@@ -128,6 +128,26 @@ def _get_today_last_checkout(employee):
     )
 
 
+def _get_today_last_dashboard_log(employee):
+    """Latest check-in/out today that originated from the DASHBOARD (no device_id).
+
+    eSSL/biometric punches set `device_id`; dashboard logs do not. The web timer must reflect
+    dashboard actions only, so stray device punches never stop or restart it — only a dashboard
+    checkout does. Filtered in Python so both NULL and empty-string device_id count as dashboard.
+    """
+    start, end = _get_today_range()
+    logs = frappe.get_all(
+        "Employee Checkin",
+        filters={"employee": employee, "time": ["between", [start, end]]},
+        fields=["name", "log_type", "time", "device_id"],
+        order_by="time desc",
+    )
+    for log in logs:
+        if not log.get("device_id"):
+            return [log]
+    return []
+
+
 @frappe.whitelist()
 def get_status():
     employee = _get_employee_for_user(frappe.session.user)
@@ -159,6 +179,19 @@ def get_status():
 
         return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
     else:
+        # Biometric employee: the web timer reflects DASHBOARD actions only. eSSL/device
+        # punches (including stray/mistaken ones) never stop or restart it. Only a dashboard
+        # checkout stops the timer and flips the widget to "Checked Out". Once that happens it
+        # stays OUT for the rest of the day (a later eSSL punch does not revive the web timer).
+        last_dash = _get_today_last_dashboard_log(employee)
+        if last_dash and last_dash[0]["log_type"] == "OUT":
+            elapsed_seconds = int((last_dash[0]["time"] - in_time).total_seconds())
+            return {
+                "status": "OUT",
+                "last_time": last_dash[0]["time"],
+                "elapsed_seconds": max(elapsed_seconds, 0),
+                **base,
+            }
         return {"status": "IN", "last_time": in_time, "elapsed_seconds": None, **base}
 
 
@@ -529,11 +562,14 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
     employee = _get_employee_for_user(frappe.session.user)
     if not employee:
         frappe.throw("No Employee linked to this user.")
-    today_last = _get_today_last_checkin(employee)
-    if not today_last or today_last[0]["log_type"] != "IN":
+    # Allow a dashboard checkout as long as there is ANY check-in today. We deliberately do
+    # NOT require the *last* log to be an IN: an eSSL device OUT (e.g. a mistaken punch near
+    # the biometric machine) may be the latest log, yet the employee still needs to check out
+    # from the dashboard. The last log's type is irrelevant here.
+    if not _get_today_first_checkin(employee):
         frappe.throw("You must Check In today before Check Out.")
 
-    # No-Biometric companies must capture a live photo at check-out.
+    # No-Biometric companies must capture a live photo at check-out and can only check out once.
     if _employee_no_biometric(employee):
         if not image:
             frappe.throw("A live photo is required to Check Out.")
