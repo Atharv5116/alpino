@@ -12,7 +12,7 @@ from hrms.hr.doctype.employee_checkin.employee_checkin import (
 	CheckinRadiusExceededError,
 )
 from hrms.hr.utils import get_distance_between_coordinates
-from frappe.utils import flt, get_datetime, getdate
+from frappe.utils import flt, get_datetime
 
 _patch_applied = False
 
@@ -45,23 +45,35 @@ def _apply_checkout_reason_patch():
 
 	ec_module.mark_attendance_and_link_log = _mark_attendance_and_link_log
 
-	_orig_calc = ec_module.calculate_working_hours
-
 	def custom_calculate_working_hours(logs, check_in_out_type, working_hours_calc_type):
+		# Alpinos rule: attendance always spans the FIRST log to the LAST log of the shift,
+		# regardless of each log's type (IN/OUT) or the Shift Type's check_in_out_type. Two
+		# systems feed check-ins (the web dashboard + the eSSL biometric device), so strict
+		# IN/OUT pairing is unreliable (stray/duplicate device punches). We therefore take the
+		# earliest log as the in-time and the latest log as the out-time. `logs` arrives sorted
+		# by time ascending from HRMS.
 		if not logs:
 			return 0, None, None
 
-		if check_in_out_type == "Alternating entries as IN and OUT during the same shift":
-			in_time = logs[0].time
-			out_time = logs[-1].time if len(logs) >= 2 else None
-			total_hours = 0
-			if in_time and out_time:
-				total_hours = round(float((out_time - in_time).total_seconds()) / 3600, 2)
-			return total_hours, in_time, out_time
-
-		return _orig_calc(logs, check_in_out_type, working_hours_calc_type)
+		in_time = logs[0].time
+		out_time = logs[-1].time if len(logs) >= 2 else None
+		total_hours = 0
+		if in_time and out_time:
+			total_hours = round(float((out_time - in_time).total_seconds()) / 3600, 2)
+		return total_hours, in_time, out_time
 
 	ec_module.calculate_working_hours = custom_calculate_working_hours
+
+	# CRITICAL: shift_type.py does `from ...employee_checkin import (calculate_working_hours,
+	# mark_attendance_and_link_log)`, binding the ORIGINAL functions into its own namespace at
+	# import time. Auto-attendance runs through ShiftType.process_auto_attendance / get_attendance,
+	# so patching only `ec_module` above is a no-op for attendance — the original strict IN/OUT
+	# pairing still runs (this is why "IN, OUT, IN" was measured as IN→OUT only). We must rebind
+	# the names in the shift_type module too.
+	import hrms.hr.doctype.shift_type.shift_type as st_module
+	st_module.calculate_working_hours = custom_calculate_working_hours
+	st_module.mark_attendance_and_link_log = _mark_attendance_and_link_log
+
 	_patch_applied = True
 
 
@@ -254,11 +266,17 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		if not assignment_locations:
 			return
 
-		checkin_radius, latitude, longitude = frappe.db.get_value(
-			"Shift Location", assignment_locations[0], ["checkin_radius", "latitude", "longitude"]
+		# Office coordinates come from the assigned Shift Location, but the geo-fence RADIUS is
+		# the single source of truth from eSSL Settings (web_checkin_radius_km). This keeps
+		# check-IN and check-OUT governed by the exact same configured radius (default 1 km),
+		# rather than a per-Shift-Location radius. Same coords, one radius.
+		latitude, longitude = frappe.db.get_value(
+			"Shift Location", assignment_locations[0], ["latitude", "longitude"]
 		)
-		checkin_radius = flt(checkin_radius)
-		if not checkin_radius or checkin_radius <= 0:
+		radius_km = flt(frappe.db.get_single_value("eSSL Settings", "web_checkin_radius_km")) or 1.0
+		checkin_radius = radius_km * 1000.0
+		if not (flt(latitude) or flt(longitude)):
+			# No office coordinates to compare against — can't verify location.
 			if self.log_type == "OUT":
 				self._require_checkout_reason_if_outside()
 			return
@@ -279,65 +297,13 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 
 		# Outside radius
 		if self.log_type == "IN":
-			# Allow check-in from outside only if employee has applied for Work From Home for this day
-			checkin_date = getdate(self.time)
-			wfh = frappe.db.get_value(
-				"Work From Home Request",
-				{
-					"employee": self.employee,
-					"date": checkin_date,
-					"status": ["in", ["Draft", "Approved", "Live"]],
-				},
-				["name", "half_day", "custom_half_day_period"],
-				as_dict=True,
-			)
-			if wfh:
-				# Full-day WFH: outside check-in allowed all day. Half-day WFH: the outside
-				# check-in must fall within the covered half (the "leverage" is only for that half).
-				if not wfh.half_day or self._checkin_within_wfh_half(checkin_date, wfh.custom_half_day_period):
-					return
-				frappe.throw(
-					_(
-						"Your Work From Home for {0} is a half-day ({1}). Check-in from outside the "
-						"office is only allowed during that half — this check-in at {2} is outside it."
-					).format(
-						checkin_date,
-						wfh.custom_half_day_period or _("half day"),
-						get_datetime(self.time).strftime("%H:%M"),
-					),
-					exc=CheckinRadiusExceededError,
-				)
-			frappe.throw(
-				_(
-					"You are checking in from outside the office location. "
-					"Check-in is only allowed if you have applied for Work From Home for this date. "
-					"Please submit a Work From Home request for {0} first."
-				).format(checkin_date),
-				exc=CheckinRadiusExceededError,
-			)
+			# Check-in is allowed from any location. When outside the office geo-fence the
+			# employee selects a check-in reason/type in the widget (captured on the record);
+			# no Work From Home request is required. We only flag it (above) for HR review.
+			return
 
 		# OUT: require reason when checking out from outside office
 		self._require_checkout_reason_if_outside()
-
-	def _checkin_within_wfh_half(self, date, period):
-		"""For a half-day WFH, is this check-IN within the covered half?
-
-		The day is split at the shift midpoint: First Half = shift start..midpoint, Second Half =
-		midpoint..shift end. Fail-open (allow) when the period is unknown or the shift/midpoint
-		can't be resolved, so a legitimate check-in is never blocked for lack of data.
-		"""
-		if not period:
-			return True
-		from alpinos.attendance_request_automation import get_assigned_shift_times
-
-		start, end = get_assigned_shift_times(self.employee, date, self.shift)
-		if not start or not end or end <= start:
-			return True
-		midpoint = start + (end - start) / 2
-		t = get_datetime(self.time)
-		if period == "Second Half":
-			return t >= midpoint
-		return t <= midpoint  # First Half (default)
 
 
 def patch_mark_attendance_and_link_log(bootinfo=None):
