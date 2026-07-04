@@ -301,36 +301,56 @@ function checkOut(){
       btn("btn-out", true);
       const afterCapture = function () {
       fetchLocation(function () {
-        frappe.call({
-          method: "alpinos.attendance_widget.get_today_wfh_request",
-          silent: true,
-          callback(r) {
-            if (r.message) {
-              showWFHTaskDialog(
-                r.message,
-                function(tasks) {
-                  frappe.call({
-                    method: "alpinos.attendance_widget.save_wfh_tasks",
-                    args: { wfh_request: r.message.name, tasks: JSON.stringify(tasks) },
-                    callback(sr) {
-                      if (sr.exc) {
-                        frappe.msgprint("Could not save tasks. Please try again.");
-                        btn("btn-out", false);
-                        return;
+        const proceedCheckout = function () {
+          frappe.call({
+            method: "alpinos.attendance_widget.get_today_wfh_request",
+            silent: true,
+            callback(r) {
+              if (r.message) {
+                showWFHTaskDialog(
+                  r.message,
+                  function(tasks) {
+                    frappe.call({
+                      method: "alpinos.attendance_widget.save_wfh_tasks",
+                      args: { wfh_request: r.message.name, tasks: JSON.stringify(tasks) },
+                      callback(sr) {
+                        if (sr.exc) {
+                          frappe.msgprint("Could not save tasks. Please try again.");
+                          btn("btn-out", false);
+                          return;
+                        }
+                        doCheckOut();
                       }
-                      doCheckOut();
-                    }
-                  });
-                },
-                function() {
-                  btn("btn-out", false);
-                }
-              );
-            } else {
-              doCheckOut();
+                    });
+                  },
+                  function() {
+                    btn("btn-out", false);
+                  }
+                );
+              } else {
+                doCheckOut();
+              }
             }
-          }
-        });
+          });
+        };
+        // Biometric employees inside the office radius must check OUT on the device (mirrors
+        // the check-in rule); the dashboard checkout is only for genuine outside-office cases.
+        if (webCheckinRules && !noBiometric) {
+          frappe.call({
+            method: "alpinos.attendance_widget.is_within_shift_location",
+            args: { latitude: latitude, longitude: longitude },
+            callback(res) {
+              if (res.message && res.message.within_location) {
+                frappe.msgprint("Please use biometric device to check out");
+                btn("btn-out", false);
+                return;
+              }
+              proceedCheckout();
+            }
+          });
+        } else {
+          proceedCheckout();
+        }
       });
       };
       if(noBiometric){
