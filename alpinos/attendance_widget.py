@@ -585,6 +585,23 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
     if longitude is not None:
         values["longitude"] = flt(longitude)
 
+    # Biometric companies with web check-in rules enabled: within the Shift Location radius the
+    # employee must check OUT on the biometric device too (mirrors the check-in rule), so the
+    # dashboard is only for genuine outside-office checkouts.
+    if _web_checkin_rules_active(employee):
+        enabled, radius_km = _web_checkin_config()
+        coords = _shift_location_coords(employee, now_datetime())
+        if coords and coords.get("latitude") is not None and (latitude is not None and longitude is not None):
+            from hrms.hr.utils import get_distance_between_coordinates
+
+            distance_m = get_distance_between_coordinates(
+                flt(coords.latitude), flt(coords.longitude), flt(latitude), flt(longitude)
+            )
+            if distance_m <= radius_km * 1000.0:
+                frappe.throw(
+                    "Please use biometric device to check out"
+                )
+
     # Structured outside-location reason (Client/Vendor, Shoot, Meeting, Other + remarks).
     reason = (str(outside_reason).strip() if outside_reason else "")
     remarks = (str(outside_remarks).strip() if outside_remarks else "")
