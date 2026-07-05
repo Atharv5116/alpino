@@ -1,0 +1,305 @@
+{
+ "actions": [],
+ "creation": "2026-07-05 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "employee_name",
+  "department",
+  "salary_category",
+  "date_of_joining",
+  "relieving_date",
+  "column_break_emp",
+  "working_days",
+  "payable_days",
+  "present_days",
+  "absent_days",
+  "half_days",
+  "section_leave",
+  "paid_leaves",
+  "unpaid_leaves",
+  "weekends",
+  "public_holidays",
+  "section_ho",
+  "late_group1_count",
+  "late_group2_count",
+  "late_deduction_days",
+  "column_break_ho",
+  "wfh_count",
+  "od_days",
+  "comp_off_earned",
+  "section_essl",
+  "ot_minutes",
+  "el_minutes",
+  "column_break_essl",
+  "ot_hours_display",
+  "el_hours_display",
+  "section_offline",
+  "pl_opening_balance",
+  "pl_taken",
+  "pl_closing_balance",
+  "column_break_offline",
+  "present_on_weekend",
+  "tada_days",
+  "section_day_data",
+  "day_data"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "employee.department",
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "employee.salary_category",
+   "fieldname": "salary_category",
+   "fieldtype": "Link",
+   "label": "Salary Category",
+   "options": "Salary Category",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "employee.date_of_joining",
+   "fieldname": "date_of_joining",
+   "fieldtype": "Date",
+   "label": "Date of Joining",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "employee.relieving_date",
+   "fieldname": "relieving_date",
+   "fieldtype": "Date",
+   "label": "Relieving Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_emp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Expected working days for the month (calendar days - Sundays - weekday public holidays), prorated to joining/relieving dates.",
+   "fieldname": "working_days",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Working Days",
+   "precision": "1"
+  },
+  {
+   "description": "Final days eligible for salary after all attendance, leave and penalty rules.",
+   "fieldname": "payable_days",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Payable Days",
+   "precision": "1"
+  },
+  {
+   "fieldname": "present_days",
+   "fieldtype": "Float",
+   "label": "Present Days",
+   "precision": "1"
+  },
+  {
+   "fieldname": "absent_days",
+   "fieldtype": "Float",
+   "label": "Absent Days",
+   "precision": "1"
+  },
+  {
+   "fieldname": "half_days",
+   "fieldtype": "Float",
+   "label": "Half Days (0.5)",
+   "precision": "1"
+  },
+  {
+   "fieldname": "section_leave",
+   "fieldtype": "Section Break",
+   "label": "Leaves & Holidays"
+  },
+  {
+   "fieldname": "paid_leaves",
+   "fieldtype": "Float",
+   "label": "Approved Paid Leaves",
+   "precision": "1"
+  },
+  {
+   "fieldname": "unpaid_leaves",
+   "fieldtype": "Float",
+   "label": "Unpaid Leaves (LOP)",
+   "precision": "1"
+  },
+  {
+   "fieldname": "weekends",
+   "fieldtype": "Int",
+   "label": "Weekends"
+  },
+  {
+   "fieldname": "public_holidays",
+   "fieldtype": "Int",
+   "label": "Public Holidays"
+  },
+  {
+   "fieldname": "section_ho",
+   "fieldtype": "Section Break",
+   "label": "HO/Admin"
+  },
+  {
+   "description": "Late marks between 10:15 and 10:29 (every 4 deduct 0.5 day).",
+   "fieldname": "late_group1_count",
+   "fieldtype": "Int",
+   "label": "Late In (>10:15)"
+  },
+  {
+   "description": "Late marks at 10:30 or later (every 4 deduct 1.0 day).",
+   "fieldname": "late_group2_count",
+   "fieldtype": "Int",
+   "label": "Late In (>10:30)"
+  },
+  {
+   "fieldname": "late_deduction_days",
+   "fieldtype": "Float",
+   "label": "Late Deduction (Days)",
+   "precision": "1"
+  },
+  {
+   "fieldname": "column_break_ho",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Monthly WFH count (full = 1.0, half = 0.5). Paid in attendance; penalty applies in payroll.",
+   "fieldname": "wfh_count",
+   "fieldtype": "Float",
+   "label": "WFH Count",
+   "precision": "1"
+  },
+  {
+   "fieldname": "od_days",
+   "fieldtype": "Float",
+   "label": "On Duty (OD) Days",
+   "precision": "1"
+  },
+  {
+   "fieldname": "comp_off_earned",
+   "fieldtype": "Float",
+   "label": "Comp-Off Earned",
+   "precision": "1"
+  },
+  {
+   "fieldname": "section_essl",
+   "fieldtype": "Section Break",
+   "label": "WH ESSL"
+  },
+  {
+   "description": "Total overtime minutes for the month (all days incl. Sundays/PH).",
+   "fieldname": "ot_minutes",
+   "fieldtype": "Int",
+   "label": "OT Minutes"
+  },
+  {
+   "description": "Total early-leave minutes for the month (working days only).",
+   "fieldname": "el_minutes",
+   "fieldtype": "Int",
+   "label": "EL Minutes"
+  },
+  {
+   "fieldname": "column_break_essl",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ot_hours_display",
+   "fieldtype": "Data",
+   "label": "OT Hours (H:MM)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "el_hours_display",
+   "fieldtype": "Data",
+   "label": "EL Hours (H:MM)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_offline",
+   "fieldtype": "Section Break",
+   "label": "Offline Sales"
+  },
+  {
+   "fieldname": "pl_opening_balance",
+   "fieldtype": "Float",
+   "label": "Paid Leave Opening Balance",
+   "precision": "1"
+  },
+  {
+   "fieldname": "pl_taken",
+   "fieldtype": "Float",
+   "label": "Paid Leaves Taken",
+   "precision": "1"
+  },
+  {
+   "fieldname": "pl_closing_balance",
+   "fieldtype": "Float",
+   "label": "Paid Leave Closing Balance",
+   "precision": "1"
+  },
+  {
+   "fieldname": "column_break_offline",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "present_on_weekend",
+   "fieldtype": "Int",
+   "label": "Present on Weekend"
+  },
+  {
+   "description": "TADA Days = Payable Days - Paid Leaves Taken + Unpaid Leaves.",
+   "fieldname": "tada_days",
+   "fieldtype": "Float",
+   "label": "TADA Days",
+   "precision": "1"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_day_data",
+   "fieldtype": "Section Break",
+   "label": "Day-wise Detail"
+  },
+  {
+   "description": "Per-day detail rendered by the batch entry page: {\"YYYY-MM-DD\": {in, out, hours, ot, el, status}}.",
+   "fieldname": "day_data",
+   "fieldtype": "JSON",
+   "label": "Day Data"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-05 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Monthly Attendance Batch Row",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

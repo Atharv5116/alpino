@@ -1,0 +1,201 @@
+{
+ "actions": [],
+ "creation": "2026-07-05 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "rule_engine",
+  "payroll_month",
+  "month_title",
+  "column_break_head",
+  "company",
+  "section_ingestion",
+  "source_file",
+  "public_holidays",
+  "column_break_ingestion",
+  "fetched_by",
+  "fetched_on",
+  "approved_by",
+  "approved_on",
+  "section_rows",
+  "rows",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "description": "Which attendance calculation engine this batch runs. Employees are pulled in by their Salary Category's rule engine.",
+   "fieldname": "rule_engine",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Attendance Rule Engine",
+   "options": "\nHO/Admin\nWH ESSL\nOffline Sales",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "Any date within the payroll month; normalized to the 1st on save.",
+   "fieldname": "payroll_month",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Payroll Month",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "month_title",
+   "fieldtype": "Data",
+   "label": "Month",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_ingestion",
+   "fieldtype": "Section Break",
+   "label": "Data Source"
+  },
+  {
+   "depends_on": "eval:doc.rule_engine === 'Offline Sales'",
+   "description": "Monthly attendance Excel uploaded by HR (Offline Sales Officers only).",
+   "fieldname": "source_file",
+   "fieldtype": "Attach",
+   "label": "Attendance Excel"
+  },
+  {
+   "depends_on": "eval:doc.rule_engine === 'WH ESSL'",
+   "description": "Month-specific public holidays marked by HR for WH staff. Marked dates are EL-exempt and worked hours count 100% into OT.",
+   "fieldname": "public_holidays",
+   "fieldtype": "Table",
+   "label": "Public Holidays (This Month)",
+   "options": "Attendance Batch Public Holiday"
+  },
+  {
+   "fieldname": "column_break_ingestion",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "fetched_by",
+   "fieldtype": "Link",
+   "label": "Data Fetched By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fetched_on",
+   "fieldtype": "Datetime",
+   "label": "Data Fetched On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_rows",
+   "fieldtype": "Section Break",
+   "label": "Employee Attendance"
+  },
+  {
+   "fieldname": "rows",
+   "fieldtype": "Table",
+   "label": "Rows",
+   "options": "Monthly Attendance Batch Row"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Monthly Attendance Batch",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-05 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Monthly Attendance Batch",
+ "naming_rule": "By script",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "month_title,rule_engine",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "month_title",
+ "track_changes": 1
+}

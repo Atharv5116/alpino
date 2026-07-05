@@ -1,0 +1,30 @@
+<div class="attendance-batch-entry">
+	<div class="abe-header frappe-card" style="padding: 12px 16px; margin-bottom: 12px;">
+		<div class="row">
+			<div class="col-sm-3"><strong class="abe-month"></strong></div>
+			<div class="col-sm-3">Engine: <span class="abe-engine"></span></div>
+			<div class="col-sm-3">Company: <span class="abe-company"></span></div>
+			<div class="col-sm-3 text-right"><span class="abe-status indicator-pill gray"></span></div>
+		</div>
+		<div class="row" style="margin-top: 4px;">
+			<div class="col-sm-12 text-muted small abe-fetched"></div>
+		</div>
+	</div>
+
+	<div class="abe-ingestion frappe-card" style="padding: 12px 16px; margin-bottom: 12px;">
+		<!-- Per-engine ingestion controls rendered by JS -->
+	</div>
+
+	<div class="abe-summary frappe-card" style="padding: 12px 16px; margin-bottom: 12px; display: none;">
+		<div class="row abe-summary-tiles"></div>
+	</div>
+
+	<div class="abe-grid-wrapper frappe-card" style="padding: 8px; overflow-x: auto;">
+		<table class="table table-bordered table-sm abe-grid" style="margin-bottom: 0;">
+			<thead class="abe-grid-head"></thead>
+			<tbody class="abe-grid-body">
+				<tr><td class="text-muted text-center">No data yet — generate / fetch / upload above.</td></tr>
+			</tbody>
+		</table>
+	</div>
+</div>
