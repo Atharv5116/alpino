@@ -153,8 +153,6 @@ after_migrate = [
 	"alpinos.attendance_request_workflow_setup.execute",
 	"alpinos.salary_category_setup.seed_salary_categories",
 	"alpinos.attendance_batch_workflow_setup.execute",
-	"alpinos.comp_off_automation.setup_comp_off_leave_type",
-	"alpinos.comp_off_workflow_setup.execute",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
 	"alpinos.employee_probation_automation.setup_employee_probation",
@@ -431,9 +429,6 @@ doc_events = {
 		],
 		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
 		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
-	},
-	"Compensatory Leave Request": {
-		"on_change": "alpinos.comp_off_automation.notify_comp_off_outcome"
 	}
 }
 
@@ -444,8 +439,7 @@ scheduler_events = {
 	"daily": [
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
 		"alpinos.approval_access.sync_reporting_manager_roles",
-		"alpinos.workflow_engine.refresh_todays_dispatch",
-		"alpinos.comp_off_automation.process_comp_off_detection"
+		"alpinos.workflow_engine.refresh_todays_dispatch"
 	],
 	"cron": {
 		"*/5 * * * *": [

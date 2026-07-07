@@ -494,18 +494,6 @@ def setup_custom_fields():
 			description="When ticked, this employee checks in/out via the workspace dialog (live photo + location) instead of a biometric device.",
 		),
 
-		# BRD ALP_HRMS_Payroll_001 §2: when active, the attendance engine completely
-		# ignores punch data and marks the employee Present for all working days
-		# (no late flags, no absents). HR-controlled.
-		dict(
-			fieldname="custom_present_by_default",
-			label="Present by Default",
-			fieldtype="Check",
-			insert_after="custom_no_biometric",
-			default=0,
-			description="Ignore clock-in/out punches and auto-mark this employee Present for all working days (no late penalties).",
-		),
-
 		# Internship duration in months (e.g. 1 = 1 month, 4 = 4 months).
 		# Used by the HR dashboard to compute internship completion = Date of Joining + N months.
 		dict(
