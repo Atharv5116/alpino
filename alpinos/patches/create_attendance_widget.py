@@ -39,6 +39,7 @@ let longitude = null;
 let noBiometric = false;
 let capturedImage = null;
 let webCheckinRules = false;
+let approvedWFH = false;
 let checkinType = null;
 let checkinReason = null;
 
@@ -64,6 +65,7 @@ function loadStatus(){
       let status = r.message ? r.message.status : "NONE";
       noBiometric = !!(r.message && r.message.no_biometric);
       webCheckinRules = !!(r.message && r.message.web_checkin_rules);
+      approvedWFH = !!(r.message && r.message.approved_wfh);
   if(status === "IN"){
     setStatusBadge("Checked In", "in");
     btn("btn-in",true);
@@ -219,7 +221,7 @@ function checkIn(){
 
     if(noBiometric){
       openCameraDialog(function(img){ capturedImage = img; submitCheckin(); }, function(){ btn("btn-in", false); });
-    } else if(webCheckinRules){
+    } else if(webCheckinRules && !approvedWFH){
       frappe.call({
         method: "alpinos.attendance_widget.is_within_shift_location",
         args: { latitude: latitude, longitude: longitude },
@@ -335,7 +337,7 @@ function checkOut(){
         };
         // Biometric employees inside the office radius must check OUT on the device (mirrors
         // the check-in rule); the dashboard checkout is only for genuine outside-office cases.
-        if (webCheckinRules && !noBiometric) {
+        if (webCheckinRules && !noBiometric && !approvedWFH) {
           frappe.call({
             method: "alpinos.attendance_widget.is_within_shift_location",
             args: { latitude: latitude, longitude: longitude },
