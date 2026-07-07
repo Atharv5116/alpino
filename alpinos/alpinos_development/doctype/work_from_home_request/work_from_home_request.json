@@ -47,6 +47,7 @@
   {
    "fieldname": "date",
    "fieldtype": "Date",
+   "in_preview": 1,
    "label": "From Date"
   },
   {
@@ -55,14 +56,15 @@
    "label": "To Date"
   },
   {
+   "default": 0,
    "fieldname": "half_day",
    "fieldtype": "Check",
-   "label": "Half Day",
-   "default": 0
+   "label": "Half Day"
   },
   {
    "fieldname": "reason",
    "fieldtype": "Data",
+   "in_preview": 1,
    "label": "Reason"
   },
   {
@@ -76,6 +78,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "hidden": 1,
+   "in_preview": 1,
    "label": "Status",
    "options": "Draft\nPending Reporting Manager Approval\nPending HOD Approval\nPending HR Approval\nApproved\nLive\nRejected\nReturned to Requestor\nOn Hold"
   },
@@ -95,7 +98,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-19 14:05:39.765667",
+ "modified": "2026-07-07 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Work From Home Request",
@@ -116,7 +119,9 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "employee_name"
 }
