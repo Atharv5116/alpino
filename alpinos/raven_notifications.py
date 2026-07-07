@@ -65,11 +65,6 @@ def _get_bot():
 		return None
 
 
-def _doc_link(doc):
-	route = doc.doctype.lower().replace(" ", "-")
-	return f"{frappe.utils.get_url()}/app/{route}/{doc.name}"
-
-
 # --------------------------------------------------------------------------- recipients
 
 
@@ -144,6 +139,20 @@ def _emp(doc):
 	return doc.get("employee_name") or doc.get("employee") or doc.get("requested_by") or "—"
 
 
+def _fmt_date(value):
+	"""Render a date in the site's date format (falls back to the raw value)."""
+	try:
+		return frappe.utils.formatdate(value)
+	except Exception:
+		return value
+
+
+def _fmt_range(from_date, to_date=None):
+	if to_date and str(to_date) != str(from_date):
+		return f"{_fmt_date(from_date)} to {_fmt_date(to_date)}"
+	return _fmt_date(from_date)
+
+
 def _stage_icon(state):
 	s = (state or "").lower()
 	if any(k in s for k in ("approved", "live", "completed", "paid")):
@@ -170,7 +179,10 @@ def _send_dm(bot, user, text, doc=None):
 
 def _notify_stage(label, doc, state, detail=""):
 	"""Targeted DMs for a stage change: the applicant gets a status update on their own
-	request; the stage's approver(s) get an action ping."""
+	request; the stage's approver(s) get an action ping.
+
+	The DM carries the document as a link card (name + preview fields), so the text
+	itself stays free of the doc name and raw URLs — no repeated data."""
 	bot = _get_bot()
 	if not bot:
 		return
@@ -178,7 +190,7 @@ def _notify_stage(label, doc, state, detail=""):
 	_send_dm(
 		bot,
 		applicant,
-		f"{_stage_icon(state)} Your <b>{label}</b> {doc.name}{detail} is now <b>{state}</b>.<br>{_doc_link(doc)}",
+		f"{_stage_icon(state)} Your <b>{label}</b> request{detail} is now <b>{state}</b>.",
 		doc,
 	)
 	for user in _approvers_for_state(doc, state):
@@ -186,8 +198,7 @@ def _notify_stage(label, doc, state, detail=""):
 			_send_dm(
 				bot,
 				user,
-				f"🔔 <b>{label}</b> {doc.name} from <b>{_emp(doc)}</b>{detail} needs your approval "
-				f"(<b>{state}</b>).<br>{_doc_link(doc)}",
+				f"🔔 <b>{label}</b> request from <b>{_emp(doc)}</b>{detail} needs your approval.",
 				doc,
 			)
 
@@ -201,7 +212,7 @@ def _submitted(label, who, detail, doc):
 	_send_dm(
 		bot,
 		applicant,
-		f"🔔 Your <b>{label}</b> {doc.name}{detail} was submitted — pending approval.<br>{_doc_link(doc)}",
+		f"🔔 Your <b>{label}</b> request{detail} was submitted — pending approval.",
 		doc,
 	)
 	rm = _rm_user(doc)
@@ -209,7 +220,7 @@ def _submitted(label, who, detail, doc):
 		_send_dm(
 			bot,
 			rm,
-			f"🔔 <b>{label}</b> {doc.name} from <b>{who}</b>{detail} needs your approval.<br>{_doc_link(doc)}",
+			f"🔔 <b>{label}</b> request from <b>{who}</b>{detail} needs your approval.",
 			doc,
 		)
 
@@ -226,15 +237,13 @@ def notify_leave_application(doc, method=None):
 	state = doc.get("workflow_state")
 	if not state or state == "Draft":
 		return
-	when = doc.get("from_date")
-	if doc.get("to_date") and doc.get("to_date") != doc.get("from_date"):
-		when = f"{doc.get('from_date')} to {doc.get('to_date')}"
+	when = _fmt_range(doc.get("from_date"), doc.get("to_date"))
 	_notify_stage("Leave Application", doc, state, f" ({doc.get('leave_type')}, {when})")
 
 
 def notify_attendance_request(doc, method=None):
 	if method == "on_submit":
-		when = doc.get("custom_request_date") or doc.get("from_date")
+		when = _fmt_date(doc.get("custom_request_date") or doc.get("from_date"))
 		_submitted("Attendance Request", _emp(doc), f" ({doc.get('reason')}, {when})", doc)
 
 
@@ -244,7 +253,11 @@ def notify_work_from_home(doc, method=None):
 		status = doc.get("status")
 		if not status or status == "Draft":
 			return
-		_notify_stage("Work From Home", doc, status, f" ({doc.get('date')})")
+		when = _fmt_range(doc.get("date"), doc.get("to_date"))
+		if doc.get("half_day"):
+			period = doc.get("custom_half_day_period")
+			when += f", Half Day ({period})" if period else ", Half Day"
+		_notify_stage("Work From Home", doc, status, f" for <b>{when}</b>")
 
 
 def notify_job_requisition(doc, method=None):
