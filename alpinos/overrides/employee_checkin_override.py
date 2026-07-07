@@ -235,6 +235,13 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		# Skip all location/geo validations when check-in/check-out is from Attendance Request or Biometric Device
 		if self.get("from_attendance_request") or self.get("device_id"):
 			return
+		# Approved Work From Home day: working from outside the office is expected, so don't flag
+		# the check-in as outside-location and don't demand an outside checkout reason. The daily
+		# task update collected on checkout (attendance_widget) covers accountability instead.
+		from alpinos.attendance_widget import _approved_wfh_today
+
+		if _approved_wfh_today(self.employee):
+			return
 		if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
 			return
 

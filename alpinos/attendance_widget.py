@@ -22,6 +22,25 @@ def _employee_no_biometric(employee):
     return bool(frappe.db.get_value("Employee", employee, "custom_no_biometric"))
 
 
+def _approved_wfh_today(employee):
+    """True when the employee has an APPROVED Work From Home Request for today.
+    On such days, working from outside the office is expected: the check-in geo-fence
+    (outside-location flag + Client/Vendor/Shoot/Meeting type, and the outside checkout
+    reason) is skipped, and a daily task update is collected on checkout instead."""
+    if not employee or not frappe.db.exists("DocType", "Work From Home Request"):
+        return False
+    return bool(
+        frappe.db.exists(
+            "Work From Home Request",
+            {
+                "employee": employee,
+                "date": getdate(now_datetime()),
+                "status": ["in", ["Approved", "Live"]],
+            },
+        )
+    )
+
+
 def _web_checkin_config():
     """(enabled, radius_km) for the eSSL Settings web/mobile check-in rules."""
     enabled = frappe.db.get_single_value("eSSL Settings", "enable_web_checkin_rules")
@@ -153,7 +172,11 @@ def get_status():
     employee = _get_employee_for_user(frappe.session.user)
     no_bio = _employee_no_biometric(employee)
     web_rules = _web_checkin_rules_active(employee)
-    base = {"no_biometric": no_bio, "web_checkin_rules": web_rules}
+    base = {
+        "no_biometric": no_bio,
+        "web_checkin_rules": web_rules,
+        "approved_wfh": _approved_wfh_today(employee),
+    }
     if not employee:
         return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
     today_in = _get_today_first_checkin(employee)
@@ -463,8 +486,9 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
         values["longitude"] = flt(longitude)
 
     # Biometric companies with web check-in rules enabled: restrict to Shift Location radius
-    # and require a type (+ reason for 'Other').
-    if _web_checkin_rules_active(employee):
+    # and require a type (+ reason for 'Other'). On an approved-WFH day this whole gate is
+    # skipped — the employee is expected to work from outside the office.
+    if _web_checkin_rules_active(employee) and not _approved_wfh_today(employee):
         enabled, radius_km = _web_checkin_config()
         coords = _shift_location_coords(employee, now_datetime())
         if coords and coords.get("latitude") is not None and (latitude is not None and longitude is not None):
@@ -587,8 +611,8 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
 
     # Biometric companies with web check-in rules enabled: within the Shift Location radius the
     # employee must check OUT on the biometric device too (mirrors the check-in rule), so the
-    # dashboard is only for genuine outside-office checkouts.
-    if _web_checkin_rules_active(employee):
+    # dashboard is only for genuine outside-office checkouts. Skipped on approved-WFH days.
+    if _web_checkin_rules_active(employee) and not _approved_wfh_today(employee):
         enabled, radius_km = _web_checkin_config()
         coords = _shift_location_coords(employee, now_datetime())
         if coords and coords.get("latitude") is not None and (latitude is not None and longitude is not None):
