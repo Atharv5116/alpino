@@ -194,8 +194,10 @@ def get_employees_for_engine(rule_engine, company, payroll_month):
 # their own modules as those tasks land; keys must match the rule_engine options.
 
 def _ho_admin_adapter(batch):
-	"""HO/Admin — 97%/50% percentage rules. Engine parked on branch attendance-phase2."""
-	pass
+	"""HO/Admin — 97%/50% percentage rules, late tiers, WFH/OD counts."""
+	from alpinos.attendance_percentage import run_ho_adapter
+
+	run_ho_adapter(batch)
 
 
 def _wh_essl_adapter(batch):
