@@ -209,10 +209,13 @@ def _render_stickers_pdf(stickers, label):
 		{"stickers": stickers, "pick_list": label},
 	)
 	from frappe.utils.pdf import get_pdf
-	# Exactly 100mm x 75mm, zero margins so the @page CSS is honoured. NO
-	# orientation option: combined with explicit page dimensions wkhtmltopdf
-	# rotates the custom size (75 wide x 100 tall) and the sticker floats
-	# shrunken inside a portrait page. 100x75 is already landscape by shape.
+	# Exactly 100mm x 75mm, zero margins so the @page CSS is honoured.
+	# - NO orientation option: combined with explicit page dimensions
+	#   wkhtmltopdf rotates the custom size (75 wide x 100 tall).
+	# - dpi 96 + disable-smart-shrinking: without these wkhtmltopdf maps CSS
+	#   millimetres at 96dpi onto a page computed at 72dpi — the page comes out
+	#   4/3 bigger than the sticker and the bottom band spills to a second page.
+	#   With them, CSS mm == physical mm and each sticker fills one page.
 	pdf_options = {
 		"page-width": "100mm",
 		"page-height": "75mm",
@@ -220,6 +223,8 @@ def _render_stickers_pdf(stickers, label):
 		"margin-bottom": "0mm",
 		"margin-left": "0mm",
 		"margin-right": "0mm",
+		"dpi": "96",
+		"disable-smart-shrinking": "",
 	}
 	return get_pdf(html, options=pdf_options)
 
