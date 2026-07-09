@@ -225,6 +225,10 @@ def _render_stickers_pdf(stickers, label):
 		"margin-right": "0mm",
 		"dpi": "96",
 		"disable-smart-shrinking": "",
+		# This wkhtmltopdf build renders CSS at 72dpi onto a 96dpi page — the
+		# sticker came out at exactly 3/4 of the label. zoom 96/72 corrects it.
+		# If a future patched-qt build prints stickers OVERSIZED, remove zoom.
+		"zoom": "1.3333333",
 	}
 	return get_pdf(html, options=pdf_options)
 

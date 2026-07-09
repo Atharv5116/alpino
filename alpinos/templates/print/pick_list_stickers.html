@@ -18,7 +18,9 @@
 <head>
 <meta charset="utf-8" />
 <style>
-	@page { size: 100mm 75mm; margin: 0; }
+	/* Page size comes from the wkhtmltopdf options (100mm x 75mm) — a CSS
+	   size here paginates in webkit's own px scale and splits stickers. */
+	@page { margin: 0; }
 	html, body { margin: 0; padding: 0; }
 	body {
 		font-family: "Helvetica Neue", "Helvetica", "Arial", sans-serif;
