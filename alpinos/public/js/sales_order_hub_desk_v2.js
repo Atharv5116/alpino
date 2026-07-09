@@ -24,10 +24,18 @@
 		frappe.router.on("change", function () {
 			const r = frappe.get_route() || [];
 			if (r[0] === "List" && CUSTOM_LIST_PAGE[r[1]]) {
-				const view = (r[2] || "List").toLowerCase();
-				if (view !== "report") {
-					frappe.set_route(CUSTOM_LIST_PAGE[r[1]]);
-				}
+				// Defer one tick and re-read the route: opening the Report view
+				// can fire an intermediate change without the view suffix, which
+				// would wrongly bounce the report to the custom list page.
+				const target = CUSTOM_LIST_PAGE[r[1]];
+				setTimeout(function () {
+					const cur = frappe.get_route() || [];
+					if (cur[0] !== "List" || CUSTOM_LIST_PAGE[cur[1]] !== target) return;
+					const view = (cur[2] || "List").toLowerCase();
+					if (view !== "report") {
+						frappe.set_route(target);
+					}
+				}, 0);
 			} else if (r[0] === "Pick List" && r[1] && r[1] !== "List") {
 				// Intercept standard Pick List form and redirect to custom entry
 				frappe.set_route("pick_list_entry", r[1]);

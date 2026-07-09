@@ -31,7 +31,7 @@ class SalesOrderEntryView {
 			frappe.set_route('sales-order-entry-list')
 		);
 		// Always-visible Download PDF button (every Sales Order, any status).
-		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
+		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf(), __('PDF'));
 		// Fetch the customer PO PDF (named by 'PO No for PDF') from the folder
 		// set in Alpino General Settings and attach it to the order.
 		this.page.add_inner_button(__('Fetch PO PDF'), () => {
@@ -47,19 +47,19 @@ class SalesOrderEntryView {
 					}
 				}
 			});
-		});
+		}, __('PDF'));
 		// Edit re-opens the entry form on the SAME draft (shown for drafts only).
 		this.btn_edit_so = this.page.add_inner_button(__('Edit Order'), () => {
 			frappe.route_options = { edit_so: this._so_name };
 			frappe.set_route('sales-order-entry');
-		});
+		}, __('Order'));
 		if (this.btn_edit_so) this.btn_edit_so.hide();
 		// Duplicate prefills the entry form with this order's data; saving
 		// creates a NEW order (fresh workflow state, status and Created By).
 		this.page.add_inner_button(__('Duplicate'), () => {
 			frappe.route_options = { duplicate_so: this._so_name };
 			frappe.set_route('sales-order-entry');
-		});
+		}, __('Order'));
 		// Cancel: submitted orders only, and only for roles with cancel rights
 		// (server re-checks). The guard blocks with the linked Pick List /
 		// Delivery Note ID while one is still active.
@@ -78,12 +78,14 @@ class SalesOrderEntryView {
 					}
 				});
 			});
-		});
+		}, __('Order'));
 		if (this.btn_cancel_so) this.btn_cancel_so.hide();
 		// The main "next stage" action is set as the page primary action by
 		// update_actions(). This is the only stage-secondary inline button.
-		this.btn_future_dispatch = this.page.add_inner_button(__('Mark as Future Dispatch'), () =>
-			this.do_future_dispatch()
+		this.btn_future_dispatch = this.page.add_inner_button(
+			__('Mark as Future Dispatch'),
+			() => this.do_future_dispatch(),
+			__('Order')
 		);
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
 	}
