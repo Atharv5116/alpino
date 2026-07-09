@@ -23,6 +23,15 @@ def ensure_allow_import():
 		if not frappe.get_meta(dt).allow_import:
 			make_property_setter(dt, None, "allow_import", 1, "Check", for_doctype=True)
 			changed = True
+
+	# Submit After Import is set_only_once in core — frozen the moment a Data
+	# Import is saved. The shortcut pages pre-create the document, so the user
+	# could never toggle it. Lift the lock; the importer reads the value at
+	# import time, so editing it on a pending import is safe.
+	if frappe.get_meta("Data Import").get_field("submit_after_import").set_only_once:
+		make_property_setter("Data Import", "submit_after_import", "set_only_once", 0, "Check")
+		changed = True
+
 	if changed:
 		frappe.clear_cache()
 
