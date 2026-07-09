@@ -171,7 +171,7 @@ class OfflineBuyerCatalogPage {
 				fields: [
 					// Classification first — channel, customer type and the four
 					// buyer flags are asked before anything else (general masters).
-					{ label: 'Channel', fieldname: 'channel', fieldtype: 'Link', options: 'Channel', reqd: 1 },
+					{ label: 'Channel', fieldname: 'channel', fieldtype: 'Link', options: 'Channel' },
 					{
 						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
 						options: 'Alpino Customer Type',
