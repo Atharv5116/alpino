@@ -49,15 +49,19 @@
 		font-size: 26pt; font-weight: 900; line-height: 1; letter-spacing: 0.5px;
 	}
 
-	/* Column 2 — SKU code beside the SKU#, MFG date (value only) below it. */
+	/* Column 2 — SKU code beside the SKU#, MFG date (value only) below it.
+	   Kept left of the SAMPLE box: capped width, long codes wrap to a second
+	   line instead of running underneath it. */
 	.sku-code {
 		position: absolute;
-		top: 5mm; left: 38mm;
+		top: 5mm; left: 30mm;
+		max-width: 38mm;
 		font-size: 16pt; font-weight: 800; line-height: 1.1;
+		word-wrap: break-word;
 	}
 	.mfg-date {
 		position: absolute;
-		top: 14mm; left: 38mm;
+		top: 19mm; left: 30mm;
 		font-size: 12pt; font-weight: 800; line-height: 1;
 	}
 

@@ -31,14 +31,19 @@ def _map_customer_type(obm_customer_type):
 def _ensure_customer_for_obm(doc):
 	"""Create or refresh ERPNext Customer from business name (no manual Customer pick list)."""
 	biz_name = (doc.customer_business_name or "").strip()
-	# A buyer now holds multiple sites under one record, so site no longer names the
-	# Customer. Children (different GST entities under a parent) are distinguished by
-	# GST No (Registered) / PAN No (Unregistered); Overseas falls back to business name.
+	# GST No (Registered) / PAN No (Unregistered) distinguishes GST entities that
+	# share a trade name — but ONLY in the Customer ID (docname). customer_name
+	# stays the plain business name: that is what Sales Orders, Pick Lists and
+	# stickers display.
 	tax_id = (doc.gst_no or doc.pan_no or "").strip()
-	name = f"{biz_name} - {tax_id}" if tax_id else biz_name
+	unique_id = f"{biz_name} - {tax_id}" if tax_id else biz_name
 
-	if not name:
+	if not biz_name:
 		frappe.throw(_("Customer (Business Name) is required."), title=_("Missing business name"))
+
+	# A customer for this GST entity may already exist (e.g. re-linking) — adopt it.
+	if not doc.customer and frappe.db.exists("Customer", unique_id):
+		doc.customer = unique_id
 
 	cg, territory = _selling_defaults()
 	if not cg or not territory:
@@ -56,8 +61,8 @@ def _ensure_customer_for_obm(doc):
 
 	if doc.customer and frappe.db.exists("Customer", doc.customer):
 		cust = frappe.get_doc("Customer", doc.customer)
-		if cust.customer_name != name:
-			cust.customer_name = name
+		if cust.customer_name != biz_name:
+			cust.customer_name = biz_name
 		if mapped_order_type:
 			cust.custom_order_type = mapped_order_type
 		if doc.gst_type == "Registered Business" and doc.gst_no:
@@ -66,11 +71,20 @@ def _ensure_customer_for_obm(doc):
 			cust.tax_id = doc.pan_no
 		if parent_customer:
 			cust.parent_customer = parent_customer
+		cust.flags.ignore_mandatory = True
 		cust.save(ignore_permissions=True)
+		# Keep the ID as "business - GST/PAN" when it drifted (renames update
+		# every linked document). Skipped when the target ID is already taken.
+		if tax_id and cust.name != unique_id and not frappe.db.exists("Customer", unique_id):
+			try:
+				frappe.rename_doc("Customer", cust.name, unique_id, force=True)
+				doc.customer = unique_id
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), f"customer id rename failed: {cust.name}")
 		return
 
 	cust = frappe.new_doc("Customer")
-	cust.customer_name = name
+	cust.customer_name = biz_name
 	cust.customer_type = "Company"
 	cust.customer_group = cg
 	cust.territory = territory
@@ -84,7 +98,8 @@ def _ensure_customer_for_obm(doc):
 		cust.parent_customer = parent_customer
 	if company:
 		cust.append("companies", {"company": company})
-	cust.insert(ignore_permissions=True)
+	# Docname = "business - GST/PAN" (unique per GST entity); display name plain.
+	cust.insert(ignore_permissions=True, set_name=unique_id if tax_id else None)
 	doc.customer = cust.name
 
 

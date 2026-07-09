@@ -14,7 +14,13 @@ def update_job_application_webform():
 		return
 	
 	web_form = frappe.get_doc("Web Form", "job-application")
-	
+
+	# Standard web forms can only be edited in developer mode — skip instead of
+	# crashing the migrate when the flag is off (or races during migrate).
+	if web_form.get("is_standard") and not frappe.conf.developer_mode:
+		print("ℹ️  job-application web form is standard and developer mode is off — skipping update")
+		return
+
 	# Fields to remove from web form (keep for HR but hide from candidates)
 	fields_to_hide = [
 		"country",
