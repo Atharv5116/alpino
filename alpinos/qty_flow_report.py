@@ -112,6 +112,25 @@ def _pairs_quo_so(filters):
 			yield quo, so, _agg(up_rows), _agg(linked), _remarks(linked, "custom_remarks")
 
 
+def _exploded_so_qty(so):
+	"""{item_code: qty} for a Sales Order with bundle SKUs exploded into their
+	components (bundle qty x per-unit base qty) — the Pick List stores exploded
+	component rows, so both sides of the comparison must speak components."""
+	from alpinos.sales_order_api import _bundle_components
+
+	out = {}
+	for r in frappe.get_all("Sales Order Item", filters={"parent": so}, fields=["item_code", "qty"]):
+		if not r.item_code:
+			continue
+		comps = _bundle_components(r.item_code)
+		if comps:
+			for c in comps:
+				out[c.item] = out.get(c.item, 0) + flt(r.qty) * flt(c.base_qty)
+		else:
+			out[r.item_code] = out.get(r.item_code, 0) + flt(r.qty)
+	return out
+
+
 def _pairs_so_pl(filters):
 	conds = [["docstatus", "<", 2], ["custom_sales_order_id", "is", "set"]]
 	conds += _date_conditions(filters, "creation")
@@ -133,8 +152,7 @@ def _pairs_so_pl(filters):
 			)
 			if (r.get("custom_source_table") or "Items") == "Items"
 		]
-		up_rows = frappe.get_all("Sales Order Item", filters={"parent": so}, fields=["item_code", "qty"])
-		yield so, pl.name, _agg(up_rows), _agg(down_rows), _remarks(down_rows, "custom_remark")
+		yield so, pl.name, _exploded_so_qty(so), _agg(down_rows), _remarks(down_rows, "custom_remark")
 
 
 def _pairs_pl_dn(filters):
