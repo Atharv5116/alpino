@@ -1,7 +1,7 @@
 frappe.pages['pick_list_list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Pick Lists'),
+		title: __('Alpino Pick Lists'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('pick_list_list'));

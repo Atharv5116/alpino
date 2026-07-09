@@ -4,7 +4,7 @@
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-05-22 11:28:10.161524",
+ "modified": "2026-07-08 17:30:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "pick_list_list",
@@ -15,5 +15,5 @@
  "standard": "Yes",
  "style": null,
  "system_page": 0,
- "title": "Pick List List"
+ "title": "Alpino Pick Lists"
 }

@@ -10,20 +10,20 @@ def validate_opportunity_alpinos(doc, method=None):
 	"""Runs on Opportunity.validate via hooks.doc_events.
 
 	1. Rounds SKU quantities up to full boxes when a Box UOM conversion exists.
-	2. Sets customer_name from OBM's customer_business_name when opportunity_from == 'Offline Buyer Master'.
+	2. Sets customer_name from OBM's customer_business_name when opportunity_from == 'Buyer Master'.
 	3. Clears contact_person if ERPNext's map_fields() copied OBM's plain-text value into the
 	   Link-to-Contact field (which would cause a link-validation error on save).
 	"""
 	apply_box_conversion_to_items(doc)
 	recalculate_opportunity_totals(doc)
 
-	if doc.opportunity_from != "Offline Buyer Master":
+	if doc.opportunity_from != "Buyer Master":
 		return
 
 	# --- 1. customer_name --------------------------------------------------
 	if doc.party_name:
 		biz_name = frappe.db.get_value(
-			"Offline Buyer Master", doc.party_name, "customer_business_name"
+			"Buyer Master", doc.party_name, "customer_business_name"
 		)
 		if biz_name:
 			doc.customer_name = biz_name

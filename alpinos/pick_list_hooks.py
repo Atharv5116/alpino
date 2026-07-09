@@ -86,8 +86,12 @@ def _sync_rows_and_totals(doc):
 				["manufacturing_date", "expiry_date"],
 				as_dict=True,
 			) or {}
-			row.custom_mfg_date = batch_details.get("manufacturing_date")
-			row.custom_expiry_date = batch_details.get("expiry_date")
+			# Only mirror dates the Batch master actually has — manually entered
+			# MFG/Expiry must survive when the master lacks them.
+			if batch_details.get("manufacturing_date"):
+				row.custom_mfg_date = batch_details.get("manufacturing_date")
+			if batch_details.get("expiry_date"):
+				row.custom_expiry_date = batch_details.get("expiry_date")
 
 		row_weight_per_box = flt(row.custom_weight_per_box)
 		row_box = flt(row.custom_box)
@@ -118,16 +122,16 @@ def before_validate_pick_list(doc, method):
 	if df and df.reqd:
 		df.reqd = 0
 
-	# Non-batch-tracked items must not carry a batch / MFG / Expiry. Clear them
-	# here (before link validation) so a stray free-text code can't be saved and
-	# later break the Delivery Note's batch validation on submit.
+	# Free-text batch codes (items without batch tracking, or codes typed before
+	# the Batch master exists) must live in custom_batch_code, never in batch_no
+	# (a Link to Batch) — a non-existent value there fails link validation here
+	# and batch validation on the Delivery Note. Move it instead of dropping it:
+	# the batch mention has to survive the whole SO → PL → DN cycle.
 	for row in doc.get("locations") or []:
-		if row.get("item_code") and not frappe.db.get_value("Item", row.item_code, "has_batch_no"):
+		if row.get("batch_no") and not frappe.db.exists("Batch", row.batch_no):
+			if hasattr(row, "custom_batch_code") and not row.get("custom_batch_code"):
+				row.custom_batch_code = row.batch_no
 			row.batch_no = None
-			if hasattr(row, "custom_batch_code"):
-				row.custom_batch_code = None
-			row.custom_mfg_date = None
-			row.custom_expiry_date = None
 
 
 def _validate_mandatory_rows(doc):

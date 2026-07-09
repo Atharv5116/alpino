@@ -633,7 +633,7 @@ def setup_custom_fields():
 			fieldtype="Small Text",
 			insert_after="custom_checkin_type",
 			read_only=1,
-			description="Reason entered for a web/mobile check-in of type 'Other' (letters only).",
+			description="Reason entered for a web/mobile check-in of type 'Other' (letters and spaces only).",
 		),
 	],
 	"Attendance": [
@@ -649,7 +649,7 @@ def setup_custom_fields():
 	"Sales Order": [
 		dict(
 			fieldname="custom_offline_buyer_section",
-			label="Offline Buyer",
+			label="Buyer",
 			fieldtype="Section Break",
 			# After GSTIN so standard customer / name / type / dates / addresses flow right under Customer.
 			insert_after="tax_id",
@@ -657,16 +657,16 @@ def setup_custom_fields():
 		),
 		dict(
 			fieldname="custom_offline_buyer_master",
-			label="Offline Buyer Master",
+			label="Buyer Master",
 			fieldtype="Link",
-			options="Offline Buyer Master",
+			options="Buyer Master",
 			insert_after="custom_offline_buyer_section",
 			read_only=1,
 			allow_on_submit=1,
 		),
 		dict(
 			fieldname="custom_offline_buyer_customer_type",
-			label="Customer Type (Offline Buyer)",
+			label="Customer Type (Buyer)",
 			fieldtype="Link",
 			options="Alpino Customer Type",
 			insert_after="custom_offline_buyer_master",
@@ -675,21 +675,21 @@ def setup_custom_fields():
 		),
 	],
 		"Address": [
-			# Site / trade name for this address, carried from the Offline Buyer Address
+			# Site / trade name for this address, carried from the Buyer Address
 			# row it was synced from. Used by the Sales Order print (shipping address site).
 			dict(
 				fieldname="custom_site_name",
 				label="Site Name",
 				fieldtype="Data",
 				insert_after="address_title",
-				description="Site / trade name for this location (synced from Offline Buyer Master address).",
+				description="Site / trade name for this location (synced from Buyer Master address).",
 			),
 		],
 	# Delete qualification table field if it exists (references non-existent Qualification DocType)
 	# This is handled separately to avoid validation errors
 	}
 
-	if not frappe.db.exists("DocType", "Offline Buyer Master"):
+	if not frappe.db.exists("DocType", "Buyer Master"):
 		custom_fields.pop("Sales Order", None)
 
 	# Force field type changes in DB to bypass Data -> Link validation

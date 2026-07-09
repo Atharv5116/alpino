@@ -1,17 +1,14 @@
 {# Pick List sticker — 100mm x 75mm, one per page.
 
-   Mirrors the spec sketch's two-column layout:
+   Layout (per approved mock, 2026-07-09):
 
 	+----------------------------------------------+
-	|                                              |
-	|   36                              NCR1KG     |  ← SKU# (huge) | SKU name
-	|                                              |
-	|   A1/50                           03BC12     |  ← Gate/Total | Batch
-	|                                   BATCH      |
-	|   1/50                            BZ         |  ← Counter | PO
-	|                                   PO         |
-	|   ──────────────────────────────────────     |
-	|   XYZ SUPPLIMENT                             |  ← Party (bottom)
+	|   36        NCR1KG                 SAMPLE    |  ← SKU# (huge) | SKU code | SAMPLE (3rd col, sample boxes only)
+	|             05-07-2026                       |  ← MFG date (value only, no label)
+	|                                   03BC12     |  ← Batch
+	|   A1/7/15                                    |  ← Gate / running box no. / grand total (continuous across ALL items)
+	|                                  BZ-4521     |  ← PO No (value only, SKU#-sized, auto-shrinks when long)
+	|   XYZ SUPPLIMENT                             |  ← Party (bottom, no divider line — outer border only)
 	+----------------------------------------------+
 
    Every cell positioned absolutely in mm so wkhtmltopdf can't shift it.
@@ -40,8 +37,7 @@
 	}
 	.sticker:last-child { page-break-after: auto; }
 
-	/* Left column — SKU# big at the top, then a single
-	   "<gate> / <current> / <total>" line below it. */
+	/* Column 1 — SKU# big at the top-left, gate / serial / total below. */
 	.sku-no {
 		position: absolute;
 		top: 4mm; left: 5mm;
@@ -49,41 +45,49 @@
 	}
 	.gate-counter {
 		position: absolute;
-		top: 34mm; left: 5mm;
+		top: 36mm; left: 5mm;
 		font-size: 26pt; font-weight: 900; line-height: 1; letter-spacing: 0.5px;
 	}
-	.gate-counter small {
-		display: block;
-		font-size: 7pt; font-weight: 500;
-		color: #6b7280; letter-spacing: 1.5px;
-		margin-bottom: 1mm;
+
+	/* Column 2 — SKU code beside the SKU#, MFG date (value only) below it. */
+	.sku-code {
+		position: absolute;
+		top: 5mm; left: 38mm;
+		font-size: 16pt; font-weight: 800; line-height: 1.1;
+	}
+	.mfg-date {
+		position: absolute;
+		top: 14mm; left: 38mm;
+		font-size: 12pt; font-weight: 800; line-height: 1;
 	}
 
-	/* Right column — SKU name, Batch (label above value), PO (label above value). */
-	.sku-name {
+	/* Column 3 — SAMPLE marker (sample boxes only), black. */
+	.sample-col {
 		position: absolute;
-		top: 5mm; right: 5mm;
-		font-size: 16pt; font-weight: 800; line-height: 1.1; text-align: right;
+		top: 4mm; right: 5mm;
+		font-size: 14pt; font-weight: 900; letter-spacing: 1.5px;
+		border: 0.6mm solid #111;
+		padding: 1mm 2.5mm;
+		border-radius: 1mm;
 	}
+
+	/* Batch (value only) on the right. */
 	.batch-block {
 		position: absolute;
 		top: 25mm; right: 5mm; text-align: right;
+		font-size: 13pt; font-weight: 800; line-height: 1;
 	}
-	.batch-block .lbl { display: block; font-size: 7pt; font-weight: 600; color: #6b7280; letter-spacing: 1.5px; margin-bottom: 1mm; }
-	.batch-block .val { font-size: 13pt; font-weight: 800; line-height: 1; }
-	.po-block {
-		position: absolute;
-		top: 42mm; right: 5mm; text-align: right;
-	}
-	.po-block .lbl { display: block; font-size: 7pt; font-weight: 600; color: #6b7280; letter-spacing: 1.5px; margin-bottom: 1mm; }
-	.po-block .val { font-size: 22pt; font-weight: 900; line-height: 1; }
 
-	/* Party — bottom band */
-	.divider {
+	/* PO No — value only, same size as the SKU#; long numbers shrink to fit. */
+	.po-val {
 		position: absolute;
-		left: 5mm; right: 5mm; bottom: 9mm;
-		border-top: 0.3mm solid #111;
+		top: 46mm; right: 5mm; text-align: right;
+		font-size: 44pt; font-weight: 900; line-height: 1; letter-spacing: 1px;
 	}
+	.po-val.po-md { font-size: 32pt; }
+	.po-val.po-sm { font-size: 24pt; top: 50mm; }
+
+	/* Party — bottom band, no divider line (outer border only). */
 	.party {
 		position: absolute;
 		left: 5mm; right: 5mm; bottom: 3mm;
@@ -91,20 +95,12 @@
 		text-transform: uppercase; letter-spacing: 1px;
 	}
 
-	/* SAMPLE styling */
-	.sample-flag {
-		position: absolute; top: 2mm; left: 2mm;
-		background: #dc2626; color: #fff;
-		padding: 0.5mm 2mm;
-		font-size: 8pt; font-weight: 800; letter-spacing: 1px;
-		border-radius: 1mm;
-		z-index: 5;
-	}
+	/* SAMPLE watermark — black, faint. */
 	.sample-watermark {
 		position: absolute; top: 50%; left: 50%;
 		transform: translate(-50%, -50%) rotate(-22deg);
 		font-size: 60pt; font-weight: 900;
-		color: rgba(220, 38, 38, 0.14);
+		color: rgba(17, 17, 17, 0.10);
 		letter-spacing: 8px;
 		pointer-events: none;
 		z-index: 0;
@@ -126,28 +122,24 @@
 		<div class="sticker">
 			{% if s.is_sample %}
 				<div class="sample-watermark">SAMPLE</div>
-				<div class="sample-flag">SAMPLE</div>
+				<div class="sample-col">SAMPLE</div>
 			{% endif %}
 
 			<div class="sku-no">{{ s.sku_no or "—" }}</div>
+			{% if s.sku_name %}<div class="sku-code">{{ s.sku_name }}</div>{% endif %}
+			{% if s.mfg_date %}<div class="mfg-date">{{ s.mfg_date }}</div>{% endif %}
+
+			{% if s.batch_no %}<div class="batch-block">{{ s.batch_no }}</div>{% endif %}
+
 			<div class="gate-counter">
 				{{ s.dispatch_area or "—" }} / {{ s.box_index }} / {{ s.total_box }}
 			</div>
 
-			{% if s.sku_name %}<div class="sku-name">{{ s.sku_name }}</div>{% endif %}
-			{% if s.batch_no %}
-			<div class="batch-block">
-				<span class="val">{{ s.batch_no }}</span>
-			</div>
-			{% endif %}
 			{% if s.po_no %}
-			<div class="po-block">
-				<span class="lbl">PO NO.</span>
-				<span class="val">{{ s.po_no }}</span>
-			</div>
+				{% set _len = s.po_no | length %}
+				<div class="po-val {% if _len > 12 %}po-sm{% elif _len > 8 %}po-md{% endif %}">{{ s.po_no }}</div>
 			{% endif %}
 
-			<div class="divider"></div>
 			{% if s.party_name %}<div class="party">{{ s.party_name }}</div>{% endif %}
 		</div>
 	{% endfor %}

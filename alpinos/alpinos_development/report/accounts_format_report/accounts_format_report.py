@@ -2,7 +2,7 @@
 
 One row per Sales Order line (main items + marketing freebies + scheme items +
 additional-unit/damage items, the latter at selling rate 0). Pulls from Sales Order,
-Offline Buyer Master, Item Master and the selected billing/shipping Addresses.
+Buyer Master, Item Master and the selected billing/shipping Addresses.
 
 Exports to Excel via the standard report view (Menu → Export).
 """
@@ -150,7 +150,7 @@ def _get_data(filters):
 	def obm_info(customer):
 		if customer not in obm_cache:
 			obm_cache[customer] = frappe.db.get_value(
-				"Offline Buyer Master", {"customer": customer},
+				"Buyer Master", {"customer": customer},
 				["tally_buyer_name", "tally_pl_name", "gst_type", "gst_no", "contact_no",
 				 "custom_tally_warehouse_id", "customer_type", "combine_product_bundles"],
 				as_dict=True,

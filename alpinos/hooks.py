@@ -26,7 +26,10 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/alpinos/css/alpinos.css"
-app_include_js = "/assets/alpinos/js/sales_order_hub_desk_v2.js"
+app_include_js = [
+	"/assets/alpinos/js/sales_order_hub_desk_v2.js",
+	"/assets/alpinos/js/item_row_colors.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/alpinos/css/alpinos.css"
@@ -53,6 +56,7 @@ doctype_js = {
 }
 doctype_list_js = {
 	"Pick List": "public/js/pick_list_list.js",
+	"Item": "public/js/item_list_colors.js",
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -165,6 +169,7 @@ after_migrate = [
 	"alpinos.patches.create_approvals_widget.execute",
 	"alpinos.approval_access.setup_approvals_access",
 	"alpinos.patches.create_outside_geo_widget.execute",
+	"alpinos.data_import_shortcuts.ensure_allow_import",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
@@ -320,7 +325,10 @@ doc_events = {
 	},
 	"Quotation": {
 		"before_validate": ["alpinos.quotation_validate.before_validate_quotation_alpinos"],
-		"validate": ["alpinos.quotation_validate.validate_quotation_alpinos"],
+		"validate": [
+			"alpinos.quotation_validate.validate_quotation_alpinos",
+			"alpinos.qty_flow.quotation_qty_remarks",
+		],
 	},
 	"Opportunity": {
 		"validate": ["alpinos.opportunity_validate.validate_opportunity_alpinos"],
@@ -333,6 +341,7 @@ doc_events = {
 		"validate": [
 			"alpinos.pick_list_hooks.validate_pick_list",
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
+			"alpinos.qty_flow.pick_list_qty_remarks",
 		],
 		"after_insert": [
 			"alpinos.workflow_engine.pick_list_after_insert",
@@ -350,6 +359,7 @@ doc_events = {
 		"validate": [
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
+			"alpinos.qty_flow.delivery_note_qty_remarks",
 		],
 		"after_insert": "alpinos.workflow_engine.delivery_note_after_insert",
 		"on_submit": [
@@ -367,13 +377,18 @@ doc_events = {
 		"validate": "alpinos.product_bundle_sync.force_bundle_non_stock",
 		"on_update": "alpinos.product_bundle_sync.sync_item_product_bundle",
 	},
+	"File": {
+		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",
+	},
 	"Sales Order": {
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
+			"alpinos.sales_order_api.validate_so_freebies_and_box_multiples",
 			"alpinos.dispatch_date_utils.validate_dispatch_date_on_save",
 			"alpinos.workflow_engine.sales_order_validate",
+			"alpinos.qty_flow.sales_order_qty_remarks",
 		],
 		"on_submit": "alpinos.workflow_engine.sales_order_on_submit",
 		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",

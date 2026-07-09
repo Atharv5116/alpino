@@ -152,6 +152,13 @@ def setup_delivery_note_alpinos():
 		],
 		"Delivery Note Item": [
 			dict(
+				fieldname="custom_remark",
+				label="Remark",
+				fieldtype="Data",
+				insert_after="qty",
+				description="Mandatory when this DN qty is less than the Pick List qty.",
+			),
+			dict(
 				fieldname="custom_box",
 				label="Box",
 				fieldtype="Float",

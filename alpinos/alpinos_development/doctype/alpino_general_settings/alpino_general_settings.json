@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "creation": "2026-07-09 13:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "po_pdf_section",
+  "po_pdf_folder"
+ ],
+ "fields": [
+  {
+   "fieldname": "po_pdf_section",
+   "fieldtype": "Section Break",
+   "label": "Customer PO PDFs"
+  },
+  {
+   "fieldname": "po_pdf_folder",
+   "fieldtype": "Data",
+   "label": "PO PDF Folder",
+   "description": "Absolute folder path on the server where customer PO PDFs are stored. A Sales Order's 'PO No for PDF' value + .pdf must match a file name in this folder."
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-09 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Alpino General Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "share": 1
+  },
+  {
+   "role": "Sales Admin",
+   "read": 1,
+   "write": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

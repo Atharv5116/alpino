@@ -42,7 +42,7 @@
 <div class="sales-order-entry" style="max-width: 1200px; margin: 0 auto; padding: 15px;">
 
 	<p class="text-muted" style="font-size: 12px; margin-bottom: 12px;">
-		<strong>Customer</strong> is limited to customers on <strong>Offline Buyer Master</strong> (same as Sales Order). Main-line <strong>SKU</strong> lists all saleable <strong>variants</strong>. If that SKU has margin on the master for this customer, MRP and margin fill automatically; otherwise MRP comes from Customer Item MRP or Item standard rate—edit the row as needed.
+		<strong>Customer</strong> is limited to customers on <strong>Buyer Master</strong> (same as Sales Order). Main-line <strong>SKU</strong> lists all saleable <strong>variants</strong>. If that SKU has margin on the master for this customer, MRP and margin fill automatically; otherwise MRP comes from Customer Item MRP or Item standard rate—edit the row as needed.
 	</p>
 
 	<!-- Header Fields -->
@@ -54,6 +54,8 @@
 			<div class="col-md-4 field-delivery-date"></div>
 			<div class="col-md-4 field-dispatch-date"></div>
 			<div class="col-md-4 field-customer-po"></div>
+			<div class="col-md-4 field-po-expiry"></div>
+			<div class="col-md-4 field-po-pdf-no"></div>
 		</div>
 		<div class="row" style="margin-top: 12px;">
 			<div class="col-md-6 field-billing-address"></div>
@@ -61,6 +63,7 @@
 		</div>
 		<div class="row" style="margin-top: 12px;">
 			<div class="col-md-6 field-tax-template"></div>
+			<div class="col-md-6 field-created-by"></div>
 		</div>
 	</div>
 
@@ -83,6 +86,7 @@
 						<th style="width: 76px;">Flat Disc. %</th>
 						<th style="width: 76px;">Offer %</th>
 						<th style="width: 78px;">Add. Disc. %</th>
+						<th style="min-width: 110px;">Remarks</th>
 						<th style="width: 90px;">Amount</th>
 						<th style="width: 36px;"></th>
 					</tr>

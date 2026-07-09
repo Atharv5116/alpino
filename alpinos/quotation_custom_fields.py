@@ -175,6 +175,13 @@ def setup_quotation_custom_fields():
 		],
 		"Quotation Item": [
 			dict(
+				fieldname="custom_remarks",
+				label="Remarks",
+				fieldtype="Data",
+				insert_after="qty",
+				description="Mandatory when this quotation qty is less than the Opportunity qty.",
+			),
+			dict(
 				fieldname="custom_boxes",
 				label="Box",
 				fieldtype="Int",

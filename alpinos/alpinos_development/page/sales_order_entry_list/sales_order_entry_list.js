@@ -1,7 +1,7 @@
 frappe.pages['sales-order-entry-list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Sales Orders'),
+		title: __('Alpino Sales Orders'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('sales_order_entry_list'));
@@ -31,6 +31,47 @@ const SO_WF_COLORS = {
 	Cancelled: 'red',
 };
 
+// Role-based column layouts. Warehouse staff (without a sales role) get the
+// warehouse layout; everyone else — sales roles, System Manager — gets sales.
+// E-Com layout is specced but deferred (see project memory) — add here later.
+const SO_LIST_LAYOUTS = {
+	sales: [
+		{ label: 'ID', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'Customer Name', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Order Date', render: (d, h) => h.date(d.transaction_date) },
+		{ label: 'PO No', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Workflow Status', render: (d, h) => h.wf(d) },
+		{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
+		{ label: 'Created By', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', cls: 'text-right', render: (d, h) => h.money(d) },
+	],
+	warehouse: [
+		{ label: 'Customer Type', render: (d, h) => h.esc(d.order_type || '—') },
+		{ label: 'ID', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'PO No', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Customer Name', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Dispatch Date', render: (d, h) => h.date(d.custom_dispatch_date) },
+		{ label: 'PO Exp Date', render: (d, h) => h.date(d.custom_po_expiry_date) },
+		{ label: 'Delivery Date', render: (d, h) => h.date(d.delivery_date) },
+		{ label: 'Workflow Status', render: (d, h) => h.wf(d) },
+		{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
+		{ label: 'Created By', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', cls: 'text-right', render: (d, h) => h.money(d) },
+	],
+};
+
+function so_list_layout_for_user() {
+	const roles = frappe.user_roles || [];
+	const WAREHOUSE_ROLES = [
+		'Warehouse Admin', 'Warehouse Manager', 'Warehouse User',
+		'PL User', 'PL Manager', 'DN User', 'DN Manager',
+	];
+	const SALES_ROLES = ['Sales Admin', 'Sales Manager', 'Sales User'];
+	const isWarehouse = WAREHOUSE_ROLES.some((r) => roles.includes(r));
+	const isSales = SALES_ROLES.some((r) => roles.includes(r));
+	return isWarehouse && !isSales ? 'warehouse' : 'sales';
+}
+
 class SalesOrderEntryListPage {
 	constructor(page) {
 		this.page = page;
@@ -39,6 +80,8 @@ class SalesOrderEntryListPage {
 		this.start = 0;
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
+		this._columns = SO_LIST_LAYOUTS[so_list_layout_for_user()];
+		this.render_header();
 		this.setup_toolbar();
 		this.setup_filters();
 		this.bind_events();
@@ -204,6 +247,11 @@ class SalesOrderEntryListPage {
 			if (!name) return;
 			frappe.set_route('sales-order-entry-view', name);
 		});
+		this.wrapper.on('click', '.so-list-link-btn', (e) => {
+			e.stopPropagation();
+			const route = $(e.currentTarget).data('route');
+			if (Array.isArray(route)) frappe.set_route(...route);
+		});
 		this.wrapper.on('change', '.so-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
 			this.wrapper.find('.so-list-row-select').prop('checked', checked);
@@ -256,45 +304,61 @@ class SalesOrderEntryListPage {
 		});
 	}
 
+	render_header() {
+		const tr = this.wrapper.find('.so-list-table thead tr').empty();
+		tr.append(
+			'<th style="text-align: center;"><input type="checkbox" class="so-list-select-all"></th>'
+		);
+		this._columns.forEach((c) =>
+			tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`)
+		);
+	}
+
 	render_rows(rows) {
 		const tb = this.wrapper.find('.so-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="11" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
+				`<tr><td colspan="${this._columns.length + 1}" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
 			);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const helpers = {
+			esc,
+			date: (v) => (v && frappe.datetime.str_to_user(String(v))) || '—',
+			money: (d) => format_currency(d.grand_total || 0, d.currency),
+			wf: (d) => {
+				const wf = d.custom_workflow_status || '';
+				const c = SO_WF_COLORS[wf] || 'gray';
+				return wf ? `<span class="indicator-pill ${c}">${esc(wf)}</span>` : '—';
+			},
+			// Redirect buttons to the latest linked Pick List / Delivery Note /
+			// Sales Invoice — shown only when the doc exists AND the user's role
+			// can read that doctype.
+			links: (d) => {
+				const btns = [];
+				const mk = (label, route, title) =>
+					`<button type="button" class="btn btn-xs btn-default so-list-link-btn"
+						data-route='${esc(JSON.stringify(route))}' title="${esc(title)}">${label}</button>`;
+				if (d.pick_list && frappe.model.can_read('Pick List')) {
+					btns.push(mk('PL', ['pick_list_entry', d.pick_list], d.pick_list));
+				}
+				if (d.delivery_note && frappe.model.can_read('Delivery Note')) {
+					btns.push(mk('DN', ['delivery_note_entry', d.delivery_note], d.delivery_note));
+				}
+				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) {
+					btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
+				}
+				return btns.join(' ') || '—';
+			},
+		};
 		rows.forEach((d) => {
-			const gt = format_currency(d.grand_total || 0, d.currency);
-			const td = (d.transaction_date && frappe.datetime.str_to_user(d.transaction_date)) || '—';
-			const dd = (d.delivery_date && frappe.datetime.str_to_user(d.delivery_date)) || '—';
-			const hasAug =
-				d.custom_additional_units_damage !== undefined &&
-				d.custom_additional_units_damage !== null;
-			const augLabel = hasAug
-				? cint(d.custom_additional_units_damage)
-					? __('Yes')
-					: __('No')
-				: '—';
-			const augClass = hasAug && cint(d.custom_additional_units_damage) ? 'green' : 'gray';
-			const wf = d.custom_workflow_status || '';
-			const wfColor = SO_WF_COLORS[wf] || 'gray';
-			const wfCell = wf
-				? `<span class="indicator-pill ${wfColor}">${esc(wf)}</span>`
-				: '—';
+			const cells = this._columns
+				.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`)
+				.join('');
 			tb.append(`<tr class="so-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="so-list-row-select" data-name="${esc(d.name)}"></td>
-				<td><strong>${esc(d.name)}</strong></td>
-				<td>${esc(d.customer)}</td>
-				<td>${esc(d.customer_name)}</td>
-				<td>${esc(td)}</td>
-				<td>${esc(dd)}</td>
-				<td>${esc(d.company)}</td>
-				<td>${wfCell}</td>
-				<td><span class="indicator-pill blue">${esc(d.status)}</span></td>
-				<td class="text-center"><span class="indicator-pill ${augClass}">${esc(augLabel)}</span></td>
-				<td class="text-right">${gt}</td>
+				${cells}
 			</tr>`);
 		});
 	}

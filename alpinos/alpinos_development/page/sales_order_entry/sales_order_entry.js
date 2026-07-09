@@ -1,13 +1,20 @@
 frappe.pages['sales-order-entry'].on_page_load = function(wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: 'Sales Order Entry',
+		title: 'Alpino Sales Order Entry',
 		single_column: true
 	});
 
 	page.main.html(frappe.render_template('sales_order_entry'));
 
-	new SalesOrderEntry(page);
+	wrapper.soe_instance = new SalesOrderEntry(page);
+};
+
+// Fires on every visit (including right after on_page_load): the form always
+// starts blank unless route_options ask for a prefill (quotation / edit /
+// duplicate), so navigating away and coming back never shows stale data.
+frappe.pages['sales-order-entry'].on_page_show = function(wrapper) {
+	if (wrapper.soe_instance) wrapper.soe_instance.handle_route_entry();
 };
 
 class SalesOrderEntry {
@@ -31,7 +38,8 @@ class SalesOrderEntry {
 		this.make_actions();
 		this.bind_events();
 		this.load_recent_orders();
-		this.maybe_prefill_from_quotation();
+		// Prefills (quotation / edit / duplicate) are handled per-visit by
+		// handle_route_entry(), triggered from on_page_show.
 	}
 
 	_get_default_company() {
@@ -46,13 +54,68 @@ class SalesOrderEntry {
 		);
 	}
 
-	maybe_prefill_from_quotation() {
-		let ro = frappe.route_options || {};
-		if (!ro.from_quotation) return;
-		const qname = ro.from_quotation;
-		delete ro.from_quotation;
-		frappe.route_options = ro;
-		this.prefill_from_quotation(qname);
+	handle_route_entry() {
+		const ro = frappe.route_options || {};
+		if (ro.from_quotation) {
+			const qname = ro.from_quotation;
+			delete ro.from_quotation;
+			this.clear_form();
+			this.prefill_from_quotation(qname);
+		} else if (ro.edit_so) {
+			const name = ro.edit_so;
+			delete ro.edit_so;
+			this.clear_form();
+			this.load_so_prefill(name, 'edit');
+		} else if (ro.duplicate_so) {
+			const name = ro.duplicate_so;
+			delete ro.duplicate_so;
+			this.clear_form();
+			this.load_so_prefill(name, 'duplicate');
+		} else {
+			// Plain visit (or refresh): always start with a blank form.
+			this.clear_form();
+		}
+	}
+
+	// Load an existing Sales Order into the form. mode 'edit' rewrites the same
+	// draft on save; mode 'duplicate' prefills only — creating gives a fresh doc
+	// with its own workflow state, status and Created By.
+	load_so_prefill(name, mode) {
+		let me = this;
+		frappe.call({
+			method: 'alpinos.sales_order_api.get_so_entry_payload',
+			args: { sales_order: name },
+			freeze: true,
+			freeze_message: mode === 'edit' ? __('Loading Sales Order...') : __('Copying Sales Order...'),
+			callback(r) {
+				if (!r.message) return;
+				const d = r.message;
+				if (mode === 'edit') {
+					if (cint(d.docstatus) !== 0) {
+						frappe.msgprint(__('Only draft Sales Orders can be edited.'));
+						return;
+					}
+					me.editing_so = d.sales_order;
+					me.page.set_title(__('Alpino Sales Order Entry — {0}', [d.sales_order]));
+					me.page.set_primary_action(__('Update Sales Order'), () => me.create_sales_order(), 'fa fa-check');
+					if (me.created_by_field) me.created_by_field.set_value(d.owner_full_name || d.owner);
+					d._alert_message = __('Loaded {0} for editing', [d.sales_order]);
+				} else {
+					d._alert_message = __('Prefilled from {0} — saving creates a new order', [d.sales_order]);
+				}
+				if (me.customer_po_field) me.customer_po_field.set_value(d.po_no || '');
+				if (me.po_expiry_field) me.po_expiry_field.set_value(d.po_expiry_date || '');
+				if (me.po_pdf_no_field) me.po_pdf_no_field.set_value(d.po_no_for_pdf || '');
+				if (me.site_name_field && d.site_name) {
+					// Keep the stored (possibly hand-edited) site name — the
+					// customer/address auto-fill must not overwrite it.
+					me.site_name_field.set_value(d.site_name);
+					me._site_name_manual = true;
+				}
+				if (me.dispatch_date_field && d.dispatch_date) me.dispatch_date_field.set_value(d.dispatch_date);
+				me._apply_quotation_prefill(d);
+			}
+		});
 	}
 
 	prefill_from_quotation(qname) {
@@ -71,6 +134,9 @@ class SalesOrderEntry {
 
 	_apply_quotation_prefill(d) {
 		let me = this;
+		// Source quotation (from-quotation flow or an edited SO that was created
+		// from one) — sent on save so SO items keep their prevdoc link.
+		me._from_quotation = d.quotation || d.from_quotation || null;
 
 		me.customer_field.set_value(d.customer);
 		me.order_type_field.set_value(d.order_type || '');
@@ -143,7 +209,7 @@ class SalesOrderEntry {
 
 			me.calc_totals();
 			frappe.show_alert({
-				message: __('Loaded from quotation {0}', [d.quotation]),
+				message: d._alert_message || __('Loaded from quotation {0}', [d.quotation]),
 				indicator: 'green',
 			});
 		};
@@ -200,6 +266,37 @@ class SalesOrderEntry {
 		if (this.company_field.$input) {
 			this.company_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
 		}
+		// Company stays on the doc (single-company site) but is hidden — the
+		// slot shows the buyer's Site Name instead. Editable: the shipping
+		// address's site (or the buyer master's) is only the default; once the
+		// user types a value it is never overwritten by auto-fill.
+		this.company_field.$wrapper && this.company_field.$wrapper.hide();
+		this._site_name_manual = false;
+		this._obm_site_name = '';
+		this._from_quotation = null;
+		this.site_name_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', label: 'Site Name', fieldname: 'site_name' },
+			parent: header.find('.field-company'),
+			render_input: true
+		});
+		this.site_name_field.$input && this.site_name_field.$input.on('input', function() {
+			me._site_name_manual = true;
+		});
+		me._set_site_name_default = function(value) {
+			if (me._site_name_manual) return;
+			me.site_name_field && me.site_name_field.set_value(value || '');
+		};
+		me._update_site_from_shipping = function() {
+			if (me._site_name_manual) return;
+			const ship = me._get_actual_address(me.shipping_address_field);
+			if (!ship) {
+				me._set_site_name_default(me._obm_site_name);
+				return;
+			}
+			frappe.db.get_value('Address', ship, 'custom_site_name', function(r) {
+				me._set_site_name_default((r && r.custom_site_name) || me._obm_site_name);
+			});
+		};
 		// Set address field value AND show its human-readable label in the input.
 		// Guard: only set_value if the address name is actually in opts (linked to Customer).
 		// Calling set_value with an unlinked address name triggers Frappe's "not found" error.
@@ -270,6 +367,8 @@ class SalesOrderEntry {
 							if (r.message && r.message.customer_type) {
 								me.order_type_field.set_value(r.message.customer_type);
 							}
+							me._obm_site_name = (r.message && r.message.site_name) || '';
+							me._update_site_from_shipping();
 						}
 					});
 					frappe.call({
@@ -289,6 +388,8 @@ class SalesOrderEntry {
 					me.shipping_address_field && me.shipping_address_field.set_value('');
 					me._load_address_options(null);
 					if (me.tax_template_field) me.tax_template_field.set_value('');
+					me._obm_site_name = '';
+					me._set_site_name_default('');
 				}
 			}, 300);
 		};
@@ -343,6 +444,20 @@ class SalesOrderEntry {
 			render_input: true
 		});
 
+		this.po_expiry_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Date', label: 'PO Expiry Date', fieldname: 'custom_po_expiry_date' },
+			parent: header.find('.field-po-expiry'),
+			render_input: true
+		});
+
+		// PO No for PDF: file name in the Alpino General Settings PO folder;
+		// the PDF is fetched and attached automatically right after save.
+		this.po_pdf_no_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', label: 'PO No for PDF', fieldname: 'custom_po_no_for_pdf' },
+			parent: header.find('.field-po-pdf-no'),
+			render_input: true
+		});
+
 		this.billing_address_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Autocomplete', label: 'Billing Address', fieldname: 'billing_address' },
 			parent: header.find('.field-billing-address'),
@@ -366,6 +481,16 @@ class SalesOrderEntry {
 			render_input: true
 		});
 		this.tax_template_field.$input && this.tax_template_field.$input.prop('readonly', true);
+
+		// Created By: read-only; the session user for new orders (Frappe stores
+		// it as the doc owner on insert), the original owner when editing.
+		this.created_by_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', label: 'Created By', fieldname: 'created_by', read_only: 1 },
+			parent: header.find('.field-created-by'),
+			render_input: true
+		});
+		this.created_by_field.$input && this.created_by_field.$input.prop('readonly', true);
+		this.created_by_field.set_value(frappe.session.user_fullname || frappe.session.user);
 
 		this._refresh_tax_template = function() {
 			const customer = me.customer_field.get_value();
@@ -394,7 +519,10 @@ class SalesOrderEntry {
 			this.billing_address_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
 		}
 		if (this.shipping_address_field && this.shipping_address_field.$input) {
-			this.shipping_address_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
+			this.shipping_address_field.$input.on('change awesomplete-selectcomplete', () => {
+				me._refresh_tax_template();
+				me._update_site_from_shipping();
+			});
 		}
 	}
 
@@ -471,6 +599,7 @@ class SalesOrderEntry {
 				flat_discount: 0,
 				offer: '',
 				additional_discount: 0,
+				remarks: '',
 				amount: 0,
 				rate: 0,
 				custom_item_tax: 0,
@@ -497,6 +626,7 @@ class SalesOrderEntry {
 				<td class="item-flat-discount"></td>
 				<td class="item-offer"></td>
 				<td class="item-additional-discount"></td>
+				<td class="item-remarks"></td>
 				<td class="item-amount text-right font-weight-bold" style="vertical-align: middle;">0.00</td>
 				<td class="text-center" style="vertical-align: middle;"><button class="btn btn-xs btn-danger remove-row"><i class="fa fa-trash"></i></button></td>
 			</tr>
@@ -639,6 +769,20 @@ class SalesOrderEntry {
 		});
 		row_data._add_disc_field = add_disc_field;
 
+		// Remarks — mandatory (server-enforced) when this item's qty is reduced
+		// vs the source Quotation.
+		let remarks_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: `remarks_${idx}` },
+			parent: $row.find('.item-remarks'),
+			render_input: true,
+			only_input: true
+		});
+		remarks_field.$input && remarks_field.$input.css('min-width', '100px');
+		remarks_field.$input.on('change', function() {
+			me.items[idx].remarks = remarks_field.get_value();
+		});
+		row_data._remarks_field = remarks_field;
+
 		// Set values if data was passed
 		if (data && data.item_code) {
 			sku_field.set_value(data.item_code);
@@ -662,6 +806,9 @@ class SalesOrderEntry {
 				data.additional_discount !== ''
 			) {
 				add_disc_field.set_value(data.additional_discount);
+			}
+			if (data.remarks || data.custom_remarks) {
+				remarks_field.set_value(data.remarks || data.custom_remarks);
 			}
 			if (data.item_name) {
 				$row.find('.item-name-text').text(data.item_name).removeClass('text-muted');
@@ -694,7 +841,7 @@ class SalesOrderEntry {
 			}
 		});
 
-		// Pricing: if this SKU is on Offline Buyer Master for the customer → MRP + margin from master.
+		// Pricing: if this SKU is on Buyer Master for the customer → MRP + margin from master.
 		// Otherwise → Customer Item MRP, else Item standard rate (user can edit row discounts).
 		const apply_obm_pricing = (msg) => {
 			me.items[idx].mrp = flt(msg.mrp);
@@ -787,13 +934,14 @@ class SalesOrderEntry {
 	}
 
 	calc_box_from_qty(idx, $row) {
+		// Derive box count for display only — the typed qty is never rounded up.
+		// Whole-box compliance (qty + freebies as a multiple of the box factor)
+		// is validated on save instead.
 		let item = this.items[idx];
 		let cf = this._box_cache[item.item_code];
 		if (cf) {
 			item.box = Math.ceil(flt(item.qty) / flt(cf));
-			item.qty = flt(item.box * cf, 2);
 			item._box_field.set_value(item.box);
-			item._qty_field.set_value(item.qty);
 		}
 	}
 
@@ -1006,6 +1154,17 @@ class SalesOrderEntry {
 
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
+			// Freebies can only be given for items already in the order Items
+			// table — warn and clear the selection right away.
+			if (val && !me.items.some(it => it.item_code === val)) {
+				frappe.msgprint({
+					title: __('Not an ordered item'),
+					message: __('Marketing Freebie {0} is not in the Items table. Add it to the order items first.', [val.bold()]),
+					indicator: 'orange'
+				});
+				item_field.set_value('');
+				val = '';
+			}
 			me.freebies[idx].item_code = val || '';
 			if (!val) {
 				me.freebies[idx].item_name = '';
@@ -1429,7 +1588,8 @@ class SalesOrderEntry {
 			buyer_margin_percent: item.buyer_margin_percent || item.custom_buyer_margin_percent || 0,
 			custom_offer: item.offer,
 			custom_additional_discount: item.additional_discount,
-			custom_item_tax: flt(item.custom_item_tax)
+			custom_item_tax: flt(item.custom_item_tax),
+			custom_remarks: item.remarks || ''
 		}));
 
 		let freebies = this.freebies.filter(f => f.item_code).map(f => ({
@@ -1438,6 +1598,36 @@ class SalesOrderEntry {
 			qty: f.qty,
 			remarks: f.remarks || ''
 		}));
+
+		// Freebies must reference ordered items (a row can go stale if its item
+		// was later removed from the Items table), and every ordered item must
+		// fill whole boxes — qty + freebies when freebies exist, qty alone
+		// otherwise. Mirrors the server-side validate hook.
+		let ordered_codes = new Set(valid_items.map(i => i.item_code));
+		let stale_freebie = freebies.find(f => !ordered_codes.has(f.item_code));
+		if (stale_freebie) {
+			return frappe.throw(__('Marketing Freebie {0} is not in the Items table. Add it to the order items or remove the freebie row.', [stale_freebie.item_code.bold()]));
+		}
+		let order_qty_by_code = {};
+		valid_items.forEach(i => {
+			order_qty_by_code[i.item_code] = (order_qty_by_code[i.item_code] || 0) + flt(i.qty);
+		});
+		for (let item_code of Object.keys(order_qty_by_code)) {
+			let cf = flt(me._box_cache[item_code]);
+			if (!cf) continue;
+			let has_freebies = freebies.some(f => f.item_code === item_code);
+			let freebie_qty = freebies.filter(f => f.item_code === item_code)
+				.reduce((s, f) => s + flt(f.qty), 0);
+			let qty = order_qty_by_code[item_code];
+			let total = qty + freebie_qty;
+			let rem = total % cf;
+			if (Math.min(rem, cf - rem) > 0.0001) {
+				let detail = has_freebies
+					? __('ordered qty {0} + freebies {1} = {2}', [qty, freebie_qty, total])
+					: __('ordered qty {0}', [qty]);
+				return frappe.throw(__('{0}: a box holds {1} units — {2} must be a multiple of {3}.', [item_code.bold(), cf, detail, cf]));
+			}
+		}
 
 		let scheme_items = this.scheme_items.filter(s => s.item_code).map(s => ({
 			item_code: s.item_code,
@@ -1454,32 +1644,45 @@ class SalesOrderEntry {
 			remarks: s.remarks || ''
 		}));
 
+		const is_edit = !!me.editing_so;
+		let args = {
+			customer: customer,
+			order_type: order_type,
+			company: (me.company_field && me.company_field.get_value()) || me.default_company || me._get_default_company(),
+			delivery_date: delivery_date,
+			po_no: me.customer_po_field ? me.customer_po_field.get_value() : '',
+			po_expiry_date: me.po_expiry_field ? me.po_expiry_field.get_value() : '',
+			po_no_for_pdf: me.po_pdf_no_field ? me.po_pdf_no_field.get_value() : '',
+			site_name: me.site_name_field ? me.site_name_field.get_value() : '',
+			from_quotation: me._from_quotation || '',
+			dispatch_date: me.dispatch_date_field ? me.dispatch_date_field.get_value() : '',
+			billing_address: billing_address,
+			shipping_address: shipping_address,
+			taxes_and_charges: me.tax_template_field ? me.tax_template_field.get_value() : '',
+			items: items,
+			cash_discount: flt(me.cash_discount_field.get_value()),
+			freebies: freebies,
+			scheme_items: scheme_items,
+			additional_units_items: additional_units_items,
+			additional_units_damage: me.additional_units_damage_field.get_value() ? 1 : 0
+		};
+		if (is_edit) {
+			args.name = me.editing_so;
+		} else {
+			args.submit_now = 0;
+		}
+
 		frappe.call({
-			method: 'alpinos.sales_order_api.create_sales_order',
-			args: {
-				customer: customer,
-				order_type: order_type,
-				company: (me.company_field && me.company_field.get_value()) || me.default_company || me._get_default_company(),
-				delivery_date: delivery_date,
-				po_no: me.customer_po_field ? me.customer_po_field.get_value() : '',
-				dispatch_date: me.dispatch_date_field ? me.dispatch_date_field.get_value() : '',
-				billing_address: billing_address,
-				shipping_address: shipping_address,
-				taxes_and_charges: me.tax_template_field ? me.tax_template_field.get_value() : '',
-				items: items,
-				cash_discount: flt(me.cash_discount_field.get_value()),
-				freebies: freebies,
-				scheme_items: scheme_items,
-				additional_units_items: additional_units_items,
-				additional_units_damage: me.additional_units_damage_field.get_value() ? 1 : 0,
-				submit_now: 0
-			},
+			method: is_edit ? 'alpinos.sales_order_api.update_sales_order' : 'alpinos.sales_order_api.create_sales_order',
+			args: args,
 			freeze: true,
-			freeze_message: 'Creating Sales Order...',
+			freeze_message: is_edit ? 'Updating Sales Order...' : 'Creating Sales Order...',
 			callback: function(r) {
 				if (r.message && r.message.name) {
 					frappe.show_alert({
-						message: `Sales Order <b>${r.message.name}</b> saved as Draft. Review it, then click "Send for Warehouse Approval".`,
+						message: is_edit
+							? `Sales Order <b>${r.message.name}</b> updated.`
+							: `Sales Order <b>${r.message.name}</b> saved as Draft. Review it, then click "Send for Warehouse Approval".`,
 						indicator: 'green'
 					}, 6);
 					frappe.set_route('sales-order-entry-view', r.message.name);
@@ -1562,13 +1765,29 @@ class SalesOrderEntry {
 	}
 
 	clear_form() {
+		let me = this;
+		// Leave edit mode: back to a fresh "create" form.
+		this.editing_so = null;
+		this.page.set_title(__('Alpino Sales Order Entry'));
+		this.page.set_primary_action(__('Create Sales Order'), () => me.create_sales_order(), 'fa fa-check');
+
 		this.customer_field.set_value('');
 		this.order_type_field.set_value('');
 		this.delivery_date_field.set_value('');
 		this.dispatch_date_field && this.dispatch_date_field.set_value('');
 		this.customer_po_field && this.customer_po_field.set_value('');
+		this.po_expiry_field && this.po_expiry_field.set_value('');
+		this.po_pdf_no_field && this.po_pdf_no_field.set_value('');
+		this._site_name_manual = false;
+		this._obm_site_name = '';
+		this.site_name_field && this.site_name_field.set_value('');
 		this.billing_address_field && this.billing_address_field.set_value('');
 		this.shipping_address_field && this.shipping_address_field.set_value('');
+		this.tax_template_field && this.tax_template_field.set_value('');
+		this.cash_discount_field && this.cash_discount_field.set_value(0);
+		this.created_by_field && this.created_by_field.set_value(frappe.session.user_fullname || frappe.session.user);
+		this.additional_units_damage_field && this.additional_units_damage_field.set_value(0);
+		this.wrapper.find('.additional-units-section').toggle(false);
 		this.items = [];
 		this.freebies = [];
 		this.scheme_items = [];
@@ -1579,5 +1798,14 @@ class SalesOrderEntry {
 		this.wrapper.find('.additional-units-table tbody').empty();
 		this.add_item_row();
 		this.calc_totals();
+		// Re-apply the 2pm-cutoff default dispatch date for a fresh order.
+		frappe.call({
+			method: 'alpinos.dispatch_date_utils.get_default_dispatch_date',
+			callback: function(r) {
+				if (r.message && me.dispatch_date_field && !me.dispatch_date_field.get_value()) {
+					me.dispatch_date_field.set_value(r.message.date);
+				}
+			}
+		});
 	}
 }

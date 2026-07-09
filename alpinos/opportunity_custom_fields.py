@@ -31,7 +31,7 @@ def setup_opportunity_custom_fields():
 			fieldtype="Link",
 			options="Address",
 			insert_after="custom_order_type",
-			depends_on="eval:doc.opportunity_from === 'Offline Buyer Master'",
+			depends_on="eval:doc.opportunity_from === 'Buyer Master'",
 		),
 		dict(
 			fieldname="custom_other_details_section",
@@ -123,7 +123,7 @@ def setup_opportunity_custom_fields():
 				label="Buyer Margin %",
 				fieldtype="Percent",
 				insert_after="custom_mrp",
-				description="From Offline Buyer Master / catalog when applicable; applied before Flat % / Offer / Additional Discount.",
+				description="From Buyer Master / catalog when applicable; applied before Flat % / Offer / Additional Discount.",
 			),
 			dict(
 				fieldname="custom_flat_discount",
@@ -263,7 +263,7 @@ def _setup_opportunity_property_setters():
 			doc_type="Opportunity",
 			field_name="customer_address",
 			property="depends_on",
-			value="eval:doc.opportunity_from === 'Offline Buyer Master'",
+			value="eval:doc.opportunity_from === 'Buyer Master'",
 			property_type="Data",
 		),
 		# Remove the more_info Property Setter override - let it stay in its default position
@@ -281,7 +281,7 @@ def _setup_opportunity_property_setters():
 			doc_type="Opportunity",
 			field_name="custom_details_tab",
 			property="depends_on",
-			value="eval:doc.opportunity_from !== 'Offline Buyer Master'",
+			value="eval:doc.opportunity_from !== 'Buyer Master'",
 			property_type="Data",
 		),
 		# Hide the 'Contacts' tab when OBM is selected
@@ -290,7 +290,7 @@ def _setup_opportunity_property_setters():
 			doc_type="Opportunity",
 			field_name="contact_info",
 			property="depends_on",
-			value="eval:doc.opportunity_from !== 'Offline Buyer Master'",
+			value="eval:doc.opportunity_from !== 'Buyer Master'",
 			property_type="Data",
 		),
 		dict(

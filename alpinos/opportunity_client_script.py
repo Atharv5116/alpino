@@ -1,7 +1,7 @@
 """
 Client Script for Opportunity custom flow:
-- Offline Buyer Master: show business name, hide org noise, Dynamic Link filtering
-- SKU pricing from Offline Buyer Items / Offline Buyer Margin (MRP + buyer margin %) + editable
+- Buyer Master: show business name, hide org noise, Dynamic Link filtering
+- SKU pricing from Buyer Items / Buyer Margin (MRP + buyer margin %) + editable
 - Qty / boxes, totals (buyer margin before other line discounts)
 """
 
@@ -27,10 +27,10 @@ const OBM_HIDE_FIELDS = [
 frappe.ui.form.on("Opportunity", {
 	setup(frm) {
 		frm.set_query("opportunity_from", () => ({
-			filters: { name: ["in", ["Customer", "Lead", "Prospect", "Offline Buyer Master"]] },
+			filters: { name: ["in", ["Customer", "Lead", "Prospect", "Buyer Master"]] },
 		}));
 		frm.set_query("party_name", () => {
-			const obm = frm.doc.opportunity_from === "Offline Buyer Master";
+			const obm = frm.doc.opportunity_from === "Buyer Master";
 			return obm
 				? { filters: { customer: ["!=", ""] } }
 				: {};
@@ -55,7 +55,7 @@ frappe.ui.form.on("Opportunity", {
 	},
 
 	party_name(frm) {
-		if (frm.doc.opportunity_from === "Offline Buyer Master") {
+		if (frm.doc.opportunity_from === "Buyer Master") {
 			sync_obm_header_from_master(frm);
 		} else if (frm.doc.opportunity_from === "Customer" && frm.doc.party_name) {
 			frappe.db.get_value("Customer", frm.doc.party_name, "custom_order_type", (r) => {
@@ -116,12 +116,12 @@ function sync_obm_header_from_master(frm) {
 }
 
 function apply_opportunity_party_layout(frm) {
-	const is_obm = frm.doc.opportunity_from === "Offline Buyer Master";
+	const is_obm = frm.doc.opportunity_from === "Buyer Master";
 
 	frm.set_df_property(
 		"party_name",
 		"label",
-		is_obm ? __("Offline Buyer Master") : __("Customer")
+		is_obm ? __("Buyer Master") : __("Customer")
 	);
 
 	OBM_HIDE_FIELDS.forEach((fn) => frm.toggle_display(fn, !is_obm));

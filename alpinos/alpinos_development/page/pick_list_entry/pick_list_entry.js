@@ -3,7 +3,7 @@ frappe.pages['pick_list_entry'] = frappe.pages['pick_list_entry'] || {};
 frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: 'Pick List Entry',
+		title: 'Alpino Pick List Entry',
 		single_column: true
 	});
 	wrapper.page_instance = page;
@@ -11,6 +11,27 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	page.set_primary_action('Submit', () => {
 		page.save_pick_list();
 	});
+
+	// Cancel: only for submitted Pick Lists AND users whose role grants cancel
+	// (shown/hidden in render_data; the server enforces the permission too).
+	// The cancellation guard blocks with the linked Delivery Note's ID when
+	// one is still active.
+	page.btn_cancel_pl = page.add_inner_button(__('Cancel Pick List'), function() {
+		frappe.confirm(__('Cancel Pick List {0}?', [page.pick_list_name]), function() {
+			frappe.call({
+				method: 'alpinos.workflow_engine.cancel_document',
+				args: { doctype: 'Pick List', name: page.pick_list_name },
+				freeze: true,
+				freeze_message: __('Cancelling...'),
+				callback: function(r) {
+					if (r.exc) return;
+					frappe.show_alert({ message: __('Pick List cancelled'), indicator: 'red' });
+					page.load_data();
+				}
+			});
+		});
+	});
+	if (page.btn_cancel_pl) page.btn_cancel_pl.hide();
 
 	try {
 		let html = frappe.render_template("pick_list_entry", {});
@@ -186,6 +207,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		} else {
 			$stopPicking.hide();
 		}
+		// Cancel: submitted docs only, and only when the role has cancel rights.
+		if (page.btn_cancel_pl) {
+			const can_cancel = frappe.model.can_cancel && frappe.model.can_cancel('Pick List');
+			if (data.docstatus === 1 && can_cancel) page.btn_cancel_pl.show();
+			else page.btn_cancel_pl.hide();
+		}
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
 			$draftBtn.hide();
@@ -229,6 +256,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_po_no"]').val(data.custom_po_no);
 		page.main.find('[data-fieldname="custom_transporter"]').val(data.custom_transporter);
 		page.main.find('[data-fieldname="custom_gate"]').val(data.custom_gate || '');
+		page.main.find('[data-fieldname="created_by"]').val(data.owner_full_name || data.owner || frappe.session.user_fullname || frappe.session.user);
 		page.main.find('[data-fieldname="custom_customer_name"]').val(data.custom_customer_name);
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
@@ -318,9 +346,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let batch_readonly = itemsLocked ? 'readonly' : '';
 			let input_disabled = itemsLocked ? 'disabled' : '';
-			// Batch Code / MFG / Expiry are only enterable for batch-tracked items.
-			let no_batch = !cint(row.has_batch_no);
-			let batch_lock = (itemsLocked || no_batch) ? 'readonly tabindex="-1"' : '';
+			// Batch Code / MFG / Expiry are always enterable — non-batch-tracked
+			// items carry the code as free text (custom_batch_code) through the
+			// whole cycle instead of a Batch master link.
+			let batch_lock = itemsLocked ? 'readonly tabindex="-1"' : '';
 			
 			// Exploded bundle component: qty & box are derived from the combo order,
 			// so both are locked; the row is tinted and tagged with its bundle SKU.
@@ -347,7 +376,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
 					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="1" min="0" ${input_disabled} ${box_readonly}/></td>
 					<td>
-						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock} placeholder="${no_batch ? 'No batch tracking' : ''}">
+						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock}>
 					</td>
 					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_lock}></td>
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_lock}></td>
@@ -633,13 +662,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_batch_details',
 					args: { batch_no: val, item_code: item_code },
 					callback: function(res) {
-						if (res.message) {
+						// Free-text codes with no Batch master return {} — leave any
+						// manually entered MFG/Expiry untouched in that case.
+						if (res.message && (res.message.manufacturing_date || res.message.expiry_date)) {
 							// Ensure format is YYYY-MM-DD for date inputs
 							let mfg = res.message.manufacturing_date ? frappe.datetime.str_to_obj(res.message.manufacturing_date) : null;
 							let exp = res.message.expiry_date ? frappe.datetime.str_to_obj(res.message.expiry_date) : null;
 
-							tr.find('.mfg-input').val(mfg ? frappe.datetime.obj_to_str(mfg) : '');
-							tr.find('.exp-input').val(exp ? frappe.datetime.obj_to_str(exp) : '');
+							if (mfg) tr.find('.mfg-input').val(frappe.datetime.obj_to_str(mfg));
+							if (exp) tr.find('.exp-input').val(frappe.datetime.obj_to_str(exp));
 
 							// Customer-type expiry warning (Task 7) — soft alert only.
 							let sales_order = page.main.find('[data-fieldname="custom_sales_order_id"]').val()
@@ -682,9 +713,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// Fetch users for QC + Assigned To dropdowns (same enabled System Users list).
+		// Fetch users for QC + Assigned To dropdowns — only the warehouse/sales
+		// workflow team (roles from the Pick List permission matrix), plus any
+		// already-saved assignee so legacy values still display.
 		frappe.call({
-			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_users',
+			method: 'alpinos.workflow_role_access.get_workflow_team_users',
+			args: {
+				doctype: 'Pick List',
+				include_users: [data.custom_assigned_to, data.custom_qc_attended_by].filter(Boolean)
+			},
 			callback: function(res) {
 				if(res.message) {
 					let qc_select = page.main.find('[data-fieldname="custom_qc_attended_by"]');

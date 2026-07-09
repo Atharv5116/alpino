@@ -22,7 +22,7 @@ ALLOWED_OFFLINE_BUYER_ITEM_GROUPS = [
 
 @frappe.whitelist()
 def get_all_records():
-	"""Return all Offline Buyer Items records for the list view (incl. Offline Buyer Master context)."""
+	"""Return all Buyer Items records for the list view (incl. Buyer Master context)."""
 	records = frappe.db.sql(
 		"""
 		SELECT
@@ -33,14 +33,14 @@ def get_all_records():
 			obi.modified,
 			(
 				SELECT COUNT(obil.name)
-				FROM `tabOffline Buyer Item` obil
+				FROM `tabBuyer Item` obil
 				WHERE obil.parent = obi.name
 			) AS item_count,
 			obm.name AS offline_buyer_master,
 			(
 				SELECT oba.site_name
-				FROM `tabOffline Buyer Address` oba
-				WHERE oba.parent = obm.name AND oba.parenttype = 'Offline Buyer Master'
+				FROM `tabBuyer Address` oba
+				WHERE oba.parent = obm.name AND oba.parenttype = 'Buyer Master'
 				ORDER BY oba.is_primary DESC, oba.idx ASC
 				LIMIT 1
 			) AS site_name,
@@ -51,9 +51,9 @@ def get_all_records():
 			obm.payment_term,
 			obm.payment_term_days,
 			obm.party_owner
-		FROM `tabOffline Buyer Items` obi
+		FROM `tabBuyer Items` obi
 		LEFT JOIN `tabCustomer` bcust ON bcust.name = obi.buyer
-		LEFT JOIN `tabOffline Buyer Master` obm ON obm.customer = obi.buyer
+		LEFT JOIN `tabBuyer Master` obm ON obm.customer = obi.buyer
 		ORDER BY obi.modified DESC
 		""",
 		as_dict=True,
@@ -63,12 +63,12 @@ def get_all_records():
 
 @frappe.whitelist()
 def get_buyer_items(record_name):
-	"""Return active variant items for the catalog grid, merged with saved rows and Offline Buyer Master margins.
+	"""Return active variant items for the catalog grid, merged with saved rows and Buyer Master margins.
 
-	When this catalog's **buyer** (Customer) has an Offline Buyer Master with margin rows, the page only lists
+	When this catalog's **buyer** (Customer) has an Buyer Master with margin rows, the page only lists
 	SKUs that appear on that master (plus any SKUs already saved on this catalog). Default **margin %** and
 	**MRP** match the master (and Sales Order Entry): MRP from Item ``valuation_rate``, margin from
-	``Offline Buyer Margin``; saved child rows still win if present.
+	``Buyer Margin``; saved child rows still win if present.
 	"""
 	# All active, saleable variant items from Item master
 	items = frappe.get_all(
@@ -87,8 +87,8 @@ def get_buyer_items(record_name):
 
 	saved: dict = {}
 	buyer = None
-	if frappe.db.exists("Offline Buyer Items", record_name):
-		doc = frappe.get_doc("Offline Buyer Items", record_name)
+	if frappe.db.exists("Buyer Items", record_name):
+		doc = frappe.get_doc("Buyer Items", record_name)
 		buyer = doc.buyer
 		for row in doc.get("items") or []:
 			if row.item_code:
@@ -96,11 +96,11 @@ def get_buyer_items(record_name):
 
 	obm_margin_by_sku: dict = {}
 	if buyer:
-		obm_name = frappe.db.get_value("Offline Buyer Master", {"customer": buyer}, "name")
+		obm_name = frappe.db.get_value("Buyer Master", {"customer": buyer}, "name")
 		if obm_name:
 			for r in frappe.get_all(
-				"Offline Buyer Margin",
-				filters={"parent": obm_name, "parenttype": "Offline Buyer Master"},
+				"Buyer Margin",
+				filters={"parent": obm_name, "parenttype": "Buyer Master"},
 				fields=["sku", "margin_percent"],
 			):
 				if r.sku:
@@ -140,14 +140,14 @@ def get_buyer_items(record_name):
 
 @frappe.whitelist()
 def save_buyer_items(record_name, items):
-	"""Save selected items back to the specified Offline Buyer Items record."""
+	"""Save selected items back to the specified Buyer Items record."""
 	if isinstance(items, str):
 		items = json.loads(items)
 
-	if not frappe.db.exists("Offline Buyer Items", record_name):
+	if not frappe.db.exists("Buyer Items", record_name):
 		frappe.throw(f"Record {record_name} not found")
 
-	doc = frappe.get_doc("Offline Buyer Items", record_name)
+	doc = frappe.get_doc("Buyer Items", record_name)
 	doc.set("items", [])
 
 	for item in items:
@@ -176,35 +176,36 @@ def save_buyer_items(record_name, items):
 
 @frappe.whitelist()
 def create_record(title, buyer=None, offline_buyer_master=None, description=None):
-	"""Create a new Offline Buyer Items record and return its name.
+	"""Create a new Buyer Items record and return its name.
 
 	Prefer ``offline_buyer_master`` (desk page): resolves to the auto-created Customer on that master.
 	Legacy ``buyer`` (Customer name) is still accepted for API callers.
 	"""
 	cust = None
 	if offline_buyer_master:
-		cust = frappe.db.get_value("Offline Buyer Master", offline_buyer_master, "customer")
+		cust = frappe.db.get_value("Buyer Master", offline_buyer_master, "customer")
 		if not cust:
 			# Customer not yet linked — auto-save OBM to trigger customer creation
-			obm_doc = frappe.get_doc("Offline Buyer Master", offline_buyer_master)
+			obm_doc = frappe.get_doc("Buyer Master", offline_buyer_master)
+			obm_doc.flags.ignore_mandatory = True  # legacy rows may lack Channel
 			obm_doc.save(ignore_permissions=True)
 			frappe.db.commit()
 			cust = obm_doc.customer
 		if not cust:
 			frappe.throw(
-				_("Could not auto-create a Customer for Offline Buyer Master {0}. Please open the record and save it manually.").format(
+				_("Could not auto-create a Customer for Buyer Master {0}. Please open the record and save it manually.").format(
 					frappe.bold(offline_buyer_master)
 				)
 			)
 	elif buyer:
 		cust = buyer
 	if not cust:
-		frappe.throw(_("Choose an Offline Buyer Master (or Customer) for this catalog."))
+		frappe.throw(_("Choose an Buyer Master (or Customer) for this catalog."))
 
-	if not offline_buyer_master and not frappe.db.exists("Offline Buyer Master", {"customer": cust}):
-		frappe.throw(_("The selected Customer must have an Offline Buyer Master."))
+	if not offline_buyer_master and not frappe.db.exists("Buyer Master", {"customer": cust}):
+		frappe.throw(_("The selected Customer must have an Buyer Master."))
 
-	doc = frappe.new_doc("Offline Buyer Items")
+	doc = frappe.new_doc("Buyer Items")
 	doc.title = title
 	doc.buyer = cust
 	if description:
@@ -280,7 +281,7 @@ def get_parent_group_filter_data(item_groups):
 
 @frappe.whitelist()
 def get_allowed_item_groups():
-	"""Return the fixed list of item groups allowed in Offline Buyer Margin."""
+	"""Return the fixed list of item groups allowed in Buyer Margin."""
 	return ALLOWED_OFFLINE_BUYER_ITEM_GROUPS
 
 
@@ -291,7 +292,7 @@ def get_variant_items_for_group(item_group):
 		return []
 
 	if item_group not in ALLOWED_OFFLINE_BUYER_ITEM_GROUPS:
-		frappe.throw(f"Item Group '{item_group}' is not allowed for Offline Buyer Margin")
+		frappe.throw(f"Item Group '{item_group}' is not allowed for Buyer Margin")
 
 	root = frappe.db.get_value("Item Group", item_group, ["lft", "rgt"], as_dict=True)
 	if not root:
@@ -429,8 +430,8 @@ def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def get_offline_buyer_master_details(obm_name):
-	"""Return all editable fields of an Offline Buyer Master for the catalog edit dialog."""
-	doc = frappe.get_doc("Offline Buyer Master", obm_name)
+	"""Return all editable fields of an Buyer Master for the catalog edit dialog."""
+	doc = frappe.get_doc("Buyer Master", obm_name)
 	return {
 		"customer_business_name": doc.customer_business_name,
 		"level": doc.level or "",
@@ -468,7 +469,7 @@ def get_offline_buyer_master_details(obm_name):
 
 @frappe.whitelist()
 def update_offline_buyer_master(obm_name, updates, addresses):
-	"""Save scalar fields and the full addresses child table for an Offline Buyer Master."""
+	"""Save scalar fields and the full addresses child table for an Buyer Master."""
 	import json as _json
 
 	if isinstance(updates, str):
@@ -476,7 +477,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 	if isinstance(addresses, str):
 		addresses = _json.loads(addresses)
 
-	doc = frappe.get_doc("Offline Buyer Master", obm_name)
+	doc = frappe.get_doc("Buyer Master", obm_name)
 
 	editable = [
 		"customer_business_name", "customer_type", "level", "gst_type",
@@ -506,6 +507,7 @@ def update_offline_buyer_master(obm_name, updates, addresses):
 			"is_shipping": int(addr.get("is_shipping") or 0),
 		})
 
+	doc.flags.ignore_mandatory = True  # legacy rows may lack Channel; this API only edits addresses
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 	return doc.customer_business_name
@@ -533,8 +535,13 @@ def quick_create_offline_buyer(
 	gst_no=None,
 	pan_no=None,
 	combine_product_bundles=1,
+	channel=None,
+	appointment_required=0,
+	grn_available=0,
+	partial_order_allowed=0,
+	gst_exclusive_buyer=0,
 ):
-	"""Create a minimal Offline Buyer Master from the Catalog quick-create dialog.
+	"""Create a minimal Buyer Master from the Catalog quick-create dialog.
 
 	Returns the new OBM name so the caller can pre-fill the catalog form.
 	"""
@@ -548,18 +555,19 @@ def quick_create_offline_buyer(
 
 	if not actual_parent and biz_name_stripped:
 		actual_parent = frappe.db.get_value(
-			"Offline Buyer Master",
+			"Buyer Master",
 			{"customer_business_name": biz_name_stripped, "is_parent": 1},
 			"name"
 		)
 
 		if not actual_parent:
 			# Create a new Parent record automatically (no address rows — site/child holds the real address).
-			parent_obm = frappe.new_doc("Offline Buyer Master")
+			parent_obm = frappe.new_doc("Buyer Master")
 			parent_obm.customer_business_name = biz_name_stripped
 			parent_obm.is_parent = 1
 			# Use some defaults from the current dialog if applicable
 			parent_obm.customer_type = customer_type
+			parent_obm.channel = channel or ""
 			parent_obm.level = level or ""
 			parent_obm.gst_type = gst_type
 			parent_obm.payment_term = payment_term
@@ -570,9 +578,14 @@ def quick_create_offline_buyer(
 			parent_obm.insert(ignore_permissions=True)
 			actual_parent = parent_obm.name
 
-	obm = frappe.new_doc("Offline Buyer Master")
+	obm = frappe.new_doc("Buyer Master")
 	obm.customer_business_name = biz_name_stripped
 	obm.customer_type = customer_type
+	obm.channel = channel or ""
+	obm.appointment_required = frappe.utils.cint(appointment_required)
+	obm.grn_available = frappe.utils.cint(grn_available)
+	obm.partial_order_allowed = frappe.utils.cint(partial_order_allowed)
+	obm.gst_exclusive_buyer = frappe.utils.cint(gst_exclusive_buyer)
 	obm.level = level or ""
 	obm.gst_type = gst_type
 	# GST No (Registered) / PAN No (Unregistered) distinguish the child Customer name.
@@ -604,7 +617,7 @@ def quick_create_offline_buyer(
 	obm.insert(ignore_permissions=True)
 	# Ensure the customer link is persisted
 	if obm.customer:
-		frappe.db.set_value("Offline Buyer Master", obm.name, "customer", obm.customer, update_modified=False)
+		frappe.db.set_value("Buyer Master", obm.name, "customer", obm.customer, update_modified=False)
 	frappe.db.commit()
 	return obm.name
 

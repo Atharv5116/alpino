@@ -35,6 +35,9 @@ def get_pick_list_data(name):
 		row["shelf_life_in_days"] = item_info.get("shelf_life_in_days") or 0
 		row["has_batch_no"] = item_info.get("has_batch_no") or 0
 
+	# Created By display for the entry page header.
+	doc_dict["owner_full_name"] = frappe.utils.get_fullname(doc.owner)
+
 	# Surface any existing (non-cancelled) DN against this pick list so the UI
 	# can hide the Create Delivery Note button.
 	doc_dict["existing_delivery_note"] = frappe.db.get_value(

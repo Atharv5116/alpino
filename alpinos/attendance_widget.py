@@ -75,12 +75,13 @@ def _shift_location_coords(employee, when):
 
 
 def _validate_letters_only(value, field_label="Reason"):
-    """Reason must be letters only — no digits, spaces or special characters."""
+    """Reason must be words of letters — spaces between words are fine, but no
+    digits, special characters or whitespace-only values."""
     import re
 
-    if not re.fullmatch(r"[A-Za-z]+", value or ""):
+    if not re.fullmatch(r"[A-Za-z]+(?:\s+[A-Za-z]+)*", (value or "").strip()):
         frappe.throw(
-            f"{field_label} must contain letters only (no numbers, spaces or special characters)."
+            f"{field_label} must contain letters and spaces only (no numbers or special characters)."
         )
 
 

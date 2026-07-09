@@ -1,7 +1,7 @@
 frappe.pages['offline-buyer-catalog'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: 'Offline Buyer Catalog',
+		title: 'Buyer Catalog',
 		single_column: true
 	});
 
@@ -167,15 +167,23 @@ class OfflineBuyerCatalogPage {
 		// ── quick-create buyer sub-dialog ─────────────────────────────────────
 		const show_create_buyer_dialog = (catalog_title, catalog_desc) => {
 			const bd = new frappe.ui.Dialog({
-				title: 'Create New Offline Buyer',
+				title: 'Create New Buyer',
 				fields: [
-					{ label: 'Business Name', fieldname: 'business_name', fieldtype: 'Data', reqd: 1 },
-					{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master' },
+					// Classification first — channel, customer type and the four
+					// buyer flags are asked before anything else (general masters).
+					{ label: 'Channel', fieldname: 'channel', fieldtype: 'Link', options: 'Channel', reqd: 1 },
 					{
 						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
 						options: 'Alpino Customer Type',
 						reqd: 1,
 					},
+					{ label: 'Appointment Required', fieldname: 'appointment_required', fieldtype: 'Check' },
+					{ label: 'GRN Available', fieldname: 'grn_available', fieldtype: 'Check' },
+					{ label: 'Partial Order Allowed', fieldname: 'partial_order_allowed', fieldtype: 'Check' },
+					{ label: 'GST-Exclusive Buyer', fieldname: 'gst_exclusive_buyer', fieldtype: 'Check' },
+					{ fieldtype: 'Section Break', label: 'Profile' },
+					{ label: 'Business Name', fieldname: 'business_name', fieldtype: 'Data', reqd: 1 },
+					{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Buyer Master' },
 					{
 						label: 'Level', fieldname: 'level', fieldtype: 'Select',
 						options: '\nSuperstockist\nDistributor',
@@ -226,6 +234,11 @@ class OfflineBuyerCatalogPage {
 							business_name: v.business_name,
 							site_name: v.site_name || '',
 							customer_type: v.customer_type,
+							channel: v.channel,
+							appointment_required: v.appointment_required ? 1 : 0,
+							grn_available: v.grn_available ? 1 : 0,
+							partial_order_allowed: v.partial_order_allowed ? 1 : 0,
+							gst_exclusive_buyer: v.gst_exclusive_buyer ? 1 : 0,
 							level: v.level,
 							gst_type: v.gst_type,
 							gst_no: v.gst_no || '',
@@ -279,7 +292,7 @@ class OfflineBuyerCatalogPage {
 			bd.fields_dict.parent_buyer && bd.fields_dict.parent_buyer.$input.on('change awesomplete-selectcomplete', function () {
 				const pb = bd.get_value('parent_buyer');
 				if (pb) {
-					frappe.db.get_value('Offline Buyer Master', pb, 'customer_business_name', (r) => {
+					frappe.db.get_value('Buyer Master', pb, 'customer_business_name', (r) => {
 						if (r && r.customer_business_name && !bd.get_value('business_name')) {
 							bd.set_value('business_name', r.customer_business_name);
 						}
@@ -300,7 +313,7 @@ class OfflineBuyerCatalogPage {
 					label: 'Select Existing Buyer',
 					fieldname: 'offline_buyer_master',
 					fieldtype: 'Link',
-					options: 'Offline Buyer Master',
+					options: 'Buyer Master',
 					description: 'Search by business name to pick an existing offline buyer.',
 				},
 				{
@@ -371,7 +384,7 @@ class OfflineBuyerCatalogPage {
 			buyer_bits.push(`Business: ${rec.customer_business_name}`);
 		}
 		if (rec.offline_buyer_master) {
-			buyer_bits.push(`Offline Buyer Master: ${rec.offline_buyer_master}`);
+			buyer_bits.push(`Buyer Master: ${rec.offline_buyer_master}`);
 		}
 		if (rec.buyer) {
 			const nm = (rec.buyer_customer_name || '').trim();
@@ -692,7 +705,7 @@ class OfflineBuyerCatalogPage {
 		const me = this;
 		const obm_name = rec.offline_buyer_master;
 		if (!obm_name) {
-			frappe.msgprint(__('No Offline Buyer Master linked to this catalog.'));
+			frappe.msgprint(__('No Buyer Master linked to this catalog.'));
 			return;
 		}
 
@@ -874,7 +887,7 @@ class OfflineBuyerCatalogPage {
 				{ fieldtype: 'Section Break', label: 'Business Information' },
 				{ label: 'Business Name', fieldname: 'customer_business_name', fieldtype: 'Data', reqd: 1, default: obm.customer_business_name },
 				{ label: 'Is Parent', fieldname: 'is_parent', fieldtype: 'Check', default: obm.is_parent },
-				{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Offline Buyer Master', default: obm.parent_buyer },
+				{ label: 'Parent Buyer', fieldname: 'parent_buyer', fieldtype: 'Link', options: 'Buyer Master', default: obm.parent_buyer },
 				{ fieldtype: 'Column Break' },
 				{
 					label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',

@@ -60,9 +60,9 @@ def apply_box_conversion(row):
 
 
 def sync_obm_payment_mode(doc):
-	if doc.get("quotation_to") != "Offline Buyer Master" or not doc.get("party_name"):
+	if doc.get("quotation_to") != "Buyer Master" or not doc.get("party_name"):
 		return
-	payment_term = frappe.db.get_value("Offline Buyer Master", doc.party_name, "payment_term")
+	payment_term = frappe.db.get_value("Buyer Master", doc.party_name, "payment_term")
 	if not payment_term:
 		return
 	doc.custom_payment_mode = {
@@ -73,14 +73,14 @@ def sync_obm_payment_mode(doc):
 
 
 def sync_obm_item_pricing(doc, row):
-	if doc.get("quotation_to") != "Offline Buyer Master" or not doc.get("party_name") or not row.get("item_code"):
+	if doc.get("quotation_to") != "Buyer Master" or not doc.get("party_name") or not row.get("item_code"):
 		return
 	if flt(row.get("custom_mrp")) and flt(row.get("custom_flat_discount")):
 		return
 
 	from alpinos.sales_order_api import get_opportunity_line_pricing
 
-	pricing = get_opportunity_line_pricing("Offline Buyer Master", doc.party_name, row.item_code)
+	pricing = get_opportunity_line_pricing("Buyer Master", doc.party_name, row.item_code)
 	margin = flt(pricing.get("margin_percent"))
 	if pricing.get("mrp") and not flt(row.get("custom_mrp")):
 		row.custom_mrp = flt(pricing.get("mrp"))
@@ -149,8 +149,8 @@ def sync_resolved_customer(doc):
 	t = doc.get("quotation_to") or ""
 	if t == "Customer" and doc.get("party_name"):
 		doc.custom_resolved_customer = doc.party_name
-	elif t == "Offline Buyer Master" and doc.get("party_name"):
-		cust = frappe.db.get_value("Offline Buyer Master", doc.party_name, "customer")
+	elif t == "Buyer Master" and doc.get("party_name"):
+		cust = frappe.db.get_value("Buyer Master", doc.party_name, "customer")
 		doc.custom_resolved_customer = cust or None
 	else:
 		doc.custom_resolved_customer = None
@@ -173,9 +173,9 @@ def _address_belongs_to_customer(address_name, customer):
 
 
 def link_obm_quotation_addresses(doc):
-	"""Offline Buyer Master quotations must use addresses linked to the resolved ERP Customer."""
+	"""Buyer Master quotations must use addresses linked to the resolved ERP Customer."""
 
-	if doc.get("quotation_to") != "Offline Buyer Master":
+	if doc.get("quotation_to") != "Buyer Master":
 		return
 	exp = doc.get("custom_resolved_customer")
 	if not exp:
@@ -187,7 +187,7 @@ def link_obm_quotation_addresses(doc):
 		addr = doc.get(fn)
 		if addr and not _address_belongs_to_customer(addr, exp):
 			frappe.throw(
-				_("{0} must belong to Customer {1} when Quotation To is Offline Buyer Master.").format(
+				_("{0} must belong to Customer {1} when Quotation To is Buyer Master.").format(
 					label, frappe.bold(exp)
 				)
 			)

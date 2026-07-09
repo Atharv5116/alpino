@@ -1,0 +1,106 @@
+{
+ "actions": [],
+ "creation": "2026-05-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "site_name",
+  "is_primary",
+  "is_shipping",
+  "address_line",
+  "city",
+  "state",
+  "pincode",
+  "country",
+  "address_label",
+  "area",
+  "sub_area"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "is_primary",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Primary"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_shipping",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Shipping"
+  },
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site Name",
+   "description": "Site / trade name for this location. Shown on the Sales Order print for the chosen shipping address."
+  },
+  {
+   "fieldname": "address_line",
+   "fieldtype": "Text",
+   "in_list_view": 1,
+   "label": "Address"
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "City",
+   "options": "City"
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "State",
+   "options": "State"
+  },
+  {
+   "fieldname": "pincode",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pincode",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Country",
+   "options": "Country"
+  },
+  {
+   "fieldname": "address_label",
+   "fieldtype": "Data",
+   "label": "Label",
+   "description": "Optional e.g. Head Office, Warehouse"
+  },
+  {
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "label": "Area"
+  },
+  {
+   "fieldname": "sub_area",
+   "fieldtype": "Data",
+   "label": "Sub Area"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Buyer Address",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

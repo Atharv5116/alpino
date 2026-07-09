@@ -179,7 +179,7 @@ SUPPORTING_READ_DOCTYPES = [
 	"Address",
 	"Contact",
 	"Company",
-	"Offline Buyer Master",
+	"Buyer Master",
 	"Alpino Customer Type",
 	"Sales Taxes and Charges Template",
 	"Tax Category",
@@ -338,6 +338,42 @@ def _setup_status_fields():
 	# We only add a Select tracking field here, so skipping that unrelated
 	# whole-doctype check is safe and avoids breaking migrate.
 	create_custom_fields(custom_fields, ignore_validate=True, update=True)
+
+
+@frappe.whitelist()
+def get_workflow_team_users(doctype, include_users=None):
+	"""Enabled System Users holding any of the workflow roles defined for the
+	doctype in PERMISSION_MATRIX (the warehouse + sales teams). Used by the
+	Assign To / QC dropdowns on the Pick List and Delivery Note entry pages so
+	they only offer workflow team members instead of every user on the site.
+
+	Names passed in include_users are appended even without a matching role so
+	documents with an existing (legacy) assignee still display their value."""
+	roles = list(PERMISSION_MATRIX.get(doctype) or {})
+	if not roles:
+		frappe.throw(f"No workflow roles are defined for {doctype}.")
+
+	role_holders = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", roles], "parenttype": "User"},
+		pluck="parent",
+		distinct=True,
+	)
+	users = []
+	if role_holders:
+		users = frappe.get_all(
+			"User",
+			filters={"name": ["in", role_holders], "enabled": 1, "user_type": "System User"},
+			pluck="name",
+			order_by="full_name asc",
+		)
+
+	if isinstance(include_users, str):
+		include_users = frappe.parse_json(include_users) or []
+	for extra in include_users or []:
+		if extra and extra not in users and frappe.db.exists("User", extra):
+			users.append(extra)
+	return users
 
 
 # ---------------------------------------------------------------------------

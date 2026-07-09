@@ -207,6 +207,15 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			let is_neg  = item.net_unit < 0;
 			let row_cls = is_neg ? 'dr-row-neg' : '';
 
+			// SKU color from Item.custom_color tints the ITEM cell (the other
+			// cells keep their green/red dispatch backgrounds).
+			let item_cell_style = '';
+			let color_m = /^#?([0-9a-f]{6})$/i.exec((item.color || '').trim());
+			if (color_m) {
+				let n = parseInt(color_m[1], 16);
+				item_cell_style = ` style="background:rgba(${(n>>16)&255},${(n>>8)&255},${n&255},0.35)"`;
+			}
+
 			// Inward date
 			let inward_cell;
 			if (item.inward_date) {
@@ -241,7 +250,7 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 				<td class="${s_cls}">${fmt(item.today_stock)}</td>
 				<td class="dr-n${net_extra}">${fmt(item.net_unit)}</td>
 				${inward_cell}
-				<td class="dr-item-cell" title="${item.item_name}">${item.item_code}</td>
+				<td class="dr-item-cell"${item_cell_style} title="${item.item_name}">${item.item_code}</td>
 				${green_cells}
 				${red_cells}
 			</tr>`);

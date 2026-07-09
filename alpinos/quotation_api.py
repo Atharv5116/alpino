@@ -16,8 +16,8 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 	customer = None
 	if doc.quotation_to == "Customer":
 		customer = doc.party_name
-	elif doc.quotation_to == "Offline Buyer Master":
-		customer = frappe.db.get_value("Offline Buyer Master", doc.party_name, "customer")
+	elif doc.quotation_to == "Buyer Master":
+		customer = frappe.db.get_value("Buyer Master", doc.party_name, "customer")
 
 	if not customer:
 		frappe.throw(_("Could not resolve Customer for this quotation"))

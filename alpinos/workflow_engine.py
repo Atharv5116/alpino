@@ -260,20 +260,43 @@ def sales_order_on_cancel(doc, method=None):
 	doc.db_set("custom_workflow_status", SO_CANCELLED, update_modified=False)
 
 
-def _guard_sales_order_cancellation(doc):
-	if _active_delivery_notes_for_so(doc.name):
-		frappe.throw(
-			frappe._(
-				"Sales Order cannot be cancelled because a linked Delivery Note exists. "
-				"Please cancel the Delivery Note and Pick List first."
-			)
+_ENTRY_PAGE_ROUTES = {
+	"Sales Order": "sales-order-entry-view",
+	"Pick List": "pick_list_entry",
+	"Delivery Note": "delivery_note_entry",
+}
+
+
+def _linked_doc_refs(doctype, names):
+	"""Linked-document IDs for cancellation guard messages. Rendered as links
+	to the doctype's entry page only when the current user may read that
+	doctype — otherwise plain IDs, so users without access see the ID but
+	cannot navigate to it."""
+	if frappe.has_permission(doctype, "read"):
+		route = _ENTRY_PAGE_ROUTES[doctype]
+		return ", ".join(
+			f'<a href="/app/{route}/{frappe.utils.quote(n)}">{frappe.utils.escape_html(n)}</a>'
+			for n in names
 		)
-	if _active_pick_lists_for_so(doc.name):
+	return ", ".join(frappe.utils.escape_html(n) for n in names)
+
+
+def _guard_sales_order_cancellation(doc):
+	dns = _active_delivery_notes_for_so(doc.name)
+	if dns:
 		frappe.throw(
 			frappe._(
-				"Sales Order cannot be cancelled because a linked Pick List exists. "
+				"Sales Order cannot be cancelled because linked Delivery Note {0} exists. "
+				"Please cancel the Delivery Note (and Pick List) first."
+			).format(_linked_doc_refs("Delivery Note", dns))
+		)
+	pls = _active_pick_lists_for_so(doc.name)
+	if pls:
+		frappe.throw(
+			frappe._(
+				"Sales Order cannot be cancelled because linked Pick List {0} exists. "
 				"Please cancel the Pick List first."
-			)
+			).format(_linked_doc_refs("Pick List", pls))
 		)
 
 
@@ -325,12 +348,13 @@ def pick_list_on_cancel(doc, method=None):
 
 
 def _guard_pick_list_cancellation(doc):
-	if _active_delivery_notes_for_pick_list(doc.name):
+	dns = _active_delivery_notes_for_pick_list(doc.name)
+	if dns:
 		frappe.throw(
 			frappe._(
-				"Pick List cannot be cancelled because a linked Delivery Note exists. "
+				"Pick List cannot be cancelled because linked Delivery Note {0} exists. "
 				"Please cancel the Delivery Note first."
-			)
+			).format(_linked_doc_refs("Delivery Note", dns))
 		)
 
 
@@ -368,6 +392,24 @@ def delivery_note_on_cancel(doc, method=None):
 # ---------------------------------------------------------------------------
 # User actions (no document event to hang off)
 # ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def cancel_document(doctype, name):
+	"""Cancel a Sales Order / Pick List / Delivery Note from its entry page.
+
+	Requires cancel permission on the doctype (the page only shows the button
+	when the user has it; this is the server-side enforcement). Cancellation
+	guards run via on_cancel and block with the linked document's ID when a
+	downstream document is still active."""
+	if doctype not in _ENTRY_PAGE_ROUTES:
+		frappe.throw(frappe._("Cancellation is not supported for {0}.").format(doctype))
+	doc = frappe.get_doc(doctype, name)
+	doc.check_permission("cancel")
+	if doc.docstatus != 1:
+		frappe.throw(frappe._("Only submitted documents can be cancelled."))
+	doc.cancel()
+	return {"name": doc.name, "docstatus": doc.docstatus}
+
 
 @frappe.whitelist()
 def submit_sales_order(sales_order):

@@ -7,18 +7,24 @@ from frappe.utils import flt
 
 
 def strip_non_batch_item_batches(doc, method=None):
-	"""Runs on before_validate (i.e. before ERPNext validates batches): a
-	non-batch-tracked item must not carry a batch_no, otherwise the Delivery
-	Note fails on submit with "Could not find Batch No: ...". Free-text batch
-	codes entered on the Pick List for such items are cleared here."""
+	"""Runs on before_validate (i.e. before ERPNext validates batches): batch_no
+	(a Link to Batch) must only carry real Batch masters on batch-tracked items,
+	otherwise the Delivery Note fails on submit with "Could not find Batch No: ...".
+	The code itself is preserved in custom_batch_code (free text) — the batch
+	mention must survive the whole cycle even without a Batch master."""
 	if doc.get("is_return"):
 		return
+	meta_dn_item = frappe.get_meta("Delivery Note Item")
+	has_code_field = bool(meta_dn_item.get_field("custom_batch_code"))
 	for row in doc.get("items") or []:
-		if (
-			row.get("batch_no")
-			and row.get("item_code")
-			and not frappe.db.get_value("Item", row.item_code, "has_batch_no")
-		):
+		if not row.get("batch_no"):
+			continue
+		non_batch_item = row.get("item_code") and not frappe.db.get_value(
+			"Item", row.item_code, "has_batch_no"
+		)
+		if non_batch_item or not frappe.db.exists("Batch", row.batch_no):
+			if has_code_field and not row.get("custom_batch_code"):
+				row.custom_batch_code = row.batch_no
 			row.batch_no = None
 
 
@@ -50,7 +56,7 @@ def _sync_sales_order_header(doc):
 def _pick_list_item_fields():
 	meta = frappe.get_meta("Pick List Item")
 	fields = ["batch_no", "item_code", "picked_qty", "qty"]
-	for fname in ("custom_box", "custom_mfg_date", "custom_expiry_date"):
+	for fname in ("custom_box", "custom_mfg_date", "custom_expiry_date", "custom_batch_code"):
 		if meta.get_field(fname):
 			fields.append(fname)
 	return fields
@@ -85,19 +91,16 @@ def _sync_items_from_pick_list(doc):
 			f = _box_factor(row.item_code) or 1
 			row.custom_box = ceil(flt(row.qty) / f) if flt(row.qty) else 0
 
-		# Only carry batch/dates for batch-tracked items. Non-batch items must
-		# not have a batch_no (otherwise the DN fails batch validation on submit
-		# with "Could not find Batch No: ..."). Clear any stray values.
+		# Free-text batch code always travels with the row; batch_no (Link) only
+		# for batch-tracked items with a real Batch master — anything else there
+		# fails DN batch validation on submit ("Could not find Batch No: ...").
+		if pli.get("custom_batch_code") and meta_dn_item.get_field("custom_batch_code"):
+			row.custom_batch_code = pli.get("custom_batch_code")
+
 		has_batch = row.item_code and frappe.db.get_value("Item", row.item_code, "has_batch_no")
 		if not has_batch:
 			row.batch_no = None
-			if meta_dn_item.get_field("custom_mfg_date"):
-				row.custom_mfg_date = None
-			if meta_dn_item.get_field("custom_expiry_date"):
-				row.custom_expiry_date = None
-			continue
-
-		if pli.get("batch_no"):
+		elif pli.get("batch_no"):
 			row.batch_no = pli.get("batch_no")
 
 		if meta_dn_item.get_field("custom_mfg_date"):

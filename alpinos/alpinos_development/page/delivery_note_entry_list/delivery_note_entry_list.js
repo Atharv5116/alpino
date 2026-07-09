@@ -1,7 +1,7 @@
 frappe.pages['delivery_note_entry_list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Delivery Notes'),
+		title: __('Alpino Delivery Notes'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('delivery_note_entry_list'));

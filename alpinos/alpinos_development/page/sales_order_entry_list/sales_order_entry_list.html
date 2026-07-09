@@ -44,19 +44,9 @@
 		<div style="overflow-x: auto;">
 			<table class="table table-bordered so-list-table" style="font-size: 13px; margin-bottom: 0;">
 				<thead style="background: var(--bg-color);">
-					<tr>
-						<th style="text-align: center;"><input type="checkbox" class="so-list-select-all"></th>
-						<th>ID</th>
-						<th>Customer</th>
-						<th>Customer Name</th>
-						<th>Date</th>
-						<th>Delivery Date</th>
-						<th>Company</th>
-						<th>Workflow Status</th>
-						<th>Status</th>
-						<th class="text-center">Damage AU</th>
-						<th class="text-right">Grand Total</th>
-					</tr>
+					<!-- Header is rendered by JS: columns depend on the user's role
+					     (Sales vs Warehouse layouts). -->
+					<tr></tr>
 				</thead>
 				<tbody></tbody>
 			</table>

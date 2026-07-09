@@ -154,7 +154,10 @@ def _collect_pick_list_stickers(doc):
 		return (src_idx, row.idx or 0)
 
 	sorted_rows = sorted(doc.locations or [], key=_row_sort_key)
-	stickers = []
+
+	# First pass: per-row box counts, so the counter can run continuously
+	# across the whole pick list (serial / grand total) in page order.
+	printable = []
 	for row in sorted_rows:
 		source_table = row.get("custom_source_table") or "Items"
 		is_sample = source_table in SAMPLE_SOURCE_TABLES
@@ -162,22 +165,34 @@ def _collect_pick_list_stickers(doc):
 		# falling back to 1 sticker per row when the count is zero so the
 		# freebie/scheme/additional-unit gets at least one printed label.
 		if is_sample:
-			total_box = int(flt(row.get("custom_sample_box") or 0)) or 1
+			boxes = int(flt(row.get("custom_sample_box") or 0)) or 1
 		else:
-			total_box = int(flt(row.get("custom_box") or 0))
-			if total_box <= 0:
+			boxes = int(flt(row.get("custom_box") or 0))
+			if boxes <= 0:
 				continue
+		printable.append((row, boxes, is_sample))
+
+	grand_total = sum(boxes for _, boxes, _ in printable)
+
+	stickers = []
+	serial = 0
+	for row, boxes, is_sample in printable:
 		sku_no = ""
 		if row.item_code:
 			sku_no = frappe.db.get_value("Item", row.item_code, "custom_sku_no") or ""
 		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
-		for box_idx in range(1, total_box + 1):
+		mfg_date = ""
+		if row.get("custom_mfg_date"):
+			mfg_date = frappe.utils.formatdate(str(row.custom_mfg_date))
+		for _ in range(boxes):
+			serial += 1
 			stickers.append({
 				"sku_no": sku_no,
 				"sku_name": row.item_code or "",
 				"batch_no": batch_no,
-				"box_index": box_idx,
-				"total_box": total_box,
+				"mfg_date": mfg_date,
+				"box_index": serial,
+				"total_box": grand_total,
 				"party_name": party_name,
 				"po_no": po_no,
 				"dispatch_area": gate,

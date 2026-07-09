@@ -95,6 +95,37 @@ def setup_sales_order_custom_fields():
 				in_list_view=1,
 				description="Auto-set: today if before 2 PM, next working day if after 2 PM.",
 			),
+			dict(
+				fieldname="custom_po_expiry_date",
+				label="PO Expiry Date",
+				fieldtype="Date",
+				insert_after="po_date",
+			),
+			dict(
+				fieldname="custom_po_no_for_pdf",
+				label="PO No for PDF",
+				fieldtype="Data",
+				insert_after="custom_po_expiry_date",
+				allow_on_submit=1,
+				description="File name (without .pdf) of the customer PO in the folder set in Alpino General Settings. Leaving this field fetches and attaches the PDF.",
+			),
+			dict(
+				fieldname="custom_po_pdf",
+				label="PO PDF",
+				fieldtype="Attach",
+				insert_after="custom_po_no_for_pdf",
+				read_only=1,
+				allow_on_submit=1,
+				description="Fetched from the PO PDF folder by 'PO No for PDF'.",
+			),
+			dict(
+				fieldname="custom_site_name",
+				label="Site Name",
+				fieldtype="Data",
+				insert_after="customer_name",
+				read_only=0,
+				description="Defaults from the customer's Buyer Master (site_name) when blank; editable per order. Shown on the entry page instead of Company.",
+			),
 			# Invoice (external) — populated by the Invoice PDF sync; shown only once Dispatched.
 			dict(
 				fieldname="custom_invoice_section",
@@ -194,6 +225,13 @@ def setup_sales_order_custom_fields():
 		# SALES ORDER ITEM: Additional fields
 		# ============================================================
 		"Sales Order Item": [
+			dict(
+				fieldname="custom_remarks",
+				label="Remarks",
+				fieldtype="Data",
+				insert_after="qty",
+				description="Mandatory when this order qty is less than the Quotation qty.",
+			),
 			dict(
 				fieldname="custom_product_image",
 				label="Product Image",

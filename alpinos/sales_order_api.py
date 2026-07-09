@@ -455,6 +455,54 @@ def validate_sales_order_pricing(doc, method=None):
 	)
 
 
+def validate_so_freebies_and_box_multiples(doc, method=None):
+	"""Two Sales Order save rules (drafts only):
+
+	1. Marketing Freebies may only contain items that are also in the Items
+	   table (the entry page warns and clears immediately; this is the backstop).
+	2. Ordered qty must fill whole boxes: per item, (order qty + freebie qty)
+	   must be a multiple of the Box conversion factor when freebies exist for
+	   that item, otherwise the order qty alone must be. Items without a Box
+	   UOM are skipped. Replaces the old client-side auto-rounding of qty.
+	"""
+	if doc.docstatus != 0:
+		return
+
+	order_qty = {}
+	for row in doc.get("items") or []:
+		if row.item_code:
+			order_qty[row.item_code] = order_qty.get(row.item_code, 0) + flt(row.qty)
+
+	freebie_qty = {}
+	for row in doc.get("custom_marketing_freebies") or []:
+		if not row.item_code:
+			continue
+		if row.item_code not in order_qty:
+			frappe.throw(
+				f"Marketing Freebie row #{row.idx}: {row.item_code} is not in the "
+				"order Items table. Freebies can only be given for ordered items."
+			)
+		freebie_qty[row.item_code] = freebie_qty.get(row.item_code, 0) + flt(row.qty)
+
+	for item_code, qty in order_qty.items():
+		cf = get_box_conversion_factor(item_code)
+		if not cf:
+			continue
+		total = qty + freebie_qty.get(item_code, 0)
+		remainder = total % cf
+		if min(remainder, cf - remainder) > 1e-4:
+			if item_code in freebie_qty:
+				frappe.throw(
+					f"{item_code}: a box holds {flt(cf)} units — "
+					f"ordered qty {flt(qty)} + freebies {flt(freebie_qty[item_code])} = {flt(total)} "
+					f"must be a multiple of {flt(cf)}."
+				)
+			frappe.throw(
+				f"{item_code}: a box holds {flt(cf)} units — ordered qty {flt(qty)} "
+				f"must be a multiple of {flt(cf)} (or top it up with Marketing Freebies)."
+			)
+
+
 @frappe.whitelist()
 def download_sales_orders_zip(names, no_letterhead=0):
 	"""Bulk export: one PDF per Sales Order, bundled into a single ZIP download.
@@ -518,13 +566,13 @@ def get_customer_item_mrp(customer, item_code):
 
 @frappe.whitelist()
 def get_opportunity_obm_party_data(offline_buyer_master):
-	"""Offline Buyer Master name + ERPNext Customer + Customer Type for Opportunity header."""
+	"""Buyer Master name + ERPNext Customer + Customer Type for Opportunity header."""
 	if not offline_buyer_master or not frappe.db.exists(
-		"Offline Buyer Master", offline_buyer_master
+		"Buyer Master", offline_buyer_master
 	):
 		return {}
 	row = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		offline_buyer_master,
 		["customer", "customer_business_name", "customer_type", "payment_term"],
 		as_dict=True,
@@ -545,9 +593,9 @@ def get_opportunity_obm_party_data(offline_buyer_master):
 def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 	"""MRP + margin for an Opportunity line.
 
-	Priority when **Opportunity From** is Offline Buyer Master:
-	1) Saved row on any **Offline Buyer Items** catalog for that buyer (customer)
-	2) **Offline Buyer Margin** row on the selected master (`party_name`)
+	Priority when **Opportunity From** is Buyer Master:
+	1) Saved row on any **Buyer Items** catalog for that buyer (customer)
+	2) **Buyer Margin** row on the selected master (`party_name`)
 
 	Then ERPNext Customer Item MRP, else Item.valuation_rate.
 
@@ -563,8 +611,8 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 	if not opportunity_from or not party_name or not item_code:
 		return out
 
-	if opportunity_from == "Offline Buyer Master":
-		cust = frappe.db.get_value("Offline Buyer Master", party_name, "customer")
+	if opportunity_from == "Buyer Master":
+		cust = frappe.db.get_value("Buyer Master", party_name, "customer")
 		if not cust:
 			return out
 		out["customer"] = cust
@@ -572,8 +620,8 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 		catalog = frappe.db.sql(
 			"""
 			SELECT obil.mrp, IFNULL(obil.margin_percent, 0) AS margin_percent
-			FROM `tabOffline Buyer Item` obil
-			INNER JOIN `tabOffline Buyer Items` obi ON obi.name = obil.parent AND obil.parenttype = 'Offline Buyer Items'
+			FROM `tabBuyer Item` obil
+			INNER JOIN `tabBuyer Items` obi ON obi.name = obil.parent AND obil.parenttype = 'Buyer Items'
 			WHERE IFNULL(obi.docstatus, 0) < 2
 				AND obil.item_code = %(item)s
 				AND obi.buyer = %(cust)s
@@ -594,10 +642,10 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 			return out
 
 		m_pct = frappe.db.get_value(
-			"Offline Buyer Margin",
+			"Buyer Margin",
 			{
 				"parent": party_name,
-				"parenttype": "Offline Buyer Master",
+				"parenttype": "Buyer Master",
 				"sku": item_code,
 			},
 			"margin_percent",
@@ -781,28 +829,34 @@ def get_bundle_combos(sales_order):
 	return combos
 
 
-@frappe.whitelist()
-def create_sales_order(customer, order_type, company, items, cash_discount=0,
-                       delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
-                       additional_units_items=None,
-                       additional_units_damage=0, billing_address=None, shipping_address=None,
-                       taxes_and_charges=None, po_no=None,
-                       submit_now=1):
-	"""Create a Sales Order from the custom entry page"""
+def _parse_so_entry_args(items, freebies, scheme_items, additional_units_items):
 	import json
 
 	if isinstance(items, str):
 		items = json.loads(items)
 	if not items:
 		frappe.throw(_("Order items are required"))
-	freebies = _parse_request_child_list(freebies)
-	scheme_items = _parse_request_child_list(scheme_items)
-	additional_units_items = _parse_request_child_list(additional_units_items)
+	return (
+		items,
+		_parse_request_child_list(freebies),
+		_parse_request_child_list(scheme_items),
+		_parse_request_child_list(additional_units_items),
+	)
 
-	if not frappe.has_permission("Sales Order", "create"):
-		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
-	so = frappe.new_doc("Sales Order")
+def _populate_so_from_entry(so, customer, order_type, company, items, cash_discount=0,
+                            delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
+                            additional_units_items=None,
+                            additional_units_damage=0, billing_address=None, shipping_address=None,
+                            taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
+                            from_quotation=None, po_no_for_pdf=None):
+	"""Populate a Sales Order's header + child tables from entry-page args.
+	Shared by create_sales_order / update_sales_order; never touches owner,
+	docstatus or the workflow status."""
+	freebies = freebies or []
+	scheme_items = scheme_items or []
+	additional_units_items = additional_units_items or []
+
 	so.customer = customer
 	so.order_type = order_type
 	so.company = _resolve_company(company)
@@ -810,6 +864,11 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	so.delivery_date = delivery_date
 	if po_no:
 		so.po_no = po_no
+	so.custom_po_expiry_date = po_expiry_date or None
+	if po_no_for_pdf is not None:
+		so.custom_po_no_for_pdf = (po_no_for_pdf or "").strip()
+	if site_name is not None:
+		so.custom_site_name = (site_name or "").strip()
 	if dispatch_date:
 		so.custom_dispatch_date = dispatch_date
 	so.ignore_pricing_rule = 1
@@ -861,10 +920,12 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		custom_box = flt(item.get("custom_box"))
 		factor = get_box_conversion_factor(item_code)
 		if factor:
-			# Always round to next whole box and keep qty aligned to full boxes.
-			boxes = ceil(qty / factor) if qty else ceil(custom_box) if custom_box else 0
-			qty = flt(boxes * factor) if boxes else qty
-			custom_box = boxes
+			# qty stays exactly as entered — whole-box compliance (incl. freebie
+			# top-ups) is enforced by validate_so_freebies_and_box_multiples.
+			# Box count is derived for display/downstream use only.
+			if not qty and custom_box:
+				qty = flt(ceil(custom_box) * factor)
+			custom_box = ceil(qty / factor) if qty else ceil(custom_box)
 
 		calc = _calculate_sales_order_line_values(
 			{
@@ -894,7 +955,10 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			"custom_offer": item.get("custom_offer") or "",
 			"custom_additional_discount": flt(item.get("custom_additional_discount")),
 			"custom_item_tax": flt(calc.get("gst_amount") or item.get("custom_item_tax")),
+			"custom_remarks": (item.get("custom_remarks") or item.get("remarks") or "").strip(),
 		}
+		if from_quotation:
+			row["prevdoc_docname"] = from_quotation
 		w = item.get("warehouse")
 		row["warehouse"] = w or _resolve_item_warehouse(item_code, so.company, default_warehouse)
 		if not row["warehouse"]:
@@ -959,10 +1023,38 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 			)
 
 	_apply_cash_discount(so)
+
+
+@frappe.whitelist()
+def create_sales_order(customer, order_type, company, items, cash_discount=0,
+                       delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
+                       additional_units_items=None,
+                       additional_units_damage=0, billing_address=None, shipping_address=None,
+                       taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
+                       from_quotation=None, po_no_for_pdf=None,
+                       submit_now=1):
+	"""Create a Sales Order from the custom entry page"""
+	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
+		items, freebies, scheme_items, additional_units_items
+	)
+	if not frappe.has_permission("Sales Order", "create"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	so = frappe.new_doc("Sales Order")
+	_populate_so_from_entry(
+		so, customer, order_type, company, items, cash_discount,
+		delivery_date, dispatch_date, freebies, scheme_items,
+		additional_units_items, additional_units_damage,
+		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
+		from_quotation, po_no_for_pdf,
+	)
 	so.insert()
 	if int(submit_now):
 		so.submit()
 	frappe.db.commit()
+	if so.get("custom_po_no_for_pdf"):
+		from alpinos.po_pdf import maybe_fetch_po_pdf
+		maybe_fetch_po_pdf(so.name)
 	_so_tax_logger().info(
 		"[create] inserted so=%s template=%s tax_rows=%s total_taxes=%s grand_total=%s",
 		so.name,
@@ -973,6 +1065,139 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	)
 
 	return {"name": so.name, "docstatus": so.docstatus}
+
+
+@frappe.whitelist()
+def update_sales_order(name, customer, order_type, company, items, cash_discount=0,
+                       delivery_date=None, dispatch_date=None, freebies=None, scheme_items=None,
+                       additional_units_items=None,
+                       additional_units_damage=0, billing_address=None, shipping_address=None,
+                       taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
+                       from_quotation=None, po_no_for_pdf=None):
+	"""Rewrite a draft Sales Order from the entry page (edit mode). Child tables
+	are rebuilt from the payload; owner, docstatus and the workflow status are
+	left untouched."""
+	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
+		items, freebies, scheme_items, additional_units_items
+	)
+	so = frappe.get_doc("Sales Order", name)
+	so.check_permission("write")
+	if so.docstatus != 0:
+		frappe.throw(_("Only draft Sales Orders can be edited from the entry page."))
+
+	so.set("items", [])
+	so.set("custom_marketing_freebies", [])
+	so.set("custom_scheme_item_table", [])
+	so.set("custom_additional_units_damage_items", [])
+	_populate_so_from_entry(
+		so, customer, order_type, company, items, cash_discount,
+		delivery_date, dispatch_date, freebies, scheme_items,
+		additional_units_items, additional_units_damage,
+		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
+		from_quotation, po_no_for_pdf,
+	)
+	so.save()
+	frappe.db.commit()
+	if so.get("custom_po_no_for_pdf"):
+		from alpinos.po_pdf import maybe_fetch_po_pdf
+		maybe_fetch_po_pdf(so.name)
+	return {"name": so.name, "docstatus": so.docstatus}
+
+
+@frappe.whitelist()
+def get_so_entry_payload(sales_order):
+	"""Prefill payload for the entry page from an existing Sales Order —
+	used by Edit (drafts) and Duplicate. Same shape as the quotation payload."""
+	doc = frappe.get_doc("Sales Order", sales_order)
+	doc.check_permission("read")
+
+	items = []
+	for row in doc.items or []:
+		items.append(
+			{
+				"item_code": row.item_code,
+				"item_name": row.get("item_name") or "",
+				"description": row.get("description") or "",
+				"warehouse": row.get("warehouse") or "",
+				"delivery_date": str(row.get("delivery_date") or doc.get("delivery_date") or ""),
+				"qty": flt(row.qty),
+				"box": flt(row.get("custom_box")),
+				"mrp": flt(row.get("custom_customer_mrp")),
+				"custom_selling_price": flt(row.get("custom_selling_price")),
+				"gst_percent": flt(row.get("custom_gst_percent")),
+				"flat_discount": flt(row.get("custom_flat_discount")),
+				"offer": row.get("custom_offer") or "",
+				"additional_discount": flt(row.get("custom_additional_discount")),
+				"rate": flt(row.rate),
+				"amount": flt(row.amount),
+				"custom_item_tax": flt(row.get("custom_item_tax")),
+				"custom_remarks": row.get("custom_remarks") or "",
+				"image": row.get("image") or "",
+			}
+		)
+
+	freebies = [
+		{
+			"item_code": r.item_code,
+			"item_name": r.get("item_name") or "",
+			"custom_selling_price": flt(r.get("custom_selling_price")),
+			"qty": flt(r.qty),
+			"remarks": r.get("remarks") or "",
+		}
+		for r in (doc.get("custom_marketing_freebies") or [])
+		if r.item_code
+	]
+	scheme_items = [
+		{
+			"item_code": r.item_code,
+			"item_name": r.get("item_name") or "",
+			"custom_selling_price": flt(r.get("custom_selling_price")),
+			"qty": flt(r.qty),
+			"scheme": r.get("scheme") or "",
+		}
+		for r in (doc.get("custom_scheme_item_table") or [])
+		if r.item_code
+	]
+	additional_units_items = [
+		{
+			"item_code": r.item_code,
+			"item_name": r.get("item_name") or "",
+			"custom_selling_price": flt(r.get("custom_selling_price")),
+			"qty": flt(r.qty),
+			"previous_order_id": r.get("previous_order_id") or "",
+			"remarks": r.get("remarks") or "",
+		}
+		for r in (doc.get("custom_additional_units_damage_items") or [])
+		if r.item_code
+	]
+
+	return {
+		"sales_order": doc.name,
+		"docstatus": doc.docstatus,
+		"workflow_status": doc.get("custom_workflow_status") or "",
+		"owner": doc.owner,
+		"owner_full_name": frappe.utils.get_fullname(doc.owner),
+		"customer": doc.customer,
+		"order_type": doc.get("order_type") or "",
+		"delivery_date": str(doc.get("delivery_date") or ""),
+		"dispatch_date": str(doc.get("custom_dispatch_date") or ""),
+		"po_no": doc.get("po_no") or "",
+		"from_quotation": next(
+			(r.get("prevdoc_docname") for r in (doc.items or []) if r.get("prevdoc_docname")), ""
+		),
+		"po_expiry_date": str(doc.get("custom_po_expiry_date") or ""),
+		"po_no_for_pdf": doc.get("custom_po_no_for_pdf") or "",
+		"site_name": doc.get("custom_site_name") or "",
+		"billing_address": doc.get("customer_address") or "",
+		"shipping_address": doc.get("shipping_address_name") or "",
+		"taxes_and_charges": doc.get("taxes_and_charges") or "",
+		"custom_cash_discount": flt(doc.get("custom_cash_discount")),
+		"additional_units_damage": cint(doc.get("custom_additional_units_damage")),
+		"items": items,
+		"freebies": freebies,
+		"scheme_items": scheme_items,
+		"additional_units_items": additional_units_items,
+	}
 
 
 def _so_view_abs_url(path):
@@ -1035,6 +1260,9 @@ def get_sales_order_entry_view_payload(sales_order):
 		if k in permitted_parent:
 			parent[k] = v
 	parent["name"] = doc.name
+	# Std fields aren't in permitted fieldnames; Created By is always shown.
+	parent["owner"] = doc.owner
+	parent["owner_full_name"] = frappe.utils.get_fullname(doc.owner)
 
 	# Table fields (items, child tables) are excluded from get_permitted_fieldnames but SO read
 	# implies line visibility; still filter each child row by Sales Order *Item* field perms.
@@ -1204,6 +1432,12 @@ def get_sales_order_entry_list(
 		"custom_additional_units_damage",
 		"docstatus",
 		"modified",
+		"po_no",
+		"po_date",
+		"custom_dispatch_date",
+		"custom_po_expiry_date",
+		"custom_site_name",
+		"owner",
 	]
 
 	rows = frappe.get_list(
@@ -1219,7 +1453,54 @@ def get_sales_order_entry_list(
 	has_more = len(rows) > page_length
 	rows = rows[:page_length]
 
+	_attach_so_list_row_extras(rows)
+
 	return {"data": rows, "has_more": int(has_more), "start": start, "page_length": page_length}
+
+
+def _attach_so_list_row_extras(rows):
+	"""Per row: Created By full name + the latest linked Pick List / Delivery
+	Note / Sales Invoice (for the list page's redirect buttons). One bulk query
+	per doctype for the whole page."""
+	if not rows:
+		return
+	names = [r.name for r in rows]
+
+	pl_map = {}
+	for r in frappe.get_all(
+		"Pick List",
+		filters={"custom_sales_order_id": ["in", names], "docstatus": ["<", 2]},
+		fields=["name", "custom_sales_order_id"],
+		order_by="modified asc",
+	):
+		pl_map[r.custom_sales_order_id] = r.name  # last write wins = latest
+
+	dn_map = {}
+	for r in frappe.get_all(
+		"Delivery Note",
+		filters={"custom_sales_order_id": ["in", names], "docstatus": ["<", 2], "is_return": 0},
+		fields=["name", "custom_sales_order_id"],
+		order_by="modified asc",
+	):
+		dn_map[r.custom_sales_order_id] = r.name
+
+	inv_map = {}
+	for r in frappe.get_all(
+		"Sales Invoice Item",
+		filters={"sales_order": ["in", names], "docstatus": ["<", 2]},
+		fields=["parent", "sales_order"],
+		order_by="modified asc",
+	):
+		inv_map[r.sales_order] = r.parent
+
+	fullnames = {}
+	for r in rows:
+		if r.owner not in fullnames:
+			fullnames[r.owner] = frappe.utils.get_fullname(r.owner)
+		r["owner_full_name"] = fullnames[r.owner]
+		r["pick_list"] = pl_map.get(r.name) or ""
+		r["delivery_note"] = dn_map.get(r.name) or ""
+		r["sales_invoice"] = inv_map.get(r.name) or ""
 
 @frappe.whitelist()
 def get_pick_list_mapping_data(sales_order):

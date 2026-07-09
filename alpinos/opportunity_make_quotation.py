@@ -69,13 +69,13 @@ def make_quotation(source_name, target_doc=None):
 
 		quotation.opportunity = source.name
 
-		obm_party = source.party_name if source.get("opportunity_from") == "Offline Buyer Master" else None
+		obm_party = source.party_name if source.get("opportunity_from") == "Buyer Master" else None
 		resolved_customer = None
 		obm_customer_name = None
 		payment_term = None
 		if obm_party:
 			row = frappe.db.get_value(
-				"Offline Buyer Master",
+				"Buyer Master",
 				obm_party,
 				["customer", "customer_business_name", "payment_term"],
 				as_dict=True,
@@ -86,7 +86,7 @@ def make_quotation(source_name, target_doc=None):
 				payment_term = row.get("payment_term")
 			if not resolved_customer:
 				frappe.throw(
-					"Offline Buyer Master {0} has no linked Customer. Please save the Offline Buyer Master first.".format(
+					"Buyer Master {0} has no linked Customer. Please save the Buyer Master first.".format(
 						frappe.bold(obm_party)
 					)
 				)
@@ -120,12 +120,12 @@ def make_quotation(source_name, target_doc=None):
 		if obm_party:
 			# ERPNext's set_missing_values/get_party_details only understands standard
 			# selling parties for tax rules. Use the linked Customer internally, then
-			# restore the visible Quotation party back to Offline Buyer Master.
+			# restore the visible Quotation party back to Buyer Master.
 			quotation.quotation_to = "Customer"
 			quotation.party_name = resolved_customer
 		quotation.run_method("set_missing_values")
 		if obm_party:
-			quotation.quotation_to = "Offline Buyer Master"
+			quotation.quotation_to = "Buyer Master"
 			quotation.party_name = obm_party
 			quotation.customer_name = obm_customer_name or source.get("customer_name") or obm_party
 			quotation.custom_resolved_customer = resolved_customer

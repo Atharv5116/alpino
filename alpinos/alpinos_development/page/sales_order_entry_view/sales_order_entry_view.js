@@ -1,7 +1,7 @@
 frappe.pages['sales-order-entry-view'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Sales Order View'),
+		title: __('Alpino Sales Order View'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('sales_order_entry_view'));
@@ -32,6 +32,54 @@ class SalesOrderEntryView {
 		);
 		// Always-visible Download PDF button (every Sales Order, any status).
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf());
+		// Fetch the customer PO PDF (named by 'PO No for PDF') from the folder
+		// set in Alpino General Settings and attach it to the order.
+		this.page.add_inner_button(__('Fetch PO PDF'), () => {
+			const me = this;
+			frappe.call({
+				method: 'alpinos.po_pdf.fetch_po_pdf',
+				args: { sales_order: me._so_name },
+				freeze: true,
+				freeze_message: __('Fetching PO PDF...'),
+				callback: (r) => {
+					if (r.message && r.message.file_url) {
+						frappe.show_alert({ message: __('PO PDF attached: {0}', [r.message.file_name]), indicator: 'green' }, 5);
+					}
+				}
+			});
+		});
+		// Edit re-opens the entry form on the SAME draft (shown for drafts only).
+		this.btn_edit_so = this.page.add_inner_button(__('Edit Order'), () => {
+			frappe.route_options = { edit_so: this._so_name };
+			frappe.set_route('sales-order-entry');
+		});
+		if (this.btn_edit_so) this.btn_edit_so.hide();
+		// Duplicate prefills the entry form with this order's data; saving
+		// creates a NEW order (fresh workflow state, status and Created By).
+		this.page.add_inner_button(__('Duplicate'), () => {
+			frappe.route_options = { duplicate_so: this._so_name };
+			frappe.set_route('sales-order-entry');
+		});
+		// Cancel: submitted orders only, and only for roles with cancel rights
+		// (server re-checks). The guard blocks with the linked Pick List /
+		// Delivery Note ID while one is still active.
+		this.btn_cancel_so = this.page.add_inner_button(__('Cancel Order'), () => {
+			const me = this;
+			frappe.confirm(__('Cancel Sales Order {0}?', [me._so_name]), () => {
+				frappe.call({
+					method: 'alpinos.workflow_engine.cancel_document',
+					args: { doctype: 'Sales Order', name: me._so_name },
+					freeze: true,
+					freeze_message: __('Cancelling...'),
+					callback: (r) => {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Sales Order cancelled'), indicator: 'red' });
+						me.load_order(me._so_name);
+					}
+				});
+			});
+		});
+		if (this.btn_cancel_so) this.btn_cancel_so.hide();
 		// The main "next stage" action is set as the page primary action by
 		// update_actions(). This is the only stage-secondary inline button.
 		this.btn_future_dispatch = this.page.add_inner_button(__('Mark as Future Dispatch'), () =>
@@ -63,10 +111,22 @@ class SalesOrderEntryView {
 			});
 		});
 		Promise.all([
-			frappe.db.get_value('Sales Order', this._so_name, 'custom_workflow_status'),
+			frappe.db.get_value('Sales Order', this._so_name, ['custom_workflow_status', 'docstatus']),
 			plStatus,
 		]).then(([sv, pl]) => {
 			const status = (sv && sv.message && sv.message.custom_workflow_status) || '';
+			const docstatus = cint(sv && sv.message && sv.message.docstatus);
+			// Edit only while the order is still a draft (server enforces too).
+			if (me.btn_edit_so) {
+				if (docstatus === 0 && status !== 'Cancelled') me.btn_edit_so.show();
+				else me.btn_edit_so.hide();
+			}
+			// Cancel: submitted only + role must have cancel rights (server re-checks).
+			if (me.btn_cancel_so) {
+				const can_cancel = frappe.model.can_cancel && frappe.model.can_cancel('Sales Order');
+				if (docstatus === 1 && status !== 'Cancelled' && can_cancel) me.btn_cancel_so.show();
+				else me.btn_cancel_so.hide();
+			}
 			// Status badge next to the title.
 			const colorMap = {
 				Draft: 'gray',
@@ -338,7 +398,7 @@ class SalesOrderEntryView {
 					frappe.msgprint(__('Could not load Sales Order data.'));
 					return;
 				}
-				this.page.set_title(__('Sales Order View — {0}', [name]));
+				this.page.set_title(__('Alpino Sales Order View — {0}', [name]));
 				this.render(r.message);
 			},
 		});
@@ -430,6 +490,7 @@ class SalesOrderEntryView {
 		w.find('.v-tax-id').text(this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—');
 		w.find('.v-dispatch-date').text(this._fmt_date(p, 'custom_dispatch_date'));
 		w.find('.v-delivery-date').text(this._fmt_date(p, 'delivery_date'));
+		w.find('.v-created-by').text(this._plain_text(p.owner_full_name || p.owner || '—'));
 
 		// Hide customer rows where field not permitted
 		[

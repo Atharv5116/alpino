@@ -1,10 +1,10 @@
 // Alpinos Quotation patches:
 //  1. Redirect "Create → Sales Order" on submitted Quotation to the custom Sales Order Entry page.
-//  2. Skip erpnext.utils.get_party_details when quotation_to = "Offline Buyer Master"
+//  2. Skip erpnext.utils.get_party_details when quotation_to = "Buyer Master"
 //     (standard ERPNext party fetch fails with "customer not found" for non-standard party types).
 
 (function () {
-	// ── Patch 1: get_party_details guard for Offline Buyer Master ──────────────
+	// ── Patch 1: get_party_details guard for Buyer Master ──────────────
 	function patch_get_party_details() {
 		if (!window.erpnext || !erpnext.utils || !erpnext.utils.get_party_details) {
 			return false;
@@ -17,7 +17,7 @@
 			if (
 				frm &&
 				frm.doctype === "Quotation" &&
-				frm.doc.quotation_to === "Offline Buyer Master"
+				frm.doc.quotation_to === "Buyer Master"
 			) {
 				// Skip standard party details fetch — our own sync_obm_quotation_header handles it.
 				return;

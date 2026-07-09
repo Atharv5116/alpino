@@ -7,13 +7,13 @@ from frappe.utils import flt
 
 
 def _customers_with_offline_buyer_master_query(txt, start, page_len):
-	"""Customers that have a row in Offline Buyer Master (same pool for Sales Order + Catalog)."""
+	"""Customers that have a row in Buyer Master (same pool for Sales Order + Catalog)."""
 	txt = txt or ""
 	return frappe.db.sql(
 		"""
 		SELECT c.name, c.customer_name
 		FROM `tabCustomer` c
-		INNER JOIN `tabOffline Buyer Master` m ON m.customer = c.name
+		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
 		WHERE IFNULL(c.disabled, 0) = 0
 			AND IFNULL(m.is_parent, 0) = 0
 			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s)
@@ -27,14 +27,14 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Limit Sales Order Customer link to customers that have an Offline Buyer Master."""
+	"""Limit Sales Order Customer link to customers that have an Buyer Master."""
 	return _customers_with_offline_buyer_master_query(txt, start, page_len)
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def catalog_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Same customer list as Sales Order — only customers linked in Offline Buyer Master."""
+	"""Same customer list as Sales Order — only customers linked in Buyer Master."""
 	return _customers_with_offline_buyer_master_query(txt, start, page_len)
 
 
@@ -45,7 +45,7 @@ def get_offline_buyer_item_rate(customer, item_code):
 		return None
 
 	obm_name = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		{"customer": customer},
 		"name",
 		order_by="modified desc",
@@ -56,9 +56,9 @@ def get_offline_buyer_item_rate(customer, item_code):
 	catalog = frappe.db.sql(
 		"""
 		SELECT obil.mrp, IFNULL(obil.margin_percent, 0) AS margin_percent, IFNULL(obil.selling_rate, 0) AS selling_rate
-		FROM `tabOffline Buyer Item` obil
-		INNER JOIN `tabOffline Buyer Items` obi
-			ON obi.name = obil.parent AND obil.parenttype = 'Offline Buyer Items'
+		FROM `tabBuyer Item` obil
+		INNER JOIN `tabBuyer Items` obi
+			ON obi.name = obil.parent AND obil.parenttype = 'Buyer Items'
 		WHERE IFNULL(obi.docstatus, 0) < 2
 			AND obi.buyer = %(customer)s
 			AND obil.item_code = %(item_code)s
@@ -82,8 +82,8 @@ def get_offline_buyer_item_rate(customer, item_code):
 		}
 
 	margin_pct = frappe.db.get_value(
-		"Offline Buyer Margin",
-		{"parent": obm_name, "parenttype": "Offline Buyer Master", "sku": item_code},
+		"Buyer Margin",
+		{"parent": obm_name, "parenttype": "Buyer Master", "sku": item_code},
 		"margin_percent",
 	)
 	if margin_pct is None:
@@ -104,15 +104,15 @@ def get_offline_buyer_item_rate(customer, item_code):
 
 @frappe.whitelist()
 def get_offline_buyer_for_customer(customer):
-	"""Return Offline Buyer Master name and trade customer_type for a linked ERPNext Customer.
+	"""Return Buyer Master name and trade customer_type for a linked ERPNext Customer.
 	Fallback to Customer.custom_order_type if not defined on OBM."""
 	if not customer:
 		return {"offline_buyer_master": None, "customer_type": None}
 
 	row = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		{"customer": customer},
-		["name", "customer_type"],
+		["name", "customer_type", "site_name"],
 		as_dict=True,
 	)
 
@@ -124,6 +124,7 @@ def get_offline_buyer_for_customer(customer):
 	return {
 		"offline_buyer_master": row.get("name") if row else None,
 		"customer_type": cust_type,
+		"site_name": (row.get("site_name") if row else None) or "",
 	}
 
 
@@ -138,20 +139,35 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 	if not meta.has_field("custom_offline_buyer_master"):
 		return
 
+	has_site_field = meta.has_field("custom_site_name")
+
 	if not doc.customer:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None
 		return
 
 	row = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		{"customer": doc.customer},
-		["name", "customer_type"],
+		["name", "customer_type", "site_name"],
 		as_dict=True,
 	)
 	if row:
 		doc.custom_offline_buyer_master = row.get("name")
 		doc.custom_offline_buyer_customer_type = row.get("customer_type")
+		# Site name is user-editable — only default it when blank. Priority:
+		# the selected shipping address's site (OBM per-address site_name is
+		# synced onto Address.custom_site_name), then the OBM header site_name.
+		if has_site_field and not (doc.get("custom_site_name") or "").strip():
+			addr_site = ""
+			if doc.get("shipping_address_name"):
+				addr_site = (
+					frappe.db.get_value(
+						"Address", doc.shipping_address_name, "custom_site_name"
+					)
+					or ""
+				)
+			doc.custom_site_name = addr_site or row.get("site_name") or ""
 	else:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None
@@ -246,7 +262,7 @@ def _ensure_address_doc(
 
 
 def _offline_buyer_addresses_for_addresses_table(obm_doc):
-	"""Map Offline Buyer Address child rows to ERPNext Address names for Customer."""
+	"""Map Buyer Address child rows to ERPNext Address names for Customer."""
 
 	customer = obm_doc.customer
 	all_rows = list(obm_doc.get("addresses") or [])
@@ -329,7 +345,7 @@ def _primary_ob_address_row(obm_doc):
 
 
 def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None):
-	"""Derive one or more ERPNext Shipping Address records from the Offline Buyer Master.
+	"""Derive one or more ERPNext Shipping Address records from the Buyer Master.
 
 	Priority:
 	  1. If 'Shipping Same as Primary' is checked → use the billing default.
@@ -427,13 +443,13 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 
 
 def _offline_buyer_address_sync(customer: str):
-	"""Create missing ERPNext Address rows from Offline Buyer Master; return billing/shipping defaults."""
+	"""Create missing ERPNext Address rows from Buyer Master; return billing/shipping defaults."""
 
 	if not customer:
 		return {"default_billing": None, "default_shipping": None}
 
 	master_name = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		{"customer": customer},
 		"name",
 		order_by="modified desc",
@@ -441,7 +457,7 @@ def _offline_buyer_address_sync(customer: str):
 	if not master_name:
 		return {"default_billing": None, "default_shipping": None}
 
-	doc = frappe.get_doc("Offline Buyer Master", master_name)
+	doc = frappe.get_doc("Buyer Master", master_name)
 	mapped = _offline_buyer_addresses_for_addresses_table(doc)
 	billing = mapped["billing_default"]
 	shipping = _ensure_shipping_address_from_obm(doc, billing) or billing
@@ -521,7 +537,7 @@ def sync_obm_to_customer_party(obm_doc):
 	"""Create/refresh ERPNext Address + Contact for the OBM's Customer and set
 	them as the customer's primary address/contact.
 
-	Runs on every Offline Buyer Master save (via on_update) and from the
+	Runs on every Buyer Master save (via on_update) and from the
 	backfill job for existing customers. All underlying helpers are idempotent,
 	so repeated runs reuse existing Address/Contact records instead of
 	duplicating them.
@@ -547,7 +563,7 @@ def sync_obm_to_customer_party(obm_doc):
 
 @frappe.whitelist()
 def sync_single_offline_buyer_master(offline_buyer_master):
-	"""Re-sync one Offline Buyer Master's Address + Contact onto its Customer.
+	"""Re-sync one Buyer Master's Address + Contact onto its Customer.
 
 	Administrator only — backs the "Sync to Customer" button on the OBM form.
 	"""
@@ -555,9 +571,9 @@ def sync_single_offline_buyer_master(offline_buyer_master):
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("Only the Administrator can run this action."), frappe.PermissionError)
 
-	doc = frappe.get_doc("Offline Buyer Master", offline_buyer_master)
+	doc = frappe.get_doc("Buyer Master", offline_buyer_master)
 	if not doc.customer or not frappe.db.exists("Customer", doc.customer):
-		frappe.throw(_("This Offline Buyer Master has no linked Customer yet."))
+		frappe.throw(_("This Buyer Master has no linked Customer yet."))
 
 	result = sync_obm_to_customer_party(doc)
 	frappe.db.commit()
@@ -580,11 +596,11 @@ def _customer_has_linked(doctype, customer):
 
 @frappe.whitelist()
 def report_offline_buyers_missing_customer_party():
-	"""List customers whose Offline Buyer Master holds address/contact data but
+	"""List customers whose Buyer Master holds address/contact data but
 	whose Customer record is still missing the linked Address and/or Contact.
 
 	These are exactly the records the backfill would fix. Returns one row per
-	Offline Buyer Master with flags for what's missing.
+	Buyer Master with flags for what's missing.
 
 	Run with:
 	  bench --site <site> execute \
@@ -592,7 +608,7 @@ def report_offline_buyers_missing_customer_party():
 	"""
 
 	masters = frappe.get_all(
-		"Offline Buyer Master",
+		"Buyer Master",
 		filters={"customer": ["is", "set"]},
 		fields=[
 			"name",
@@ -612,7 +628,7 @@ def report_offline_buyers_missing_customer_party():
 			continue
 
 		has_addr_rows = bool(
-			frappe.db.exists("Offline Buyer Address", {"parent": m.name})
+			frappe.db.exists("Buyer Address", {"parent": m.name})
 		)
 		obm_has_address = has_addr_rows or bool(_nz(m.address))
 		obm_has_contact = bool(
@@ -637,7 +653,7 @@ def report_offline_buyers_missing_customer_party():
 			)
 
 	# Readable summary in the bench console.
-	print(f"\n{len(rows)} Offline Buyer Master record(s) need a Customer Address/Contact:\n")
+	print(f"\n{len(rows)} Buyer Master record(s) need a Customer Address/Contact:\n")
 	if rows:
 		print(f"{'Customer':<24} {'Business Name':<32} {'Addr?':<7} {'Contact?':<8} OBM")
 		print("-" * 100)
@@ -656,7 +672,7 @@ def report_offline_buyers_missing_customer_party():
 @frappe.whitelist()
 def backfill_offline_buyer_addresses_and_contacts():
 	"""Maintenance job: create ERPNext Address + Contact for every existing
-	Offline Buyer Master that already has a linked Customer.
+	Buyer Master that already has a linked Customer.
 
 	Run with:
 	  bench --site <site> execute \
@@ -664,7 +680,7 @@ def backfill_offline_buyer_addresses_and_contacts():
 	"""
 
 	names = frappe.get_all(
-		"Offline Buyer Master",
+		"Buyer Master",
 		filters={"customer": ["is", "set"]},
 		pluck="name",
 	)
@@ -672,7 +688,7 @@ def backfill_offline_buyer_addresses_and_contacts():
 	processed, errors = 0, []
 	for nm in names:
 		try:
-			doc = frappe.get_doc("Offline Buyer Master", nm)
+			doc = frappe.get_doc("Buyer Master", nm)
 			if not doc.customer or not frappe.db.exists("Customer", doc.customer):
 				continue
 			sync_obm_to_customer_party(doc)
@@ -687,7 +703,7 @@ def backfill_offline_buyer_addresses_and_contacts():
 
 @frappe.whitelist()
 def sync_offline_buyer_master_addresses(customer):
-	"""Lazy-sync Offline Buyer Address table + shipping panel into ERPNext Address (linked to Customer).
+	"""Lazy-sync Buyer Address table + shipping panel into ERPNext Address (linked to Customer).
 
 	Desk Sales Order Entry uses this as default Billing/Shipping picks; Address Link fields stay a full customer list.
 	"""
@@ -731,25 +747,25 @@ def get_customer_addresses_for_display(customer):
 
 
 def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
-	"""If the Flat Disc % on the Sales Order differs from the Offline Buyer Margin/Catalog, update the master."""
+	"""If the Flat Disc % on the Sales Order differs from the Buyer Margin/Catalog, update the master."""
 	new_margin = flt(new_margin, 2)
 	if new_margin <= 0:
 		return
-	obm_name = frappe.db.get_value("Offline Buyer Master", {"customer": customer}, "name")
+	obm_name = frappe.db.get_value("Buyer Master", {"customer": customer}, "name")
 	if not obm_name:
 		return
 
-	# 1. Update in Offline Buyer Items (Catalog)
-	obi_list = frappe.db.get_all("Offline Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, order_by="modified desc")
+	# 1. Update in Buyer Items (Catalog)
+	obi_list = frappe.db.get_all("Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, order_by="modified desc")
 	for obi in obi_list:
 		frappe.db.sql("""
-			UPDATE `tabOffline Buyer Item`
+			UPDATE `tabBuyer Item`
 			SET margin_percent = %s
 			WHERE parent = %s AND item_code = %s AND IFNULL(margin_percent, 0) != %s
 		""", (new_margin, obi.name, item_code, new_margin))
 
-	# 2. Update in Offline Buyer Master (Margin table)
-	doc = frappe.get_doc("Offline Buyer Master", obm_name)
+	# 2. Update in Buyer Master (Margin table)
+	doc = frappe.get_doc("Buyer Master", obm_name)
 	updated = False
 	found = False
 	for row in doc.get("margins") or []:
@@ -768,22 +784,25 @@ def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
 		
 	if updated:
 		doc.flags.ignore_permissions = True
+		# Background margin sync during SO creation — must not trip mandatory
+		# fields (e.g. Channel) missing on legacy Buyer Master rows.
+		doc.flags.ignore_mandatory = True
 		doc.save()
 
 
 def validate_sales_order_offline_buyer_customer(doc, method=None):
-	"""Ensure Sales Order customer is linked to an Offline Buyer Master (UI also restricts the link)."""
+	"""Ensure Sales Order customer is linked to an Buyer Master (UI also restricts the link)."""
 	if doc.docstatus != 0:
 		return
 	if getattr(doc.flags, "ignore_offline_buyer_customer_check", False):
 		return
 	if not doc.customer:
 		return
-	if frappe.db.exists("DocType", "Offline Buyer Master") and not frappe.db.exists(
-		"Offline Buyer Master", {"customer": doc.customer}
+	if frappe.db.exists("DocType", "Buyer Master") and not frappe.db.exists(
+		"Buyer Master", {"customer": doc.customer}
 	):
 		frappe.throw(
-			_("Customer {0} is not linked to an Offline Buyer Master. Only offline-buyer customers can be selected.").format(
+			_("Customer {0} is not linked to an Buyer Master. Only offline-buyer customers can be selected.").format(
 				frappe.bold(doc.customer)
 			),
 			title=_("Invalid Customer"),
