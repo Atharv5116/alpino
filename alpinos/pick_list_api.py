@@ -202,6 +202,27 @@ def _collect_pick_list_stickers(doc):
 	return stickers
 
 
+import functools
+
+
+@functools.lru_cache(maxsize=1)
+def _wkhtmltopdf_is_unpatched():
+	"""True when the server runs the unpatched-qt wkhtmltopdf build (the
+	official build reports "0.12.6 (with patched qt)"). Unpatched builds render
+	CSS at 72dpi onto a 96dpi page — sticker content comes out at exactly 3/4
+	of the label — and need a 96/72 zoom correction; patched builds map CSS mm
+	1:1 and must NOT be zoomed."""
+	import subprocess
+
+	try:
+		out = subprocess.check_output(
+			["wkhtmltopdf", "-V"], text=True, stderr=subprocess.STDOUT, timeout=10
+		)
+		return "patched qt" not in out.lower()
+	except Exception:
+		return False
+
+
 def _render_stickers_pdf(stickers, label):
 	"""Render a flat list of sticker dicts into a single sticker-sized PDF."""
 	html = frappe.render_template(
@@ -225,11 +246,11 @@ def _render_stickers_pdf(stickers, label):
 		"margin-right": "0mm",
 		"dpi": "96",
 		"disable-smart-shrinking": "",
-		# This wkhtmltopdf build renders CSS at 72dpi onto a 96dpi page — the
-		# sticker came out at exactly 3/4 of the label. zoom 96/72 corrects it.
-		# If a future patched-qt build prints stickers OVERSIZED, remove zoom.
-		"zoom": "1.3333333",
 	}
+	if _wkhtmltopdf_is_unpatched():
+		# 96/72 correction — see _wkhtmltopdf_is_unpatched. Applied only on
+		# unpatched builds so a patched-qt server prints 1:1 untouched.
+		pdf_options["zoom"] = "1.3333333"
 	return get_pdf(html, options=pdf_options)
 
 
