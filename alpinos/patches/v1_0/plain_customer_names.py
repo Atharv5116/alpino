@@ -30,13 +30,17 @@ def execute():
 		if not biz or not frappe.db.exists("Customer", b.customer):
 			continue
 		try:
-			if frappe.db.get_value("Customer", b.customer, "customer_name") != biz:
-				frappe.db.set_value("Customer", b.customer, "customer_name", biz, update_modified=False)
-				fixed += 1
+			# Rename first — Customer.after_rename resets customer_name to the
+			# docname when naming is "By Customer Name".
+			cust_id = b.customer
 			target = f"{biz} - {tax}" if tax else biz
-			if b.customer != target and not frappe.db.exists("Customer", target):
-				frappe.rename_doc("Customer", b.customer, target, force=True)
+			if cust_id != target and not frappe.db.exists("Customer", target):
+				frappe.rename_doc("Customer", cust_id, target, force=True)
+				cust_id = target
 				renamed += 1
+			if frappe.db.get_value("Customer", cust_id, "customer_name") != biz:
+				frappe.db.set_value("Customer", cust_id, "customer_name", biz, update_modified=False)
+				fixed += 1
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"plain customer name backfill failed: {b.customer}")
 

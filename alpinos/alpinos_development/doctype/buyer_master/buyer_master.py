@@ -79,6 +79,9 @@ def _ensure_customer_for_obm(doc):
 			try:
 				frappe.rename_doc("Customer", cust.name, unique_id, force=True)
 				doc.customer = unique_id
+				# Customer.after_rename resets customer_name to the docname when
+				# naming is "By Customer Name" — put the plain name back.
+				frappe.db.set_value("Customer", unique_id, "customer_name", biz_name, update_modified=False)
 			except Exception:
 				frappe.log_error(frappe.get_traceback(), f"customer id rename failed: {cust.name}")
 		return
