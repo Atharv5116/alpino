@@ -27,7 +27,7 @@ app_license = "mit"
 # include js, css files in header of desk.html
 # app_include_css = "/assets/alpinos/css/alpinos.css"
 app_include_js = [
-	"/assets/alpinos/js/sales_order_hub_desk_v2.js",
+	"/assets/alpinos/js/sales_order_hub_desk_v3.js",
 	"/assets/alpinos/js/item_row_colors.js",
 ]
 
