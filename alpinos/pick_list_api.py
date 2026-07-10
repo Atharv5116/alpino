@@ -202,56 +202,40 @@ def _collect_pick_list_stickers(doc):
 	return stickers
 
 
-import functools
-
-
-@functools.lru_cache(maxsize=1)
-def _wkhtmltopdf_is_unpatched():
-	"""True when the server runs the unpatched-qt wkhtmltopdf build (the
-	official build reports "0.12.6 (with patched qt)"). Unpatched builds render
-	CSS at 72dpi onto a 96dpi page — sticker content comes out at exactly 3/4
-	of the label — and need a 96/72 zoom correction; patched builds map CSS mm
-	1:1 and must NOT be zoomed."""
-	import subprocess
-
-	try:
-		out = subprocess.check_output(
-			["wkhtmltopdf", "-V"], text=True, stderr=subprocess.STDOUT, timeout=10
-		)
-		return "patched qt" not in out.lower()
-	except Exception:
-		return False
-
-
 def _render_stickers_pdf(stickers, label):
-	"""Render a flat list of sticker dicts into a single sticker-sized PDF."""
+	"""Render a flat list of sticker dicts into a single 100mm x 75mm PDF —
+	one sticker per page.
+
+	Calls pdfkit directly rather than frappe.utils.pdf.get_pdf ON PURPOSE:
+	get_pdf.prepare_options reads options["page-size"], and because we only set
+	page-width/height it falls back to Print Settings (A4) and injects
+	page-size=A4 alongside our dimensions. wkhtmltopdf 0.12.6 lets --page-size
+	win, so the sticker ended up in the corner of an A4 page with its bottom
+	band pushed onto a second page. Passing ONLY page-width/height yields an
+	exact 100x75mm page. Everything on the sticker is sized in mm/pt (physical
+	units), so page mm == CSS mm regardless of the build's dpi — no zoom needed.
+	"""
+	import pdfkit
+
 	html = frappe.render_template(
 		"alpinos/templates/print/pick_list_stickers.html",
 		{"stickers": stickers, "pick_list": label},
 	)
-	from frappe.utils.pdf import get_pdf
-	# Exactly 100mm x 75mm, zero margins so the @page CSS is honoured.
-	# - NO orientation option: combined with explicit page dimensions
-	#   wkhtmltopdf rotates the custom size (75 wide x 100 tall).
-	# - dpi 96 + disable-smart-shrinking: without these wkhtmltopdf maps CSS
-	#   millimetres at 96dpi onto a page computed at 72dpi — the page comes out
-	#   4/3 bigger than the sticker and the bottom band spills to a second page.
-	#   With them, CSS mm == physical mm and each sticker fills one page.
-	pdf_options = {
+	options = {
 		"page-width": "100mm",
 		"page-height": "75mm",
 		"margin-top": "0mm",
 		"margin-bottom": "0mm",
 		"margin-left": "0mm",
 		"margin-right": "0mm",
-		"dpi": "96",
+		"encoding": "UTF-8",
+		"print-media-type": "",
 		"disable-smart-shrinking": "",
+		"disable-javascript": "",
+		"quiet": "",
 	}
-	if _wkhtmltopdf_is_unpatched():
-		# 96/72 correction — see _wkhtmltopdf_is_unpatched. Applied only on
-		# unpatched builds so a patched-qt server prints 1:1 untouched.
-		pdf_options["zoom"] = "1.3333333"
-	return get_pdf(html, options=pdf_options)
+	# output_path=False -> return the PDF as bytes.
+	return pdfkit.from_string(html, False, options=options)
 
 
 @frappe.whitelist()
