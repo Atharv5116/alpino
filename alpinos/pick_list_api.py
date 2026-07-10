@@ -233,6 +233,10 @@ def _render_stickers_pdf(stickers, label):
 		"disable-smart-shrinking": "",
 		"disable-javascript": "",
 		"quiet": "",
+		# Now that the page is a true 100x75mm, the mm-sized content renders at
+		# 3/4 scale (wkhtmltopdf rasterises CSS at 96dpi onto a 72dpi page:
+		# 72/96 = 0.75). zoom 4/3 scales it back up to fill the label exactly.
+		"zoom": "1.3333333",
 	}
 	# output_path=False -> return the PDF as bytes.
 	return pdfkit.from_string(html, False, options=options)
