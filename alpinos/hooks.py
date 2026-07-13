@@ -171,6 +171,9 @@ after_migrate = [
 	"alpinos.patches.create_outside_geo_widget.execute",
 	"alpinos.data_import_shortcuts.ensure_allow_import",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
+	"alpinos.ecom_sales_order_custom_fields.setup_ecom_sales_order_fields",
+	"alpinos.post_delivery_custom_fields.setup_post_delivery_fields",
+	"alpinos.forced_close.setup_forced_close_fields",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",
 	"alpinos.quotation_custom_fields.setup_quotation_custom_fields",
 	"alpinos.sales_order_scheme_damage_migration.run_sales_order_scheme_damage_split_migration",
@@ -342,6 +345,7 @@ doc_events = {
 			"alpinos.pick_list_hooks.validate_pick_list",
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
 			"alpinos.qty_flow.pick_list_qty_remarks",
+			"alpinos.partial_dispatch.validate_pick_list_partial",
 		],
 		"after_insert": [
 			"alpinos.workflow_engine.pick_list_after_insert",
@@ -360,6 +364,7 @@ doc_events = {
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 			"alpinos.qty_flow.delivery_note_qty_remarks",
+			"alpinos.partial_dispatch.validate_delivery_note_partial",
 		],
 		"after_insert": "alpinos.workflow_engine.delivery_note_after_insert",
 		"on_submit": [
@@ -386,6 +391,7 @@ doc_events = {
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
 			"alpinos.sales_order_api.validate_so_freebies_and_box_multiples",
+			"alpinos.ecom_sales_order_api.validate_ecom_sales_order",
 			"alpinos.dispatch_date_utils.validate_dispatch_date_on_save",
 			"alpinos.workflow_engine.sales_order_validate",
 			"alpinos.qty_flow.sales_order_qty_remarks",
@@ -454,7 +460,8 @@ scheduler_events = {
 	"daily": [
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
 		"alpinos.approval_access.sync_reporting_manager_roles",
-		"alpinos.workflow_engine.refresh_todays_dispatch"
+		"alpinos.workflow_engine.refresh_todays_dispatch",
+		"alpinos.so_notifications.run_daily_so_notifications"
 	],
 	"cron": {
 		"*/5 * * * *": [

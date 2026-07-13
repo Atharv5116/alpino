@@ -1032,8 +1032,12 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
                        from_quotation=None, po_no_for_pdf=None,
-                       submit_now=1):
-	"""Create a Sales Order from the custom entry page"""
+                       submit_now=1, ecom_fields=None):
+	"""Create a Sales Order from the custom entry page.
+
+	ecom_fields (JSON): optional e-com extra fields for offline Modern-Trade orders
+	(flags, PO Number/Date, GSTINs, freebie PO) — applied with channel='Offline'.
+	"""
 	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
 		items, freebies, scheme_items, additional_units_items
 	)
@@ -1048,6 +1052,9 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	if ecom_fields:
+		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
+		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
 	so.insert()
 	if int(submit_now):
 		so.submit()
@@ -1073,10 +1080,10 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
                        additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
-                       from_quotation=None, po_no_for_pdf=None):
+                       from_quotation=None, po_no_for_pdf=None, ecom_fields=None):
 	"""Rewrite a draft Sales Order from the entry page (edit mode). Child tables
 	are rebuilt from the payload; owner, docstatus and the workflow status are
-	left untouched."""
+	left untouched. ecom_fields (JSON): optional offline Modern-Trade extra fields."""
 	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
 		items, freebies, scheme_items, additional_units_items
 	)
@@ -1096,6 +1103,9 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	if ecom_fields:
+		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
+		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
 	so.save()
 	frappe.db.commit()
 	if so.get("custom_po_no_for_pdf"):
@@ -1193,6 +1203,22 @@ def get_so_entry_payload(sales_order):
 		"taxes_and_charges": doc.get("taxes_and_charges") or "",
 		"custom_cash_discount": flt(doc.get("custom_cash_discount")),
 		"additional_units_damage": cint(doc.get("custom_additional_units_damage")),
+		# E-com extras (populated only for E-com / offline Modern-Trade orders).
+		"channel": doc.get("custom_channel") or "",
+		"ecom": {
+			"flags": {
+				"appointment_required": cint(doc.get("custom_appointment_required")),
+				"grn_available": cint(doc.get("custom_grn_available")),
+				"partial_order_allowed": cint(doc.get("custom_partial_order_allowed")),
+				"gst_exclusive_buyer": cint(doc.get("custom_gst_exclusive_buyer")),
+			},
+			"po_number": doc.get("custom_po_number") or "",
+			"po_date": str(doc.get("custom_po_date") or ""),
+			"delivery_by_date": str(doc.get("custom_delivery_by_date") or ""),
+			"billing_gstin": doc.get("custom_billing_gstin") or "",
+			"shipping_gstin": doc.get("custom_shipping_gstin") or "",
+			"is_freebie_po": cint(doc.get("custom_is_freebie_po")),
+		},
 		"items": items,
 		"freebies": freebies,
 		"scheme_items": scheme_items,
@@ -1349,8 +1375,13 @@ def get_sales_order_entry_list(
 	from_date=None,
 	to_date=None,
 	additional_units_damage_filter=None,
+	channel=None,
 ):
-	"""Paginated Sales Order rows for Alpinos custom list page (respects DocPerm / user rules)."""
+	"""Paginated Sales Order rows for Alpinos custom list page (respects DocPerm / user rules).
+
+	channel: "Offline" or "E-com" restricts to that channel; legacy (blank) rows are
+	treated as Offline so the offline list keeps showing pre-migration orders.
+	"""
 	if not frappe.has_permission("Sales Order", "read"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
@@ -1358,6 +1389,12 @@ def get_sales_order_entry_list(
 	page_length = min(max(cint(page_length) or 20, 1), 100)
 
 	filters = {}
+	channel = (channel or "").strip()
+	if channel == "E-com":
+		filters["custom_channel"] = "E-com"
+	elif channel == "Offline":
+		# Offline + legacy(blank) rows.
+		filters["custom_channel"] = ["in", ["Offline", ""]]
 	if status:
 		filters["status"] = str(status).strip()
 	if workflow_status:
@@ -1437,6 +1474,9 @@ def get_sales_order_entry_list(
 		"custom_dispatch_date",
 		"custom_po_expiry_date",
 		"custom_site_name",
+		"custom_channel",
+		"custom_po_number",
+		"custom_po_date",
 		"owner",
 	]
 
@@ -1503,7 +1543,14 @@ def _attach_so_list_row_extras(rows):
 		r["sales_invoice"] = inv_map.get(r.name) or ""
 
 @frappe.whitelist()
-def get_pick_list_mapping_data(sales_order):
+def get_pick_list_mapping_data(sales_order, remaining_only=0):
+	"""Build the Pick List skeleton for a Sales Order.
+
+	remaining_only=1 (partial "Create PL for Remaining Qty"): each location's qty is
+	reduced by the qty already committed on existing non-cancelled Pick Lists for the
+	same SKU, and fully-covered rows are dropped — so the new PL pre-fills only the
+	outstanding qty.
+	"""
 	so = _ensure_so_packed_items(frappe.get_doc("Sales Order", sales_order))
 
 	pick_list = frappe._dict({
@@ -1615,6 +1662,33 @@ def get_pick_list_mapping_data(sales_order):
 		add_item_to_pick_list(additional, "Additional Units")
 
 	pick_list["combos"] = combos
+	from alpinos import partial_dispatch as pd
+	pick_list["partial_order_allowed"] = int(pd.is_partial_order(sales_order))
+
+	if cint(remaining_only):
+		from alpinos import partial_dispatch as pd
+
+		# Running pool of already-committed qty per SKU; distribute it across the
+		# mapped rows so duplicate SKUs (bundle components, freebie top-ups) subtract
+		# correctly rather than each row over-subtracting the full committed amount.
+		to_subtract = {k: flt(v) for k, v in pd.committed_pl_qty_by_sku(sales_order).items()}
+		remaining_locs = []
+		for loc in pick_list["locations"]:
+			ic = loc.get("item_code")
+			full = flt(loc.get("qty"))
+			sub = min(full, flt(to_subtract.get(ic, 0)))
+			to_subtract[ic] = flt(to_subtract.get(ic, 0)) - sub
+			rem = flt(full - sub, 2)
+			if rem <= 1e-6:
+				continue  # already fully committed on earlier rounds
+			loc["qty"] = rem
+			loc["custom_ordered_qty"] = rem
+			factor = flt(loc.get("custom_conversion_factor")) or 1
+			if loc.get("custom_source_table") not in ("Marketing Freebies", "Scheme Table", "Additional Units"):
+				loc["custom_box"] = flt(rem / factor, 2) if factor else 0.0
+			remaining_locs.append(loc)
+		pick_list["locations"] = remaining_locs
+
 	return pick_list
 
 
@@ -1696,11 +1770,23 @@ def get_so_pick_list_status(sales_order):
 				fully_picked = False
 				break
 				
+	from alpinos import partial_dispatch as pd
+	partial_allowed = pd.is_partial_order(sales_order)
+	remaining = pd.remaining_qty_by_sku(sales_order)
+	has_remaining = any(v > 1e-6 for v in remaining.values())
+	force_closed = bool(so.get("custom_force_closed"))
+
 	return {
 		"fully_picked": fully_picked,
 		"has_draft": has_draft,
 		"draft_name": draft_name,
-		"has_pick_list": bool(all_pls)  # Any pick list exists (draft or submitted)
+		"has_pick_list": bool(all_pls),  # Any pick list exists (draft or submitted)
+		# Partial dispatch: allow another PL for the remaining qty.
+		"partial_order_allowed": int(partial_allowed),
+		"has_remaining_qty": int(has_remaining),
+		"remaining_qty": remaining,
+		# Forced Close: order permanently locked.
+		"force_closed": int(force_closed),
 	}
 
 

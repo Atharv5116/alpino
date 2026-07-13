@@ -1,0 +1,325 @@
+{
+ "actions": [],
+ "autoname": "POST-DEL-.#####",
+ "creation": "2026-07-12 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "details_section",
+  "sales_order",
+  "delivery_note",
+  "customer",
+  "channel",
+  "column_break_head",
+  "post_delivery_status",
+  "appointment_required",
+  "grn_available",
+  "transport_section",
+  "transporter",
+  "lr_awb_no",
+  "dispatch_date",
+  "column_break_transport",
+  "dispatch_time",
+  "dispatched_qty",
+  "appointment_section",
+  "appointment_id",
+  "appointment_date",
+  "appointment_remarks",
+  "column_break_appt",
+  "appointment_time_from",
+  "appointment_time_to",
+  "appointment_status",
+  "asn_section",
+  "asn_id",
+  "asn_date",
+  "asn_status",
+  "column_break_asn",
+  "asn_uploaded_by",
+  "asn_uploaded_on",
+  "grn_section",
+  "grn_number",
+  "grn_date",
+  "grn_document",
+  "column_break_grn",
+  "grn_status",
+  "grn_items",
+  "summary_section",
+  "fill_rate"
+ ],
+ "fields": [
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Post Delivery"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_note",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Delivery Note",
+   "options": "Delivery Note",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "channel",
+   "fieldtype": "Data",
+   "label": "Channel",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Not Started",
+   "fieldname": "post_delivery_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Post Delivery Status",
+   "options": "Not Started\nIn Progress\nCompleted",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "appointment_required",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Appointment Required",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "grn_available",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "GRN Available",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transport_section",
+   "fieldtype": "Section Break",
+   "label": "Transport Details (from Delivery Note)"
+  },
+  {
+   "fieldname": "transporter",
+   "fieldtype": "Data",
+   "label": "Transporter",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lr_awb_no",
+   "fieldtype": "Data",
+   "label": "LR No / AWB No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dispatch_date",
+   "fieldtype": "Date",
+   "label": "Dispatch Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_transport",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "dispatch_time",
+   "fieldtype": "Time",
+   "label": "Dispatch Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dispatched_qty",
+   "fieldtype": "Float",
+   "label": "Dispatched Qty (this DN)",
+   "read_only": 1
+  },
+  {
+   "collapsible": 0,
+   "depends_on": "eval:doc.appointment_required",
+   "fieldname": "appointment_section",
+   "fieldtype": "Section Break",
+   "label": "Appointment Details"
+  },
+  {
+   "fieldname": "appointment_id",
+   "fieldtype": "Data",
+   "label": "Appointment ID"
+  },
+  {
+   "fieldname": "appointment_date",
+   "fieldtype": "Date",
+   "label": "Appointment Date"
+  },
+  {
+   "fieldname": "appointment_remarks",
+   "fieldtype": "Small Text",
+   "label": "Appointment Remarks"
+  },
+  {
+   "fieldname": "column_break_appt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "appointment_time_from",
+   "fieldtype": "Time",
+   "label": "Time Slot From"
+  },
+  {
+   "fieldname": "appointment_time_to",
+   "fieldtype": "Time",
+   "label": "Time Slot To"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "appointment_status",
+   "fieldtype": "Select",
+   "label": "Appointment Status",
+   "options": "Pending\nBooked\nCompleted\nCancelled"
+  },
+  {
+   "fieldname": "asn_section",
+   "fieldtype": "Section Break",
+   "label": "ASN Details"
+  },
+  {
+   "fieldname": "asn_id",
+   "fieldtype": "Data",
+   "label": "ASN ID"
+  },
+  {
+   "fieldname": "asn_date",
+   "fieldtype": "Date",
+   "label": "ASN Date"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "asn_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "ASN Status",
+   "options": "Pending\nUploaded\nAccepted\nRejected"
+  },
+  {
+   "fieldname": "column_break_asn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "asn_uploaded_by",
+   "fieldtype": "Link",
+   "label": "ASN Uploaded By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "asn_uploaded_on",
+   "fieldtype": "Datetime",
+   "label": "ASN Uploaded On",
+   "read_only": 1
+  },
+  {
+   "collapsible": 0,
+   "depends_on": "eval:doc.grn_available",
+   "fieldname": "grn_section",
+   "fieldtype": "Section Break",
+   "label": "GRN Details"
+  },
+  {
+   "fieldname": "grn_number",
+   "fieldtype": "Data",
+   "label": "GRN Number"
+  },
+  {
+   "fieldname": "grn_date",
+   "fieldtype": "Date",
+   "label": "GRN Date"
+  },
+  {
+   "fieldname": "grn_document",
+   "fieldtype": "Attach",
+   "label": "GRN Document"
+  },
+  {
+   "fieldname": "column_break_grn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "grn_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "GRN Status",
+   "options": "Pending\nPartial\nCompleted\nRejected"
+  },
+  {
+   "fieldname": "grn_items",
+   "fieldtype": "Table",
+   "label": "GRN SKU",
+   "options": "Post Delivery GRN Item"
+  },
+  {
+   "fieldname": "summary_section",
+   "fieldtype": "Section Break",
+   "label": "Dispatch Summary"
+  },
+  {
+   "description": "(Total Dispatched Qty across all DNs ÷ Total PO Qty) × 100",
+   "fieldname": "fill_rate",
+   "fieldtype": "Percent",
+   "label": "Fill Rate (%)",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-12 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Post Delivery",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

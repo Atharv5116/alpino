@@ -1,0 +1,115 @@
+<div class="ecom-so-entry" style="max-width: 1200px; margin: 0 auto; padding: 12px;">
+
+	<!-- Section 1: Customer Details -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Customer Details</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-channel"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-customer"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-customer-type"></div></div>
+		</div>
+		<div class="row" style="margin-top: 4px;">
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-appointment-required"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-grn-available"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-partial-order-allowed"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-gst-exclusive-buyer"></div></div>
+		</div>
+	</div>
+
+	<!-- Section 2: Address -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Address</h6>
+		<div class="row">
+			<div class="col-md-4 col-sm-6 eso-fld"><div class="fld-site-name"></div></div>
+			<div class="col-md-4 col-sm-6 eso-fld"><div class="fld-billing-gstin"></div></div>
+			<div class="col-md-4 col-sm-6 eso-fld"><div class="fld-shipping-gstin"></div></div>
+		</div>
+		<div class="row">
+			<div class="col-md-6 col-sm-12 eso-fld"><div class="fld-billing-address"></div></div>
+			<div class="col-md-6 col-sm-12 eso-fld"><div class="fld-shipping-address"></div></div>
+		</div>
+	</div>
+
+	<!-- Section 3: PO Details -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">PO Details</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-po-number"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-po-date"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-po-expiry-date"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-delivery-by-date"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-dispatch-date"></div></div>
+		</div>
+	</div>
+
+	<!-- Section 4: Freebies flag -->
+	<div class="eso-card">
+		<div class="fld-is-freebie-po"></div>
+	</div>
+
+	<!-- Section 5: Ordered Products (hidden when Freebies PO) -->
+	<div class="eso-card eso-ordered-products">
+		<h6 class="eso-card-title">Ordered Products</h6>
+		<div class="row" style="align-items: flex-end;">
+			<div class="col-md-5 col-sm-8 eso-fld"><div class="fld-add-sku"></div></div>
+			<div class="col-md-2 col-sm-4 eso-fld"><div class="fld-add-qty"></div></div>
+			<div class="col-md-2 col-sm-4 eso-fld" style="padding-top: 22px;">
+				<button type="button" class="btn btn-default btn-sm btn-add-item">Add SKU</button>
+			</div>
+		</div>
+		<div style="overflow-x: auto; margin-top: 8px;">
+			<table class="table table-bordered eso-items-table" style="font-size: 13px; margin-bottom: 0;">
+				<thead style="background: var(--bg-color);">
+					<tr>
+						<th>SKU</th><th>SKU Name</th><th style="width:90px;">Qty</th>
+						<th style="width:90px;">Box</th><th style="width:110px;">MRP</th>
+						<th style="width:100px;">Margin %</th><th style="width:120px;">Selling Price</th>
+						<th style="width:40px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+
+	<!-- Section 6: Freebies Table -->
+	<div class="eso-card eso-freebies-block">
+		<h6 class="eso-card-title eso-freebies-title">Freebies</h6>
+		<div class="row" style="align-items: flex-end;">
+			<div class="col-md-5 col-sm-8 eso-fld"><div class="fld-add-freebie-sku"></div></div>
+			<div class="col-md-2 col-sm-4 eso-fld"><div class="fld-add-freebie-qty"></div></div>
+			<div class="col-md-2 col-sm-4 eso-fld" style="padding-top: 22px;">
+				<button type="button" class="btn btn-default btn-sm btn-add-freebie">Add Freebie</button>
+			</div>
+		</div>
+		<div style="overflow-x: auto; margin-top: 8px;">
+			<table class="table table-bordered eso-freebies-table" style="font-size: 13px; margin-bottom: 0;">
+				<thead style="background: var(--bg-color);">
+					<tr><th>SKU</th><th>SKU Name</th><th style="width:90px;">Qty</th><th style="width:40px;"></th></tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+
+	<div class="eso-card" style="text-align: right;">
+		<span class="text-muted eso-total" style="margin-right: 12px;"></span>
+		<button type="button" class="btn btn-default btn-sm btn-eso-clear">Clear</button>
+		<button type="button" class="btn btn-primary btn-sm btn-eso-save">Save Sales Order</button>
+	</div>
+</div>
+
+<style>
+	.ecom-so-entry .eso-card {
+		background: var(--card-bg);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 16px;
+		margin-bottom: 16px;
+	}
+	.ecom-so-entry .eso-card-title { margin-top: 0; margin-bottom: 12px; font-weight: 600; }
+	.ecom-so-entry .eso-fld { margin-bottom: 8px; }
+	.ecom-so-entry .eso-items-table input,
+	.ecom-so-entry .eso-freebies-table input { width: 100%; border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 6px; }
+	.ecom-so-entry .eso-items-table td.readonly-cell { color: var(--text-muted); }
+</style>

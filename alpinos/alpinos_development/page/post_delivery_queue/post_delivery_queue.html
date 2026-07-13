@@ -1,0 +1,30 @@
+<div class="post-delivery-queue" style="max-width: 1400px; margin: 0 auto; padding: 12px;">
+	<div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+		<h6 style="margin-top: 0; margin-bottom: 12px; font-weight: 600;">Filters</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6" style="margin-bottom: 10px;"><div class="fld-search"></div></div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;"><div class="fld-status"></div></div>
+			<div class="col-md-2 col-sm-6" style="margin-bottom: 10px;"><div class="fld-customer"></div></div>
+		</div>
+		<div>
+			<button type="button" class="btn btn-primary btn-sm btn-pdq-apply">Apply</button>
+			<button type="button" class="btn btn-default btn-sm btn-pdq-clear">Clear</button>
+		</div>
+	</div>
+
+	<div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0; overflow: hidden;">
+		<div style="padding: 12px 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+			<span class="text-muted pdq-count"></span>
+			<div>
+				<button type="button" class="btn btn-default btn-sm btn-pdq-prev" disabled>Previous</button>
+				<button type="button" class="btn btn-default btn-sm btn-pdq-next" disabled>Next</button>
+			</div>
+		</div>
+		<div style="overflow-x: auto;">
+			<table class="table table-bordered pdq-table" style="font-size: 13px; margin-bottom: 0;">
+				<thead style="background: var(--bg-color);"><tr></tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+</div>

@@ -113,6 +113,9 @@ class SalesOrderEntry {
 					me._site_name_manual = true;
 				}
 				if (me.dispatch_date_field && d.dispatch_date) me.dispatch_date_field.set_value(d.dispatch_date);
+				// Stash saved MT/e-com values so the async buyer autofill applies these
+				// (not the buyer defaults) when the customer is set during prefill.
+				if (d.ecom) me._mt_saved = d.ecom;
 				me._apply_quotation_prefill(d);
 			}
 		});
@@ -369,6 +372,9 @@ class SalesOrderEntry {
 							}
 							me._obm_site_name = (r.message && r.message.site_name) || '';
 							me._update_site_from_shipping();
+							// Modern Trade: reveal + default the e-com extra fields.
+							me.apply_mt_buyer_flags(r.message);
+							me.toggle_mt_ecom();
 						}
 					});
 					frappe.call({
@@ -397,10 +403,15 @@ class SalesOrderEntry {
 		this.customer_field.$input.on('awesomplete-selectcomplete', on_customer_change);
 
 		this.order_type_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Link', options: 'Alpino Customer Type', label: 'Customer Type', fieldname: 'order_type', reqd: 1 },
+			df: { fieldtype: 'Link', options: 'Alpino Customer Type', label: 'Customer Type', fieldname: 'order_type', reqd: 1,
+				onchange: () => me.toggle_mt_ecom() },
 			parent: header.find('.field-order-type'),
 			render_input: true
 		});
+
+		// E-Com extra fields surface on the offline order too, but only for
+		// Modern Trade customers (channel stays Offline). Built once, toggled by type.
+		this.make_mt_ecom_fields();
 
 		this.delivery_date_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Date', label: 'Delivery Date', fieldname: 'delivery_date' },
@@ -528,6 +539,104 @@ class SalesOrderEntry {
 
 	make_item_table() {
 		this.add_item_row();
+	}
+
+	// ---- Modern Trade e-com extras (offline channel) -----------------------
+	_is_modern_trade() {
+		return (this.order_type_field.get_value() || '').trim().toLowerCase() === 'modern trade';
+	}
+
+	make_mt_ecom_fields() {
+		const me = this;
+		const $card = $(`
+			<div class="mt-ecom-card" style="display:none; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin: 0 0 16px 0;">
+				<h6 style="margin-top:0; margin-bottom:12px; font-weight:600;">Modern Trade / E-Com Details</h6>
+				<div class="row">
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-appointment"></div></div>
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-grn"></div></div>
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-partial"></div></div>
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-gst-excl"></div></div>
+				</div>
+				<div class="row">
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-po-number"></div></div>
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-po-date"></div></div>
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-billing-gstin"></div></div>
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-shipping-gstin"></div></div>
+				</div>
+				<div class="row">
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-delivery-by"></div></div>
+					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-freebie-po"></div></div>
+				</div>
+			</div>`);
+		this.wrapper.find('.so-header').after($card);
+		const mk = (sel, df) => frappe.ui.form.make_control({ df, parent: $card.find(sel), render_input: true });
+		this.mt = {
+			appointment: mk('.mt-fld-appointment', { fieldtype: 'Check', fieldname: 'appointment_required', label: 'Appointment Required' }),
+			grn: mk('.mt-fld-grn', { fieldtype: 'Check', fieldname: 'grn_available', label: 'GRN Available' }),
+			partial: mk('.mt-fld-partial', { fieldtype: 'Check', fieldname: 'partial_order_allowed', label: 'Partial Order Allowed' }),
+			gst_excl: mk('.mt-fld-gst-excl', { fieldtype: 'Check', fieldname: 'gst_exclusive_buyer', label: 'GST-Exclusive Buyer' }),
+			po_number: mk('.mt-fld-po-number', { fieldtype: 'Data', fieldname: 'po_number', label: 'PO Number' }),
+			po_date: mk('.mt-fld-po-date', { fieldtype: 'Date', fieldname: 'po_date', label: 'PO Date' }),
+			billing_gstin: mk('.mt-fld-billing-gstin', { fieldtype: 'Data', fieldname: 'billing_gstin', label: 'Billing GSTIN' }),
+			shipping_gstin: mk('.mt-fld-shipping-gstin', { fieldtype: 'Data', fieldname: 'shipping_gstin', label: 'Shipping GSTIN' }),
+			delivery_by: mk('.mt-fld-delivery-by', { fieldtype: 'Date', fieldname: 'delivery_by_date', label: 'Delivery By Date' }),
+			freebie_po: mk('.mt-fld-freebie-po', { fieldtype: 'Check', fieldname: 'is_freebie_po', label: 'Freebies (Entire PO Free)' }),
+		};
+		this.$mt_card = $card;
+	}
+
+	toggle_mt_ecom() {
+		if (!this.$mt_card) return;
+		this.$mt_card.toggle(this._is_modern_trade());
+	}
+
+	// Fills the MT flags when a Modern Trade customer is picked. On edit-prefill,
+	// saved SO values (me._mt_saved) win over buyer defaults; on a fresh pick, the
+	// buyer master flags are used.
+	apply_mt_buyer_flags(buyer) {
+		if (!this.mt) return;
+		if (this._mt_saved) {
+			const s = this._mt_saved, fl = s.flags || {};
+			this.mt.appointment.set_value(cint(fl.appointment_required));
+			this.mt.grn.set_value(cint(fl.grn_available));
+			this.mt.partial.set_value(cint(fl.partial_order_allowed));
+			this.mt.gst_excl.set_value(cint(fl.gst_exclusive_buyer));
+			this.mt.po_number.set_value(s.po_number || '');
+			this.mt.po_date.set_value(s.po_date || '');
+			this.mt.delivery_by.set_value(s.delivery_by_date || '');
+			this.mt.billing_gstin.set_value(s.billing_gstin || '');
+			this.mt.shipping_gstin.set_value(s.shipping_gstin || '');
+			this.mt.freebie_po.set_value(cint(s.is_freebie_po));
+			this._mt_saved = null;
+			return;
+		}
+		if (!buyer) return;
+		this.mt.appointment.set_value(cint(buyer.appointment_required));
+		this.mt.grn.set_value(cint(buyer.grn_available));
+		this.mt.partial.set_value(cint(buyer.partial_order_allowed));
+		this.mt.gst_excl.set_value(cint(buyer.gst_exclusive_buyer));
+		if (buyer.gst_no) {
+			if (!this.mt.billing_gstin.get_value()) this.mt.billing_gstin.set_value(buyer.gst_no);
+			if (!this.mt.shipping_gstin.get_value()) this.mt.shipping_gstin.set_value(buyer.gst_no);
+		}
+	}
+
+	mt_ecom_payload() {
+		if (!this.mt || !this._is_modern_trade()) return null;
+		return {
+			flags: {
+				appointment_required: cint(this.mt.appointment.get_value()),
+				grn_available: cint(this.mt.grn.get_value()),
+				partial_order_allowed: cint(this.mt.partial.get_value()),
+				gst_exclusive_buyer: cint(this.mt.gst_excl.get_value()),
+			},
+			po_number: this.mt.po_number.get_value() || '',
+			po_date: this.mt.po_date.get_value() || '',
+			delivery_by_date: this.mt.delivery_by.get_value() || '',
+			billing_gstin: this.mt.billing_gstin.get_value() || '',
+			shipping_gstin: this.mt.shipping_gstin.get_value() || '',
+			is_freebie_po: cint(this.mt.freebie_po.get_value()),
+		};
 	}
 
 	_make_item_link_field(parent, fieldname, filterType) {
@@ -1671,6 +1780,9 @@ class SalesOrderEntry {
 		} else {
 			args.submit_now = 0;
 		}
+		// Modern Trade offline orders carry the e-com extra fields (channel stays Offline).
+		const mt_payload = me.mt_ecom_payload();
+		if (mt_payload) args.ecom_fields = JSON.stringify(mt_payload);
 
 		frappe.call({
 			method: is_edit ? 'alpinos.sales_order_api.update_sales_order' : 'alpinos.sales_order_api.create_sales_order',
@@ -1788,6 +1900,12 @@ class SalesOrderEntry {
 		this.created_by_field && this.created_by_field.set_value(frappe.session.user_fullname || frappe.session.user);
 		this.additional_units_damage_field && this.additional_units_damage_field.set_value(0);
 		this.wrapper.find('.additional-units-section').toggle(false);
+		// Reset the Modern Trade / e-com card.
+		this._mt_saved = null;
+		if (this.mt) {
+			Object.values(this.mt).forEach((f) => f && f.set_value(''));
+		}
+		this.toggle_mt_ecom();
 		this.items = [];
 		this.freebies = [];
 		this.scheme_items = [];

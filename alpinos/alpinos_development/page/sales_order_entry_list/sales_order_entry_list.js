@@ -269,6 +269,7 @@ class SalesOrderEntryListPage {
 		return {
 			start: this.start,
 			page_length: this.page_length,
+			channel: 'Offline',
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
 			workflow_status: f.workflow_status.get_value() || '',

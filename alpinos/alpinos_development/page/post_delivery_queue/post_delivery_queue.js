@@ -1,0 +1,171 @@
+frappe.pages['post-delivery-queue'].on_page_load = function (wrapper) {
+	const page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: __('Post Delivery'),
+		single_column: true,
+	});
+	page.main.html(frappe.render_template('post_delivery_queue'));
+	new PostDeliveryQueue(page);
+};
+
+const PDQ_STATUS_OPTIONS = '\nNot Started\nIn Progress\nCompleted';
+
+const PDQ_STATUS_COLORS = {
+	'Not Started': 'gray',
+	'In Progress': 'orange',
+	Completed: 'green',
+};
+const PDQ_ASN_COLORS = { Pending: 'gray', Uploaded: 'blue', Accepted: 'green', Rejected: 'red' };
+const PDQ_GRN_COLORS = { Pending: 'gray', Partial: 'orange', Completed: 'green', Rejected: 'red' };
+
+const PDQ_COLUMNS = [
+	{ label: 'Delivery Note', render: (d, h) => `<strong>${h.esc(d.delivery_note)}</strong>` },
+	{ label: 'Sales Order', render: (d, h) => h.esc(d.sales_order) },
+	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || d.customer) },
+	{ label: 'Channel', render: (d, h) => h.esc(d.channel || '—') },
+	{ label: 'Dispatch Date', render: (d, h) => h.date(d.dispatch_date) },
+	{ label: 'Transporter', render: (d, h) => h.esc(d.transporter || '—') },
+	{ label: 'ASN', render: (d, h) => h.pill(d.asn_status, PDQ_ASN_COLORS) },
+	{ label: 'GRN', render: (d, h) => (cint(d.grn_available) ? h.pill(d.grn_status, PDQ_GRN_COLORS) : '—') },
+	{ label: 'Status', render: (d, h) => h.pill(d.post_delivery_status, PDQ_STATUS_COLORS) },
+	{ label: 'Action', cls: 'text-center', render: (d, h) => h.action(d) },
+];
+
+class PostDeliveryQueue {
+	constructor(page) {
+		this.page = page;
+		this.wrapper = $(page.main);
+		this.page_length = 20;
+		this.start = 0;
+		this._last_meta = { has_more: 0 };
+		this._filters = {};
+		this._columns = PDQ_COLUMNS;
+		this.render_header();
+		this.page.add_inner_button(__('Refresh'), () => this.load_list());
+		this.setup_filters();
+		this.bind_events();
+		this.load_list();
+	}
+
+	setup_filters() {
+		const w = this.wrapper;
+		this._filters.search = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: 'search', label: __('Search (DN, SO, customer)') },
+			parent: w.find('.fld-search'), render_input: true,
+		});
+		this._filters.status = frappe.ui.form.make_control({
+			df: { fieldtype: 'Select', fieldname: 'status', label: __('Status'), options: PDQ_STATUS_OPTIONS },
+			parent: w.find('.fld-status'), render_input: true,
+		});
+		this._filters.customer = frappe.ui.form.make_control({
+			df: { fieldtype: 'Link', fieldname: 'customer', label: __('Customer'), options: 'Customer' },
+			parent: w.find('.fld-customer'), render_input: true,
+		});
+	}
+
+	bind_events() {
+		const w = this.wrapper;
+		w.find('.btn-pdq-apply').on('click', () => { this.start = 0; this.load_list(); });
+		w.find('.btn-pdq-clear').on('click', () => {
+			Object.values(this._filters).forEach((f) => f && f.set_value(''));
+			this.start = 0; this.load_list();
+		});
+		w.find('.btn-pdq-prev').on('click', () => { this.start = Math.max(0, this.start - this.page_length); this.load_list(); });
+		w.find('.btn-pdq-next').on('click', () => { if (this._last_meta.has_more) { this.start += this.page_length; this.load_list(); } });
+		w.on('click', '.pdq-start-btn', (e) => {
+			const dn = $(e.currentTarget).data('dn');
+			this.start_post_delivery(dn);
+		});
+		w.on('click', '.pdq-open-btn', (e) => {
+			const pd = $(e.currentTarget).data('pd');
+			frappe.set_route('Form', 'Post Delivery', pd);
+		});
+	}
+
+	start_post_delivery(delivery_note) {
+		frappe.call({
+			method: 'alpinos.post_delivery_api.start_post_delivery',
+			args: { delivery_note },
+			freeze: true, freeze_message: __('Starting Post Delivery...'),
+			callback: (r) => {
+				if (r.message && r.message.name) {
+					frappe.set_route('Form', 'Post Delivery', r.message.name);
+				}
+			},
+		});
+	}
+
+	_args() {
+		const f = this._filters;
+		return {
+			start: this.start,
+			page_length: this.page_length,
+			search: f.search.get_value() || '',
+			status: f.status.get_value() || '',
+			customer: f.customer.get_value() || '',
+		};
+	}
+
+	load_list() {
+		const me = this;
+		frappe.call({
+			method: 'alpinos.post_delivery_api.get_post_delivery_queue',
+			args: me._args(),
+			freeze: true, freeze_message: __('Loading...'),
+			callback(r) {
+				if (r.exc) return;
+				const msg = r.message || {};
+				me._last_meta = { has_more: cint(msg.has_more), start: cint(msg.start), page_length: cint(msg.page_length) };
+				me.render_rows(msg.data || []);
+				me.update_pager();
+			},
+		});
+	}
+
+	render_header() {
+		const tr = this.wrapper.find('.pdq-table thead tr').empty();
+		this._columns.forEach((c) => tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`));
+	}
+
+	render_rows(rows) {
+		const tb = this.wrapper.find('.pdq-table tbody').empty();
+		if (!rows.length) {
+			tb.append(`<tr><td colspan="${this._columns.length}" class="text-muted text-center">${__('Nothing pending post-delivery')}</td></tr>`);
+			return;
+		}
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const helpers = {
+			esc,
+			date: (v) => (v && frappe.datetime.str_to_user(String(v))) || '—',
+			pill: (v, colors) => {
+				const val = v || 'Pending';
+				const c = (colors && colors[val]) || 'gray';
+				return `<span class="indicator-pill ${c}">${esc(val)}</span>`;
+			},
+			action: (d) => {
+				if (d.post_delivery) {
+					return `<button type="button" class="btn btn-xs btn-default pdq-open-btn" data-pd="${esc(d.post_delivery)}">${__('Open')}</button>`;
+				}
+				return `<button type="button" class="btn btn-xs btn-primary pdq-start-btn" data-dn="${esc(d.delivery_note)}">${__('Start Post Delivery')}</button>`;
+			},
+		};
+		rows.forEach((d) => {
+			const cells = this._columns.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`).join('');
+			tb.append(`<tr>${cells}</tr>`);
+		});
+	}
+
+	update_pager() {
+		const n = this.wrapper.find('.pdq-table tbody tr').length;
+		const has_rows = n && !this.wrapper.find('.pdq-table tbody .text-muted').length;
+		if (!has_rows) {
+			this.wrapper.find('.pdq-count').text(__('No rows on this page'));
+		} else {
+			const from = this._last_meta.start + 1;
+			const to = this._last_meta.start + n;
+			this.wrapper.find('.pdq-count').text(__('Showing {0}–{1}', [from, to]));
+		}
+		this.wrapper.find('.btn-pdq-prev').prop('disabled', this.start <= 0);
+		this.wrapper.find('.btn-pdq-next').prop('disabled', !this._last_meta.has_more);
+	}
+}

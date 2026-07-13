@@ -128,10 +128,16 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			// keyed by the page route so a refresh keeps the SO context.
 			let so_name = (frappe.route_options && frappe.route_options.so_name) || null;
 			const cache_key = 'alpinos_pick_list_entry_so_name';
+			const rem_key = 'alpinos_pick_list_entry_remaining_only';
+			// Partial "Create PL for Remaining Qty" flag — pre-fills outstanding qty only.
+			let remaining_only = (frappe.route_options && frappe.route_options.remaining_only) ? 1 : 0;
 			if (so_name) {
-				try { sessionStorage.setItem(cache_key, so_name); } catch (e) {}
+				try { sessionStorage.setItem(cache_key, so_name); sessionStorage.setItem(rem_key, String(remaining_only)); } catch (e) {}
 			} else {
-				try { so_name = sessionStorage.getItem(cache_key); } catch (e) {}
+				try {
+					so_name = sessionStorage.getItem(cache_key);
+					remaining_only = cint(sessionStorage.getItem(rem_key));
+				} catch (e) {}
 			}
 			if (!so_name) {
 				page.main.html('<h3>Missing Sales Order context for New Pick List.</h3><p>Open a Sales Order and click the "Create Pick List" button to start a new Pick List Entry.</p>');
@@ -140,7 +146,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.so_name = so_name;
 			frappe.call({
 				method: 'alpinos.sales_order_api.get_pick_list_mapping_data',
-				args: { sales_order: so_name },
+				args: { sales_order: so_name, remaining_only: remaining_only },
 				callback: function(r) {
 					if (r.message) {
 						page.render_data(r.message);
@@ -928,6 +934,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		// Gather item data and validate
 		let items = [];
 		let validation_error = false;
+		let is_short_pick = false;
 		page.main.find('.sku-table tbody tr').each(function() {
 			let tr = $(this);
 			let table_name = tr.closest('table').attr('data-table-name');
@@ -937,13 +944,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let qty_val = flt(tr.find('.qty-input').val());
 			let ordered_qty = flt(tr.find('.ordered-qty-cell').text());
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
-			
+
 			if (qty_val > ordered_qty) {
 				frappe.msgprint(__("Row for item {0}: Picked Qty ({1}) cannot be greater than Ordered Qty ({2})", [item_code, qty_val, ordered_qty]));
 				validation_error = true;
 				return false; // Break loop
 			}
-			
+			// Short pick on a real order line -> the shortfall needs a decision.
+			if (ordered_qty > 0 && qty_val < ordered_qty) is_short_pick = true;
+
 			items.push({
 				name: tr.attr('data-name'),
 				item_code: item_code,
@@ -966,41 +975,143 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		}
 
 		let removed_rows = page._pending_removals || [];
+		// A removed SKU also leaves the order short for this round.
+		if (removed_rows && removed_rows.length) is_short_pick = true;
 
-		if (page.pick_list_name === 'New Pick List') {
-			frappe.call({
-				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_and_submit_pick_list',
-				args: {
-					so_name: page.so_name,
-					header: header_data,
-					items: items,
-					removed_rows: removed_rows
-				},
-				freeze: true,
-				callback: function(r) {
-					if(!r.exc && r.message) {
-						frappe.show_alert({message: "Pick List Created and Submitted Successfully", indicator: "green"});
-						frappe.set_route('pick_list_list');
+		const doSubmit = (extra) => {
+			extra = extra || {};
+			if (page.pick_list_name === 'New Pick List') {
+				frappe.call({
+					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_and_submit_pick_list',
+					args: {
+						so_name: page.so_name,
+						header: header_data,
+						items: items,
+						removed_rows: removed_rows,
+						short_pick_action: extra.short_pick_action || null,
+						short_pick_reason: extra.short_pick_reason || null,
+						future_dispatch_date: extra.future_dispatch_date || null
+					},
+					freeze: true,
+					callback: function(r) {
+						if(!r.exc && r.message) {
+							frappe.show_alert({message: "Pick List Created and Submitted Successfully", indicator: "green"});
+							frappe.set_route('pick_list_list');
+						}
 					}
-				}
+				});
+			} else {
+				frappe.call({
+					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.save_pick_list_data',
+					args: {
+						name: page.pick_list_name,
+						header: header_data,
+						items: items,
+						short_pick_action: extra.short_pick_action || null,
+						short_pick_reason: extra.short_pick_reason || null,
+						future_dispatch_date: extra.future_dispatch_date || null
+					},
+					freeze: true,
+					callback: function(r) {
+						if(!r.exc) {
+							frappe.show_alert({message: "Pick List Submitted Successfully", indicator: "green"});
+							frappe.set_route('pick_list_list');
+						}
+					}
+				});
+			}
+		};
+
+		if (is_short_pick) {
+			page.resolve_partial_allowed(function(partialAllowed) {
+				page.show_short_pick_modal(partialAllowed, doSubmit);
 			});
 		} else {
-			frappe.call({
-				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.save_pick_list_data',
-				args: {
-					name: page.pick_list_name,
-					header: header_data,
-					items: items
-				},
-				freeze: true,
-				callback: function(r) {
-					if(!r.exc) {
-						frappe.show_alert({message: "Pick List Submitted Successfully", indicator: "green"});
-						frappe.set_route('pick_list_list');
-					}
-				}
-			});
+			doSubmit({});
 		}
+	};
+
+	// Resolve whether the order permits partial dispatch (drives the modal options).
+	page.resolve_partial_allowed = function(cb) {
+		const done = (so) => {
+			if (!so) return cb(0);
+			page.so_name = so;
+			frappe.db.get_value('Sales Order', so, 'custom_partial_order_allowed').then((r) => {
+				cb(cint((r.message || {}).custom_partial_order_allowed));
+			});
+		};
+		if (page.so_name) {
+			done(page.so_name);
+		} else if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
+			frappe.db.get_value('Pick List', page.pick_list_name, 'custom_sales_order_id').then((r) => {
+				done((r.message || {}).custom_sales_order_id);
+			});
+		} else {
+			cb(0);
+		}
+	};
+
+	// Short-pick decision: Partial (with a future dispatch date) or Forced Close.
+	page.show_short_pick_modal = function(partialAllowed, onConfirm) {
+		const actions = ['Forced Close'];
+		if (cint(partialAllowed)) actions.unshift('Partial');
+		const d = new frappe.ui.Dialog({
+			title: __('Short Pick — Choose Action'),
+			fields: [
+				{
+					fieldtype: 'HTML',
+					options: `<p>${__('Picked qty is less than ordered. Choose how to handle the shortfall.')}</p>`
+				},
+				{
+					fieldtype: 'Select',
+					fieldname: 'reason',
+					label: __('Reason for Short Picking'),
+					options: ['Damage', 'Stock Shortage', 'Expiry', 'Others'].join('\n'),
+					reqd: 1
+				},
+				{
+					fieldtype: 'Select',
+					fieldname: 'action',
+					label: __('Action'),
+					options: actions.join('\n'),
+					default: actions[0],
+					reqd: 1
+				},
+				{
+					fieldtype: 'Date',
+					fieldname: 'future_dispatch_date',
+					label: __('Future Dispatch Date (remaining qty)'),
+					depends_on: "eval:doc.action=='Partial'",
+					mandatory_depends_on: "eval:doc.action=='Partial'"
+				},
+				{
+					fieldtype: 'HTML',
+					options: `<p class="text-danger small">${__('Forced Close permanently closes the order at the dispatched qty — no further Pick List / Delivery Note can be created.')}</p>`
+				}
+			],
+			primary_action_label: __('Submit Pick List'),
+			primary_action(v) {
+				if (v.action === 'Partial' && !v.future_dispatch_date) {
+					frappe.msgprint(__('Set a Future Dispatch Date for the remaining qty.'));
+					return;
+				}
+				if (v.action === 'Forced Close') {
+					d.hide();
+					frappe.confirm(
+						__('Force Close permanently abandons the remaining qty. Continue?'),
+						() => onConfirm({ short_pick_action: v.action, short_pick_reason: v.reason })
+					);
+					return;
+				}
+				d.hide();
+				onConfirm({
+					short_pick_action: v.action,
+					short_pick_reason: v.reason,
+					future_dispatch_date: v.future_dispatch_date
+				});
+			}
+		});
+		d.show();
 	};
 
 	// Save edits on an existing draft without submitting it. Reuses the same

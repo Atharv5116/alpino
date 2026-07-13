@@ -34,6 +34,13 @@ SO_SUBMISSION_PENDING = "Submission Pending"
 SO_READY = "Ready For Dispatch"
 SO_DN_CREATED = "Delivery Note Created"
 SO_DISPATCHED = "Dispatched"
+SO_PARTIAL_READY = "Partial Ready For Dispatch"
+SO_PARTIAL_DN_CREATED = "Partial Delivery Note Created"
+SO_PARTIAL_DISPATCHED = "Partial Dispatched"
+SO_FORCED_READY = "Forced Ready For Dispatch"
+SO_FORCED_DN_CREATED = "Forced Delivery Note Created"
+SO_FORCED_DISPATCHED = "Forced Dispatched"
+SO_FORCED_COMPLETED = "Forced Completed"
 SO_COMPLETED = "Completed"
 SO_CANCELLED = "Cancelled"
 
@@ -56,6 +63,8 @@ PL_PICKING = "Picking In Progress"
 PL_STICKER_PENDING = "Sticker Pending"
 PL_SUBMISSION_PENDING = "Submission Pending"
 PL_READY = "Ready To Dispatch"
+PL_PARTIAL_READY = "Partial Ready To Dispatch"
+PL_FORCED_READY = "Forced Ready To Dispatch"
 PL_DISPATCHED = "Dispatched"
 PL_CANCELLED = "Cancelled"
 
@@ -252,7 +261,8 @@ def sales_order_on_submit(doc, method=None):
 	dd = doc.get("custom_dispatch_date")
 	status = SO_TODAYS_DISPATCH if (dd and getdate(dd) <= getdate(today())) else SO_WAREHOUSE_PENDING
 	doc.db_set("custom_workflow_status", status, update_modified=False)
-	_notify(lambda: _notify_so_submitted(doc))
+	from alpinos import so_notifications as son
+	_notify(lambda: son.n01_so_submitted(doc))
 
 
 def sales_order_on_cancel(doc, method=None):
@@ -320,22 +330,56 @@ def _sync_so_from_pick_list(so, pl_status):
 
 
 def pick_list_after_insert(doc, method=None):
+	from alpinos import so_notifications as son
+
+	so = _so_of_pick_list(doc)
+	prev_so = frappe.db.get_value("Sales Order", so, "custom_workflow_status") if so else None
 	# Set the Pick List's own status; mirror any active picking stage onto the SO.
 	status = _apply_pick_list_status(doc)
-	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
+	_sync_so_from_pick_list(so, status)
+	if so:
+		if prev_so == SO_FUTURE_DISPATCH:
+			_notify(lambda: son.n05_pl_from_future_dispatch(so, doc.name))
+		else:
+			_notify(lambda: son.n03_pl_created(so, doc.name))
+	if doc.get("custom_assigned_to"):
+		_notify(lambda: son.n06_pl_assigned(doc))
 
 
 def pick_list_on_update(doc, method=None):
 	if doc.docstatus != 0:
 		return
+	from alpinos import so_notifications as son
+
+	old_status = doc.get("custom_workflow_status")
 	status = _apply_pick_list_status(doc)
 	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
+	if status != old_status:
+		if status == PL_STICKER_PENDING:
+			_notify(lambda: son.n07_sticker_pending(doc))
+		elif status == PL_SUBMISSION_PENDING:
+			_notify(lambda: son.n08_submission_pending(doc))
+	if doc.has_value_changed("custom_assigned_to") and doc.get("custom_assigned_to"):
+		_notify(lambda: son.n06_pl_assigned(doc))
 
 
 def pick_list_on_submit(doc, method=None):
-	doc.db_set("custom_workflow_status", PL_READY, update_modified=False)
-	_set_status("Sales Order", _so_of_pick_list(doc), SO_READY)
-	_notify(lambda: _notify_pl_submitted(doc))
+	from alpinos import partial_dispatch as pd
+	from alpinos.forced_close import is_force_closed
+
+	so = _so_of_pick_list(doc)
+	if so and is_force_closed(so):
+		doc.db_set("custom_workflow_status", PL_FORCED_READY, update_modified=False)
+		_set_status("Sales Order", so, SO_FORCED_READY)
+	# Partial order still short of full coverage -> partial ready statuses.
+	elif so and pd.is_partial_round(so):
+		doc.db_set("custom_workflow_status", PL_PARTIAL_READY, update_modified=False)
+		_set_status("Sales Order", so, SO_PARTIAL_READY)
+	else:
+		doc.db_set("custom_workflow_status", PL_READY, update_modified=False)
+		_set_status("Sales Order", so, SO_READY)
+	from alpinos import so_notifications as son
+	_notify(lambda: son.n09_pl_submitted(doc, so))
 
 
 def pick_list_on_cancel(doc, method=None):
@@ -365,28 +409,61 @@ def _guard_pick_list_cancellation(doc):
 def delivery_note_after_insert(doc, method=None):
 	if doc.get("is_return"):
 		return
-	_set_status("Sales Order", _so_of_delivery_note(doc), SO_DN_CREATED)
+	from alpinos import partial_dispatch as pd
+	from alpinos.forced_close import is_force_closed
+
+	so = _so_of_delivery_note(doc)
+	if so and is_force_closed(so):
+		_set_status("Sales Order", so, SO_FORCED_DN_CREATED)
+	elif so and pd.is_partial_round(so):
+		_set_status("Sales Order", so, SO_PARTIAL_DN_CREATED)
+	else:
+		_set_status("Sales Order", so, SO_DN_CREATED)
 
 
 def delivery_note_on_submit(doc, method=None):
 	if doc.get("is_return"):
 		return
+	from alpinos import partial_dispatch as pd
+	from alpinos.forced_close import is_force_closed
+
+	from alpinos import so_notifications as son
+
 	pl = _pick_list_of_delivery_note(doc)
 	if pl:
 		_set_status("Pick List", pl, PL_DISPATCHED)
-	_set_status("Sales Order", _so_of_delivery_note(doc), SO_DISPATCHED)
-	_notify(lambda: _notify_dn_dispatched(doc))
+	so = _so_of_delivery_note(doc)
+	if so:
+		if is_force_closed(so):
+			# Forced chain: dispatch what's picked, order stays locked until Sales confirms.
+			_set_status("Sales Order", so, SO_FORCED_DISPATCHED)
+			_notify(lambda: son.n18_forced_dn_submitted(so))
+		elif pd.is_partial_order(so):
+			# Auto-complete once cumulative dispatched covers the full order;
+			# otherwise the order stays in the partial chain (no Partial Completed).
+			if pd.so_fully_dispatched(so):
+				_set_status("Sales Order", so, SO_COMPLETED)
+				_notify(lambda: son.n16_auto_completed(so))
+			else:
+				_set_status("Sales Order", so, SO_PARTIAL_DISPATCHED)
+				_notify(lambda: son.n15_partial_dn_submitted(so))
+		else:
+			_set_status("Sales Order", so, SO_DISPATCHED)
+			_notify(lambda: son.n11_dn_dispatched(doc, so))
 
 
 def delivery_note_on_cancel(doc, method=None):
 	if doc.get("is_return"):
 		return
+	from alpinos import partial_dispatch as pd
+
+	so = _so_of_delivery_note(doc)
+	partial = bool(so and pd.is_partial_round(so))
 	pl = _pick_list_of_delivery_note(doc)
 	if pl and frappe.db.get_value("Pick List", pl, "docstatus") == 1:
-		_set_status("Pick List", pl, PL_READY)
-	so = _so_of_delivery_note(doc)
+		_set_status("Pick List", pl, PL_PARTIAL_READY if partial else PL_READY)
 	if so and frappe.db.get_value("Sales Order", so, "custom_workflow_status") != SO_CANCELLED:
-		_set_status("Sales Order", so, SO_READY)
+		_set_status("Sales Order", so, _recompute_so_status(so))
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +533,9 @@ def mark_future_dispatch(sales_order, expected_date):
 		if frappe.db.get_value("Pick List", pl, "docstatus") == 0:
 			frappe.db.set_value("Pick List", pl, "custom_dispatch_date", expected_date, update_modified=False)
 	frappe.db.commit()
+	if new_status == SO_FUTURE_DISPATCH:
+		from alpinos import so_notifications as son
+		_notify(lambda: son.n04_future_dispatch(sales_order))
 	return new_status
 
 
@@ -473,6 +553,8 @@ def mark_delivered(sales_order):
 		update_modified=False,
 	)
 	frappe.db.commit()
+	from alpinos import so_notifications as son
+	_notify(lambda: son.n12_completed(sales_order))
 	return SO_COMPLETED
 
 
@@ -590,13 +672,23 @@ def _recompute_so_status(so):
 
 	cur = frappe.db.get_value("Sales Order", so, "custom_workflow_status")
 
+	# Force-closed orders are locked to their forced terminal state.
+	if frappe.db.get_value("Sales Order", so, "custom_force_closed"):
+		return cur if cur in (SO_FORCED_DISPATCHED, SO_FORCED_COMPLETED) else SO_FORCED_COMPLETED
+
+	from alpinos import partial_dispatch as pd
+	partial = pd.is_partial_order(so)
+
 	if frappe.get_all("Delivery Note", filters={"custom_sales_order_id": so, "docstatus": 1, "is_return": 0}, limit=1):
+		if partial:
+			# Auto-complete when fully dispatched, else stay in the partial chain.
+			return SO_COMPLETED if pd.so_fully_dispatched(so) else SO_PARTIAL_DISPATCHED
 		# Preserve a manually-confirmed Completed; otherwise it's Dispatched.
 		return SO_COMPLETED if cur == SO_COMPLETED else SO_DISPATCHED
 	if frappe.get_all("Delivery Note", filters={"custom_sales_order_id": so, "docstatus": 0, "is_return": 0}, limit=1):
-		return SO_DN_CREATED
+		return SO_PARTIAL_DN_CREATED if pd.is_partial_round(so) else SO_DN_CREATED
 	if frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 1}, limit=1):
-		return SO_READY
+		return SO_PARTIAL_READY if pd.is_partial_round(so) else SO_READY
 	# A draft Pick List that is being picked mirrors its stage onto the SO.
 	draft_pls = frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 0}, pluck="name")
 	if draft_pls:

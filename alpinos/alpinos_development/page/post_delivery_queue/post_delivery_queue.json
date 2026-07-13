@@ -1,0 +1,33 @@
+{
+ "content": null,
+ "creation": "2026-07-12 12:00:00.000000",
+ "doctype": "Page",
+ "icon": "fa fa-truck",
+ "idx": 0,
+ "modified": "2026-07-12 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "post-delivery-queue",
+ "owner": "Administrator",
+ "page_name": "post-delivery-queue",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "E-Commerce Admin"
+  },
+  {
+   "role": "E-Commerce Manager"
+  },
+  {
+   "role": "E-Commerce Coordinator"
+  }
+ ],
+ "standard": "Yes",
+ "system_page": 0,
+ "title": "Post Delivery"
+}

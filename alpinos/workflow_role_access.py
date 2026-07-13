@@ -243,6 +243,13 @@ SALES_ORDER_STATUSES = "\n".join(
 		"Ready For Dispatch",
 		"Delivery Note Created",
 		"Dispatched",
+		"Partial Ready For Dispatch",
+		"Partial Delivery Note Created",
+		"Partial Dispatched",
+		"Forced Ready For Dispatch",
+		"Forced Delivery Note Created",
+		"Forced Dispatched",
+		"Forced Completed",
 		"Completed",
 		"Cancelled",
 	]
@@ -256,6 +263,8 @@ PICK_LIST_STATUSES = "\n".join(
 		"Sticker Pending",
 		"Submission Pending",
 		"Ready To Dispatch",
+		"Partial Ready To Dispatch",
+		"Forced Ready To Dispatch",
 		"Dispatched",
 		"Cancelled",
 	]

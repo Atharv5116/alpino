@@ -1,0 +1,79 @@
+{
+ "actions": [],
+ "creation": "2026-07-12 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "column_break_1",
+  "dispatched_qty",
+  "grn_qty",
+  "column_break_2",
+  "grn_rejected_qty",
+  "rejection_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SKU",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "SKU Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "dispatched_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Dispatched Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grn_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "GRN Qty"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "grn_rejected_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Rejected Qty"
+  },
+  {
+   "fieldname": "rejection_reason",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Rejection Reason",
+   "options": "\nDamage\nLeakage\nExpiry\nShort Supply\nWrong Item\nOthers"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-12 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Post Delivery GRN Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

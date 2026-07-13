@@ -6,29 +6,47 @@ from frappe import _
 from frappe.utils import flt
 
 
-def _customers_with_offline_buyer_master_query(txt, start, page_len):
-	"""Customers that have a row in Buyer Master (same pool for Sales Order + Catalog)."""
+def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None):
+	"""Customers that have a row in Buyer Master (same pool for Sales Order + Catalog).
+
+	channel: "Offline" -> offline + legacy(blank) buyers, "E-com" -> e-com buyers only,
+	None -> any channel.
+	"""
 	txt = txt or ""
+	params = {"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)}
+	channel_clause = ""
+	if channel == "Offline":
+		channel_clause = "AND (IFNULL(m.channel, '') = '' OR m.channel = 'Offline')"
+	elif channel == "E-com":
+		channel_clause = "AND m.channel = 'E-com'"
 	return frappe.db.sql(
-		"""
+		f"""
 		SELECT c.name, c.customer_name
 		FROM `tabCustomer` c
 		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
 		WHERE IFNULL(c.disabled, 0) = 0
 			AND IFNULL(m.is_parent, 0) = 0
+			{channel_clause}
 			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s)
 		ORDER BY c.name ASC
 		LIMIT %(page_len)s OFFSET %(start)s
 		""",
-		{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
+		params,
 	)
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Limit Sales Order Customer link to customers that have an Buyer Master."""
-	return _customers_with_offline_buyer_master_query(txt, start, page_len)
+	"""Limit offline Sales Order Customer link to offline (or legacy) Buyer Master customers."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="Offline")
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def ecom_sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Limit E-Com Sales Order Customer link to E-com channel Buyer Master customers."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="E-com")
 
 
 @frappe.whitelist()
@@ -112,7 +130,12 @@ def get_offline_buyer_for_customer(customer):
 	row = frappe.db.get_value(
 		"Buyer Master",
 		{"customer": customer},
-		["name", "customer_type", "site_name"],
+		[
+			"name", "customer_type", "site_name", "channel",
+			"appointment_required", "grn_available",
+			"partial_order_allowed", "gst_exclusive_buyer",
+			"gst_no", "shipping_address",
+		],
 		as_dict=True,
 	)
 
@@ -125,6 +148,13 @@ def get_offline_buyer_for_customer(customer):
 		"offline_buyer_master": row.get("name") if row else None,
 		"customer_type": cust_type,
 		"site_name": (row.get("site_name") if row else None) or "",
+		"channel": (row.get("channel") if row else None) or "",
+		# Order-behaviour flags (auto-populated onto the SO, overridable per order).
+		"appointment_required": int(row.get("appointment_required") or 0) if row else 0,
+		"grn_available": int(row.get("grn_available") or 0) if row else 0,
+		"partial_order_allowed": int(row.get("partial_order_allowed") or 0) if row else 0,
+		"gst_exclusive_buyer": int(row.get("gst_exclusive_buyer") or 0) if row else 0,
+		"gst_no": (row.get("gst_no") if row else None) or "",
 	}
 
 
@@ -149,7 +179,11 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 	row = frappe.db.get_value(
 		"Buyer Master",
 		{"customer": doc.customer},
-		["name", "customer_type", "site_name"],
+		[
+			"name", "customer_type", "site_name", "channel",
+			"appointment_required", "grn_available",
+			"partial_order_allowed", "gst_exclusive_buyer",
+		],
 		as_dict=True,
 	)
 	if row:
@@ -168,6 +202,22 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 					or ""
 				)
 			doc.custom_site_name = addr_site or row.get("site_name") or ""
+		# Channel: default from the buyer only when the entry path hasn't set it.
+		# The offline/e-com entry pages set custom_channel explicitly.
+		if meta.has_field("custom_channel") and not (doc.get("custom_channel") or "").strip():
+			doc.custom_channel = row.get("channel") or "Offline"
+		# Order-behaviour flags: default from the buyer on new orders (raw form /
+		# import robustness). Editable overrides on existing orders are preserved,
+		# and the create API sets flags.skip_ecom_flag_default when it owns them.
+		if (
+			meta.has_field("custom_appointment_required")
+			and doc.is_new()
+			and not getattr(doc.flags, "skip_ecom_flag_default", False)
+		):
+			doc.custom_appointment_required = int(row.get("appointment_required") or 0)
+			doc.custom_grn_available = int(row.get("grn_available") or 0)
+			doc.custom_partial_order_allowed = int(row.get("partial_order_allowed") or 0)
+			doc.custom_gst_exclusive_buyer = int(row.get("gst_exclusive_buyer") or 0)
 	else:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None

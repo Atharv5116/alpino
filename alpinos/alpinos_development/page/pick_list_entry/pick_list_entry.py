@@ -1,6 +1,34 @@
 import frappe
 import json
-from frappe.utils import add_days
+from frappe.utils import add_days, flt
+
+
+def _fill_short_pick_remarks(pick_list, reason):
+	"""Populate the short-pick reason onto any short row lacking a remark, so the
+	qty_flow per-row remark rule is satisfied from the modal choice."""
+	if not reason:
+		return
+	for loc in pick_list.locations or []:
+		if flt(loc.qty) < flt(loc.custom_ordered_qty) and not (loc.get("custom_remark") or "").strip():
+			loc.custom_remark = reason
+
+
+def _apply_short_pick_action(pick_list_name, action, reason, future_dispatch_date):
+	"""After the closing Pick List is submitted, enact the short-pick modal choice:
+	Partial (record future dispatch date) or Forced Close (lock the order)."""
+	action = (action or "").strip()
+	if not action:
+		return
+	so = frappe.db.get_value("Pick List", pick_list_name, "custom_sales_order_id")
+	if not so:
+		return
+	if action == "Forced Close":
+		from alpinos.forced_close import apply_forced_close_after_pl
+		apply_forced_close_after_pl(so, pick_list_name, reason)
+	elif action == "Partial":
+		from alpinos.partial_dispatch import apply_partial_future_dispatch
+		apply_partial_future_dispatch(so, future_dispatch_date, reason)
+	frappe.db.commit()
 
 
 def _compute_expiry_from_shelf_life(item_code, mfg_date):
@@ -141,10 +169,11 @@ def save_pick_list_keep_draft(name, header, items):
 
 
 @frappe.whitelist()
-def save_pick_list_data(name, header, items):
+def save_pick_list_data(name, header, items, short_pick_action=None,
+                        short_pick_reason=None, future_dispatch_date=None):
 	header = json.loads(header) if isinstance(header, str) else header
 	items = json.loads(items) if isinstance(items, str) else items
-	
+
 	doc = frappe.get_doc('Pick List', name)
 	doc.check_permission('write')
 	
@@ -164,6 +193,10 @@ def save_pick_list_data(name, header, items):
 			exp = item_data.get('custom_expiry_date') or None
 			if mfg and not exp:
 				exp = _compute_expiry_from_shelf_life(item.item_code, mfg)
+			# A short row without a remark inherits the short-pick modal reason.
+			remark = item_data.get('custom_remark') or None
+			if short_pick_reason and not remark and qty_val < flt(item.custom_ordered_qty):
+				remark = short_pick_reason
 			frappe.db.set_value('Pick List Item', item.name, {
 				'qty': qty_val,
 				'stock_qty': qty_val,
@@ -175,9 +208,9 @@ def save_pick_list_data(name, header, items):
 				'batch_no': None,
 				'custom_mfg_date': mfg,
 				'custom_expiry_date': exp,
-				'custom_remark': item_data.get('custom_remark') or None,
+				'custom_remark': remark,
 			}, update_modified=False)
-	
+
 	frappe.db.commit()
 	
 	# Step 3: Reload the doc so it has the freshly written DB values
@@ -186,7 +219,10 @@ def save_pick_list_data(name, header, items):
 	# Step 4: Submit (this will re-run validate hooks — but now doc has correct values from DB)
 	doc.flags.ignore_mandatory = True
 	doc.submit()
-	
+
+	# Step 5: Enact the short-pick modal choice (Partial / Forced Close).
+	_apply_short_pick_action(name, short_pick_action, short_pick_reason, future_dispatch_date)
+
 	return True
 
 
@@ -412,7 +448,11 @@ def create_pick_list_as_draft(so_name, header, items, removed_rows=None):
 
 
 @frappe.whitelist()
-def create_and_submit_pick_list(so_name, header, items, removed_rows=None):
+def create_and_submit_pick_list(so_name, header, items, removed_rows=None,
+                                short_pick_action=None, short_pick_reason=None,
+                                future_dispatch_date=None):
 	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows)
+	_fill_short_pick_remarks(pick_list, short_pick_reason)
 	pick_list.submit()
+	_apply_short_pick_action(pick_list.name, short_pick_action, short_pick_reason, future_dispatch_date)
 	return pick_list.name

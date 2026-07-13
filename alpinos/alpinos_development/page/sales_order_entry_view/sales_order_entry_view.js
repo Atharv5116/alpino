@@ -88,6 +88,13 @@ class SalesOrderEntryView {
 			__('Order')
 		);
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
+		// Forced Close — permanently close the order at the qty already dispatched.
+		this.btn_force_close = this.page.add_inner_button(
+			__('Force Close Order'),
+			() => this.do_force_close(),
+			__('Order')
+		);
+		if (this.btn_force_close) this.btn_force_close.hide();
 	}
 
 	_has_any_role(roles) {
@@ -141,7 +148,14 @@ class SalesOrderEntryView {
 				'Ready For Dispatch': 'blue',
 				'Delivery Note Created': 'blue',
 				Dispatched: 'green',
+				'Partial Ready For Dispatch': 'blue',
+				'Partial Delivery Note Created': 'blue',
+				'Partial Dispatched': 'purple',
+				'Forced Ready For Dispatch': 'orange',
+				'Forced Delivery Note Created': 'orange',
+				'Forced Dispatched': 'red',
 				Completed: 'green',
+				'Forced Completed': 'red',
 				Cancelled: 'red',
 			};
 			if (status && me.page.set_indicator) {
@@ -152,6 +166,16 @@ class SalesOrderEntryView {
 
 			const isWarehouse = me._has_any_role(['Warehouse Admin', 'Warehouse Manager', 'System Manager']);
 			const isSales = me._has_any_role(['Sales Admin', 'Sales Manager', 'System Manager']);
+
+			// Force Close available to warehouse while an order has been picked but
+			// isn't fully dispatched, isn't already force-closed, and isn't terminal.
+			const terminal = ['Completed', 'Forced Completed', 'Cancelled'].includes(status);
+			if (me.btn_force_close) {
+				const can_force = isWarehouse && docstatus === 1 && !terminal &&
+					!cint(pl.force_closed) && cint(pl.has_pick_list) && cint(pl.has_remaining_qty);
+				if (can_force) me.btn_force_close.show();
+				else me.btn_force_close.hide();
+			}
 
 			// PRIMARY action = the clear "next stage" step for this stage + role.
 			if (status === 'Draft' && isSales) {
@@ -172,6 +196,24 @@ class SalesOrderEntryView {
 				}
 			} else if (status === 'Dispatched' && isSales) {
 				me.page.set_primary_action(__('Mark Delivered'), () => me.do_mark_delivered());
+			} else if (status === 'Forced Dispatched' && isSales) {
+				me.page.set_primary_action(__('Confirm Forced Delivery'), () => me.do_confirm_forced());
+			} else if (
+				['Partial Dispatched', 'Partial Delivery Note Created', 'Partial Ready For Dispatch'].includes(status) &&
+				isWarehouse
+			) {
+				// Partial chain: continue an in-progress round, or start a Pick List
+				// for the outstanding qty (pre-filled with remaining only).
+				if (pl.has_draft) {
+					me.page.set_primary_action(__('Continue Pick List'), () =>
+						frappe.set_route('pick_list_entry', pl.draft_name)
+					);
+				} else if (!cint(pl.force_closed) && cint(pl.partial_order_allowed) && cint(pl.has_remaining_qty)) {
+					me.page.set_primary_action(__('Create PL for Remaining Qty'), () => {
+						frappe.route_options = { so_name: me._so_name, remaining_only: 1 };
+						frappe.set_route('pick_list_entry', 'New Pick List');
+					});
+				}
 			} else if (pl.has_draft && isWarehouse) {
 				// Mid-flow (Warehouse Approved / Picking) — jump back into the Pick List.
 				me.page.set_primary_action(__('Continue Pick List'), () =>
@@ -268,6 +310,62 @@ class SalesOrderEntryView {
 				callback(r) {
 					if (r.exc) return;
 					frappe.show_alert({ message: __('Order marked Completed'), indicator: 'green' });
+					me.load_order(me._so_name);
+				},
+			});
+		});
+	}
+
+	do_force_close() {
+		if (!this._so_name) return;
+		const me = this;
+		const d = new frappe.ui.Dialog({
+			title: __('Force Close Order'),
+			fields: [
+				{
+					fieldtype: 'HTML',
+					options: `<p class="text-danger"><b>${__('Warning:')}</b> ${__(
+						'This permanently closes the order at the qty already dispatched. The remaining qty is abandoned and no further Pick List / Delivery Note can be created. This cannot be undone.'
+					)}</p>`,
+				},
+				{
+					fieldtype: 'Select',
+					fieldname: 'reason',
+					label: __('Reason for Force Close'),
+					options: ['Damage', 'Stock Shortage', 'Expiry', 'Others'].join('\n'),
+					reqd: 1,
+				},
+			],
+			primary_action_label: __('Force Close'),
+			primary_action(values) {
+				frappe.call({
+					method: 'alpinos.forced_close.force_close_sales_order',
+					args: { sales_order: me._so_name, reason: values.reason },
+					freeze: true,
+					freeze_message: __('Force closing...'),
+					callback(r) {
+						if (r.exc) return;
+						d.hide();
+						frappe.show_alert({ message: __('Order Force Closed'), indicator: 'red' });
+						me.load_order(me._so_name);
+					},
+				});
+			},
+		});
+		d.show();
+	}
+
+	do_confirm_forced() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.confirm(__('Confirm delivery and mark this force-closed order as Forced Completed?'), () => {
+			frappe.call({
+				method: 'alpinos.forced_close.confirm_forced_completion',
+				args: { sales_order: me._so_name },
+				freeze: true,
+				callback(r) {
+					if (r.exc) return;
+					frappe.show_alert({ message: __('Order marked Forced Completed'), indicator: 'green' });
 					me.load_order(me._so_name);
 				},
 			});
