@@ -96,8 +96,19 @@ def _fixtures(tag):
 	def mk_buyer(suffix, partial):
 		cust = f"ECOMTEST-CUST-{tag}-{suffix}"
 		if not frappe.db.exists("Customer", cust):
-			frappe.get_doc({"doctype": "Customer", "customer_name": cust,
-			                "custom_order_type": ct}).insert(ignore_permissions=True)
+			# Group/territory must be explicit — sites without Selling Settings
+			# defaults (e.g. UAT) otherwise create a group-less Customer, and
+			# ERPNext's price-list lookup crashes on Customer Group None.
+			frappe.get_doc({
+				"doctype": "Customer", "customer_name": cust,
+				"custom_order_type": ct,
+				"customer_group": frappe.db.get_single_value("Selling Settings", "customer_group")
+					or frappe.db.get_value("Customer Group", {"is_group": 0}, "name")
+					or "All Customer Groups",
+				"territory": frappe.db.get_single_value("Selling Settings", "territory")
+					or frappe.db.get_value("Territory", {"is_group": 0}, "name")
+					or "All Territories",
+			}).insert(ignore_permissions=True)
 		cust_name = frappe.db.get_value("Customer", {"customer_name": cust}, "name")
 		if not frappe.db.exists("Buyer Master", {"customer": cust_name}):
 			frappe.get_doc({
