@@ -424,6 +424,85 @@ def run():
 	check(f"notifications delivered to test user ({notif_after - notif_before} logs)",
 		lambda: (notif_after > notif_before) or (_ for _ in ()).throw(AssertionError("no Notification Log rows created")))
 
+	# ------------------------------------------------------------ Feature 7
+	# Role matrix: single-role users — allowed actions succeed, forbidden throw.
+	def _mk_role_user(label, roles):
+		email = f"ecomtest-{label}-{tag.lower()}@example.com"
+		if not frappe.db.exists("User", email):
+			u = frappe.get_doc({"doctype": "User", "email": email, "first_name": f"ECOMTEST {label}",
+			                    "send_welcome_email": 0, "enabled": 1,
+			                    "roles": [{"role": r} for r in roles]})
+			u.flags.ignore_permissions = True
+			u.insert()
+		return email
+
+	u_ecom = _mk_role_user("ecom", ["E-Commerce Coordinator"])
+	u_sales = _mk_role_user("sales", ["Sales Manager"])
+	u_wh = _mk_role_user("wh", ["Warehouse Manager"])
+	frappe.db.commit()
+
+	from alpinos.forced_close import force_close_sales_order
+	from alpinos.workflow_engine import mark_delivered
+	from alpinos.sales_order_api import get_sales_order_entry_list
+
+	try:
+		# ECOM Coordinator can create + submit an e-com SO (new docperms).
+		frappe.set_user(u_ecom)
+		so6 = _mk_ecom_so(f, f["cust_partial"], f"PO-{tag}-6", [(it1, 5, 100, 10)])
+		check("role: ECOM Coordinator can create + submit e-com SO", lambda: None)
+
+		# ...but cannot force close (warehouse-only action).
+		expect_throw("role: ECOM Coordinator blocked from force close",
+			lambda: force_close_sales_order(so6, "Stock Shortage"), "not permitted")
+
+		# Sales cannot force close either.
+		frappe.set_user(u_sales)
+		expect_throw("role: Sales blocked from force close",
+			lambda: force_close_sales_order(so6, "Stock Shortage"), "not permitted")
+
+		# Pure Warehouse Manager list scoping: only Warehouse Approval Pending rows.
+		frappe.set_user(u_wh)
+		rows = get_sales_order_entry_list(page_length=100)["data"]
+		check("role: Warehouse Manager list scoped to Warehouse Approval Pending", lambda: (
+			(any(r.get("name") == so6 for r in rows)
+			 and all(r.get("custom_workflow_status") == "Warehouse Approval Pending" for r in rows))
+			or (_ for _ in ()).throw(AssertionError(
+				f"so6 in rows: {any(r.get('name') == so6 for r in rows)}; statuses: "
+				+ str(sorted({r.get('custom_workflow_status') for r in rows}))))))
+
+		# Warehouse cannot Mark Delivered (sales-only action).
+		expect_throw("role: Warehouse blocked from Mark Delivered",
+			lambda: mark_delivered(so6), "not permitted")
+
+		# Short-dispatch so6 as Administrator (plumbing, not under test here).
+		frappe.set_user("Administrator")
+		pl6 = _mk_pl(so6, f, {it1: 3}, short_action="Partial", reason="Stock Shortage",
+		             future_date=add_days(today(), 3))
+		dn6 = _mk_dn(pl6)
+
+		# Warehouse CAN force close the short order.
+		frappe.set_user(u_wh)
+		force_close_sales_order(so6, "Stock Shortage")
+		check("role: Warehouse can force close",
+			lambda: (so_status(so6) == "Forced Dispatched") or (_ for _ in ()).throw(AssertionError(so_status(so6))))
+
+		# Sales CAN confirm forced completion.
+		frappe.set_user(u_sales)
+		from alpinos.forced_close import confirm_forced_completion as _cfc
+		_cfc(so6)
+		check("role: Sales can confirm forced completion",
+			lambda: (so_status(so6) == "Forced Completed") or (_ for _ in ()).throw(AssertionError(so_status(so6))))
+
+		# ECOM Coordinator can run Post Delivery (queue + start).
+		frappe.set_user(u_ecom)
+		q6 = get_post_delivery_queue(search=so6)
+		pd6 = start_post_delivery(dn6)["name"]
+		check("role: ECOM Coordinator can start Post Delivery", lambda: (
+			(bool(pd6) and any(r.get("delivery_note") == dn6 for r in q6["data"]))
+			or (_ for _ in ()).throw(AssertionError(f"pd={pd6}"))))
+	finally:
+		frappe.set_user("Administrator")
+
 	frappe.db.commit()
 
 	# ------------------------------------------------------------ Report

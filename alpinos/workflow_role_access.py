@@ -40,6 +40,9 @@ ROLES = {
 	"Sales Admin": "Offline Sales: full access to Sales Orders; view Pick List / Delivery Note.",
 	"Sales Manager": "Offline Sales: create / edit / submit Sales Orders; view Pick List / Delivery Note.",
 	"Sales User": "Offline Sales: view Sales Orders / Pick List / Delivery Note.",
+	"E-Commerce Coordinator": "E-Com: create / edit / submit E-Com Sales Orders; ASN + GRN entry on Post Delivery; view Pick List / Delivery Note.",
+	"E-Commerce Manager": "E-Com: Coordinator access plus cancel Sales Orders and override ASN/GRN on Post Delivery.",
+	"E-Commerce Admin": "E-Com: full access to E-Com Sales Orders and Post Delivery.",
 }
 
 
@@ -97,6 +100,9 @@ def _level_ptypes(level):
 	if level == "SO_SALES_MANAGER":
 		# VIEW / CREATE / EDIT plus submit + cancel per SO workflow + cancellation rules
 		return _VIEW | {"write", "create", "submit", "cancel"}
+	if level == "SO_CREATE_SUBMIT":
+		# VIEW / CREATE / EDIT / submit — no cancel (E-Commerce Coordinator)
+		return _VIEW | {"write", "create", "submit"}
 	raise ValueError(f"Unknown access level: {level}")
 
 
@@ -110,6 +116,12 @@ PERMISSION_MATRIX = {
 		"Sales Admin": "FULL",
 		"Sales Manager": "SO_SALES_MANAGER",
 		"Sales User": "VIEW",
+		# E-Com channel (BRD): Coordinator creates/submits, Manager may cancel,
+		# Admin has full control. Channel separation is by the entry pages/list
+		# filters — docperms are on the shared Sales Order doctype.
+		"E-Commerce Coordinator": "SO_CREATE_SUBMIT",
+		"E-Commerce Manager": "SO_SALES_MANAGER",
+		"E-Commerce Admin": "FULL",
 	},
 	"Pick List": {
 		"Warehouse Admin": "FULL",
@@ -120,6 +132,9 @@ PERMISSION_MATRIX = {
 		"Sales Admin": "VIEW",
 		"Sales Manager": "VIEW",
 		"Sales User": "VIEW",
+		"E-Commerce Coordinator": "VIEW",
+		"E-Commerce Manager": "VIEW",
+		"E-Commerce Admin": "VIEW",
 	},
 	"Delivery Note": {
 		"Warehouse Admin": "FULL",
@@ -130,6 +145,9 @@ PERMISSION_MATRIX = {
 		"Sales Admin": "VIEW",
 		"Sales Manager": "VIEW",
 		"Sales User": "VIEW",
+		"E-Commerce Coordinator": "VIEW",
+		"E-Commerce Manager": "VIEW",
+		"E-Commerce Admin": "VIEW",
 	},
 }
 
@@ -201,6 +219,9 @@ SUPPORTING_READ_ROLES = [
 	"Sales Admin",
 	"Sales Manager",
 	"Sales User",
+	"E-Commerce Coordinator",
+	"E-Commerce Manager",
+	"E-Commerce Admin",
 ]
 
 # Read-only ptype bundle for a supporting master.
