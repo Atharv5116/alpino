@@ -503,6 +503,59 @@ def run():
 	finally:
 		frappe.set_user("Administrator")
 
+	# ------------------------------------------------------------ Feature 8
+	# (a) Catalogue write-back: so1's selling price (90 = MRP 100, margin 10)
+	# must have auto-created the buyer's catalogue and persist on re-fetch
+	# (previously the rate fell back to MRP when no catalogue existed).
+	from alpinos.sales_order_offline_buyer import (
+		buyer_family_customers,
+		get_customer_addresses_for_display,
+		get_offline_buyer_item_rate,
+		sync_offline_buyer_master_addresses,
+	)
+	check("catalogue auto-created for buyer with no catalogue", lambda: (
+		bool(frappe.db.exists("Buyer Items", {"buyer": f["cust_partial"], "docstatus": ["<", 2]}))
+		or (_ for _ in ()).throw(AssertionError("no Buyer Items created"))))
+	check("selling price persists in catalogue (90, not MRP 100)", lambda: (
+		(lambda r: (r and flt(r.get("rate")) == 90.0)
+		 or (_ for _ in ()).throw(AssertionError(str(r))))
+		(get_offline_buyer_item_rate(f["cust_partial"], it1))))
+
+	# (b) Family-wide addresses: link both buyers under one parent — each buyer
+	# can then bill/ship to any address in the family, GST following the
+	# selected billing address's state.
+	pbm = frappe.get_doc({
+		"doctype": "Buyer Master",
+		"customer_business_name": f"ECOMTEST-PARENT-{tag}",
+		"is_parent": 1,
+		"customer_type": f["ctype"], "channel": "E-com",
+		"gst_type": "Registered Business", "level": "N/A",
+		"email": "ecomtest@example.com", "contact_no": "9999999999",
+		"contact_person": "ECOMTEST Person",
+	})
+	pbm.flags.ignore_permissions = True
+	pbm.flags.ignore_mandatory = True
+	pbm.insert()
+	for cust in (f["cust_partial"], f["cust_single"]):
+		bm = frappe.db.get_value("Buyer Master", {"customer": cust}, "name")
+		frappe.db.set_value("Buyer Master", bm, "parent_buyer", pbm.name, update_modified=False)
+		sync_offline_buyer_master_addresses(cust)
+	frappe.db.commit()
+
+	check("buyer family resolves parent + siblings", lambda: (
+		(set(buyer_family_customers(f["cust_partial"])) >= {f["cust_partial"], f["cust_single"]})
+		or (_ for _ in ()).throw(AssertionError(str(buyer_family_customers(f["cust_partial"]))))))
+
+	fam_addrs = get_customer_addresses_for_display(f["cust_partial"])
+	sib = next((r for r in fam_addrs if r.get("owner_customer") == f["cust_single"]), None)
+	check("sibling buyer's address offered in the picker", lambda: (
+		bool(sib) or (_ for _ in ()).throw(AssertionError(
+			"owners: " + str(sorted({r.get("owner_customer") for r in fam_addrs}))))))
+	from alpinos.sales_order_api import _resolve_address_name
+	check("sibling address accepted for the SO", lambda: (
+		(sib and _resolve_address_name(sib["name"], f["cust_partial"]) == sib["name"])
+		or (_ for _ in ()).throw(AssertionError("sibling address did not resolve"))))
+
 	frappe.db.commit()
 
 	# ------------------------------------------------------------ Report

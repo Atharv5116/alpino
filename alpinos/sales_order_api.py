@@ -192,18 +192,24 @@ def _ensure_gst_setup_for_company(company):
 def _resolve_address_name(address_string, customer):
 	"""
 	If the frontend passes the display label instead of the actual ERPNext Address Name,
-	this function resolves it back to the Address Name.
+	this function resolves it back to the Address Name. Accepts any address in the
+	customer's buyer-master family (parent + siblings) — the entry page offers the
+	whole family's addresses.
 	"""
 	if not address_string or not customer:
 		return address_string
 
-	# Check if it's already a valid Address name linked to customer
+	from alpinos.sales_order_offline_buyer import buyer_family_customers
+
+	# Check if it's already a valid Address name linked to a family customer
+	family = buyer_family_customers(customer)
 	exists = frappe.db.get_value(
-		"Dynamic Link", 
-		{"parent": address_string, "parenttype": "Address", "link_doctype": "Customer", "link_name": customer},
+		"Dynamic Link",
+		{"parent": address_string, "parenttype": "Address", "link_doctype": "Customer",
+		 "link_name": ["in", family]},
 		"parent"
 	)
-	if exists: 
+	if exists:
 		return address_string
 
 	# If not found, it might be the display string. Resolve via display label.
@@ -938,8 +944,19 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 
 		flat_discount = flt(calc.get("flat_discount"))
 		if customer and item_code:
-			from alpinos.sales_order_offline_buyer import update_offline_buyer_margin_if_changed
+			from alpinos.sales_order_offline_buyer import (
+				update_offline_buyer_margin_if_changed,
+				upsert_buyer_catalog_selling_rate,
+			)
 			update_offline_buyer_margin_if_changed(customer, item_code, flat_discount)
+			# Keep the buyer catalogue in sync with the line's Selling Price —
+			# creating the catalogue when the buyer has none, else the entered
+			# price is lost and the next fetch falls back to MRP.
+			upsert_buyer_catalog_selling_rate(
+				customer, item_code,
+				flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0),
+				mrp=flt(item.get("custom_customer_mrp")),
+			)
 
 		row = {
 			"item_code": item_code,

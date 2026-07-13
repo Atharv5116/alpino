@@ -3,7 +3,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 
 def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None):
@@ -760,28 +760,70 @@ def sync_offline_buyer_master_addresses(customer):
 	return _offline_buyer_address_sync(customer)
 
 
+def buyer_family_customers(customer):
+	"""Customers of every Buyer Master in the same parent family (parent + all
+	its children, including this one). A buyer with no parent returns just itself."""
+	if not customer:
+		return []
+	obm = frappe.db.get_value(
+		"Buyer Master", {"customer": customer},
+		["name", "is_parent", "parent_buyer"], as_dict=True,
+	)
+	if not obm:
+		return [customer]
+	root = obm.parent_buyer or (obm.name if cint(obm.is_parent) else None)
+	if not root:
+		return [customer]
+	family = frappe.db.sql_list(
+		"""
+		SELECT DISTINCT customer FROM `tabBuyer Master`
+		WHERE IFNULL(customer, '') != ''
+			AND (name = %(root)s OR parent_buyer = %(root)s)
+		""",
+		{"root": root},
+	)
+	if customer not in family:
+		family.append(customer)
+	return family
+
+
 @frappe.whitelist()
 def get_customer_addresses_for_display(customer):
-	"""Return addresses linked to a Customer with a human-readable display string for Autocomplete."""
+	"""Addresses for the Autocomplete on the SO entry page — the pool covers the
+	whole buyer-master family (parent + siblings), so an order can bill/ship to
+	any address the group shares. GST then follows the chosen billing address
+	(tax mode is derived from the Address record's state)."""
 	if not customer:
 		return []
 
+	family = buyer_family_customers(customer)
 	rows = frappe.db.sql(
 		"""
-		SELECT a.name, a.address_type,
+		SELECT DISTINCT a.name, a.address_type,
 			a.address_line1, a.address_line2,
-			a.city, a.state, a.country, a.pincode
+			a.city, a.state, a.country, a.pincode,
+			a.custom_site_name,
+			dl.link_name AS owner_customer
 		FROM `tabAddress` a
 		INNER JOIN `tabDynamic Link` dl
 			ON dl.parent = a.name
 			AND dl.parenttype = 'Address'
 			AND dl.link_doctype = 'Customer'
-			AND dl.link_name = %(customer)s
+			AND dl.link_name IN %(family)s
 		ORDER BY a.address_type, a.name
 		""",
-		{"customer": customer},
+		{"family": tuple(family)},
 		as_dict=True,
 	)
+
+	multi = len(family) > 1
+	owner_names = {}
+	if multi:
+		for cust, cname in frappe.db.sql(
+			"SELECT name, customer_name FROM `tabCustomer` WHERE name IN %(family)s",
+			{"family": tuple(family)},
+		):
+			owner_names[cust] = cname or cust
 
 	for row in rows:
 		parts = []
@@ -791,9 +833,64 @@ def get_customer_addresses_for_display(customer):
 				clean_p = " ".join(str(p).replace("\n", " ").replace("\r", " ").split())
 				if clean_p:
 					parts.append(clean_p)
-		row.display = "{} ({})".format(", ".join(parts), row.address_type or "Address")
+		suffix = row.address_type or "Address"
+		# Disambiguate sibling addresses by the buyer they belong to.
+		if multi and row.owner_customer and row.owner_customer != customer:
+			suffix += " — " + owner_names.get(row.owner_customer, row.owner_customer)
+		row.display = "{} ({})".format(", ".join(parts), suffix)
 
 	return rows
+
+
+def upsert_buyer_catalog_selling_rate(customer, item_code, selling_rate, mrp=None):
+	"""Persist the SO line's Selling Price into the buyer's catalogue (Buyer Items).
+
+	Creates the catalogue in the backend when the buyer doesn't have one yet —
+	without it the next rate fetch falls back to MRP and the entered price is
+	lost (get_offline_buyer_item_rate only returns a stored selling_rate)."""
+	selling_rate = flt(selling_rate, 2)
+	if not customer or not item_code or selling_rate <= 0:
+		return
+	if not frappe.db.exists("Buyer Master", {"customer": customer}):
+		return
+
+	obi_name = frappe.db.get_value(
+		"Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, "name",
+		order_by="modified desc",
+	)
+	if obi_name:
+		doc = frappe.get_doc("Buyer Items", obi_name)
+	else:
+		doc = frappe.new_doc("Buyer Items")
+		doc.title = "{} Catalogue".format(
+			frappe.db.get_value("Customer", customer, "customer_name") or customer
+		)
+		doc.buyer = customer
+
+	mrp = flt(mrp)
+	margin = flt((1 - selling_rate / mrp) * 100, 2) if mrp > 0 else 0.0
+	row = next((r for r in doc.get("items") or [] if r.item_code == item_code), None)
+	if row:
+		if flt(row.selling_rate, 2) == selling_rate and (not mrp or flt(row.mrp, 2) == mrp):
+			return  # unchanged — don't churn the catalogue's modified stamp
+		row.selling_rate = selling_rate
+		if mrp:
+			row.mrp = mrp
+			row.margin_percent = margin
+	else:
+		doc.append("items", {
+			"item_code": item_code,
+			"selling_rate": selling_rate,
+			"mrp": mrp or 0,
+			"margin_percent": margin,
+		})
+
+	doc.flags.ignore_permissions = True
+	doc.flags.ignore_mandatory = True
+	if doc.is_new():
+		doc.insert()
+	else:
+		doc.save()
 
 
 def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
