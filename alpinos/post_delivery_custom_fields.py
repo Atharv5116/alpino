@@ -116,6 +116,47 @@ def setup_post_delivery_fields():
 				read_only=1,
 				allow_on_submit=1,
 			),
+			# SO-level aggregate summary across all dispatch terms (BRD Module 3).
+			dict(
+				fieldname="custom_total_terms",
+				label="Total Terms",
+				fieldtype="Int",
+				insert_after="custom_fill_rate",
+				read_only=1,
+				allow_on_submit=1,
+			),
+			dict(
+				fieldname="custom_total_dispatched_qty",
+				label="Total Dispatched Qty",
+				fieldtype="Float",
+				insert_after="custom_total_terms",
+				read_only=1,
+				allow_on_submit=1,
+			),
+			dict(
+				fieldname="custom_total_grn_qty",
+				label="Total GRN Qty",
+				fieldtype="Float",
+				insert_after="custom_total_dispatched_qty",
+				read_only=1,
+				allow_on_submit=1,
+			),
+			dict(
+				fieldname="custom_total_grn_rejected_qty",
+				label="Total GRN Rejected Qty",
+				fieldtype="Float",
+				insert_after="custom_total_grn_qty",
+				read_only=1,
+				allow_on_submit=1,
+			),
+			dict(
+				fieldname="custom_overall_grn_fill_rate",
+				label="Overall GRN Fill Rate (%)",
+				fieldtype="Percent",
+				insert_after="custom_total_grn_rejected_qty",
+				read_only=1,
+				allow_on_submit=1,
+			),
 		],
 	}
 	create_custom_fields(custom_fields, update=True)

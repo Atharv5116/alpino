@@ -189,6 +189,44 @@ def _ecom_common_populate(so, customer, order_type, company, items, freebies,
 	_apply_ecom_item_margins(so, items)
 
 
+def _write_back_addresses_to_buyer(so):
+	"""BRD Module 2 §2: a billing/shipping address edited on the e-com SO is
+	stored back into the Buyer Master as a NEW address entry. Deduped against
+	existing rows (normalized text) so repeated orders don't pile up copies."""
+	obm_name = frappe.db.get_value("Buyer Master", {"customer": so.customer}, "name")
+	if not obm_name:
+		return
+
+	def norm(s):
+		return " ".join((s or "").lower().split())
+
+	texts = []
+	for fieldname, is_shipping in (("custom_billing_address_text", 0), ("custom_shipping_address_text", 1)):
+		t = (so.get(fieldname) or "").strip()
+		if t and norm(t) not in [norm(x) for _, x in texts]:
+			texts.append((is_shipping, t))
+	if not texts:
+		return
+
+	obm = frappe.get_doc("Buyer Master", obm_name)
+	existing = {norm(r.address_line) for r in (obm.get("addresses") or [])}
+	changed = False
+	for is_shipping, t in texts:
+		if norm(t) in existing:
+			continue
+		obm.append("addresses", {
+			"address_line": t,
+			"is_shipping": is_shipping,
+			"site_name": (so.get("custom_site_name") or "").strip(),
+		})
+		existing.add(norm(t))
+		changed = True
+	if changed:
+		obm.flags.ignore_permissions = True
+		obm.flags.ignore_mandatory = True
+		obm.save()
+
+
 @frappe.whitelist()
 def create_ecom_sales_order(customer, order_type, company, items, flags=None,
                             po_number=None, po_date=None, po_expiry_date=None,
@@ -218,6 +256,7 @@ def create_ecom_sales_order(customer, order_type, company, items, flags=None,
 	so.insert()
 	if cint(submit_now):
 		so.submit()
+	_write_back_addresses_to_buyer(so)
 	frappe.db.commit()
 	return {"name": so.name, "docstatus": so.docstatus}
 
@@ -253,6 +292,7 @@ def update_ecom_sales_order(name, customer, order_type, company, items, flags=No
 		site_name, billing_address, shipping_address, taxes_and_charges,
 	)
 	so.save()
+	_write_back_addresses_to_buyer(so)
 	frappe.db.commit()
 	return {"name": so.name, "docstatus": so.docstatus}
 
@@ -310,6 +350,28 @@ def get_ecom_so_entry_payload(sales_order):
 		"items": items,
 		"freebies": freebies,
 	}
+
+
+def validate_po_expiry_terminal_lock(doc, method=None):
+	"""PO Expiry Date stays editable after submit (allow_on_submit) but locks the
+	moment the order reaches a terminal status; a changed value must still be
+	on/after the PO Date. Runs on before_update_after_submit (post-submit edits
+	skip the normal validate event)."""
+	before = doc.get_doc_before_save()
+	if not before:
+		return
+	old = str(before.get("custom_po_expiry_date") or "")
+	new = str(doc.get("custom_po_expiry_date") or "")
+	if old == new:
+		return
+	status = doc.get("custom_workflow_status")
+	if status in ("Completed", "Forced Completed", "Cancelled"):
+		frappe.throw(
+			_("PO Expiry Date can no longer be changed — the order is {0}.").format(status),
+			title=_("PO Expiry Locked"),
+		)
+	if new and doc.get("custom_po_date") and getdate(new) < getdate(doc.custom_po_date):
+		frappe.throw(_("Expiry Date must be on or after PO Date."))
 
 
 # ---------------------------------------------------------------------------

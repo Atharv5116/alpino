@@ -44,7 +44,13 @@
   "grn_status",
   "grn_items",
   "summary_section",
-  "fill_rate"
+  "fill_rate",
+  "total_terms",
+  "total_dispatched_qty",
+  "column_break_summary",
+  "total_grn_qty",
+  "total_grn_rejected_qty",
+  "overall_grn_fill_rate"
  ],
  "fields": [
   {
@@ -288,6 +294,42 @@
    "fieldname": "fill_rate",
    "fieldtype": "Percent",
    "label": "Fill Rate (%)",
+   "read_only": 1
+  },
+  {
+   "description": "Count of submitted Delivery Notes on this Sales Order",
+   "fieldname": "total_terms",
+   "fieldtype": "Int",
+   "label": "Total Terms",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_dispatched_qty",
+   "fieldtype": "Float",
+   "label": "Total Dispatched Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_summary",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_grn_qty",
+   "fieldtype": "Float",
+   "label": "Total GRN Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_grn_rejected_qty",
+   "fieldtype": "Float",
+   "label": "Total GRN Rejected Qty",
+   "read_only": 1
+  },
+  {
+   "description": "(Total GRN Qty ÷ Total Dispatched Qty) × 100",
+   "fieldname": "overall_grn_fill_rate",
+   "fieldtype": "Percent",
+   "label": "Overall GRN Fill Rate (%)",
    "read_only": 1
   }
  ],

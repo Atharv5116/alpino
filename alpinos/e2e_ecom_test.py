@@ -354,10 +354,8 @@ def run():
 	dn3 = _mk_dn(pl3)
 	check("forced DN submit -> SO Forced Dispatched",
 		lambda: (so_status(so3) == "Forced Dispatched") or (_ for _ in ()).throw(AssertionError(so_status(so3))))
-	from alpinos.forced_close import confirm_forced_completion
-	confirm_forced_completion(so3)
-	check("confirm -> Forced Completed (terminal)",
-		lambda: (so_status(so3) == "Forced Completed") or (_ for _ in ()).throw(AssertionError(so_status(so3))))
+	# (Sales confirms Forced Completed AFTER post-delivery entry — Feature 5 —
+	# matching the real sequence; the appointment lock forbids the reverse.)
 
 	# Single-PL lock (partial off).
 	so4 = _mk_ecom_so(f, f["cust_single"], f"PO-{tag}-4", [(it1, 10, 100, 10)])
@@ -418,6 +416,43 @@ def run():
 		(frappe.db.get_value("Delivery Note", dn3, "custom_post_delivery_status") == "Completed"
 		 and frappe.db.get_value("Sales Order", so3, "custom_grn_status") == "Completed")
 		or (_ for _ in ()).throw(AssertionError("reflect fields not set"))))
+
+	# SO-level aggregate summary (1 term, 20 dispatched, GRN 18 / rejected 2 -> 90%).
+	check("SO aggregate summary (terms/dispatched/GRN/overall)", lambda: (
+		(lambda d: (flt(d.custom_total_terms) == 1 and flt(d.custom_total_dispatched_qty) == 20
+		            and flt(d.custom_total_grn_qty) == 18 and flt(d.custom_total_grn_rejected_qty) == 2
+		            and abs(flt(d.custom_overall_grn_fill_rate) - 90.0) < 0.01)
+		 or (_ for _ in ()).throw(AssertionError(str(d))))
+		(frappe.db.get_value("Sales Order", so3,
+			["custom_total_terms", "custom_total_dispatched_qty", "custom_total_grn_qty",
+			 "custom_total_grn_rejected_qty", "custom_overall_grn_fill_rate"], as_dict=True))))
+
+	# Sales confirms forced completion (moved after post-delivery entry).
+	from alpinos.forced_close import confirm_forced_completion
+	confirm_forced_completion(so3)
+	check("confirm -> Forced Completed (terminal)",
+		lambda: (so_status(so3) == "Forced Completed") or (_ for _ in ()).throw(AssertionError(so_status(so3))))
+
+	# Appointment ID locks once the SO is terminal.
+	def _appt_after_terminal():
+		p = frappe.get_doc("Post Delivery", pd_name)
+		p.appointment_id = "APT-LOCKED"
+		p.save(ignore_permissions=True)
+	expect_throw("appointment ID locked after terminal status", _appt_after_terminal, "Appointment ID")
+
+	# PO Expiry: locked on a terminal order, editable on an active submitted one.
+	def _expiry_on_terminal():
+		d = frappe.get_doc("Sales Order", so1)
+		d.custom_po_expiry_date = add_days(today(), 30)
+		d.save(ignore_permissions=True)
+	expect_throw("PO expiry locked once order terminal", _expiry_on_terminal, "no longer be changed")
+
+	d4 = frappe.get_doc("Sales Order", so4)
+	d4.custom_po_expiry_date = add_days(today(), 30)
+	d4.save(ignore_permissions=True)
+	check("PO expiry editable while order active (post-submit)", lambda: (
+		(str(frappe.db.get_value("Sales Order", so4, "custom_po_expiry_date")) == add_days(today(), 30))
+		or (_ for _ in ()).throw(AssertionError("expiry not saved"))))
 
 	# ------------------------------------------------------------ Feature 6
 	notif_after = frappe.db.count("Notification Log", {"for_user": f["notify_user"]})
@@ -555,6 +590,19 @@ def run():
 	check("sibling address accepted for the SO", lambda: (
 		(sib and _resolve_address_name(sib["name"], f["cust_partial"]) == sib["name"])
 		or (_ for _ in ()).throw(AssertionError("sibling address did not resolve"))))
+
+	# (c) E-com address write-back: the SO's typed billing/shipping texts were
+	# stored on the buyer as new entries — exactly once despite three e-com SOs
+	# (so1/so3/so6) reusing the same text (dedupe).
+	bm_partial = frappe.get_doc(
+		"Buyer Master", frappe.db.get_value("Buyer Master", {"customer": f["cust_partial"]}, "name")
+	)
+	bill_rows = [r for r in bm_partial.addresses if (r.address_line or "").strip() == "ECOMTEST billing addr"]
+	ship_rows = [r for r in bm_partial.addresses if (r.address_line or "").strip() == "ECOMTEST shipping addr"]
+	check("SO addresses written back to Buyer Master (deduped)", lambda: (
+		(len(bill_rows) == 1 and len(ship_rows) == 1)
+		or (_ for _ in ()).throw(AssertionError(
+			f"billing rows: {len(bill_rows)}, shipping rows: {len(ship_rows)}"))))
 
 	frappe.db.commit()
 

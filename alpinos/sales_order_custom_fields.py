@@ -100,6 +100,9 @@ def setup_sales_order_custom_fields():
 				label="PO Expiry Date",
 				fieldtype="Date",
 				insert_after="po_date",
+				# BRD: editable until the order reaches a terminal status — the
+				# lock is enforced by validate_po_expiry_terminal_lock.
+				allow_on_submit=1,
 			),
 			dict(
 				fieldname="custom_po_no_for_pdf",

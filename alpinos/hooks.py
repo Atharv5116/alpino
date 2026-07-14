@@ -398,6 +398,7 @@ doc_events = {
 		],
 		"on_submit": "alpinos.workflow_engine.sales_order_on_submit",
 		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",
+		"before_update_after_submit": "alpinos.ecom_sales_order_api.validate_po_expiry_terminal_lock",
 	},
 	"Employee Onboarding": {
 		"before_validate": [
