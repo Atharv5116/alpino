@@ -58,6 +58,10 @@ def setup_ecom_sales_order_fields():
 				insert_after="naming_series",
 				read_only=1,
 				in_standard_filter=1,
+				# Default so an order created outside the entry pages (raw form,
+				# API, import) is never channel-less and can't vanish from both
+				# the Offline and E-com lists. The e-com page overrides to "E-com".
+				default="Offline",
 				description="Offline or E-com. Set automatically by the entry page used.",
 			),
 			# ---- E-Commerce / MT classification (flags mirror Buyer Master) -

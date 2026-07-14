@@ -9,8 +9,8 @@ frappe.pages['ecom-sales-order-entry-list'].on_page_load = function (wrapper) {
 };
 
 const ESO_WF_STATUS_OPTIONS =
-	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nWarehouse Approved' +
-	'\nPicking In Progress\nReady For Dispatch\nDelivery Note Created\nDispatched' +
+	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
+	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch\nDelivery Note Created\nDispatched' +
 	'\nPartial Ready For Dispatch\nPartial Delivery Note Created\nPartial Dispatched' +
 	'\nForced Ready For Dispatch\nForced Delivery Note Created\nForced Dispatched' +
 	'\nCompleted\nForced Completed\nCancelled';
@@ -19,12 +19,18 @@ const ESO_WF_COLORS = {
 	Draft: 'gray',
 	'Warehouse Approval Pending': 'orange',
 	'Future Dispatch': 'yellow',
+	"Today's Dispatch": 'purple',
 	'Warehouse Approved': 'blue',
 	'Picking In Progress': 'blue',
+	'Submission Pending': 'orange',
 	'Ready For Dispatch': 'blue',
 	'Delivery Note Created': 'blue',
 	Dispatched: 'green',
+	'Partial Ready For Dispatch': 'blue',
+	'Partial Delivery Note Created': 'blue',
 	'Partial Dispatched': 'purple',
+	'Forced Ready For Dispatch': 'orange',
+	'Forced Delivery Note Created': 'orange',
 	'Forced Dispatched': 'red',
 	Completed: 'green',
 	'Forced Completed': 'red',

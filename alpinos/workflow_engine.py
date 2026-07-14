@@ -359,7 +359,14 @@ def pick_list_on_update(doc, method=None):
 			_notify(lambda: son.n07_sticker_pending(doc))
 		elif status == PL_SUBMISSION_PENDING:
 			_notify(lambda: son.n08_submission_pending(doc))
-	if doc.has_value_changed("custom_assigned_to") and doc.get("custom_assigned_to"):
+	# Assignment notice: only on a real re-assignment of an EXISTING doc.
+	# On insert, has_value_changed() is True (no prior value) and
+	# pick_list_after_insert already fires n06 — guard against the double-send.
+	if (
+		doc.get_doc_before_save()
+		and doc.has_value_changed("custom_assigned_to")
+		and doc.get("custom_assigned_to")
+	):
 		_notify(lambda: son.n06_pl_assigned(doc))
 
 
@@ -437,16 +444,16 @@ def delivery_note_on_submit(doc, method=None):
 		if is_force_closed(so):
 			# Forced chain: dispatch what's picked, order stays locked until Sales confirms.
 			_set_status("Sales Order", so, SO_FORCED_DISPATCHED)
-			_notify(lambda: son.n18_forced_dn_submitted(so))
+			_notify(lambda: son.n18_forced_dn_submitted(so, doc))
 		elif pd.is_partial_order(so):
 			# Auto-complete once cumulative dispatched covers the full order;
 			# otherwise the order stays in the partial chain (no Partial Completed).
 			if pd.so_fully_dispatched(so):
 				_set_status("Sales Order", so, SO_COMPLETED)
-				_notify(lambda: son.n16_auto_completed(so))
+				_notify(lambda: son.n16_auto_completed(so, doc))
 			else:
 				_set_status("Sales Order", so, SO_PARTIAL_DISPATCHED)
-				_notify(lambda: son.n15_partial_dn_submitted(so))
+				_notify(lambda: son.n15_partial_dn_submitted(so, doc))
 		else:
 			_set_status("Sales Order", so, SO_DISPATCHED)
 			_notify(lambda: son.n11_dn_dispatched(doc, so))

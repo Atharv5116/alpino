@@ -170,15 +170,27 @@ def n13_partial_initiated(so, future_date=None):
 		doctype="Sales Order", docname=so, priority="high")
 
 
-def n15_partial_dn_submitted(so):
+def _dispatch_detail(doc):
+	"""' Dispatched via <transporter>, LR/AWB <no>.' — appended so the DN that
+	completes a partial/forced order still carries the shipment tracking info."""
+	if not doc:
+		return ""
+	lr = doc.get("custom_lr_gr_no") or ""
+	transporter = doc.get("custom_transporter_name") or ""
+	if not (lr or transporter):
+		return ""
+	return _(" Dispatched via {0}, LR/AWB {1}.").format(transporter or "—", lr or "—")
+
+
+def n15_partial_dn_submitted(so, doc=None):
 	_send(_role_users(SALES) + _role_users(ECOM_COORD),
-		_("Partial dispatch completed for {0}.").format(so),
+		_("Partial dispatch completed for {0}.").format(so) + _dispatch_detail(doc),
 		doctype="Sales Order", docname=so, priority="medium")
 
 
-def n16_auto_completed(so):
-	_send(_role_users(SALES) + _role_users(WAREHOUSE),
-		_("Sales Order {0} fully fulfilled across all partial terms. Status auto-updated to Completed.").format(so),
+def n16_auto_completed(so, doc=None):
+	_send(_role_users(SALES) + _role_users(WAREHOUSE) + _role_users(ECOM_COORD),
+		_("Sales Order {0} fully fulfilled across all partial terms. Status auto-updated to Completed.").format(so) + _dispatch_detail(doc),
 		doctype="Sales Order", docname=so, priority="medium")
 
 
@@ -188,9 +200,9 @@ def n17_forced_close(so, reason):
 		doctype="Sales Order", docname=so, priority="high")
 
 
-def n18_forced_dn_submitted(so):
+def n18_forced_dn_submitted(so, doc=None):
 	_send(_role_users(SALES) + _role_users(ECOM_COORD),
-		_("Forced dispatch completed for {0}. Order is now closed.").format(so),
+		_("Forced dispatch completed for {0}. Order is now closed.").format(so) + _dispatch_detail(doc),
 		doctype="Sales Order", docname=so, priority="high")
 
 

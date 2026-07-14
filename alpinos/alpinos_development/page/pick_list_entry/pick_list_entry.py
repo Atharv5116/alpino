@@ -279,13 +279,19 @@ def get_pick_list_entry_list(
 		"page_length": page_length
 	}
 
-def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
+def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, remaining_only=0):
 	"""Shared core: insert a Pick List in draft state from SO mapping data + UI edits.
 
 	Items may include client-side split rows (marked is_client_extra=1) that
 	don't exist in the SO mapping — those get appended as fresh locations
 	cloned from their `source_row` mapping. removed_rows is a list of audit
 	entries written to custom_removed_items.
+
+	remaining_only=1 (partial "Create PL for Remaining Qty"): the mapping is
+	refetched with the SAME remaining-qty reduction the UI rendered, so each
+	row's custom_ordered_qty snapshots the remaining qty (not the full SO qty).
+	Without this, a full-remaining pick reads as short vs the full ordered qty
+	and qty_flow wrongly demands a short-pick remark.
 
 	Returns the inserted doc (still docstatus=0). Caller decides whether to submit.
 	"""
@@ -294,7 +300,7 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 	removed_rows = json.loads(removed_rows) if isinstance(removed_rows, str) else (removed_rows or [])
 
 	from alpinos.sales_order_api import get_pick_list_mapping_data
-	mapping_data = get_pick_list_mapping_data(so_name)
+	mapping_data = get_pick_list_mapping_data(so_name, remaining_only=frappe.utils.cint(remaining_only))
 	mapping_by_name = {row.get("name"): row for row in (mapping_data.locations or [])}
 
 	pick_list = frappe.new_doc("Pick List")
@@ -434,7 +440,7 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None):
 
 
 @frappe.whitelist()
-def create_pick_list_as_draft(so_name, header, items, removed_rows=None):
+def create_pick_list_as_draft(so_name, header, items, removed_rows=None, remaining_only=0):
 	"""Persist a Pick List as draft (docstatus=0) and return its name.
 
 	Used by the entry page when the user wants to split/remove rows on a
@@ -442,7 +448,7 @@ def create_pick_list_as_draft(so_name, header, items, removed_rows=None):
 	creation, the page navigates to the new doc and the row-action buttons
 	become available.
 	"""
-	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows)
+	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows, remaining_only)
 	frappe.db.commit()
 	return pick_list.name
 
@@ -450,8 +456,8 @@ def create_pick_list_as_draft(so_name, header, items, removed_rows=None):
 @frappe.whitelist()
 def create_and_submit_pick_list(so_name, header, items, removed_rows=None,
                                 short_pick_action=None, short_pick_reason=None,
-                                future_dispatch_date=None):
-	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows)
+                                future_dispatch_date=None, remaining_only=0):
+	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows, remaining_only)
 	_fill_short_pick_remarks(pick_list, short_pick_reason)
 	pick_list.submit()
 	_apply_short_pick_action(pick_list.name, short_pick_action, short_pick_reason, future_dispatch_date)

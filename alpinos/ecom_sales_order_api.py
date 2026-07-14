@@ -38,6 +38,9 @@ GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}
 @frappe.whitelist()
 def get_ecom_buyer_for_customer(customer):
 	"""Full buyer profile for the e-com entry page: flags, addresses, GSTIN, type."""
+	# Only order creators may look up buyer GSTIN/addresses (avoid RPC data leak).
+	if not frappe.has_permission("Sales Order", "create"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	base = get_offline_buyer_for_customer(customer) or {}
 	obm_name = base.get("offline_buyer_master")
 
@@ -79,6 +82,9 @@ def get_ecom_buyer_for_customer(customer):
 @frappe.whitelist()
 def get_ecom_item_defaults(customer, item_code):
 	"""SKU defaults for an e-com order row: MRP, box factor, GST %, margin, name."""
+	# Buyer-specific pricing — restrict to order creators (avoid RPC price leak).
+	if not frappe.has_permission("Sales Order", "create"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	if not item_code:
 		return {}
 	item = frappe.db.get_value(

@@ -144,6 +144,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				return;
 			}
 			page.so_name = so_name;
+			// Remember the round type so create/draft rebuild the mapping the same
+			// way (custom_ordered_qty must snapshot the remaining qty, not full).
+			page.remaining_only = remaining_only ? 1 : 0;
 			frappe.call({
 				method: 'alpinos.sales_order_api.get_pick_list_mapping_data',
 				args: { sales_order: so_name, remaining_only: remaining_only },
@@ -990,7 +993,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						removed_rows: removed_rows,
 						short_pick_action: extra.short_pick_action || null,
 						short_pick_reason: extra.short_pick_reason || null,
-						future_dispatch_date: extra.future_dispatch_date || null
+						future_dispatch_date: extra.future_dispatch_date || null,
+						remaining_only: page.remaining_only || 0
 					},
 					freeze: true,
 					callback: function(r) {
@@ -1214,7 +1218,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		let removed_rows = page._pending_removals || [];
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_pick_list_as_draft',
-			args: { so_name: page.so_name, header: header_data, items: items, removed_rows: removed_rows },
+			args: { so_name: page.so_name, header: header_data, items: items, removed_rows: removed_rows, remaining_only: page.remaining_only || 0 },
 			freeze: true,
 			freeze_message: __('Saving as draft...'),
 			callback: function(r) {

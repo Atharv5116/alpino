@@ -195,29 +195,38 @@ def _mk_ecom_so(f, cust, po, items_spec):
 	return out["name"]
 
 
-def _mk_pl(so, f, qtys, short_action=None, reason=None, future_date=None, qc_user=None):
-	"""Create+submit a PL via the real page API. qtys: {item_code: qty}."""
+def _mk_pl(so, f, qtys, short_action=None, reason=None, future_date=None, qc_user=None,
+          remaining_only=0):
+	"""Create+submit a PL via the real page API exactly as the UI does. qtys:
+	{item_code: qty}. remaining_only=1 reproduces the 'Create PL for Remaining
+	Qty' round: mapping is fetched + rebuilt with the remaining reduction, and
+	NO short-pick remark is supplied (the row must not read as short vs the
+	remaining ordered qty)."""
 	from alpinos.sales_order_api import get_pick_list_mapping_data
 	from alpinos.alpinos_development.page.pick_list_entry.pick_list_entry import (
 		create_and_submit_pick_list,
 	)
-	mapping = get_pick_list_mapping_data(so)
+	mapping = get_pick_list_mapping_data(so, remaining_only=remaining_only)
 	items = []
 	for loc in mapping["locations"]:
 		it = loc.get("item_code")
 		if it not in qtys:
 			continue
-		items.append({"name": loc.get("name"), "item_code": it, "qty": qtys[it],
-		              "custom_box": 0, "custom_batch_code": "", "batch_no": "",
-		              "custom_mfg_date": "", "custom_expiry_date": "",
-		              "custom_source_table": "Items",
-		              "custom_remark": reason or "ECOMTEST"})
+		row = {"name": loc.get("name"), "item_code": it, "qty": qtys[it],
+		       "custom_box": 0, "custom_batch_code": "", "batch_no": "",
+		       "custom_mfg_date": "", "custom_expiry_date": "",
+		       "custom_source_table": "Items"}
+		# Only stamp a remark when the caller supplies one (short-pick rounds);
+		# leave it blank for a full-remaining pick so the fix is exercised.
+		if reason:
+			row["custom_remark"] = reason
+		items.append(row)
 	header = {"custom_qc_attended_by": qc_user or frappe.db.get_value("User", {"email": ["like", "ecomtest-%"]}, "name") or "Administrator",
 	          "custom_dispatch_date": DISPATCH()}
 	return create_and_submit_pick_list(
 		so_name=so, header=frappe.as_json(header), items=frappe.as_json(items),
 		short_pick_action=short_action, short_pick_reason=reason,
-		future_dispatch_date=future_date,
+		future_dispatch_date=future_date, remaining_only=remaining_only,
 	)
 
 
@@ -345,7 +354,13 @@ def run():
 	expect_throw("cumulative over-dispatch blocked (15 > remaining 10)",
 		lambda: _mk_pl(so1, f, {it1: 15}), "exceed")
 
-	pl2 = _mk_pl(so1, f, {it1: 10}, reason="ECOMTEST round2")
+	# Round 2 = "Create PL for Remaining Qty": full remaining pick, NO remark.
+	# Regression guard for the blocker where the server rebuilt custom_ordered_qty
+	# as the FULL qty and qty_flow then wrongly demanded a short-pick remark.
+	pl2 = _mk_pl(so1, f, {it1: 10}, remaining_only=1)
+	check("remaining-round PL submits without a short-pick remark",
+		lambda: (frappe.db.get_value("Pick List", pl2, "docstatus") == 1)
+		or (_ for _ in ()).throw(AssertionError("remaining PL not submitted")))
 	dn2 = _mk_dn(pl2)
 	check("auto-Complete when cumulative dispatched == ordered",
 		lambda: (so_status(so1) == "Completed") or (_ for _ in ()).throw(AssertionError(so_status(so1))))

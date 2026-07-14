@@ -161,13 +161,15 @@ def _so_ordered_qty(sales_order):
 
 
 def _so_dispatched_qty(sales_order):
-	"""Sum of Delivery Note item qty across all submitted DNs linked to the SO."""
+	"""Sum of Delivery Note item qty across all submitted, non-return DNs linked to
+	the SO. Excludes sales returns so they don't inflate dispatched qty / fill rate
+	(matches partial_dispatch.dispatched_qty_by_sku)."""
 	return flt(frappe.db.sql(
 		"""
 		SELECT SUM(dni.qty)
 		FROM `tabDelivery Note Item` dni
 		INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-		WHERE dn.custom_sales_order_id = %s AND dn.docstatus = 1
+		WHERE dn.custom_sales_order_id = %s AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
 		""",
 		(sales_order,),
 	)[0][0] or 0)
