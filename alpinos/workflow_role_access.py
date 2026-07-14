@@ -103,6 +103,12 @@ def _level_ptypes(level):
 	if level == "SO_CREATE_SUBMIT":
 		# VIEW / CREATE / EDIT / submit — no cancel (E-Commerce Coordinator)
 		return _VIEW | {"write", "create", "submit"}
+	if level == "CREATE_EDIT":
+		# masters (non-submittable): view + create + edit
+		return _VIEW | {"write", "create"}
+	if level == "MASTER_FULL":
+		# masters (non-submittable): full control without submit/cancel/amend
+		return _VIEW | {"write", "create", "delete", "share"}
 	raise ValueError(f"Unknown access level: {level}")
 
 
@@ -148,6 +154,13 @@ PERMISSION_MATRIX = {
 		"E-Commerce Coordinator": "VIEW",
 		"E-Commerce Manager": "VIEW",
 		"E-Commerce Admin": "VIEW",
+	},
+	# BRD Module 1: the E-Commerce roles own the (E-Com) Buyer Master.
+	# Non-ECOM roles keep their read-only access from the supporting-masters list.
+	"Buyer Master": {
+		"E-Commerce Coordinator": "CREATE_EDIT",
+		"E-Commerce Manager": "CREATE_EDIT",
+		"E-Commerce Admin": "MASTER_FULL",
 	},
 }
 

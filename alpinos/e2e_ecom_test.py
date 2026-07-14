@@ -333,6 +333,15 @@ def run():
 		 or (_ for _ in ()).throw(AssertionError(str(r))))
 		(pd.remaining_qty_by_sku(so1))))
 
+	# SO view payload exposes the Remaining column for partial orders.
+	from alpinos.sales_order_api import get_sales_order_entry_view_payload
+	vp = get_sales_order_entry_view_payload(so1)
+	check("view payload exposes Remaining column (partial)", lambda: (
+		(int(vp.get("show_remaining") or 0) == 1
+		 and flt((vp.get("remaining_qty") or {}).get(it1)) == 10)
+		or (_ for _ in ()).throw(AssertionError(
+			f"show={vp.get('show_remaining')} rem={vp.get('remaining_qty')}"))))
+
 	expect_throw("cumulative over-dispatch blocked (15 > remaining 10)",
 		lambda: _mk_pl(so1, f, {it1: 15}), "exceed")
 
@@ -490,6 +499,15 @@ def run():
 		expect_throw("role: ECOM Coordinator blocked from force close",
 			lambda: force_close_sales_order(so6, "Stock Shortage"), "not permitted")
 
+		# ECOM Coordinator can edit the Buyer Master (BRD Module 1 ownership).
+		bm_name = frappe.db.get_value("Buyer Master", {"customer": f["cust_partial"]}, "name")
+		bm_doc = frappe.get_doc("Buyer Master", bm_name)
+		bm_doc.contact_person = "ECOMTEST Person Edited"
+		bm_doc.save()
+		check("role: ECOM Coordinator can edit Buyer Master", lambda: (
+			(frappe.db.get_value("Buyer Master", bm_name, "contact_person") == "ECOMTEST Person Edited")
+			or (_ for _ in ()).throw(AssertionError("edit not saved"))))
+
 		# Sales cannot force close either.
 		frappe.set_user(u_sales)
 		expect_throw("role: Sales blocked from force close",
@@ -603,6 +621,19 @@ def run():
 		(len(bill_rows) == 1 and len(ship_rows) == 1)
 		or (_ for _ in ()).throw(AssertionError(
 			f"billing rows: {len(bill_rows)}, shipping rows: {len(ship_rows)}"))))
+
+	# (d) Buyer Master field validations — enforced on new/changed values only.
+	def _bad_gst():
+		bm = frappe.get_doc("Buyer Master", frappe.db.get_value("Buyer Master", {"customer": f["cust_single"]}, "name"))
+		bm.gst_no = "BADGST123"
+		bm.save(ignore_permissions=True)
+	expect_throw("Buyer Master rejects invalid GSTIN (changed value)", _bad_gst, "GSTIN")
+
+	def _bad_pin():
+		bm = frappe.get_doc("Buyer Master", frappe.db.get_value("Buyer Master", {"customer": f["cust_single"]}, "name"))
+		bm.append("addresses", {"address_line": "PIN test row", "pincode": "12AB3"})
+		bm.save(ignore_permissions=True)
+	expect_throw("Buyer Master rejects invalid PIN on new address row", _bad_pin, "PIN")
 
 	frappe.db.commit()
 

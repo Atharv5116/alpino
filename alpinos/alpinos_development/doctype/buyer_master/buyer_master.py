@@ -112,6 +112,7 @@ class BuyerMaster(Document):
 		self._normalize_addresses()
 		self._validate_primary_address()
 		self._sync_primary_to_flat_fields()
+		self._validate_gstin_and_pincodes()
 
 		if self.is_parent and self.parent_buyer:
 			frappe.throw(_("A record cannot be both a Parent and a Child."), title=_("Relationship Error"))
@@ -127,6 +128,38 @@ class BuyerMaster(Document):
 			)
 
 		_ensure_customer_for_obm(self)
+
+	def _validate_gstin_and_pincodes(self):
+		"""BRD field rules: 15-char GSTIN on gst_no, 6-digit PIN on address rows.
+		Enforced only for NEW or CHANGED values — legacy rows with bad data must
+		not block unrelated saves (margin sync, address write-back, etc.)."""
+		import re
+
+		gstin_re = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
+		before = self.get_doc_before_save()
+
+		new_gst = (self.gst_no or "").strip().upper()
+		old_gst = ((before.get("gst_no") if before else "") or "").strip().upper()
+		if new_gst and new_gst != old_gst:
+			if not gstin_re.match(new_gst):
+				frappe.throw(_("Invalid GSTIN format: {0}").format(new_gst), title=_("GST"))
+			self.gst_no = new_gst
+
+		old_pins = {}
+		if before:
+			for r in before.get("addresses") or []:
+				old_pins[r.get("name")] = (r.get("pincode") or "").strip()
+		for r in self.get("addresses") or []:
+			pin = (r.pincode or "").strip()
+			if not pin:
+				continue
+			if r.name and old_pins.get(r.name) == pin:
+				continue  # unchanged legacy value
+			if not re.fullmatch(r"[1-9][0-9]{5}", pin):
+				frappe.throw(
+					_("Address row #{0}: invalid PIN Code {1} — must be a 6-digit Indian PIN.").format(r.idx, pin),
+					title=_("Address"),
+				)
 
 		if self.payment_term in ("Credit", "Partial"):
 			self.payment_term_days = (self.payment_term_days or "").strip()

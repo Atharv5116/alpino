@@ -615,6 +615,10 @@ class SalesOrderEntryView {
 		const items = Array.isArray(payload.items) ? payload.items : [];
 		w.find('.sec-order-items').show();
 		const tb = w.find('.v-items tbody').empty();
+		// Partial orders: per-SKU Remaining column (outstanding = ordered − committed).
+		const show_remaining = !!cint(payload.show_remaining);
+		const remaining_map = payload.remaining_qty || {};
+		w.find('.v-remaining-th').toggle(show_remaining);
 		if (!items.length) {
 			tb.append(
 				`<tr><td colspan="10" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
@@ -645,12 +649,18 @@ class SalesOrderEntryView {
 							rowCur
 					  )
 					: '—';
+				let remTd = '';
+				if (show_remaining) {
+					const rem = flt(remaining_map[it.item_code] || 0);
+					remTd = `<td class="text-right">${rem > 0 ? `<strong>${rem}</strong>` : '0'}</td>`;
+				}
 				tb.append(`<tr>
 					<td>${i + 1}</td>
 					<td class="text-center">${imgTag}</td>
 					<td>${sku}</td>
 					<td>${nm}</td>
 					<td class="text-right">${qty != null ? qty : '—'}</td>
+					${remTd}
 					<td class="text-right">${box != null ? box : '—'}</td>
 					<td class="text-right">${mrp}</td>
 					<td class="text-right">${sp}</td>

@@ -1370,6 +1370,11 @@ def get_sales_order_entry_view_payload(sales_order):
 	if "custom_additional_units_damage" in permitted_parent:
 		damage = int(doc.get("custom_additional_units_damage") or 0)
 
+	# Partial orders: per-SKU remaining qty for the Remaining column (BRD).
+	from alpinos import partial_dispatch as pd
+	show_remaining = doc.docstatus == 1 and pd.is_partial_order(sales_order)
+	remaining_qty = pd.remaining_qty_by_sku(sales_order) if show_remaining else {}
+
 	return {
 		"parent": parent,
 		"items": items,
@@ -1377,6 +1382,8 @@ def get_sales_order_entry_view_payload(sales_order):
 		"scheme_rows": scheme_rows,
 		"damage_item_rows": damage_item_rows,
 		"additional_units_damage": damage,
+		"show_remaining": int(show_remaining),
+		"remaining_qty": remaining_qty,
 	}
 
 
