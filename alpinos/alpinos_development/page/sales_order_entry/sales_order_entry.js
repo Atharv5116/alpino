@@ -1596,6 +1596,10 @@ class SalesOrderEntry {
 			warehouse: item.warehouse || '',
 			custom_box: item.box,
 			custom_customer_mrp: item.mrp,
+			// Send the entered Selling Price so a direct edit persists — without it the
+			// server recomputes the price from MRP minus discounts and drops the typed
+			// value. Read the live input in case the change event hasn't fired yet.
+			custom_selling_price: flt((item._selling_price_field && item._selling_price_field.get_value()) || item.custom_selling_price || 0),
 			custom_gst_percent: flt(item.gst_percent),
 			custom_flat_discount: item.flat_discount,
 			buyer_margin_percent: item.buyer_margin_percent || item.custom_buyer_margin_percent || 0,
