@@ -481,8 +481,11 @@ class SalesOrderEntryView {
 	}
 
 	sync_from_route() {
+		// Always re-fetch on page show — returning here after an edit lands on the
+		// SAME order name, so a "skip if unchanged" guard would leave stale data on
+		// screen until a manual browser refresh.
 		const so_name = this._resolve_sales_order_name();
-		if (so_name && so_name !== this._so_name) {
+		if (so_name) {
 			this.load_order(so_name);
 		}
 	}
