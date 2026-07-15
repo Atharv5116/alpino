@@ -791,7 +791,9 @@ class SalesOrderEntry {
 		qty_field.$input.on('change', function() {
 			me.items[idx].qty = flt(qty_field.get_value());
 			me.calc_box_from_qty(idx, $row);
-			me.calc_row_amount(idx, $row);
+			// Preserve the unit Selling Price (a qty change must not rederive it
+			// from MRP minus discounts and wipe a manual override).
+			me.calc_row_amount(idx, $row, true);
 		});
 		row_data._qty_field = qty_field;
 
@@ -806,7 +808,8 @@ class SalesOrderEntry {
 		box_field.$input.on('change', function() {
 			me.items[idx].box = flt(box_field.get_value());
 			me.calc_qty_from_box(idx, $row);
-			me.calc_row_amount(idx, $row);
+			// Preserve the unit Selling Price (box drives qty, not the unit price).
+			me.calc_row_amount(idx, $row, true);
 		});
 		row_data._box_field = box_field;
 
@@ -885,7 +888,9 @@ class SalesOrderEntry {
 		add_disc_field.$input && add_disc_field.$input.css('width', '46px');
 		add_disc_field.$input.on('change', function() {
 			me.items[idx].additional_discount = flt(add_disc_field.get_value());
-			me.calc_row_amount(idx, $row);
+			// Additional discount applies on top of the current Selling Price; it
+			// must not rederive (and reset) that price from MRP minus flat/offer.
+			me.calc_row_amount(idx, $row, true);
 		});
 		row_data._add_disc_field = add_disc_field;
 
