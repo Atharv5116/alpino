@@ -76,6 +76,60 @@ class EcomSalesOrderListPage {
 		}
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
 		this.page.add_inner_button(__('Offline Orders'), () => frappe.set_route('sales-order-entry-list'));
+		if (frappe.model.can_create('Sales Order')) {
+			this.page.add_inner_button(__('Download Template'), () => {
+				window.open('/api/method/alpinos.ecom_sales_order_import.download_ecom_import_template');
+			}, __('Import'));
+			this.page.add_inner_button(__('Import Excel'), () => this.open_import_dialog(), __('Import'));
+		}
+	}
+
+	open_import_dialog() {
+		const me = this;
+		const d = new frappe.ui.Dialog({
+			title: __('Import E-Com Sales Orders'),
+			fields: [
+				{
+					fieldtype: 'HTML',
+					options: `<p class="text-muted">${__(
+						'One row per SKU line; rows are grouped into an order by PO Number. Use Download Template for the columns. Each order is validated and created individually — failures are reported and skip only that order.'
+					)}</p>`,
+				},
+				{ fieldtype: 'Attach', fieldname: 'file', label: __('Excel / CSV File'), reqd: 1 },
+			],
+			primary_action_label: __('Import'),
+			primary_action(v) {
+				if (!v.file) return;
+				frappe.call({
+					method: 'alpinos.ecom_sales_order_import.import_ecom_sales_orders',
+					args: { file_url: v.file },
+					freeze: true,
+					freeze_message: __('Importing orders...'),
+					callback(r) {
+						const m = r.message || {};
+						d.hide();
+						me.show_import_summary(m);
+						me.load_list();
+					},
+				});
+			},
+		});
+		d.show();
+	}
+
+	show_import_summary(m) {
+		const created = m.created || [];
+		const errors = m.errors || [];
+		const esc = (s) => frappe.utils.escape_html(String(s == null ? '' : s));
+		let html = `<p><b>${created.length}</b> ${__('order(s) created')}, <b>${errors.length}</b> ${__('failed')} (${__('of')} ${cint(m.total_orders)}).</p>`;
+		if (created.length) {
+			html += '<ul>' + created.map((c) => `<li>${esc(c.po_number)} → <b>${esc(c.sales_order)}</b></li>`).join('') + '</ul>';
+		}
+		if (errors.length) {
+			html += `<p class="text-danger"><b>${__('Errors')}:</b></p><ul>` +
+				errors.map((e) => `<li>${esc(e.po_number)} (${esc(e.customer)}): ${esc(e.error)}</li>`).join('') + '</ul>';
+		}
+		frappe.msgprint({ title: __('Import Result'), message: html, indicator: errors.length ? 'orange' : 'green' });
 	}
 
 	setup_filters() {

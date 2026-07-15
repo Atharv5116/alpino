@@ -637,6 +637,23 @@ def run():
 		or (_ for _ in ()).throw(AssertionError(
 			f"billing rows: {len(bill_rows)}, shipping rows: {len(ship_rows)}"))))
 
+	# (e) Excel/CSV import: one order, two SKU lines, grouped by PO Number.
+	from alpinos.ecom_sales_order_import import _orders_from_rows
+	imp_rows = [
+		{"Customer": f["cust_partial"], "PO Number": f"PO-{tag}-IMP", "PO Date": today(),
+		 "Dispatch Date": DISPATCH(), "Billing Address": "Imp billing", "Shipping Address": "Imp shipping",
+		 "Appointment Required": "Yes", "GRN Available": "Yes", "Partial Order Allowed": "Yes",
+		 "SKU": it1, "Qty": 5, "MRP": 100, "Margin %": 10},
+		{"Customer": f["cust_partial"], "PO Number": f"PO-{tag}-IMP",
+		 "SKU": it2, "Qty": 4, "MRP": 50, "Margin %": 20},
+	]
+	imp_res = _orders_from_rows(imp_rows)
+	check("Excel import creates the order with both lines", lambda: (
+		(len(imp_res["created"]) == 1 and not imp_res["errors"]
+		 and frappe.db.get_value("Sales Order", imp_res["created"][0]["sales_order"], "custom_channel") == "E-com"
+		 and len(frappe.get_doc("Sales Order", imp_res["created"][0]["sales_order"]).items) == 2)
+		or (_ for _ in ()).throw(AssertionError(frappe.as_json(imp_res)))))
+
 	# (d) Buyer Master field validations — enforced on new/changed values only.
 	def _bad_gst():
 		bm = frappe.get_doc("Buyer Master", frappe.db.get_value("Buyer Master", {"customer": f["cust_single"]}, "name"))
