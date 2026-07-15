@@ -29,12 +29,14 @@
 }
 .sales-order-entry .items-table,
 .sales-order-entry .freebies-table,
-.sales-order-entry .scheme-table {
+.sales-order-entry .scheme-table,
+.sales-order-entry .additional-units-table {
 	overflow: visible !important;
 }
 .sales-order-entry .items-table td,
 .sales-order-entry .freebies-table td,
-.sales-order-entry .scheme-table td {
+.sales-order-entry .scheme-table td,
+.sales-order-entry .additional-units-table td {
 	overflow: visible !important;
 	position: relative;
 }
@@ -139,39 +141,35 @@
 	<!-- Other Details -->
 	<div class="other-details-section eso-card">
 		<h6 class="eso-card-title">Marketing Freebies</h6>
-		<div style="overflow-x: auto;">
-			<table class="table table-bordered freebies-table so-table">
-				<thead>
-					<tr>
-						<th style="min-width: 140px;">Item</th>
-						<th>Item Name</th>
-						<th style="width: 80px;">Qty</th>
-						<th>Remarks</th>
-						<th style="width: 40px;"></th>
-					</tr>
-				</thead>
-				<tbody></tbody>
-			</table>
-		</div>
+		<table class="table table-bordered freebies-table so-table">
+			<thead>
+				<tr>
+					<th style="min-width: 140px;">Item</th>
+					<th>Item Name</th>
+					<th style="width: 80px;">Qty</th>
+					<th>Remarks</th>
+					<th style="width: 40px;"></th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
 		<button class="btn btn-sm btn-light btn-add-freebie" style="margin-top: 8px;">
 			<i class="fa fa-plus"></i> Add Freebie
 		</button>
 
 		<h6 class="eso-subtitle">Scheme Item Table</h6>
-		<div style="overflow-x: auto;">
-			<table class="table table-bordered scheme-table so-table">
-				<thead>
-					<tr>
-						<th style="min-width: 140px;">SKU</th>
-						<th>SKU Name</th>
-						<th style="width: 80px;">Qty</th>
-						<th>Scheme</th>
-						<th style="width: 40px;"></th>
-					</tr>
-				</thead>
-				<tbody></tbody>
-			</table>
-		</div>
+		<table class="table table-bordered scheme-table so-table">
+			<thead>
+				<tr>
+					<th style="min-width: 140px;">SKU</th>
+					<th>SKU Name</th>
+					<th style="width: 80px;">Qty</th>
+					<th>Scheme</th>
+					<th style="width: 40px;"></th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
 		<button class="btn btn-sm btn-light btn-add-scheme" style="margin-top: 8px;">
 			<i class="fa fa-plus"></i> Add Scheme Item
 		</button>
@@ -180,21 +178,19 @@
 
 		<div class="additional-units-section" style="margin-top: 12px; display: none;">
 			<h6 class="eso-subtitle">Additional Units - Damage Items</h6>
-			<div style="overflow-x: auto;">
-				<table class="table table-bordered additional-units-table so-table">
-					<thead>
-						<tr>
-							<th style="min-width: 140px;">SKU</th>
-							<th>SKU Name</th>
-							<th style="width: 80px;">Qty</th>
-							<th>Previous Order No / ID</th>
-							<th style="min-width: 120px;">Remark</th>
-							<th style="width: 40px;"></th>
-						</tr>
-					</thead>
-					<tbody></tbody>
-				</table>
-			</div>
+			<table class="table table-bordered additional-units-table so-table">
+				<thead>
+					<tr>
+						<th style="min-width: 140px;">SKU</th>
+						<th>SKU Name</th>
+						<th style="width: 80px;">Qty</th>
+						<th>Previous Order No / ID</th>
+						<th style="min-width: 120px;">Remark</th>
+						<th style="width: 40px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
 			<button class="btn btn-sm btn-light btn-add-additional-units" style="margin-top: 8px;">
 				<i class="fa fa-plus"></i> Add Additional Unit
 			</button>

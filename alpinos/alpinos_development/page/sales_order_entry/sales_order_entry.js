@@ -171,14 +171,15 @@ class SalesOrderEntry {
 			else {
 				rows.forEach((it) => me.add_item_row(it));
 				rows.forEach((it, idx) => {
-					me.items[idx].rate = flt(it.rate);
-					me.items[idx].amount = flt(it.amount);
-					me.items[idx].custom_item_tax = flt(it.custom_item_tax);
 					me.items[idx].description = it.description || '';
 					me.items[idx].warehouse = it.warehouse || '';
 					me.items[idx].delivery_date = it.delivery_date || d.delivery_date || '';
 					const $r = me.wrapper.find('.items-table tbody tr').eq(idx);
-					$r.find('.item-amount').text(format_currency(me.items[idx].amount));
+					// Recompute taxable/GST/amount from the row inputs exactly like a manual
+					// edit does, so the totals (incl. the excl-GST "Total Amount") are correct
+					// on load — otherwise taxable_amount stays 0 and the total reads 0 until
+					// the user tweaks a price/discount.
+					me.calc_row_amount(idx, $r, true);
 					if (it.item_name) {
 						$r.find('.item-name-text').text(it.item_name).removeClass('text-muted');
 					}
@@ -933,6 +934,23 @@ class SalesOrderEntry {
 
 	on_item_select(idx, item_code, $row) {
 		let me = this;
+
+		// The same SKU must not appear on more than one line — flag it and clear the row.
+		const dup = me.items.some((it, i) => i !== idx && it && it.item_code === item_code);
+		if (dup) {
+			frappe.msgprint({
+				title: __('Duplicate SKU'),
+				message: __('SKU {0} is already in the item table. Update its quantity on the existing row instead of adding it again.', [item_code]),
+				indicator: 'orange',
+			});
+			me.items[idx].item_code = '';
+			if (me.items[idx]._sku_field) me.items[idx]._sku_field.set_value('');
+			$row.find('.item-name-text').text('-').addClass('text-muted');
+			me._set_row_image($row, '');
+			me.items[idx].item_name = '';
+			return;
+		}
+
 		let customer = this.customer_field.get_value();
 
 		// Fetch item name + image + GST %

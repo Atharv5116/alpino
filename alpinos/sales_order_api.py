@@ -920,6 +920,18 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 		int(cint(additional_units_damage)),
 	)
 
+	# The same SKU must not appear on more than one order line.
+	_seen_item_codes = set()
+	for item in items:
+		ic = item.get("item_code")
+		if not ic:
+			continue
+		if ic in _seen_item_codes:
+			frappe.throw(
+				_("SKU {0} appears more than once in the item table. Please combine the quantity onto a single line.").format(ic)
+			)
+		_seen_item_codes.add(ic)
+
 	for item in items:
 		item_code = item.get("item_code")
 		qty = flt(item.get("qty"))

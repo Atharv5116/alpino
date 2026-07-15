@@ -643,7 +643,7 @@ class SalesOrderEntryView {
 		w.find('.v-remaining-th').toggle(show_remaining);
 		if (!items.length) {
 			tb.append(
-				`<tr><td colspan="10" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
+				`<tr><td colspan="14" class="text-muted text-center">${__('No line items on this order.')}</td></tr>`
 			);
 		} else {
 			items.forEach((it, i) => {
@@ -665,6 +665,9 @@ class SalesOrderEntryView {
 				const fd = this._has(it, 'custom_flat_discount') ? flt(it.custom_flat_discount) : null;
 				const of = this._has(it, 'custom_offer') ? flt(it.custom_offer) : null;
 				const ad = this._has(it, 'custom_additional_discount') ? flt(it.custom_additional_discount) : null;
+				const rmk = this._has(it, 'custom_remarks') && String(it.custom_remarks).trim() !== ''
+					? this._esc(it.custom_remarks)
+					: '—';
 				const amt = this._has(it, 'amount')
 					? format_currency(
 							flt(it.amount) + flt(it.custom_item_tax || 0),
@@ -689,6 +692,7 @@ class SalesOrderEntryView {
 					<td class="text-right">${fd != null ? fd : '—'}</td>
 					<td class="text-right">${of != null ? of : '—'}</td>
 					<td class="text-right">${ad != null ? ad : '—'}</td>
+					<td>${rmk}</td>
 					<td class="text-right"><strong>${amt}</strong></td>
 				</tr>`);
 			});
@@ -752,9 +756,14 @@ class SalesOrderEntryView {
 			w.find('.sec-damage-items').hide();
 		}
 
-		if (this._has(p, 'custom_cash_discount')) {
+		const cashPct = flt(p.custom_cash_discount);
+		const cashAmt = flt(p.custom_cash_discount_amount);
+		// Only surface cash discount when one was actually applied.
+		if (cashPct > 0) {
 			w.find('.sec-cash-disc').show();
-			w.find('.v-cash-disc-pct').text(`${flt(p.custom_cash_discount)}%`);
+			w.find('.v-cash-disc-pct').text(
+				cashAmt > 0 ? `${cashPct}%  (- ${format_currency(cashAmt, currency)})` : `${cashPct}%`
+			);
 		} else {
 			w.find('.sec-cash-disc').hide();
 		}
@@ -764,7 +773,13 @@ class SalesOrderEntryView {
 			w.find('.sec-grand').show();
 			w.find('.v-total-qty').text(this._has(p, 'total_qty') ? String(flt(p.total_qty)) : '—');
 			w.find('.v-total-amount').text(this._fmt_num(p, 'total', true));
-			w.find('.v-grand-cash-pct').text(this._has(p, 'custom_cash_discount') ? `${flt(p.custom_cash_discount)}%` : '—');
+			if (cashPct > 0) {
+				w.find('.v-grand-cash-row').show();
+				w.find('.v-grand-cash-pct').text(`${cashPct}%`);
+				w.find('.v-grand-cash-amt').text(cashAmt > 0 ? `(- ${format_currency(cashAmt, currency)})` : '');
+			} else {
+				w.find('.v-grand-cash-row').hide();
+			}
 			w.find('.v-grand-total').html(`<strong>${this._fmt_num(p, 'grand_total', true)}</strong>`);
 		} else {
 			w.find('.sec-grand').hide();
