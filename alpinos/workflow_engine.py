@@ -255,12 +255,11 @@ def sales_order_validate(doc, method=None):
 
 
 def sales_order_on_submit(doc, method=None):
-	# Date-driven: an order already due today (dispatch date <= today) shows as
-	# Today's Dispatch; otherwise it waits in the warehouse queue until its
-	# dispatch date arrives (the daily job flips it then).
-	dd = doc.get("custom_dispatch_date")
-	status = SO_TODAYS_DISPATCH if (dd and getdate(dd) <= getdate(today())) else SO_WAREHOUSE_PENDING
-	doc.db_set("custom_workflow_status", status, update_modified=False)
+	# "Send for Warehouse Approval" always lands in Warehouse Approval Pending —
+	# the approval stage must never be skipped. The date-driven Today's Dispatch
+	# transition happens afterwards via refresh_todays_dispatch (the daily job
+	# flips due-today orders forward), so it's the stage after, not instead.
+	doc.db_set("custom_workflow_status", SO_WAREHOUSE_PENDING, update_modified=False)
 	from alpinos import so_notifications as son
 	_notify(lambda: son.n01_so_submitted(doc))
 

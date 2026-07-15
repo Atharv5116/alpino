@@ -995,7 +995,6 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 			{
 				"item_code": ic,
 				"item_name": iname,
-				"custom_selling_price": flt(freebie.get("custom_selling_price") or freebie.get("selling_price") or 0),
 				"qty": flt(freebie.get("qty")),
 				"remarks": freebie.get("remarks") or "",
 			},
@@ -1013,7 +1012,6 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 			{
 				"item_code": ic,
 				"item_name": iname,
-				"custom_selling_price": flt(scheme.get("custom_selling_price") or scheme.get("selling_price") or 0),
 				"qty": flt(scheme.get("qty")),
 				"scheme": sch_txt,
 			},
@@ -1032,7 +1030,6 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 				{
 					"item_code": ic,
 					"item_name": iname,
-					"custom_selling_price": flt(row.get("custom_selling_price") or row.get("selling_price") or 0),
 					"qty": flt(row.get("qty")),
 					"previous_order_id": row.get("previous_order_id") or "",
 					"remarks": row.get("remarks") or "",
@@ -1167,7 +1164,6 @@ def get_so_entry_payload(sales_order):
 		{
 			"item_code": r.item_code,
 			"item_name": r.get("item_name") or "",
-			"custom_selling_price": flt(r.get("custom_selling_price")),
 			"qty": flt(r.qty),
 			"remarks": r.get("remarks") or "",
 		}
@@ -1178,7 +1174,6 @@ def get_so_entry_payload(sales_order):
 		{
 			"item_code": r.item_code,
 			"item_name": r.get("item_name") or "",
-			"custom_selling_price": flt(r.get("custom_selling_price")),
 			"qty": flt(r.qty),
 			"scheme": r.get("scheme") or "",
 		}
@@ -1189,7 +1184,6 @@ def get_so_entry_payload(sales_order):
 		{
 			"item_code": r.item_code,
 			"item_name": r.get("item_name") or "",
-			"custom_selling_price": flt(r.get("custom_selling_price")),
 			"qty": flt(r.qty),
 			"previous_order_id": r.get("previous_order_id") or "",
 			"remarks": r.get("remarks") or "",
@@ -1342,7 +1336,7 @@ def get_sales_order_entry_view_payload(sales_order):
 	if not scheme_rows and frappe.db.has_table("Sales Order Scheme Item"):
 		raw_scheme = frappe.db.sql(
 			"""
-			SELECT item_code, item_name, custom_selling_price, qty, scheme
+			SELECT item_code, item_name, qty, scheme
 			FROM `tabSales Order Scheme Item`
 			WHERE parent=%s
 				AND parenttype='Sales Order'

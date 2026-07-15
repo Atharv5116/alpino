@@ -1233,7 +1233,7 @@ class SalesOrderEntry {
 
 	add_freebie_row(data) {
 		let idx = this.freebies.length;
-		let row_data = data || { item_code: '', item_name: '', custom_selling_price: 0, qty: 0, remarks: '' };
+		let row_data = data || { item_code: '', item_name: '', qty: 0, remarks: '' };
 		this.freebies.push(row_data);
 
 		let $tbody = this.wrapper.find('.freebies-table tbody');
@@ -1241,7 +1241,6 @@ class SalesOrderEntry {
 			<tr data-idx="${idx}">
 				<td class="freebie-item"></td>
 				<td class="freebie-name"><span class="text-muted">-</span></td>
-				<td class="freebie-selling-price"></td>
 				<td class="freebie-qty"></td>
 				<td class="freebie-remarks"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-freebie"><i class="fa fa-trash"></i></button></td>
@@ -1251,15 +1250,6 @@ class SalesOrderEntry {
 		let me = this;
 
 		let item_field = this._make_item_link_field($row.find('.freebie-item'), `freebie_item_${idx}`, 'nonTemplates');
-		let selling_price_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Currency', fieldname: `freebie_selling_price_${idx}`, read_only: 1 },
-			parent: $row.find('.freebie-selling-price'),
-			render_input: true,
-			only_input: true
-		});
-		selling_price_field.$input && selling_price_field.$input.css('width', '90px');
-		selling_price_field.$input && selling_price_field.$input.prop('readonly', true);
-		row_data._selling_price_field = selling_price_field;
 
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
@@ -1277,8 +1267,6 @@ class SalesOrderEntry {
 			me.freebies[idx].item_code = val || '';
 			if (!val) {
 				me.freebies[idx].item_name = '';
-				me.freebies[idx].custom_selling_price = 0;
-				if (selling_price_field) selling_price_field.set_value(0);
 				$row.find('.freebie-name span').text('-').addClass('text-muted');
 				return;
 			}
@@ -1289,35 +1277,6 @@ class SalesOrderEntry {
 					$row.find('.freebie-name span').text(nm).removeClass('text-muted');
 				}
 			});
-			// Fetch Selling Price for Freebie
-			let customer = me.customer_field.get_value();
-			if (customer) {
-				frappe.call({
-					method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_item_rate',
-					args: { customer: customer, item_code: val },
-					callback: function(r) {
-						let sp = 0;
-						if (r.message) {
-							sp = flt(r.message.rate || r.message.mrp);
-						} else {
-							frappe.db.get_value('Item', val, 'valuation_rate', function(ir) {
-								sp = flt(ir && ir.valuation_rate);
-								me.freebies[idx].custom_selling_price = sp;
-								if (selling_price_field) selling_price_field.set_value(sp);
-							});
-							return;
-						}
-						me.freebies[idx].custom_selling_price = sp;
-						if (selling_price_field) selling_price_field.set_value(sp);
-					}
-				});
-			} else {
-				frappe.db.get_value('Item', val, 'valuation_rate', function(ir) {
-					let sp = flt(ir && ir.valuation_rate);
-					me.freebies[idx].custom_selling_price = sp;
-					if (selling_price_field) selling_price_field.set_value(sp);
-				});
-			}
 		});
 
 		let qty_field = frappe.ui.form.make_control({
@@ -1360,7 +1319,7 @@ class SalesOrderEntry {
 
 	add_scheme_row(data) {
 		let idx = this.scheme_items.length;
-		let row_data = data || { item_code: '', item_name: '', custom_selling_price: 0, qty: 0, scheme: '' };
+		let row_data = data || { item_code: '', item_name: '', qty: 0, scheme: '' };
 		this.scheme_items.push(row_data);
 
 		let $tbody = this.wrapper.find('.scheme-table tbody');
@@ -1368,7 +1327,6 @@ class SalesOrderEntry {
 			<tr data-idx="${idx}">
 				<td class="scheme-item"></td>
 				<td class="scheme-name"><span class="text-muted">-</span></td>
-				<td class="scheme-selling-price"></td>
 				<td class="scheme-qty"></td>
 				<td class="scheme-scheme"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-scheme"><i class="fa fa-trash"></i></button></td>
@@ -1378,23 +1336,12 @@ class SalesOrderEntry {
 		let me = this;
 
 		let item_field = this._make_item_link_field($row.find('.scheme-item'), `scheme_item_${idx}`, 'nonTemplates');
-		let selling_price_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Currency', fieldname: `scheme_selling_price_${idx}`, read_only: 1 },
-			parent: $row.find('.scheme-selling-price'),
-			render_input: true,
-			only_input: true
-		});
-		selling_price_field.$input && selling_price_field.$input.css('width', '90px');
-		selling_price_field.$input && selling_price_field.$input.prop('readonly', true);
-		row_data._selling_price_field = selling_price_field;
 
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.scheme_items[idx].item_code = val || '';
 			if (!val) {
 				me.scheme_items[idx].item_name = '';
-				me.scheme_items[idx].custom_selling_price = 0;
-				if (selling_price_field) selling_price_field.set_value(0);
 				$row.find('.scheme-name span').text('-').addClass('text-muted');
 				return;
 			}
@@ -1405,35 +1352,6 @@ class SalesOrderEntry {
 					$row.find('.scheme-name span').text(nm).removeClass('text-muted');
 				}
 			});
-			// Fetch Selling Price for Scheme Item
-			let customer = me.customer_field.get_value();
-			if (customer) {
-				frappe.call({
-					method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_item_rate',
-					args: { customer: customer, item_code: val },
-					callback: function(r) {
-						let sp = 0;
-						if (r.message) {
-							sp = flt(r.message.rate || r.message.mrp);
-						} else {
-							frappe.db.get_value('Item', val, 'valuation_rate', function(ir) {
-								sp = flt(ir && ir.valuation_rate);
-								me.scheme_items[idx].custom_selling_price = sp;
-								if (selling_price_field) selling_price_field.set_value(sp);
-							});
-							return;
-						}
-						me.scheme_items[idx].custom_selling_price = sp;
-						if (selling_price_field) selling_price_field.set_value(sp);
-					}
-				});
-			} else {
-				frappe.db.get_value('Item', val, 'valuation_rate', function(ir) {
-					let sp = flt(ir && ir.valuation_rate);
-					me.scheme_items[idx].custom_selling_price = sp;
-					if (selling_price_field) selling_price_field.set_value(sp);
-				});
-			}
 		});
 
 		let qty_field = frappe.ui.form.make_control({
@@ -1480,7 +1398,6 @@ class SalesOrderEntry {
 			{
 				item_code: '',
 				item_name: '',
-				custom_selling_price: 0,
 				qty: 0,
 				previous_order_id: '',
 				remarks: ''
@@ -1494,7 +1411,6 @@ class SalesOrderEntry {
 			<tr data-idx="${idx}">
 				<td class="au-item"></td>
 				<td class="au-name"><span class="text-muted">-</span></td>
-				<td class="au-selling-price"></td>
 				<td class="au-qty"></td>
 				<td class="au-prev-order"></td>
 				<td class="au-remarks"></td>
@@ -1505,23 +1421,12 @@ class SalesOrderEntry {
 		let me = this;
 
 		let item_field = this._make_item_link_field($row.find('.au-item'), `au_item_${idx}`, 'variants');
-		let selling_price_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Currency', fieldname: `au_selling_price_${idx}`, read_only: 1 },
-			parent: $row.find('.au-selling-price'),
-			render_input: true,
-			only_input: true
-		});
-		selling_price_field.$input && selling_price_field.$input.css('width', '90px');
-		selling_price_field.$input && selling_price_field.$input.prop('readonly', true);
-		row_data._selling_price_field = selling_price_field;
 
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
 			me.additional_units_items[idx].item_code = val || '';
 			if (!val) {
 				me.additional_units_items[idx].item_name = '';
-				me.additional_units_items[idx].custom_selling_price = 0;
-				if (selling_price_field) selling_price_field.set_value(0);
 				$row.find('.au-name span').text('-').addClass('text-muted');
 				return;
 			}
@@ -1532,35 +1437,6 @@ class SalesOrderEntry {
 					$row.find('.au-name span').text(nm).removeClass('text-muted');
 				}
 			});
-			// Fetch Selling Price for Additional Units Item
-			let customer = me.customer_field.get_value();
-			if (customer) {
-				frappe.call({
-					method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_item_rate',
-					args: { customer: customer, item_code: val },
-					callback: function(r) {
-						let sp = 0;
-						if (r.message) {
-							sp = flt(r.message.rate || r.message.mrp);
-						} else {
-							frappe.db.get_value('Item', val, 'valuation_rate', function(ir) {
-								sp = flt(ir && ir.valuation_rate);
-								me.additional_units_items[idx].custom_selling_price = sp;
-								if (selling_price_field) selling_price_field.set_value(sp);
-							});
-							return;
-						}
-						me.additional_units_items[idx].custom_selling_price = sp;
-						if (selling_price_field) selling_price_field.set_value(sp);
-					}
-				});
-			} else {
-				frappe.db.get_value('Item', val, 'valuation_rate', function(ir) {
-					let sp = flt(ir && ir.valuation_rate);
-					me.additional_units_items[idx].custom_selling_price = sp;
-					if (selling_price_field) selling_price_field.set_value(sp);
-				});
-			}
 		});
 
 		let qty_field = frappe.ui.form.make_control({

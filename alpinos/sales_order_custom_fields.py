@@ -310,33 +310,10 @@ def setup_sales_order_custom_fields():
 				description="Auto-calculated or editable tax amount per item.",
 			),
 		],
-		"Sales Order Marketing Freebie": [
-			dict(
-				fieldname="custom_selling_price",
-				label="Selling Price",
-				fieldtype="Currency",
-				insert_after="item_name",
-				read_only=1,
-			),
-		],
-		"Sales Order Scheme Item": [
-			dict(
-				fieldname="custom_selling_price",
-				label="Selling Price",
-				fieldtype="Currency",
-				insert_after="item_name",
-				read_only=1,
-			),
-		],
-		"Sales Order Additional Units Item": [
-			dict(
-				fieldname="custom_selling_price",
-				label="Selling Price",
-				fieldtype="Currency",
-				insert_after="item_name",
-				read_only=1,
-			),
-		],
+		# Selling Price removed from the Marketing Freebie / Scheme Item /
+		# Additional Units Item child tables (deleted in
+		# _delete_obsolete_sales_order_custom_fields). The main Order Items table
+		# keeps its Selling Price.
 	}
 
 	create_custom_fields(custom_fields, update=True)
@@ -538,6 +515,10 @@ def _delete_obsolete_sales_order_custom_fields():
 	"""Drop legacy fields that duplicated standard behaviour (safe if missing)."""
 	obsolete = [
 		("Sales Order Item", "custom_item_mrp"),
+		# Selling Price removed from these three child tables (kept on Order Items).
+		("Sales Order Marketing Freebie", "custom_selling_price"),
+		("Sales Order Scheme Item", "custom_selling_price"),
+		("Sales Order Additional Units Item", "custom_selling_price"),
 	]
 	for doctype, fieldname in obsolete:
 		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")
