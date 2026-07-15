@@ -65,12 +65,24 @@
 	margin-bottom: 8px;
 }
 .sales-order-entry .so-table {
-	font-size: 13px;
+	font-size: 12px;
 	margin-bottom: 0;
 }
 .sales-order-entry .so-table thead th {
 	background: var(--bg-color);
 	white-space: nowrap;
+}
+/* Compact the wide 15-column items table so every column (incl. Amount) stays
+   inside the card without a horizontal scroll — Bootstrap's default 24px/cell
+   padding alone pushes the table past the card edge. */
+.sales-order-entry .items-table th,
+.sales-order-entry .items-table td {
+	padding: 4px 5px;
+	vertical-align: middle;
+}
+.sales-order-entry .items-table .control-value,
+.sales-order-entry .items-table input {
+	font-size: 12px;
 }
 </style>
 <div class="sales-order-entry" style="max-width: 1200px; margin: 0 auto; padding: 12px;">
@@ -113,21 +125,21 @@
 			<table class="table table-bordered items-table so-table">
 				<thead>
 					<tr>
-						<th style="width: 36px;">#</th>
-						<th style="width: 56px;">Product Image</th>
-						<th style="min-width: 124px;">SKU</th>
-						<th style="min-width: 96px;">SKU Name</th>
-						<th style="width: 62px;">Qty</th>
-						<th style="width: 62px;">Box</th>
-						<th style="width: 86px;">MRP</th>
-						<th style="width: 88px;">Selling Price</th>
-						<th style="width: 64px;">GST %</th>
-						<th style="width: 76px;">Flat Disc. %</th>
-						<th style="width: 76px;">Offer %</th>
-						<th style="width: 78px;">Add. Disc. %</th>
-						<th style="min-width: 110px;">Remarks</th>
-						<th style="width: 90px;">Amount</th>
-						<th style="width: 36px;"></th>
+						<th style="width: 28px;">#</th>
+						<th style="width: 44px;">Image</th>
+						<th style="min-width: 92px;">SKU</th>
+						<th style="min-width: 84px;">SKU Name</th>
+						<th style="width: 50px;">Qty</th>
+						<th style="width: 50px;">Box</th>
+						<th style="width: 62px;">MRP</th>
+						<th style="width: 66px;">Sell Price</th>
+						<th style="width: 44px;">GST %</th>
+						<th style="width: 54px;">Flat %</th>
+						<th style="width: 54px;">Offer %</th>
+						<th style="width: 56px;">Add %</th>
+						<th style="min-width: 82px;">Remarks</th>
+						<th style="width: 74px;">Amount</th>
+						<th style="width: 30px;"></th>
 					</tr>
 				</thead>
 				<tbody></tbody>

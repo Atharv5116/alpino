@@ -171,15 +171,25 @@ class SalesOrderEntry {
 			else {
 				rows.forEach((it) => me.add_item_row(it));
 				rows.forEach((it, idx) => {
+					// The stored line `amount`/`rate` are NET of item-GST (ERPNext
+					// convention); the item-GST lives in custom_item_tax. The UI model
+					// carries the incl-GST amount and a separate taxable_amount, so derive
+					// all three here. This works for both the SO-edit payload and the
+					// quotation payload (neither of which is guaranteed to send
+					// custom_selling_price / gst_percent), and — unlike leaving
+					// taxable_amount unset — makes the totals correct on load instead of
+					// reading 0 until a price/discount is touched.
+					const it_tax = flt(it.custom_item_tax);
+					me.items[idx].rate = flt(it.rate);
+					me.items[idx].taxable_amount = flt(it.amount);
+					me.items[idx].custom_item_tax = it_tax;
+					me.items[idx].amount = flt(it.amount) + it_tax;
+					me.items[idx].remarks = it.custom_remarks || it.remarks || '';
 					me.items[idx].description = it.description || '';
 					me.items[idx].warehouse = it.warehouse || '';
 					me.items[idx].delivery_date = it.delivery_date || d.delivery_date || '';
 					const $r = me.wrapper.find('.items-table tbody tr').eq(idx);
-					// Recompute taxable/GST/amount from the row inputs exactly like a manual
-					// edit does, so the totals (incl. the excl-GST "Total Amount") are correct
-					// on load — otherwise taxable_amount stays 0 and the total reads 0 until
-					// the user tweaks a price/discount.
-					me.calc_row_amount(idx, $r, true);
+					$r.find('.item-amount').text(format_currency(me.items[idx].amount));
 					if (it.item_name) {
 						$r.find('.item-name-text').text(it.item_name).removeClass('text-muted');
 					}
@@ -674,7 +684,7 @@ class SalesOrderEntry {
 			});
 		}
 		if (field.$input) {
-			field.$input.css('min-width', '118px');
+			field.$input.css('min-width', '90px');
 		}
 		// Dropdown styling handled via CSS in template
 		return field;
@@ -777,7 +787,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		qty_field.$input && qty_field.$input.css('width', '56px');
+		qty_field.$input && qty_field.$input.css('width', '44px');
 		qty_field.$input.on('change', function() {
 			me.items[idx].qty = flt(qty_field.get_value());
 			me.calc_box_from_qty(idx, $row);
@@ -792,7 +802,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		box_field.$input && box_field.$input.css('width', '56px');
+		box_field.$input && box_field.$input.css('width', '44px');
 		box_field.$input.on('change', function() {
 			me.items[idx].box = flt(box_field.get_value());
 			me.calc_qty_from_box(idx, $row);
@@ -807,7 +817,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		mrp_field.$input && mrp_field.$input.css('width', '76px');
+		mrp_field.$input && mrp_field.$input.css('width', '56px');
 		mrp_field.$input && mrp_field.$input.prop('readonly', true);
 		row_data._mrp_field = mrp_field;
 
@@ -818,7 +828,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		selling_price_field.$input && selling_price_field.$input.css('width', '78px');
+		selling_price_field.$input && selling_price_field.$input.css('width', '60px');
 		selling_price_field.$input.on('change', function() {
 			me.items[idx].custom_selling_price = flt(selling_price_field.get_value());
 			me.calc_row_amount(idx, $row, true);
@@ -832,7 +842,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		gst_field.$input && gst_field.$input.css('width', '56px');
+		gst_field.$input && gst_field.$input.css('width', '40px');
 		gst_field.$input && gst_field.$input.prop('readonly', true);
 		if (row_data.gst_percent) gst_field.set_value(row_data.gst_percent);
 		row_data._gst_field = gst_field;
@@ -844,7 +854,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		flat_disc_field.$input && flat_disc_field.$input.css('width', '66px');
+		flat_disc_field.$input && flat_disc_field.$input.css('width', '46px');
 		flat_disc_field.$input.on('change', function() {
 			me.items[idx].flat_discount = flt(flat_disc_field.get_value());
 			me.calc_row_amount(idx, $row);
@@ -858,7 +868,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		offer_field.$input && offer_field.$input.css('width', '66px');
+		offer_field.$input && offer_field.$input.css('width', '46px');
 		offer_field.$input.on('change', function() {
 			me.items[idx].offer = flt(offer_field.get_value());
 			me.calc_row_amount(idx, $row);
@@ -872,7 +882,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		add_disc_field.$input && add_disc_field.$input.css('width', '66px');
+		add_disc_field.$input && add_disc_field.$input.css('width', '46px');
 		add_disc_field.$input.on('change', function() {
 			me.items[idx].additional_discount = flt(add_disc_field.get_value());
 			me.calc_row_amount(idx, $row);
@@ -887,7 +897,7 @@ class SalesOrderEntry {
 			render_input: true,
 			only_input: true
 		});
-		remarks_field.$input && remarks_field.$input.css('min-width', '100px');
+		remarks_field.$input && remarks_field.$input.css('min-width', '74px');
 		remarks_field.$input.on('change', function() {
 			me.items[idx].remarks = remarks_field.get_value();
 		});
@@ -1592,7 +1602,9 @@ class SalesOrderEntry {
 			custom_offer: item.offer,
 			custom_additional_discount: item.additional_discount,
 			custom_item_tax: flt(item.custom_item_tax),
-			custom_remarks: item.remarks || ''
+			// Read the live input too — the change event may not have fired if the
+			// user clicks save straight after typing (and prefill sets the model).
+			custom_remarks: (item._remarks_field && item._remarks_field.get_value()) || item.remarks || ''
 		}));
 
 		let freebies = this.freebies.filter(f => f.item_code).map(f => ({
