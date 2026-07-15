@@ -528,15 +528,29 @@ def run():
 		expect_throw("role: Sales blocked from force close",
 			lambda: force_close_sales_order(so6, "Stock Shortage"), "not permitted")
 
-		# Pure Warehouse Manager list scoping: only Warehouse Approval Pending rows.
+		# Pure Warehouse Manager sees the whole warehouse queue (so6 is
+		# Warehouse Approval Pending after submit), and never Draft/terminal rows.
 		frappe.set_user(u_wh)
 		rows = get_sales_order_entry_list(page_length=100)["data"]
-		check("role: Warehouse Manager list scoped to Warehouse Approval Pending", lambda: (
+		_wh_queue = {
+			"Warehouse Approval Pending", "Future Dispatch", "Today's Dispatch", "Warehouse Approved",
+			"Picking In Progress", "Submission Pending", "Ready For Dispatch", "Delivery Note Created",
+			"Partial Ready For Dispatch", "Partial Delivery Note Created", "Partial Dispatched",
+			"Forced Ready For Dispatch", "Forced Delivery Note Created", "Forced Dispatched",
+		}
+		check("role: Warehouse Manager list shows the warehouse queue (incl. so6)", lambda: (
 			(any(r.get("name") == so6 for r in rows)
-			 and all(r.get("custom_workflow_status") == "Warehouse Approval Pending" for r in rows))
+			 and all(r.get("custom_workflow_status") in _wh_queue for r in rows))
 			or (_ for _ in ()).throw(AssertionError(
 				f"so6 in rows: {any(r.get('name') == so6 for r in rows)}; statuses: "
 				+ str(sorted({r.get('custom_workflow_status') for r in rows}))))))
+
+		# Warehouse approves so6 -> dispatch queue (Future Dispatch, dd is tomorrow).
+		from alpinos.workflow_engine import approve_sales_order
+		_appr = approve_sales_order(so6)
+		check("role: Warehouse approve -> dispatch queue (Future Dispatch)", lambda: (
+			(_appr.get("status") == "Future Dispatch" and so_status(so6) == "Future Dispatch")
+			or (_ for _ in ()).throw(AssertionError(str(_appr) + " / " + so_status(so6)))))
 
 		# Warehouse cannot Mark Delivered (sales-only action).
 		expect_throw("role: Warehouse blocked from Mark Delivered",

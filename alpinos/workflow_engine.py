@@ -222,16 +222,15 @@ def _apply_pick_list_status(doc):
 
 
 def refresh_todays_dispatch():
-	"""Daily scheduled job: flip submitted Sales Orders whose dispatch date has
-	arrived (<= today) to "Today's Dispatch", as long as they are still in the
-	warehouse queue (no submitted Pick List yet). This is what makes the status
-	date-driven — an order parked for a future date becomes Today's Dispatch on
-	its day automatically."""
+	"""Daily scheduled job: flip APPROVED, future-dated Sales Orders to "Today's
+	Dispatch" on the day their dispatch date arrives. Only Future Dispatch orders
+	are flipped — Warehouse Approval Pending is a manual gate (approve_sales_order)
+	and must never be auto-approved by this job."""
 	rows = frappe.get_all(
 		"Sales Order",
 		filters={
 			"docstatus": 1,
-			"custom_workflow_status": ["in", [SO_WAREHOUSE_PENDING, SO_FUTURE_DISPATCH]],
+			"custom_workflow_status": SO_FUTURE_DISPATCH,
 		},
 		fields=["name", "custom_dispatch_date"],
 	)
@@ -506,6 +505,21 @@ def submit_sales_order(sales_order):
 	# Frappe enforces the submit permission inside doc.submit().
 	doc.submit()
 	return frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
+
+
+@frappe.whitelist()
+def approve_sales_order(sales_order):
+	"""Warehouse approves an order pending approval -> it enters the dispatch queue:
+	Today's Dispatch if the dispatch date is due (<= today), else Future Dispatch."""
+	_require_roles(WAREHOUSE_ROLES)
+	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
+	if cur != SO_WAREHOUSE_PENDING:
+		frappe.throw(frappe._("Only an order Pending Warehouse Approval can be approved."))
+	dd = frappe.db.get_value("Sales Order", sales_order, "custom_dispatch_date")
+	new_status = SO_TODAYS_DISPATCH if (dd and getdate(dd) <= getdate(today())) else SO_FUTURE_DISPATCH
+	_set_status("Sales Order", sales_order, new_status)
+	frappe.db.commit()
+	return {"status": new_status}
 
 
 @frappe.whitelist()

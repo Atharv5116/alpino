@@ -1448,8 +1448,13 @@ def get_sales_order_entry_list(
 	elif td:
 		filters["transaction_date"] = ["<=", td]
 
-	# A dedicated Warehouse Manager only sees orders waiting for their approval.
-	# Users who also hold a broad/sales/admin role keep full visibility.
+	# A dedicated Warehouse Manager sees the whole warehouse work queue — every
+	# stage from "waiting for approval" through dispatch-in-progress — not just
+	# "Warehouse Approval Pending". The old single-status filter hid an order the
+	# moment it left that status (e.g. the daily job flipping it to Today's
+	# Dispatch), so warehouse orders vanished from their list. Users who also hold
+	# a broad/sales/admin role keep full visibility. An explicit status filter
+	# chosen in the UI is respected.
 	_roles = set(frappe.get_roles())
 	_override_roles = {
 		"System Manager",
@@ -1458,8 +1463,15 @@ def get_sales_order_entry_list(
 		"Sales Manager",
 		"Sales User",
 	}
+	_WAREHOUSE_QUEUE = [
+		"Warehouse Approval Pending", "Future Dispatch", "Today's Dispatch", "Warehouse Approved",
+		"Picking In Progress", "Submission Pending", "Ready For Dispatch", "Delivery Note Created",
+		"Partial Ready For Dispatch", "Partial Delivery Note Created", "Partial Dispatched",
+		"Forced Ready For Dispatch", "Forced Delivery Note Created", "Forced Dispatched",
+	]
 	if "Warehouse Manager" in _roles and not (_roles & _override_roles):
-		filters["custom_workflow_status"] = "Warehouse Approval Pending"
+		if "custom_workflow_status" not in filters:  # respect an explicit UI status filter
+			filters["custom_workflow_status"] = ["in", _WAREHOUSE_QUEUE]
 
 	or_filters = None
 	search = (search or "").strip()

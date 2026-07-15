@@ -180,8 +180,11 @@ class SalesOrderEntryView {
 			// PRIMARY action = the clear "next stage" step for this stage + role.
 			if (status === 'Draft' && isSales) {
 				me.page.set_primary_action(__('Send for Warehouse Approval'), () => me.do_submit_order());
+			} else if (status === 'Warehouse Approval Pending' && isWarehouse) {
+				// Warehouse must approve before the order enters the dispatch queue.
+				me.page.set_primary_action(__('Approve Order'), () => me.do_approve());
 			} else if (
-				['Warehouse Approval Pending', 'Future Dispatch', "Today's Dispatch"].includes(status) &&
+				['Future Dispatch', "Today's Dispatch", 'Warehouse Approved'].includes(status) &&
 				isWarehouse
 			) {
 				if (pl.has_draft) {
@@ -297,6 +300,25 @@ class SalesOrderEntryView {
 					__('Confirm')
 				);
 			});
+	}
+
+	do_approve() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.confirm(__('Approve this order and move it into the dispatch queue?'), () => {
+			frappe.call({
+				method: 'alpinos.workflow_engine.approve_sales_order',
+				args: { sales_order: me._so_name },
+				freeze: true,
+				freeze_message: __('Approving...'),
+				callback(r) {
+					if (r.exc) return;
+					const st = (r.message && r.message.status) || '';
+					frappe.show_alert({ message: __('Order approved → {0}', [st]), indicator: 'green' });
+					me.load_order(me._so_name);
+				},
+			});
+		});
 	}
 
 	do_mark_delivered() {
