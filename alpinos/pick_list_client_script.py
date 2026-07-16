@@ -4,6 +4,8 @@ import frappe
 PICK_LIST_CLIENT_SCRIPT = """
 frappe.ui.form.on('Pick List', {
 	onload(frm) {
+		// Assigned To must list only Warehouse User role holders.
+		frm.set_query('custom_assigned_to', () => ({ query: 'alpinos.pick_list_api.warehouse_user_query' }));
 		set_defaults(frm);
 		sync_order_information(frm);
 		sync_all_pick_list_batch_dates(frm);
