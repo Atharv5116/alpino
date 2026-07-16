@@ -185,7 +185,9 @@ class EcomSalesOrderListPage {
 		this.wrapper.on('click', '.eso-list-row', (e) => {
 			if ($(e.target).closest('a,button').length) return;
 			const name = $(e.currentTarget).data('name');
-			if (name) frappe.set_route('ecom-sales-order-entry', { edit_eso: name });
+			// Open the shared Sales Order view — same workflow action bar as offline
+			// (Approve, Create Pick List, Mark Delivered, ...). Edit from there.
+			if (name) frappe.set_route('sales-order-entry-view', name);
 		});
 		this.wrapper.on('click', '.eso-list-link-btn', (e) => {
 			e.stopPropagation();

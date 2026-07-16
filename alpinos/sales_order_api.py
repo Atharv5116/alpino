@@ -1390,6 +1390,8 @@ def get_sales_order_entry_view_payload(sales_order):
 		"additional_units_damage": damage,
 		"show_remaining": int(show_remaining),
 		"remaining_qty": remaining_qty,
+		# Drives where the view's Edit/Duplicate buttons route (e-com vs offline entry).
+		"channel": doc.get("custom_channel") or "",
 	}
 
 

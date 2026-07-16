@@ -116,7 +116,8 @@ class EcomSalesOrderEntry {
 		w.find('.btn-eso-clear').on('click', () => this.clear_form());
 		w.on('click', '.recent-orders-list .order-row', (e) => {
 			const name = $(e.currentTarget).data('name');
-			if (name) frappe.set_route('ecom-sales-order-entry', { edit_eso: name });
+			// Open the shared Sales Order view (workflow action bar), same as the list.
+			if (name) frappe.set_route('sales-order-entry-view', name);
 		});
 	}
 
@@ -126,7 +127,12 @@ class EcomSalesOrderEntry {
 			const name = ro.edit_eso;
 			delete ro.edit_eso;
 			this.clear_form();
-			this.load_prefill(name);
+			this.load_prefill(name, 'edit');
+		} else if (ro.duplicate_eso) {
+			const name = ro.duplicate_eso;
+			delete ro.duplicate_eso;
+			this.clear_form();
+			this.load_prefill(name, 'duplicate');
 		}
 	}
 
@@ -454,7 +460,8 @@ class EcomSalesOrderEntry {
 	}
 
 	// ---- prefill / clear ---------------------------------------------------
-	load_prefill(name) {
+	load_prefill(name, mode) {
+		mode = mode || 'edit';
 		frappe.call({
 			method: 'alpinos.ecom_sales_order_api.get_ecom_so_entry_payload',
 			args: { sales_order: name },
@@ -462,8 +469,14 @@ class EcomSalesOrderEntry {
 			callback: (r) => {
 				const d = r.message;
 				if (!d) return;
-				this.editing = d.name;
-				this.page.set_title(__('E-Com Sales Order Entry — {0}', [d.name]));
+				// Duplicate: prefill only — leave editing null so save creates a NEW order.
+				if (mode === 'duplicate') {
+					this.editing = null;
+					this.page.set_title(__('E-Com Sales Order Entry — Copy of {0}', [d.name]));
+				} else {
+					this.editing = d.name;
+					this.page.set_title(__('E-Com Sales Order Entry — {0}', [d.name]));
+				}
 				this.f_customer.set_value(d.customer);
 				this.f_customer_type.set_value(d.order_type);
 				const fl = d.flags || {};

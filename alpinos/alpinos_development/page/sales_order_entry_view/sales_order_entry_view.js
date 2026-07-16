@@ -49,16 +49,27 @@ class SalesOrderEntryView {
 			});
 		}, __('PDF'));
 		// Edit re-opens the entry form on the SAME draft (shown for drafts only).
+		// E-com orders edit on the e-com entry page; offline on the offline one.
 		this.btn_edit_so = this.page.add_inner_button(__('Edit Order'), () => {
-			frappe.route_options = { edit_so: this._so_name };
-			frappe.set_route('sales-order-entry');
+			if (this._channel === 'E-com') {
+				frappe.route_options = { edit_eso: this._so_name };
+				frappe.set_route('ecom-sales-order-entry');
+			} else {
+				frappe.route_options = { edit_so: this._so_name };
+				frappe.set_route('sales-order-entry');
+			}
 		}, __('Order'));
 		if (this.btn_edit_so) this.btn_edit_so.hide();
 		// Duplicate prefills the entry form with this order's data; saving
 		// creates a NEW order (fresh workflow state, status and Created By).
 		this.page.add_inner_button(__('Duplicate'), () => {
-			frappe.route_options = { duplicate_so: this._so_name };
-			frappe.set_route('sales-order-entry');
+			if (this._channel === 'E-com') {
+				frappe.route_options = { duplicate_eso: this._so_name };
+				frappe.set_route('ecom-sales-order-entry');
+			} else {
+				frappe.route_options = { duplicate_so: this._so_name };
+				frappe.set_route('sales-order-entry');
+			}
 		}, __('Order'));
 		// Cancel: submitted orders only, and only for roles with cancel rights
 		// (server re-checks). The guard blocks with the linked Pick List /
@@ -524,6 +535,8 @@ class SalesOrderEntryView {
 					return;
 				}
 				this.page.set_title(__('Alpino Sales Order View — {0}', [name]));
+				// Channel drives where Edit/Duplicate route (offline vs e-com entry).
+				this._channel = r.message.channel || '';
 				this.render(r.message);
 			},
 		});
