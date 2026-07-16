@@ -1520,7 +1520,6 @@ def get_sales_order_entry_list(
 		"custom_po_number",
 		"custom_po_date",
 		"custom_delivery_by_date",
-		"custom_asn_status",
 		"owner",
 	]
 
@@ -1577,6 +1576,25 @@ def _attach_so_list_row_extras(rows):
 	):
 		inv_map[r.sales_order] = r.parent
 
+	# ASN details live on Post Delivery (one per dispatch) — collect them per SO so
+	# the list can show a summary with the full per-DN breakdown on hover.
+	asn_map = {}
+	if frappe.db.exists("DocType", "Post Delivery"):
+		for r in frappe.get_all(
+			"Post Delivery",
+			filters={"sales_order": ["in", names], "docstatus": ["<", 2]},
+			fields=["sales_order", "delivery_note", "asn_id", "asn_status", "asn_date"],
+			order_by="asn_date asc, modified asc",
+		):
+			if not (r.get("asn_id") or r.get("asn_status")):
+				continue
+			asn_map.setdefault(r.sales_order, []).append({
+				"asn_id": r.get("asn_id") or "",
+				"asn_status": r.get("asn_status") or "",
+				"asn_date": str(r.get("asn_date")) if r.get("asn_date") else "",
+				"delivery_note": r.get("delivery_note") or "",
+			})
+
 	fullnames = {}
 	for r in rows:
 		if r.owner not in fullnames:
@@ -1585,6 +1603,7 @@ def _attach_so_list_row_extras(rows):
 		r["pick_list"] = pl_map.get(r.name) or ""
 		r["delivery_note"] = dn_map.get(r.name) or ""
 		r["sales_invoice"] = inv_map.get(r.name) or ""
+		r["asn_details"] = asn_map.get(r.name) or []
 
 @frappe.whitelist()
 def get_pick_list_mapping_data(sales_order, remaining_only=0):

@@ -259,12 +259,22 @@ class EcomSalesOrderListPage {
 				return btns.join(' ') || '—';
 			},
 			asn: (d) => {
-				const v = d.custom_asn_status || '';
-				if (!v) return '—';
-				// Single ASN Status field on the SO — shown directly (with hover for the
-				// full text when it is long). If ASN ever becomes a child table, swap
-				// this for a summary + full detail on hover.
-				return `<span title="${esc(v)}">${esc(v)}</span>`;
+				// ASN details come from the SO's Post Delivery records (one per dispatch).
+				// Show a compact summary in the cell and the full per-DN breakdown on hover.
+				const list = Array.isArray(d.asn_details) ? d.asn_details : [];
+				if (!list.length) return '—';
+				const line = (a) => {
+					const parts = [a.asn_id || '(no ASN ID)'];
+					if (a.asn_status) parts.push(a.asn_status);
+					if (a.asn_date) parts.push(frappe.datetime.str_to_user(a.asn_date));
+					if (a.delivery_note) parts.push('DN ' + a.delivery_note);
+					return parts.join(' — ');
+				};
+				const tip = list.map(line).join('\n');
+				const first = list[0];
+				const head = esc(first.asn_id || first.asn_status || 'ASN');
+				const label = list.length > 1 ? `${head} +${list.length - 1}` : head;
+				return `<span class="eso-asn" title="${esc(tip)}" style="cursor: help; border-bottom: 1px dotted var(--text-muted);">${label}</span>`;
 			},
 		};
 		rows.forEach((d) => {
