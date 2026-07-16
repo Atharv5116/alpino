@@ -23,6 +23,10 @@ class EcomSalesOrderEntry {
 		this._site_manual = false;
 		this.make_fields();
 		this.bind_events();
+		this.toggle_freebie_po();
+		this.add_item_row();
+		this.render_total();
+		this.load_recent_orders();
 	}
 
 	// ---- field construction ------------------------------------------------
@@ -101,55 +105,18 @@ class EcomSalesOrderEntry {
 			fieldtype: 'Check', fieldname: 'is_freebie_po', label: __('Freebies (Entire PO Free)'),
 			onchange: () => this.toggle_freebie_po(),
 		});
-
-		// Add-item controls
-		this.f_add_sku = mk('.fld-add-sku', {
-			fieldtype: 'Link', options: 'Item', fieldname: 'add_sku', label: __('SKU'),
-			get_query: () => ({ filters: { disabled: 0 } }),
-		});
-		this.f_add_qty = mk('.fld-add-qty', {
-			fieldtype: 'Float', fieldname: 'add_qty', label: __('Qty'),
-		});
-		this.f_add_freebie_sku = mk('.fld-add-freebie-sku', {
-			fieldtype: 'Link', options: 'Item', fieldname: 'add_freebie_sku', label: __('SKU'),
-			get_query: () => ({ filters: { disabled: 0 } }),
-		});
-		this.f_add_freebie_qty = mk('.fld-add-freebie-qty', {
-			fieldtype: 'Float', fieldname: 'add_freebie_qty', label: __('Qty'),
-		});
 	}
 
 	// ---- events ------------------------------------------------------------
 	bind_events() {
 		const w = this.wrapper;
-		w.find('.btn-add-item').on('click', () => this.add_item());
-		w.find('.btn-add-freebie').on('click', () => this.add_freebie());
+		w.find('.btn-add-item').on('click', () => this.add_item_row());
+		w.find('.btn-add-freebie').on('click', () => this.add_freebie_row());
 		w.find('.btn-eso-save').on('click', () => this.save());
 		w.find('.btn-eso-clear').on('click', () => this.clear_form());
-
-		w.on('input change', '.eso-items-table .item-input', (e) => {
-			const $el = $(e.currentTarget);
-			const idx = cint($el.closest('tr').data('idx'));
-			const field = $el.data('field');
-			if (!this.items[idx]) return;
-			this.items[idx][field] = flt($el.val());
-			if (field === 'mrp' || field === 'margin_percent') this.recalc_row(idx);
-		});
-		w.on('click', '.eso-items-table .btn-del-row', (e) => {
-			const idx = cint($(e.currentTarget).closest('tr').data('idx'));
-			this.items.splice(idx, 1);
-			this.render_items();
-		});
-		w.on('input change', '.eso-freebies-table .free-input', (e) => {
-			const $el = $(e.currentTarget);
-			const idx = cint($el.closest('tr').data('idx'));
-			if (!this.freebies[idx]) return;
-			this.freebies[idx].qty = flt($el.val());
-		});
-		w.on('click', '.eso-freebies-table .btn-del-row', (e) => {
-			const idx = cint($(e.currentTarget).closest('tr').data('idx'));
-			this.freebies.splice(idx, 1);
-			this.render_freebies();
+		w.on('click', '.recent-orders-list .order-row', (e) => {
+			const name = $(e.currentTarget).data('name');
+			if (name) frappe.set_route('ecom-sales-order-entry', { edit_eso: name });
 		});
 	}
 
@@ -187,65 +154,107 @@ class EcomSalesOrderEntry {
 		});
 	}
 
-	// ---- items -------------------------------------------------------------
-	add_item() {
-		const item_code = this.f_add_sku.get_value();
-		if (!item_code) { frappe.show_alert({ message: __('Select a SKU'), indicator: 'orange' }); return; }
-		const qty = flt(this.f_add_qty.get_value());
+	// ---- per-row SKU link (awesomplete, mirrors the offline page) ----------
+	_make_item_link_field(parent, fieldname) {
+		const field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Link', options: 'Item', fieldname },
+			parent, render_input: true, only_input: true,
+		});
+		field.get_query = () => ({ filters: { disabled: 0 } });
+		if (field.$input) field.$input.css('min-width', '120px');
+		return field;
+	}
+
+	// ---- ordered products (inline Add Row) ---------------------------------
+	add_item_row(data) {
+		const me = this;
+		const row = Object.assign({
+			item_code: '', item_name: '', qty: 0, box: 0, box_factor: 0,
+			mrp: 0, margin_percent: 0, gst_percent: 0, selling_price: 0,
+		}, data || {});
+		this.items.push(row);
+
+		const $row = $(`<tr>
+			<td class="cell-sku"></td>
+			<td class="cell-name"><span class="text-muted" style="font-size:12px;">-</span></td>
+			<td class="cell-qty"></td>
+			<td class="cell-box text-right readonly-cell">—</td>
+			<td class="cell-mrp"></td>
+			<td class="cell-margin"></td>
+			<td class="cell-selling text-right readonly-cell">0.00</td>
+			<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-row">&times;</button></td>
+		</tr>`);
+		this.wrapper.find('.eso-items-table tbody').append($row);
+		row._$row = $row;
+
+		const sku_field = this._make_item_link_field($row.find('.cell-sku'), 'eso_item');
+		const commit = () => setTimeout(() => {
+			const val = sku_field.get_value();
+			row.item_code = val;
+			if (val) me.on_item_select(row, val);
+		}, 200);
+		sku_field.$input.on('change', commit);
+		sku_field.$input.on('awesomplete-selectcomplete', commit);
+		row._sku_field = sku_field;
+
+		const mk_input = (cell, field, extra) => {
+			const $i = $('<input type="number" class="form-control input-xs eso-cell-input" min="0" ' + (extra || '') + '>');
+			if (flt(row[field])) $i.val(flt(row[field]));
+			$row.find(cell).append($i);
+			$i.on('input change', () => { row[field] = flt($i.val()); me.recalc_row(row); });
+			return $i;
+		};
+		row._qty = mk_input('.cell-qty', 'qty');
+		row._mrp = mk_input('.cell-mrp', 'mrp');
+		row._margin = mk_input('.cell-margin', 'margin_percent', 'max="90"');
+
+		$row.find('.btn-del-row').on('click', () => {
+			const i = me.items.indexOf(row);
+			if (i > -1) me.items.splice(i, 1);
+			$row.remove();
+			me.render_total();
+		});
+
+		if (data) {
+			if (data.item_name) $row.find('.cell-name').html(frappe.utils.escape_html(data.item_name)).removeClass('text-muted');
+			if (data.item_code) sku_field.set_value(data.item_code);
+		}
+		this._paint_row(row);
+		return row;
+	}
+
+	on_item_select(row, item_code) {
+		const me = this;
 		frappe.call({
 			method: 'alpinos.ecom_sales_order_api.get_ecom_item_defaults',
 			args: { customer: this.f_customer.get_value() || '', item_code },
 			callback: (r) => {
 				const d = r.message || {};
-				const box_factor = flt(d.box_factor);
-				const row = {
-					item_code,
-					item_name: d.item_name || '',
-					qty: qty || 0,
-					box: box_factor && qty ? Math.ceil(qty / box_factor) : 0,
-					box_factor,
-					mrp: flt(d.mrp),
-					margin_percent: flt(d.margin_percent),
-					gst_percent: flt(d.gst_percent),
-					selling_price: flt(d.selling_price),
-				};
-				this.items.push(row);
-				this.render_items();
-				this.f_add_sku.set_value('');
-				this.f_add_qty.set_value('');
+				row.item_name = d.item_name || '';
+				row.box_factor = flt(d.box_factor);
+				row.mrp = flt(d.mrp);
+				row.margin_percent = flt(d.margin_percent);
+				row.gst_percent = flt(d.gst_percent);
+				row.selling_price = flt(d.selling_price);
+				row._$row.find('.cell-name').html(frappe.utils.escape_html(row.item_name)).removeClass('text-muted');
+				row._mrp.val(flt(row.mrp) || '');
+				row._margin.val(flt(row.margin_percent) || '');
+				me.recalc_row(row);
 			},
 		});
 	}
 
-	recalc_row(idx) {
-		const r = this.items[idx];
-		if (!r) return;
-		r.selling_price = flt(r.mrp * (1 - flt(r.margin_percent) / 100), 2);
-		if (r.box_factor && r.qty) r.box = Math.ceil(r.qty / r.box_factor);
-		this.render_items();
+	recalc_row(row) {
+		row.selling_price = flt(flt(row.mrp) * (1 - flt(row.margin_percent) / 100), 2);
+		if (row.box_factor && row.qty) row.box = Math.ceil(flt(row.qty) / row.box_factor);
+		this._paint_row(row);
+		this.render_total();
 	}
 
-	render_items() {
-		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
-		const tb = this.wrapper.find('.eso-items-table tbody').empty();
-		if (!this.items.length) {
-			tb.append('<tr><td colspan="8" class="text-muted text-center">' + __('No SKUs added') + '</td></tr>');
-			this.render_total();
-			return;
-		}
-		this.items.forEach((r, i) => {
-			tb.append(`<tr data-idx="${i}">
-				<td>${esc(r.item_code)}</td>
-				<td>${esc(r.item_name)}</td>
-				<td><input class="item-input" data-field="qty" type="number" min="0" value="${flt(r.qty)}"></td>
-				<td><input class="item-input" data-field="box" type="number" min="0" value="${flt(r.box)}"></td>
-				<td><input class="item-input" data-field="mrp" type="number" min="0" value="${flt(r.mrp)}"></td>
-				<td><input class="item-input" data-field="margin_percent" type="number" min="0" max="90" value="${flt(r.margin_percent)}"></td>
-				<td class="readonly-cell">${format_number(flt(r.selling_price), null, 2)}</td>
-				<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-row">&times;</button></td>
-			</tr>`);
-		});
-		this.render_total();
+	_paint_row(row) {
+		if (!row._$row) return;
+		row._$row.find('.cell-box').text(flt(row.box) ? flt(row.box) : '—');
+		row._$row.find('.cell-selling').text(format_number(flt(row.selling_price), null, 2));
 	}
 
 	render_total() {
@@ -254,34 +263,52 @@ class EcomSalesOrderEntry {
 		this.wrapper.find('.eso-total').text(__('Order Value (incl. GST): {0}', [format_number(total, null, 2)]));
 	}
 
-	// ---- freebies ----------------------------------------------------------
-	add_freebie() {
-		const item_code = this.f_add_freebie_sku.get_value();
-		if (!item_code) { frappe.show_alert({ message: __('Select a SKU'), indicator: 'orange' }); return; }
-		const qty = flt(this.f_add_freebie_qty.get_value());
-		frappe.db.get_value('Item', item_code, 'item_name').then((r) => {
-			this.freebies.push({ item_code, item_name: (r.message || {}).item_name || '', qty });
-			this.render_freebies();
-			this.f_add_freebie_sku.set_value('');
-			this.f_add_freebie_qty.set_value('');
-		});
-	}
+	// ---- freebies (inline Add Freebie) -------------------------------------
+	add_freebie_row(data) {
+		const me = this;
+		const row = Object.assign({ item_code: '', item_name: '', qty: 0 }, data || {});
+		this.freebies.push(row);
 
-	render_freebies() {
-		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
-		const tb = this.wrapper.find('.eso-freebies-table tbody').empty();
-		if (!this.freebies.length) {
-			tb.append('<tr><td colspan="4" class="text-muted text-center">' + __('No freebies added') + '</td></tr>');
-			return;
-		}
-		this.freebies.forEach((r, i) => {
-			tb.append(`<tr data-idx="${i}">
-				<td>${esc(r.item_code)}</td>
-				<td>${esc(r.item_name)}</td>
-				<td><input class="free-input" type="number" min="0" value="${flt(r.qty)}"></td>
-				<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-row">&times;</button></td>
-			</tr>`);
+		const $row = $(`<tr>
+			<td class="cell-sku"></td>
+			<td class="cell-name"><span class="text-muted" style="font-size:12px;">-</span></td>
+			<td class="cell-qty"></td>
+			<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-row">&times;</button></td>
+		</tr>`);
+		this.wrapper.find('.eso-freebies-table tbody').append($row);
+		row._$row = $row;
+
+		const sku_field = this._make_item_link_field($row.find('.cell-sku'), 'eso_free');
+		const commit = () => setTimeout(() => {
+			const val = sku_field.get_value();
+			row.item_code = val;
+			if (val) {
+				frappe.db.get_value('Item', val, 'item_name').then((r) => {
+					row.item_name = (r.message || {}).item_name || '';
+					$row.find('.cell-name').html(frappe.utils.escape_html(row.item_name)).removeClass('text-muted');
+				});
+			}
+		}, 200);
+		sku_field.$input.on('change', commit);
+		sku_field.$input.on('awesomplete-selectcomplete', commit);
+		row._sku_field = sku_field;
+
+		const $q = $('<input type="number" class="form-control input-xs eso-cell-input" min="0">');
+		if (flt(row.qty)) $q.val(flt(row.qty));
+		$row.find('.cell-qty').append($q);
+		$q.on('input change', () => { row.qty = flt($q.val()); });
+
+		$row.find('.btn-del-row').on('click', () => {
+			const i = me.freebies.indexOf(row);
+			if (i > -1) me.freebies.splice(i, 1);
+			$row.remove();
 		});
+
+		if (data) {
+			if (data.item_name) $row.find('.cell-name').html(frappe.utils.escape_html(data.item_name)).removeClass('text-muted');
+			if (data.item_code) sku_field.set_value(data.item_code);
+		}
+		return row;
 	}
 
 	toggle_freebie_po() {
@@ -290,24 +317,79 @@ class EcomSalesOrderEntry {
 		this.wrapper.find('.eso-freebies-title').text(on ? __('Freebie Items (Entire PO)') : __('Freebies'));
 	}
 
+	// ---- recent orders (mirrors the offline entry page) --------------------
+	load_recent_orders() {
+		const me = this;
+		frappe.call({
+			method: 'frappe.client.get_list',
+			args: {
+				doctype: 'Sales Order',
+				filters: { custom_channel: 'E-com' },
+				fields: ['name', 'customer', 'customer_name', 'custom_po_number', 'po_no',
+					'grand_total', 'custom_workflow_status', 'transaction_date', 'custom_dispatch_date'],
+				order_by: 'creation desc',
+				limit_page_length: 15,
+			},
+			callback: (r) => me.render_orders_list(r.message || []),
+		});
+	}
+
+	render_orders_list(orders) {
+		const $c = this.wrapper.find('.recent-orders-list').empty();
+		if (!orders.length) {
+			$c.html('<p class="text-muted text-center">No e-com sales orders yet</p>');
+			return;
+		}
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const rows = orders.map((o) => `
+			<tr class="order-row" data-name="${esc(o.name)}" style="cursor: pointer;">
+				<td><span class="text-primary" style="font-weight: 500;">${esc(o.name)}</span></td>
+				<td>${esc(o.customer_name || o.customer || '')}</td>
+				<td>${esc(o.custom_po_number || o.po_no || '—')}</td>
+				<td>${o.transaction_date ? frappe.datetime.str_to_user(o.transaction_date) : '—'}</td>
+				<td>${o.custom_dispatch_date ? frappe.datetime.str_to_user(o.custom_dispatch_date) : '—'}</td>
+				<td class="text-right">${format_currency(o.grand_total)}</td>
+				<td>${esc(o.custom_workflow_status || '—')}</td>
+			</tr>`).join('');
+		$c.html(`
+			<table class="table table-hover" style="font-size: 13px;">
+				<thead style="background: var(--bg-color);">
+					<tr>
+						<th>Order #</th><th>Customer</th><th>PO No</th><th>Date</th>
+						<th>Dispatch</th><th class="text-right">Grand Total</th><th>Status</th>
+					</tr>
+				</thead>
+				<tbody>${rows}</tbody>
+			</table>`);
+	}
+
 	// ---- save --------------------------------------------------------------
+	_valid_items() {
+		return this.items.filter((r) => r.item_code && flt(r.qty) > 0);
+	}
+	_valid_freebies() {
+		return this.freebies.filter((f) => f.item_code && flt(f.qty) > 0);
+	}
+
 	build_payload() {
 		const freebie_po = cint(this.f_freebie_po.get_value());
+		const valid_items = this._valid_items();
+		const valid_freebies = this._valid_freebies();
 		let items, freebies;
 		if (freebie_po) {
-			items = this.freebies.map((f) => ({
+			items = valid_freebies.map((f) => ({
 				item_code: f.item_code, qty: flt(f.qty),
 				custom_box: 0, custom_customer_mrp: 0, custom_selling_price: 0,
 				margin_percent: 0, custom_gst_percent: 0,
 			}));
 			freebies = [];
 		} else {
-			items = this.items.map((r) => ({
+			items = valid_items.map((r) => ({
 				item_code: r.item_code, qty: flt(r.qty), custom_box: flt(r.box),
 				custom_customer_mrp: flt(r.mrp), custom_selling_price: flt(r.selling_price),
 				margin_percent: flt(r.margin_percent), custom_gst_percent: flt(r.gst_percent),
 			}));
-			freebies = this.freebies.map((f) => ({ item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty) }));
+			freebies = valid_freebies.map((f) => ({ item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty) }));
 		}
 		return {
 			customer: this.f_customer.get_value(),
@@ -345,8 +427,8 @@ class EcomSalesOrderEntry {
 		if (!this.f_bill_addr.get_value()) errs.push(__('Billing Address is required'));
 		if (!this.f_ship_addr.get_value()) errs.push(__('Shipping Address is required'));
 		const freebie_po = cint(this.f_freebie_po.get_value());
-		if (freebie_po && !this.freebies.length) errs.push(__('Add at least one freebie item'));
-		if (!freebie_po && !this.items.length) errs.push(__('Add at least one SKU'));
+		if (freebie_po && !this._valid_freebies().length) errs.push(__('Add at least one freebie item'));
+		if (!freebie_po && !this._valid_items().length) errs.push(__('Add at least one SKU'));
 		return errs;
 	}
 
@@ -401,17 +483,22 @@ class EcomSalesOrderEntry {
 				this.f_delivery_by.set_value(d.delivery_by_date || '');
 				this.f_dispatch.set_value(d.dispatch_date || frappe.datetime.get_today());
 				this.f_freebie_po.set_value(cint(d.is_freebie_po));
-				this.items = (d.items || []).map((it) => ({
+
+				this.items = [];
+				this.freebies = [];
+				this.wrapper.find('.eso-items-table tbody').empty();
+				this.wrapper.find('.eso-freebies-table tbody').empty();
+				(d.items || []).forEach((it) => this.add_item_row({
 					item_code: it.item_code, item_name: it.item_name, qty: flt(it.qty),
 					box: flt(it.box), box_factor: 0, mrp: flt(it.mrp),
 					margin_percent: flt(it.margin_percent), gst_percent: flt(it.gst_percent),
 					selling_price: flt(it.custom_selling_price),
 				}));
-				this.freebies = (d.freebies || []).map((f) => ({
+				(d.freebies || []).forEach((f) => this.add_freebie_row({
 					item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty),
 				}));
-				this.render_items();
-				this.render_freebies();
+				if (!this.items.length) this.add_item_row();
+				this.render_total();
 				this.toggle_freebie_po();
 			},
 		});
@@ -422,6 +509,8 @@ class EcomSalesOrderEntry {
 		this._site_manual = false;
 		this.items = [];
 		this.freebies = [];
+		this.wrapper.find('.eso-items-table tbody').empty();
+		this.wrapper.find('.eso-freebies-table tbody').empty();
 		this.page.set_title(__('E-Com Sales Order Entry'));
 		[
 			this.f_customer, this.f_customer_type, this.f_appointment, this.f_grn, this.f_partial,
@@ -430,8 +519,8 @@ class EcomSalesOrderEntry {
 			this.f_freebie_po,
 		].forEach((f) => f && f.set_value(''));
 		this.f_dispatch.set_value(frappe.datetime.get_today());
-		this.render_items();
-		this.render_freebies();
+		this.add_item_row();
+		this.render_total();
 		this.toggle_freebie_po();
 	}
 }

@@ -8,6 +8,9 @@ frappe.pages['ecom-sales-order-entry-list'].on_page_load = function (wrapper) {
 	new EcomSalesOrderListPage(page);
 };
 
+const ESO_STATUS_OPTIONS =
+	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
+
 const ESO_WF_STATUS_OPTIONS =
 	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
 	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch\nDelivery Note Created\nDispatched' +
@@ -138,6 +141,14 @@ class EcomSalesOrderListPage {
 			df: { fieldtype: 'Data', fieldname: 'search', label: __('Search (ID, customer, PO)') },
 			parent: w.find('.fld-search'), render_input: true,
 		});
+		this._filters.status = frappe.ui.form.make_control({
+			df: { fieldtype: 'Select', fieldname: 'status', label: __('Status'), options: ESO_STATUS_OPTIONS },
+			parent: w.find('.fld-status'), render_input: true,
+		});
+		this._filters.company = frappe.ui.form.make_control({
+			df: { fieldtype: 'Link', fieldname: 'company', label: __('Company'), options: 'Company' },
+			parent: w.find('.fld-company'), render_input: true,
+		});
 		this._filters.workflow_status = frappe.ui.form.make_control({
 			df: { fieldtype: 'Select', fieldname: 'workflow_status', label: __('Workflow Status'), options: ESO_WF_STATUS_OPTIONS },
 			parent: w.find('.fld-workflow-status'), render_input: true,
@@ -187,6 +198,8 @@ class EcomSalesOrderListPage {
 			page_length: this.page_length,
 			channel: 'E-com',
 			search: f.search.get_value() || '',
+			status: f.status.get_value() || '',
+			company: f.company.get_value() || '',
 			workflow_status: f.workflow_status.get_value() || '',
 			customer: f.customer.get_value() || '',
 			from_date: f.from_date.get_value() || '',
