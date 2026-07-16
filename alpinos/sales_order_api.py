@@ -1519,6 +1519,8 @@ def get_sales_order_entry_list(
 		"custom_channel",
 		"custom_po_number",
 		"custom_po_date",
+		"custom_delivery_by_date",
+		"custom_asn_status",
 		"owner",
 	]
 

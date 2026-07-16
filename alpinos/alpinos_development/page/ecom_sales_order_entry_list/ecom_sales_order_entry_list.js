@@ -43,12 +43,15 @@ const ESO_WF_COLORS = {
 // E-Com column layout (specced separately from the offline Sales/Warehouse layouts).
 const ESO_COLUMNS = [
 	{ label: 'ID', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+	{ label: 'PO No', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
 	{ label: 'Customer Name', render: (d, h) => h.esc(d.customer_name) },
-	{ label: 'PO Number', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
+	{ label: 'Site Name', render: (d, h) => h.esc(d.custom_site_name || '—') },
 	{ label: 'PO Date', render: (d, h) => h.date(d.custom_po_date || d.po_date) },
+	{ label: 'PO Exp Date', render: (d, h) => h.date(d.custom_po_expiry_date) },
+	{ label: 'Delivery By', render: (d, h) => h.date(d.custom_delivery_by_date || d.delivery_date) },
 	{ label: 'Dispatch Date', render: (d, h) => h.date(d.custom_dispatch_date) },
-	{ label: 'Workflow Status', render: (d, h) => h.wf(d) },
 	{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
+	{ label: 'ASN Detail', render: (d, h) => h.asn(d) },
 	{ label: 'Created By', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
 	{ label: 'Grand Total', cls: 'text-right', render: (d, h) => h.money(d) },
 ];
@@ -252,7 +255,16 @@ class EcomSalesOrderListPage {
 					`<button type="button" class="btn btn-xs btn-default eso-list-link-btn" data-route='${esc(JSON.stringify(route))}' title="${esc(title)}">${label}</button>`;
 				if (d.pick_list && frappe.model.can_read('Pick List')) btns.push(mk('PL', ['pick_list_entry', d.pick_list], d.pick_list));
 				if (d.delivery_note && frappe.model.can_read('Delivery Note')) btns.push(mk('DN', ['delivery_note_entry', d.delivery_note], d.delivery_note));
+				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
 				return btns.join(' ') || '—';
+			},
+			asn: (d) => {
+				const v = d.custom_asn_status || '';
+				if (!v) return '—';
+				// Single ASN Status field on the SO — shown directly (with hover for the
+				// full text when it is long). If ASN ever becomes a child table, swap
+				// this for a summary + full detail on hover.
+				return `<span title="${esc(v)}">${esc(v)}</span>`;
 			},
 		};
 		rows.forEach((d) => {
