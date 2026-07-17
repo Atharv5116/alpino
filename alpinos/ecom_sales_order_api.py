@@ -108,17 +108,35 @@ def get_ecom_item_defaults(customer, item_code):
 # ---------------------------------------------------------------------------
 # Create / Update
 # ---------------------------------------------------------------------------
+def _buyer_master_flags(customer):
+	"""The 4 order flags as set on the customer's Buyer Master (source of truth)."""
+	if not customer:
+		return {}
+	return frappe.db.get_value(
+		"Buyer Master",
+		{"customer": customer},
+		["appointment_required", "grn_available", "partial_order_allowed", "gst_exclusive_buyer"],
+		as_dict=True,
+	) or {}
+
+
 def _apply_ecom_header(so, *, flags, po_number, po_date, delivery_by_date,
                        billing_gstin, shipping_gstin, billing_address, shipping_address,
-                       is_freebie_po, channel=CHANNEL_ECOM):
+                       is_freebie_po, channel=CHANNEL_ECOM, customer=None):
 	"""Set the e-com header fields on the Sales Order (channel overridable so the
 	offline Modern-Trade path can reuse this with channel='Offline')."""
 	so.custom_channel = channel
 	flags = flags or {}
-	so.custom_appointment_required = cint(flags.get("appointment_required"))
-	so.custom_grn_available = cint(flags.get("grn_available"))
-	so.custom_partial_order_allowed = cint(flags.get("partial_order_allowed"))
-	so.custom_gst_exclusive_buyer = cint(flags.get("gst_exclusive_buyer"))
+	# Buyer Master is the source of truth (BRD: these flags are auto-carried from
+	# Buyer Master). Use the entered value, but fall back to the Buyer Master when
+	# the client sent 0/blank — e.g. the async buyer autofill hadn't populated the
+	# checkbox before save, which was silently storing appointment_required = 0.
+	# On create, so.customer isn't set yet, so the caller passes `customer`.
+	bm = _buyer_master_flags(customer or so.get("customer"))
+	so.custom_appointment_required = cint(flags.get("appointment_required")) or cint(bm.get("appointment_required"))
+	so.custom_grn_available = cint(flags.get("grn_available")) or cint(bm.get("grn_available"))
+	so.custom_partial_order_allowed = cint(flags.get("partial_order_allowed")) or cint(bm.get("partial_order_allowed"))
+	so.custom_gst_exclusive_buyer = cint(flags.get("gst_exclusive_buyer")) or cint(bm.get("gst_exclusive_buyer"))
 	so.custom_po_number = (po_number or "").strip()
 	so.custom_po_date = po_date or None
 	so.custom_delivery_by_date = delivery_by_date or None
@@ -253,6 +271,7 @@ def create_ecom_sales_order(customer, order_type, company, items, flags=None,
 		delivery_by_date=delivery_by_date, billing_gstin=billing_gstin,
 		shipping_gstin=shipping_gstin, billing_address=billing_address,
 		shipping_address=shipping_address, is_freebie_po=is_freebie_po,
+		customer=customer,
 	)
 	_ecom_common_populate(
 		so, customer, order_type, company, items, freebies,

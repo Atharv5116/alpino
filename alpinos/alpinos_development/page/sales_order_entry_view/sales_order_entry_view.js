@@ -635,6 +635,20 @@ class SalesOrderEntryView {
 		w.find('.v-delivery-date').text(this._fmt_date(p, 'delivery_date'));
 		w.find('.v-created-by').text(this._plain_text(p.owner_full_name || p.owner || '—'));
 
+		// E-com order flags (carried from Buyer Master) — surface what was stored.
+		if ((this._channel || '') === 'E-com') {
+			const yn = (v) => (cint(v) ? 'Yes' : 'No');
+			w.find('.v-ecom-flags').text(
+				`Appointment Required: ${yn(p.custom_appointment_required)}  ·  ` +
+				`GRN Available: ${yn(p.custom_grn_available)}  ·  ` +
+				`Partial Order Allowed: ${yn(p.custom_partial_order_allowed)}  ·  ` +
+				`GST-Exclusive Buyer: ${yn(p.custom_gst_exclusive_buyer)}`
+			);
+			w.find('.v-ecom-flags-row').show();
+		} else {
+			w.find('.v-ecom-flags-row').hide();
+		}
+
 		// Hide customer rows where field not permitted
 		[
 			['customer_name', '.v-customer-name'],
