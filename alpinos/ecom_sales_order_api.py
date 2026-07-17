@@ -108,6 +108,40 @@ def get_ecom_item_defaults(customer, item_code):
 # ---------------------------------------------------------------------------
 # Create / Update
 # ---------------------------------------------------------------------------
+@frappe.whitelist()
+def backfill_ecom_flags_from_buyer_master():
+	"""One-off repair: for existing E-com Sales Orders (not cancelled), upgrade the
+	4 order flags to their Buyer Master value where they were saved as 0 by the old
+	pre-fix path. Never downgrades a 1. Direct DB writes so it works on submitted
+	orders. Returns {changed, scanned}."""
+	if not frappe.has_permission("Sales Order", "write"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	pairs = [
+		("custom_appointment_required", "appointment_required"),
+		("custom_grn_available", "grn_available"),
+		("custom_partial_order_allowed", "partial_order_allowed"),
+		("custom_gst_exclusive_buyer", "gst_exclusive_buyer"),
+	]
+	names = frappe.get_all(
+		"Sales Order", filters={"custom_channel": "E-com", "docstatus": ["<", 2]}, pluck="name"
+	)
+	changed = 0
+	for name in names:
+		so = frappe.db.get_value(
+			"Sales Order", name,
+			["customer"] + [f for f, _bm in pairs], as_dict=True,
+		)
+		bm = _buyer_master_flags(so.customer)
+		did = False
+		for f, bmk in pairs:
+			if not cint(so.get(f)) and cint(bm.get(bmk)):
+				frappe.db.set_value("Sales Order", name, f, 1, update_modified=False)
+				did = True
+		changed += int(did)
+	frappe.db.commit()
+	return {"changed": changed, "scanned": len(names)}
+
+
 def _buyer_master_flags(customer):
 	"""The 4 order flags as set on the customer's Buyer Master (source of truth)."""
 	if not customer:
