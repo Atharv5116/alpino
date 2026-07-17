@@ -65,6 +65,13 @@
 	padding: 10px 8px;
 	vertical-align: middle;
 }
+/* Keep currency/number columns (₹ 519.00, amounts) on one line so the ₹ symbol
+   never wraps under the number. The table scrolls horizontally if needed. */
+.so-view-shell .so-view-items-table thead th.text-right,
+.so-view-shell .so-view-items-table tbody td.text-right {
+	white-space: nowrap;
+	text-align: right;
+}
 .so-view-shell .so-view-items-table tbody tr:nth-child(even) {
 	background: var(--fg-color);
 }

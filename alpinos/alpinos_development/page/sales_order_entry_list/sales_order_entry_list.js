@@ -46,27 +46,27 @@ const SO_WF_COLORS = {
 // E-Com layout is specced but deferred (see project memory) — add here later.
 const SO_LIST_LAYOUTS = {
 	sales: [
-		{ label: 'ID', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'Customer Name', render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Order Date', render: (d, h) => h.date(d.transaction_date) },
-		{ label: 'PO No', render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Workflow Status', render: (d, h) => h.wf(d) },
+		{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'Customer Name', sort: 'customer_name', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Order Date', sort: 'transaction_date', render: (d, h) => h.date(d.transaction_date) },
+		{ label: 'PO No', sort: 'po_no', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', render: (d, h) => h.wf(d) },
 		{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
-		{ label: 'Created By', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', cls: 'text-right', render: (d, h) => h.money(d) },
+		{ label: 'Created By', sort: 'owner', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
 	],
 	warehouse: [
-		{ label: 'Customer Type', render: (d, h) => h.esc(d.order_type || '—') },
-		{ label: 'ID', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'PO No', render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Customer Name', render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Dispatch Date', render: (d, h) => h.date(d.custom_dispatch_date) },
-		{ label: 'PO Exp Date', render: (d, h) => h.date(d.custom_po_expiry_date) },
-		{ label: 'Delivery Date', render: (d, h) => h.date(d.delivery_date) },
-		{ label: 'Workflow Status', render: (d, h) => h.wf(d) },
+		{ label: 'Customer Type', sort: 'order_type', render: (d, h) => h.esc(d.order_type || '—') },
+		{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'PO No', sort: 'po_no', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Customer Name', sort: 'customer_name', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', render: (d, h) => h.date(d.custom_dispatch_date) },
+		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', render: (d, h) => h.date(d.custom_po_expiry_date) },
+		{ label: 'Delivery Date', sort: 'delivery_date', render: (d, h) => h.date(d.delivery_date) },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', render: (d, h) => h.wf(d) },
 		{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
-		{ label: 'Created By', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', cls: 'text-right', render: (d, h) => h.money(d) },
+		{ label: 'Created By', sort: 'owner', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
 	],
 };
 
@@ -90,6 +90,7 @@ class SalesOrderEntryListPage {
 		this.start = 0;
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
+		this._sort = { field: '', dir: 'desc' };
 		this._columns = SO_LIST_LAYOUTS[so_list_layout_for_user()];
 		this.render_header();
 		this.setup_toolbar();
@@ -268,6 +269,25 @@ class SalesOrderEntryListPage {
 			this.update_selection();
 		});
 		this.wrapper.on('change', '.so-list-row-select', () => this.update_selection());
+		// Click a sortable header to sort; click again to flip direction.
+		this.wrapper.on('click', '.so-sort-th', (e) => {
+			const field = $(e.currentTarget).data('sort');
+			if (this._sort.field === field) {
+				this._sort.dir = this._sort.dir === 'asc' ? 'desc' : 'asc';
+			} else {
+				this._sort.field = field;
+				this._sort.dir = 'asc';
+			}
+			this.start = 0;
+			this.render_header();
+			this.load_list();
+		});
+		// Dynamic filters: apply as the user types/picks (debounced); the Apply
+		// button stays for an explicit trigger.
+		const apply = frappe.utils.debounce(() => { this.start = 0; this.load_list(); }, 350);
+		Object.values(this._filter_fields).forEach((f) => {
+			if (f && f.$input) f.$input.on('input change awesomplete-selectcomplete', apply);
+		});
 	}
 
 	_args() {
@@ -288,6 +308,8 @@ class SalesOrderEntryListPage {
 			from_date: f.from_date.get_value() || '',
 			to_date: f.to_date.get_value() || '',
 			additional_units_damage_filter,
+			sort_field: this._sort.field || '',
+			sort_dir: this._sort.dir || 'desc',
 		};
 	}
 
@@ -320,9 +342,19 @@ class SalesOrderEntryListPage {
 		tr.append(
 			'<th style="text-align: center;"><input type="checkbox" class="so-list-select-all"></th>'
 		);
-		this._columns.forEach((c) =>
-			tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`)
-		);
+		this._columns.forEach((c) => {
+			if (!c.sort) {
+				tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`);
+				return;
+			}
+			const active = this._sort.field === c.sort;
+			const arrow = active ? (this._sort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
+			tr.append(
+				`<th class="${c.cls || ''} so-sort-th" data-sort="${c.sort}" ` +
+				`style="cursor:pointer; user-select:none; white-space:nowrap;" title="${__('Click to sort')}">` +
+				`${__(c.label)}<span class="text-muted" style="font-size:10px; opacity:${active ? 1 : 0.4};">${arrow}</span></th>`
+			);
+		});
 	}
 
 	render_rows(rows) {

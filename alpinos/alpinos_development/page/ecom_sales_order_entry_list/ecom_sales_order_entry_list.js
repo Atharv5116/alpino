@@ -42,18 +42,18 @@ const ESO_WF_COLORS = {
 
 // E-Com column layout (specced separately from the offline Sales/Warehouse layouts).
 const ESO_COLUMNS = [
-	{ label: 'ID', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-	{ label: 'PO No', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
-	{ label: 'Customer Name', render: (d, h) => h.esc(d.customer_name) },
-	{ label: 'Site Name', render: (d, h) => h.esc(d.custom_site_name || '—') },
-	{ label: 'PO Date', render: (d, h) => h.date(d.custom_po_date || d.po_date) },
-	{ label: 'PO Exp Date', render: (d, h) => h.date(d.custom_po_expiry_date) },
-	{ label: 'Delivery By', render: (d, h) => h.date(d.custom_delivery_by_date || d.delivery_date) },
-	{ label: 'Dispatch Date', render: (d, h) => h.date(d.custom_dispatch_date) },
+	{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+	{ label: 'PO No', sort: 'custom_po_number', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
+	{ label: 'Customer Name', sort: 'customer_name', render: (d, h) => h.esc(d.customer_name) },
+	{ label: 'Site Name', sort: 'custom_site_name', render: (d, h) => h.esc(d.custom_site_name || '—') },
+	{ label: 'PO Date', sort: 'custom_po_date', render: (d, h) => h.date(d.custom_po_date || d.po_date) },
+	{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', render: (d, h) => h.date(d.custom_po_expiry_date) },
+	{ label: 'Delivery By', sort: 'custom_delivery_by_date', render: (d, h) => h.date(d.custom_delivery_by_date || d.delivery_date) },
+	{ label: 'Dispatch Date', sort: 'custom_dispatch_date', render: (d, h) => h.date(d.custom_dispatch_date) },
 	{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
 	{ label: 'ASN Detail', render: (d, h) => h.asn(d) },
-	{ label: 'Created By', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-	{ label: 'Grand Total', cls: 'text-right', render: (d, h) => h.money(d) },
+	{ label: 'Created By', sort: 'owner', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+	{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
 ];
 
 class EcomSalesOrderListPage {
@@ -65,6 +65,7 @@ class EcomSalesOrderListPage {
 		this._last_meta = { has_more: 0 };
 		this._filters = {};
 		this._columns = ESO_COLUMNS;
+		this._sort = { field: '', dir: 'desc' };
 		this.render_header();
 		this.setup_toolbar();
 		this.setup_filters();
@@ -194,6 +195,25 @@ class EcomSalesOrderListPage {
 			const route = $(e.currentTarget).data('route');
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
+		// Click a sortable header to sort; click again to flip direction.
+		this.wrapper.on('click', '.eso-sort-th', (e) => {
+			const field = $(e.currentTarget).data('sort');
+			if (this._sort.field === field) {
+				this._sort.dir = this._sort.dir === 'asc' ? 'desc' : 'asc';
+			} else {
+				this._sort.field = field;
+				this._sort.dir = 'asc';
+			}
+			this.start = 0;
+			this.render_header();
+			this.load_list();
+		});
+		// Dynamic filters: apply as the user types/picks (debounced) — the Apply
+		// button stays for an explicit trigger.
+		const apply = frappe.utils.debounce(() => { this.start = 0; this.load_list(); }, 350);
+		Object.values(this._filters).forEach((f) => {
+			if (f && f.$input) f.$input.on('input change awesomplete-selectcomplete', apply);
+		});
 	}
 
 	_args() {
@@ -209,6 +229,8 @@ class EcomSalesOrderListPage {
 			customer: f.customer.get_value() || '',
 			from_date: f.from_date.get_value() || '',
 			to_date: f.to_date.get_value() || '',
+			sort_field: this._sort.field || '',
+			sort_dir: this._sort.dir || 'desc',
 		};
 	}
 
@@ -232,7 +254,19 @@ class EcomSalesOrderListPage {
 
 	render_header() {
 		const tr = this.wrapper.find('.eso-list-table thead tr').empty();
-		this._columns.forEach((c) => tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`));
+		this._columns.forEach((c) => {
+			if (!c.sort) {
+				tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`);
+				return;
+			}
+			const active = this._sort.field === c.sort;
+			const arrow = active ? (this._sort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
+			tr.append(
+				`<th class="${c.cls || ''} eso-sort-th" data-sort="${c.sort}" ` +
+				`style="cursor:pointer; user-select:none; white-space:nowrap;" title="${__('Click to sort')}">` +
+				`${__(c.label)}<span class="text-muted" style="font-size:10px; opacity:${active ? 1 : 0.4};">${arrow}</span></th>`
+			);
+		});
 	}
 
 	render_rows(rows) {

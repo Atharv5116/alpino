@@ -1409,6 +1409,8 @@ def get_sales_order_entry_list(
 	to_date=None,
 	additional_units_damage_filter=None,
 	channel=None,
+	sort_field=None,
+	sort_dir=None,
 ):
 	"""Paginated Sales Order rows for Alpinos custom list page (respects DocPerm / user rules).
 
@@ -1526,6 +1528,18 @@ def get_sales_order_entry_list(
 		"owner",
 	]
 
+	# Sorting — whitelist the column to keep it injection-safe; default newest first.
+	_SORTABLE = {
+		"name", "customer_name", "transaction_date", "delivery_date",
+		"custom_dispatch_date", "custom_po_expiry_date", "custom_delivery_by_date",
+		"custom_po_date", "custom_po_number", "po_no", "custom_site_name",
+		"grand_total", "status", "custom_workflow_status", "order_type",
+		"owner", "modified", "creation",
+	}
+	sf = (sort_field or "").strip()
+	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
+	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else "modified desc"
+
 	rows = frappe.get_list(
 		"Sales Order",
 		fields=fields,
@@ -1533,7 +1547,7 @@ def get_sales_order_entry_list(
 		or_filters=or_filters,
 		limit_start=start,
 		limit_page_length=page_length + 1,
-		order_by="modified desc",
+		order_by=order_by,
 	)
 
 	has_more = len(rows) > page_length
