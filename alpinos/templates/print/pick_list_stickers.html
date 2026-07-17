@@ -12,6 +12,17 @@
 	+----------------------------------------------+
 
    Every cell positioned absolutely in mm so wkhtmltopdf can't shift it.
+
+   EXACT SIZING — wkhtmltopdf renders absolute CSS lengths (mm/pt) at a
+   build-dependent scale (≈1.0 on some builds, ≈0.58 on others), so the 100x75mm
+   box came out physically wrong (e.g. ~77x58mm on the production server). We do
+   NOT fight that with a --zoom fudge (it's build-specific and unreliable).
+   Instead each sticker carries an invisible <a class="pl-cal"> anchor sized to
+   the exact 100x75mm design box: wkhtmltopdf emits it as a PDF link annotation
+   whose rectangle reveals the ACTUAL rendered scale. A post-processing step
+   (_normalize_stickers_to_exact_size in pick_list_api.py) reads that rectangle
+   and scales every page to a true 100x75mm, then strips the anchor. This is
+   exact on any wkhtmltopdf build. Keep the anchor; keep the layout in mm.
 #}
 <!DOCTYPE html>
 <html>
@@ -35,9 +46,25 @@
 		page-break-after: always;
 		page-break-inside: avoid;
 		overflow: hidden;
-		border: 0.4mm solid #111;
 	}
 	.sticker:last-child { page-break-after: auto; }
+
+	/* Calibration anchor AND the visible sticker outline are the same element,
+	   on purpose: the box border lives here (not on .sticker) so the rectangle
+	   wkhtmltopdf reports for the link annotation is EXACTLY the drawn border.
+	   The post-processor (_normalize_stickers_to_exact_size) reads that rectangle
+	   to learn the real render scale, rescales every page to a true 100x75mm so
+	   this border lands at exactly 100x75mm, then deletes the annotation. Keeping
+	   the border on .sticker instead would offset the anchor by the border width
+	   (absolute positioning is relative to the padding box) and leave the box
+	   ~0.3mm short. */
+	.pl-cal {
+		position: absolute;
+		top: 0; left: 0;
+		width: 100mm; height: 75mm;
+		display: block;
+		border: 0.4mm solid #111;
+	}
 
 	/* Column 1 — SKU# big at the top-left, gate / serial / total below. */
 	.sku-no {
@@ -126,6 +153,7 @@
 {% else %}
 	{% for s in stickers %}
 		<div class="sticker">
+			<a class="pl-cal" href="https://sticker.invalid/pl-cal"></a>
 			{% if s.is_sample %}
 				<div class="sample-col">SAMPLE</div>
 			{% endif %}

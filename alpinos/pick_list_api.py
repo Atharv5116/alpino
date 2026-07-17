@@ -212,12 +212,13 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 	  * "a4" — the SAME 100x75mm sticker centered on an A4 sheet (rest blank), for
 	    an ordinary A4 printer.
 
-	Both start from the identical 100x75mm render. For A4 we do NOT re-render at a
-	bigger page (wkhtmltopdf scales mm content by page size, so the box shrank to
-	~0.75x = 75x56mm on an A4-sized page and --zoom would not correct it). Instead
-	the correct 100x75mm page is composed, unscaled, onto a blank A4 page with
-	pypdf — so the sticker keeps its exact physical size and just gets A4
-	whitespace around it.
+	Both start from the identical 100x75mm render. wkhtmltopdf renders absolute
+	CSS lengths at a build-dependent scale (the box came out ~0.77x, ≈77x58mm, on
+	the production server), so straight after rendering we run
+	_normalize_stickers_to_exact_size() to force every page to a true 100x75mm.
+	For A4 we then compose that exact 100x75mm page, unscaled, onto a blank A4
+	page with pypdf — so the sticker keeps its exact physical size and just gets
+	A4 whitespace around it.
 
 	Calls pdfkit directly rather than frappe.utils.pdf.get_pdf ON PURPOSE:
 	get_pdf.prepare_options injects page-size=A4 alongside our page-width/height,
@@ -242,16 +243,105 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 		"disable-smart-shrinking": "",
 		"disable-javascript": "",
 		"quiet": "",
-		# mm-sized content renders at 3/4 scale (wkhtmltopdf rasterises CSS at
-		# 96dpi onto a 72dpi page: 72/96 = 0.75). zoom 4/3 scales it back so the
-		# 100x75mm box is physically 100x75mm on the label page.
-		"zoom": "1.3333333",
+		# NOTE: deliberately no "zoom" here. wkhtmltopdf mis-scales absolute CSS
+		# lengths (mm/pt/px) by a factor that varies per build, and a --zoom fudge
+		# only ever fixed one build while breaking another. The exact size is
+		# enforced afterwards, geometrically, by _normalize_stickers_to_exact_size.
 	}
 	# output_path=False -> return the PDF as bytes.
 	label_pdf = pdfkit.from_string(html, False, options=options)
+	# wkhtmltopdf's absolute-length scale is build-dependent; force exact 100x75mm.
+	label_pdf = _normalize_stickers_to_exact_size(label_pdf)
 	if paper != "a4":
 		return label_pdf
 	return _compose_stickers_on_a4(label_pdf)
+
+
+def _normalize_stickers_to_exact_size(label_pdf):
+	"""Rescale every sticker page to a true 100mm x 75mm, whatever scale
+	wkhtmltopdf actually rendered at.
+
+	wkhtmltopdf renders absolute CSS lengths (mm/pt) at a build-dependent scale —
+	~1.0 on some builds, ~0.58 on the production server — so the nominally
+	100x75mm box lands at the wrong physical size (≈77x58mm on the server). We
+	can't fix that reliably with a --zoom constant, so we measure and correct.
+
+	Each sticker carries an invisible <a class="pl-cal"> anchor sized to the exact
+	100x75mm design box (see templates/print/pick_list_stickers.html). wkhtmltopdf
+	emits it as a PDF link annotation whose /Rect is the anchor's ACTUAL rendered
+	size — i.e. it reports the real scale directly. We read that rectangle, scale
+	every page (anchored at its top-left corner) so the box becomes exactly
+	100x75mm, reset the mediabox, and strip the calibration annotation.
+
+	The scale is identical for every page in one render, so it's measured once
+	from the first calibrated page and applied to all. Falls back to the
+	unmodified PDF if pypdf is missing or no calibration annotation is found — so
+	the worst case is the pre-existing behaviour, never an error.
+	"""
+	try:
+		import io
+		from pypdf import PdfReader, PdfWriter, Transformation
+		from pypdf.generic import RectangleObject
+	except Exception:
+		return label_pdf
+
+	pt = 72.0 / 25.4  # PDF points per mm
+	w_new, h_new = 100.0 * pt, 75.0 * pt
+
+	try:
+		reader = PdfReader(io.BytesIO(label_pdf))
+
+		# Find the calibration anchor's rendered rectangle on the first page that
+		# has one. Its width/height reveal wkhtmltopdf's real scale; its top-left
+		# corner (x0, y1 — PDF origin is bottom-left) is where content is anchored.
+		sx = sy = None
+		anchor_x0 = anchor_y1 = 0.0
+		for page in reader.pages:
+			annots = page.get("/Annots")
+			if not annots:
+				continue
+			for ref in annots:
+				obj = ref.get_object()
+				rect = obj.get("/Rect")
+				if obj.get("/Subtype") == "/Link" and rect:
+					v = [float(x) for x in rect]
+					aw, ah = abs(v[2] - v[0]), abs(v[3] - v[1])
+					if aw > 0 and ah > 0:
+						sx, sy = w_new / aw, h_new / ah
+						anchor_x0, anchor_y1 = min(v[0], v[2]), max(v[1], v[3])
+						break
+			if sx:
+				break
+
+		if not sx:
+			# No calibration annotation (unexpected) — leave the PDF untouched.
+			return label_pdf
+
+		writer = PdfWriter()
+		for page in reader.pages:
+			# Scale about the anchor's top-left corner so the box grows/shrinks to
+			# exactly 100x75mm while staying pinned to the page's top-left.
+			page.add_transformation(
+				Transformation(ctm=(sx, 0, 0, sy, -sx * anchor_x0, h_new - sy * anchor_y1))
+			)
+			page.mediabox = RectangleObject([0, 0, w_new, h_new])
+			page.cropbox = RectangleObject([0, 0, w_new, h_new])
+			if "/Annots" in page:
+				del page["/Annots"]  # drop the (now invisible) calibration link
+			writer.add_page(page)
+
+		out = io.BytesIO()
+		writer.write(out)
+		return out.getvalue()
+	except Exception:
+		# Never let a normalization glitch break sticker printing — fall back to
+		# the un-normalized PDF (the pre-existing behaviour). Guard the log call
+		# itself so it can't raise out of this handler.
+		try:
+			frappe.log_error(title="Pick List sticker size normalization failed")
+		except Exception:
+			pass
+		return label_pdf
 
 
 def _compose_stickers_on_a4(label_pdf):
