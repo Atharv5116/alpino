@@ -801,6 +801,20 @@ def create_delivery_note_from_pick_list(pick_list_name):
 
 		if not (dn.get("custom_dispatch_to") or []):
 			dispatch_to = _format_address_text(dn.get("shipping_address_name"))
+			if not dispatch_to:
+				# E-com orders store the shipping address as free text on the SO
+				# (no ERPNext Address record), so shipping_address_name is blank —
+				# fall back to that text, else the billing text, so Dispatch To is
+				# populated (and the submit-time "Dispatch To required" check passes).
+				so_name = dn.get("custom_sales_order_id")
+				if so_name:
+					addr = frappe.db.get_value(
+						"Sales Order", so_name,
+						["custom_shipping_address_text", "custom_billing_address_text"],
+						as_dict=True,
+					) or {}
+					dispatch_to = (addr.get("custom_shipping_address_text")
+						or addr.get("custom_billing_address_text") or "").strip()
 			if dispatch_to:
 				dn.append("custom_dispatch_to", {"dispatch_to_address": dispatch_to})
 
