@@ -405,8 +405,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock}>
 					</td>
-					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_lock}></td>
-					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_lock}></td>
+					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" min="2000-01-01" max="9999-12-31" ${batch_lock}></td>
+					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" min="2000-01-01" max="9999-12-31" ${batch_lock}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
 						${data.docstatus !== 1 ? `
@@ -633,11 +633,17 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
+		// A native <input type="date"> reports a valid value even for a half-typed
+		// year ("20" -> 0020), which fired the EXP/MFG checks before the user had
+		// finished the date. Only react once the year is a full 4 digits.
+		const yearComplete = (d) => parseInt(String(d || '').split('-')[0], 10) >= 1000;
+
 		// EXP must be >= MFG; clear exp if user enters an earlier date than mfg.
 		container.on('change.alpinosRowEvents', '.exp-input', function() {
 			let tr = $(this).closest('tr');
 			let mfg = tr.find('.mfg-input').val();
 			let exp = $(this).val();
+			if (!yearComplete(exp) || (mfg && !yearComplete(mfg))) return; // still typing
 			if (mfg && exp && exp < mfg) {
 				frappe.msgprint(__('Expiry Date cannot be earlier than Manufacturing Date.'));
 				$(this).val('');
@@ -651,7 +657,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let mfg = $(this).val();
 			let exp_input = tr.find('.exp-input');
 			let exp = exp_input.val();
-			if (mfg && exp && exp < mfg) {
+			if (!yearComplete(mfg)) return; // still typing the year — don't validate/auto-fill yet
+			if (mfg && exp && yearComplete(exp) && exp < mfg) {
 				frappe.msgprint(__('Expiry Date cannot be earlier than Manufacturing Date. Clearing expiry; re-enter it.'));
 				exp_input.val('');
 				exp = '';
