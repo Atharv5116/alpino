@@ -133,6 +133,12 @@ class EcomSalesOrderEntry {
 			delete ro.duplicate_eso;
 			this.clear_form();
 			this.load_prefill(name, 'duplicate');
+		} else {
+			// Plain "New" visit — the page instance is reused across visits, so
+			// clear stale data from the previously created/edited order and
+			// refresh the recent-orders list (shows the just-created order).
+			this.clear_form();
+			this.load_recent_orders();
 		}
 	}
 
