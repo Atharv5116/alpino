@@ -617,12 +617,17 @@ class SalesOrderEntryView {
 			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'
 		);
 		w.find('.v-order-type').text(this._has(p, 'order_type') ? this._plain_text(p.order_type) : '—');
-		w.find('.v-billing').text(
-			this._has(p, 'address_display') ? this._address_plain(p.address_display) : '—'
-		);
-		w.find('.v-shipping').text(
-			this._has(p, 'shipping_address') ? this._address_plain(p.shipping_address) : '—'
-		);
+		// E-com orders store billing/shipping as free text (custom_*_address_text),
+		// not as ERPNext Address records — prefer that so the entered/fetched
+		// address shows instead of the customer's auto-linked default (or blank).
+		const billing_txt = (this._has(p, 'custom_billing_address_text') && p.custom_billing_address_text)
+			? p.custom_billing_address_text
+			: (this._has(p, 'address_display') ? this._address_plain(p.address_display) : '—');
+		const shipping_txt = (this._has(p, 'custom_shipping_address_text') && p.custom_shipping_address_text)
+			? p.custom_shipping_address_text
+			: (this._has(p, 'shipping_address') ? this._address_plain(p.shipping_address) : '—');
+		w.find('.v-billing').text(billing_txt);
+		w.find('.v-shipping').text(shipping_txt);
 		w.find('.v-date').text(this._fmt_date(p, 'transaction_date'));
 		w.find('.v-po-no').text(this._has(p, 'po_no') ? this._plain_text(p.po_no) : '—');
 		w.find('.v-tax-id').text(this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—');
@@ -649,6 +654,14 @@ class SalesOrderEntryView {
 				$tr.show();
 			}
 		});
+		// E-com free-text addresses keep the billing/shipping rows visible even
+		// when there is no linked ERPNext Address record.
+		if (this._has(p, 'custom_billing_address_text') && p.custom_billing_address_text) {
+			w.find('.v-billing').closest('tr').show();
+		}
+		if (this._has(p, 'custom_shipping_address_text') && p.custom_shipping_address_text) {
+			w.find('.v-shipping').closest('tr').show();
+		}
 
 		const items = Array.isArray(payload.items) ? payload.items : [];
 		w.find('.sec-order-items').show();
