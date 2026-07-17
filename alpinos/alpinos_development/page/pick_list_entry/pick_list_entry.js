@@ -91,9 +91,27 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					frappe.msgprint(__('Save the Pick List first, then generate stickers.'));
 					return;
 				}
-				let url = '/api/method/alpinos.pick_list_api.generate_pick_list_stickers'
-					+ '?pick_list=' + encodeURIComponent(page.pick_list_name);
-				window.open(url, '_blank');
+				const open_stickers = (paper) => {
+					const url = '/api/method/alpinos.pick_list_api.generate_pick_list_stickers'
+						+ '?pick_list=' + encodeURIComponent(page.pick_list_name)
+						+ '&paper=' + encodeURIComponent(paper);
+					window.open(url, '_blank');
+				};
+				// Same 100x75 mm sticker either way — only the paper differs.
+				const d = new frappe.ui.Dialog({
+					title: __('Generate Stickers'),
+					fields: [{
+						fieldtype: 'HTML',
+						options: `<p class="text-muted" style="margin-bottom:0;">${__(
+							'Each sticker is 100 &times; 75 mm. Pick the paper you are printing on — the box comes out the same size on both.'
+						)}</p>`,
+					}],
+					primary_action_label: __('Label Printer (100 &times; 75)'),
+					primary_action() { d.hide(); open_stickers('label'); },
+					secondary_action_label: __('A4 Sheet'),
+					secondary_action() { d.hide(); open_stickers('a4'); },
+				});
+				d.show();
 			});
 
 			page.main.find('#btn-create-delivery-note').on('click', function() {

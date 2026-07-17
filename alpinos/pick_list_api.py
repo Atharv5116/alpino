@@ -202,18 +202,28 @@ def _collect_pick_list_stickers(doc):
 	return stickers
 
 
-def _render_stickers_pdf(stickers, label):
-	"""Render a flat list of sticker dicts into a single 100mm x 75mm PDF —
-	one sticker per page.
+def _render_stickers_pdf(stickers, label, paper="label"):
+	"""Render a flat list of sticker dicts into a single PDF — one 100mm x 75mm
+	sticker per page.
+
+	`paper`:
+	  * "label" (default) — the page IS 100x75mm, so the sticker fills the whole
+	    label. For a 100x75mm label printer / roll.
+	  * "a4" — an A4 portrait page with the SAME true 100x75mm sticker anchored
+	    at the top-left corner (rest of the sheet blank). For an ordinary A4
+	    printer: the box comes out the identical physical size, upright, instead
+	    of the printer auto-rotating a tiny landscape label into the middle.
+
+	The sticker box (.sticker in the template) is a fixed 100mm x 75mm either
+	way — only the page around it changes.
 
 	Calls pdfkit directly rather than frappe.utils.pdf.get_pdf ON PURPOSE:
-	get_pdf.prepare_options reads options["page-size"], and because we only set
-	page-width/height it falls back to Print Settings (A4) and injects
-	page-size=A4 alongside our dimensions. wkhtmltopdf 0.12.6 lets --page-size
-	win, so the sticker ended up in the corner of an A4 page with its bottom
-	band pushed onto a second page. Passing ONLY page-width/height yields an
-	exact 100x75mm page. Everything on the sticker is sized in mm/pt (physical
-	units), so page mm == CSS mm regardless of the build's dpi — no zoom needed.
+	get_pdf.prepare_options reads options["page-size"], and because the label
+	path only sets page-width/height it falls back to Print Settings (A4) and
+	injects page-size=A4 alongside our dimensions. wkhtmltopdf 0.12.6 lets
+	--page-size win, so the sticker ended up in the corner of an A4 page with
+	its bottom band pushed onto a second page. Passing ONLY page-width/height
+	yields an exact 100x75mm page.
 	"""
 	import pdfkit
 
@@ -222,8 +232,6 @@ def _render_stickers_pdf(stickers, label):
 		{"stickers": stickers, "pick_list": label},
 	)
 	options = {
-		"page-width": "100mm",
-		"page-height": "75mm",
 		"margin-top": "0mm",
 		"margin-bottom": "0mm",
 		"margin-left": "0mm",
@@ -233,18 +241,28 @@ def _render_stickers_pdf(stickers, label):
 		"disable-smart-shrinking": "",
 		"disable-javascript": "",
 		"quiet": "",
-		# Now that the page is a true 100x75mm, the mm-sized content renders at
-		# 3/4 scale (wkhtmltopdf rasterises CSS at 96dpi onto a 72dpi page:
-		# 72/96 = 0.75). zoom 4/3 scales it back up to fill the label exactly.
+		# mm-sized content renders at 3/4 scale (wkhtmltopdf rasterises CSS at
+		# 96dpi onto a 72dpi page: 72/96 = 0.75). zoom 4/3 scales it back so the
+		# 100x75mm box is physically 100x75mm — on the label page AND on A4.
 		"zoom": "1.3333333",
 	}
+	if paper == "a4":
+		# A4 page; the .sticker box (100x75mm, page-break-after:always) sits at
+		# the top-left of each page → one true-size sticker per sheet, upright.
+		options["page-size"] = "A4"
+	else:
+		options["page-width"] = "100mm"
+		options["page-height"] = "75mm"
 	# output_path=False -> return the PDF as bytes.
 	return pdfkit.from_string(html, False, options=options)
 
 
 @frappe.whitelist()
-def generate_pick_list_stickers(pick_list):
+def generate_pick_list_stickers(pick_list, paper="label"):
 	"""Return a PDF stream of pick-list stickers — one per box per row.
+
+	`paper`: "label" (100x75mm page, for a label printer) or "a4" (A4 page with
+	the same 100x75mm sticker upright at the top-left). See _render_stickers_pdf.
 
 	Sticker layout fields (per sticker dict): see templates/print/pick_list_stickers.html.
 	Rows whose custom_source_table is in SAMPLE_SOURCE_TABLES are marked
@@ -262,12 +280,12 @@ def generate_pick_list_stickers(pick_list):
 	mark_sticker_printed(doc.name)
 
 	frappe.local.response.filename = "stickers-{0}.pdf".format(pick_list)
-	frappe.local.response.filecontent = _render_stickers_pdf(stickers, doc.name)
+	frappe.local.response.filecontent = _render_stickers_pdf(stickers, doc.name, paper=paper)
 	frappe.local.response.type = "download"
 
 
 @frappe.whitelist()
-def generate_pick_list_stickers_bulk(pick_lists):
+def generate_pick_list_stickers_bulk(pick_lists, paper="label"):
 	"""Return a single PDF of stickers for several Pick Lists at once.
 
 	`pick_lists` is a JSON list of Pick List names (sent by the list page's
@@ -289,7 +307,7 @@ def generate_pick_list_stickers_bulk(pick_lists):
 
 	label = pick_lists[0] if len(pick_lists) == 1 else "{0}-lists".format(len(pick_lists))
 	frappe.local.response.filename = "stickers-{0}.pdf".format(label)
-	frappe.local.response.filecontent = _render_stickers_pdf(stickers, label)
+	frappe.local.response.filecontent = _render_stickers_pdf(stickers, label, paper=paper)
 	frappe.local.response.type = "download"
 
 
