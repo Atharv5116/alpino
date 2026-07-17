@@ -209,21 +209,20 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 	`paper`:
 	  * "label" (default) — the page IS 100x75mm, so the sticker fills the whole
 	    label. For a 100x75mm label printer / roll.
-	  * "a4" — an A4 portrait page with the SAME true 100x75mm sticker anchored
-	    at the top-left corner (rest of the sheet blank). For an ordinary A4
-	    printer: the box comes out the identical physical size, upright, instead
-	    of the printer auto-rotating a tiny landscape label into the middle.
+	  * "a4" — the SAME 100x75mm sticker centered on an A4 sheet (rest blank), for
+	    an ordinary A4 printer.
 
-	The sticker box (.sticker in the template) is a fixed 100mm x 75mm either
-	way — only the page around it changes.
+	Both start from the identical 100x75mm render. For A4 we do NOT re-render at a
+	bigger page (wkhtmltopdf scales mm content by page size, so the box shrank to
+	~0.75x = 75x56mm on an A4-sized page and --zoom would not correct it). Instead
+	the correct 100x75mm page is composed, unscaled, onto a blank A4 page with
+	pypdf — so the sticker keeps its exact physical size and just gets A4
+	whitespace around it.
 
 	Calls pdfkit directly rather than frappe.utils.pdf.get_pdf ON PURPOSE:
-	get_pdf.prepare_options reads options["page-size"], and because the label
-	path only sets page-width/height it falls back to Print Settings (A4) and
-	injects page-size=A4 alongside our dimensions. wkhtmltopdf 0.12.6 lets
-	--page-size win, so the sticker ended up in the corner of an A4 page with
-	its bottom band pushed onto a second page. Passing ONLY page-width/height
-	yields an exact 100x75mm page.
+	get_pdf.prepare_options injects page-size=A4 alongside our page-width/height,
+	which wkhtmltopdf lets win — pushing the sticker into the corner of an A4 page.
+	Passing ONLY page-width/height yields an exact 100x75mm page.
 	"""
 	import pdfkit
 
@@ -232,6 +231,8 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 		{"stickers": stickers, "pick_list": label},
 	)
 	options = {
+		"page-width": "100mm",
+		"page-height": "75mm",
 		"margin-top": "0mm",
 		"margin-bottom": "0mm",
 		"margin-left": "0mm",
@@ -243,32 +244,45 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 		"quiet": "",
 		# mm-sized content renders at 3/4 scale (wkhtmltopdf rasterises CSS at
 		# 96dpi onto a 72dpi page: 72/96 = 0.75). zoom 4/3 scales it back so the
-		# 100x75mm box is physically 100x75mm — on the label page AND on A4.
+		# 100x75mm box is physically 100x75mm on the label page.
 		"zoom": "1.3333333",
 	}
-	if paper == "a4":
-		# A4 page with the 100x75mm .sticker box centered. Symmetric page margins
-		# (physical, so unaffected by the content zoom) frame a content area of
-		# exactly 100x75mm in the middle of the 210x297mm sheet — same box size as
-		# the label output, just centered. One sticker per page (page-break-after).
-		# A4 = 210x297mm expressed via page-width/height (NOT page-size): wkhtmltopdf
-		# honours the content --zoom for page-width/height (as it does for the label
-		# page) but IGNORES it under page-size:A4, which shrank the box to 0.75x
-		# (~75x56mm). Same mechanism as the label => the shared zoom (1.3333) yields
-		# a true 100x75mm box. Center it: left/top margins fix its top-left corner
-		# (55 = (210-100)/2, 111 = (297-75)/2); right/bottom keep a few mm slack so
-		# the box can't round onto a blank second page.
-		options["page-width"] = "210mm"
-		options["page-height"] = "297mm"
-		options["margin-top"] = "111mm"
-		options["margin-left"] = "55mm"
-		options["margin-bottom"] = "108mm"
-		options["margin-right"] = "50mm"
-	else:
-		options["page-width"] = "100mm"
-		options["page-height"] = "75mm"
 	# output_path=False -> return the PDF as bytes.
-	return pdfkit.from_string(html, False, options=options)
+	label_pdf = pdfkit.from_string(html, False, options=options)
+	if paper != "a4":
+		return label_pdf
+	return _compose_stickers_on_a4(label_pdf)
+
+
+def _compose_stickers_on_a4(label_pdf):
+	"""Place each 100x75mm sticker page, unscaled, centered on its own A4 page.
+
+	Pure PDF geometry (pypdf) — no re-rendering — so the sticker keeps its exact
+	100x75mm physical size; only A4 whitespace is added around it. Falls back to
+	the original 100x75 PDF if pypdf is unavailable.
+	"""
+	try:
+		import io
+		from pypdf import PdfReader, PdfWriter
+	except Exception:
+		return label_pdf
+
+	pt = 72.0 / 25.4  # PDF points per mm
+	a4_w, a4_h = 210.0 * pt, 297.0 * pt
+
+	reader = PdfReader(io.BytesIO(label_pdf))
+	writer = PdfWriter()
+	for src in reader.pages:
+		page = writer.add_blank_page(width=a4_w, height=a4_h)
+		w = float(src.mediabox.width)
+		h = float(src.mediabox.height)
+		tx = (a4_w - w) / 2.0   # center horizontally
+		ty = (a4_h - h) / 2.0   # center vertically (PDF origin is bottom-left)
+		page.merge_translated_page(src, tx, ty)
+
+	out = io.BytesIO()
+	writer.write(out)
+	return out.getvalue()
 
 
 @frappe.whitelist()
