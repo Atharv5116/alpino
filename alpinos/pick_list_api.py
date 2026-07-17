@@ -252,13 +252,18 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 		# exactly 100x75mm in the middle of the 210x297mm sheet — same box size as
 		# the label output, just centered. One sticker per page (page-break-after).
 		options["page-size"] = "A4"
-		# Frame a content area of EXACTLY 100x75mm centered on the 210x297mm sheet,
-		# i.e. the same dimensions as the label page so the sticker renders at the
-		# identical size — just centered. margins: (210-100)/2 = 55, (297-75)/2 = 111.
+		# On an A4 page wkhtmltopdf applies an extra 3/4 shrink that the 100x75mm
+		# label page does not, so with the label zoom (1.3333) the box measured
+		# ~75x56mm on print. Multiply by another 4/3 to land on a true 100x75mm box:
+		# 1.3333 * (100/75) = 1.7778.
+		options["zoom"] = "1.7777778"
+		# Center the box: the left/top margins fix its top-left corner (55mm =
+		# (210-100)/2, 111mm = (297-75)/2). Right/bottom keep a few mm of slack so
+		# the now full-size box can't round onto a blank second page.
 		options["margin-top"] = "111mm"
-		options["margin-bottom"] = "111mm"
 		options["margin-left"] = "55mm"
-		options["margin-right"] = "55mm"
+		options["margin-bottom"] = "108mm"
+		options["margin-right"] = "50mm"
 	else:
 		options["page-width"] = "100mm"
 		options["page-height"] = "75mm"
