@@ -1309,9 +1309,10 @@ def get_sales_order_entry_view_payload(sales_order):
 		if k in permitted_parent:
 			parent[k] = v
 	parent["name"] = doc.name
-	# Std fields aren't in permitted fieldnames; Created By is always shown.
+	# Std fields aren't in permitted fieldnames; Created By / On are always shown.
 	parent["owner"] = doc.owner
 	parent["owner_full_name"] = frappe.utils.get_fullname(doc.owner)
+	parent["creation"] = str(doc.get("creation") or "")
 
 	# Table fields (items, child tables) are excluded from get_permitted_fieldnames but SO read
 	# implies line visibility; still filter each child row by Sales Order *Item* field perms.

@@ -24,6 +24,10 @@ class SalesOrderEntryView {
 	}
 
 	setup_toolbar() {
+		// Idempotent: if this page instance is ever re-created, clear the existing
+		// buttons/menu first so the action bar never accumulates duplicates.
+		this.page.clear_inner_toolbar && this.page.clear_inner_toolbar();
+		this.page.clear_menu && this.page.clear_menu();
 		// Utility actions live in the "⋯" menu to keep the action bar uncluttered.
 		this.page.add_menu_item(__('Print'), () => this.open_default_print_preview());
 		this.page.add_menu_item(__('Download PDF'), () => this.download_default_print_pdf());
@@ -497,7 +501,10 @@ class SalesOrderEntryView {
 		// screen until a manual browser refresh.
 		const so_name = this._resolve_sales_order_name();
 		if (so_name) {
-			this.load_order(so_name);
+			// First open freezes (reassuring); later re-shows refresh silently so
+			// navigating back doesn't flash a loading overlay each time.
+			this.load_order(so_name, { silent: !!this._loaded_once });
+			this._loaded_once = true;
 		}
 	}
 
@@ -518,12 +525,12 @@ class SalesOrderEntryView {
 		);
 	}
 
-	load_order(name) {
+	load_order(name, opts = {}) {
 		this._so_name = name;
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_sales_order_entry_view_payload',
 			args: { sales_order: name },
-			freeze: true,
+			freeze: !opts.silent,
 			freeze_message: __('Loading Sales Order...'),
 			callback: (r) => {
 				if (r.exc) {
@@ -634,6 +641,9 @@ class SalesOrderEntryView {
 		w.find('.v-dispatch-date').text(this._fmt_date(p, 'custom_dispatch_date'));
 		w.find('.v-delivery-date').text(this._fmt_date(p, 'delivery_date'));
 		w.find('.v-created-by').text(this._plain_text(p.owner_full_name || p.owner || '—'));
+		w.find('.v-created-on').text(
+			this._has(p, 'creation') && p.creation ? frappe.datetime.str_to_user(p.creation) : '—'
+		);
 
 		// E-com order flags (carried from Buyer Master) — surface what was stored.
 		if ((this._channel || '') === 'E-com') {
