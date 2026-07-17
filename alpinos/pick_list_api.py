@@ -252,14 +252,13 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 		# exactly 100x75mm in the middle of the 210x297mm sheet — same box size as
 		# the label output, just centered. One sticker per page (page-break-after).
 		options["page-size"] = "A4"
-		# The box sits at the TOP-LEFT of the content area, so the top/left margins
-		# alone set its position: 111mm = (297-75)/2 and 55mm = (210-100)/2 center
-		# it. Bottom/right are given a few mm of slack (content area a touch larger
-		# than the box) so an exact 100x75 fit can't round into a blank second page.
+		# Frame a content area of EXACTLY 100x75mm centered on the 210x297mm sheet,
+		# i.e. the same dimensions as the label page so the sticker renders at the
+		# identical size — just centered. margins: (210-100)/2 = 55, (297-75)/2 = 111.
 		options["margin-top"] = "111mm"
+		options["margin-bottom"] = "111mm"
 		options["margin-left"] = "55mm"
-		options["margin-bottom"] = "105mm"
-		options["margin-right"] = "50mm"
+		options["margin-right"] = "55mm"
 	else:
 		options["page-width"] = "100mm"
 		options["page-height"] = "75mm"
