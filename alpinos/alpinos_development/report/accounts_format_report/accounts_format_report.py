@@ -186,8 +186,17 @@ def _get_data(filters):
 		if not pl_voucher:
 			pl_voucher = _voucher_type(registration_type, bill.get("state"))
 
-		bill_lines = _split_address(" ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")])))
-		ship_lines = _split_address(" ".join(filter(None, [ship.get("address_line1"), ship.get("address_line2")])))
+		# Address lines: e-com orders store the billing/shipping address as free
+		# text on the SO (custom_*_address_text) — that's what the user entered, so
+		# prefer it. Offline orders leave it blank and use the structured Address
+		# record (customer_address / shipping_address_name). State/city/pincode
+		# still come from the Address record (free text isn't parsed into those).
+		bill_text = (so.get("custom_billing_address_text") or "").strip() \
+			or " ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")]))
+		ship_text = (so.get("custom_shipping_address_text") or "").strip() \
+			or " ".join(filter(None, [ship.get("address_line1"), ship.get("address_line2")]))
+		bill_lines = _split_address(bill_text)
+		ship_lines = _split_address(ship_text)
 
 		customer_name = obm.get("tally_buyer_name") or so.get("customer_name") or so.customer
 
