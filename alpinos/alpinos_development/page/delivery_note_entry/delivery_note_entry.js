@@ -223,15 +223,20 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('.dn-dispatch-to-input').prop('readonly', !draft);
 		$main.find('.dn-dispatch-to-remove').toggle(draft);
 
-		// DN Users can only enter the LR/AWB and submit — they cannot edit the
-		// product qty, Dispatch From / To, or the assignment.
+		// Quantity is read-only by default — only authorized roles may modify it.
 		var _roles = frappe.user_roles || [];
-		var _isDNUser = _roles.indexOf('DN User') !== -1 &&
-			!_roles.some(function (r) {
-				return ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'].indexOf(r) !== -1;
-			});
-		if (_isDNUser) {
+		var _AUTHORIZED_QTY_ROLES = ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'];
+		var _canEditQty = _roles.some(function (r) {
+			return _AUTHORIZED_QTY_ROLES.indexOf(r) !== -1;
+		});
+		if (draft && !_canEditQty) {
 			$main.find('.dn-item-qty').prop('readonly', true);
+		}
+
+		// DN Users can only enter the LR/AWB and submit — they cannot edit the
+		// Dispatch From / To or the assignment (qty is already gated above).
+		var _isDNUser = _roles.indexOf('DN User') !== -1 && !_canEditQty;
+		if (_isDNUser) {
 			$main.find('.dn-item-remove').hide();
 			$main.find('.dn-dispatch-to-input').prop('readonly', true);
 			$main.find('#btn-dn-dispatch-to-add').hide();
@@ -275,11 +280,10 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			return;
 		}
 		frappe.call({
-			// Only the warehouse/sales workflow team (Delivery Note permission
-			// matrix roles); the current assignee is kept for legacy values.
-			method: 'alpinos.workflow_role_access.get_workflow_team_users',
+			// Only DN User / DN Manager holders; the current assignee is kept
+			// even without a matching role so legacy values still display.
+			method: 'alpinos.workflow_role_access.get_dn_assignable_users',
 			args: {
-				doctype: 'Delivery Note',
 				include_users: [current_value].filter(Boolean)
 			},
 			callback: function(r) {

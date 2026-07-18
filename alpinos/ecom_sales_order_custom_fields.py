@@ -163,6 +163,16 @@ def setup_ecom_sales_order_fields():
 				insert_after="custom_additional_units_damage_items",
 				description="If checked, the whole PO is a freebie order; Order Items table is hidden and free items go in Marketing Freebies.",
 			),
+			# ---- Sticker attachments (E-com & MT orders) -------------------
+			dict(
+				fieldname="custom_sticker_attachments",
+				label="Sticker Attachments",
+				fieldtype="Table",
+				options="Sales Order Sticker Attachment",
+				insert_after="custom_is_freebie_po",
+				depends_on=_ECOM_SECTION_DEPENDS,
+				description="Sticker artwork/files for this E-com or Modern Trade order; shown on the Pick List.",
+			),
 		],
 		"Sales Order Item": [
 			dict(

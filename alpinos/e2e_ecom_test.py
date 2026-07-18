@@ -222,7 +222,10 @@ def _mk_pl(so, f, qtys, short_action=None, reason=None, future_date=None, qc_use
 			row["custom_remark"] = reason
 		items.append(row)
 	header = {"custom_qc_attended_by": qc_user or frappe.db.get_value("User", {"email": ["like", "ecomtest-%"]}, "name") or "Administrator",
-	          "custom_dispatch_date": DISPATCH()}
+	          "custom_dispatch_date": DISPATCH(),
+	          # Transporter + PO No. are now mandatory to submit a Pick List.
+	          "custom_transporter": "ECOMTEST Transport",
+	          "custom_po_no": "ECOMTEST-PO"}
 	return create_and_submit_pick_list(
 		so_name=so, header=frappe.as_json(header), items=frappe.as_json(items),
 		short_pick_action=short_action, short_pick_reason=reason,

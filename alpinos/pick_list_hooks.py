@@ -145,6 +145,14 @@ def _validate_mandatory_rows(doc):
 	if not doc.custom_qc_attended_by:
 		frappe.throw("QC Attended By is mandatory.")
 
+	# Transporter + PO No. are mandatory before the Pick List can be submitted
+	# (draft may still be saved without them so the details can be filled later).
+	if doc.docstatus == 1:
+		if not (doc.get("custom_transporter") or "").strip():
+			frappe.throw("Transporter is mandatory before submitting the Pick List.")
+		if not (doc.get("custom_po_no") or "").strip():
+			frappe.throw("PO No. is mandatory before submitting the Pick List.")
+
 	for row in doc.locations or []:
 		if not row.item_code:
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")

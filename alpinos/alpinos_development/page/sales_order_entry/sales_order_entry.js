@@ -578,6 +578,17 @@ class SalesOrderEntry {
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-delivery-by"></div></div>
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-freebie-po"></div></div>
 				</div>
+				<div class="row">
+					<div class="col-md-12" style="margin-bottom:8px;">
+						<label class="control-label" style="font-size:12px;">Sticker Attachments</label>
+						<div class="mt-stickers-empty text-muted" style="font-size:12px; margin-bottom:6px;">No sticker files uploaded.</div>
+						<table class="table table-bordered mt-stickers-table" style="font-size:13px; margin-bottom:8px; display:none;">
+							<thead><tr><th style="min-width:220px;">File</th><th style="min-width:160px;">Remarks</th><th style="width:36px;"></th></tr></thead>
+							<tbody></tbody>
+						</table>
+						<button type="button" class="btn btn-sm btn-light btn-mt-add-sticker"><i class="fa fa-upload"></i> Upload Sticker</button>
+					</div>
+				</div>
 			</div>`);
 		this.wrapper.find('.so-header').after($card);
 		const mk = (sel, df) => frappe.ui.form.make_control({ df, parent: $card.find(sel), render_input: true });
@@ -593,7 +604,54 @@ class SalesOrderEntry {
 			delivery_by: mk('.mt-fld-delivery-by', { fieldtype: 'Date', fieldname: 'delivery_by_date', label: 'Delivery By Date' }),
 			freebie_po: mk('.mt-fld-freebie-po', { fieldtype: 'Check', fieldname: 'is_freebie_po', label: 'Freebies (Entire PO Free)' }),
 		};
+		this.mt_stickers = []; // [{attachment, file_name, remarks}]
+		$card.find('.btn-mt-add-sticker').on('click', () => this.upload_mt_sticker());
 		this.$mt_card = $card;
+	}
+
+	upload_mt_sticker() {
+		new frappe.ui.FileUploader({
+			allow_multiple: true,
+			on_success: (file_doc) => {
+				this.mt_stickers.push({
+					attachment: file_doc.file_url,
+					file_name: file_doc.file_name || '',
+					remarks: '',
+				});
+				this.render_mt_stickers();
+			},
+		});
+	}
+
+	render_mt_stickers() {
+		if (!this.$mt_card) return;
+		const $table = this.$mt_card.find('.mt-stickers-table');
+		const $body = $table.find('tbody').empty();
+		const $empty = this.$mt_card.find('.mt-stickers-empty');
+		if (!this.mt_stickers || !this.mt_stickers.length) {
+			$table.hide();
+			$empty.show();
+			return;
+		}
+		$empty.hide();
+		$table.show();
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		this.mt_stickers.forEach((s, idx) => {
+			const $row = $(`<tr>
+				<td><a href="${esc(s.attachment)}" target="_blank">${esc(s.file_name || s.attachment)}</a></td>
+				<td class="cell-remarks"></td>
+				<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-sticker">&times;</button></td>
+			</tr>`);
+			const $rm = $('<input type="text" class="form-control input-xs">');
+			$rm.val(s.remarks || '');
+			$row.find('.cell-remarks').append($rm);
+			$rm.on('input change', () => { this.mt_stickers[idx].remarks = $rm.val(); });
+			$row.find('.btn-del-sticker').on('click', () => {
+				this.mt_stickers.splice(idx, 1);
+				this.render_mt_stickers();
+			});
+			$body.append($row);
+		});
 	}
 
 	toggle_mt_ecom() {
@@ -618,6 +676,10 @@ class SalesOrderEntry {
 			this.mt.billing_gstin.set_value(s.billing_gstin || '');
 			this.mt.shipping_gstin.set_value(s.shipping_gstin || '');
 			this.mt.freebie_po.set_value(cint(s.is_freebie_po));
+			this.mt_stickers = (s.sticker_attachments || []).map((st) => ({
+				attachment: st.attachment || '', file_name: st.file_name || '', remarks: st.remarks || '',
+			}));
+			this.render_mt_stickers();
 			this._mt_saved = null;
 			return;
 		}
@@ -647,6 +709,9 @@ class SalesOrderEntry {
 			billing_gstin: this.mt.billing_gstin.get_value() || '',
 			shipping_gstin: this.mt.shipping_gstin.get_value() || '',
 			is_freebie_po: cint(this.mt.freebie_po.get_value()),
+			sticker_attachments: (this.mt_stickers || []).filter((s) => s.attachment).map((s) => ({
+				attachment: s.attachment, file_name: s.file_name || '', remarks: s.remarks || '',
+			})),
 		};
 	}
 

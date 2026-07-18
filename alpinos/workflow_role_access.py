@@ -420,6 +420,69 @@ def get_workflow_team_users(doctype, include_users=None):
 
 
 # ---------------------------------------------------------------------------
+# Delivery Note "Assigned To" — restricted to DN User / DN Manager
+# ---------------------------------------------------------------------------
+DN_ASSIGN_ROLES = ["DN User", "DN Manager"]
+
+
+@frappe.whitelist()
+def get_dn_assignable_users(include_users=None):
+	"""Enabled System Users holding the DN User or DN Manager role — the only
+	users offered in the Delivery Note 'Assigned To' dropdown on the entry page.
+
+	Names in include_users are appended even without a matching role so a DN with
+	an existing (legacy) assignee still shows its value."""
+	role_holders = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", DN_ASSIGN_ROLES], "parenttype": "User"},
+		pluck="parent",
+		distinct=True,
+	)
+	users = []
+	if role_holders:
+		users = frappe.get_all(
+			"User",
+			filters={"name": ["in", role_holders], "enabled": 1, "user_type": "System User"},
+			pluck="name",
+			order_by="full_name asc",
+		)
+	if isinstance(include_users, str):
+		include_users = frappe.parse_json(include_users) or []
+	for extra in include_users or []:
+		if extra and extra not in users and frappe.db.exists("User", extra):
+			users.append(extra)
+	return users
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def dn_assigned_to_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link-field query for Delivery Note.custom_assigned_to — restricts the
+	standard-form picker to DN User / DN Manager holders."""
+	txt = txt or ""
+	return frappe.db.sql(
+		"""
+		SELECT DISTINCT u.name, u.full_name
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` r ON r.parent = u.name AND r.role IN (%(role1)s, %(role2)s)
+		WHERE IFNULL(u.enabled, 0) = 1
+			AND u.user_type = 'System User'
+			AND u.name NOT IN ('Administrator', 'Guest')
+			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+		ORDER BY u.full_name ASC
+		LIMIT %(page_len)s OFFSET %(start)s
+		""",
+		{
+			"role1": "DN User",
+			"role2": "DN Manager",
+			"txt": f"%{txt}%",
+			"start": int(start or 0),
+			"page_len": int(page_len or 20),
+		},
+	)
+
+
+# ---------------------------------------------------------------------------
 # Entry point (hooks.after_migrate)
 # ---------------------------------------------------------------------------
 

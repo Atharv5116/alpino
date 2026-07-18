@@ -162,8 +162,6 @@
 			{% if s.sku_name %}<div class="sku-code">{{ s.sku_name }}</div>{% endif %}
 			{% if s.mfg_date %}<div class="mfg-date">{{ s.mfg_date }}</div>{% endif %}
 
-			{% if s.batch_no %}<div class="batch-block">{{ s.batch_no }}</div>{% endif %}
-
 			<div class="gate-counter">
 				{{ s.dispatch_area or "—" }} / {{ s.box_index }} / {{ s.total_box }}
 			</div>

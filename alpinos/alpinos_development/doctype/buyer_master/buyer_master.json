@@ -44,6 +44,8 @@
   "contact_section",
   "email",
   "contact_no",
+  "primary_poc",
+  "secondary_poc",
   "shipping_section",
   "shipping_same_as_profile",
   "shipping_address",
@@ -299,6 +301,16 @@
    "label": "Contact No",
    "options": "Phone",
    "reqd": 1
+  },
+  {
+   "fieldname": "primary_poc",
+   "fieldtype": "Data",
+   "label": "Primary POC"
+  },
+  {
+   "fieldname": "secondary_poc",
+   "fieldtype": "Data",
+   "label": "Secondary POC"
   },
   {
    "fieldname": "shipping_section",

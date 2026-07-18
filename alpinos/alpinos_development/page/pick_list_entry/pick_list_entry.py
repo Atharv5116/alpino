@@ -84,6 +84,17 @@ def get_pick_list_data(name):
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Pick List combo recompute failed")
 
+	# Sticker attachments from the linked Sales Order (E-com & MT orders) — shown
+	# read-only on the Pick List so the picker can print/reference the artwork.
+	doc_dict["custom_sticker_attachments"] = []
+	if doc.get("custom_sales_order_id"):
+		doc_dict["custom_sticker_attachments"] = frappe.get_all(
+			"Sales Order Sticker Attachment",
+			filters={"parent": doc.custom_sales_order_id, "parenttype": "Sales Order"},
+			fields=["attachment", "file_name", "remarks"],
+			order_by="idx",
+		)
+
 	return doc_dict
 
 @frappe.whitelist()

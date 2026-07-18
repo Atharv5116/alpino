@@ -19,6 +19,7 @@ class EcomSalesOrderEntry {
 		this.wrapper = $(page.main);
 		this.items = [];
 		this.freebies = [];
+		this.stickers = []; // [{attachment, file_name, remarks}]
 		this.editing = null; // SO name when editing a draft
 		this._site_manual = false;
 		this.make_fields();
@@ -115,6 +116,7 @@ class EcomSalesOrderEntry {
 		const w = this.wrapper;
 		w.find('.btn-add-item').on('click', () => this.add_item_row());
 		w.find('.btn-add-freebie').on('click', () => this.add_freebie_row());
+		w.find('.btn-eso-add-sticker').on('click', () => this.upload_sticker());
 		w.find('.btn-eso-save').on('click', () => this.save());
 		w.find('.btn-eso-clear').on('click', () => this.clear_form());
 		w.on('click', '.recent-orders-list .order-row', (e) => {
@@ -353,6 +355,51 @@ class EcomSalesOrderEntry {
 		this.wrapper.find('.eso-freebies-title').text(on ? __('Freebie Items (Entire PO)') : __('Freebies'));
 	}
 
+	// ---- sticker attachments (multiple uploads) ----------------------------
+	upload_sticker() {
+		new frappe.ui.FileUploader({
+			allow_multiple: true,
+			on_success: (file_doc) => {
+				this.stickers.push({
+					attachment: file_doc.file_url,
+					file_name: file_doc.file_name || '',
+					remarks: '',
+				});
+				this.render_stickers();
+			},
+		});
+	}
+
+	render_stickers() {
+		const $table = this.wrapper.find('.eso-stickers-table');
+		const $body = $table.find('tbody').empty();
+		const $empty = this.wrapper.find('.eso-stickers-empty');
+		if (!this.stickers.length) {
+			$table.hide();
+			$empty.show();
+			return;
+		}
+		$empty.hide();
+		$table.show();
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		this.stickers.forEach((s, idx) => {
+			const $row = $(`<tr>
+				<td><a href="${esc(s.attachment)}" target="_blank">${esc(s.file_name || s.attachment)}</a></td>
+				<td class="cell-remarks"></td>
+				<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-sticker">&times;</button></td>
+			</tr>`);
+			const $rm = $('<input type="text" class="form-control input-xs eso-cell-input">');
+			$rm.val(s.remarks || '');
+			$row.find('.cell-remarks').append($rm);
+			$rm.on('input change', () => { this.stickers[idx].remarks = $rm.val(); });
+			$row.find('.btn-del-sticker').on('click', () => {
+				this.stickers.splice(idx, 1);
+				this.render_stickers();
+			});
+			$body.append($row);
+		});
+	}
+
 	// ---- recent orders (mirrors the offline entry page) --------------------
 	load_recent_orders() {
 		const me = this;
@@ -450,6 +497,11 @@ class EcomSalesOrderEntry {
 			shipping_address: this.f_ship_addr.get_value(),
 			site_name: this.f_site.get_value(),
 			is_freebie_po: freebie_po,
+			sticker_attachments: JSON.stringify(
+				(this.stickers || []).filter((s) => s.attachment).map((s) => ({
+					attachment: s.attachment, file_name: s.file_name || '', remarks: s.remarks || '',
+				}))
+			),
 		};
 	}
 
@@ -541,6 +593,10 @@ class EcomSalesOrderEntry {
 				(d.freebies || []).forEach((f) => this.add_freebie_row({
 					item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty),
 				}));
+				this.stickers = (d.sticker_attachments || []).map((s) => ({
+					attachment: s.attachment || '', file_name: s.file_name || '', remarks: s.remarks || '',
+				}));
+				this.render_stickers();
 				if (!this.items.length) this.add_item_row();
 				this.render_total();
 				this.toggle_freebie_po();
@@ -553,8 +609,10 @@ class EcomSalesOrderEntry {
 		this._site_manual = false;
 		this.items = [];
 		this.freebies = [];
+		this.stickers = [];
 		this.wrapper.find('.eso-items-table tbody').empty();
 		this.wrapper.find('.eso-freebies-table tbody').empty();
+		this.render_stickers();
 		this.page.set_title(__('E-Com Sales Order Entry'));
 		[
 			this.f_customer, this.f_customer_type, this.f_appointment, this.f_grn, this.f_partial,

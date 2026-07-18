@@ -205,6 +205,9 @@ def apply_ecom_fields_to_so(so, ecom_fields, channel="Offline"):
 		is_freebie_po=data.get("is_freebie_po"),
 		channel=channel,
 	)
+	# Sticker attachments carry through for Modern-Trade orders too.
+	if "sticker_attachments" in data:
+		_apply_sticker_attachments(so, data.get("sticker_attachments"))
 
 
 def _apply_ecom_item_margins(so, items):
@@ -285,6 +288,23 @@ def _write_back_addresses_to_buyer(so):
 		obm.save()
 
 
+def _apply_sticker_attachments(so, stickers):
+	"""Replace the SO's sticker-attachment child rows from the entry-page payload.
+
+	Each sticker is {attachment, file_name, remarks}; rows without a file URL are
+	dropped. Used by E-com and Modern Trade orders and shown on the Pick List."""
+	so.set("custom_sticker_attachments", [])
+	for s in _parse_json(stickers) or []:
+		url = (s.get("attachment") or "").strip()
+		if not url:
+			continue
+		so.append("custom_sticker_attachments", {
+			"attachment": url,
+			"file_name": (s.get("file_name") or "").strip(),
+			"remarks": (s.get("remarks") or "").strip(),
+		})
+
+
 @frappe.whitelist()
 def create_ecom_sales_order(customer, order_type, company, items, flags=None,
                             po_number=None, po_date=None, po_expiry_date=None,
@@ -292,7 +312,7 @@ def create_ecom_sales_order(customer, order_type, company, items, flags=None,
                             billing_gstin=None, shipping_gstin=None,
                             billing_address=None, shipping_address=None,
                             site_name=None, is_freebie_po=0, freebies=None,
-                            taxes_and_charges=None, submit_now=1):
+                            taxes_and_charges=None, sticker_attachments=None, submit_now=1):
 	"""Create an E-com channel Sales Order from the e-com entry page."""
 	if not frappe.has_permission("Sales Order", "create"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
@@ -312,6 +332,7 @@ def create_ecom_sales_order(customer, order_type, company, items, flags=None,
 		dispatch_date, delivery_by_date, po_number, po_expiry_date,
 		site_name, billing_address, shipping_address, taxes_and_charges,
 	)
+	_apply_sticker_attachments(so, sticker_attachments)
 	so.insert()
 	if cint(submit_now):
 		so.submit()
@@ -327,7 +348,7 @@ def update_ecom_sales_order(name, customer, order_type, company, items, flags=No
                             billing_gstin=None, shipping_gstin=None,
                             billing_address=None, shipping_address=None,
                             site_name=None, is_freebie_po=0, freebies=None,
-                            taxes_and_charges=None):
+                            taxes_and_charges=None, sticker_attachments=None):
 	"""Rewrite a draft E-com Sales Order from the e-com entry page (edit mode)."""
 	items, freebies, _s, _a = _parse_so_entry_args(items, freebies, [], [])
 	flags = _parse_json(flags) or {}
@@ -350,6 +371,7 @@ def update_ecom_sales_order(name, customer, order_type, company, items, flags=No
 		dispatch_date, delivery_by_date, po_number, po_expiry_date,
 		site_name, billing_address, shipping_address, taxes_and_charges,
 	)
+	_apply_sticker_attachments(so, sticker_attachments)
 	so.save()
 	_write_back_addresses_to_buyer(so)
 	frappe.db.commit()
@@ -383,6 +405,15 @@ def get_ecom_so_entry_payload(sales_order):
 		for r in (doc.get("custom_marketing_freebies") or [])
 	]
 
+	sticker_attachments = [
+		{
+			"attachment": r.get("attachment") or "",
+			"file_name": r.get("file_name") or "",
+			"remarks": r.get("remarks") or "",
+		}
+		for r in (doc.get("custom_sticker_attachments") or [])
+	]
+
 	return {
 		"name": doc.name,
 		"customer": doc.customer,
@@ -408,6 +439,7 @@ def get_ecom_so_entry_payload(sales_order):
 		"is_freebie_po": cint(doc.get("custom_is_freebie_po")),
 		"items": items,
 		"freebies": freebies,
+		"sticker_attachments": sticker_attachments,
 	}
 
 

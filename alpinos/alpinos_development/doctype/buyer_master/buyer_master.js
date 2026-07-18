@@ -18,6 +18,11 @@ frappe.ui.form.on("Buyer Master", {
 				name: ["!=", frm.doc.name || ""],
 			},
 		}));
+		// Customer Type is scoped to the selected Channel (Alpino Customer Type
+		// carries a `channel` link). No channel yet -> show all so the field stays usable.
+		frm.set_query("customer_type", () => ({
+			filters: frm.doc.channel ? { channel: frm.doc.channel } : {},
+		}));
 
 		// Administrator-only: re-create/refresh the Customer's Address + Contact from this record.
 		if (!frm.is_new() && frm.doc.customer && frappe.session.user === "Administrator") {
@@ -50,6 +55,18 @@ frappe.ui.form.on("Buyer Master", {
 
 	shipping_same_as_profile(frm) {
 		copy_shipping_address(frm);
+	},
+
+	channel(frm) {
+		// A customer type belongs to one channel — clear a stale value when the
+		// channel changes so it can't survive across channels.
+		if (frm.doc.customer_type) {
+			frappe.db.get_value("Alpino Customer Type", frm.doc.customer_type, "channel", (r) => {
+				if (r && r.channel !== frm.doc.channel) {
+					frm.set_value("customer_type", "");
+				}
+			});
+		}
 	},
 
 	parent_buyer(frm) {

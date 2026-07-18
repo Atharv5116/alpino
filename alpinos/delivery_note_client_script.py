@@ -4,6 +4,8 @@ DELIVERY_NOTE_CLIENT_SCRIPT = """
 frappe.ui.form.on('Delivery Note', {
 	refresh(frm) {
 		configure_dn_grid_actions(frm);
+		apply_dn_qty_permission(frm);
+		frm.set_query('custom_assigned_to', () => ({ query: 'alpinos.workflow_role_access.dn_assigned_to_query' }));
 		if (frm.doc.is_return) return;
 		sync_sales_order_from_items(frm);
 		sync_all_items_from_pick_list(frm).then(() => recalc_dn_totals(frm));
@@ -63,6 +65,17 @@ frappe.ui.form.on('Delivery Note Item', {
 		recalc_dn_totals(frm);
 	}
 });
+
+function apply_dn_qty_permission(frm) {
+	// Quantity is read-only on the standard form unless the user holds an
+	// authorized role (mirrors the entry page and server-side guard).
+	const authorized = ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'];
+	const can_edit = (frappe.user_roles || []).some(r => authorized.indexOf(r) !== -1);
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid) return;
+	grid.update_docfield_property('qty', 'read_only', can_edit ? 0 : 1);
+	grid.refresh();
+}
 
 function sync_sales_order_from_items(frm) {
 	const rows = frm.doc.items || [];

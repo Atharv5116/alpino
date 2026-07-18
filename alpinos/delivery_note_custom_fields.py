@@ -176,7 +176,7 @@ def setup_delivery_note_alpinos():
 				insert_after="qty",
 				read_only=1,
 				default="0",
-				reqd=1,
+				reqd=0,
 			),
 			dict(
 				fieldname="custom_batch_code",

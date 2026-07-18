@@ -81,6 +81,15 @@ _EDITABLE_HEADER_FIELDS = {
 }
 
 
+_DN_QTY_EDIT_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager", "PL Manager"}
+
+
+def _can_edit_dn_qty():
+	"""Only authorized roles may change Delivery Note item quantities; everyone
+	else re-posts the (read-only) qty unchanged."""
+	return bool(set(frappe.get_roles()) & _DN_QTY_EDIT_ROLES)
+
+
 def _apply_items_changes(dn, items):
 	"""Apply qty edits and row removals from the page to dn.items."""
 	if items is None:
@@ -88,6 +97,7 @@ def _apply_items_changes(dn, items):
 
 	items = json.loads(items) if isinstance(items, str) else items
 	by_name = {row.name: row for row in dn.items}
+	can_edit_qty = _can_edit_dn_qty()
 
 	to_remove = []
 	for entry in items:
@@ -98,7 +108,9 @@ def _apply_items_changes(dn, items):
 		if entry.get("delete"):
 			to_remove.append(row)
 			continue
-		if "qty" in entry and entry.get("qty") not in (None, ""):
+		# Qty is read-only unless the user holds an authorized role. Unauthorized
+		# edits are silently ignored (the page re-posts the existing qty on submit).
+		if can_edit_qty and "qty" in entry and entry.get("qty") not in (None, ""):
 			try:
 				row.qty = float(entry["qty"])
 			except (TypeError, ValueError):

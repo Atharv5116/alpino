@@ -171,8 +171,7 @@ def _validate_dn_mandatory(doc):
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")
 		if not flt(row.qty):
 			frappe.throw(f"Row #{row.idx}: Quantity is mandatory.")
-		if meta_dn_item.get_field("custom_box") and flt(row.qty) and not flt(row.custom_box):
-			frappe.throw(f"Row #{row.idx}: Box is mandatory.")
+		# Box is no longer mandatory on the Delivery Note (validation removed per spec).
 		# Check if the item is batched in the Item master
 		has_batch_no = frappe.db.get_value("Item", row.item_code, "has_batch_no") if row.item_code else 0
 		if has_batch_no:

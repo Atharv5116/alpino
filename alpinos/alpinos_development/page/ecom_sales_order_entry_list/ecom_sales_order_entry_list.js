@@ -52,6 +52,7 @@ const ESO_COLUMNS = [
 	{ label: 'Dispatch Date', sort: 'custom_dispatch_date', render: (d, h) => h.date(d.custom_dispatch_date) },
 	{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
 	{ label: 'ASN Detail', render: (d, h) => h.asn(d) },
+	{ label: 'Workflow Status', sort: 'custom_workflow_status', render: (d, h) => h.wf(d) },
 	{ label: 'Created By', sort: 'owner', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
 	{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
 ];

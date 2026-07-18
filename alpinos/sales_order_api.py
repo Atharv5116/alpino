@@ -1241,6 +1241,14 @@ def get_so_entry_payload(sales_order):
 			"billing_gstin": doc.get("custom_billing_gstin") or "",
 			"shipping_gstin": doc.get("custom_shipping_gstin") or "",
 			"is_freebie_po": cint(doc.get("custom_is_freebie_po")),
+			"sticker_attachments": [
+				{
+					"attachment": r.get("attachment") or "",
+					"file_name": r.get("file_name") or "",
+					"remarks": r.get("remarks") or "",
+				}
+				for r in (doc.get("custom_sticker_attachments") or [])
+			],
 		},
 		"items": items,
 		"freebies": freebies,
@@ -1680,6 +1688,10 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 			"custom_ordered_qty": item_row.qty,
 			"qty": item_row.qty,
 			"custom_box": box,
+			# SKU-level remark typed on the Sales Order line carries through to the
+			# Pick List so it shows on the picking report (SO field has an 's',
+			# the Pick List Item field does not).
+			"custom_remark": (item_row.get("custom_remarks") or "").strip(),
 			"custom_source_table": source_table,
 			"custom_conversion_factor": factor,
 			"custom_bundle_parent": bundle_parent or "",

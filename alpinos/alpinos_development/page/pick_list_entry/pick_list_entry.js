@@ -479,6 +479,25 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		};
 		create_combo_table(data.combos);
 
+		// Sticker attachments from the linked Sales Order (E-com & MT) — read-only.
+		const render_sticker_attachments = (stickers) => {
+			const $box = page.main.find('#pl-sticker-attachments');
+			const $body = $box.find('.pl-sticker-body').empty();
+			if (!stickers || !stickers.length) {
+				$box.hide();
+				return;
+			}
+			const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+			stickers.forEach((s) => {
+				$body.append(`<tr>
+					<td><a href="${esc(s.attachment)}" target="_blank">${esc(s.file_name || s.attachment)}</a></td>
+					<td>${esc(s.remarks || '')}</td>
+				</tr>`);
+			});
+			$box.show();
+		};
+		render_sticker_attachments(data.custom_sticker_attachments);
+
 		// Removed Items audit table — server-persisted rows for saved PLs,
 		// plus any pending client-side removals on a new (unsaved) PL.
 		page.render_removed_items = function() {

@@ -928,13 +928,13 @@ def create_delivery_note_from_pick_list(pick_list_name):
 @frappe.validate_and_sanitize_search_inputs
 def warehouse_user_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Link query for Pick List 'Assigned To' — only enabled users holding the
-	Warehouse User role."""
+	PL User or PL Manager role."""
 	txt = txt or ""
 	return frappe.db.sql(
 		"""
 		SELECT DISTINCT u.name, u.full_name
 		FROM `tabUser` u
-		INNER JOIN `tabHas Role` r ON r.parent = u.name AND r.role = %(role)s
+		INNER JOIN `tabHas Role` r ON r.parent = u.name AND r.role IN (%(role1)s, %(role2)s)
 		WHERE IFNULL(u.enabled, 0) = 1
 			AND u.name NOT IN ('Administrator', 'Guest')
 			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
@@ -942,7 +942,8 @@ def warehouse_user_query(doctype, txt, searchfield, start, page_len, filters):
 		LIMIT %(page_len)s OFFSET %(start)s
 		""",
 		{
-			"role": "Warehouse User",
+			"role1": "PL User",
+			"role2": "PL Manager",
 			"txt": f"%{txt}%",
 			"start": int(start or 0),
 			"page_len": int(page_len or 20),
