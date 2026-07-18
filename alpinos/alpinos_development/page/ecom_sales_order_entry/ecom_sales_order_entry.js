@@ -75,11 +75,14 @@ class EcomSalesOrderEntry {
 		this.f_ship_gstin = mk('.fld-shipping-gstin', {
 			fieldtype: 'Data', fieldname: 'shipping_gstin', label: __('Shipping GSTIN'), length: 15,
 		});
+		// Address dropdowns — pooled across the whole buyer family (parent + all
+		// child sites), so any site under the parent can be billed/shipped to.
+		// Autocomplete keeps a typed value too, so a one-off address still works.
 		this.f_bill_addr = mk('.fld-billing-address', {
-			fieldtype: 'Small Text', fieldname: 'billing_address', label: __('Billing Address'), reqd: 1,
+			fieldtype: 'Autocomplete', fieldname: 'billing_address', label: __('Billing Address'), reqd: 1,
 		});
 		this.f_ship_addr = mk('.fld-shipping-address', {
-			fieldtype: 'Small Text', fieldname: 'shipping_address', label: __('Shipping Address'), reqd: 1,
+			fieldtype: 'Autocomplete', fieldname: 'shipping_address', label: __('Shipping Address'), reqd: 1,
 		});
 
 		// PO details
@@ -143,9 +146,30 @@ class EcomSalesOrderEntry {
 	}
 
 	// ---- customer / buyer autofill ----------------------------------------
+	// Family-wide address dropdown: pool every Address of the parent + all child
+	// sites so any site under the parent can be billed/shipped to. Option value is
+	// the clean address text (stored as the SO's free-text address); the label
+	// shows the site so you can tell sites apart.
+	_load_ecom_address_options(customer) {
+		const clean = (a) => [a.address_line1, a.address_line2, a.city, a.state, a.pincode]
+			.map((p) => (p ? String(p).replace(/[\r\n]+/g, ' ').trim() : ''))
+			.filter(Boolean).join(', ');
+		const set = (opts) => {
+			this.f_bill_addr.set_data && this.f_bill_addr.set_data(opts);
+			this.f_ship_addr.set_data && this.f_ship_addr.set_data(opts);
+		};
+		if (!customer) { set([]); return; }
+		frappe.call({
+			method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
+			args: { customer },
+			callback: (r) => set((r.message || []).map((a) => ({ value: clean(a), label: a.display }))),
+		});
+	}
+
 	on_customer_change() {
 		const customer = this.f_customer.get_value();
 		if (!customer) return;
+		this._load_ecom_address_options(customer);
 		frappe.call({
 			method: 'alpinos.ecom_sales_order_api.get_ecom_buyer_for_customer',
 			args: { customer },
@@ -484,6 +508,7 @@ class EcomSalesOrderEntry {
 					this.page.set_title(__('E-Com Sales Order Entry — {0}', [d.name]));
 				}
 				this.f_customer.set_value(d.customer);
+				this._load_ecom_address_options(d.customer);
 				this.f_customer_type.set_value(d.order_type);
 				const fl = d.flags || {};
 				this.f_appointment.set_value(cint(fl.appointment_required));
