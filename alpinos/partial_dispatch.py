@@ -38,11 +38,28 @@ def is_partial_order(sales_order) -> bool:
 # Per-SKU qty maps
 # ---------------------------------------------------------------------------
 def ordered_qty_by_sku(sales_order) -> dict:
+	# Combo/bundle SO lines carry the combo SKU (e.g. PB-CHCR-1000x2), but the
+	# Pick List and Delivery Note carry the EXPLODED component SKUs. Explode the
+	# ordered map to components too, so committed/dispatched line up — otherwise a
+	# fully-picked combo order never matches, leaving a phantom "remaining qty"
+	# and blocking auto-completion.
+	from alpinos.sales_order_api import _bundle_components
+
 	rows = frappe.db.sql(
 		"SELECT item_code, SUM(qty) q FROM `tabSales Order Item` WHERE parent=%s GROUP BY item_code",
 		(sales_order,), as_dict=True,
 	)
-	return {r.item_code: flt(r.q) for r in rows if r.item_code}
+	out = {}
+	for r in rows:
+		if not r.item_code:
+			continue
+		comps = _bundle_components(r.item_code)
+		if comps:
+			for c in comps:
+				out[c.item] = out.get(c.item, 0.0) + flt(r.q) * flt(c.base_qty)
+		else:
+			out[r.item_code] = out.get(r.item_code, 0.0) + flt(r.q)
+	return out
 
 
 def committed_pl_qty_by_sku(sales_order, exclude_pl=None) -> dict:
