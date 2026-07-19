@@ -29,6 +29,7 @@ app_include_css = "/assets/alpinos/css/alpinos_pages.css"
 app_include_js = [
 	"/assets/alpinos/js/sales_order_hub_desk_v3.js",
 	"/assets/alpinos/js/item_row_colors.js",
+	"/assets/alpinos/js/alpinos_list_prefs.js",
 ]
 
 # include js, css files in header of web template

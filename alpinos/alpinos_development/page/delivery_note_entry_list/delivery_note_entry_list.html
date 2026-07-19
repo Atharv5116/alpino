@@ -25,6 +25,15 @@
 		justify-content: space-between;
 		align-items: center;
 	}
+	.dnl-nav {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+	}
+	.dnl-page-size {
+		width: auto;
+		display: inline-block;
+	}
 	@media (max-width: 768px) {
 		.dnl-filter-item {
 			flex: 1 1 100%;
@@ -71,6 +80,11 @@
 	<div class="dnl-pager">
 		<div class="dnl-count text-muted"></div>
 		<div class="dnl-nav">
+			<select class="form-control input-xs dnl-page-size" title="Rows per page">
+				<option value="20" selected>20</option>
+				<option value="50">50</option>
+				<option value="100">100</option>
+			</select>
 			<button class="btn btn-default btn-sm btn-dnl-prev">Previous</button>
 			<button class="btn btn-default btn-sm btn-dnl-next">Next</button>
 		</div>

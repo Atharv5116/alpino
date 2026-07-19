@@ -8,6 +8,11 @@ frappe.pages['ecom-sales-order-entry-list'].on_page_load = function (wrapper) {
 	new EcomSalesOrderListPage(page);
 };
 
+// Route key for alpinos.list_prefs — must match the frappe.pages key above.
+const ESO_LIST_ROUTE = 'ecom-sales-order-entry-list';
+
+const ESO_PAGE_LENGTHS = [20, 50, 100];
+
 const ESO_STATUS_OPTIONS =
 	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
 
@@ -70,6 +75,10 @@ class EcomSalesOrderListPage {
 		this.render_header();
 		this.setup_toolbar();
 		this.setup_filters();
+		// Restore the user's saved view (filters/sort/page size) before binding
+		// events and loading, so the first request already uses it and no
+		// change handlers fire while values are being applied.
+		this._restore_view_prefs();
 		this.bind_events();
 		this.load_list();
 	}
@@ -184,6 +193,11 @@ class EcomSalesOrderListPage {
 		this.wrapper.find('.btn-eso-list-next').on('click', () => {
 			if (this._last_meta.has_more) { this.start += this.page_length; this.load_list(); }
 		});
+		this.wrapper.find('.eso-page-length').on('change', (e) => {
+			this.page_length = cint($(e.currentTarget).val()) || 20;
+			this.start = 0;
+			this.load_list();
+		});
 		this.wrapper.on('click', '.eso-list-row', (e) => {
 			if ($(e.target).closest('a,button').length) return;
 			const name = $(e.currentTarget).data('name');
@@ -229,6 +243,58 @@ class EcomSalesOrderListPage {
 		});
 	}
 
+	// Persist the current view (filters + sort + page size, never the start
+	// offset) per user via the shared alpinos.list_prefs helper. Called from
+	// load_list so every code path that reloads also saves.
+	_save_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const f = this._filters;
+		const val = (c) => (c && c.get_value && c.get_value()) || '';
+		alpinos.list_prefs.save(ESO_LIST_ROUTE, {
+			filters: {
+				search: val(f.search),
+				status: val(f.status),
+				company: val(f.company),
+				workflow_status: val(f.workflow_status),
+				customer: val(f.customer),
+				from_date: val(f.from_date),
+				to_date: val(f.to_date),
+			},
+			sort_field: this._sort.field || '',
+			sort_dir: this._sort.dir || 'desc',
+			page_length: this.page_length,
+		});
+	}
+
+	// Apply a previously saved view. Every value is validated before use so
+	// unknown/renamed keys (or hand-edited localStorage) can never break the
+	// page. The pagination offset is intentionally not restored — always
+	// start at page 1.
+	_restore_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const saved = alpinos.list_prefs.load(ESO_LIST_ROUTE) || {};
+		if (!Object.keys(saved).length) return;
+		const filters = (saved.filters && typeof saved.filters === 'object') ? saved.filters : {};
+		Object.keys(this._filters).forEach((k) => {
+			const c = this._filters[k];
+			const v = filters[k];
+			// set_input (not set_value) — synchronous, updates both the stored
+			// value and the visible input, and fires no change events.
+			if (c && c.set_input && typeof v === 'string' && v !== '') c.set_input(v);
+		});
+		const sortable = this._columns.filter((c) => c.sort).map((c) => c.sort);
+		if (typeof saved.sort_field === 'string' && sortable.includes(saved.sort_field)) {
+			this._sort.field = saved.sort_field;
+			this._sort.dir = saved.sort_dir === 'asc' ? 'asc' : 'desc';
+			this.render_header(); // reflect the restored sort indicator
+		}
+		const pl = cint(saved.page_length);
+		if (ESO_PAGE_LENGTHS.includes(pl)) {
+			this.page_length = pl;
+			this.wrapper.find('.eso-page-length').val(String(pl));
+		}
+	}
+
 	_args() {
 		const f = this._filters;
 		return {
@@ -249,6 +315,9 @@ class EcomSalesOrderListPage {
 
 	load_list() {
 		const me = this;
+		// Every reload path (filter change, sort, page size, clear, refresh)
+		// funnels through here, so this is the single save point for prefs.
+		this._save_view_prefs();
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_sales_order_entry_list',
 			args: me._args(),

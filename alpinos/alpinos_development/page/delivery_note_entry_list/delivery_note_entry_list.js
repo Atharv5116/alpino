@@ -14,11 +14,13 @@ class DeliveryNoteListPage {
 		this.wrapper = $(page.main);
 		this.page_length = 20;
 		this.start = 0;
+		this._prefs_route = 'delivery_note_entry_list';
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
 		this.setup_toolbar();
 		this.setup_filters();
 		this.bind_events();
+		this._restore_view_prefs();
 		this.load_list();
 	}
 
@@ -62,11 +64,19 @@ class DeliveryNoteListPage {
 	bind_events() {
 		this.wrapper.find('.btn-dnl-apply').on('click', () => {
 			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-dnl-clear').on('click', () => {
 			Object.values(this._filter_fields).forEach((f) => f && f.set_value(''));
 			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		});
+		this.wrapper.find('.dnl-page-size').on('change', (e) => {
+			this.page_length = cint($(e.currentTarget).val()) || 20;
+			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-dnl-prev').on('click', () => {
@@ -85,6 +95,44 @@ class DeliveryNoteListPage {
 			if (!name) return;
 			frappe.set_route('delivery_note_entry', name);
 		});
+	}
+
+	// Persist the current view (filters + page size) for this user. Never
+	// persists the pagination offset — a fresh visit always starts at page 1.
+	_save_view_prefs() {
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		const f = this._filter_fields;
+		alpinos.list_prefs.save(this._prefs_route, {
+			search: (f.search && f.search.get_value()) || '',
+			status: (f.status && f.status.get_value()) || '',
+			company: (f.company && f.company.get_value()) || '',
+			page_length: this.page_length,
+		});
+	}
+
+	// Apply the saved view (if any) to instance state AND the UI controls,
+	// before the first data load. Unknown/invalid keys are ignored.
+	_restore_view_prefs() {
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		const saved = alpinos.list_prefs.load(this._prefs_route);
+		if (!saved || typeof saved !== 'object') return;
+		const f = this._filter_fields;
+		['search', 'status', 'company'].forEach((k) => {
+			const v = saved[k];
+			if (typeof v !== 'string' || !v || !f[k]) return;
+			// set_input applies synchronously so the first load_list()
+			// reads the restored values via get_value().
+			if (typeof f[k].set_input === 'function') {
+				f[k].set_input(v);
+			} else {
+				f[k].set_value(v);
+			}
+		});
+		const pl = cint(saved.page_length);
+		if ([20, 50, 100].includes(pl)) {
+			this.page_length = pl;
+			this.wrapper.find('.dnl-page-size').val(String(pl));
+		}
 	}
 
 	_args() {

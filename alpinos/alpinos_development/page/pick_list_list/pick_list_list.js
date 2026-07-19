@@ -14,10 +14,12 @@ class PickListListPage {
 		this.wrapper = $(page.main);
 		this.page_length = 20;
 		this.start = 0;
+		this._prefs_route = 'pick_list_list';
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
 		this.setup_toolbar();
 		this.setup_filters();
+		this._restore_view_prefs();
 		this.bind_events();
 		this.load_list();
 	}
@@ -89,11 +91,21 @@ class PickListListPage {
 	bind_events() {
 		this.wrapper.find('.btn-pl-list-apply').on('click', () => {
 			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-pl-list-clear').on('click', () => {
 			Object.values(this._filter_fields).forEach((f) => f && f.set_value(''));
 			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		});
+		this.wrapper.find('.pl-list-page-size').on('change', (e) => {
+			const v = cint($(e.currentTarget).val());
+			this.page_length = [20, 50, 100].includes(v) ? v : 20;
+			$(e.currentTarget).val(String(this.page_length));
+			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-pl-list-prev').on('click', () => {
@@ -120,6 +132,59 @@ class PickListListPage {
 		this.wrapper.on('change', '.pl-list-row-select', () => {
 			this.update_selection();
 		});
+	}
+
+	_save_view_prefs() {
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		const f = this._filter_fields;
+		alpinos.list_prefs.save(this._prefs_route, {
+			search: (f.search && f.search.get_value()) || '',
+			status: (f.status && f.status.get_value()) || '',
+			company: (f.company && f.company.get_value()) || '',
+			page_length: this.page_length,
+		});
+	}
+
+	_restore_view_prefs() {
+		// Runs before the first load_list(): apply the saved per-user view to
+		// the instance AND the visible controls. Every value is validated so a
+		// stale/renamed key can never break the page. Pagination offset is
+		// intentionally never restored — the list always opens on page 1.
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		let saved = {};
+		try {
+			saved = alpinos.list_prefs.load(this._prefs_route) || {};
+		} catch (e) {
+			saved = {};
+		}
+		const f = this._filter_fields;
+		// set_input applies synchronously, so the first load_list() sees the
+		// restored values via get_value(); set_value is promise-based and can
+		// land after the first request.
+		const set_sync = (c, v) => {
+			if (!c) return;
+			if (typeof c.set_input === 'function') c.set_input(v);
+			else c.set_value(v);
+		};
+		try {
+			if (typeof saved.search === 'string') {
+				set_sync(f.search, saved.search);
+			}
+			const status_options = ['', 'Draft', 'Open', 'Completed', 'Cancelled', 'Closed', 'Submitted'];
+			if (typeof saved.status === 'string' && status_options.includes(saved.status)) {
+				set_sync(f.status, saved.status);
+			}
+			if (typeof saved.company === 'string') {
+				set_sync(f.company, saved.company);
+			}
+			const pl = cint(saved.page_length);
+			if ([20, 50, 100].includes(pl)) {
+				this.page_length = pl;
+			}
+		} catch (e) {
+			// A malformed saved state must never block the page.
+		}
+		this.wrapper.find('.pl-list-page-size').val(String(this.page_length));
 	}
 
 	_args() {

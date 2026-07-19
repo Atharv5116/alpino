@@ -8,6 +8,10 @@ frappe.pages['sales-order-entry-list'].on_page_load = function (wrapper) {
 	new SalesOrderEntryListPage(page);
 };
 
+// Route key for alpinos.list_prefs — must stay the exact frappe.pages key.
+const SO_LIST_ROUTE = 'sales-order-entry-list';
+const SO_LIST_PAGE_LENGTHS = [20, 50, 100];
+
 const SO_STATUS_OPTIONS =
 	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
 
@@ -95,12 +99,16 @@ class SalesOrderEntryListPage {
 		this.render_header();
 		this.setup_toolbar();
 		this.setup_filters();
+		// Restore the user's saved view (filters, sort, page size) BEFORE the
+		// first load and before events are bound, so nothing fires mid-restore.
+		this._restore_view_prefs();
 		this.bind_events();
 		this.wrapper.find('.so-list-filters-title').text(__('Filters'));
 		this.wrapper.find('.btn-so-list-apply').text(__('Apply'));
 		this.wrapper.find('.btn-so-list-clear').text(__('Clear'));
 		this.wrapper.find('.btn-so-list-prev').text(__('Previous'));
 		this.wrapper.find('.btn-so-list-next').text(__('Next'));
+		this.wrapper.find('.so-list-page-length').attr('title', __('Rows per page'));
 		this._init_filter_collapse();
 		this.load_list();
 	}
@@ -236,11 +244,20 @@ class SalesOrderEntryListPage {
 	bind_events() {
 		this.wrapper.find('.btn-so-list-apply').on('click', () => {
 			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-so-list-clear').on('click', () => {
 			Object.values(this._filter_fields).forEach((f) => f && f.set_value(''));
 			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		});
+		this.wrapper.find('.so-list-page-length').on('change', (e) => {
+			const v = cint($(e.currentTarget).val());
+			this.page_length = SO_LIST_PAGE_LENGTHS.includes(v) ? v : 20;
+			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-so-list-prev').on('click', () => {
@@ -281,11 +298,16 @@ class SalesOrderEntryListPage {
 			}
 			this.start = 0;
 			this.render_header();
+			this._save_view_prefs();
 			this.load_list();
 		});
 		// Dynamic filters: apply as the user types/picks (debounced); the Apply
 		// button stays for an explicit trigger.
-		const apply = frappe.utils.debounce(() => { this.start = 0; this.load_list(); }, 350);
+		const apply = frappe.utils.debounce(() => {
+			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		}, 350);
 		Object.values(this._filter_fields).forEach((f) => {
 			if (f && f.$input) f.$input.on('input change awesomplete-selectcomplete', apply);
 		});
@@ -311,6 +333,74 @@ class SalesOrderEntryListPage {
 			card.addClass('so-list-filters-collapsed');
 		}
 		sync();
+	}
+
+	// Per-user saved view: one snapshot of every user-adjustable piece of view
+	// state (filters + sort + page size — never the pagination offset), stored
+	// via the shared alpinos.list_prefs helper.
+	_save_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const f = this._filter_fields;
+		const val = (name) => (f[name] && f[name].get_value()) || '';
+		alpinos.list_prefs.save(SO_LIST_ROUTE, {
+			filters: {
+				search: val('search'),
+				status: val('status'),
+				workflow_status: val('workflow_status'),
+				company: val('company'),
+				customer: val('customer'),
+				from_date: val('from_date'),
+				to_date: val('to_date'),
+				additional_units_damage_filter: val('additional_units_damage_filter'),
+			},
+			sort_field: this._sort.field || '',
+			sort_dir: this._sort.dir === 'asc' ? 'asc' : 'desc',
+			page_length: this.page_length,
+		});
+	}
+
+	_restore_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const saved = alpinos.list_prefs.load(SO_LIST_ROUTE);
+		if (!saved || typeof saved !== 'object') return;
+
+		// Filters: only keys that map to an existing control; Select values must
+		// still be a known option (renamed statuses etc. are silently dropped).
+		const filters = saved.filters && typeof saved.filters === 'object' ? saved.filters : {};
+		Object.keys(filters).forEach((name) => {
+			const field = this._filter_fields[name];
+			const value = filters[name];
+			if (!field || typeof value !== 'string' || !value) return;
+			if (field.df.fieldtype === 'Select') {
+				const options = String(field.df.options || '').split('\n');
+				if (!options.includes(value)) return;
+			}
+			try {
+				// set_input applies synchronously, so the first load_list() sees
+				// the restored value via get_value(); set_value is promise-based
+				// and can land after the first request.
+				if (typeof field.set_input === 'function') field.set_input(value);
+				else field.set_value(value);
+			} catch (e) {
+				// A bad saved value must never break the page.
+			}
+		});
+
+		// Sort: only fields present in this user's column layout (sales vs
+		// warehouse layouts expose different sortable columns).
+		const sortable = this._columns.filter((c) => c.sort).map((c) => c.sort);
+		if (typeof saved.sort_field === 'string' && sortable.includes(saved.sort_field)) {
+			this._sort.field = saved.sort_field;
+			this._sort.dir = saved.sort_dir === 'asc' ? 'asc' : 'desc';
+			this.render_header(); // refresh the sort indicator
+		}
+
+		const pl = cint(saved.page_length);
+		if (SO_LIST_PAGE_LENGTHS.includes(pl)) this.page_length = pl;
+		this.wrapper.find('.so-list-page-length').val(String(this.page_length));
+
+		// Pagination offset is deliberately never restored — always page 1.
+		this.start = 0;
 	}
 
 	_args() {

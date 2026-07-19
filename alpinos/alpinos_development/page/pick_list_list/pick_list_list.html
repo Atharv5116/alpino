@@ -28,6 +28,16 @@
 		align-items: center;
 		gap: 10px;
 	}
+	.pl-list-nav {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.pl-list-page-size {
+		width: auto;
+		min-width: 70px;
+		display: inline-block;
+	}
 </style>
 
 <div class="pl-list-container">
@@ -66,6 +76,11 @@
 	<div class="pl-pager">
 		<div class="pl-list-count text-muted"></div>
 		<div class="pl-list-nav">
+			<select class="form-control input-xs pl-list-page-size" title="Rows per page">
+				<option value="20" selected>20</option>
+				<option value="50">50</option>
+				<option value="100">100</option>
+			</select>
 			<button class="btn btn-default btn-sm btn-pl-list-prev">Previous</button>
 			<button class="btn btn-default btn-sm btn-pl-list-next">Next</button>
 		</div>

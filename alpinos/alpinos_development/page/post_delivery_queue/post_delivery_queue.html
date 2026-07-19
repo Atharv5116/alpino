@@ -8,6 +8,10 @@
 		justify-content: space-between;
 		margin-bottom: 12px;
 	}
+	.post-delivery-queue .pdq-page-size {
+		width: auto;
+		display: inline-block;
+	}
 	@media (max-width: 768px) {
 		.post-delivery-queue .pdq-count {
 			flex-basis: 100%;
@@ -38,6 +42,11 @@
 		<div class="alp-actions pdq-list-header">
 			<span class="text-muted pdq-count"></span>
 			<div class="alp-actions pdq-pager">
+				<select class="form-control input-xs pdq-page-size" title="Rows per page">
+					<option value="20" selected>20</option>
+					<option value="50">50</option>
+					<option value="100">100</option>
+				</select>
 				<button type="button" class="btn btn-default btn-sm btn-pdq-prev" disabled>Previous</button>
 				<button type="button" class="btn btn-default btn-sm btn-pdq-next" disabled>Next</button>
 			</div>

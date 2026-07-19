@@ -8,6 +8,9 @@ frappe.pages['post-delivery-queue'].on_page_load = function (wrapper) {
 	new PostDeliveryQueue(page);
 };
 
+const PDQ_ROUTE = 'post-delivery-queue';
+const PDQ_PAGE_LENGTHS = [20, 50, 100];
+
 const PDQ_STATUS_OPTIONS = '\nNot Started\nIn Progress\nCompleted';
 
 const PDQ_STATUS_COLORS = {
@@ -44,6 +47,7 @@ class PostDeliveryQueue {
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
 		this.setup_filters();
 		this.bind_events();
+		this._restore_view_prefs();
 		this.load_list();
 	}
 
@@ -65,10 +69,17 @@ class PostDeliveryQueue {
 
 	bind_events() {
 		const w = this.wrapper;
-		w.find('.btn-pdq-apply').on('click', () => { this.start = 0; this.load_list(); });
+		w.find('.btn-pdq-apply').on('click', () => { this.start = 0; this._save_view_prefs(); this.load_list(); });
 		w.find('.btn-pdq-clear').on('click', () => {
 			Object.values(this._filters).forEach((f) => f && f.set_value(''));
-			this.start = 0; this.load_list();
+			this.start = 0; this._save_view_prefs(); this.load_list();
+		});
+		w.find('.pdq-page-size').on('change', (e) => {
+			const v = cint($(e.currentTarget).val());
+			this.page_length = PDQ_PAGE_LENGTHS.includes(v) ? v : 20;
+			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
 		});
 		w.find('.btn-pdq-prev').on('click', () => { this.start = Math.max(0, this.start - this.page_length); this.load_list(); });
 		w.find('.btn-pdq-next').on('click', () => { if (this._last_meta.has_more) { this.start += this.page_length; this.load_list(); } });
@@ -104,6 +115,45 @@ class PostDeliveryQueue {
 			status: f.status.get_value() || '',
 			customer: f.customer.get_value() || '',
 		};
+	}
+
+	_save_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const f = this._filters;
+		alpinos.list_prefs.save(PDQ_ROUTE, {
+			search: (f.search && f.search.get_value()) || '',
+			status: (f.status && f.status.get_value()) || '',
+			customer: (f.customer && f.customer.get_value()) || '',
+			page_length: this.page_length,
+		});
+	}
+
+	_restore_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const saved = alpinos.list_prefs.load(PDQ_ROUTE);
+		if (!saved || typeof saved !== 'object') return;
+		const f = this._filters;
+		// set_input applies synchronously, so the first load_list() sees the
+		// restored values via get_value(); set_value is promise-based and can
+		// land after the first request.
+		const set_sync = (c, v) => {
+			if (!c) return;
+			if (typeof c.set_input === 'function') c.set_input(v);
+			else c.set_value(v);
+		};
+		// Guard every value: unknown/renamed keys are ignored, bad values dropped.
+		if (typeof saved.search === 'string') set_sync(f.search, saved.search);
+		if (typeof saved.status === 'string' && PDQ_STATUS_OPTIONS.split('\n').includes(saved.status)) {
+			set_sync(f.status, saved.status);
+		}
+		if (typeof saved.customer === 'string') set_sync(f.customer, saved.customer);
+		const pl = cint(saved.page_length);
+		if (PDQ_PAGE_LENGTHS.includes(pl)) {
+			this.page_length = pl;
+			this.wrapper.find('.pdq-page-size').val(String(pl));
+		}
+		// Never restore pagination offset — always begin at page 1.
+		this.start = 0;
 	}
 
 	load_list() {
