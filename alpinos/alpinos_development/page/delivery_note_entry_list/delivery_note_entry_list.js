@@ -140,11 +140,11 @@ class DeliveryNoteListPage {
 			const customer = d.custom_dn_so_customer_name || d.customer_name || '';
 			tb.append(`<tr class="dnl-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td><strong>${esc(d.name)}</strong></td>
+				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
 				<td>${esc(customer)}</td>
 				<td>${esc(d.posting_date || '—')}</td>
 				<td>${esc(d.custom_dispatch_date || '—')}</td>
 				<td>${esc(d.company)}</td>
-				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
 			</tr>`);
 		});
 	}

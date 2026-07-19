@@ -196,6 +196,18 @@ class EcomSalesOrderListPage {
 			const route = $(e.currentTarget).data('route');
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
+		// Touch fallback for the ASN hover tooltip: tap/click the summary to see
+		// the full per-DN breakdown (title= tooltips are unreachable on touch).
+		this.wrapper.on('click', '.eso-asn', (e) => {
+			e.stopPropagation();
+			const tip = $(e.currentTarget).attr('title') || '';
+			if (!tip) return;
+			const esc = (s) => frappe.utils.escape_html(s);
+			frappe.msgprint({
+				title: __('ASN Details'),
+				message: tip.split('\n').map(esc).join('<br>'),
+			});
+		});
 		// Click a sortable header to sort; click again to flip direction.
 		this.wrapper.on('click', '.eso-sort-th', (e) => {
 			const field = $(e.currentTarget).data('sort');
@@ -297,7 +309,8 @@ class EcomSalesOrderListPage {
 			},
 			asn: (d) => {
 				// ASN details come from the SO's Post Delivery records (one per dispatch).
-				// Show a compact summary in the cell and the full per-DN breakdown on hover.
+				// Show a compact summary in the cell and the full per-DN breakdown on
+				// hover (title=) or tap/click (delegated .eso-asn handler in bind_events).
 				const list = Array.isArray(d.asn_details) ? d.asn_details : [];
 				if (!list.length) return '—';
 				const line = (a) => {
@@ -311,7 +324,7 @@ class EcomSalesOrderListPage {
 				const first = list[0];
 				const head = esc(first.asn_id || first.asn_status || 'ASN');
 				const label = list.length > 1 ? `${head} +${list.length - 1}` : head;
-				return `<span class="eso-asn" title="${esc(tip)}" style="cursor: help; border-bottom: 1px dotted var(--text-muted);">${label}</span>`;
+				return `<span class="eso-asn" title="${esc(tip)}" style="cursor: pointer; border-bottom: 1px dotted var(--text-muted);">${label}</span>`;
 			},
 		};
 		rows.forEach((d) => {

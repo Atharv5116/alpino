@@ -648,11 +648,16 @@ class SalesOrderEntryView {
 		// E-com order flags (carried from Buyer Master) — surface what was stored.
 		if ((this._channel || '') === 'E-com') {
 			const yn = (v) => (cint(v) ? 'Yes' : 'No');
-			w.find('.v-ecom-flags').text(
-				`Appointment Required: ${yn(p.custom_appointment_required)}  ·  ` +
-				`GRN Available: ${yn(p.custom_grn_available)}  ·  ` +
-				`Partial Order Allowed: ${yn(p.custom_partial_order_allowed)}  ·  ` +
-				`GST-Exclusive Buyer: ${yn(p.custom_gst_exclusive_buyer)}`
+			// One span per flag (styled via .v-ecom-flag in the page style block) so
+			// each "Label: Yes/No" pair wraps as a unit on narrow screens instead of
+			// one long dot-separated string breaking mid-label. Static labels +
+			// Yes/No values only — nothing user-supplied is interpolated.
+			const flag = (label, v) => `<span class="v-ecom-flag">${label}: ${yn(v)}</span>`;
+			w.find('.v-ecom-flags').html(
+				flag('Appointment Required', p.custom_appointment_required) +
+				flag('GRN Available', p.custom_grn_available) +
+				flag('Partial Order Allowed', p.custom_partial_order_allowed) +
+				flag('GST-Exclusive Buyer', p.custom_gst_exclusive_buyer)
 			);
 			w.find('.v-ecom-flags-row').show();
 		} else {
@@ -702,7 +707,7 @@ class SalesOrderEntryView {
 			items.forEach((it, i) => {
 				const img = it.custom_product_image_url || it.custom_product_image || '';
 				const imgTag = img
-					? `<img src="${this._esc(img)}" alt="" style="max-height:44px;max-width:72px;border-radius:4px;object-fit:contain;" />`
+					? `<img src="${this._esc(img)}" alt="" class="so-view-item-img" />`
 					: '—';
 				const sku = this._has(it, 'item_code') ? this._esc(it.item_code) : '—';
 				const nm = this._has(it, 'item_name') ? this._esc(it.item_name) : '—';

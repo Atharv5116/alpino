@@ -37,6 +37,7 @@ class SalesOrderEntry {
 		this.make_totals();
 		this.make_actions();
 		this.bind_events();
+		this.setup_awesomplete_portal();
 		this.load_recent_orders();
 		// Prefills (quotation / edit / duplicate) are handled per-visit by
 		// handle_route_entry(), triggered from on_page_show.
@@ -552,6 +553,60 @@ class SalesOrderEntry {
 		this.add_item_row();
 	}
 
+	// The item/freebie/scheme/damage tables sit inside .alp-scroll wrappers
+	// (overflow-x: auto) so phones scroll the table instead of the whole page.
+	// That overflow would clip the awesomplete dropdowns, so while a list is
+	// open inside a scroll wrapper we pin it to the viewport (position: fixed
+	// escapes ancestor overflow clipping) and restore it on close.
+	setup_awesomplete_portal() {
+		const me = this;
+		me._portal_ul = null;
+		me._portal_input = null;
+		const place = function(input, ul) {
+			const rect = input.getBoundingClientRect();
+			const vw = window.innerWidth || document.documentElement.clientWidth;
+			const width = Math.min(450, Math.max(240, vw - 16));
+			const left = Math.max(8, Math.min(rect.left, vw - width - 8));
+			ul.style.setProperty('position', 'fixed', 'important');
+			ul.style.setProperty('left', left + 'px', 'important');
+			ul.style.setProperty('right', 'auto', 'important');
+			ul.style.setProperty('top', (rect.bottom + 2) + 'px', 'important');
+			ul.style.setProperty('min-width', Math.min(350, width) + 'px', 'important');
+			ul.style.setProperty('max-width', width + 'px', 'important');
+			ul.style.setProperty('z-index', '10050', 'important');
+		};
+		const reset = function(ul) {
+			if (!ul) return;
+			['position', 'left', 'right', 'top', 'min-width', 'max-width', 'z-index'].forEach(function(p) {
+				ul.style.removeProperty(p);
+			});
+		};
+		this.wrapper.on('awesomplete-open', 'input', function() {
+			const $input = $(this);
+			if (!$input.closest('.alp-scroll').length) return;
+			const ul = $input.closest('.awesomplete').children('ul').get(0);
+			if (!ul) return;
+			me._portal_ul = ul;
+			me._portal_input = this;
+			place(this, ul);
+		});
+		this.wrapper.on('awesomplete-close', 'input', function() {
+			const ul = $(this).closest('.awesomplete').children('ul').get(0);
+			reset(ul);
+			if (me._portal_ul === ul) {
+				me._portal_ul = null;
+				me._portal_input = null;
+			}
+		});
+		// Keep an open pinned list glued to its input while anything scrolls
+		// (capture phase also catches the .alp-scroll wrappers themselves).
+		document.addEventListener('scroll', function() {
+			if (me._portal_ul && me._portal_input) {
+				place(me._portal_input, me._portal_ul);
+			}
+		}, true);
+	}
+
 	// ---- Modern Trade e-com extras (offline channel) -----------------------
 	_is_modern_trade() {
 		return (this.order_type_field.get_value() || '').trim().toLowerCase() === 'modern trade';
@@ -582,10 +637,12 @@ class SalesOrderEntry {
 					<div class="col-md-12" style="margin-bottom:8px;">
 						<label class="control-label" style="font-size:12px;">Sticker Attachments</label>
 						<div class="mt-stickers-empty text-muted" style="font-size:12px; margin-bottom:6px;">No sticker files uploaded.</div>
-						<table class="table table-bordered mt-stickers-table" style="font-size:13px; margin-bottom:8px; display:none;">
-							<thead><tr><th style="min-width:220px;">File</th><th style="min-width:160px;">Remarks</th><th style="width:36px;"></th></tr></thead>
-							<tbody></tbody>
-						</table>
+						<div class="alp-scroll" style="margin-bottom:8px;">
+							<table class="table table-bordered mt-stickers-table" style="font-size:13px; margin-bottom:0; display:none;">
+								<thead><tr><th style="min-width:220px;">File</th><th style="min-width:160px;">Remarks</th><th style="width:36px;"></th></tr></thead>
+								<tbody></tbody>
+							</table>
+						</div>
 						<button type="button" class="btn btn-sm btn-light btn-mt-add-sticker"><i class="fa fa-upload"></i> Upload Sticker</button>
 					</div>
 				</div>
@@ -1398,9 +1455,6 @@ class SalesOrderEntry {
 			item_field.set_value(data.item_code);
 			if (data.qty) qty_field.set_value(data.qty);
 			if (data.remarks) remarks_field.set_value(data.remarks);
-			if (data.custom_selling_price !== undefined || data.selling_price !== undefined) {
-				selling_price_field.set_value(data.custom_selling_price || data.selling_price || 0);
-			}
 			if (data.item_name) {
 				$row.find('.freebie-name span').text(data.item_name).removeClass('text-muted');
 			} else {
@@ -1473,9 +1527,6 @@ class SalesOrderEntry {
 			item_field.set_value(data.item_code);
 			if (data.qty) qty_field.set_value(data.qty);
 			if (data.scheme) scheme_field.set_value(data.scheme);
-			if (data.custom_selling_price !== undefined || data.selling_price !== undefined) {
-				selling_price_field.set_value(data.custom_selling_price || data.selling_price || 0);
-			}
 			if (data.item_name) {
 				$row.find('.scheme-name span').text(data.item_name).removeClass('text-muted');
 			} else {
@@ -1567,9 +1618,6 @@ class SalesOrderEntry {
 			if (data.qty) qty_field.set_value(data.qty);
 			if (data.previous_order_id) prev_order_field.set_value(data.previous_order_id);
 			if (data.remarks) remarks_field.set_value(data.remarks);
-			if (data.custom_selling_price !== undefined || data.selling_price !== undefined) {
-				selling_price_field.set_value(data.custom_selling_price || data.selling_price || 0);
-			}
 			if (data.item_name) {
 				$row.find('.au-name span').text(data.item_name).removeClass('text-muted');
 			} else {
@@ -1839,20 +1887,22 @@ class SalesOrderEntry {
 		}).join('');
 
 		$container.html(`
-			<table class="table table-hover" style="font-size: 13px;">
-				<thead style="background: var(--bg-color);">
-					<tr>
-						<th>Order #</th>
-						<th>Customer</th>
-						<th>Type</th>
-						<th>Date</th>
-						<th>Delivery</th>
-						<th class="text-right">Grand Total</th>
-						<th>Status</th>
-					</tr>
-				</thead>
-				<tbody>${rows}</tbody>
-			</table>
+			<div class="alp-scroll">
+				<table class="table table-hover" style="font-size: 13px;">
+					<thead>
+						<tr>
+							<th>Order #</th>
+							<th>Customer</th>
+							<th>Type</th>
+							<th>Date</th>
+							<th>Delivery</th>
+							<th class="text-right">Grand Total</th>
+							<th>Status</th>
+						</tr>
+					</thead>
+					<tbody>${rows}</tbody>
+				</table>
+			</div>
 		`);
 	}
 

@@ -124,6 +124,34 @@ class EcomSalesOrderEntry {
 			// Open the shared Sales Order view (workflow action bar), same as the list.
 			if (name) frappe.set_route('sales-order-entry-view', name);
 		});
+		// The items/freebies tables live inside .alp-scroll wrappers (overflow-x:
+		// auto), which would clip the absolutely-positioned awesomplete list. While
+		// a dropdown inside .eso-table-scroll is open, pin it to the viewport with
+		// position: fixed and keep it glued to its input on scroll/resize.
+		w.on('awesomplete-open', 'input', (e) => {
+			if ($(e.target).closest('.eso-table-scroll').length) this._position_open_dropdowns();
+		});
+		w.find('.eso-table-scroll').on('scroll', () => this._position_open_dropdowns());
+		$(window).on('scroll.eso_dropdown resize.eso_dropdown', () => this._position_open_dropdowns());
+	}
+
+	_position_open_dropdowns() {
+		this.wrapper.find('.eso-table-scroll .awesomplete > ul').each(function () {
+			if (this.hasAttribute('hidden')) return;
+			const input = this.parentElement.querySelector('input');
+			if (!input) return;
+			const r = input.getBoundingClientRect();
+			// Inline !important beats the absolute-positioning fallback in the
+			// page <style> block (kept for safety if this handler never runs).
+			this.style.setProperty('position', 'fixed', 'important');
+			this.style.setProperty('top', (r.bottom + 2) + 'px', 'important');
+			this.style.setProperty('left', r.left + 'px', 'important');
+			this.style.setProperty('right', 'auto', 'important');
+			// Pull the list back on-screen if it spills past the right edge
+			// (min-width 320px is nearly a full phone viewport).
+			const spill = this.getBoundingClientRect().right - (window.innerWidth - 8);
+			if (spill > 0) this.style.setProperty('left', Math.max(8, r.left - spill) + 'px', 'important');
+		});
 	}
 
 	handle_route_entry() {
@@ -434,16 +462,20 @@ class EcomSalesOrderEntry {
 				<td class="text-right">${format_currency(o.grand_total)}</td>
 				<td>${esc(o.custom_workflow_status || '—')}</td>
 			</tr>`).join('');
+		// .alp-scroll keeps the 7-column table scrolling inside its own wrapper on
+		// phones; header background/typography comes from the central stylesheet.
 		$c.html(`
-			<table class="table table-hover" style="font-size: 13px;">
-				<thead style="background: var(--bg-color);">
-					<tr>
-						<th>Order #</th><th>Customer</th><th>PO No</th><th>Date</th>
-						<th>Dispatch</th><th class="text-right">Grand Total</th><th>Status</th>
-					</tr>
-				</thead>
-				<tbody>${rows}</tbody>
-			</table>`);
+			<div class="alp-scroll">
+				<table class="table table-hover" style="font-size: 13px;">
+					<thead>
+						<tr>
+							<th>Order #</th><th>Customer</th><th>PO No</th><th>Date</th>
+							<th>Dispatch</th><th class="text-right">Grand Total</th><th>Status</th>
+						</tr>
+					</thead>
+					<tbody>${rows}</tbody>
+				</table>
+			</div>`);
 	}
 
 	// ---- save --------------------------------------------------------------

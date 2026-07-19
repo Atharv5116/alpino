@@ -101,6 +101,7 @@ class SalesOrderEntryListPage {
 		this.wrapper.find('.btn-so-list-clear').text(__('Clear'));
 		this.wrapper.find('.btn-so-list-prev').text(__('Previous'));
 		this.wrapper.find('.btn-so-list-next').text(__('Next'));
+		this._init_filter_collapse();
 		this.load_list();
 	}
 
@@ -288,6 +289,28 @@ class SalesOrderEntryListPage {
 		Object.values(this._filter_fields).forEach((f) => {
 			if (f && f.$input) f.$input.on('input change awesomplete-selectcomplete', apply);
 		});
+	}
+
+	// Collapsible filter card. The toggle button is display:none above 768px
+	// (local style block in the page HTML), so desktop behaviour is unchanged;
+	// on phones the 8 stacked filter fields start collapsed to save a screenful.
+	_init_filter_collapse() {
+		const card = this.wrapper.find('.so-list-filters');
+		const btn = this.wrapper.find('.btn-so-list-toggle-filters');
+		if (!btn.length) return;
+		const sync = () => {
+			const collapsed = card.hasClass('so-list-filters-collapsed');
+			btn.text(collapsed ? __('Show Filters') : __('Hide Filters'));
+			btn.attr('aria-expanded', collapsed ? 'false' : 'true');
+		};
+		btn.on('click', () => {
+			card.toggleClass('so-list-filters-collapsed');
+			sync();
+		});
+		if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+			card.addClass('so-list-filters-collapsed');
+		}
+		sync();
 	}
 
 	_args() {

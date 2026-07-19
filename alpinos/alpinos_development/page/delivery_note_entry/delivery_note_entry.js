@@ -245,14 +245,14 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			$main.find('[data-fieldname="custom_assigned_to"]').prop('disabled', true);
 		}
 
-		// Status banner
+		// Status banner — colors come from the page <style> classes (theme-aware
+		// via Frappe vars), not inline hexes, so dark mode works.
 		var $banner = $main.find('#dn-status-banner');
+		$banner.removeClass('dn-banner-submitted dn-banner-cancelled');
 		if (submitted) {
-			$banner.css({ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' })
-				.text('Submitted — read only').show();
+			$banner.addClass('dn-banner-submitted').text('Submitted — read only').show();
 		} else if (cancelled) {
-			$banner.css({ background: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2' })
-				.text('Cancelled').show();
+			$banner.addClass('dn-banner-cancelled').text('Cancelled').show();
 		} else {
 			$banner.hide();
 		}

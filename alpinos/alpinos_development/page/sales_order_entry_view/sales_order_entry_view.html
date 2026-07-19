@@ -1,25 +1,10 @@
 <style>
 .sales-order-entry-view.so-view-shell {
-	max-width: 1120px;
-	margin: 0 auto;
-	padding: 8px 12px 24px;
+	padding: 8px 0 24px;
 }
-.so-view-shell .so-view-card {
-	background: var(--card-bg);
-	border-radius: 10px;
-	padding: 20px 22px;
-	margin-bottom: 18px;
-	border: 1px solid var(--border-color);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-.so-view-shell .so-view-section-title {
-	margin-top: 0;
-	margin-bottom: 14px;
-	font-weight: 600;
-	font-size: 15px;
-	letter-spacing: -0.01em;
-	color: var(--text-color);
-}
+/* Card + section-title visuals now come from the central design system
+   (alpinos_pages.css): .so-view-card / .so-view-order-details-wrap are in the
+   central card list and titles use .alp-section-title. */
 .so-view-shell .so-view-kv {
 	font-size: 13px;
 	margin-bottom: 0;
@@ -47,18 +32,10 @@
 .so-view-shell .so-view-items-table {
 	font-size: 13px;
 	margin-bottom: 0;
-	border-radius: 8px;
-	overflow: hidden;
 }
+/* Header colors/typography come from the central table system; nowrap stays
+   local so headings pair with the horizontal scroll wrapper. */
 .so-view-shell .so-view-items-table thead th {
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	font-weight: 600;
-	color: var(--text-muted);
-	background: var(--fg-color);
-	border-bottom: 2px solid var(--border-color);
-	padding: 10px 8px;
 	white-space: nowrap;
 }
 .so-view-shell .so-view-items-table tbody td {
@@ -71,9 +48,6 @@
 .so-view-shell .so-view-items-table tbody td.text-right {
 	white-space: nowrap;
 	text-align: right;
-}
-.so-view-shell .so-view-items-table tbody tr:nth-child(even) {
-	background: var(--fg-color);
 }
 .so-view-shell .so-view-items-table tbody tr:hover {
 	background: var(--control-bg);
@@ -91,17 +65,49 @@
 	background: var(--fg-color);
 	border: 1px dashed var(--border-color);
 }
-.so-view-order-details-wrap h5 {
-	border-bottom: 1px solid var(--border-color);
-	padding-bottom: 10px;
-	margin-bottom: 18px;
+.so-view-shell .v-freebies,
+.so-view-shell .v-scheme,
+.so-view-shell .v-damage-items {
+	font-size: 13px;
+	margin-bottom: 0;
+}
+/* Money summary tables stay a compact fixed-width block; right-aligned so they
+   do not look orphaned on the full-width desktop layout. On phones the table
+   is narrower than 440px anyway and simply fills the card. */
+.so-view-shell .so-view-money {
+	max-width: 440px;
+	margin-left: auto;
+	margin-bottom: 0;
+}
+.so-view-shell .v-cash-disc-pct {
+	margin-left: 8px;
+}
+/* Each e-com order flag wraps as one unit on narrow screens (JS renders
+   .v-ecom-flag spans) instead of breaking mid-label. */
+.so-view-shell .v-ecom-flag {
+	display: inline-block;
+	white-space: nowrap;
+	margin: 2px 16px 2px 0;
+}
+/* Product thumbnails in the items table (JS-injected; sized here, not inline,
+   so the design system can restyle them). */
+.so-view-shell .so-view-item-img {
+	max-height: 44px;
+	max-width: 72px;
+	border-radius: 4px;
+	object-fit: contain;
+}
+@media (max-width: 768px) {
+	.so-view-shell .so-view-kv td:last-child {
+		word-break: break-word;
+	}
 }
 </style>
 
 <div class="sales-order-entry-view so-view-shell">
 	<!-- 1. Customer Details -->
 	<div class="so-view-card">
-		<h5 class="so-view-section-title">Customer Details</h5>
+		<h5 class="so-view-section-title alp-section-title">Customer Details</h5>
 		<table class="table table-bordered so-view-kv">
 			<tbody>
 				<tr data-row="customer_name"><td class="text-muted">Customer Name</td><td class="v-customer-name">—</td></tr>
@@ -122,11 +128,11 @@
 
 	<!-- 2. Order Items Details -->
 	<div class="so-view-order-details-wrap so-view-card">
-		<h5 class="so-view-section-title">Order Items Details</h5>
+		<h5 class="so-view-section-title alp-section-title">Order Items Details</h5>
 
 		<div class="sec-order-items" style="margin-bottom: 20px;">
 			<h6>Order Items</h6>
-			<div style="overflow-x: auto;">
+			<div class="alp-scroll alp-scroll--wide">
 				<table class="table table-bordered table-hover so-view-items-table v-items">
 					<thead>
 						<tr>
@@ -154,8 +160,8 @@
 		<div class="sec-marketing-freebies" style="margin-bottom: 20px; display: none;">
 			<h6>Marketing Freebies</h6>
 			<div style="overflow-x: auto;">
-				<table class="table table-bordered table-hover v-freebies" style="font-size: 13px; margin-bottom: 0;">
-					<thead style="background: var(--fg-color);">
+				<table class="table table-bordered table-hover v-freebies">
+					<thead>
 						<tr>
 							<th>SKU</th>
 							<th>Item Name</th>
@@ -171,8 +177,8 @@
 		<div class="sec-scheme" style="display: none;">
 			<h6 class="v-scheme-title">Scheme Details</h6>
 			<div style="overflow-x: auto;">
-				<table class="table table-bordered table-hover v-scheme" style="font-size: 13px; margin-bottom: 0;">
-					<thead style="background: var(--fg-color);">
+				<table class="table table-bordered table-hover v-scheme">
+					<thead>
 						<tr>
 							<th>SKU</th>
 							<th>Item Name</th>
@@ -188,8 +194,8 @@
 		<div class="sec-damage-items" style="margin-bottom: 20px; display: none;">
 			<h6>Additional Units – Damage Items</h6>
 			<div style="overflow-x: auto;">
-				<table class="table table-bordered table-hover v-damage-items" style="font-size: 13px; margin-bottom: 0;">
-					<thead style="background: var(--fg-color);">
+				<table class="table table-bordered table-hover v-damage-items">
+					<thead>
 						<tr>
 							<th>SKU</th>
 							<th>Item Name</th>
@@ -207,13 +213,13 @@
 	<!-- 3. Cash Disc.% -->
 	<div class="sec-cash-disc so-view-card" style="display: none;">
 		<strong>Cash Disc.%:</strong>
-		<span class="v-cash-disc-pct" style="margin-left: 8px;">—</span>
+		<span class="v-cash-disc-pct">—</span>
 	</div>
 
 	<!-- 4. Grand Total -->
 	<div class="sec-grand so-view-card" style="display: none;">
-		<h5 class="so-view-section-title">Grand Total</h5>
-		<table class="table table-bordered so-view-kv" style="max-width: 440px; margin-bottom: 0;">
+		<h5 class="so-view-section-title alp-section-title">Grand Total</h5>
+		<table class="table table-bordered so-view-kv so-view-money">
 			<tbody>
 				<tr data-row="total_qty"><td class="text-muted">Total Qty</td><td class="text-right v-total-qty">—</td></tr>
 				<tr data-row="total"><td class="text-muted">Total Amount</td><td class="text-right v-total-amount">—</td></tr>
@@ -225,8 +231,8 @@
 
 	<!-- 5. Taxes -->
 	<div class="sec-taxes so-view-card" style="display: none;">
-		<h5 class="so-view-section-title">Taxes</h5>
-		<table class="table table-bordered so-view-kv" style="max-width: 440px; margin-bottom: 0;">
+		<h5 class="so-view-section-title alp-section-title">Taxes</h5>
+		<table class="table table-bordered so-view-kv so-view-money">
 			<tbody>
 				<tr data-row="total_taxes_and_charges"><td class="text-muted">Total GST Amount</td><td class="text-right v-total-gst">—</td></tr>
 			</tbody>
@@ -235,8 +241,8 @@
 
 	<!-- 6. Net Total -->
 	<div class="sec-net so-view-card" style="display: none;">
-		<h5 class="so-view-section-title">Net Total</h5>
-		<table class="table table-bordered so-view-kv" style="max-width: 440px; margin-bottom: 0;">
+		<h5 class="so-view-section-title alp-section-title">Net Total</h5>
+		<table class="table table-bordered so-view-kv so-view-money">
 			<tbody>
 				<tr data-row="net_total"><td class="text-muted">Total Amount (Excl. GST)</td><td class="text-right v-net-total-excl">—</td></tr>
 				<tr data-row="total_taxes_net"><td class="text-muted">Total GST Amount</td><td class="text-right v-net-total-gst">—</td></tr>

@@ -1,19 +1,6 @@
 <style>
-	.pl-list-container {
-		background-color: #fff;
-		border-radius: 4px;
-		box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-	}
-	.pl-list-filters {
-		padding: 15px;
-		border-bottom: 1px solid #d1d8dd;
-		background: #f8f9fa;
-	}
-	.pl-list-filters-title {
-		font-weight: bold;
-		margin-bottom: 10px;
-		color: #333;
-	}
+	/* Card look, table skin, row hover, sticky thead and full width are
+	   handled centrally by alpinos_pages.css - only layout stays local. */
 	.pl-list-filter-row {
 		display: flex;
 		flex-wrap: wrap;
@@ -31,37 +18,21 @@
 	.pl-list-table-wrapper {
 		overflow-x: auto;
 	}
-	.pl-list-table {
-		width: 100%;
-		border-collapse: collapse;
-	}
 	.pl-list-table th, .pl-list-table td {
 		padding: 10px 15px;
-		border-bottom: 1px solid #edf0f2;
-	}
-	.pl-list-table th {
-		font-weight: bold;
-		background: #f8f9fa;
-		color: #8D99A6;
-		text-transform: uppercase;
-		font-size: 11px;
-	}
-	.pl-list-row:hover {
-		background-color: #f4f5f6;
+		border-bottom: 1px solid var(--border-color, #e2e2e2);
 	}
 	.pl-pager {
-		padding: 15px;
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		background: #fff;
-		border-top: 1px solid #d1d8dd;
+		gap: 10px;
 	}
 </style>
 
 <div class="pl-list-container">
 	<div class="pl-list-filters">
-		<div class="pl-list-filters-title">Filters</div>
+		<div class="pl-list-filters-title alp-section-title">Filters</div>
 		<div class="pl-list-filter-row">
 			<div class="pl-list-filter-item fld-search"></div>
 			<div class="pl-list-filter-item fld-status"></div>
@@ -73,7 +44,7 @@
 		</div>
 	</div>
 	
-	<div class="pl-list-table-wrapper">
+	<div class="pl-list-table-wrapper alp-scroll alp-card">
 		<table class="pl-list-table">
 			<thead>
 				<tr>

@@ -1,12 +1,12 @@
 <style>
 	.pick-list-container {
 		padding: 15px;
-		background: #fff;
+		background: var(--card-bg, #fff);
 	}
 	.pl-actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: 8px;
 		justify-content: flex-end;
 		margin-bottom: 15px;
 	}
@@ -44,29 +44,21 @@
 	.sku-table {
 		width: 100%;
 		border-collapse: collapse;
-		margin-bottom: 20px;
 	}
 	.sku-table th, .sku-table td {
-		border: 1px solid #d1d8dd;
+		border: 1px solid var(--border-color, #d1d8dd);
 		padding: 5px;
 		text-align: center;
-	}
-	.sku-table th {
-		background: #f8f9fa;
-		font-weight: bold;
 	}
 	.sku-table input {
 		width: 100%;
 		box-sizing: border-box;
 	}
-	.table-section-title {
-		margin-top: 30px;
-		margin-bottom: 10px;
-		font-size: 16px;
-		font-weight: bold;
-		color: #333;
-		border-bottom: 1px solid #ddd;
-		padding-bottom: 5px;
+	/* Section spacing lives on the scroll wrapper so the horizontal
+	   scrollbar hugs each table. Header look + section titles come from
+	   the central alpinos_pages.css design system. */
+	.sku-table-wrapper {
+		margin-bottom: 20px;
 	}
 	#tables-container {
 		width: 100%;
@@ -74,7 +66,7 @@
 		-webkit-overflow-scrolling: touch;
 	}
 	#tables-container .sku-table {
-		min-width: 720px;
+		min-width: 900px;
 	}
 	.row-actions-cell {
 		white-space: nowrap;
@@ -91,7 +83,7 @@
 		margin: 0 1px;
 		border: none;
 		background: transparent;
-		color: #6b7280;
+		color: var(--text-muted, #6b7280);
 		border-radius: 4px;
 		cursor: pointer;
 		transition: background-color .12s ease-in-out, color .12s ease-in-out;
@@ -101,50 +93,19 @@
 		line-height: 1;
 	}
 	.alpinos-row-icon-btn:hover {
-		background: #f1f5f9;
-		color: #111827;
+		background: rgba(127, 127, 127, 0.15);
+		color: var(--text-color, #111827);
 	}
 	.alpinos-row-icon-btn:focus {
-		outline: 2px solid #cbd5e1;
+		outline: 2px solid var(--border-color, #cbd5e1);
 		outline-offset: 1px;
 	}
 	.alpinos-row-icon-danger {
-		color: #b91c1c;
+		color: #dc2626;
 	}
 	.alpinos-row-icon-danger:hover {
-		background: #fef2f2;
-		color: #7f1d1d;
-	}
-
-	/* Page-level action buttons (Go to List View / Create Delivery Note). */
-	.pl-actions .btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 5px 12px;
-		font-size: 12px;
-		font-weight: 500;
-		line-height: 1.4;
-		border-radius: 6px;
-		border: 1px solid #d1d8dd;
-		background: #fff;
-		color: #374151;
-		transition: all .12s ease-in-out;
-		box-shadow: 0 1px 0 rgba(0,0,0,0.02);
-	}
-	.pl-actions .btn:hover {
-		background: #f1f5f9;
-		border-color: #94a3b8;
-		color: #111827;
-	}
-	.pl-actions .btn.btn-primary {
-		background: #111827;
-		border-color: #111827;
-		color: #fff;
-	}
-	.pl-actions .btn.btn-primary:hover {
-		background: #1f2937;
-		border-color: #1f2937;
+		background: rgba(220, 38, 38, 0.15);
+		color: #dc2626;
 	}
 
 	/* Tablet narrow */
@@ -155,9 +116,20 @@
 		.pl-field label {
 			font-size: 11px;
 		}
+		/* Bigger touch targets for the row split/remove icons — the central
+		   36px control rule only covers .btn and .form-control. */
+		.alpinos-row-icon-btn {
+			width: 32px;
+			height: 32px;
+		}
+		.alpinos-row-icon-btn .fa {
+			font-size: 14px;
+		}
 	}
 
-	/* Phone — keep 2 outer columns; stack label on top of input inside each cell */
+	/* Phone — the central alpinos_pages.css already collapses .pl-grid to a
+	   single outer column at 768px; here we only stack each label on top of
+	   its input. Control height comes from the central 36px touch-target rule. */
 	@media (max-width: 480px) {
 		.pick-list-container {
 			padding: 8px;
@@ -177,13 +149,12 @@
 		.pl-field select {
 			font-size: 13px;
 			padding: 4px 6px;
-			height: 30px;
 		}
 	}
 </style>
 
 <div class="pick-list-container">
-	<div class="pl-actions">
+	<div class="pl-actions alp-actions alp-actions--end">
 		<button class="btn btn-default btn-sm" id="btn-save-draft" style="display: none;">Save as Draft</button>
 		<button class="btn btn-default btn-sm" id="btn-save-draft-update" style="display: none;">Save</button>
 		<button class="btn btn-default btn-sm" id="btn-start-picking" style="display: none;">Start Picking</button>
@@ -275,12 +246,14 @@
 		<!-- Tables will be dynamically generated here -->
 	</div>
 
-	<div id="pl-sticker-attachments" style="display:none; margin-top:16px; background:var(--card-bg, #fff); border:1px solid var(--border-color, #d1d8dd); border-radius:8px; padding:16px;">
-		<h6 style="margin-top:0; margin-bottom:12px; font-weight:600;">Sticker Attachments</h6>
-		<table class="table table-bordered" style="font-size:13px; margin-bottom:0;">
-			<thead><tr><th style="min-width:240px;">File</th><th style="min-width:160px;">Remarks</th></tr></thead>
-			<tbody class="pl-sticker-body"></tbody>
-		</table>
+	<div id="pl-sticker-attachments" style="display:none;">
+		<h6 class="alp-section-title">Sticker Attachments</h6>
+		<div class="alp-scroll">
+			<table class="table table-bordered" style="font-size:13px; margin-bottom:0;">
+				<thead><tr><th style="min-width:240px;">File</th><th style="min-width:160px;">Remarks</th></tr></thead>
+				<tbody class="pl-sticker-body"></tbody>
+			</table>
+		</div>
 	</div>
 
 	<datalist id="batch-list"></datalist>

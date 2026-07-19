@@ -1,4 +1,4 @@
-<div class="ecom-so-entry" style="max-width: 1200px; margin: 0 auto; padding: 12px;">
+<div class="ecom-so-entry">
 
 	<!-- Section 1: Customer Details -->
 	<div class="eso-card">
@@ -33,12 +33,12 @@
 	<!-- Section 3: PO Details -->
 	<div class="eso-card">
 		<h6 class="eso-card-title">PO Details</h6>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-po-number"></div></div>
-			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-po-date"></div></div>
-			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-po-expiry-date"></div></div>
-			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-delivery-by-date"></div></div>
-			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-dispatch-date"></div></div>
+		<div class="alp-grid">
+			<div class="eso-fld"><div class="fld-po-number"></div></div>
+			<div class="eso-fld"><div class="fld-po-date"></div></div>
+			<div class="eso-fld"><div class="fld-po-expiry-date"></div></div>
+			<div class="eso-fld"><div class="fld-delivery-by-date"></div></div>
+			<div class="eso-fld"><div class="fld-dispatch-date"></div></div>
 		</div>
 	</div>
 
@@ -50,7 +50,7 @@
 	<!-- Section 5: Ordered Products (hidden when Freebies PO) -->
 	<div class="eso-card eso-ordered-products">
 		<h6 class="eso-card-title">Ordered Products</h6>
-		<div style="overflow: visible;">
+		<div class="alp-scroll eso-table-scroll">
 			<table class="table table-bordered eso-items-table so-table" style="font-size: 13px; margin-bottom: 0;">
 				<thead>
 					<tr>
@@ -75,7 +75,7 @@
 	<!-- Section 6: Freebies Table -->
 	<div class="eso-card eso-freebies-block">
 		<h6 class="eso-card-title eso-freebies-title">Freebies</h6>
-		<div style="overflow: visible;">
+		<div class="alp-scroll eso-table-scroll">
 			<table class="table table-bordered eso-freebies-table so-table" style="font-size: 13px; margin-bottom: 0;">
 				<thead>
 					<tr>
@@ -97,24 +97,26 @@
 	<div class="eso-card eso-stickers-block">
 		<h6 class="eso-card-title">Sticker Attachments</h6>
 		<div class="eso-stickers-empty text-muted" style="font-size: 12px; margin-bottom: 8px;">No sticker files uploaded.</div>
-		<table class="table table-bordered eso-stickers-table so-table" style="font-size: 13px; margin-bottom: 0; display: none;">
-			<thead>
-				<tr>
-					<th style="min-width: 220px;">File</th>
-					<th style="min-width: 160px;">Remarks</th>
-					<th style="width: 36px;"></th>
-				</tr>
-			</thead>
-			<tbody></tbody>
-		</table>
+		<div class="alp-scroll">
+			<table class="table table-bordered eso-stickers-table so-table" style="font-size: 13px; margin-bottom: 0; display: none;">
+				<thead>
+					<tr>
+						<th style="min-width: 220px;">File</th>
+						<th style="min-width: 160px;">Remarks</th>
+						<th style="width: 36px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
 		<button type="button" class="btn btn-sm btn-light btn-eso-add-sticker" style="margin-top: 8px;">
 			<i class="fa fa-upload"></i> Upload Sticker
 		</button>
 	</div>
 
 	<!-- Totals + actions -->
-	<div class="eso-card" style="text-align: right;">
-		<span class="text-muted eso-total" style="margin-right: 12px;"></span>
+	<div class="eso-card alp-actions alp-actions--end">
+		<span class="text-muted eso-total"></span>
 		<button type="button" class="btn btn-default btn-sm btn-eso-clear">Clear</button>
 		<button type="button" class="btn btn-primary btn-sm btn-eso-save">Save Sales Order</button>
 	</div>
@@ -129,21 +131,18 @@
 </div>
 
 <style>
-	.ecom-so-entry .eso-card {
-		background: var(--card-bg);
-		border: 1px solid var(--border-color);
-		border-radius: 8px;
-		padding: 16px;
-		margin-bottom: 16px;
-	}
-	.ecom-so-entry .eso-card-title { margin-top: 0; margin-bottom: 12px; font-weight: 600; }
+	/* Card + section-title + table-header + row-hover styling now comes from the
+	   central design system: /assets/alpinos/css/alpinos_pages.css */
 	.ecom-so-entry .eso-fld { margin-bottom: 8px; }
-	/* Per-row awesomplete SKU dropdown must not be clipped by the table box. */
+	/* Per-row awesomplete SKU dropdown must not be clipped by the table box.
+	   The JS switches open dropdowns inside .eso-table-scroll to fixed
+	   positioning so the .alp-scroll wrapper can clip the table without
+	   clipping the suggestion list. */
 	.ecom-so-entry .eso-items-table,
 	.ecom-so-entry .eso-freebies-table { overflow: visible !important; }
 	.ecom-so-entry .eso-items-table td,
 	.ecom-so-entry .eso-freebies-table td { overflow: visible !important; position: relative; vertical-align: middle; }
-	.ecom-so-entry .so-table thead th { background: var(--bg-color); white-space: nowrap; }
+	.ecom-so-entry .so-table thead th { white-space: nowrap; }
 	.ecom-so-entry .so-table th,
 	.ecom-so-entry .so-table td { padding: 4px 6px; }
 	.ecom-so-entry .eso-cell-input { width: 100%; min-width: 48px; }
@@ -153,8 +152,8 @@
 		position: absolute !important;
 		left: 0 !important;
 		right: auto !important;
-		min-width: 320px !important;
-		max-width: 440px !important;
+		min-width: min(320px, calc(100vw - 24px)) !important;
+		max-width: min(440px, calc(100vw - 24px)) !important;
 		max-height: 300px;
 		overflow-y: auto;
 		background: var(--card-bg, #fff);
@@ -165,5 +164,4 @@
 	.ecom-so-entry .awesomplete > ul > li { padding: 8px 12px; cursor: pointer; white-space: normal; word-wrap: break-word; }
 	.ecom-so-entry .awesomplete > ul > li:hover,
 	.ecom-so-entry .awesomplete > ul > li[aria-selected="true"] { background: var(--bg-color, #f5f5f5); }
-	.ecom-so-entry .recent-orders-list .order-row:hover { background: var(--bg-color); }
 </style>

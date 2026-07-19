@@ -348,7 +348,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let html = `
 				<div class="table-section-title">${title}</div>
-				<div class="sku-table-wrapper">
+				<div class="sku-table-wrapper alp-scroll alp-scroll--wide">
 				<table class="sku-table" data-table-name="${title}">
 					<thead>
 						<tr>
@@ -395,9 +395,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let box_readonly = (!itemsLocked && (title === "Items" || title === "Marketing Freebies")) ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
-				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:#f5f3ff;"' : ''}>
+				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:rgba(124,58,237,0.08);"' : ''}>
 					<td>${idx + 1}</td>
-					<td data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#7c3aed;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}</td>
+					<td data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}</td>
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
@@ -434,12 +434,19 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		// COMBO mapping table — one row per component, each combo shaded distinctly so
 		// multiple combos in one order are easy to tell apart. Read-only reference: it
 		// tells the picker how the exploded component qtys above pack back into combos.
-		const COMBO_SHADES = ['#eef6ff', '#fff7ed', '#f0fdf4', '#fdf2f8', '#f1f5f9'];
+			// Translucent shades so the tint reads on both light and dark themes.
+		const COMBO_SHADES = [
+			'rgba(59,130,246,0.10)',
+			'rgba(249,115,22,0.10)',
+			'rgba(34,197,94,0.10)',
+			'rgba(236,72,153,0.10)',
+			'rgba(100,116,139,0.12)',
+		];
 		const create_combo_table = (combos) => {
 			if (!combos || !combos.length) return;
 			let html = `
 				<div class="table-section-title">Combos</div>
-				<div class="sku-table-wrapper">
+				<div class="sku-table-wrapper alp-scroll alp-scroll--wide">
 				<table class="sku-table" data-table-name="Combos">
 					<thead>
 						<tr>
@@ -464,7 +471,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					html += `<tr style="background:${shade};">`;
 					html += `<td>${sr}</td>`;
 					if (j === 0) {
-						html += `<td rowspan="${comps.length}" style="vertical-align:middle;font-weight:600;">${frappe.utils.escape_html(combo.combo_sku || '')}<div style="font-weight:400;color:#6b7280;font-size:11px;">${frappe.utils.escape_html(combo.combo_name || '')}</div></td>`;
+						html += `<td rowspan="${comps.length}" style="vertical-align:middle;font-weight:600;">${frappe.utils.escape_html(combo.combo_sku || '')}<div style="font-weight:400;color:var(--text-muted, #6b7280);font-size:11px;">${frappe.utils.escape_html(combo.combo_name || '')}</div></td>`;
 						html += `<td rowspan="${comps.length}" style="vertical-align:middle;">${flt(combo.ordered_qty || 0)}</td>`;
 					}
 					html += `<td data-item-code="${c.item_code}">${frappe.utils.escape_html(c.item_code || '')}</td>`;
@@ -519,7 +526,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				return;
 			}
 			let rows_html = removed.map((r, idx) => `
-				<tr ${r.is_pending ? 'style="background:#fffbeb;"' : ''}>
+				<tr ${r.is_pending ? 'style="background:rgba(245,158,11,0.14);"' : ''}>
 					<td>${idx + 1}</td>
 					<td>${frappe.utils.escape_html(r.item_code || '')}</td>
 					<td>${frappe.utils.escape_html(r.item_name || '')}</td>
@@ -534,7 +541,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let html = `
 				<div id="removed-items-section">
 					<div class="table-section-title">Removed Items</div>
-					<div class="sku-table-wrapper">
+					<div class="sku-table-wrapper alp-scroll alp-scroll--wide">
 					<table class="sku-table">
 						<thead>
 							<tr>
