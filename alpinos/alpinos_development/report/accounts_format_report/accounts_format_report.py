@@ -369,7 +369,7 @@ def _get_data(filters):
 		else:
 			import math
 			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
-			from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor
+			from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
 
 			exploded_items = {}
 
@@ -409,13 +409,22 @@ def _get_data(filters):
 					for p in packed:
 						add_item_to_exploded(p.item_code, flt(p.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
 				else:
-					pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
-					if pb_name:
-						pb_items = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
-						for p in pb_items:
-							add_item_to_exploded(p.item_code, flt(p.qty) * flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+					# alpinos custom bundle (custom_is_bundle / custom_product_mapping):
+					# no native Packed Items, so explode it the SAME way the Pick List
+					# does — otherwise the combo SKU (which isn't in the pick list, only
+					# its components are) reports qty 0.
+					comps = _bundle_components(r.item_code)
+					if comps:
+						for c in comps:
+							add_item_to_exploded(c.item, flt(r.qty) * flt(c.base_qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
 					else:
-						add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+						pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
+						if pb_name:
+							pb_items = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
+							for p in pb_items:
+								add_item_to_exploded(p.item_code, flt(p.qty) * flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+						else:
+							add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
 
 			for code, item_dict in exploded_items.items():
 				cf = flt(get_box_conversion_factor(code))

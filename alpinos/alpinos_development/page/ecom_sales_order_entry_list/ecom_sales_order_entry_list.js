@@ -207,7 +207,10 @@ class EcomSalesOrderListPage {
 		});
 		this.wrapper.on('click', '.eso-list-link-btn', (e) => {
 			e.stopPropagation();
-			const route = $(e.currentTarget).data('route');
+			const $btn = $(e.currentTarget);
+			const so = $btn.data('so');
+			const route = $btn.data('route');
+			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
 		// Touch fallback for the ASN hover tooltip: tap/click the summary to see
@@ -371,8 +374,11 @@ class EcomSalesOrderListPage {
 				const btns = [];
 				const mk = (label, route, title) =>
 					`<button type="button" class="btn btn-xs btn-default eso-list-link-btn" data-route='${esc(JSON.stringify(route))}' title="${esc(title)}">${label}</button>`;
-				if (d.pick_list && frappe.model.can_read('Pick List')) btns.push(mk('PL', ['pick_list_entry', d.pick_list], d.pick_list));
-				if (d.delivery_note && frappe.model.can_read('Delivery Note')) btns.push(mk('DN', ['delivery_note_entry', d.delivery_note], d.delivery_note));
+				// PL / DN open the LIST filtered to this Sales Order (all linked docs).
+				const mkList = (label, listRoute, title) =>
+					`<button type="button" class="btn btn-xs btn-default eso-list-link-btn" data-route='${esc(JSON.stringify([listRoute]))}' data-so="${esc(d.name)}" title="${esc(title)}">${label}</button>`;
+				if (d.pick_list && frappe.model.can_read('Pick List')) btns.push(mkList('PL', 'pick_list_list', __('Pick Lists for {0}', [d.name])));
+				if (d.delivery_note && frappe.model.can_read('Delivery Note')) btns.push(mkList('DN', 'delivery_note_entry_list', __('Delivery Notes for {0}', [d.name])));
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
 				return btns.join(' ') || '—';
 			},

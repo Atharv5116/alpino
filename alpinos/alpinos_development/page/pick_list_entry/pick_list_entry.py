@@ -244,16 +244,19 @@ def get_pick_list_entry_list(
 	page_length=20,
 	search="",
 	status="",
-	company=""
+	company="",
+	sales_order=""
 ):
 	start = frappe.utils.cint(start)
 	page_length = frappe.utils.cint(page_length)
-	
+
 	filters = {}
 	if status:
 		filters["status"] = status
 	if company:
 		filters["company"] = company
+	if sales_order:
+		filters["custom_sales_order_id"] = sales_order
 
 	# A dedicated PL User only sees Pick Lists assigned to them. Warehouse
 	# admins/managers (and System Manager) keep full visibility.

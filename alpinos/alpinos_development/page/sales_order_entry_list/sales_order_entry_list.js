@@ -278,7 +278,11 @@ class SalesOrderEntryListPage {
 		});
 		this.wrapper.on('click', '.so-list-link-btn', (e) => {
 			e.stopPropagation();
-			const route = $(e.currentTarget).data('route');
+			const $btn = $(e.currentTarget);
+			const so = $btn.data('so');
+			const route = $btn.data('route');
+			// PL / DN buttons carry the SO name -> open the list filtered to it.
+			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
 		this.wrapper.on('change', '.so-list-select-all', (e) => {
@@ -496,11 +500,16 @@ class SalesOrderEntryListPage {
 				const mk = (label, route, title) =>
 					`<button type="button" class="btn btn-xs btn-default so-list-link-btn"
 						data-route='${esc(JSON.stringify(route))}' title="${esc(title)}">${label}</button>`;
+				// PL / DN open the LIST filtered to this Sales Order, so every linked
+				// Pick List / Delivery Note is shown (not just the latest one).
+				const mkList = (label, listRoute, title) =>
+					`<button type="button" class="btn btn-xs btn-default so-list-link-btn"
+						data-route='${esc(JSON.stringify([listRoute]))}' data-so="${esc(d.name)}" title="${esc(title)}">${label}</button>`;
 				if (d.pick_list && frappe.model.can_read('Pick List')) {
-					btns.push(mk('PL', ['pick_list_entry', d.pick_list], d.pick_list));
+					btns.push(mkList('PL', 'pick_list_list', __('Pick Lists for {0}', [d.name])));
 				}
 				if (d.delivery_note && frappe.model.can_read('Delivery Note')) {
-					btns.push(mk('DN', ['delivery_note_entry', d.delivery_note], d.delivery_note));
+					btns.push(mkList('DN', 'delivery_note_entry_list', __('Delivery Notes for {0}', [d.name])));
 				}
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) {
 					btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));

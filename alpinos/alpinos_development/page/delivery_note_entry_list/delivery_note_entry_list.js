@@ -17,11 +17,28 @@ class DeliveryNoteListPage {
 		this._prefs_route = 'delivery_note_entry_list';
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
+		// Opened from a Sales Order's "DN" button -> show every Delivery Note of that SO.
+		this.so_filter = (frappe.route_options && frappe.route_options.sales_order) || '';
+		if (frappe.route_options) delete frappe.route_options.sales_order;
 		this.setup_toolbar();
 		this.setup_filters();
 		this.bind_events();
 		this._restore_view_prefs();
+		this._render_so_banner();
 		this.load_list();
+	}
+
+	_render_so_banner() {
+		let $b = this.wrapper.find('.dnl-so-filter-banner');
+		if (!this.so_filter) { $b.remove(); return; }
+		if (!$b.length) {
+			$b = $('<div class="dnl-so-filter-banner" style="margin-bottom:12px; padding:8px 12px; border-radius:6px; background:var(--bg-color,#f4f5f6); border:1px solid var(--border-color,#d1d8dd); display:flex; align-items:center; gap:10px;"></div>');
+			this.wrapper.find('.dnl-container').prepend($b);
+		}
+		$b.html('<span>Showing Delivery Notes for Sales Order <strong>' + frappe.utils.escape_html(this.so_filter) + '</strong></span>');
+		$('<button type="button" class="btn btn-xs btn-default">Show all</button>')
+			.appendTo($b)
+			.on('click', () => { this.so_filter = ''; this.start = 0; this._render_so_banner(); this.load_list(); });
 	}
 
 	setup_toolbar() {
@@ -143,6 +160,7 @@ class DeliveryNoteListPage {
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
 			company: f.company.get_value() || '',
+			sales_order: this.so_filter || '',
 		};
 	}
 

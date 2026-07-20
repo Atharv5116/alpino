@@ -256,6 +256,7 @@ def get_delivery_note_list(
 	search="",
 	status="",
 	company="",
+	sales_order="",
 ):
 	start = cint(start)
 	page_length = cint(page_length)
@@ -265,6 +266,8 @@ def get_delivery_note_list(
 		filters["status"] = status
 	if company:
 		filters["company"] = company
+	if sales_order:
+		filters["custom_sales_order_id"] = sales_order
 
 	# A dedicated DN User only sees Delivery Notes assigned to them. Warehouse
 	# admins/managers (and System Manager) keep full visibility.
