@@ -173,6 +173,7 @@ after_migrate = [
 	"alpinos.data_import_shortcuts.ensure_allow_import",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
 	"alpinos.ecom_sales_order_custom_fields.setup_ecom_sales_order_fields",
+	"alpinos.sales_order_offline_buyer.ensure_customer_title_in_link",
 	"alpinos.post_delivery_custom_fields.setup_post_delivery_fields",
 	"alpinos.forced_close.setup_forced_close_fields",
 	"alpinos.opportunity_custom_fields.setup_opportunity_custom_fields",

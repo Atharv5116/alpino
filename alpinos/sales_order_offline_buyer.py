@@ -19,9 +19,15 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		channel_clause = "AND (IFNULL(m.channel, '') = '' OR m.channel = 'Offline')"
 	elif channel == "E-com":
 		channel_clause = "AND m.channel = 'E-com'"
-	rows = frappe.db.sql(
+	# MUST return positional tuples: Frappe's link search (build_for_autosuggest)
+	# indexes each result as item[0]/item[1:], so dicts raise KeyError: 0.
+	# With Customer.show_title_field_in_link enabled (see _ensure_customer_title_in_link),
+	# the dropdown and selected value show the customer NAME (title) and the docname
+	# ("<business name> - <gst>") as the muted description — which disambiguates
+	# same-named customers by their GSTIN. Searching by GSTIN also works.
+	return frappe.db.sql(
 		f"""
-		SELECT c.name, c.customer_name, MAX(m.gst_no) AS gst_no
+		SELECT c.name, c.customer_name
 		FROM `tabCustomer` c
 		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
 		WHERE IFNULL(c.disabled, 0) = 0
@@ -33,22 +39,7 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		LIMIT %(page_len)s OFFSET %(start)s
 		""",
 		params,
-		as_dict=True,
 	)
-	# Return dicts so the Link dropdown shows the customer NAME (label) with the
-	# GSTIN as a muted proof line (description) — and stores/shows the name, not
-	# the "<business name> - <gst>" docname. When two customers share a name, the
-	# GSTIN line disambiguates them; the unique docname is still what gets stored.
-	out = []
-	for r in rows:
-		gst = (r.get("gst_no") or "").strip()
-		description = f"GSTIN: {gst}" if gst else r.get("name")
-		out.append({
-			"value": r.get("name"),
-			"label": r.get("customer_name") or r.get("name"),
-			"description": description,
-		})
-	return out
 
 
 @frappe.whitelist()
@@ -63,6 +54,27 @@ def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filte
 def ecom_sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Limit E-Com Sales Order Customer link to E-com channel Buyer Master customers."""
 	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="E-com")
+
+
+def ensure_customer_title_in_link():
+	"""Show the customer NAME (title_field = customer_name) in every Customer link
+	field instead of the '<business name> - <gst>' docname — the SO / e-com
+	customer dropdowns and elsewhere. The docname still appears as the muted
+	description, disambiguating same-named customers by their GSTIN. Idempotent;
+	wired into after_migrate."""
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	if not frappe.utils.cint(frappe.db.get_value("DocType", "Customer", "show_title_field_in_link")):
+		make_property_setter(
+			doctype="Customer",
+			fieldname=None,  # DocType-level property
+			property="show_title_field_in_link",
+			value="1",
+			property_type="Check",
+			for_doctype=True,
+		)
+		frappe.clear_cache(doctype="Customer")
+		print("✅ Customer link fields now show the customer name (show_title_field_in_link)")
 
 
 @frappe.whitelist()
