@@ -170,10 +170,12 @@ class DeliveryNoteListPage {
 	render_rows(rows) {
 		const tb = this.wrapper.find('.dnl-table tbody').empty();
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="6" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
+			tb.append(`<tr><td colspan="11" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const dash = (v) => (v == null || v === '' ? '—' : esc(v));
+		const only_date = (v) => (v ? String(v).substring(0, 10) : '—');
 		rows.forEach((d) => {
 			// Show the workflow-aligned status: Draft -> Dispatched -> Cancelled.
 			let wf = 'Draft';
@@ -189,10 +191,15 @@ class DeliveryNoteListPage {
 			tb.append(`<tr class="dnl-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td><strong>${esc(d.name)}</strong></td>
 				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
-				<td>${esc(customer)}</td>
-				<td>${esc(d.posting_date || '—')}</td>
-				<td>${esc(d.custom_dispatch_date || '—')}</td>
-				<td>${esc(d.company)}</td>
+				<td>${dash(d.custom_sales_order_id)}</td>
+				<td>${dash(customer)}</td>
+				<td>${only_date(d.posting_date)}</td>
+				<td>${only_date(d.custom_dispatch_date)}</td>
+				<td>${dash(d.company)}</td>
+				<td>${dash(d.custom_transporter_name)}</td>
+				<td>${dash(d.custom_lr_gr_no)}</td>
+				<td>${dash(d.custom_assigned_to)}</td>
+				<td style="text-align:right;">${d.custom_total_boxes == null ? '—' : esc(d.custom_total_boxes)}</td>
 			</tr>`);
 		});
 	}

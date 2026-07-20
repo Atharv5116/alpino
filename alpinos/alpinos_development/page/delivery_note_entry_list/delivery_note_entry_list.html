@@ -17,6 +17,23 @@
 	}
 	.dnl-table {
 		border-collapse: collapse;
+		min-width: 1280px;
+	}
+	.dnl-table th, .dnl-table td {
+		white-space: nowrap;
+	}
+	.dnl-viewbar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 10px;
+	}
+	.dnl-viewbar-label {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-muted, #6b7280);
+		margin: 0;
 	}
 	.dnl-pager {
 		display: flex;
@@ -59,16 +76,30 @@
 		</div>
 	</div>
 
+	<div class="dnl-viewbar">
+		<label class="dnl-viewbar-label">Rows per page</label>
+		<select class="form-control input-xs dnl-page-size" title="Rows per page">
+			<option value="20" selected>20</option>
+			<option value="50">50</option>
+			<option value="100">100</option>
+		</select>
+	</div>
+
 	<div class="dnl-table-wrapper alp-scroll">
 		<table class="dnl-table">
 			<thead>
 				<tr>
 					<th>ID</th>
 					<th>Status</th>
+					<th>SO No</th>
 					<th>Customer</th>
 					<th>Date</th>
 					<th>Dispatch Date</th>
 					<th>Company</th>
+					<th>Transporter</th>
+					<th>LR / GR No</th>
+					<th>Assigned To</th>
+					<th>Total Boxes</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -80,11 +111,6 @@
 	<div class="dnl-pager">
 		<div class="dnl-count text-muted"></div>
 		<div class="dnl-nav">
-			<select class="form-control input-xs dnl-page-size" title="Rows per page">
-				<option value="20" selected>20</option>
-				<option value="50">50</option>
-				<option value="100">100</option>
-			</select>
 			<button class="btn btn-default btn-sm btn-dnl-prev">Previous</button>
 			<button class="btn btn-default btn-sm btn-dnl-next">Next</button>
 		</div>

@@ -18,9 +18,29 @@
 	.pl-list-table-wrapper {
 		overflow-x: auto;
 	}
+	/* Enough columns that the table must scroll sideways on smaller screens
+	   instead of squeezing every column into unreadable slivers. */
+	.pl-list-table {
+		min-width: 1280px;
+	}
 	.pl-list-table th, .pl-list-table td {
 		padding: 10px 15px;
 		border-bottom: 1px solid var(--border-color, #e2e2e2);
+		white-space: nowrap;
+	}
+	/* View controls sit above the table (rows per page). */
+	.pl-list-viewbar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 10px;
+	}
+	.pl-list-viewbar-label {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-muted, #6b7280);
+		margin: 0;
 	}
 	.pl-pager {
 		display: flex;
@@ -54,15 +74,30 @@
 		</div>
 	</div>
 	
+	<div class="pl-list-viewbar">
+		<label class="pl-list-viewbar-label">Rows per page</label>
+		<select class="form-control input-xs pl-list-page-size" title="Rows per page">
+			<option value="20" selected>20</option>
+			<option value="50">50</option>
+			<option value="100">100</option>
+		</select>
+	</div>
+
 	<div class="pl-list-table-wrapper alp-scroll alp-card">
 		<table class="pl-list-table">
 			<thead>
 				<tr>
 					<th style="width: 40px; text-align: center;"><input type="checkbox" class="pl-list-select-all"></th>
 					<th>ID</th>
+					<th>SO No</th>
 					<th>Customer Name</th>
+					<th>PO No</th>
 					<th>Date</th>
+					<th>Dispatch Date</th>
 					<th>Company</th>
+					<th>Transporter</th>
+					<th>Assigned To</th>
+					<th>Total Box</th>
 					<th>Workflow Status</th>
 					<th>Status</th>
 				</tr>
@@ -72,15 +107,10 @@
 			</tbody>
 		</table>
 	</div>
-	
+
 	<div class="pl-pager">
 		<div class="pl-list-count text-muted"></div>
 		<div class="pl-list-nav">
-			<select class="form-control input-xs pl-list-page-size" title="Rows per page">
-				<option value="20" selected>20</option>
-				<option value="50">50</option>
-				<option value="100">100</option>
-			</select>
 			<button class="btn btn-default btn-sm btn-pl-list-prev">Previous</button>
 			<button class="btn btn-default btn-sm btn-pl-list-next">Next</button>
 		</div>

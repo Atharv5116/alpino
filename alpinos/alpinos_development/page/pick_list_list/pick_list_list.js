@@ -228,7 +228,7 @@ class PickListListPage {
 		const tb = this.wrapper.find('.pl-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="7" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
+				`<tr><td colspan="13" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
 			);
 			return;
 		}
@@ -243,8 +243,9 @@ class PickListListPage {
 			'Cancelled': 'red',
 		};
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const dash = (v) => (v == null || v === '' ? '—' : esc(v));
+		const only_date = (v) => (v ? String(v).substring(0, 10) : '—');
 		rows.forEach((d) => {
-			const td = d.custom_order_date || '—';
 			let status_color = 'blue';
 			if (d.status === 'Draft') status_color = 'red';
 			else if (d.status === 'Completed' || d.status === 'Submitted') status_color = 'green';
@@ -257,9 +258,15 @@ class PickListListPage {
 			tb.append(`<tr class="pl-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="pl-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
-				<td>${esc(d.custom_customer_name)}</td>
-				<td>${esc(td)}</td>
-				<td>${esc(d.company)}</td>
+				<td>${dash(d.custom_sales_order_id)}</td>
+				<td>${dash(d.custom_customer_name)}</td>
+				<td>${dash(d.custom_po_no)}</td>
+				<td>${only_date(d.custom_order_date)}</td>
+				<td>${only_date(d.custom_dispatch_date)}</td>
+				<td>${dash(d.company)}</td>
+				<td>${dash(d.custom_transporter)}</td>
+				<td>${dash(d.custom_assigned_to)}</td>
+				<td style="text-align:right;">${d.custom_total_box == null ? '—' : esc(d.custom_total_box)}</td>
 				<td>${wfCell}</td>
 				<td><span class="indicator-pill ${status_color}">${esc(d.status)}</span></td>
 			</tr>`);

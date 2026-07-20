@@ -273,7 +273,12 @@ def get_pick_list_entry_list(
 		"Pick List",
 		filters=filters,
 		or_filters=or_filters,
-		fields=["name", "custom_customer_name", "custom_order_date", "company", "status", "custom_workflow_status"],
+		fields=[
+			"name", "custom_customer_name", "custom_order_date", "company",
+			"status", "custom_workflow_status", "custom_sales_order_id",
+			"custom_po_no", "custom_transporter", "custom_assigned_to",
+			"custom_dispatch_date", "custom_total_box",
+		],
 		order_by="creation desc",
 		limit_start=start,
 		limit_page_length=page_length + 1
