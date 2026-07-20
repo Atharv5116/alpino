@@ -598,13 +598,22 @@ class EcomSalesOrderEntry {
 			? 'alpinos.ecom_sales_order_api.update_ecom_sales_order'
 			: 'alpinos.ecom_sales_order_api.create_ecom_sales_order';
 		const args = this.build_payload();
-		if (this.editing) args.name = this.editing;
+		if (this.editing) {
+			args.name = this.editing;
+		} else {
+			// Save as a DRAFT (like the offline Sales Order) so everything stays
+			// editable; the order only moves to "Warehouse Approval Pending" when
+			// the user clicks "Send for Warehouse Approval" on the order view.
+			args.submit_now = 0;
+		}
 		frappe.call({
 			method, args, freeze: true, freeze_message: __('Saving...'),
 			callback: (r) => {
 				if (!r.message) return;
-				frappe.show_alert({ message: __('Saved {0}', [r.message.name]), indicator: 'green' });
-				frappe.set_route('ecom-sales-order-entry-list');
+				frappe.show_alert({ message: __('Saved {0} as Draft', [r.message.name]), indicator: 'green' });
+				// Open the order view — it has Edit plus the "Send for Warehouse
+				// Approval" action for E-com orders.
+				frappe.set_route('sales-order-entry-view', r.message.name);
 			},
 		});
 	}

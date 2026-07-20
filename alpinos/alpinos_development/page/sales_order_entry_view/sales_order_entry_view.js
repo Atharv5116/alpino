@@ -180,7 +180,14 @@ class SalesOrderEntryView {
 			}
 
 			const isWarehouse = me._has_any_role(['Warehouse Admin', 'Warehouse Manager', 'System Manager']);
-			const isSales = me._has_any_role(['Sales Admin', 'Sales Manager', 'System Manager']);
+			// E-Commerce roles are the sales side for E-com orders, so they get the
+			// same sales-stage actions (Send for Warehouse Approval, etc.). The
+			// server re-checks submit/write permission, so this only affects
+			// button visibility.
+			const isSales = me._has_any_role([
+				'Sales Admin', 'Sales Manager', 'System Manager',
+				'E-Commerce Admin', 'E-Commerce Manager', 'E-Commerce Coordinator',
+			]);
 
 			// Force Close available to warehouse while an order has been picked but
 			// isn't fully dispatched, isn't already force-closed, and isn't terminal.
