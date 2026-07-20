@@ -191,9 +191,10 @@ class EcomSalesOrderEntry {
 	// the clean address text (stored as the SO's free-text address); the label
 	// shows the site so you can tell sites apart.
 	_load_ecom_address_options(customer) {
+		// Fallback composer (server already returns a.value, deduped + no "N/A").
 		const clean = (a) => [a.address_line1, a.address_line2, a.city, a.state, a.pincode]
 			.map((p) => (p ? String(p).replace(/[\r\n]+/g, ' ').trim() : ''))
-			.filter(Boolean).join(', ');
+			.filter((p) => p && p.toUpperCase() !== 'N/A').join(', ');
 		const set = (opts) => {
 			this.f_bill_addr.set_data && this.f_bill_addr.set_data(opts);
 			this.f_ship_addr.set_data && this.f_ship_addr.set_data(opts);
@@ -202,7 +203,7 @@ class EcomSalesOrderEntry {
 		frappe.call({
 			method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
 			args: { customer },
-			callback: (r) => set((r.message || []).map((a) => ({ value: clean(a), label: a.display }))),
+			callback: (r) => set((r.message || []).map((a) => ({ value: a.value || clean(a), label: a.display }))),
 		});
 	}
 
@@ -231,12 +232,26 @@ class EcomSalesOrderEntry {
 	}
 
 	// ---- per-row SKU link (awesomplete, mirrors the offline page) ----------
-	_make_item_link_field(parent, fieldname) {
+	_make_item_link_field(parent, fieldname, filterType) {
+		const me = this;
 		const field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Link', options: 'Item', fieldname },
 			parent, render_input: true, only_input: true,
 		});
-		field.get_query = () => ({ filters: { disabled: 0 } });
+		// Same filters as the offline Sales Order: order lines show saleable
+		// variants/bundles gated by the selected Customer Type; freebies show
+		// non-template sales items.
+		if (filterType === 'nonTemplates') {
+			field.get_query = () => ({ filters: { disabled: 0, is_sales_item: 1, has_variants: 0 } });
+		} else {
+			field.get_query = () => {
+				const ct = me.f_customer_type && me.f_customer_type.get_value();
+				return {
+					query: 'alpinos.offline_buyer_api.sellable_item_link_query',
+					filters: ct ? { customer_type: ct } : {},
+				};
+			};
+		}
 		if (field.$input) field.$input.css('min-width', '120px');
 		return field;
 	}
@@ -264,7 +279,7 @@ class EcomSalesOrderEntry {
 		this.wrapper.find('.eso-items-table tbody').append($row);
 		row._$row = $row;
 
-		const sku_field = this._make_item_link_field($row.find('.cell-sku'), 'eso_item');
+		const sku_field = this._make_item_link_field($row.find('.cell-sku'), 'eso_item', 'variants');
 		const commit = () => setTimeout(() => {
 			const val = sku_field.get_value();
 			row.item_code = val;
@@ -380,7 +395,7 @@ class EcomSalesOrderEntry {
 		this.wrapper.find('.eso-freebies-table tbody').append($row);
 		row._$row = $row;
 
-		const sku_field = this._make_item_link_field($row.find('.cell-sku'), 'eso_free');
+		const sku_field = this._make_item_link_field($row.find('.cell-sku'), 'eso_free', 'nonTemplates');
 		const commit = () => setTimeout(() => {
 			const val = sku_field.get_value();
 			row.item_code = val;

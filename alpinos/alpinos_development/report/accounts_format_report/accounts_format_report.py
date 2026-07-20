@@ -103,7 +103,7 @@ def _resolve_scp_from_text(customer, text, cache):
 			str(p) for p in [
 				row.get("address_line1"), row.get("address_line2"),
 				row.get("city"), row.get("state"), row.get("pincode"),
-			] if p
+			] if p and str(p).strip().upper() != "N/A"
 		))
 		if composed and composed == target:
 			return {

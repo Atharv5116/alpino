@@ -285,7 +285,16 @@ def _write_back_addresses_to_buyer(so):
 	if changed:
 		obm.flags.ignore_permissions = True
 		obm.flags.ignore_mandatory = True
-		obm.save()
+		# Best-effort: syncing the address back to the Buyer Master must NEVER block
+		# the Sales Order save. If the buyer can't be saved (e.g. a pre-existing
+		# duplicate Buyer Master for this customer), roll back just this write and
+		# log it — the order still saves.
+		try:
+			frappe.db.savepoint("eso_addr_writeback")
+			obm.save()
+		except Exception:
+			frappe.db.rollback(save_point="eso_addr_writeback")
+			frappe.log_error(frappe.get_traceback(), "E-com SO buyer address write-back skipped")
 
 
 def _apply_sticker_attachments(so, stickers):

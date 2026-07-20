@@ -896,21 +896,35 @@ def get_customer_addresses_for_display(customer):
 		):
 			owner_names[cust] = cname or cust
 
+	seen = set()
+	out = []
 	for row in rows:
 		parts = []
 		for p in [row.address_line1, row.address_line2, row.city, row.state, row.pincode]:
-			if p:
-				# Remove newlines so the label matches the single-line Autocomplete input text
-				clean_p = " ".join(str(p).replace("\n", " ").replace("\r", " ").split())
-				if clean_p:
-					parts.append(clean_p)
+			# Skip empty parts AND the "N/A" placeholder some Address records carry
+			# (e.g. a missing city stored as "N/A") — don't show it in the address.
+			clean_p = " ".join(str(p or "").replace("\n", " ").replace("\r", " ").split())
+			if clean_p and clean_p.upper() != "N/A":
+				parts.append(clean_p)
+		value = ", ".join(parts)
+		if not value:
+			continue  # nothing usable to show or store
 		suffix = row.address_type or "Address"
 		# Disambiguate sibling addresses by the buyer they belong to.
 		if multi and row.owner_customer and row.owner_customer != customer:
 			suffix += " — " + owner_names.get(row.owner_customer, row.owner_customer)
-		row.display = "{} ({})".format(", ".join(parts), suffix)
+		display = "{} ({})".format(value, suffix)
+		# Only unique addresses: collapse duplicate Address records with the SAME
+		# displayed text (same address + type + owner). Cross-owner (sibling) or
+		# cross-type entries stay distinct.
+		if display in seen:
+			continue
+		seen.add(display)
+		row.value = value  # the composed address text (what e-com stores / matches)
+		row.display = display
+		out.append(row)
 
-	return rows
+	return out
 
 
 def upsert_buyer_catalog_selling_rate(customer, item_code, selling_rate, mrp=None):
