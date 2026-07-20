@@ -19,20 +19,36 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		channel_clause = "AND (IFNULL(m.channel, '') = '' OR m.channel = 'Offline')"
 	elif channel == "E-com":
 		channel_clause = "AND m.channel = 'E-com'"
-	return frappe.db.sql(
+	rows = frappe.db.sql(
 		f"""
-		SELECT c.name, c.customer_name
+		SELECT c.name, c.customer_name, MAX(m.gst_no) AS gst_no
 		FROM `tabCustomer` c
 		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
 		WHERE IFNULL(c.disabled, 0) = 0
 			AND IFNULL(m.is_parent, 0) = 0
 			{channel_clause}
-			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s)
-		ORDER BY c.name ASC
+			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s OR m.gst_no LIKE %(txt)s)
+		GROUP BY c.name, c.customer_name
+		ORDER BY c.customer_name ASC
 		LIMIT %(page_len)s OFFSET %(start)s
 		""",
 		params,
+		as_dict=True,
 	)
+	# Return dicts so the Link dropdown shows the customer NAME (label) with the
+	# GSTIN as a muted proof line (description) — and stores/shows the name, not
+	# the "<business name> - <gst>" docname. When two customers share a name, the
+	# GSTIN line disambiguates them; the unique docname is still what gets stored.
+	out = []
+	for r in rows:
+		gst = (r.get("gst_no") or "").strip()
+		description = f"GSTIN: {gst}" if gst else r.get("name")
+		out.append({
+			"value": r.get("name"),
+			"label": r.get("customer_name") or r.get("name"),
+			"description": description,
+		})
+	return out
 
 
 @frappe.whitelist()
@@ -628,6 +644,49 @@ def sync_single_offline_buyer_master(offline_buyer_master):
 	result = sync_obm_to_customer_party(doc)
 	frappe.db.commit()
 	return result
+
+
+@frappe.whitelist()
+def clean_customer_names_strip_gst(commit=True):
+	"""One-off cleanup: strip a trailing ' - <gstin/pan>' that leaked into
+	Customer.customer_name, keeping the docname (id) unchanged.
+
+	The buyer -> Customer flow names the Customer DOCNAME '<business name> - <gst>'
+	(kept unique), but the DISPLAY name (customer_name) should be just the
+	business name. Older records ended up with the GST in customer_name too;
+	this restores the clean business name while the id stays '<name> - <gst>'.
+
+	Idempotent and safe to re-run. Run with:
+	  bench --site <site> execute alpinos.sales_order_offline_buyer.clean_customer_names_strip_gst
+	"""
+	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
+		frappe.throw(_("Only an Administrator / System Manager can run this."), frappe.PermissionError)
+
+	rows = frappe.db.sql(
+		"""
+		SELECT c.name, c.customer_name, c.tax_id
+		FROM `tabCustomer` c
+		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
+		WHERE IFNULL(c.tax_id, '') != '' AND IFNULL(c.customer_name, '') != ''
+		GROUP BY c.name, c.customer_name, c.tax_id
+		""",
+		as_dict=True,
+	)
+	fixed = []
+	for r in rows:
+		cn = (r.get("customer_name") or "").strip()
+		tax = (r.get("tax_id") or "").strip()
+		suffix = f" - {tax}"
+		if tax and cn.endswith(suffix):
+			cleaned = cn[: -len(suffix)].strip()
+			if cleaned and cleaned != cn:
+				# Update the display name only; the docname (id) is untouched so
+				# the GST-disambiguated unique id is preserved.
+				frappe.db.set_value("Customer", r.get("name"), "customer_name", cleaned, update_modified=False)
+				fixed.append({"customer_id": r.get("name"), "from": cn, "to": cleaned})
+	if commit:
+		frappe.db.commit()
+	return {"scanned": len(rows), "fixed_count": len(fixed), "fixed": fixed[:100]}
 
 
 def _customer_has_linked(doctype, customer):

@@ -247,7 +247,8 @@ class EcomSalesOrderEntry {
 			<td class="cell-box text-right readonly-cell">—</td>
 			<td class="cell-mrp"></td>
 			<td class="cell-margin"></td>
-			<td class="cell-selling text-right readonly-cell">0.00</td>
+			<td class="cell-selling"></td>
+			<td class="cell-amount text-right readonly-cell">0.00</td>
 			<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-row">&times;</button></td>
 		</tr>`);
 		this.wrapper.find('.eso-items-table tbody').append($row);
@@ -273,6 +274,14 @@ class EcomSalesOrderEntry {
 		row._qty = mk_input('.cell-qty', 'qty');
 		row._mrp = mk_input('.cell-mrp', 'mrp');
 		row._margin = mk_input('.cell-margin', 'margin_percent', 'max="90"');
+
+		// Selling Price is editable (like the offline Sales Order): typing MRP or
+		// Margin recomputes it, but the user can override it directly — and the
+		// override back-fills Margin % so the two stay consistent.
+		row._selling = $('<input type="number" class="form-control input-xs eso-cell-input" min="0" step="0.01">');
+		if (flt(row.selling_price)) row._selling.val(flt(row.selling_price));
+		$row.find('.cell-selling').append(row._selling);
+		row._selling.on('input change', () => { row.selling_price = flt(row._selling.val()); me.on_selling_edited(row); });
 
 		$row.find('.btn-del-row').on('click', () => {
 			const i = me.items.indexOf(row);
@@ -310,8 +319,24 @@ class EcomSalesOrderEntry {
 		});
 	}
 
+	// Driven by MRP / Margin / Qty edits: recompute selling price from margin and
+	// reflect it into the (editable) selling-price input.
 	recalc_row(row) {
 		row.selling_price = flt(flt(row.mrp) * (1 - flt(row.margin_percent) / 100), 2);
+		if (row.box_factor && row.qty) row.box = Math.ceil(flt(row.qty) / row.box_factor);
+		if (row._selling) row._selling.val(flt(row.selling_price) || '');
+		this._paint_row(row);
+		this.render_total();
+	}
+
+	// Driven by a direct Selling Price edit: keep the typed price and back-fill
+	// Margin % from it so margin stays truthful (no recompute of selling here).
+	on_selling_edited(row) {
+		const mrp = flt(row.mrp);
+		if (mrp > 0) {
+			row.margin_percent = flt((1 - flt(row.selling_price) / mrp) * 100, 2);
+			if (row._margin) row._margin.val(row.margin_percent || '');
+		}
 		if (row.box_factor && row.qty) row.box = Math.ceil(flt(row.qty) / row.box_factor);
 		this._paint_row(row);
 		this.render_total();
@@ -320,7 +345,8 @@ class EcomSalesOrderEntry {
 	_paint_row(row) {
 		if (!row._$row) return;
 		row._$row.find('.cell-box').text(flt(row.box) ? flt(row.box) : '—');
-		row._$row.find('.cell-selling').text(format_number(flt(row.selling_price), null, 2));
+		const amount = flt(row.qty) * flt(row.selling_price);
+		row._$row.find('.cell-amount').text(format_number(amount, null, 2));
 	}
 
 	render_total() {
