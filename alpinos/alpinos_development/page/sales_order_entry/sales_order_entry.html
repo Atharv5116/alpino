@@ -3,6 +3,25 @@
 	position: relative;
 	display: inline-block;
 }
+/* Billing / Shipping address: fill the whole row and stand taller so long
+   addresses are readable (the autocomplete wrapper is inline-block, which
+   otherwise shrinks it to a small chip). */
+.sales-order-entry .field-billing-address,
+.sales-order-entry .field-shipping-address {
+	flex: 0 0 100%;
+	max-width: 100%;
+}
+.sales-order-entry .field-billing-address .awesomplete,
+.sales-order-entry .field-shipping-address .awesomplete {
+	display: block;
+	width: 100%;
+}
+.sales-order-entry .field-billing-address .awesomplete input,
+.sales-order-entry .field-shipping-address .awesomplete input {
+	width: 100%;
+	min-height: 42px;
+	font-size: 14px;
+}
 .sales-order-entry .awesomplete > ul {
 	z-index: 9999 !important;
 	position: absolute !important;
