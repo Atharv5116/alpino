@@ -60,7 +60,7 @@ def _picklist_map(so_name):
 def _address(name):
 	if not name:
 		return {}
-	return (
+	return dict(
 		frappe.db.get_value(
 			"Address", name,
 			["state", "city", "pincode", "address_line1", "address_line2"],
@@ -68,6 +68,50 @@ def _address(name):
 		)
 		or {}
 	)
+
+
+def _has_scp(d):
+	"""True when an address dict carries any of state / city / pincode."""
+	return bool(d.get("state") or d.get("city") or d.get("pincode"))
+
+
+def _norm_addr(text):
+	"""Normalize an address string for matching: lowercase, collapse whitespace,
+	drop a trailing '(Billing)'/'(Shipping)' type suffix and stray punctuation."""
+	s = " ".join((text or "").replace("\n", " ").replace("\r", " ").split()).lower()
+	if "(" in s:  # the family-dropdown label carries a "(type)" suffix; strip defensively
+		s = s.split("(", 1)[0]
+	return s.strip().strip(",").strip()
+
+
+def _resolve_scp_from_text(customer, text, cache):
+	"""Recover {state, city, pincode} for a FREE-TEXT address (e-com orders store
+	the address as text, not an Address link) by matching it back to one of the
+	buyer family's Address records — composed the same way the entry page builds
+	the option value: 'line1, line2, city, state, pincode'."""
+	target = _norm_addr(text)
+	if not customer or not target:
+		return {}
+	if customer not in cache:
+		try:
+			from alpinos.sales_order_offline_buyer import get_customer_addresses_for_display
+			cache[customer] = get_customer_addresses_for_display(customer) or []
+		except Exception:
+			cache[customer] = []
+	for row in cache[customer]:
+		composed = _norm_addr(", ".join(
+			str(p) for p in [
+				row.get("address_line1"), row.get("address_line2"),
+				row.get("city"), row.get("state"), row.get("pincode"),
+			] if p
+		))
+		if composed and composed == target:
+			return {
+				"state": row.get("state") or "",
+				"city": row.get("city") or "",
+				"pincode": row.get("pincode") or "",
+			}
+	return {}
 
 
 # ── column definitions ─────────────────────────────────────────────────────
@@ -163,6 +207,7 @@ def _get_data(filters):
 		return ct_channel_cache[customer_type]
 
 	data = []
+	addr_cache = {}  # customer -> family Address rows (for free-text state/city/pincode recovery)
 	for so_name in so_names:
 		so = frappe.get_doc("Sales Order", so_name)
 		obm = obm_info(so.customer)
@@ -183,6 +228,21 @@ def _get_data(filters):
 
 		bill = _address(so.get("customer_address"))
 		ship = _address(so.get("shipping_address_name"))
+		# Recover state/city/pincode when the address isn't a structured Address
+		# link (e-com orders keep it as free text) by matching the stored text
+		# back to the buyer family's Address records.
+		if not _has_scp(bill):
+			bill.update({k: v for k, v in _resolve_scp_from_text(
+				so.customer, so.get("custom_billing_address_text"), addr_cache).items() if v})
+		if not _has_scp(ship):
+			ship.update({k: v for k, v in _resolve_scp_from_text(
+				so.customer, so.get("custom_shipping_address_text"), addr_cache).items() if v})
+		# No distinct shipping address at all (common for offline orders) — the
+		# order ships to the billing address, so mirror its state/city/pincode.
+		if not _has_scp(ship):
+			ship["state"] = bill.get("state") or ""
+			ship["city"] = bill.get("city") or ""
+			ship["pincode"] = bill.get("pincode") or ""
 		if not pl_voucher:
 			pl_voucher = _voucher_type(registration_type, bill.get("state"))
 
