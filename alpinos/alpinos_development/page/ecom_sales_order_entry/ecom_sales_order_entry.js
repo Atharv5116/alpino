@@ -23,11 +23,22 @@ class EcomSalesOrderEntry {
 		this.editing = null; // SO name when editing a draft
 		this._site_manual = false;
 		this.make_fields();
+		this.setup_header_actions();
 		this.bind_events();
 		this.toggle_freebie_po();
 		this.add_item_row();
 		this.render_total();
 		this.load_recent_orders();
+	}
+
+	// Action buttons in the page header (top), matching the offline Sales Order
+	// entry page — Save (primary), Clear (secondary), and a link to the list.
+	setup_header_actions() {
+		this.page.set_primary_action(__('Save Sales Order'), () => this.save(), 'fa fa-check');
+		this.page.set_secondary_action(__('Clear'), () => this.clear_form());
+		this.page.add_inner_button(__('E-Com Sales Order List'), () => {
+			frappe.set_route('ecom-sales-order-entry-list');
+		});
 	}
 
 	// ---- field construction ------------------------------------------------
@@ -117,8 +128,7 @@ class EcomSalesOrderEntry {
 		w.find('.btn-add-item').on('click', () => this.add_item_row());
 		w.find('.btn-add-freebie').on('click', () => this.add_freebie_row());
 		w.find('.btn-eso-add-sticker').on('click', () => this.upload_sticker());
-		w.find('.btn-eso-save').on('click', () => this.save());
-		w.find('.btn-eso-clear').on('click', () => this.clear_form());
+		// Save / Clear now live in the page header (setup_header_actions).
 		w.on('click', '.recent-orders-list .order-row', (e) => {
 			const name = $(e.currentTarget).data('name');
 			// Open the shared Sales Order view (workflow action bar), same as the list.
