@@ -520,6 +520,48 @@ def validate_so_freebies_and_box_multiples(doc, method=None):
 
 
 @frappe.whitelist()
+def backfill_so_product_images(only_missing=1, commit=True):
+	"""Refresh custom_product_image on Sales Order Items from the CURRENT Item
+	master image — so pictures uploaded to Items AFTER the orders were created
+	appear on those orders (the field is a fetch_from snapshot taken at creation).
+
+	only_missing=1 (default): only fill rows whose image is currently blank.
+	only_missing=0: overwrite every row from the current Item image.
+
+	Run: bench --site <site> execute alpinos.sales_order_api.backfill_so_product_images
+	"""
+	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
+		frappe.throw(_("Only an Administrator / System Manager can run this."), frappe.PermissionError)
+	only_missing = cint(only_missing)
+
+	# Current Item-master images, keyed by item code.
+	imgs = {}
+	for r in frappe.get_all("Item", filters={"image": ["is", "set"]}, fields=["name", "image"]):
+		if r.image:
+			imgs[r.name] = r.image
+
+	rows = frappe.get_all(
+		"Sales Order Item", fields=["name", "item_code", "custom_product_image"]
+	)
+	updated = 0
+	for row in rows:
+		live = imgs.get(row.item_code)
+		if not live:
+			continue
+		if only_missing and (row.get("custom_product_image") or "").strip():
+			continue
+		if (row.get("custom_product_image") or "") == live:
+			continue
+		frappe.db.set_value(
+			"Sales Order Item", row.name, "custom_product_image", live, update_modified=False
+		)
+		updated += 1
+	if commit:
+		frappe.db.commit()
+	return {"scanned": len(rows), "updated": updated, "items_with_image": len(imgs)}
+
+
+@frappe.whitelist()
 def download_sales_orders_zip(names, no_letterhead=0):
 	"""Bulk export: one PDF per Sales Order, bundled into a single ZIP download.
 
@@ -1340,10 +1382,20 @@ def get_sales_order_entry_view_payload(sales_order):
 	# NOTE: the view page (and pick list) always show the raw order lines (combos stay as combos).
 	# Bundle explosion/combining per 'Combine Product Bundles' happens ONLY in the PDF print and
 	# the Tally (Accounts Format) report.
+	# Product images: prefer the CURRENT Item-master image so pictures uploaded to
+	# the Item AFTER this order was created still show up (custom_product_image is
+	# a fetch_from snapshot taken at creation). Fall back to the stored snapshot.
+	item_codes = list({row.item_code for row in doc.items if row.item_code})
+	live_images = {}
+	if item_codes:
+		for r in frappe.get_all("Item", filters={"name": ["in", item_codes]}, fields=["name", "image"]):
+			if r.image:
+				live_images[r.name] = r.image
+
 	items = []
 	for row in doc.items:
 		rd = _so_view_filter_dict_by_read_perm("Sales Order Item", row.as_dict(), parenttype="Sales Order")
-		img = rd.get("custom_product_image") or ""
+		img = live_images.get(row.item_code) or rd.get("custom_product_image") or ""
 		if img:
 			rd["custom_product_image_url"] = _so_view_abs_url(img)
 		items.append(rd)
