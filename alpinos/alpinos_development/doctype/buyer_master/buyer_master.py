@@ -171,6 +171,34 @@ class BuyerMaster(Document):
 		else:
 			self.payment_term_days = None
 
+		# GST No must be UNIQUE across Buyer Masters — the same GSTIN on two
+		# unrelated buyers is what creates the duplicate customer that later
+		# breaks Sales Order selection. Parent/child buyers in the SAME family
+		# (one legal entity, multiple sites) may share a GST, so those are exempt.
+		# Only enforced when the GST is set or CHANGED, so existing records
+		# (incl. legacy shared-GST data) stay editable as long as the GST is kept.
+		gst = (self.gst_no or "").strip().upper()
+		old_gst = ""
+		if not self.is_new():
+			old_gst = (frappe.db.get_value("Buyer Master", self.name, "gst_no") or "").strip().upper()
+		if self.gst_type == "Registered Business" and gst and gst != old_gst:
+			my_root = self.parent_buyer or (self.name if self.is_parent else None)
+			for other in frappe.get_all(
+				"Buyer Master",
+				filters={"gst_no": gst, "name": ["!=", self.name or ""]},
+				fields=["name", "parent_buyer", "is_parent"],
+			):
+				other_root = other.parent_buyer or (other.name if other.is_parent else None)
+				if my_root and other_root and my_root == other_root:
+					continue  # same family — a shared GSTIN is allowed
+				frappe.throw(
+					_(
+						"GST No {0} is already used by Buyer Master {1}. A GSTIN can belong "
+						"to only one buyer (its parent/child sites aside)."
+					).format(frappe.bold(gst), frappe.bold(other.name)),
+					title=_("Duplicate GST"),
+				)
+
 		filters = {"customer": self.customer}
 		if not self.is_new():
 			filters["name"] = ["!=", self.name]

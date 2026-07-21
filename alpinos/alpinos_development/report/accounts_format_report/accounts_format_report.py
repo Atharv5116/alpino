@@ -179,6 +179,18 @@ def _get_data(filters):
 
 	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="transaction_date asc, name asc")
 
+	# Only report orders whose Pick List has been SUBMITTED — billing data should
+	# appear only once picking is done, not on unpicked/draft orders.
+	if so_names:
+		picked = set(
+			frappe.get_all(
+				"Pick List",
+				filters={"custom_sales_order_id": ["in", so_names], "docstatus": 1},
+				pluck="custom_sales_order_id",
+			)
+		)
+		so_names = [s for s in so_names if s in picked]
+
 	item_cache, obm_cache, ct_channel_cache = {}, {}, {}
 
 	def item_info(code):

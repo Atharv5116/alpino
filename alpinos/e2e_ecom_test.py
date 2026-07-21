@@ -54,6 +54,17 @@ def so_status(so):
 	return frappe.db.get_value("Sales Order", so, "custom_workflow_status")
 
 
+def _mk_gstin(seed):
+	"""A UNIQUE, format-valid GSTIN per seed (Buyer Master now enforces GST
+	uniqueness, so each test buyer needs its own)."""
+	import hashlib
+
+	h = hashlib.md5(str(seed).encode()).hexdigest().upper()
+	letters = "".join(chr(65 + (int(c, 16) % 26)) for c in h[:5])
+	digits = ("".join(c for c in h if c.isdigit()) + "0000")[:4]
+	return f"24{letters}{digits}A1Z5"
+
+
 # ---------------------------------------------------------------------------
 def _fixtures(tag):
 	"""Create isolated test masters; return a dict of names."""
@@ -117,7 +128,7 @@ def _fixtures(tag):
 				"customer_type": ct, "channel": "E-com",
 				"appointment_required": 1, "grn_available": 1,
 				"partial_order_allowed": partial, "gst_exclusive_buyer": 0,
-				"gst_no": "24AAACC1206D1ZM", "site_name": "ECOMTEST Site",
+				"gst_no": _mk_gstin(cust), "site_name": "ECOMTEST Site",
 				"gst_type": "Registered Business", "level": "N/A",
 				"email": "ecomtest@example.com", "contact_no": "9999999999",
 				"contact_person": "ECOMTEST Person",
