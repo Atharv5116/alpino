@@ -859,6 +859,26 @@ def buyer_family_customers(customer):
 
 
 @frappe.whitelist()
+def get_customer_family_sites(customer):
+	"""Distinct Site Names across the buyer family (parent + all children) — the
+	options for the Site Name dropdown on the SO / e-com entry pages, so an order
+	can be tagged to any site the group has."""
+	if not customer:
+		return []
+	family = buyer_family_customers(customer)
+	if not family:
+		return []
+	return frappe.db.sql_list(
+		"""
+		SELECT DISTINCT site_name FROM `tabBuyer Master`
+		WHERE customer IN %(family)s AND IFNULL(site_name, '') != ''
+		ORDER BY site_name
+		""",
+		{"family": tuple(family)},
+	)
+
+
+@frappe.whitelist()
 def get_customer_addresses_for_display(customer):
 	"""Addresses for the Autocomplete on the SO entry page — the pool covers the
 	whole buyer-master family (parent + siblings), so an order can bill/ship to

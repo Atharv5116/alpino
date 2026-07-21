@@ -155,6 +155,7 @@ class SalesOrderEntry {
 				const billing = d.billing_address || ad.default_billing || '';
 				const shipping = d.shipping_address || ad.default_shipping || '';
 				me._load_address_options(d.customer, { billing, shipping });
+				me._load_family_sites(d.customer);
 					me._refresh_tax_template();
 				me._prefill_quotation_after_addresses(d);
 			},
@@ -290,13 +291,22 @@ class SalesOrderEntry {
 		this._obm_site_name = '';
 		this._from_quotation = null;
 		this.site_name_field = frappe.ui.form.make_control({
-			df: { fieldtype: 'Data', label: 'Site Name', fieldname: 'site_name' },
+			df: { fieldtype: 'Autocomplete', label: 'Site Name', fieldname: 'site_name' },
 			parent: header.find('.field-company'),
 			render_input: true
 		});
 		this.site_name_field.$input && this.site_name_field.$input.on('input', function() {
 			me._site_name_manual = true;
 		});
+		// Dropdown options = every Site Name in the buyer family (parent + children).
+		me._load_family_sites = function(customer) {
+			if (!customer || !me.site_name_field || !me.site_name_field.set_data) return;
+			frappe.call({
+				method: 'alpinos.sales_order_offline_buyer.get_customer_family_sites',
+				args: { customer },
+				callback: (r) => me.site_name_field.set_data((r.message || []).map((s) => ({ value: s, label: s }))),
+			});
+		};
 		me._set_site_name_default = function(value) {
 			if (me._site_name_manual) return;
 			me.site_name_field && me.site_name_field.set_value(value || '');
@@ -398,6 +408,7 @@ class SalesOrderEntry {
 								billing: ad.default_billing || '',
 								shipping: ad.default_shipping || '',
 							});
+							me._load_family_sites(customer);
 							me._refresh_tax_template();
 						},
 					});

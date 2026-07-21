@@ -78,7 +78,7 @@ class EcomSalesOrderEntry {
 
 		// Address
 		this.f_site = mk('.fld-site-name', {
-			fieldtype: 'Data', fieldname: 'site_name', label: __('Site Name'),
+			fieldtype: 'Autocomplete', fieldname: 'site_name', label: __('Site Name'),
 			onchange: () => { this._site_manual = true; },
 		});
 		this.f_bill_gstin = mk('.fld-billing-gstin', {
@@ -190,6 +190,15 @@ class EcomSalesOrderEntry {
 	// sites so any site under the parent can be billed/shipped to. Option value is
 	// the clean address text (stored as the SO's free-text address); the label
 	// shows the site so you can tell sites apart.
+	_load_family_sites(customer) {
+		if (!customer || !this.f_site || !this.f_site.set_data) return;
+		frappe.call({
+			method: 'alpinos.sales_order_offline_buyer.get_customer_family_sites',
+			args: { customer },
+			callback: (r) => this.f_site.set_data((r.message || []).map((s) => ({ value: s, label: s }))),
+		});
+	}
+
 	_load_ecom_address_options(customer) {
 		// Fallback composer (server already returns a.value, deduped + no "N/A").
 		const clean = (a) => [a.address_line1, a.address_line2, a.city, a.state, a.pincode]
@@ -211,6 +220,7 @@ class EcomSalesOrderEntry {
 		const customer = this.f_customer.get_value();
 		if (!customer) return;
 		this._load_ecom_address_options(customer);
+		this._load_family_sites(customer);
 		frappe.call({
 			method: 'alpinos.ecom_sales_order_api.get_ecom_buyer_for_customer',
 			args: { customer },
@@ -653,6 +663,7 @@ class EcomSalesOrderEntry {
 				}
 				this.f_customer.set_value(d.customer);
 				this._load_ecom_address_options(d.customer);
+				this._load_family_sites(d.customer);
 				this.f_customer_type.set_value(d.order_type);
 				const fl = d.flags || {};
 				this.f_appointment.set_value(cint(fl.appointment_required));
