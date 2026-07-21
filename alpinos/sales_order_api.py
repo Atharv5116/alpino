@@ -1188,6 +1188,9 @@ def get_so_entry_payload(sales_order):
 			"item_name": r.get("item_name") or "",
 			"qty": flt(r.qty),
 			"remarks": r.get("remarks") or "",
+			# item_group so the entry page can exempt Marketing Material freebies
+			# from the "must be an ordered item" rule without an extra lookup.
+			"item_group": frappe.db.get_value("Item", r.item_code, "item_group") or "",
 		}
 		for r in (doc.get("custom_marketing_freebies") or [])
 		if r.item_code

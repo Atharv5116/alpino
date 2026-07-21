@@ -1440,11 +1440,13 @@ class SalesOrderEntry {
 					item_field.set_value('');
 					me.freebies[idx].item_code = '';
 					me.freebies[idx].item_name = '';
+					me.freebies[idx].item_group = '';
 					$row.find('.freebie-name span').text('-').addClass('text-muted');
 					return;
 				}
 				me.freebies[idx].item_code = val;
 				me.freebies[idx].item_name = info.item_name || '';
+				me.freebies[idx].item_group = info.item_group || '';
 				$row.find('.freebie-name span').text(info.item_name || '-').removeClass('text-muted');
 			});
 		});
@@ -1748,15 +1750,17 @@ class SalesOrderEntry {
 			item_code: f.item_code,
 			item_name: f.item_name || '',
 			qty: f.qty,
-			remarks: f.remarks || ''
+			remarks: f.remarks || '',
+			item_group: f.item_group || ''
 		}));
 
 		// Freebies must reference ordered items (a row can go stale if its item
 		// was later removed from the Items table), and every ordered item must
 		// fill whole boxes — qty + freebies when freebies exist, qty alone
-		// otherwise. Mirrors the server-side validate hook.
+		// otherwise. Mirrors the server-side validate hook — EXCEPT Marketing
+		// Material items, which are standalone giveaways exempt from the rule.
 		let ordered_codes = new Set(valid_items.map(i => i.item_code));
-		let stale_freebie = freebies.find(f => !ordered_codes.has(f.item_code));
+		let stale_freebie = freebies.find(f => !ordered_codes.has(f.item_code) && f.item_group !== 'Marketing Material');
 		if (stale_freebie) {
 			return frappe.throw(__('Marketing Freebie {0} is not in the Items table. Add it to the order items or remove the freebie row.', [stale_freebie.item_code.bold()]));
 		}
