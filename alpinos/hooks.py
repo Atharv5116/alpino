@@ -249,6 +249,9 @@ has_permission = {
 # Override standard doctype classes
 
 override_whitelisted_methods = {
+	# Tolerate broken/unreachable images so one bad item image doesn't fail the
+	# whole PDF ("PDF generation failed because of broken image links").
+	"frappe.utils.print_format.download_pdf": "alpinos.pdf_tolerant.download_pdf",
 	"erpnext.crm.doctype.opportunity.opportunity.make_quotation": (
 		"alpinos.opportunity_make_quotation.make_quotation"
 	),
