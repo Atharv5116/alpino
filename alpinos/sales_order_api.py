@@ -11,6 +11,11 @@ from math import ceil
 
 DEFAULT_SO_COMPANY = "Alpino Health Foods Pvt. Ltd."
 
+# Freebies in this Item Group (promo inserts, discount cards, etc.) are standalone
+# marketing giveaways, so they are exempt from the "freebie must be an ordered
+# item" rule on Sales Orders / E-Com Sales Orders.
+MARKETING_MATERIAL_GROUP = "Marketing Material"
+
 
 def _so_tax_logger():
 	return frappe.logger("alpinos_so_tax", allow_site=True, file_count=20)
@@ -482,6 +487,11 @@ def validate_so_freebies_and_box_multiples(doc, method=None):
 	freebie_qty = {}
 	for row in doc.get("custom_marketing_freebies") or []:
 		if not row.item_code:
+			continue
+		# Marketing-material freebies (promo inserts, "100 Off" cards, etc.) are not
+		# tied to an ordered SKU, so they need NOT be in the Items table and don't
+		# count toward any item's box-multiple.
+		if frappe.db.get_value("Item", row.item_code, "item_group") == MARKETING_MATERIAL_GROUP:
 			continue
 		if row.item_code not in order_qty:
 			frappe.throw(

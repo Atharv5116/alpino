@@ -1419,29 +1419,33 @@ class SalesOrderEntry {
 
 		this._bind_item_link_change(item_field, function() {
 			let val = item_field.get_value();
-			// Freebies can only be given for items already in the order Items
-			// table — warn and clear the selection right away.
-			if (val && !me.items.some(it => it.item_code === val)) {
-				frappe.msgprint({
-					title: __('Not an ordered item'),
-					message: __('Marketing Freebie {0} is not in the Items table. Add it to the order items first.', [val.bold()]),
-					indicator: 'orange'
-				});
-				item_field.set_value('');
-				val = '';
-			}
-			me.freebies[idx].item_code = val || '';
 			if (!val) {
+				me.freebies[idx].item_code = '';
 				me.freebies[idx].item_name = '';
 				$row.find('.freebie-name span').text('-').addClass('text-muted');
 				return;
 			}
-			frappe.db.get_value('Item', val, 'item_name', function (r) {
-				let nm = r && r.item_name;
-				if (nm) {
-					me.freebies[idx].item_name = nm;
-					$row.find('.freebie-name span').text(nm).removeClass('text-muted');
+			// Fetch group + name together. Freebies can only be given for items
+			// already in the order Items table — EXCEPT Marketing Material items
+			// (promo inserts, discount cards), which are standalone giveaways.
+			frappe.db.get_value('Item', val, ['item_name', 'item_group'], function (r) {
+				const info = r || {};
+				const isMarketing = info.item_group === 'Marketing Material';
+				if (!isMarketing && !me.items.some(it => it.item_code === val)) {
+					frappe.msgprint({
+						title: __('Not an ordered item'),
+						message: __('Marketing Freebie {0} is not in the Items table. Add it to the order items first.', [val.bold()]),
+						indicator: 'orange'
+					});
+					item_field.set_value('');
+					me.freebies[idx].item_code = '';
+					me.freebies[idx].item_name = '';
+					$row.find('.freebie-name span').text('-').addClass('text-muted');
+					return;
 				}
+				me.freebies[idx].item_code = val;
+				me.freebies[idx].item_name = info.item_name || '';
+				$row.find('.freebie-name span').text(info.item_name || '-').removeClass('text-muted');
 			});
 		});
 
