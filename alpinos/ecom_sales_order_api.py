@@ -22,7 +22,7 @@ from alpinos.sales_order_api import (
 	_parse_so_entry_args,
 	_populate_so_from_entry,
 )
-from alpinos.sales_order_api import get_box_conversion_factor
+from alpinos.sales_order_api import get_box_conversion_factor, get_customer_item_mrp
 from alpinos.sales_order_offline_buyer import (
 	get_offline_buyer_for_customer,
 	get_offline_buyer_item_rate,
@@ -93,6 +93,11 @@ def get_ecom_item_defaults(customer, item_code):
 	rate = get_offline_buyer_item_rate(customer, item_code) or {}
 	mrp = flt(rate.get("mrp"))
 	margin = flt(rate.get("margin_percent"))
+	if not mrp:
+		# No buyer-catalogue entry yet (first order of this SKU for the buyer) —
+		# fall back to the customer's MRP so the row isn't blank; the price the
+		# user enters is saved back to the catalogue on save for next time.
+		mrp = flt(get_customer_item_mrp(customer, item_code))
 	selling = flt(mrp * (1 - margin / 100.0), 2) if mrp else 0.0
 	return {
 		"item_code": item_code,
