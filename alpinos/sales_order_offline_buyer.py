@@ -659,6 +659,40 @@ def sync_single_offline_buyer_master(offline_buyer_master):
 
 
 @frappe.whitelist()
+def report_duplicate_buyer_masters(customer=None):
+	"""Read-only: list Customers that have MORE THAN ONE Buyer Master — the cause
+	of the 'Only one Buyer Master is allowed per Customer' error on edit, and of
+	buyers behaving oddly in the Sales Order customer dropdown.
+
+	Run:
+	  bench --site <site> execute alpinos.sales_order_offline_buyer.report_duplicate_buyer_masters
+	Pass customer='<name>' to check a single customer.
+	"""
+	params = {}
+	cond = ""
+	if customer:
+		cond = "AND b.customer = %(customer)s"
+		params["customer"] = customer
+	rows = frappe.db.sql(
+		f"""
+		SELECT b.customer,
+			COUNT(*) AS n,
+			GROUP_CONCAT(b.name ORDER BY b.modified DESC SEPARATOR ' | ') AS buyer_masters,
+			GROUP_CONCAT(IFNULL(NULLIF(b.channel, ''), '(blank)') ORDER BY b.modified DESC SEPARATOR ' | ') AS channels,
+			GROUP_CONCAT(IFNULL(b.is_parent, 0) ORDER BY b.modified DESC SEPARATOR ' | ') AS is_parent
+		FROM `tabBuyer Master` b
+		WHERE IFNULL(b.customer, '') != '' {cond}
+		GROUP BY b.customer
+		HAVING n > 1
+		ORDER BY n DESC
+		""",
+		params,
+		as_dict=True,
+	)
+	return {"duplicate_customers": len(rows), "rows": rows}
+
+
+@frappe.whitelist()
 def clean_customer_names_strip_gst(commit=True):
 	"""One-off cleanup: strip a trailing ' - <gstin/pan>' that leaked into
 	Customer.customer_name, keeping the docname (id) unchanged.
