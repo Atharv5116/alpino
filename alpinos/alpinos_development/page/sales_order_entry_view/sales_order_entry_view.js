@@ -31,10 +31,13 @@ class SalesOrderEntryView {
 		// Utility actions live in the "⋯" menu to keep the action bar uncluttered.
 		this.page.add_menu_item(__('Print'), () => this.open_default_print_preview());
 		this.page.add_menu_item(__('Download PDF'), () => this.download_default_print_pdf());
-		this.page.add_menu_item(__('Back to Sales Order List'), () =>
-			frappe.set_route('sales-order-entry-list')
+		// List redirect goes to the channel's own list (E-com orders -> e-com list).
+		const goToList = () => frappe.set_route(
+			this._channel === 'E-com' ? 'ecom-sales-order-entry-list' : 'sales-order-entry-list'
 		);
-		// Always-visible Download PDF button (every Sales Order, any status).
+		this.page.add_menu_item(__('Back to Sales Order List'), goToList);
+		// Always-visible: jump back to the list, and Download PDF (any status).
+		this.page.add_inner_button(__('Sales Order List'), goToList);
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf(), __('PDF'));
 		// Fetch the customer PO PDF (named by 'PO No for PDF') from the folder
 		// set in Alpino General Settings and attach it to the order.

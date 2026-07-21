@@ -667,3 +667,29 @@
   padding-top: 3px;
   padding-bottom: 3px;
 }
+
+/* ----------------------------------------------------------------------------
+   13. SALES ORDER VIEW — centered, aligned document layout
+   Edge-to-edge put the title at the far left and the action buttons at the far
+   right while the cards sat inset, so nothing lined up. Constrain the page HEAD
+   and BODY to the SAME centered max-width so the heading, buttons and cards all
+   align within one column, with a small gap at the sides — looks professional.
+   ---------------------------------------------------------------------------- */
+[data-page-route="sales-order-entry-view"] :is(.page-head, .page-body) .container {
+  max-width: 1800px !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+/* Main content fills its container edge-to-edge (kill any column/gutter inset)
+   so the cards line up with the title and buttons above them. */
+[data-page-route="sales-order-entry-view"] .layout-main-section-wrapper,
+[data-page-route="sales-order-entry-view"] .layout-main-section {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: 0 0 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
