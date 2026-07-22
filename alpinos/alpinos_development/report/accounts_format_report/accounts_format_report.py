@@ -298,17 +298,24 @@ def _get_data(filters):
 		pl_map = _picklist_map(so.name)
 		has_pl = bool(pl_map)
 
-		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced):
+		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True):
 			it = item_info(item_code)
-			# UNIT / Box come from the submitted Pick List (picked qty). If the SO has a
-			# submitted pick list but this item isn't in it, it wasn't picked → 0; if there
-			# is no submitted pick list at all, fall back to the ordered qty/box.
-			plr = pl_map.get(item_code)
-			if plr:
-				unit, box = flt(plr.get("qty")), flt(plr.get("box"))
+			# Priced (billable) lines take UNIT / Box from the submitted Pick List
+			# (picked qty). If the SO has a submitted pick list but this item isn't in
+			# it, it wasn't picked → 0; with no submitted pick list, fall back to the
+			# ordered qty/box.
+			# Marketing freebies / scheme / damage lines are NOT billable pick-list
+			# lines, so they never appear in the pick list — reporting them from it
+			# would always give 0. Those use the qty recorded on the Sales Order.
+			if not from_picklist:
+				unit, box = flt(fallback_qty), flt(fallback_box)
 			else:
-				unit = 0 if has_pl else flt(fallback_qty)
-				box = 0 if has_pl else flt(fallback_box)
+				plr = pl_map.get(item_code)
+				if plr:
+					unit, box = flt(plr.get("qty")), flt(plr.get("box"))
+				else:
+					unit = 0 if has_pl else flt(fallback_qty)
+					box = 0 if has_pl else flt(fallback_box)
 
 			gst_pct = flt(it.get("custom_gst_percent"))
 			gst_rate = 100 + gst_pct
@@ -448,15 +455,17 @@ def _get_data(filters):
 					item_dict["additional_discount"], is_priced=True,
 				)
 
-		# Marketing freebies / scheme items / additional-unit (damage) items — selling rate 0
+		# Marketing freebies / scheme items / additional-unit (damage) items — selling
+		# rate 0, qty taken straight from the Sales Order (not the pick list, which
+		# doesn't carry these free lines — they would otherwise report qty 0).
 		for r in (so.get("custom_marketing_freebies") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=False)
 		for r in (so.get("custom_scheme_item_table") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=False)
 		for r in (so.get("custom_additional_units_damage_items") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=False)
 
 	return data

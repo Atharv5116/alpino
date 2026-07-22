@@ -4,7 +4,7 @@ frappe.query_reports["Accounts Format Report"] = {
 			fieldname: "from_date",
 			label: "From Date",
 			fieldtype: "Date",
-			default: frappe.datetime.add_months(frappe.datetime.get_today(), -1),
+			default: frappe.datetime.get_today(),
 			reqd: 1,
 		},
 		{
