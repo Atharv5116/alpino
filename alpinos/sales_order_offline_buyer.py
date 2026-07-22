@@ -914,20 +914,37 @@ def buyer_family_customers(customer):
 def get_customer_family_sites(customer):
 	"""Distinct Site Names across the buyer family (parent + all children) — the
 	options for the Site Name dropdown on the SO / e-com entry pages, so an order
-	can be tagged to any site the group has."""
+	can be tagged to any site the group has.
+
+	Sites live in TWO places: Buyer Master.site_name AND, far more reliably, on each
+	Address (Address.custom_site_name). Union both so the dropdown fills even when
+	the buyer master's own Site Name field was never set."""
 	if not customer:
 		return []
 	family = buyer_family_customers(customer)
 	if not family:
 		return []
-	return frappe.db.sql_list(
+	sites = set(frappe.db.sql_list(
 		"""
 		SELECT DISTINCT site_name FROM `tabBuyer Master`
 		WHERE customer IN %(family)s AND IFNULL(site_name, '') != ''
-		ORDER BY site_name
 		""",
 		{"family": tuple(family)},
-	)
+	))
+	sites.update(frappe.db.sql_list(
+		"""
+		SELECT DISTINCT a.custom_site_name
+		FROM `tabAddress` a
+		INNER JOIN `tabDynamic Link` dl
+			ON dl.parent = a.name
+			AND dl.parenttype = 'Address'
+			AND dl.link_doctype = 'Customer'
+			AND dl.link_name IN %(family)s
+		WHERE IFNULL(a.custom_site_name, '') != ''
+		""",
+		{"family": tuple(family)},
+	))
+	return sorted(s for s in sites if (s or "").strip())
 
 
 @frappe.whitelist()
@@ -945,8 +962,11 @@ def get_customer_addresses_for_display(customer, site_name=None):
 
 	family = buyer_family_customers(customer)
 	site_name = (site_name or "").strip()
+	# Buyer master(s) whose own Site Name matches — the fallback used to narrow when
+	# no address carries the site tag directly.
+	site_owner_custs = []
 	if site_name and family:
-		site_family = frappe.db.sql_list(
+		site_owner_custs = frappe.db.sql_list(
 			"""
 			SELECT DISTINCT customer FROM `tabBuyer Master`
 			WHERE customer IN %(family)s AND site_name = %(site)s
@@ -954,8 +974,8 @@ def get_customer_addresses_for_display(customer, site_name=None):
 			""",
 			{"family": tuple(family), "site": site_name},
 		)
-		if site_family:
-			family = site_family
+	# The address pool always covers the whole family; a chosen site filters the
+	# rows below (by the address's own tag, then by the site's buyer master).
 	rows = frappe.db.sql(
 		"""
 		SELECT DISTINCT a.name, a.address_type,
@@ -974,6 +994,15 @@ def get_customer_addresses_for_display(customer, site_name=None):
 		{"family": tuple(family)},
 		as_dict=True,
 	)
+
+	if site_name:
+		# Prefer addresses tagged with this exact site; if none carry the tag, fall
+		# back to every address of the buyer master(s) that own the site.
+		tagged = [r for r in rows if (r.custom_site_name or "").strip() == site_name]
+		if tagged:
+			rows = tagged
+		elif site_owner_custs:
+			rows = [r for r in rows if r.owner_customer in site_owner_custs]
 
 	multi = len(family) > 1
 	owner_names = {}
