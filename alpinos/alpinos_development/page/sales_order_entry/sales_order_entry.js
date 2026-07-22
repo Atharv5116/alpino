@@ -259,6 +259,9 @@ class SalesOrderEntry {
 				label: 'Customer',
 				fieldname: 'customer',
 				reqd: 1,
+				// only_select hides "Create a new Customer" / "Advanced Search" —
+				// customers are created through Buyer Master, not from here.
+				only_select: 1,
 				get_query: () => ({
 					query: 'alpinos.sales_order_offline_buyer.sales_order_customer_query',
 				}),
@@ -266,6 +269,12 @@ class SalesOrderEntry {
 			parent: header.find('.field-customer'),
 			render_input: true
 		});
+		// "Add Buyer Master" button in the customer cell — the only supported way to
+		// add a customer (the link's create-new option is removed above).
+		$('<button type="button" class="btn btn-xs btn-default so-add-buyer-master" '
+			+ 'style="margin-top:6px;">+ Add Buyer Master</button>')
+			.appendTo(header.find('.field-customer'))
+			.on('click', () => frappe.new_doc('Buyer Master'));
 
 		this.company_field = frappe.ui.form.make_control({
 			df: {
@@ -297,6 +306,15 @@ class SalesOrderEntry {
 		});
 		this.site_name_field.$input && this.site_name_field.$input.on('input', function() {
 			me._site_name_manual = true;
+			// Cleared the site -> address dropdowns go back to the whole family.
+			if (!$(this).val()) me._reload_addresses_for_site();
+		});
+		// Picking a site from the dropdown narrows the address dropdowns to that
+		// site's buyer master. awesomplete-selectcomplete only fires on a real user
+		// choice, never on the programmatic default fill, so there is no loop.
+		this.site_name_field.$input && this.site_name_field.$input.on('awesomplete-selectcomplete', function() {
+			me._site_name_manual = true;
+			me._reload_addresses_for_site();
 		});
 		// Dropdown options = every Site Name in the buyer family (parent + children).
 		me._load_family_sites = function(customer) {
@@ -352,8 +370,10 @@ class SalesOrderEntry {
 			return val;
 		};
 
-		// Load address Autocomplete options for a customer and optionally pre-select defaults
-		me._load_address_options = function(customer, defaults) {
+		// Load address Autocomplete options for a customer and optionally pre-select
+		// defaults. site_name (optional) narrows the pool to that site's buyer master;
+		// blank shows every address in the parent's family.
+		me._load_address_options = function(customer, defaults, site_name) {
 			if (!customer) {
 				me.billing_address_field && me.billing_address_field.set_data([]);
 				me.shipping_address_field && me.shipping_address_field.set_data([]);
@@ -361,7 +381,7 @@ class SalesOrderEntry {
 			}
 			frappe.call({
 				method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
-				args: { customer },
+				args: { customer, site_name: site_name || '' },
 				callback(r) {
 					const opts = (r.message || []).map(a => ({ value: a.name, label: a.display }));
 					if (me.billing_address_field) {
@@ -376,6 +396,33 @@ class SalesOrderEntry {
 						me._set_address_display(me.billing_address_field, defaults.billing || '', opts);
 						me._set_address_display(me.shipping_address_field, defaults.shipping || '', opts);
 					}
+				},
+			});
+		};
+
+		// When a site is picked, reload the address dropdowns narrowed to that site's
+		// buyer master. If the currently-chosen address is not in the narrowed list,
+		// drop to that site's default so the fields stay consistent with the site.
+		me._reload_addresses_for_site = function() {
+			const customer = me.customer_field.get_value();
+			if (!customer) return;
+			const site = (me.site_name_field && me.site_name_field.get_value()) || '';
+			frappe.call({
+				method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
+				args: { customer, site_name: site },
+				callback(r) {
+					const opts = (r.message || []).map(a => ({ value: a.name, label: a.display }));
+					const cur_bill = me._get_actual_address(me.billing_address_field);
+					const cur_ship = me._get_actual_address(me.shipping_address_field);
+					[me.billing_address_field, me.shipping_address_field].forEach((f) => {
+						if (!f) return;
+						f._opts = opts;
+						f.set_data(opts);
+					});
+					const in_opts = (name) => opts.some((o) => o.value === name);
+					me._set_address_display(me.billing_address_field, in_opts(cur_bill) ? cur_bill : '', opts);
+					me._set_address_display(me.shipping_address_field, in_opts(cur_ship) ? cur_ship : '', opts);
+					me._refresh_tax_template();
 				},
 			});
 		};

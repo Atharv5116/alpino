@@ -55,9 +55,16 @@ class EcomSalesOrderEntry {
 		this.f_customer = mk('.fld-customer', {
 			fieldtype: 'Link', options: 'Customer', fieldname: 'customer', reqd: 1,
 			label: __('Customer Name'),
+			// only_select hides "Create a new Customer" / "Advanced Search" — customers
+			// are added through Buyer Master (button below), not from here.
+			only_select: 1,
 			get_query: () => ({ query: 'alpinos.sales_order_offline_buyer.ecom_sales_order_customer_query' }),
 			onchange: () => this.on_customer_change(),
 		});
+		$('<button type="button" class="btn btn-xs btn-default eso-add-buyer-master" '
+			+ 'style="margin-top:6px;">+ Add Buyer Master</button>')
+			.appendTo(w.find('.fld-customer'))
+			.on('click', () => frappe.new_doc('Buyer Master'));
 		this.f_customer_type = mk('.fld-customer-type', {
 			fieldtype: 'Link', options: 'Alpino Customer Type', fieldname: 'customer_type',
 			label: __('Customer Type'), reqd: 1,
@@ -81,6 +88,18 @@ class EcomSalesOrderEntry {
 			fieldtype: 'Autocomplete', fieldname: 'site_name', label: __('Site Name'),
 			onchange: () => { this._site_manual = true; },
 		});
+		// Picking a site narrows the address dropdowns to that site's buyer master;
+		// clearing it restores the whole family. awesomplete-selectcomplete only
+		// fires on a real user choice, never on the programmatic default fill.
+		if (this.f_site.$input) {
+			this.f_site.$input.on('awesomplete-selectcomplete', () => {
+				this._site_manual = true;
+				this._reload_ecom_addresses_for_site();
+			});
+			this.f_site.$input.on('input', (e) => {
+				if (!$(e.target).val()) this._reload_ecom_addresses_for_site();
+			});
+		}
 		this.f_bill_gstin = mk('.fld-billing-gstin', {
 			fieldtype: 'Data', fieldname: 'billing_gstin', label: __('Billing GSTIN'), length: 15,
 		});
@@ -199,7 +218,10 @@ class EcomSalesOrderEntry {
 		});
 	}
 
-	_load_ecom_address_options(customer) {
+	// site_name blank -> whole buyer family; site_name set -> only that site's
+	// buyer master addresses. narrow=true also re-picks the bill/ship value when
+	// the current one falls outside the narrowed list (so it matches the site).
+	_load_ecom_address_options(customer, site_name, narrow) {
 		// Fallback composer (server already returns a.value, deduped + no "N/A").
 		const clean = (a) => [a.address_line1, a.address_line2, a.city, a.state, a.pincode]
 			.map((p) => (p ? String(p).replace(/[\r\n]+/g, ' ').trim() : ''))
@@ -211,9 +233,28 @@ class EcomSalesOrderEntry {
 		if (!customer) { set([]); return; }
 		frappe.call({
 			method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
-			args: { customer },
-			callback: (r) => set((r.message || []).map((a) => ({ value: a.value || clean(a), label: a.display }))),
+			args: { customer, site_name: site_name || '' },
+			callback: (r) => {
+				const opts = (r.message || []).map((a) => ({ value: a.value || clean(a), label: a.display }));
+				set(opts);
+				if (narrow) {
+					const vals = opts.map((o) => o.value);
+					if (!vals.includes(this.f_bill_addr.get_value())) {
+						this.f_bill_addr.set_value(opts.length ? opts[0].value : '');
+					}
+					if (!vals.includes(this.f_ship_addr.get_value())) {
+						this.f_ship_addr.set_value(opts.length ? opts[0].value : '');
+					}
+				}
+			},
 		});
+	}
+
+	_reload_ecom_addresses_for_site() {
+		const customer = this.f_customer.get_value();
+		if (!customer) return;
+		const site = (this.f_site && this.f_site.get_value()) || '';
+		this._load_ecom_address_options(customer, site, true);
 	}
 
 	on_customer_change() {

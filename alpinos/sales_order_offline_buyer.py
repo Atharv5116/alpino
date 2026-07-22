@@ -6,14 +6,25 @@ from frappe import _
 from frappe.utils import cint, flt
 
 
-def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None):
+def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None, parents_only=False):
 	"""Customers that have a row in Buyer Master (same pool for Sales Order + Catalog).
 
 	channel: "Offline" -> offline + legacy(blank) buyers, "E-com" -> e-com buyers only,
 	None -> any channel.
+	parents_only: True -> top-level buyer masters only (an explicit parent
+	   is_parent=1 OR a standalone buyer with no parent_buyer — i.e. the root of its
+	   family). CHILD sites are hidden; the Sales Order / e-com entry pages pick the
+	   root, then narrow to a site + its addresses. This keeps standalone buyers
+	   selectable instead of vanishing. False (default, e.g. Catalog) -> non-parent
+	   buyers only.
 	"""
 	txt = txt or ""
 	params = {"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)}
+	if parents_only:
+		# root = an explicit parent OR a buyer with no parent (its own single-node family)
+		parent_clause = "AND (IFNULL(m.is_parent, 0) = 1 OR IFNULL(m.parent_buyer, '') = '')"
+	else:
+		parent_clause = "AND IFNULL(m.is_parent, 0) = 0"
 	channel_clause = ""
 	if channel == "Offline":
 		channel_clause = "AND (IFNULL(m.channel, '') = '' OR m.channel = 'Offline')"
@@ -31,7 +42,7 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		FROM `tabCustomer` c
 		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
 		WHERE IFNULL(c.disabled, 0) = 0
-			AND IFNULL(m.is_parent, 0) = 0
+			{parent_clause}
 			{channel_clause}
 			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s OR m.gst_no LIKE %(txt)s)
 		GROUP BY c.name, c.customer_name
@@ -45,15 +56,22 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Limit offline Sales Order Customer link to offline (or legacy) Buyer Master customers."""
-	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="Offline")
+	"""Limit offline Sales Order Customer link to offline (or legacy) PARENT Buyer Masters.
+
+	Only parents show; the Site Name dropdown then narrows to a child site and its
+	addresses. GST follows the chosen billing address, so anchoring on the parent
+	stays tax-correct."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="Offline", parents_only=True)
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def ecom_sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Limit E-Com Sales Order Customer link to E-com channel Buyer Master customers."""
-	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="E-com")
+	"""Limit E-Com Sales Order Customer link to E-com channel PARENT Buyer Masters.
+
+	Only parents show; the Site Name dropdown narrows to a child site and its
+	addresses."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="E-com", parents_only=True)
 
 
 def ensure_customer_title_in_link():
@@ -913,15 +931,31 @@ def get_customer_family_sites(customer):
 
 
 @frappe.whitelist()
-def get_customer_addresses_for_display(customer):
-	"""Addresses for the Autocomplete on the SO entry page — the pool covers the
-	whole buyer-master family (parent + siblings), so an order can bill/ship to
-	any address the group shares. GST then follows the chosen billing address
-	(tax mode is derived from the Address record's state)."""
+def get_customer_addresses_for_display(customer, site_name=None):
+	"""Addresses for the Autocomplete on the SO entry page.
+
+	site_name blank  -> the pool covers the whole buyer-master family (parent +
+	   siblings), so an order can bill/ship to any address the group shares.
+	site_name set    -> narrow to the buyer master(s) that own that Site Name, so
+	   the dropdown shows only that site's addresses.
+	GST then follows the chosen billing address (tax mode is derived from the
+	Address record's state)."""
 	if not customer:
 		return []
 
 	family = buyer_family_customers(customer)
+	site_name = (site_name or "").strip()
+	if site_name and family:
+		site_family = frappe.db.sql_list(
+			"""
+			SELECT DISTINCT customer FROM `tabBuyer Master`
+			WHERE customer IN %(family)s AND site_name = %(site)s
+				AND IFNULL(customer, '') != ''
+			""",
+			{"family": tuple(family), "site": site_name},
+		)
+		if site_family:
+			family = site_family
 	rows = frappe.db.sql(
 		"""
 		SELECT DISTINCT a.name, a.address_type,
