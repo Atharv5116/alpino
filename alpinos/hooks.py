@@ -262,6 +262,7 @@ override_whitelisted_methods = {
 }
 
 override_doctype_class = {
+	"Sales Order": "alpinos.overrides.sales_order_override.CustomSalesOrder",
 	"Pick List": "alpinos.overrides.pick_list_override.CustomPickList",
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
