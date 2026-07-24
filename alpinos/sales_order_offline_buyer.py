@@ -539,29 +539,57 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 
 
 def _offline_buyer_address_sync(customer: str):
-	"""Create missing ERPNext Address rows from Buyer Master; return billing/shipping defaults."""
+	"""Materialise ERPNext Address rows from the Buyer Master(s); return billing/shipping defaults.
+
+	Syncs EVERY Buyer Master in the family (parent + children / all masters that
+	share a family customer), not just the customer's own. A customer can own
+	several buyer masters — one per site — and each site's addresses must be
+	materialised so the entry page can offer them; syncing only one master is why a
+	sibling site's address never appeared in the dropdown. Each Address is tagged
+	with its own master's Site Name so the dropdowns can be narrowed by site.
+	Returned defaults are the customer's own (primary) master's billing/shipping."""
 
 	if not customer:
 		return {"default_billing": None, "default_shipping": None}
 
-	master_name = frappe.db.get_value(
-		"Buyer Master",
-		{"customer": customer},
-		"name",
-		order_by="modified desc",
+	family = buyer_family_customers(customer)
+	masters = (
+		frappe.get_all(
+			"Buyer Master",
+			filters={"customer": ["in", family]},
+			pluck="name",
+			order_by="modified desc",
+		)
+		if family
+		else []
 	)
-	if not master_name:
+	if not masters:
 		return {"default_billing": None, "default_shipping": None}
 
-	doc = frappe.get_doc("Buyer Master", master_name)
-	mapped = _offline_buyer_addresses_for_addresses_table(doc)
-	billing = mapped["billing_default"]
-	shipping = _ensure_shipping_address_from_obm(doc, billing) or billing
+	own_master = frappe.db.get_value(
+		"Buyer Master", {"customer": customer}, "name", order_by="modified desc"
+	)
+
+	default_billing = default_shipping = None
+	first_billing = first_shipping = None
+	for master_name in masters:
+		doc = frappe.get_doc("Buyer Master", master_name)
+		mapped = _offline_buyer_addresses_for_addresses_table(doc)
+		billing = mapped["billing_default"]
+		shipping = _ensure_shipping_address_from_obm(doc, billing) or billing
+		if first_billing is None and billing:
+			first_billing, first_shipping = billing, (shipping or billing)
+		if master_name == own_master:
+			default_billing, default_shipping = billing, (shipping or billing)
+
+	# The customer's own master had no usable address → fall back to the first that did.
+	if default_billing is None:
+		default_billing, default_shipping = first_billing, first_shipping
 
 	return {
-		"default_billing": billing,
-		"default_shipping": shipping or billing,
-		"offline_buyer_master": master_name,
+		"default_billing": default_billing,
+		"default_shipping": default_shipping or default_billing,
+		"offline_buyer_master": own_master,
 	}
 
 
@@ -910,136 +938,206 @@ def buyer_family_customers(customer):
 	return family
 
 
-@frappe.whitelist()
-def get_customer_family_sites(customer):
-	"""Distinct Site Names across the buyer family (parent + all children) — the
-	options for the Site Name dropdown on the SO / e-com entry pages, so an order
-	can be tagged to any site the group has.
-
-	Sites live in TWO places: Buyer Master.site_name AND, far more reliably, on each
-	Address (Address.custom_site_name). Union both so the dropdown fills even when
-	the buyer master's own Site Name field was never set."""
-	if not customer:
-		return []
+def buyer_family_masters(customer):
+	"""Every Buyer Master in the family (parent + children / all masters that share a
+	family customer), as dicts of name + customer + site_name. This is the address
+	source of truth for the entry page — a customer can own several masters (one per
+	site), so we enumerate masters, not just customers."""
 	family = buyer_family_customers(customer)
 	if not family:
 		return []
-	sites = set(frappe.db.sql_list(
+	return frappe.get_all(
+		"Buyer Master",
+		filters={"customer": ["in", family]},
+		fields=["name", "customer", "site_name"],
+		order_by="creation asc",
+	)
+
+
+def _masters_owning_site(master_names, site):
+	"""Buyer Master(s) that OWN a Site — the master's own Site Name is it, OR one of
+	its Buyer Address rows carries it. A master can host several sites, and picking
+	any one of them shows that master's WHOLE address book; so a site resolves to its
+	master(s), not to a single address row."""
+	site = (site or "").strip()
+	if not site or not master_names:
+		return set()
+	owners = set(
+		frappe.db.sql_list(
+			"SELECT name FROM `tabBuyer Master` WHERE name IN %(m)s AND site_name = %(s)s",
+			{"m": tuple(master_names), "s": site},
+		)
+	)
+	owners.update(
+		frappe.db.sql_list(
+			"""
+			SELECT DISTINCT parent FROM `tabBuyer Address`
+			WHERE parent IN %(m)s AND parenttype = 'Buyer Master' AND site_name = %(s)s
+			""",
+			{"m": tuple(master_names), "s": site},
+		)
+	)
+	return owners
+
+
+@frappe.whitelist()
+def get_customer_family_sites(customer):
+	"""Distinct Site Names across the buyer family (parent + all children) — the
+	options for the Site Name dropdown on the SO / e-com entry pages.
+
+	Sites live in TWO places on the Buyer Master(s): the master's own site_name AND
+	each Buyer Address row's site_name (a master can host several sites). Union both
+	straight from the masters so every site the family has is offered."""
+	if not customer:
+		return []
+	masters = buyer_family_masters(customer)
+	if not masters:
+		return []
+	master_names = [m.name for m in masters]
+	sites = {(m.site_name or "").strip() for m in masters if (m.site_name or "").strip()}
+	sites.update(
+		frappe.db.sql_list(
+			"""
+			SELECT DISTINCT site_name FROM `tabBuyer Address`
+			WHERE parent IN %(m)s AND parenttype = 'Buyer Master'
+				AND IFNULL(site_name, '') != ''
+			""",
+			{"m": tuple(master_names)},
+		)
+	)
+	return sorted(s for s in sites if (s or "").strip())
+
+
+def _address_name_for_buyer_row(customer, line1, city, pincode):
+	"""Match a Buyer Address row back to the ERPNext Address the buyer-master sync
+	materialised for it. Matches on customer + line1 + pincode + city, treating a
+	blank row city as the 'N/A' placeholder the sync stores for cityless rows."""
+	line1 = (line1 or "")[:240]
+	if not line1:
+		return None
+	found = frappe.db.sql(
 		"""
-		SELECT DISTINCT site_name FROM `tabBuyer Master`
-		WHERE customer IN %(family)s AND IFNULL(site_name, '') != ''
-		""",
-		{"family": tuple(family)},
-	))
-	sites.update(frappe.db.sql_list(
-		"""
-		SELECT DISTINCT a.custom_site_name
+		SELECT a.name
 		FROM `tabAddress` a
 		INNER JOIN `tabDynamic Link` dl
-			ON dl.parent = a.name
-			AND dl.parenttype = 'Address'
-			AND dl.link_doctype = 'Customer'
-			AND dl.link_name IN %(family)s
-		WHERE IFNULL(a.custom_site_name, '') != ''
+			ON dl.parent = a.name AND dl.parenttype = 'Address'
+			AND dl.link_doctype = 'Customer' AND dl.link_name = %(cust)s
+		WHERE IFNULL(a.address_line1, '') = %(l1)s
+			AND IFNULL(a.pincode, '') = %(pin)s
+			AND (IFNULL(a.city, '') = %(city)s OR (%(city)s = '' AND a.city = 'N/A'))
+		ORDER BY a.creation ASC
+		LIMIT 1
 		""",
-		{"family": tuple(family)},
-	))
-	return sorted(s for s in sites if (s or "").strip())
+		{"cust": customer, "l1": line1, "city": _nz(city), "pin": _nz(pincode)},
+	)
+	return found[0][0] if found else None
 
 
 @frappe.whitelist()
 def get_customer_addresses_for_display(customer, site_name=None):
-	"""Addresses for the Autocomplete on the SO entry page.
+	"""Addresses for the Autocomplete on the SO / e-com entry pages, sourced DIRECTLY
+	from the Buyer Master(s) in the family.
 
-	site_name blank  -> the pool covers the whole buyer-master family (parent +
-	   siblings), so an order can bill/ship to any address the group shares.
-	site_name set    -> narrow to the buyer master(s) that own that Site Name, so
-	   the dropdown shows only that site's addresses.
-	GST then follows the chosen billing address (tax mode is derived from the
-	Address record's state)."""
+	- site_name blank -> every address row of every Buyer Master in the family
+	  (parent + children / all masters sharing a family customer).
+	- site_name set   -> the Buyer Master(s) that OWN that site (the master's own
+	  Site Name is it, OR one of its address rows carries it); ALL of those masters'
+	  addresses are then offered — a master can host several sites, and picking any
+	  one shows the master's WHOLE address book.
+
+	Each row keeps its is_primary / is_shipping ticks so the page routes Primary rows
+	to Billing and Shipping rows to Shipping (a row ticked both appears in both).
+	Read-only: rows are matched to the ERPNext Address the buyer-master sync already
+	created (so GST can follow the billing address); a row without a materialised
+	Address yet is skipped. Return rows keep the Address component fields
+	(address_line1/2, city, state, pincode) other callers rely on."""
 	if not customer:
 		return []
-
-	family = buyer_family_customers(customer)
 	site_name = (site_name or "").strip()
-	# Buyer master(s) whose own Site Name matches — the fallback used to narrow when
-	# no address carries the site tag directly.
-	site_owner_custs = []
-	if site_name and family:
-		site_owner_custs = frappe.db.sql_list(
-			"""
-			SELECT DISTINCT customer FROM `tabBuyer Master`
-			WHERE customer IN %(family)s AND site_name = %(site)s
-				AND IFNULL(customer, '') != ''
-			""",
-			{"family": tuple(family), "site": site_name},
-		)
-	# The address pool always covers the whole family; a chosen site filters the
-	# rows below (by the address's own tag, then by the site's buyer master).
-	rows = frappe.db.sql(
-		"""
-		SELECT DISTINCT a.name, a.address_type,
-			a.address_line1, a.address_line2,
-			a.city, a.state, a.country, a.pincode,
-			a.custom_site_name,
-			dl.link_name AS owner_customer
-		FROM `tabAddress` a
-		INNER JOIN `tabDynamic Link` dl
-			ON dl.parent = a.name
-			AND dl.parenttype = 'Address'
-			AND dl.link_doctype = 'Customer'
-			AND dl.link_name IN %(family)s
-		ORDER BY a.address_type, a.name
-		""",
-		{"family": tuple(family)},
-		as_dict=True,
-	)
+	masters = buyer_family_masters(customer)
+	if not masters:
+		return []
 
 	if site_name:
-		# Prefer addresses tagged with this exact site; if none carry the tag, fall
-		# back to every address of the buyer master(s) that own the site.
-		tagged = [r for r in rows if (r.custom_site_name or "").strip() == site_name]
-		if tagged:
-			rows = tagged
-		elif site_owner_custs:
-			rows = [r for r in rows if r.owner_customer in site_owner_custs]
+		owners = _masters_owning_site([m.name for m in masters], site_name)
+		if owners:
+			masters = [m for m in masters if m.name in owners]
 
-	multi = len(family) > 1
+	family_custs = {m.customer for m in masters if m.customer}
+	multi = len(family_custs) > 1
 	owner_names = {}
 	if multi:
 		for cust, cname in frappe.db.sql(
-			"SELECT name, customer_name FROM `tabCustomer` WHERE name IN %(family)s",
-			{"family": tuple(family)},
+			"SELECT name, customer_name FROM `tabCustomer` WHERE name IN %(f)s",
+			{"f": tuple(family_custs)},
 		):
 			owner_names[cust] = cname or cust
 
 	seen = set()
 	out = []
-	for row in rows:
-		parts = []
-		for p in [row.address_line1, row.address_line2, row.city, row.state, row.pincode]:
-			# Skip empty parts AND the "N/A" placeholder some Address records carry
-			# (e.g. a missing city stored as "N/A") — don't show it in the address.
-			clean_p = " ".join(str(p or "").replace("\n", " ").replace("\r", " ").split())
-			if clean_p and clean_p.upper() != "N/A":
-				parts.append(clean_p)
-		value = ", ".join(parts)
-		if not value:
-			continue  # nothing usable to show or store
-		suffix = row.address_type or "Address"
-		# Disambiguate sibling addresses by the buyer they belong to.
-		if multi and row.owner_customer and row.owner_customer != customer:
-			suffix += " — " + owner_names.get(row.owner_customer, row.owner_customer)
-		display = "{} ({})".format(value, suffix)
-		# Only unique addresses: collapse duplicate Address records with the SAME
-		# displayed text (same address + type + owner). Cross-owner (sibling) or
-		# cross-type entries stay distinct.
-		if display in seen:
-			continue
-		seen.add(display)
-		row.value = value  # the composed address text (what e-com stores / matches)
-		row.display = display
-		out.append(row)
+	for m in masters:
+		obm = frappe.get_doc("Buyer Master", m.name)
+		for brow in obm.get("addresses") or []:
+			line1 = _nz(brow.get("address_line"))
+			if not line1:
+				continue
+			addr_name = _address_name_for_buyer_row(
+				obm.customer, line1, brow.get("city"), brow.get("pincode")
+			)
+			if not addr_name:
+				continue  # not materialised as an Address yet (sync creates it first)
+			addr = frappe.db.get_value(
+				"Address",
+				addr_name,
+				[
+					"address_line1", "address_line2", "city", "state",
+					"country", "pincode", "custom_site_name", "address_type",
+				],
+				as_dict=True,
+			) or {}
+			parts = []
+			for p in [
+				addr.get("address_line1"), addr.get("address_line2"),
+				addr.get("city"), addr.get("state"), addr.get("pincode"),
+			]:
+				clean_p = " ".join(str(p or "").replace("\n", " ").replace("\r", " ").split())
+				if clean_p and clean_p.upper() != "N/A":
+					parts.append(clean_p)
+			value = ", ".join(parts)
+			if not value:
+				continue
+			is_primary = int(brow.get("is_primary") or 0)
+			is_shipping = int(brow.get("is_shipping") or 0)
+			# Type/suffix from the ROW's own ticks (not the deduped Address's type) so a
+			# shared address used for both billing and shipping is offered in both.
+			addr_type = "Billing" if is_primary else ("Shipping" if is_shipping else "Billing")
+			suffix = "Billing" if is_primary else ("Shipping" if is_shipping else "Address")
+			if multi and obm.customer and obm.customer != customer:
+				suffix += " — " + owner_names.get(obm.customer, obm.customer)
+			display = "{} ({})".format(value, suffix)
+			# Collapse identical entries — same owner + same address text + same
+			# Primary/Shipping role — that repeated Buyer Address rows can produce.
+			key = (obm.customer, value, is_primary, is_shipping)
+			if key in seen:
+				continue
+			seen.add(key)
+			out.append(frappe._dict({
+				"name": addr_name,
+				"value": value,
+				"display": display,
+				"address_line1": addr.get("address_line1"),
+				"address_line2": addr.get("address_line2"),
+				"city": addr.get("city"),
+				"state": addr.get("state"),
+				"country": addr.get("country"),
+				"pincode": addr.get("pincode"),
+				"custom_site_name": addr.get("custom_site_name"),
+				"address_type": addr_type,
+				"is_primary": is_primary,
+				"is_shipping": is_shipping,
+				"site_name": _nz(brow.get("site_name")),
+				"buyer_master": obm.name,
+			}))
 
 	return out
 

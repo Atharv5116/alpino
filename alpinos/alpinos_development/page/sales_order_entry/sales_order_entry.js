@@ -370,6 +370,23 @@ class SalesOrderEntry {
 			return val;
 		};
 
+		// Split the address list into Billing- and Shipping-field option pools by the
+		// address_type each Buyer Master row carries: Primary rows -> Billing, Shipping
+		// rows -> Shipping. If a field's own type has no addresses, fall back to the
+		// full pool so it is never empty when addresses exist.
+		me._split_addr_opts = function(list) {
+			const toOpt = (a) => ({ value: a.name, label: a.display });
+			const all = (list || []).map(toOpt);
+			// Primary (or untagged) rows -> Billing; Shipping rows -> Shipping. A row
+			// ticked BOTH appears in both. Fall back to the full pool if a field's
+			// own bucket is empty so it is never blank when addresses exist.
+			let billing = (list || []).filter((a) => a.is_primary || (!a.is_primary && !a.is_shipping)).map(toOpt);
+			let shipping = (list || []).filter((a) => a.is_shipping).map(toOpt);
+			if (!billing.length) billing = all;
+			if (!shipping.length) shipping = all;
+			return { billing, shipping };
+		};
+
 		// Load address Autocomplete options for a customer and optionally pre-select
 		// defaults. site_name (optional) narrows the pool to that site's buyer master;
 		// blank shows every address in the parent's family.
@@ -383,18 +400,18 @@ class SalesOrderEntry {
 				method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
 				args: { customer, site_name: site_name || '' },
 				callback(r) {
-					const opts = (r.message || []).map(a => ({ value: a.name, label: a.display }));
+					const split = me._split_addr_opts(r.message || []);
 					if (me.billing_address_field) {
-						me.billing_address_field._opts = opts;
-						me.billing_address_field.set_data(opts);
+						me.billing_address_field._opts = split.billing;
+						me.billing_address_field.set_data(split.billing);
 					}
 					if (me.shipping_address_field) {
-						me.shipping_address_field._opts = opts;
-						me.shipping_address_field.set_data(opts);
+						me.shipping_address_field._opts = split.shipping;
+						me.shipping_address_field.set_data(split.shipping);
 					}
 					if (defaults) {
-						me._set_address_display(me.billing_address_field, defaults.billing || '', opts);
-						me._set_address_display(me.shipping_address_field, defaults.shipping || '', opts);
+						me._set_address_display(me.billing_address_field, defaults.billing || '', split.billing);
+						me._set_address_display(me.shipping_address_field, defaults.shipping || '', split.shipping);
 					}
 				},
 			});
@@ -411,17 +428,21 @@ class SalesOrderEntry {
 				method: 'alpinos.sales_order_offline_buyer.get_customer_addresses_for_display',
 				args: { customer, site_name: site },
 				callback(r) {
-					const opts = (r.message || []).map(a => ({ value: a.name, label: a.display }));
+					const split = me._split_addr_opts(r.message || []);
 					const cur_bill = me._get_actual_address(me.billing_address_field);
 					const cur_ship = me._get_actual_address(me.shipping_address_field);
-					[me.billing_address_field, me.shipping_address_field].forEach((f) => {
-						if (!f) return;
-						f._opts = opts;
-						f.set_data(opts);
-					});
-					const in_opts = (name) => opts.some((o) => o.value === name);
-					me._set_address_display(me.billing_address_field, in_opts(cur_bill) ? cur_bill : '', opts);
-					me._set_address_display(me.shipping_address_field, in_opts(cur_ship) ? cur_ship : '', opts);
+					if (me.billing_address_field) {
+						me.billing_address_field._opts = split.billing;
+						me.billing_address_field.set_data(split.billing);
+					}
+					if (me.shipping_address_field) {
+						me.shipping_address_field._opts = split.shipping;
+						me.shipping_address_field.set_data(split.shipping);
+					}
+					const in_bill = (name) => split.billing.some((o) => o.value === name);
+					const in_ship = (name) => split.shipping.some((o) => o.value === name);
+					me._set_address_display(me.billing_address_field, in_bill(cur_bill) ? cur_bill : '', split.billing);
+					me._set_address_display(me.shipping_address_field, in_ship(cur_ship) ? cur_ship : '', split.shipping);
 					me._refresh_tax_template();
 				},
 			});
