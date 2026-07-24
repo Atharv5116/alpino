@@ -668,18 +668,21 @@
   border-radius: 100px;
   font-weight: 600;
   letter-spacing: 0.1px;
-  background: var(--alp-pill-bg, var(--bg-gray, #edeff2)) !important;
-  color: var(--alp-pill-fg, var(--text-on-gray, #45505f)) !important;
+  border: 1px solid var(--alp-pill-bd, rgba(128, 128, 128, 0.24));
+  background: var(--alp-pill-bg, rgba(128, 128, 128, 0.14)) !important;
+  color: var(--alp-pill-fg, var(--text-muted, #5c6672)) !important;
 }
-/* Per-status tint (bg + readable ink). These var maps are harmless globally —
-   only the routed .indicator-pill rule above ever consumes them. */
-.indicator-pill.gray   { --alp-pill-bg: var(--bg-gray,   #edeff2); --alp-pill-fg: var(--text-on-gray,   #45505f); }
-.indicator-pill.orange { --alp-pill-bg: var(--bg-orange, #fdecd8); --alp-pill-fg: var(--text-on-orange, #9a5b06); }
-.indicator-pill.yellow { --alp-pill-bg: var(--bg-yellow, #fbf0cd); --alp-pill-fg: var(--text-on-yellow, #836a0a); }
-.indicator-pill.blue   { --alp-pill-bg: var(--bg-blue,   #e3eefb); --alp-pill-fg: var(--text-on-blue,   #12539d); }
-.indicator-pill.green  { --alp-pill-bg: var(--bg-green,  #daf1e1); --alp-pill-fg: var(--text-on-green,  #1a7440); }
-.indicator-pill.red    { --alp-pill-bg: var(--bg-red,    #fbe2e0); --alp-pill-fg: var(--text-on-red,    #a92e26); }
-.indicator-pill.purple { --alp-pill-bg: var(--bg-purple, #ece2fa); --alp-pill-fg: var(--text-on-purple, #65389b); }
+/* Per-status tint (bg + readable ink + border). These var maps are harmless
+   globally — only the routed .indicator-pill rule above consumes them. Gray uses
+   a translucent neutral (Frappe's --bg-gray is near-white, so a gray chip would
+   otherwise be invisible on the white list); it also works in dark mode. */
+.indicator-pill.gray   { --alp-pill-bg: rgba(128, 128, 128, 0.14); --alp-pill-fg: var(--text-muted, #5c6672); --alp-pill-bd: rgba(128, 128, 128, 0.26); }
+.indicator-pill.orange { --alp-pill-bg: var(--bg-orange, #fdecd8); --alp-pill-fg: var(--text-on-orange, #9a5b06); --alp-pill-bd: rgba(154, 91, 6, 0.22); }
+.indicator-pill.yellow { --alp-pill-bg: var(--bg-yellow, #fbf0cd); --alp-pill-fg: var(--text-on-yellow, #836a0a); --alp-pill-bd: rgba(131, 106, 10, 0.22); }
+.indicator-pill.blue   { --alp-pill-bg: var(--bg-blue,   #e3eefb); --alp-pill-fg: var(--text-on-blue,   #12539d); --alp-pill-bd: rgba(18, 83, 157, 0.20); }
+.indicator-pill.green  { --alp-pill-bg: var(--bg-green,  #daf1e1); --alp-pill-fg: var(--text-on-green,  #1a7440); --alp-pill-bd: rgba(26, 116, 64, 0.20); }
+.indicator-pill.red    { --alp-pill-bg: var(--bg-red,    #fbe2e0); --alp-pill-fg: var(--text-on-red,    #a92e26); --alp-pill-bd: rgba(169, 46, 38, 0.20); }
+.indicator-pill.purple { --alp-pill-bg: var(--bg-purple, #ece2fa); --alp-pill-fg: var(--text-on-purple, #65389b); --alp-pill-bd: rgba(101, 56, 155, 0.20); }
 
 /* ----------------------------------------------------------------------------
    13. SALES ORDER VIEW — centered, aligned document layout
