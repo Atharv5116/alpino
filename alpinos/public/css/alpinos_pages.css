@@ -664,9 +664,22 @@
   white-space: normal;
   line-height: 1.3;
   text-align: left;
-  padding-top: 3px;
-  padding-bottom: 3px;
+  padding: 3px 10px !important;
+  border-radius: 100px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  background: var(--alp-pill-bg, var(--bg-gray, #edeff2)) !important;
+  color: var(--alp-pill-fg, var(--text-on-gray, #45505f)) !important;
 }
+/* Per-status tint (bg + readable ink). These var maps are harmless globally —
+   only the routed .indicator-pill rule above ever consumes them. */
+.indicator-pill.gray   { --alp-pill-bg: var(--bg-gray,   #edeff2); --alp-pill-fg: var(--text-on-gray,   #45505f); }
+.indicator-pill.orange { --alp-pill-bg: var(--bg-orange, #fdecd8); --alp-pill-fg: var(--text-on-orange, #9a5b06); }
+.indicator-pill.yellow { --alp-pill-bg: var(--bg-yellow, #fbf0cd); --alp-pill-fg: var(--text-on-yellow, #836a0a); }
+.indicator-pill.blue   { --alp-pill-bg: var(--bg-blue,   #e3eefb); --alp-pill-fg: var(--text-on-blue,   #12539d); }
+.indicator-pill.green  { --alp-pill-bg: var(--bg-green,  #daf1e1); --alp-pill-fg: var(--text-on-green,  #1a7440); }
+.indicator-pill.red    { --alp-pill-bg: var(--bg-red,    #fbe2e0); --alp-pill-fg: var(--text-on-red,    #a92e26); }
+.indicator-pill.purple { --alp-pill-bg: var(--bg-purple, #ece2fa); --alp-pill-fg: var(--text-on-purple, #65389b); }
 
 /* ----------------------------------------------------------------------------
    13. SALES ORDER VIEW — centered, aligned document layout
@@ -692,4 +705,52 @@
   flex: 0 0 100% !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
+}
+
+/* ----------------------------------------------------------------------------
+   14. SALES ORDER LIST + VIEW — figure/total/address polish
+   Visual-only refinements (no fields moved or hidden): align all figures on the
+   decimal, emphasise the document's bottom-line total, tidy multi-line
+   addresses, and dim placeholder/zero values so real numbers read first.
+   ---------------------------------------------------------------------------- */
+/* Tabular figures so ₹ amounts, qty and discount % columns line up. */
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .so-view-items-table, .so-view-kv, .eso-list-table) td {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Totals tables read as a deliberate summary block; the bottom-line Grand / Net
+   total is emphasised (bigger + brand accent + a faint highlight row). */
+[data-page-route="sales-order-entry-view"] .so-view-money {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="grand_total"] td,
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="rounded_total"] td {
+  background: rgba(36, 144, 239, 0.06);
+}
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="grand_total"] strong,
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="rounded_total"] strong {
+  font-size: 15px;
+  color: var(--primary, #2490ef);
+}
+
+/* Tighter multi-line addresses (kill the loose blank-line gaps). */
+[data-page-route="sales-order-entry-view"] .so-view-address {
+  line-height: 1.4;
+}
+
+/* Placeholder dashes and bare zeros de-emphasised (class added by each page's
+   render — this never hides a value, it only dims it). */
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) .alp-dim {
+  color: var(--text-light, #b3b9c4) !important;
 }

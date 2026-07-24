@@ -1,3 +1,14 @@
+// Dim placeholder dashes and bare zeros so real figures read first — visual
+// only, never hides a value. Skips cells holding controls / links / images.
+const ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
+function alpDimPlaceholderCells(root) {
+	if (!root || !root.querySelectorAll) return;
+	root.querySelectorAll('td').forEach((td) => {
+		if (td.querySelector('button, input, img, a')) return;
+		if (ALP_DIM_RE.test((td.textContent || '').trim())) td.classList.add('alp-dim');
+	});
+}
+
 frappe.pages['sales-order-entry-view'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -555,6 +566,7 @@ class SalesOrderEntryView {
 				// Channel drives where Edit/Duplicate route (offline vs e-com entry).
 				this._channel = r.message.channel || '';
 				this.render(r.message);
+				alpDimPlaceholderCells(this.wrapper && this.wrapper[0]);
 			},
 		});
 	}

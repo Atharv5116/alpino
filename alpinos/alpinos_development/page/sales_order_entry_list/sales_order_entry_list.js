@@ -45,6 +45,17 @@ const SO_WF_COLORS = {
 	Cancelled: 'red',
 };
 
+// Dim placeholder dashes and bare zeros so real figures read first — visual
+// only, never hides a value. Skips cells holding controls / links / images.
+const ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
+function alpDimPlaceholderCells(root) {
+	if (!root || !root.querySelectorAll) return;
+	root.querySelectorAll('td').forEach((td) => {
+		if (td.querySelector('button, input, img, a')) return;
+		if (ALP_DIM_RE.test((td.textContent || '').trim())) td.classList.add('alp-dim');
+	});
+}
+
 // Role-based column layouts. Warehouse staff (without a sales role) get the
 // warehouse layout; everyone else — sales roles, System Manager — gets sales.
 // E-Com layout is specced but deferred (see project memory) — add here later.
@@ -526,6 +537,7 @@ class SalesOrderEntryListPage {
 				${cells}
 			</tr>`);
 		});
+		alpDimPlaceholderCells(tb && tb[0]);
 	}
 
 	update_pager() {
