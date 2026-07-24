@@ -757,3 +757,49 @@
 ) .alp-dim {
   color: var(--text-light, #b3b9c4) !important;
 }
+
+/* ----------------------------------------------------------------------------
+   15. SALES ORDER LIST — one aligned column for the whole page
+   The page head (title + Refresh / New Sales Order) already runs full-width, but
+   the body's layout section kept Frappe's gutter, so the cards sat inset — the
+   title and buttons didn't line up with the cards beneath them. Zero the body
+   gutter (as the view page already does) so title, buttons and every card share
+   the same left/right edge. Then put the table on a fixed column grid so the
+   columns stop auto-sizing to content.
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.layout-main-section-wrapper, .layout-main-section) {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: 0 0 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Fixed column grid — headers and data share the <colgroup> widths instead of
+   sizing to content. Text wraps (never truncates/hides); figures and the ID stay
+   on one line. A min-width keeps it readable and scrolls inside .alp-scroll when
+   the viewport is narrow. */
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .eso-list-table) {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 1040px;
+}
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .eso-list-table) :is(td, th) {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .eso-list-table) :is(td, th).text-right {
+  white-space: nowrap;
+}

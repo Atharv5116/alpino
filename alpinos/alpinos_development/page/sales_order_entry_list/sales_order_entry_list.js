@@ -59,29 +59,32 @@ function alpDimPlaceholderCells(root) {
 // Role-based column layouts. Warehouse staff (without a sales role) get the
 // warehouse layout; everyone else — sales roles, System Manager — gets sales.
 // E-Com layout is specced but deferred (see project memory) — add here later.
+// `width` drives the <colgroup> so headers and data share one fixed column grid
+// (table-layout: fixed) instead of auto-sizing to content. Percentages are ratios
+// — the browser scales them to fill the table / its min-width.
 const SO_LIST_LAYOUTS = {
 	sales: [
-		{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'Customer Name', sort: 'customer_name', render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Order Date', sort: 'transaction_date', render: (d, h) => h.date(d.transaction_date) },
-		{ label: 'PO No', sort: 'po_no', render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Workflow Status', sort: 'custom_workflow_status', render: (d, h) => h.wf(d) },
-		{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
-		{ label: 'Created By', sort: 'owner', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
+		{ label: 'ID', sort: 'name', width: '12%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'Customer Name', sort: 'customer_name', width: '19%', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Order Date', sort: 'transaction_date', width: '9%', render: (d, h) => h.date(d.transaction_date) },
+		{ label: 'PO No', sort: 'po_no', width: '12%', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '15%', render: (d, h) => h.wf(d) },
+		{ label: 'Links', cls: 'text-center', width: '6%', render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: '12%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '12%', render: (d, h) => h.money(d) },
 	],
 	warehouse: [
-		{ label: 'Customer Type', sort: 'order_type', render: (d, h) => h.esc(d.order_type || '—') },
-		{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'PO No', sort: 'po_no', render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Customer Name', sort: 'customer_name', render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', render: (d, h) => h.date(d.custom_dispatch_date) },
-		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', render: (d, h) => h.date(d.custom_po_expiry_date) },
-		{ label: 'Delivery Date', sort: 'delivery_date', render: (d, h) => h.date(d.delivery_date) },
-		{ label: 'Workflow Status', sort: 'custom_workflow_status', render: (d, h) => h.wf(d) },
-		{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
-		{ label: 'Created By', sort: 'owner', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
+		{ label: 'Customer Type', sort: 'order_type', width: '9%', render: (d, h) => h.esc(d.order_type || '—') },
+		{ label: 'ID', sort: 'name', width: '11%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'PO No', sort: 'po_no', width: '10%', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Customer Name', sort: 'customer_name', width: '15%', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: '9%', render: (d, h) => h.date(d.custom_dispatch_date) },
+		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: '9%', render: (d, h) => h.date(d.custom_po_expiry_date) },
+		{ label: 'Delivery Date', sort: 'delivery_date', width: '9%', render: (d, h) => h.date(d.delivery_date) },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '12%', render: (d, h) => h.wf(d) },
+		{ label: 'Links', cls: 'text-center', width: '5%', render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: '9%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '11%', render: (d, h) => h.money(d) },
 	],
 };
 
@@ -466,6 +469,14 @@ class SalesOrderEntryListPage {
 	}
 
 	render_header() {
+		// Fixed column grid: a <colgroup> so the header row and every data row share
+		// the same intentional widths (checkbox col first, then each column's width).
+		const table = this.wrapper.find('.so-list-table');
+		let cg = table.children('colgroup');
+		if (!cg.length) { cg = $('<colgroup></colgroup>'); table.prepend(cg); }
+		cg.empty().append('<col style="width:3%">');
+		this._columns.forEach((c) => cg.append(`<col${c.width ? ` style="width:${c.width}"` : ''}>`));
+
 		const tr = this.wrapper.find('.so-list-table thead tr').empty();
 		tr.append(
 			'<th style="text-align: center;"><input type="checkbox" class="so-list-select-all"></th>'

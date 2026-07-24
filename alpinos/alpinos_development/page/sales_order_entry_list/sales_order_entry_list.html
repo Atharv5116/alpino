@@ -20,8 +20,31 @@
 			gap: 8px;
 			margin-bottom: 10px;
 		}
+		/* Uniform filter grid — equal-width fields on one clean 5-column grid, so
+		   row 2 (dates) lines up exactly under row 1 (was mixed Bootstrap col-md
+		   widths where the wider Search column threw the alignment off). */
+		.sales-order-entry-list .so-list-filters-body .row {
+			display: grid;
+			grid-template-columns: repeat(5, minmax(0, 1fr));
+			gap: 14px 18px;
+			margin: 0;
+		}
 		.sales-order-entry-list .so-list-filters-body .row > [class*="col-"] {
-			margin-bottom: 10px;
+			width: auto;
+			max-width: none;
+			flex: none;
+			padding: 0;
+			margin-bottom: 0;
+		}
+		.sales-order-entry-list .so-list-filters-body .fld-search .form-control,
+		.sales-order-entry-list .so-list-filters-body [class*="col-"] .form-control,
+		.sales-order-entry-list .so-list-filters-body [class*="col-"] .control-input,
+		.sales-order-entry-list .so-list-filters-body [class*="col-"] .awesomplete { width: 100%; }
+		@media (max-width: 900px) {
+			.sales-order-entry-list .so-list-filters-body .row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+		}
+		@media (max-width: 560px) {
+			.sales-order-entry-list .so-list-filters-body .row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 		}
 		@media (min-width: 769px) {
 			/* Filter collapse is a phone-only affordance. */
