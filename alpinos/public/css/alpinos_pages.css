@@ -767,6 +767,19 @@
    the same left/right edge. Then put the table on a fixed column grid so the
    columns stop auto-sizing to content.
    ---------------------------------------------------------------------------- */
+/* Head + body share one centered column (same as the view page), so the title,
+   the Refresh / New Sales Order buttons and every card line up on the same
+   left/right edge. The body's default container cap is what kept the cards inset;
+   overriding it here (not just the inner gutter) is what actually pulls them out. */
+[data-page-route="sales-order-entry-list"] :is(.page-head, .page-body) .container,
+[data-page-route="ecom-sales-order-entry-list"] :is(.page-head, .page-body) .container {
+  max-width: 1800px !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
 :is(
   [data-page-route="sales-order-entry-list"],
   [data-page-route="ecom-sales-order-entry-list"]
