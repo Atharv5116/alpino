@@ -634,6 +634,9 @@ class SalesOrderEntryView {
 			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'
 		);
 		w.find('.v-order-type').text(this._has(p, 'order_type') ? this._plain_text(p.order_type) : '—');
+		w.find('.v-site-name').text(
+			this._has(p, 'custom_site_name') && p.custom_site_name ? this._plain_text(p.custom_site_name) : '—'
+		);
 		// E-com orders store billing/shipping as free text (custom_*_address_text),
 		// not as ERPNext Address records — prefer that so the entered/fetched
 		// address shows instead of the customer's auto-linked default (or blank).
@@ -678,6 +681,7 @@ class SalesOrderEntryView {
 		[
 			['customer_name', '.v-customer-name'],
 			['order_type', '.v-order-type'],
+			['custom_site_name', '.v-site-name'],
 			['address_display', '.v-billing'],
 			['shipping_address', '.v-shipping'],
 			['transaction_date', '.v-date'],
