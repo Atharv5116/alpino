@@ -1,0 +1,254 @@
+"""Attendance healer — recompute an already-marked day from ALL its punches.
+
+HRMS marks a day once from the punches eligible at that moment, then freezes it:
+once a punch is linked to an Attendance it is excluded from re-processing, so a
+punch that lands later (synced late / processed in a separate run) hits the
+"attendance already marked" branch, gets skip_auto_attendance=1, and NEVER updates
+the in/out. On an odd-count day (IN, OUT, IN) that leaves the out-time at the last
+OUT and drops the trailing IN — understating hours and the status.
+
+`recompute_attendance` re-derives one Attendance from its day's same-shift punches
+using the SHIFT'S OWN get_attendance (patched calculate_working_hours = last log is
+out + the shift thresholds) and the Saturday override — never hand-rolled. It is
+called by two callers so they can never diverge:
+  * backfill()          — one-time fix for the historical records
+  * heal_on_checkin()   — Employee Checkin after_insert, so late punches self-heal
+"""
+
+import frappe
+from frappe.utils import flt, get_datetime, getdate
+
+# Auto-attendance produces exactly these; On Leave / Holiday / Work From Home / etc.
+# are intentional and must never be touched by the healer.
+HEALABLE_STATUSES = {"Present", "Half Day", "Absent"}
+
+
+def _day_shift_logs(employee, attendance_date, shift):
+	"""Every check-in for this employee ON attendance_date for this shift, chronological.
+
+	Same-date + same-shift scoping is what protects against cross-date mis-linked
+	punches (a next-day punch attached to the wrong Attendance) — those simply are
+	not in this set, so they can never push the out-time into another day."""
+	d = getdate(attendance_date)
+	return frappe.get_all(
+		"Employee Checkin",
+		filters={
+			"employee": employee,
+			"shift": shift,
+			"time": ["between", [f"{d} 00:00:00", f"{d} 23:59:59"]],
+		},
+		fields=[
+			"name", "employee", "log_type", "time", "shift",
+			"shift_start", "shift_end", "skip_auto_attendance",
+		],
+		order_by="time asc",
+	)
+
+
+def _apply_saturday_override(attendance_date, shift, status, working_hours, half_day_status):
+	"""Run the exact Saturday-threshold override used at marking time. Returns
+	(status, half_day_status). Non-Saturday dates are returned unchanged."""
+	from alpinos.attendance_request_automation import validate_saturday_attendance_threshold
+
+	tmp = frappe._dict(
+		status=status,
+		working_hours=working_hours,
+		attendance_date=attendance_date,
+		shift=shift,
+		docstatus=1,
+		half_day_status=half_day_status,
+		leave_application=None,
+		leave_type=None,
+	)
+	validate_saturday_attendance_threshold(tmp, "recompute")
+	return tmp.status, tmp.get("half_day_status")
+
+
+def recompute_attendance(att_name, apply=False):
+	"""Recompute one auto-marked Attendance from its day's same-shift punches.
+
+	Returns a change dict (old/new status, hours, out-time) or None when the record
+	is out of scope. Writes via db_set only when apply=True. Idempotent: re-running
+	on an already-correct record reports changed=False and writes nothing."""
+	att = frappe.db.get_value(
+		"Attendance",
+		att_name,
+		[
+			"name", "employee", "attendance_date", "shift", "status", "half_day_status",
+			"working_hours", "in_time", "out_time", "docstatus", "attendance_request",
+		],
+		as_dict=True,
+	)
+	if not att:
+		return None
+	# Scope: only submitted, auto-marked (no Attendance Request), auto-status records
+	# that have a shift. Manual / regularized / leave records are left alone.
+	if att.docstatus != 1 or att.attendance_request or att.status not in HEALABLE_STATUSES or not att.shift:
+		return None
+
+	logs = _day_shift_logs(att.employee, att.attendance_date, att.shift)
+	if len(logs) < 2:
+		return None  # a single punch cannot yield an out-time
+
+	# Ensure the last-log-as-out patch is bound in this process, then reuse the shift's
+	# own attendance calc so hours + status match normal marking exactly.
+	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
+
+	_apply_checkout_reason_patch()
+	shift = frappe.get_cached_doc("Shift Type", att.shift)
+	log_objs = [frappe._dict(row) for row in logs]
+	status, working_hours, late_entry, early_exit, in_time, out_time = shift.get_attendance(log_objs)
+	status, half_day_status = _apply_saturday_override(
+		att.attendance_date, att.shift, status, working_hours, att.half_day_status
+	)
+
+	def _dt(value):
+		return get_datetime(value) if value else None
+
+	changed = (
+		_dt(att.out_time) != _dt(out_time)
+		or _dt(att.in_time) != _dt(in_time)
+		or att.status != status
+		or flt(att.working_hours, 2) != flt(working_hours, 2)
+	)
+	change = frappe._dict(
+		attendance=att.name,
+		employee=att.employee,
+		date=str(att.attendance_date),
+		old_status=att.status,
+		new_status=status,
+		old_hours=flt(att.working_hours, 2),
+		new_hours=flt(working_hours, 2),
+		old_out=str(att.out_time),
+		new_out=str(out_time),
+		changed=changed,
+	)
+	if changed and apply:
+		frappe.db.set_value(
+			"Attendance",
+			att.name,
+			{
+				"in_time": in_time,
+				"out_time": out_time,
+				"working_hours": working_hours,
+				"status": status,
+				"half_day_status": half_day_status,
+				"late_entry": 1 if late_entry else 0,
+				"early_exit": 1 if early_exit else 0,
+			},
+			update_modified=True,
+		)
+		# Clear the stray "already marked" skips so these punches count normally again.
+		for row in logs:
+			if row.skip_auto_attendance:
+				frappe.db.set_value(
+					"Employee Checkin", row.name, "skip_auto_attendance", 0, update_modified=False
+				)
+	return change
+
+
+# ---------------------------------------------------------------------------
+# Prevention — heal on a late punch (Employee Checkin after_insert)
+# ---------------------------------------------------------------------------
+def heal_on_checkin(doc, method=None):
+	"""If this punch lands on a day that already has an auto-marked Attendance,
+	recompute it so the punch folds in — the fix for the 'skip - already marked'
+	freeze. No-op when the day isn't marked yet (normal marking handles that) or the
+	punch is from an Attendance Request."""
+	if doc.get("from_attendance_request") or not doc.get("shift") or not doc.get("time"):
+		return
+	att_name = frappe.db.get_value(
+		"Attendance",
+		{
+			"employee": doc.employee,
+			"attendance_date": getdate(doc.time),
+			"shift": doc.shift,
+			"docstatus": 1,
+		},
+		"name",
+	)
+	if not att_name:
+		return
+	try:
+		recompute_attendance(att_name, apply=True)
+	except Exception:
+		frappe.log_error(
+			title="Alpinos: attendance heal-on-checkin failed",
+			message=frappe.get_traceback(),
+		)
+
+
+# ---------------------------------------------------------------------------
+# Backfill — one-time fix for the historical records
+# ---------------------------------------------------------------------------
+def _affected_attendance_names(from_date=None, to_date=None, limit=None):
+	"""Auto-marked Attendances whose recorded out-time is EARLIER than the day's last
+	same-shift punch — the true 'last log dropped' signature (independent of linking)."""
+	conditions = [
+		"a.docstatus = 1",
+		"IFNULL(a.attendance_request, '') = ''",
+		"a.status IN ('Present', 'Half Day', 'Absent')",
+	]
+	params = {}
+	if from_date:
+		conditions.append("a.attendance_date >= %(from_date)s")
+		params["from_date"] = from_date
+	if to_date:
+		conditions.append("a.attendance_date <= %(to_date)s")
+		params["to_date"] = to_date
+	where = " AND ".join(conditions)
+	lim = f"LIMIT {int(limit)}" if limit else ""
+	return frappe.db.sql(
+		f"""
+		SELECT a.name
+		FROM `tabAttendance` a
+		JOIN `tabEmployee Checkin` ec
+			ON ec.employee = a.employee AND ec.shift = a.shift
+			AND DATE(ec.time) = a.attendance_date
+		WHERE {where}
+		GROUP BY a.name
+		HAVING a.out_time < MAX(ec.time)
+		ORDER BY a.attendance_date {lim}
+		""",
+		params,
+		as_dict=True,
+	)
+
+
+@frappe.whitelist()
+def backfill(apply=0, from_date=None, to_date=None, limit=None):
+	"""Heal historical records. apply=0 (default) is a DRY RUN — it recomputes and
+	returns exactly what WOULD change, writing nothing. apply=1 applies the fixes.
+
+	  bench --site SITE execute alpinos.attendance_healer.backfill                  # dry run
+	  bench --site SITE execute alpinos.attendance_healer.backfill --kwargs "{'apply':1}"
+	"""
+	apply = int(apply)
+	names = _affected_attendance_names(from_date, to_date, limit)
+
+	changes, applied = [], 0
+	for row in names:
+		change = recompute_attendance(row.name, apply=bool(apply))
+		if change and change.changed:
+			changes.append(change)
+			if apply:
+				applied += 1
+				if applied % 200 == 0:
+					frappe.db.commit()
+	if apply:
+		frappe.db.commit()
+
+	# status-transition summary (e.g. Absent -> Present) for a quick sanity read
+	summary = {}
+	for c in changes:
+		key = f"{c.old_status} -> {c.new_status}"
+		summary[key] = summary.get(key, 0) + 1
+
+	return {
+		"mode": "APPLY" if apply else "DRY-RUN",
+		"scanned": len(names),
+		"changed": len(changes),
+		"applied": applied,
+		"transitions": summary,
+		"sample": changes[:25],
+	}

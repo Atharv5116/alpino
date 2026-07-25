@@ -427,6 +427,12 @@ doc_events = {
 		],
 		"after_insert": "alpinos.attendance_request_automation.populate_attendance_reason_after_insert",
 		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
+	},
+	"Employee Checkin": {
+		# Prevention: a punch that lands on an already auto-marked day re-opens and
+		# recomputes that day's Attendance (first->in, last->out) so late/out-of-order
+		# punches fold in — fixes the "skip - already marked" freeze at the source.
+		"after_insert": "alpinos.attendance_healer.heal_on_checkin"
 	}
 }
 
