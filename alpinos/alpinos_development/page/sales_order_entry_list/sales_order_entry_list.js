@@ -4,8 +4,15 @@ frappe.pages['sales-order-entry-list'].on_page_load = function (wrapper) {
 		title: __('Alpino Sales Orders'),
 		single_column: true,
 	});
-	page.main.html(frappe.render_template('sales_order_entry_list'));
-	new SalesOrderEntryListPage(page);
+	wrapper.__so_list_page = new SalesOrderEntryListPage(page);
+};
+
+// Frappe keeps custom pages cached, so on_page_load runs only once. Without this,
+// navigating back (e.g. after creating an entry) shows a blank/stale cached page until a
+// manual browser refresh. Re-render the body on every show (toolbar buttons are left
+// alone, so they don't duplicate).
+frappe.pages['sales-order-entry-list'].on_page_show = function (wrapper) {
+	if (wrapper.__so_list_page) wrapper.__so_list_page.render_body();
 };
 
 // Route key for alpinos.list_prefs — must stay the exact frappe.pages key.
@@ -110,8 +117,17 @@ class SalesOrderEntryListPage {
 		this._filter_fields = {};
 		this._sort = { field: '', dir: 'desc' };
 		this._columns = SO_LIST_LAYOUTS[so_list_layout_for_user()];
+		this.setup_toolbar(); // page-header buttons: added ONCE, never on re-render
+		this.render_body();
+	}
+
+	// (Re)render the page body + reload the list. Safe to call on every page show so a
+	// cached/blank wrapper is refreshed without a manual browser reload. Does NOT touch the
+	// page-header toolbar (re-adding those buttons would duplicate them).
+	render_body() {
+		this.page.main.html(frappe.render_template('sales_order_entry_list'));
+		this.wrapper = $(this.page.main);
 		this.render_header();
-		this.setup_toolbar();
 		this.setup_filters();
 		// Restore the user's saved view (filters, sort, page size) BEFORE the
 		// first load and before events are bound, so nothing fires mid-restore.
@@ -256,6 +272,10 @@ class SalesOrderEntryListPage {
 	}
 
 	bind_events() {
+		// render_body() calls this again on every page show. Direct handlers below are on
+		// freshly-rendered children (can't duplicate), but the delegated handlers are on the
+		// persistent container, so clear them first via the .solist namespace.
+		this.wrapper.off('.solist');
 		this.wrapper.find('.btn-so-list-apply').on('click', () => {
 			this.start = 0;
 			this._save_view_prefs();
@@ -284,13 +304,13 @@ class SalesOrderEntryListPage {
 				this.load_list();
 			}
 		});
-		this.wrapper.on('click', '.so-list-row', (e) => {
+		this.wrapper.on('click.solist', '.so-list-row', (e) => {
 			if ($(e.target).closest('a,button,input[type="checkbox"]').length) return;
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
 			frappe.set_route('sales-order-entry-view', name);
 		});
-		this.wrapper.on('click', '.so-list-link-btn', (e) => {
+		this.wrapper.on('click.solist', '.so-list-link-btn', (e) => {
 			e.stopPropagation();
 			const $btn = $(e.currentTarget);
 			const so = $btn.data('so');
@@ -299,14 +319,14 @@ class SalesOrderEntryListPage {
 			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
-		this.wrapper.on('change', '.so-list-select-all', (e) => {
+		this.wrapper.on('change.solist', '.so-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
 			this.wrapper.find('.so-list-row-select').prop('checked', checked);
 			this.update_selection();
 		});
-		this.wrapper.on('change', '.so-list-row-select', () => this.update_selection());
+		this.wrapper.on('change.solist', '.so-list-row-select', () => this.update_selection());
 		// Click a sortable header to sort; click again to flip direction.
-		this.wrapper.on('click', '.so-sort-th', (e) => {
+		this.wrapper.on('click.solist', '.so-sort-th', (e) => {
 			const field = $(e.currentTarget).data('sort');
 			if (this._sort.field === field) {
 				this._sort.dir = this._sort.dir === 'asc' ? 'desc' : 'asc';
