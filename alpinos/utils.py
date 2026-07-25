@@ -39,10 +39,14 @@ def get_combined_items(doc):
 		order was confirmed at. Left None for exploded bundle components, which have
 		no saved row and are therefore priced from the buyer catalog as a fallback.
 		"""
-		# Fetch item UOM and name safely
-		res_item = frappe.db.get_value("Item", item_code, ["item_name", "stock_uom", "valuation_rate"], as_dict=True)
+		# Fetch item UOM, name and CURRENT master image safely
+		res_item = frappe.db.get_value("Item", item_code, ["item_name", "stock_uom", "valuation_rate", "image"], as_dict=True)
 		item_name = res_item.get("item_name") if res_item else item_code
 		uom = res_item.get("stock_uom") if res_item else "Nos"
+		# Mirror the on-screen Sales Order View: prefer the live Item-master image so
+		# pictures uploaded/changed after the order was placed still print; the SO Item's
+		# custom_product_image is only a snapshot taken at creation (and may be empty).
+		live_img = (res_item.get("image") if res_item else None) or None
 
 		if source_row is not None:
 			# Carry the values saved on the Sales Order Item verbatim.
@@ -52,12 +56,18 @@ def get_combined_items(doc):
 			offer = flt(source_row.get("custom_offer") or 0)
 			add_disc = flt(source_row.get("custom_additional_discount") or 0)
 			sp = flt(source_row.get("custom_selling_price") or source_row.get("rate") or 0)
-			image = source_row.get("custom_product_image")
+			image = live_img or source_row.get("custom_product_image")
 			# The saved row's own name/uom win (e-com & bundle rows may override the Item master).
 			if source_row.get("item_name"):
 				item_name = source_row.get("item_name")
 			if source_row.get("uom"):
 				uom = source_row.get("uom")
+			# Authoritative net line total straight off the saved row. The discount may be
+			# a Flat/Offer % OR baked into the selling price, so we take the stored amount
+			# rather than recomputing from MRP (which would drop a price-based discount).
+			line_amt = flt(source_row.get("amount"))
+			if not line_amt:
+				line_amt = flt(sp) * flt(qty)
 		else:
 			# Exploded bundle component: no saved price -> derive from the buyer catalog.
 			mrp = 0
@@ -78,7 +88,10 @@ def get_combined_items(doc):
 			item_mrp = flt(res_item.get("valuation_rate")) if res_item else 0
 			offer = flt(parent_row.get("custom_offer") or 0)
 			add_disc = flt(parent_row.get("custom_additional_discount") or 0)
-			image = parent_row.get("custom_product_image")
+			image = live_img or parent_row.get("custom_product_image")
+			# Bundle component has no saved row -> net selling price x qty, less the
+			# parent's offer / additional discount.
+			line_amt = flt(sp) * flt(qty) * (100 - offer) / 100.0 * (100 - add_disc) / 100.0
 
 		if item_code not in combined:
 			combined[item_code] = {
@@ -86,6 +99,7 @@ def get_combined_items(doc):
 				"item_name": item_name,
 				"uom": uom,
 				"qty": 0.0,
+				"amount": 0.0,
 				"custom_item_mrp": item_mrp,
 				"custom_customer_mrp": mrp,
 				"custom_flat_discount": flat,
@@ -95,6 +109,7 @@ def get_combined_items(doc):
 				"custom_product_image": image,
 			}
 		combined[item_code]["qty"] += qty
+		combined[item_code]["amount"] = flt(combined[item_code].get("amount") or 0) + flt(line_amt)
 
 	for r in doc.items:
 		packed = [p for p in (doc.get("packed_items") or []) if p.parent_detail_docname == r.name]
@@ -126,15 +141,10 @@ def get_combined_items(doc):
 		cf = flt(get_box_conversion_factor(code))
 		item_dict["custom_box"] = math.ceil(item_dict["qty"] / cf) if cf else 0
 		item_dict["idx"] = idx
-		# Line amount computed on the SAME basis the print format shows — MRP less the
-		# flat and offer discounts — so this field agrees with the printed Amount column
-		# and with the on-screen Sales Order View (no offer double-application).
-		item_dict["amount"] = flt(
-			flt(item_dict.get("custom_customer_mrp")) * flt(item_dict["qty"])
-			* (1 - flt(item_dict.get("custom_flat_discount")) / 100.0)
-			* (1 - flt(item_dict.get("custom_offer")) / 100.0),
-			2,
-		)
+		# Amount = the order's own stored net line total (accumulated above), NOT a
+		# recompute from MRP x %s — the discount can live in the selling price, which a
+		# MRP-based recompute would ignore and print at gross list value.
+		item_dict["amount"] = flt(item_dict.get("amount") or 0, 2)
 		item_dict["custom_item_tax"] = 0
 		result.append(frappe._dict(item_dict))
 
