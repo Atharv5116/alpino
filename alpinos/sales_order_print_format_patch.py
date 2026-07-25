@@ -37,10 +37,11 @@ NEW_DOCTYPE = "Buyer Master"
 #      GST), so it matches the backend / SO view amount exactly; a MRP recompute would
 #      drop a price-based discount and print the gross list value.
 #
-# The totals FOOTER (Sub Total incl GST -> Rounding -> Cash Disc -> Grand Total) is
-# rewritten by _rewrite_so_totals_footer() below, NOT by a tuple here: it has churned
-# through several layouts, and a single regex keyed on stable anchors converts every
-# prior variant idempotently (a chain of string tuples would false-"diverge" instead).
+# The totals FOOTER (Sub Total incl GST -> Cash Disc -> Grand Total, matching the
+# reference PDF) is rewritten by _rewrite_so_totals_footer() below, NOT by a tuple here:
+# it has churned through several layouts, and a single regex keyed on stable anchors
+# converts every prior variant idempotently (a chain of string tuples would false-
+# "diverge" instead).
 SALES_ORDER_PF_REWRITES = [
 	(
 		"{% set raw_bill = doc.address_display or '' %}",
@@ -64,24 +65,25 @@ SALES_ORDER_PF_REWRITES = [
 	),
 ]
 
-# Final totals footer: Sub Total (GST-inclusive, = sum of line amounts) -> Rounding
-# Adjustment (computed so it always ties out) -> Cash Disc -> Grand Total. Marker used
-# to detect the already-final state and no-op.
-_FOOTER_V_MARKER = "_round = frappe.utils.flt(_gt - "
-
+# Final totals footer matches the reference PDF: Sub Total (GST-inclusive, = sum of line
+# amounts) -> Cash Disc -> Grand Total. No separate "Total GST" or "Rounding Adjustment"
+# row — Grand Total may sit a paisa or two above Sub Total from GST rounding, exactly as
+# in the reference.
 _FOOTER_NEW_BLOCK = (
 	"<tr><td colspan='8' class='right bold'>Sub Total</td>"
 	"<td class='right'>{{ frappe.utils.fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>\n    "
-	"{% set _gt = frappe.utils.flt(doc.rounded_total or doc.grand_total or 0) %}"
-	"{% set _cd = frappe.utils.flt(doc.custom_cash_discount_amount or 0) %}"
-	"{% set _round = frappe.utils.flt(_gt - (frappe.utils.flt(_amt_ns.sub) - _cd), 2) %}"
-	"{% if _round %}<tr><td colspan='8' class='right bold'>Rounding Adjustment</td>"
-	"<td class='right'>{{ frappe.utils.fmt_money(_round, currency=doc.currency) }}</td></tr>{% endif %}\n    "
+)
+
+# Already-final when the Sub Total row is immediately followed by the Cash Disc row (also
+# true of the ORIGINAL 3-row footer, so those are correctly left untouched).
+_FOOTER_DONE = (
+	"fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>\n    "
+	"<tr><td colspan='8' class='right bold'>Cash Disc. (INR)</td>"
 )
 
 # From the Sub Total row (label "Sub Total" or "Sub Total (Taxable)") through everything
-# up to — but not including — the Cash Disc row. Covers the original footer and the
-# earlier "Sub Total (Taxable) + Total GST + Rounding" variant.
+# up to — but not including — the Cash Disc row. Covers every prior variant (original,
+# "Sub Total (Taxable) + Total GST", and the computed-Rounding one).
 _FOOTER_RE = re.compile(
 	r"<tr><td colspan='8' class='right bold'>Sub Total[^<]*</td>.*?"
 	r"(?=<tr><td colspan='8' class='right bold'>Cash Disc\. \(INR\))",
@@ -90,21 +92,21 @@ _FOOTER_RE = re.compile(
 
 
 def _rewrite_so_totals_footer():
-	"""Rewrite the 'Sales Order' totals footer to: Sub Total (GST-inclusive) -> Rounding
-	-> Cash Disc -> Grand Total, dropping the separate 'Sub Total (Taxable)' + 'Total GST'
-	rows. Idempotent (no-op once the computed-rounding marker is present) and handles both
-	the original and the Taxable/GST footer variants via one regex."""
+	"""Rewrite the 'Sales Order' totals footer to: Sub Total (GST-inclusive) -> Cash Disc
+	-> Grand Total, dropping any 'Sub Total (Taxable)' / 'Total GST' / 'Rounding Adjustment'
+	rows a prior layout inserted. Idempotent (no-op once Sub Total sits directly before Cash
+	Disc) and collapses every prior variant via one regex."""
 	if not frappe.db.exists("Print Format", PF_NAME):
 		return
 	html = frappe.db.get_value("Print Format", PF_NAME, "html") or ""
-	if not html or _FOOTER_V_MARKER in html:
+	if not html or _FOOTER_DONE in html:
 		return
 	new_html, n = _FOOTER_RE.subn(_FOOTER_NEW_BLOCK, html, count=1)
 	if n:
 		frappe.db.set_value("Print Format", PF_NAME, "html", new_html)
 		frappe.db.commit()
 		frappe.logger("alpinos").info(
-			"Patched '%s' totals footer: Sub Total (incl GST) + computed rounding." % PF_NAME
+			"Patched '%s' totals footer: Sub Total (incl GST) -> Cash Disc -> Grand Total." % PF_NAME
 		)
 
 
