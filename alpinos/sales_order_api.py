@@ -371,9 +371,12 @@ def _calculate_sales_order_line_values(item):
 	additional_discount_pct = flt(item.get("custom_additional_discount"))
 	gst_pct = flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0)
 
-	selling_price = flt(item.get("custom_selling_price") or item.get("selling_price"))
+	# Round the selling price to 2 decimals up front: Currency fields DISPLAY 2 dp but
+	# can store more, so a computed price like 49.0033 shows as "49.00" yet makes
+	# "49.00 x qty" look wrong in the amount. Pricing is a 2-dp figure — keep it that way.
+	selling_price = flt(item.get("custom_selling_price") or item.get("selling_price"), 2)
 	if not selling_price and mrp:
-		selling_price = mrp * (1 - flat_discount / 100.0) * (1 - offer_pct / 100.0)
+		selling_price = flt(mrp * (1 - flat_discount / 100.0) * (1 - offer_pct / 100.0), 2)
 
 	if not qty or not selling_price:
 		return {
@@ -1018,7 +1021,7 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 			# price is lost and the next fetch falls back to MRP.
 			upsert_buyer_catalog_selling_rate(
 				customer, item_code,
-				flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0),
+				flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0, 2),
 				mrp=flt(item.get("custom_customer_mrp")),
 			)
 
@@ -1030,7 +1033,7 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 			"description": item.get("description") or "",
 			"custom_box": custom_box,
 			"custom_customer_mrp": flt(item.get("custom_customer_mrp")),
-			"custom_selling_price": flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0),
+			"custom_selling_price": flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0, 2),
 			"custom_gst_percent": flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0),
 			"custom_flat_discount": calc["flat_discount"],
 			"custom_offer": item.get("custom_offer") or "",
