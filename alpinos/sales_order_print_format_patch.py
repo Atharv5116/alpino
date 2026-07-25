@@ -1,3 +1,5 @@
+import re
+
 import frappe
 
 PF_NAME = "Sales Order"
@@ -30,12 +32,15 @@ NEW_DOCTYPE = "Buyer Master"
 #      back to the original sources.
 # 4)   Grand Total: show the rounded total (falls back to grand_total when rounding
 #      is disabled) to match the amount customers expect on the printed order.
-# 5)   Item Amount: print the order's own stored net line total (row.amount) instead
-#      of recomputing MRP x (1-Flat%) x (1-Offer%). The discount can be baked into the
-#      selling price with Flat/Offer both 0, in which case the recompute printed the
-#      GROSS list value and the Sub Total ran far above the Grand Total.
-# 6)   Totals: insert a "Total GST" (and rounding) row so Sub Total (taxable) + GST +
-#      rounding = Grand Total, i.e. the footer actually reconciles.
+# 5)   Item Amount: print the order's own stored line total (row.amount) instead of
+#      recomputing MRP x (1-Flat%) x (1-Offer%). row.amount is GST-INCLUSIVE (net + its
+#      GST), so it matches the backend / SO view amount exactly; a MRP recompute would
+#      drop a price-based discount and print the gross list value.
+#
+# The totals FOOTER (Sub Total incl GST -> Rounding -> Cash Disc -> Grand Total) is
+# rewritten by _rewrite_so_totals_footer() below, NOT by a tuple here: it has churned
+# through several layouts, and a single regex keyed on stable anchors converts every
+# prior variant idempotently (a chain of string tuples would false-"diverge" instead).
 SALES_ORDER_PF_REWRITES = [
 	(
 		"{% set raw_bill = doc.address_display or '' %}",
@@ -57,11 +62,50 @@ SALES_ORDER_PF_REWRITES = [
 		"{% set _mrp = frappe.utils.flt(row.custom_customer_mrp or 0) %}{% set _qty = frappe.utils.flt(row.qty or 0) %}{% set _flatpct = frappe.utils.flt(row.custom_flat_discount or 0) %}{% set _offerpct = frappe.utils.flt(row.custom_offer or 0) %}{% set _list = _mrp * _qty %}{% set _line_amt = frappe.utils.flt(_list * (100 - _flatpct) / 100.0 * (100 - _offerpct) / 100.0) %}{% set _amt_ns.sub = frappe.utils.flt(_amt_ns.sub) + _line_amt %}{{ frappe.utils.fmt_money(_line_amt, currency=doc.currency) }}",
 		"{% set _line_amt = frappe.utils.flt(row.amount or 0) %}{% set _amt_ns.sub = frappe.utils.flt(_amt_ns.sub) + _line_amt %}{{ frappe.utils.fmt_money(_line_amt, currency=doc.currency) }}",
 	),
-	(
-		"<tr><td colspan='8' class='right bold'>Sub Total</td><td class='right'>{{ frappe.utils.fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>\n    <tr><td colspan='8' class='right bold'>Cash Disc. (INR)</td>",
-		"<tr><td colspan='8' class='right bold'>Sub Total (Taxable)</td><td class='right'>{{ frappe.utils.fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>\n    <tr><td colspan='8' class='right bold'>Total GST</td><td class='right'>{{ frappe.utils.fmt_money(doc.total_taxes_and_charges or 0, currency=doc.currency) }}</td></tr>\n    {% if frappe.utils.flt(doc.rounding_adjustment or 0) %}<tr><td colspan='8' class='right bold'>Rounding Adjustment</td><td class='right'>{{ frappe.utils.fmt_money(doc.rounding_adjustment or 0, currency=doc.currency) }}</td></tr>{% endif %}\n    <tr><td colspan='8' class='right bold'>Cash Disc. (INR)</td>",
-	),
 ]
+
+# Final totals footer: Sub Total (GST-inclusive, = sum of line amounts) -> Rounding
+# Adjustment (computed so it always ties out) -> Cash Disc -> Grand Total. Marker used
+# to detect the already-final state and no-op.
+_FOOTER_V_MARKER = "_round = frappe.utils.flt(_gt - "
+
+_FOOTER_NEW_BLOCK = (
+	"<tr><td colspan='8' class='right bold'>Sub Total</td>"
+	"<td class='right'>{{ frappe.utils.fmt_money(_amt_ns.sub, currency=doc.currency) }}</td></tr>\n    "
+	"{% set _gt = frappe.utils.flt(doc.rounded_total or doc.grand_total or 0) %}"
+	"{% set _cd = frappe.utils.flt(doc.custom_cash_discount_amount or 0) %}"
+	"{% set _round = frappe.utils.flt(_gt - (frappe.utils.flt(_amt_ns.sub) - _cd), 2) %}"
+	"{% if _round %}<tr><td colspan='8' class='right bold'>Rounding Adjustment</td>"
+	"<td class='right'>{{ frappe.utils.fmt_money(_round, currency=doc.currency) }}</td></tr>{% endif %}\n    "
+)
+
+# From the Sub Total row (label "Sub Total" or "Sub Total (Taxable)") through everything
+# up to — but not including — the Cash Disc row. Covers the original footer and the
+# earlier "Sub Total (Taxable) + Total GST + Rounding" variant.
+_FOOTER_RE = re.compile(
+	r"<tr><td colspan='8' class='right bold'>Sub Total[^<]*</td>.*?"
+	r"(?=<tr><td colspan='8' class='right bold'>Cash Disc\. \(INR\))",
+	re.DOTALL,
+)
+
+
+def _rewrite_so_totals_footer():
+	"""Rewrite the 'Sales Order' totals footer to: Sub Total (GST-inclusive) -> Rounding
+	-> Cash Disc -> Grand Total, dropping the separate 'Sub Total (Taxable)' + 'Total GST'
+	rows. Idempotent (no-op once the computed-rounding marker is present) and handles both
+	the original and the Taxable/GST footer variants via one regex."""
+	if not frappe.db.exists("Print Format", PF_NAME):
+		return
+	html = frappe.db.get_value("Print Format", PF_NAME, "html") or ""
+	if not html or _FOOTER_V_MARKER in html:
+		return
+	new_html, n = _FOOTER_RE.subn(_FOOTER_NEW_BLOCK, html, count=1)
+	if n:
+		frappe.db.set_value("Print Format", PF_NAME, "html", new_html)
+		frappe.db.commit()
+		frappe.logger("alpinos").info(
+			"Patched '%s' totals footer: Sub Total (incl GST) + computed rounding." % PF_NAME
+		)
 
 
 def _apply_sales_order_pf_rewrites():
@@ -132,6 +176,10 @@ def execute():
 	# and show the rounded grand total. Runs before the bundle-loop early-returns
 	# below so it always applies.
 	_apply_sales_order_pf_rewrites()
+
+	# Collapse the totals footer to Sub Total (incl GST) -> Rounding -> Cash Disc ->
+	# Grand Total. Handled separately from the tuple rewrites (see note above).
+	_rewrite_so_totals_footer()
 
 	if not frappe.db.exists("Print Format", PF_NAME):
 		return
