@@ -61,7 +61,7 @@ def get_combined_items(doc):
 		# Fetch item UOM, name, CURRENT master image and variant parent safely
 		res_item = frappe.db.get_value(
 			"Item", item_code,
-			["item_name", "stock_uom", "valuation_rate", "image", "variant_of", "custom_gst_percent"],
+			["item_name", "stock_uom", "valuation_rate", "image", "variant_of"],
 			as_dict=True,
 		)
 		item_name = res_item.get("item_name") if res_item else item_code
@@ -86,22 +86,15 @@ def get_combined_items(doc):
 				item_name = source_row.get("item_name")
 			if source_row.get("uom"):
 				uom = source_row.get("uom")
-			# GST-INCLUSIVE line total straight off the saved row (net amount + its GST),
-			# so the printed Amount equals what the backend / SO view shows. The discount may
-			# be a Flat/Offer % OR baked into the selling price, so we take the stored figures
-			# rather than recomputing from MRP (which would drop a price-based discount).
-			_net = flt(source_row.get("amount"))
-			_tax = flt(source_row.get("custom_item_tax"))
-			if not _tax:
-				# Older/imported rows may not store per-line GST — derive it from the rate %
-				# (line's own field first, then the Item master's GST %).
-				_gstp = flt(source_row.get("custom_gst_percent")) or (
-					flt(res_item.get("custom_gst_percent")) if res_item else 0
-				)
-				_tax = flt(_net * _gstp / 100.0, 2)
-			line_amt = _net + _tax
+			# Line total = the order's own selling price x qty. custom_selling_price is the
+			# per-unit GST-INCLUSIVE price (MRP incl GST less the discount, OR the price entered
+			# directly), so this equals the reference PDF's Amount and handles a price-baked
+			# discount. Using it directly — NOT the stored net amount (rate x qty) — avoids the
+			# net-rate rounding that rate x qty amplifies by qty (46.67 x 120 = 5600.40 vs the
+			# clean 49 x 120 = 5880.00).
+			line_amt = flt(flt(sp) * flt(qty), 2)
 			if not line_amt:
-				line_amt = flt(sp) * flt(qty)
+				line_amt = flt(source_row.get("amount"))
 		else:
 			# Exploded bundle component: no saved price -> derive from the buyer catalog.
 			mrp = 0
@@ -175,9 +168,9 @@ def get_combined_items(doc):
 		cf = flt(get_box_conversion_factor(code))
 		item_dict["custom_box"] = math.ceil(item_dict["qty"] / cf) if cf else 0
 		item_dict["idx"] = idx
-		# Amount = the order's own stored GST-inclusive line total (net + its GST),
-		# accumulated above — matches the backend / SO view amount exactly, not a recompute
-		# from MRP x %s (which would ignore a price-based discount and print gross list value).
+		# Amount = the order's own selling price x qty (accumulated above), GST-inclusive —
+		# matches the reference PDF; NOT rate x qty (whose per-unit rounding the qty amplifies)
+		# and NOT MRP x %s (which would print gross list value on a price-based discount).
 		item_dict["amount"] = flt(item_dict.get("amount") or 0, 2)
 		item_dict["custom_item_tax"] = 0
 		result.append(frappe._dict(item_dict))
