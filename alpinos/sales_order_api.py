@@ -429,6 +429,65 @@ def _apply_cash_discount(doc):
 	doc.additional_discount_percentage = cash_discount
 
 
+def _apply_clean_gst_amounts(doc):
+	"""Re-derive each line's amount from `selling_price x qty` rounded ONCE, instead of
+	ERPNext's `rate x qty` where the 2-dp net rate x qty leaves stray paise (46.67 x 120 =
+	5600.40 vs the clean 49 x 120 / 1.05 = 5600.00). Rewrites net amount / rate /
+	custom_item_tax on every row and recomputes the doc totals (net_total, the On-Net-Total
+	GST rows, grand_total, rounded_total). Called AFTER calculate_taxes_and_totals so these
+	clean values are what actually gets saved. Idempotent."""
+	net_total = 0.0
+	for row in doc.get("items") or []:
+		# Use the SAME engine the entry page uses — it applies flat/offer/additional
+		# discount + GST and rounds the net ONCE (round(gross/1.05,2) = 5600.00), unlike
+		# ERPNext's rate x qty (46.67 x 120 = 5600.40). Do NOT reinvent the gross here or a
+		# discount gets missed.
+		calc = _calculate_sales_order_line_values(row)
+		if not calc["rate"] and not calc["amount"]:
+			# nothing to re-derive from -> keep whatever ERPNext computed for this row
+			net_total = flt(net_total + flt(row.net_amount), 2)
+			continue
+		net = flt(calc["amount"])
+		rate = flt(calc["rate"])
+		row.rate = row.net_rate = row.base_rate = row.base_net_rate = rate
+		row.price_list_rate = row.base_price_list_rate = rate
+		row.amount = row.net_amount = row.base_amount = row.base_net_amount = net
+		if calc.get("gst_amount") is not None:
+			row.custom_item_tax = flt(calc.get("gst_amount"))
+		net_total = flt(net_total + net, 2)
+
+	doc.total = doc.base_total = doc.net_total = doc.base_net_total = net_total
+
+	# Recompute the On-Net-Total GST rows (IGST 5%, or CGST 2.5% + SGST 2.5%) on the clean
+	# net_total; any other charge type keeps its amount.
+	running = net_total
+	total_tax = 0.0
+	for tax in doc.get("taxes") or []:
+		if tax.charge_type == "On Net Total" and flt(tax.rate):
+			ta = flt(net_total * flt(tax.rate) / 100.0, 2)
+		else:
+			ta = flt(tax.tax_amount)
+		tax.tax_amount = tax.base_tax_amount = ta
+		tax.tax_amount_after_discount_amount = ta
+		tax.base_tax_amount_after_discount_amount = ta
+		running = flt(running + ta, 2)
+		tax.total = tax.base_total = running
+		total_tax = flt(total_tax + ta, 2)
+
+	doc.total_taxes_and_charges = doc.base_total_taxes_and_charges = total_tax
+	grand = flt(net_total + total_tax - flt(doc.get("discount_amount")), 2)
+	doc.grand_total = doc.base_grand_total = grand
+
+	# Preserve the order's rounding behaviour (disable_rounded_total => no rounding).
+	if doc.get("disable_rounded_total"):
+		doc.rounded_total = doc.base_rounded_total = 0
+		doc.rounding_adjustment = doc.base_rounding_adjustment = 0
+	else:
+		rt = flt(round(grand), 2)
+		doc.rounded_total = doc.base_rounded_total = rt
+		doc.rounding_adjustment = doc.base_rounding_adjustment = flt(rt - grand, 2)
+
+
 def validate_sales_order_pricing(doc, method=None):
 	"""Keep saved Sales Order rows aligned with the custom entry-page calculation."""
 	_so_tax_logger().info(
@@ -458,6 +517,9 @@ def validate_sales_order_pricing(doc, method=None):
 
 	if hasattr(doc, "calculate_taxes_and_totals"):
 		doc.calculate_taxes_and_totals()
+	# Override ERPNext's rate x qty amounts with selling_price x qty rounded once, so the
+	# stored net/tax/totals carry no net-rate rounding. Runs on every save -> stays clean.
+	_apply_clean_gst_amounts(doc)
 	doc.custom_cash_discount_amount = flt(doc.get("discount_amount"))
 	_so_tax_logger().info(
 		"[validate] done so=%s template=%s tax_rows=%s total_taxes=%s grand_total=%s",
