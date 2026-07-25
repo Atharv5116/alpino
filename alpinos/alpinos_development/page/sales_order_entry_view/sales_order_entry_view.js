@@ -752,12 +752,14 @@ class SalesOrderEntryView {
 				const rmk = this._has(it, 'custom_remarks') && String(it.custom_remarks).trim() !== ''
 					? this._esc(it.custom_remarks)
 					: '—';
-				const amt = this._has(it, 'amount')
-					? format_currency(
-							flt(it.amount) + flt(it.custom_item_tax || 0),
-							rowCur
-					  )
-					: '—';
+				// Amount = selling price x qty (GST-inclusive), matching the SO PDF. Using the
+				// per-unit price directly avoids the net-rate rounding that amount = rate x qty
+				// amplifies by qty (46.67 x 120 = 5600.40 -> 5880.40 vs 49 x 120 = 5880.00).
+				const amt = this._has(it, 'custom_selling_price')
+					? format_currency(flt(it.custom_selling_price) * flt(it.qty), rowCur)
+					: (this._has(it, 'amount')
+						? format_currency(flt(it.amount) + flt(it.custom_item_tax || 0), rowCur)
+						: '—');
 				let remTd = '';
 				if (show_remaining) {
 					const rem = flt(remaining_map[it.item_code] || 0);
