@@ -16,8 +16,8 @@ sub-paise selling price (there shouldn't be any) is rounded too, and the buyer c
 selling_rate is rounded.
 
 DRY-RUN by default. Preview:  bench --site SITE execute alpinos.round_so_selling_prices.run
-Commit:  bench --site SITE execute alpinos.round_so_selling_prices.run --kwargs "{'commit': True}"
-Inspect one order:  bench --site SITE execute alpinos.round_so_selling_prices.diagnose --kwargs "{'name': 'SOR-...'}"
+Commit:  bench --site SITE execute alpinos.round_so_selling_prices.run --kwargs '{"commit": true}'
+Inspect one order:  bench --site SITE execute alpinos.round_so_selling_prices.diagnose --kwargs '{"name": "SOR-..."}'
 
 Only orders whose stored amount actually differs from the recompute are touched; clean
 orders are skipped and never rewritten.
