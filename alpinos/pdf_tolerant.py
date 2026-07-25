@@ -19,16 +19,48 @@ Wired via override_whitelisted_methods on download_pdf.
 
 import base64
 import mimetypes
+import os
 import re
 
 import frappe
 
 _patched = False
 
-# <img ... src="URL" ...>
-_IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*["\'])([^"\']+)(["\'])', re.IGNORECASE)
+# a whole <img ...> tag, and the src="..." attribute inside one
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_SRC_ATTR_RE = re.compile(r'\bsrc\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
 # the frappe file path inside a (possibly absolute) URL
 _FILE_PATH_RE = re.compile(r"(/private/files/[^\s\"'?#]+|/files/[^\s\"'?#]+)")
+
+
+def _read_file_bytes(file_url):
+	"""Return the raw bytes for a frappe file URL, or None if it can't be read.
+	Tries the File doc first (handles private + DB-stored content), then falls back
+	to a direct disk read (the File doc may be missing while the file still exists,
+	or vice versa)."""
+	# 1) via the File doc
+	try:
+		name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+		if name:
+			content = frappe.get_doc("File", name).get_content()
+			if content:
+				return content
+	except Exception:
+		pass
+	# 2) direct disk read as a fallback
+	try:
+		if file_url.startswith("/private/files/"):
+			path = frappe.get_site_path("private", "files", file_url.split("/private/files/", 1)[1])
+		elif file_url.startswith("/files/"):
+			path = frappe.get_site_path("public", "files", file_url.split("/files/", 1)[1])
+		else:
+			return None
+		if os.path.isfile(path):
+			with open(path, "rb") as f:
+				return f.read()
+	except Exception:
+		pass
+	return None
 
 
 def _data_uri_for(file_url, cache):
@@ -37,41 +69,55 @@ def _data_uri_for(file_url, cache):
 	if file_url in cache:
 		return cache[file_url]
 	result = None
-	try:
-		name = frappe.db.get_value("File", {"file_url": file_url}, "name")
-		if name:
-			content = frappe.get_doc("File", name).get_content()
-			if content:
-				if isinstance(content, str):
-					content = content.encode("utf-8", "ignore")
-				mime = mimetypes.guess_type(file_url)[0] or "image/png"
-				result = "data:%s;base64,%s" % (mime, base64.b64encode(content).decode())
-	except Exception:
-		result = None
+	content = _read_file_bytes(file_url)
+	if content:
+		if isinstance(content, str):
+			content = content.encode("utf-8", "ignore")
+		mime = mimetypes.guess_type(file_url)[0] or "image/png"
+		result = "data:%s;base64,%s" % (mime, base64.b64encode(content).decode())
 	cache[file_url] = result
 	return result
 
 
-def _inline_local_images(html):
-	"""Replace <img src> pointing to a local frappe file (public OR private) with
-	an inline base64 data URI so wkhtmltopdf renders it without an HTTP fetch."""
+def _process_images(html):
+	"""Make every <img> safe for wkhtmltopdf so a bad image can never fail the PDF:
+
+	* local frappe file (public OR private) -> inline it as a base64 data URI, so no
+	  HTTP fetch is needed (private files aren't reachable from wkhtmltopdf's session);
+	* local frappe file that can't be read (deleted / missing File doc) -> DROP the
+	  <img> tag, since an unreachable link is exactly what triggers the
+	  "broken image links" failure;
+	* anything else (already-inlined data: URIs, genuinely remote URLs) -> left as-is
+	  and covered by the load-error-handling=ignore option below.
+	"""
 	if not html or "<img" not in html:
 		return html
 	cache = {}
+	dropped = []
 
 	def repl(m):
-		src = m.group(2)
+		tag = m.group(0)
+		sm = _SRC_ATTR_RE.search(tag)
+		if not sm:
+			return tag
+		src = sm.group(1)
 		if src.startswith("data:"):
-			return m.group(0)
+			return tag
 		path = _FILE_PATH_RE.search(src)
 		if not path:
-			return m.group(0)
+			return tag  # not a local frappe file; leave it for load-error-handling
 		data_uri = _data_uri_for(path.group(1), cache)
-		if not data_uri:
-			return m.group(0)
-		return m.group(1) + data_uri + m.group(3)
+		if data_uri:
+			return tag[: sm.start(1)] + data_uri + tag[sm.end(1) :]
+		dropped.append(src)
+		return ""  # broken/unreadable local image -> drop so the PDF still builds
 
-	return _IMG_SRC_RE.sub(repl, html)
+	out = _IMG_TAG_RE.sub(repl, html)
+	if dropped:
+		frappe.logger("alpinos").info(
+			"PDF: skipped %d broken image link(s): %s" % (len(dropped), ", ".join(dropped[:5]))
+		)
+	return out
 
 
 def _patch_pdf_once():
@@ -86,7 +132,7 @@ def _patch_pdf_once():
 
 	def prepare_options(html, options):
 		html, options = _orig_prepare(html, options)
-		html = _inline_local_images(html)
+		html = _process_images(html)
 		# ignore = keep going if an image / media resource still can't be fetched.
 		options.setdefault("load-error-handling", "ignore")
 		options.setdefault("load-media-error-handling", "ignore")
