@@ -68,10 +68,12 @@ def diagnose(name):
 	}
 
 
-def run(commit=False, limit=None, names=None):
+def run(commit=False, limit=None, names=None, full=False):
 	from alpinos.sales_order_api import _apply_clean_gst_amounts
 
 	commit = str(commit).lower() in ("1", "true", "yes") if isinstance(commit, str) else bool(commit)
+	full = str(full).lower() in ("1", "true", "yes") if isinstance(full, str) else bool(full)
+	cap = 100000 if full else 25
 	targeted = bool(names)
 	if names:
 		if isinstance(names, str):
@@ -101,9 +103,14 @@ def run(commit=False, limit=None, names=None):
 		orders_changed += 1
 		lines_changed += len(changed)
 		for r in changed:
-			if len(line_samples) < 25:
-				line_samples.append((name, r.item_code, before_amt.get(r.name, 0), flt(r.amount)))
-		if len(order_samples) < 25:
+			if len(line_samples) < cap:
+				# stored NET amount old -> new, and the GST-INCLUSIVE amount shown on the
+				# screen/PDF (selling_price x qty) so it can be cross-checked with the view.
+				incl = flt(flt(r.custom_selling_price) * flt(r.qty), 2)
+				line_samples.append(
+					(name, r.item_code, before_amt.get(r.name, 0), flt(r.amount), incl)
+				)
+		if len(order_samples) < cap:
 			order_samples.append((name, doc.docstatus, before_grand, after_grand))
 
 		if commit:
@@ -122,7 +129,8 @@ def run(commit=False, limit=None, names=None):
 		"orders_scanned": len(names),
 		"orders_changed": orders_changed,
 		"lines_changed": lines_changed,
-		"line_samples": line_samples,      # (order, item, old_amount -> new_amount)
+		# (order, item, old_net_amount, new_net_amount, inclusive_amount = selling_price x qty)
+		"line_samples": line_samples,
 		"order_samples": order_samples,    # (order, docstatus, old_grand -> new_grand)
 	}
 	frappe.logger("alpinos").info("round_so_selling_prices: %s", result)
