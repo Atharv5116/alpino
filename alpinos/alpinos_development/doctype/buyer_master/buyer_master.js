@@ -134,8 +134,16 @@ frappe.ui.form.on("Buyer Address", {
 	is_primary(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
 		if (row.is_primary) {
+			// One Primary (billing) PER SITE — a Buyer Master can host several sites,
+			// each with its own billing row, so multiple primaries are allowed as long
+			// as they belong to different sites. Only clear other primaries that share
+			// THIS row's Site Name (blank counts as its own single site).
+			const site = (row.site_name || "").trim().toLowerCase();
 			(frm.doc.addresses || []).forEach((r) => {
-				if (r.name && r.name !== row.name && cint(r.is_primary)) {
+				if (
+					r.name && r.name !== row.name && cint(r.is_primary) &&
+					(r.site_name || "").trim().toLowerCase() === site
+				) {
 					frappe.model.set_value(r.doctype, r.name, "is_primary", 0);
 				}
 			});

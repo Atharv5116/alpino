@@ -271,13 +271,13 @@
    "label": "Combine Product Bundles"
   },
   {
-   "description": "The row marked Primary is used as the Billing Address. Rows with Shipping checked are used as Shipping Addresses.",
+   "description": "Each Site's Primary row is its Billing Address, and its Shipping rows are its Shipping Addresses. A buyer can host several sites, so you can mark one Primary per Site (give each site a Site Name).",
    "fieldname": "address_section",
    "fieldtype": "Section Break",
    "label": "Billing & Shipping Addresses"
   },
   {
-   "description": "✔ Primary = Billing Address   ✔ Shipping = Shipping Address",
+   "description": "✔ Primary = Billing Address (one per Site)   ✔ Shipping = Shipping Address",
    "fieldname": "addresses",
    "fieldtype": "Table",
    "label": "Addresses",
@@ -445,7 +445,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-19 12:00:00.000000",
+ "modified": "2026-07-25 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Buyer Master",
