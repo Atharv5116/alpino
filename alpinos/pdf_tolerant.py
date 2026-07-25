@@ -21,6 +21,7 @@ import base64
 import mimetypes
 import os
 import re
+from html import unescape as html_unescape
 from urllib.parse import unquote
 
 import frappe
@@ -40,13 +41,16 @@ _FILE_PATH_RE = re.compile(r"(/(?:private/)?files/[^?#]+)")
 def _read_file_bytes(file_url):
 	"""Return the raw bytes for a frappe file URL, or None if it can't be read.
 	Tries the File doc first (handles private + DB-stored content), then a direct
-	disk read (the File doc may be missing while the file still exists). The URL may
-	arrive percent-encoded (…/Dark%20Chocolate…) or with literal spaces, and the
-	stored File.file_url uses literal spaces, so try both forms."""
-	candidates = [file_url]
-	decoded = unquote(file_url)
-	if decoded != file_url:
-		candidates.append(decoded)
+	disk read (the File doc may be missing while the file still exists). The path
+	pulled out of the rendered <img src> may be HTML-escaped (Jinja turns '&' into
+	'&amp;') and/or percent-encoded ('%20'), while the stored File.file_url keeps the
+	literal '&' and spaces — so try the raw value plus its HTML-unescaped and
+	URL-decoded variants."""
+	candidates = []
+	for v in (file_url, html_unescape(file_url)):
+		for w in (v, unquote(v)):
+			if w not in candidates:
+				candidates.append(w)
 	# 1) via the File doc (raw + url-decoded)
 	for fu in candidates:
 		try:
