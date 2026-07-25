@@ -38,21 +38,64 @@ _SRC_ATTR_RE = re.compile(r'\bsrc\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
 _FILE_PATH_RE = re.compile(r"(/(?:private/)?files/[^?#]+)")
 
 
-def _read_file_bytes(file_url):
-	"""Return the raw bytes for a frappe file URL, or None if it can't be read.
-	Tries the File doc first (handles private + DB-stored content), then a direct
-	disk read (the File doc may be missing while the file still exists). The path
-	pulled out of the rendered <img src> may be HTML-escaped (Jinja turns '&' into
-	'&amp;') and/or percent-encoded ('%20'), while the stored File.file_url keeps the
-	literal '&' and spaces — so try the raw value plus its HTML-unescaped and
-	URL-decoded variants."""
-	candidates = []
+def _url_variants(file_url):
+	"""Every form a frappe file URL might take between the stored File.file_url and the
+	value pulled out of a rendered <img src>: raw, HTML-unescaped ('&amp;'->'&') and
+	URL-decoded ('%20'->' '), in priority order. The stored File.file_url keeps the
+	literal '&' and spaces, while Jinja autoescape / URL-encoding mangle them."""
+	variants = []
 	for v in (file_url, html_unescape(file_url)):
 		for w in (v, unquote(v)):
-			if w not in candidates:
-				candidates.append(w)
-	# 1) via the File doc (raw + url-decoded)
-	for fu in candidates:
+			if w and w not in variants:
+				variants.append(w)
+	return variants
+
+
+def _disk_path(file_url):
+	"""Local filesystem path for a /files or /private/files URL, else None."""
+	if file_url.startswith("/private/files/"):
+		return frappe.get_site_path("private", "files", file_url.split("/private/files/", 1)[1])
+	if file_url.startswith("/files/"):
+		return frappe.get_site_path("public", "files", file_url.split("/files/", 1)[1])
+	return None
+
+
+def _file_url_exists(file_url):
+	"""True if the URL resolves to a real File doc or an on-disk file (trying every
+	name variant). Cheaper than reading the bytes — used to pick a working image
+	among fallbacks without decoding each candidate."""
+	for fu in _url_variants(file_url):
+		try:
+			if frappe.db.exists("File", {"file_url": fu}):
+				return True
+		except Exception:
+			pass
+		try:
+			p = _disk_path(fu)
+			if p and os.path.isfile(p):
+				return True
+		except Exception:
+			pass
+	return False
+
+
+def first_existing_file_url(candidates):
+	"""Return the first URL in `candidates` that resolves to a real file, else None.
+	Lets callers fall back to another image source when the preferred one is broken."""
+	for url in candidates:
+		if url and _file_url_exists(url):
+			return url
+	return None
+
+
+def _read_file_bytes(file_url):
+	"""Return the raw bytes for a frappe file URL, or None if it can't be read. Tries
+	the File doc first (handles private + DB-stored content), then a direct disk read
+	(the File doc may be missing while the file still exists), across every name
+	variant (HTML-escaped '&amp;', '%20'-encoded, or literal spaces)."""
+	variants = _url_variants(file_url)
+	# 1) via the File doc
+	for fu in variants:
 		try:
 			name = frappe.db.get_value("File", {"file_url": fu}, "name")
 			if name:
@@ -61,17 +104,12 @@ def _read_file_bytes(file_url):
 					return content
 		except Exception:
 			pass
-	# 2) direct disk read as a fallback (decoded path)
-	for fu in candidates:
+	# 2) direct disk read as a fallback
+	for fu in variants:
 		try:
-			if fu.startswith("/private/files/"):
-				path = frappe.get_site_path("private", "files", fu.split("/private/files/", 1)[1])
-			elif fu.startswith("/files/"):
-				path = frappe.get_site_path("public", "files", fu.split("/files/", 1)[1])
-			else:
-				continue
-			if os.path.isfile(path):
-				with open(path, "rb") as f:
+			p = _disk_path(fu)
+			if p and os.path.isfile(p):
+				with open(p, "rb") as f:
 					return f.read()
 		except Exception:
 			pass

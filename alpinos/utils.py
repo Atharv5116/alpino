@@ -28,8 +28,27 @@ def get_combined_items(doc):
 
 	from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
 	from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
+	from alpinos.pdf_tolerant import first_existing_file_url
 
 	combined = {}
+
+	def _pick_image(live_img, snapshot_img, variant_of):
+		"""Choose a product image that actually exists, so a broken/missing primary
+		falls back to another source. Order: current Item image -> the SO Item's own
+		snapshot -> the variant's template Item image. Returns the first that resolves
+		to a real file; if none do, the preferred URL (pdf_tolerant drops it if it's
+		genuinely unreadable, so it never errors); '' when there's nothing to show."""
+		cands = []
+		for c in (live_img, snapshot_img):
+			if c and c not in cands:
+				cands.append(c)
+		if variant_of:
+			tmpl = frappe.db.get_value("Item", variant_of, "image")
+			if tmpl and tmpl not in cands:
+				cands.append(tmpl)
+		if not cands:
+			return ""
+		return first_existing_file_url(cands) or cands[0]
 
 	def add_item_to_combined(item_code, qty, parent_row, source_row=None):
 		"""Add `qty` of `item_code` to the combined map.
@@ -39,14 +58,17 @@ def get_combined_items(doc):
 		order was confirmed at. Left None for exploded bundle components, which have
 		no saved row and are therefore priced from the buyer catalog as a fallback.
 		"""
-		# Fetch item UOM, name and CURRENT master image safely
-		res_item = frappe.db.get_value("Item", item_code, ["item_name", "stock_uom", "valuation_rate", "image"], as_dict=True)
+		# Fetch item UOM, name, CURRENT master image and variant parent safely
+		res_item = frappe.db.get_value(
+			"Item", item_code, ["item_name", "stock_uom", "valuation_rate", "image", "variant_of"], as_dict=True
+		)
 		item_name = res_item.get("item_name") if res_item else item_code
 		uom = res_item.get("stock_uom") if res_item else "Nos"
 		# Mirror the on-screen Sales Order View: prefer the live Item-master image so
 		# pictures uploaded/changed after the order was placed still print; the SO Item's
 		# custom_product_image is only a snapshot taken at creation (and may be empty).
 		live_img = (res_item.get("image") if res_item else None) or None
+		variant_of = res_item.get("variant_of") if res_item else None
 
 		if source_row is not None:
 			# Carry the values saved on the Sales Order Item verbatim.
@@ -56,7 +78,7 @@ def get_combined_items(doc):
 			offer = flt(source_row.get("custom_offer") or 0)
 			add_disc = flt(source_row.get("custom_additional_discount") or 0)
 			sp = flt(source_row.get("custom_selling_price") or source_row.get("rate") or 0)
-			image = live_img or source_row.get("custom_product_image")
+			image = _pick_image(live_img, source_row.get("custom_product_image"), variant_of)
 			# The saved row's own name/uom win (e-com & bundle rows may override the Item master).
 			if source_row.get("item_name"):
 				item_name = source_row.get("item_name")
@@ -88,7 +110,7 @@ def get_combined_items(doc):
 			item_mrp = flt(res_item.get("valuation_rate")) if res_item else 0
 			offer = flt(parent_row.get("custom_offer") or 0)
 			add_disc = flt(parent_row.get("custom_additional_discount") or 0)
-			image = live_img or parent_row.get("custom_product_image")
+			image = _pick_image(live_img, parent_row.get("custom_product_image"), variant_of)
 			# Bundle component has no saved row -> net selling price x qty, less the
 			# parent's offer / additional discount.
 			line_amt = flt(sp) * flt(qty) * (100 - offer) / 100.0 * (100 - add_disc) / 100.0
