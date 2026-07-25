@@ -21,6 +21,7 @@ import base64
 import mimetypes
 import os
 import re
+from urllib.parse import unquote
 
 import frappe
 
@@ -29,37 +30,47 @@ _patched = False
 # a whole <img ...> tag, and the src="..." attribute inside one
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _SRC_ATTR_RE = re.compile(r'\bsrc\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
-# the frappe file path inside a (possibly absolute) URL
-_FILE_PATH_RE = re.compile(r"(/private/files/[^\s\"'?#]+|/files/[^\s\"'?#]+)")
+# the frappe file path inside a (possibly absolute) URL. The filename may contain
+# spaces and other characters (e.g. "/files/Dark Chocolate Oats_2 KG front.jpeg"),
+# so match everything up to a query/fragment — NOT up to the first space, which would
+# truncate the path and make the image un-resolvable (then dropped as "broken").
+_FILE_PATH_RE = re.compile(r"(/(?:private/)?files/[^?#]+)")
 
 
 def _read_file_bytes(file_url):
 	"""Return the raw bytes for a frappe file URL, or None if it can't be read.
-	Tries the File doc first (handles private + DB-stored content), then falls back
-	to a direct disk read (the File doc may be missing while the file still exists,
-	or vice versa)."""
-	# 1) via the File doc
-	try:
-		name = frappe.db.get_value("File", {"file_url": file_url}, "name")
-		if name:
-			content = frappe.get_doc("File", name).get_content()
-			if content:
-				return content
-	except Exception:
-		pass
-	# 2) direct disk read as a fallback
-	try:
-		if file_url.startswith("/private/files/"):
-			path = frappe.get_site_path("private", "files", file_url.split("/private/files/", 1)[1])
-		elif file_url.startswith("/files/"):
-			path = frappe.get_site_path("public", "files", file_url.split("/files/", 1)[1])
-		else:
-			return None
-		if os.path.isfile(path):
-			with open(path, "rb") as f:
-				return f.read()
-	except Exception:
-		pass
+	Tries the File doc first (handles private + DB-stored content), then a direct
+	disk read (the File doc may be missing while the file still exists). The URL may
+	arrive percent-encoded (…/Dark%20Chocolate…) or with literal spaces, and the
+	stored File.file_url uses literal spaces, so try both forms."""
+	candidates = [file_url]
+	decoded = unquote(file_url)
+	if decoded != file_url:
+		candidates.append(decoded)
+	# 1) via the File doc (raw + url-decoded)
+	for fu in candidates:
+		try:
+			name = frappe.db.get_value("File", {"file_url": fu}, "name")
+			if name:
+				content = frappe.get_doc("File", name).get_content()
+				if content:
+					return content
+		except Exception:
+			pass
+	# 2) direct disk read as a fallback (decoded path)
+	for fu in candidates:
+		try:
+			if fu.startswith("/private/files/"):
+				path = frappe.get_site_path("private", "files", fu.split("/private/files/", 1)[1])
+			elif fu.startswith("/files/"):
+				path = frappe.get_site_path("public", "files", fu.split("/files/", 1)[1])
+			else:
+				continue
+			if os.path.isfile(path):
+				with open(path, "rb") as f:
+					return f.read()
+		except Exception:
+			pass
 	return None
 
 
