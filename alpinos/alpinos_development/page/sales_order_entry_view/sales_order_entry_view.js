@@ -15,14 +15,21 @@ frappe.pages['sales-order-entry-view'].on_page_load = function (wrapper) {
 		title: __('Alpino Sales Order View'),
 		single_column: true,
 	});
+	wrapper.__so_view_page = page;
 	page.main.html(frappe.render_template('sales_order_entry_view'));
-	const view = new SalesOrderEntryView(page);
-	wrapper.so_entry_view = view;
-	wrapper.on_page_show = function () {
-		if (wrapper.so_entry_view) {
-			wrapper.so_entry_view.sync_from_route();
-		}
-	};
+	wrapper.so_entry_view = new SalesOrderEntryView(page);
+};
+
+// Frappe caches custom pages, so on_page_load runs only once. Without re-rendering on
+// show, navigating back (e.g. from the SO list) leaves a blank/stale wrapper that needs a
+// manual browser refresh. Re-render the body + reload the order (the view reads its name
+// from the route) on every show. setup_toolbar() is idempotent (clears toolbar/menu
+// first) and the view binds no delegated container events, so nothing duplicates.
+frappe.pages['sales-order-entry-view'].on_page_show = function (wrapper) {
+	const page = wrapper.__so_view_page;
+	if (!page) return;
+	page.main.html(frappe.render_template('sales_order_entry_view'));
+	wrapper.so_entry_view = new SalesOrderEntryView(page);
 };
 
 class SalesOrderEntryView {
