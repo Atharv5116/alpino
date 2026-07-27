@@ -16,13 +16,13 @@ frappe.pages['sales-order-entry-list'].on_page_show = function (wrapper) {
 };
 
 // Route key for alpinos.list_prefs — must stay the exact frappe.pages key.
-const SO_LIST_ROUTE = 'sales-order-entry-list';
-const SO_LIST_PAGE_LENGTHS = [20, 50, 100];
+var SO_LIST_ROUTE = 'sales-order-entry-list';
+var SO_LIST_PAGE_LENGTHS = [20, 50, 100];
 
-const SO_STATUS_OPTIONS =
+var SO_STATUS_OPTIONS =
 	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
 
-const SO_WORKFLOW_STATUS_OPTIONS =
+var SO_WORKFLOW_STATUS_OPTIONS =
 	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
 	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch' +
 	'\nDelivery Note Created\nDispatched' +
@@ -30,7 +30,7 @@ const SO_WORKFLOW_STATUS_OPTIONS =
 	'\nForced Ready For Dispatch\nForced Delivery Note Created\nForced Dispatched\nForced Completed' +
 	'\nCompleted\nCancelled';
 
-const SO_WF_COLORS = {
+var SO_WF_COLORS = {
 	Draft: 'gray',
 	'Warehouse Approval Pending': 'orange',
 	'Future Dispatch': 'yellow',
@@ -54,7 +54,7 @@ const SO_WF_COLORS = {
 
 // Dim placeholder dashes and bare zeros so real figures read first — visual
 // only, never hides a value. Skips cells holding controls / links / images.
-const ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
+var ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
 function alpDimPlaceholderCells(root) {
 	if (!root || !root.querySelectorAll) return;
 	root.querySelectorAll('td').forEach((td) => {
@@ -69,7 +69,7 @@ function alpDimPlaceholderCells(root) {
 // `width` drives the <colgroup> so headers and data share one fixed column grid
 // (table-layout: fixed) instead of auto-sizing to content. Percentages are ratios
 // — the browser scales them to fill the table / its min-width.
-const SO_LIST_LAYOUTS = {
+var SO_LIST_LAYOUTS = {
 	sales: [
 		{ label: 'ID', sort: 'name', width: '12%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
 		{ label: 'Customer Name', sort: 'customer_name', width: '19%', render: (d, h) => h.esc(d.customer_name) },
@@ -107,7 +107,7 @@ function so_list_layout_for_user() {
 	return isWarehouse && !isSales ? 'warehouse' : 'sales';
 }
 
-class SalesOrderEntryListPage {
+var SalesOrderEntryListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

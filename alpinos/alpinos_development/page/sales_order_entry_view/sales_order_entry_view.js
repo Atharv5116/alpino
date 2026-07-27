@@ -1,6 +1,6 @@
 // Dim placeholder dashes and bare zeros so real figures read first — visual
 // only, never hides a value. Skips cells holding controls / links / images.
-const ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
+var ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
 function alpDimPlaceholderCells(root) {
 	if (!root || !root.querySelectorAll) return;
 	root.querySelectorAll('td').forEach((td) => {
@@ -32,7 +32,7 @@ frappe.pages['sales-order-entry-view'].on_page_show = function (wrapper) {
 	wrapper.so_entry_view = new SalesOrderEntryView(page);
 };
 
-class SalesOrderEntryView {
+var SalesOrderEntryView = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
