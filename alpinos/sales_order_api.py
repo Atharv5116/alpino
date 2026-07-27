@@ -1779,7 +1779,9 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 		"custom_party_code": so.customer,
 		"custom_order_date": so.transaction_date,
 		"custom_dispatch_date": str(so.custom_dispatch_date) if so.custom_dispatch_date else "",
-		"custom_po_no": so.po_no,
+		# PO No. is intentionally NOT fetched from the Sales Order — the picker enters it
+		# manually on the Pick List before submit (it's required at submit, not at draft).
+		"custom_po_no": "",
 		"pick_manually": 1,
 		"locations": []
 	})
