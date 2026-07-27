@@ -327,6 +327,7 @@ def create_checkins_from_attendance(from_date=None, to_date=None, apply=0):
 				for log_type, ts in (("IN", att.in_time), ("OUT", att.out_time)):
 					ci = frappe.new_doc("Employee Checkin")
 					ci.flags.skip_attendance_heal = True  # leave the Attendance untouched
+					ci.flags.skip_geo_validation = True   # historical reconstruction, no live geo-fence
 					ci.employee = att.employee
 					ci.log_type = log_type
 					ci.time = ts

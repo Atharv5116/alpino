@@ -232,6 +232,11 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			)
 
 	def validate_distance_from_shift_location(self):
+		# System backfill (create_checkins_from_attendance): a reconstructed historical punch
+		# that just mirrors the Attendance's in/out times — not a live geo check-in — so skip
+		# geo-fencing entirely, exactly as biometric / attendance-request punches already do.
+		if self.flags.get("skip_geo_validation"):
+			return
 		# Skip all location/geo validations when check-in/check-out is from Attendance Request or Biometric Device
 		if self.get("from_attendance_request") or self.get("device_id"):
 			return
