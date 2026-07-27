@@ -207,8 +207,8 @@ def _affected_attendance_names(from_date=None, to_date=None, limit=None):
 			AND DATE(ec.time) = a.attendance_date
 		WHERE {where}
 		GROUP BY a.name
-		HAVING a.out_time < MAX(ec.time)
-		ORDER BY a.attendance_date {lim}
+		HAVING MAX(a.out_time) < MAX(ec.time)
+		ORDER BY MIN(a.attendance_date) {lim}
 		""",
 		params,
 		as_dict=True,
