@@ -13,7 +13,7 @@ frappe.pages['ecom-sales-order-entry'].on_page_show = function (wrapper) {
 	if (wrapper.eso_instance) wrapper.eso_instance.handle_route_entry();
 };
 
-class EcomSalesOrderEntry {
+var EcomSalesOrderEntry = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

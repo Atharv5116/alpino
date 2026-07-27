@@ -13,14 +13,14 @@ frappe.pages['attendance_batch_list'].on_page_show = function (wrapper) {
 	if (wrapper.page_instance) wrapper.page_instance.load_list(true);
 };
 
-const ABL_STATUS_COLORS = {
+var ABL_STATUS_COLORS = {
 	Draft: 'orange',
 	'Pending Approval': 'blue',
 	Approved: 'green',
 	Locked: 'gray',
 };
 
-class AttendanceBatchListPage {
+var AttendanceBatchListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

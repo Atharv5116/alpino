@@ -16,7 +16,7 @@ function flt(val, precision) {
 }
 
 // ── main class ─────────────────────────────────────────────────────────────
-class OfflineBuyerCatalogPage {
+var OfflineBuyerCatalogPage = class {
 	constructor(page) {
 		this.page = page;
 

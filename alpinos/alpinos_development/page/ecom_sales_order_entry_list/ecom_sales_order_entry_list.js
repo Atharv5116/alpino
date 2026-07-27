@@ -9,21 +9,21 @@ frappe.pages['ecom-sales-order-entry-list'].on_page_load = function (wrapper) {
 };
 
 // Route key for alpinos.list_prefs — must match the frappe.pages key above.
-const ESO_LIST_ROUTE = 'ecom-sales-order-entry-list';
+var ESO_LIST_ROUTE = 'ecom-sales-order-entry-list';
 
-const ESO_PAGE_LENGTHS = [20, 50, 100];
+var ESO_PAGE_LENGTHS = [20, 50, 100];
 
-const ESO_STATUS_OPTIONS =
+var ESO_STATUS_OPTIONS =
 	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
 
-const ESO_WF_STATUS_OPTIONS =
+var ESO_WF_STATUS_OPTIONS =
 	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
 	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch\nDelivery Note Created\nDispatched' +
 	'\nPartial Ready For Dispatch\nPartial Delivery Note Created\nPartial Dispatched' +
 	'\nForced Ready For Dispatch\nForced Delivery Note Created\nForced Dispatched' +
 	'\nCompleted\nForced Completed\nCancelled';
 
-const ESO_WF_COLORS = {
+var ESO_WF_COLORS = {
 	Draft: 'gray',
 	'Warehouse Approval Pending': 'orange',
 	'Future Dispatch': 'yellow',
@@ -46,7 +46,7 @@ const ESO_WF_COLORS = {
 };
 
 // E-Com column layout (specced separately from the offline Sales/Warehouse layouts).
-const ESO_COLUMNS = [
+var ESO_COLUMNS = [
 	{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
 	{ label: 'PO No', sort: 'custom_po_number', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
 	{ label: 'Customer Name', sort: 'customer_name', render: (d, h) => h.esc(d.customer_name) },
@@ -62,7 +62,7 @@ const ESO_COLUMNS = [
 	{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
 ];
 
-class EcomSalesOrderListPage {
+var EcomSalesOrderListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

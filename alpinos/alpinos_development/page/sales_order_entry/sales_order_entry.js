@@ -17,7 +17,7 @@ frappe.pages['sales-order-entry'].on_page_show = function(wrapper) {
 	if (wrapper.soe_instance) wrapper.soe_instance.handle_route_entry();
 };
 
-class SalesOrderEntry {
+var SalesOrderEntry = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

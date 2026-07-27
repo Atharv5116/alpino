@@ -8,7 +8,7 @@ frappe.pages['pick_list_list'].on_page_load = function (wrapper) {
 	wrapper.page_instance = new PickListListPage(page);
 };
 
-class PickListListPage {
+var PickListListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

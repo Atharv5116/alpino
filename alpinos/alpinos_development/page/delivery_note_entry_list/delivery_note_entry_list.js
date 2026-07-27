@@ -8,7 +8,7 @@ frappe.pages['delivery_note_entry_list'].on_page_load = function (wrapper) {
 	wrapper.page_instance = new DeliveryNoteListPage(page);
 };
 
-class DeliveryNoteListPage {
+var DeliveryNoteListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

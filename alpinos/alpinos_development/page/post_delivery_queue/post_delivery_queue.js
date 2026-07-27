@@ -8,20 +8,20 @@ frappe.pages['post-delivery-queue'].on_page_load = function (wrapper) {
 	new PostDeliveryQueue(page);
 };
 
-const PDQ_ROUTE = 'post-delivery-queue';
-const PDQ_PAGE_LENGTHS = [20, 50, 100];
+var PDQ_ROUTE = 'post-delivery-queue';
+var PDQ_PAGE_LENGTHS = [20, 50, 100];
 
-const PDQ_STATUS_OPTIONS = '\nNot Started\nIn Progress\nCompleted';
+var PDQ_STATUS_OPTIONS = '\nNot Started\nIn Progress\nCompleted';
 
-const PDQ_STATUS_COLORS = {
+var PDQ_STATUS_COLORS = {
 	'Not Started': 'gray',
 	'In Progress': 'orange',
 	Completed: 'green',
 };
-const PDQ_ASN_COLORS = { Pending: 'gray', Uploaded: 'blue', Accepted: 'green', Rejected: 'red' };
-const PDQ_GRN_COLORS = { Pending: 'gray', Partial: 'orange', Completed: 'green', Rejected: 'red' };
+var PDQ_ASN_COLORS = { Pending: 'gray', Uploaded: 'blue', Accepted: 'green', Rejected: 'red' };
+var PDQ_GRN_COLORS = { Pending: 'gray', Partial: 'orange', Completed: 'green', Rejected: 'red' };
 
-const PDQ_COLUMNS = [
+var PDQ_COLUMNS = [
 	{ label: 'Delivery Note', render: (d, h) => `<strong>${h.esc(d.delivery_note)}</strong>` },
 	{ label: 'Sales Order', render: (d, h) => h.esc(d.sales_order) },
 	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || d.customer) },
@@ -34,7 +34,7 @@ const PDQ_COLUMNS = [
 	{ label: 'Action', cls: 'text-center', render: (d, h) => h.action(d) },
 ];
 
-class PostDeliveryQueue {
+var PostDeliveryQueue = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);

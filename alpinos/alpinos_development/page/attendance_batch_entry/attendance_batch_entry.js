@@ -19,7 +19,7 @@ frappe.pages['attendance_batch_entry'].on_page_show = function (wrapper) {
 	}
 };
 
-const ABE_STATUS_COLORS = {
+var ABE_STATUS_COLORS = {
 	Draft: 'orange',
 	'Pending Approval': 'blue',
 	Approved: 'green',
@@ -27,7 +27,7 @@ const ABE_STATUS_COLORS = {
 };
 
 // Grid column sets per rule engine: [label, fieldname]
-const ABE_COLUMNS = {
+var ABE_COLUMNS = {
 	common: [
 		[__('Employee'), 'employee'],
 		[__('Name'), 'employee_name'],
@@ -66,7 +66,7 @@ const ABE_COLUMNS = {
 };
 
 // Summary tiles per engine: [label, fieldname, aggregation]
-const ABE_SUMMARY = {
+var ABE_SUMMARY = {
 	'HO/Admin': [
 		[__('Employees'), null, 'count'],
 		[__('Payable Days'), 'payable_days', 'sum'],
@@ -88,7 +88,7 @@ const ABE_SUMMARY = {
 	],
 };
 
-class AttendanceBatchEntryPage {
+var AttendanceBatchEntryPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
