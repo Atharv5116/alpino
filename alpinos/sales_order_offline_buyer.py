@@ -643,15 +643,31 @@ def _ensure_contact_for_obm(obm_doc):
 
 	contact.first_name = first_name
 
-	if email and not any(_nz(e.email_id) == email for e in (contact.get("email_ids") or [])):
-		contact.append("email_ids", {"email_id": email, "is_primary": 1})
+	# The buyer's email is the SOLE primary — clear any other primary first, else Frappe's
+	# Contact validation ("Only one Email ID can be set as primary") rejects the save when
+	# the contact already had a primary email.
+	if email:
+		seen_email = False
+		for e in contact.get("email_ids") or []:
+			hit = _nz(e.email_id) == email
+			e.is_primary = 1 if hit else 0
+			seen_email = seen_email or hit
+		if not seen_email:
+			contact.append("email_ids", {"email_id": email, "is_primary": 1})
 
-	for ph, is_primary in ((phone, 1), (alt_phone, 0)):
-		if ph and not any(_nz(p.phone) == ph for p in (contact.get("phone_nos") or [])):
-			contact.append(
-				"phone_nos",
-				{"phone": ph, "is_primary_phone": is_primary, "is_primary_mobile_no": is_primary},
-			)
+	# Likewise the main phone is the sole primary phone + mobile; the alt phone is added
+	# non-primary (a second primary phone/mobile would hit the same validation).
+	if phone:
+		seen_phone = False
+		for p in contact.get("phone_nos") or []:
+			hit = _nz(p.phone) == phone
+			p.is_primary_phone = 1 if hit else 0
+			p.is_primary_mobile_no = 1 if hit else 0
+			seen_phone = seen_phone or hit
+		if not seen_phone:
+			contact.append("phone_nos", {"phone": phone, "is_primary_phone": 1, "is_primary_mobile_no": 1})
+	if alt_phone and not any(_nz(p.phone) == alt_phone for p in (contact.get("phone_nos") or [])):
+		contact.append("phone_nos", {"phone": alt_phone, "is_primary_phone": 0, "is_primary_mobile_no": 0})
 
 	contact.save(ignore_permissions=True)
 	return contact.name
