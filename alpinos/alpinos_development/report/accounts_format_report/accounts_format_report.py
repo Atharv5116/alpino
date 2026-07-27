@@ -392,23 +392,32 @@ def _get_data(filters):
 
 			exploded_items = {}
 
-			def add_item_to_exploded(item_code, qty, parent_offer, parent_additional):
-				mrp_val = 0
-				flat_val = 0
-				sp_val = 0
-				
-				res = get_offline_buyer_item_rate(so.customer, item_code)
-				if res and flt(res.get("mrp")) > 0:
-					mrp_val = flt(res.get("mrp"))
-					flat_val = flt(res.get("margin_percent"))
-					sp_val = flt(res.get("rate"))
+			def add_item_to_exploded(item_code, qty, parent_offer, parent_additional, source_row=None):
+				if source_row is not None:
+					# Plain saved Sales Order line: use its OWN stored pricing verbatim — never
+					# re-price from the (possibly since-changed) buyer catalog, so the report
+					# matches the SO view/PDF exactly (what the order was confirmed at).
+					mrp_val = flt(source_row.get("custom_customer_mrp") or 0)
+					flat_val = flt(source_row.get("custom_flat_discount") or 0)
+					sp_val = flt(source_row.get("custom_selling_price") or source_row.get("rate") or 0)
 				else:
-					res_mrp = get_customer_item_mrp(so.customer, item_code)
-					if res_mrp:
-						mrp_val = flt(res_mrp)
+					# Exploded bundle component — no saved SO line of its own, so derive the price
+					# from the buyer catalog (fallback to customer MRP / item valuation).
+					mrp_val = 0
+					flat_val = 0
+					sp_val = 0
+					res = get_offline_buyer_item_rate(so.customer, item_code)
+					if res and flt(res.get("mrp")) > 0:
+						mrp_val = flt(res.get("mrp"))
+						flat_val = flt(res.get("margin_percent"))
+						sp_val = flt(res.get("rate"))
 					else:
-						mrp_val = flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
-					sp_val = mrp_val * (1 - flat_val / 100.0)
+						res_mrp = get_customer_item_mrp(so.customer, item_code)
+						if res_mrp:
+							mrp_val = flt(res_mrp)
+						else:
+							mrp_val = flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
+						sp_val = mrp_val * (1 - flat_val / 100.0)
 
 				if item_code not in exploded_items:
 					exploded_items[item_code] = {
@@ -443,7 +452,7 @@ def _get_data(filters):
 							for p in pb_items:
 								add_item_to_exploded(p.item_code, flt(p.qty) * flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
 						else:
-							add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+							add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0), source_row=r)
 
 			for code, item_dict in exploded_items.items():
 				cf = flt(get_box_conversion_factor(code))
