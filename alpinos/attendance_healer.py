@@ -155,7 +155,12 @@ def heal_on_checkin(doc, method=None):
 	recompute it so the punch folds in — the fix for the 'skip - already marked'
 	freeze. No-op when the day isn't marked yet (normal marking handles that) or the
 	punch is from an Attendance Request."""
-	if doc.get("from_attendance_request") or not doc.get("shift") or not doc.get("time"):
+	if (
+		doc.flags.get("skip_attendance_heal")
+		or doc.get("from_attendance_request")
+		or not doc.get("shift")
+		or not doc.get("time")
+	):
 		return
 	att_name = frappe.db.get_value(
 		"Attendance",
@@ -251,4 +256,120 @@ def backfill(apply=0, from_date=None, to_date=None, limit=None):
 		"applied": applied,
 		"transitions": summary,
 		"sample": changes[:25],
+	}
+
+
+@frappe.whitelist()
+def create_checkins_from_attendance(from_date=None, to_date=None, apply=0):
+	"""One-time backfill: for every Attendance in [from_date, to_date] that has BOTH an
+	in_time and an out_time but NO Employee Checkin for that employee that day, create a
+	matching pair of punches — an IN checkin at the attendance's in_time and an OUT checkin
+	at its out_time — each linked back to that Attendance (the `attendance` field) and
+	flagged skip_auto_attendance=1.
+
+	The Attendance itself is left UNCHANGED: the heal hook is suppressed on these inserts
+	(flags.skip_attendance_heal) and skip_auto_attendance=1 keeps auto-marking from
+	reprocessing them, so the punches simply *back* the existing record with the same in/out
+	rather than re-deriving its status/hours. HRMS's own validate can override the shift /
+	drop the link, so both are force-set again after insert.
+
+	Skips any day that already has a punch for that employee (never duplicates) and any
+	attendance missing a timestamp. Each pair is committed atomically; a pair that fails
+	validation is rolled back and reported in `errors`. DRY-RUN by default.
+
+	  Preview:  bench --site SITE execute alpinos.attendance_healer.create_checkins_from_attendance --kwargs '{"from_date": "2026-07-07", "to_date": "2026-07-08"}'
+	  Apply  :  bench --site SITE execute alpinos.attendance_healer.create_checkins_from_attendance --kwargs '{"from_date": "2026-07-07", "to_date": "2026-07-08", "apply": 1}'
+	"""
+	apply = int(apply)
+
+	conditions = [
+		"a.docstatus < 2",
+		"a.in_time IS NOT NULL",
+		"a.out_time IS NOT NULL",
+		"IFNULL(a.shift, '') <> ''",
+	]
+	params = {}
+	if from_date:
+		conditions.append("a.attendance_date >= %(from_date)s")
+		params["from_date"] = from_date
+	if to_date:
+		conditions.append("a.attendance_date <= %(to_date)s")
+		params["to_date"] = to_date
+
+	rows = frappe.db.sql(
+		"""
+		SELECT a.name, a.employee, a.attendance_date, a.shift, a.in_time, a.out_time
+		FROM `tabAttendance` a
+		WHERE {where}
+		ORDER BY a.attendance_date, a.employee
+		""".format(where=" AND ".join(conditions)),
+		params,
+		as_dict=True,
+	)
+
+	created_pairs = 0
+	skipped_has_checkin = 0
+	errors = []
+	samples = []
+
+	for att in rows:
+		# Only backfill genuinely missing punches — skip any day that already has a
+		# checkin for this employee, so we never create a duplicate.
+		if frappe.db.sql(
+			"SELECT name FROM `tabEmployee Checkin` WHERE employee=%s AND DATE(`time`)=%s LIMIT 1",
+			(att.employee, att.attendance_date),
+		):
+			skipped_has_checkin += 1
+			continue
+
+		if apply:
+			try:
+				for log_type, ts in (("IN", att.in_time), ("OUT", att.out_time)):
+					ci = frappe.new_doc("Employee Checkin")
+					ci.flags.skip_attendance_heal = True  # leave the Attendance untouched
+					ci.employee = att.employee
+					ci.log_type = log_type
+					ci.time = ts
+					ci.shift = att.shift
+					ci.attendance = att.name
+					ci.skip_auto_attendance = 1
+					ci.insert(ignore_permissions=True)
+					# HRMS validate/fetch_shift may override shift or drop the attendance
+					# link — force the intended linkage back on.
+					frappe.db.set_value(
+						"Employee Checkin",
+						ci.name,
+						{"shift": att.shift, "attendance": att.name, "skip_auto_attendance": 1},
+						update_modified=False,
+					)
+				frappe.db.commit()  # each IN+OUT pair is atomic
+				created_pairs += 1
+			except Exception as e:
+				frappe.db.rollback()
+				errors.append({"attendance": att.name, "error": str(e)})
+				continue
+		else:
+			created_pairs += 1
+
+		if len(samples) < 25:
+			samples.append(
+				{
+					"attendance": att.name,
+					"employee": att.employee,
+					"date": str(att.attendance_date),
+					"shift": att.shift,
+					"IN": str(att.in_time),
+					"OUT": str(att.out_time),
+				}
+			)
+
+	return {
+		"mode": "APPLY" if apply else "DRY-RUN",
+		"attendances_matched": len(rows),
+		"pairs": created_pairs,  # IN+OUT pairs created (or would-create in dry-run)
+		"checkins_total": created_pairs * 2,
+		"skipped_already_has_checkin": skipped_has_checkin,
+		"error_count": len(errors),
+		"errors": errors[:25],
+		"sample": samples,
 	}
