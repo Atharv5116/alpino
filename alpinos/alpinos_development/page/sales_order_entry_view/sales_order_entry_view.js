@@ -236,6 +236,13 @@ var SalesOrderEntryView = class {
 					);
 				} else if (!pl.has_pick_list) {
 					me.page.set_primary_action(__('Create Pick List'), () => {
+						// Also stash the current SO in the same sessionStorage key the entry page
+						// falls back to, so a re-navigation (where frappe.route_options is dropped)
+						// never resolves a stale, previously-created Pick List's Sales Order.
+						try {
+							sessionStorage.setItem('alpinos_pick_list_entry_so_name', me._so_name);
+							sessionStorage.setItem('alpinos_pick_list_entry_remaining_only', '0');
+						} catch (e) {}
 						frappe.route_options = { so_name: me._so_name };
 						frappe.set_route('pick_list_entry', 'New Pick List');
 					});
@@ -256,6 +263,10 @@ var SalesOrderEntryView = class {
 					);
 				} else if (!cint(pl.force_closed) && cint(pl.partial_order_allowed) && cint(pl.has_remaining_qty)) {
 					me.page.set_primary_action(__('Create PL for Remaining Qty'), () => {
+						try {
+							sessionStorage.setItem('alpinos_pick_list_entry_so_name', me._so_name);
+							sessionStorage.setItem('alpinos_pick_list_entry_remaining_only', '1');
+						} catch (e) {}
 						frappe.route_options = { so_name: me._so_name, remaining_only: 1 };
 						frappe.set_route('pick_list_entry', 'New Pick List');
 					});
