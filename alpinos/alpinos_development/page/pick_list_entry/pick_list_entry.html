@@ -151,6 +151,63 @@
 			padding: 4px 6px;
 		}
 	}
+
+	/* ===== Packing-Sheet look — mirror the "Pick List Packing Sheet" PDF
+	   (pick_list_print_format.py): Arial, 1px black grid, bold uppercase gray
+	   labels, flat cell inputs, yellow highlight. Desktop only so the mobile
+	   stacking above is preserved. ===== */
+	@media (min-width: 481px) {
+		.pick-list-container { font-family: Arial, Helvetica, sans-serif; color: #000; }
+		.pick-list-container .pl-field {
+			gap: 0;
+			border: 1px solid #000;
+			align-items: stretch;
+		}
+		.pick-list-container .pl-field label {
+			background: #f0f0f0;
+			font-weight: 700;
+			text-transform: uppercase;
+			font-size: 10px;
+			letter-spacing: .02em;
+			text-align: center;
+			border-right: 1px solid #000;
+			margin: 0;
+			padding: 5px 6px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.pick-list-container .pl-field input,
+		.pick-list-container .pl-field select {
+			border: 0;
+			border-radius: 0;
+			box-shadow: none;
+			background: #fff;
+			min-height: 30px;
+			padding: 4px 8px;
+			font-size: 12px;
+			font-weight: 600;
+		}
+		/* Yellow highlight cells (Total Box / Total Units), like the sheet. */
+		.pick-list-container .pl-field.hl input { background: #ffff00; }
+
+		/* SKU tables: black grid + gray uppercase header, bold SKU column. */
+		.pick-list-container .sku-table { border-collapse: collapse; }
+		.pick-list-container .sku-table th,
+		.pick-list-container .sku-table td {
+			border: 1px solid #000;
+			padding: 4px 6px;
+		}
+		.pick-list-container .sku-table th {
+			background: #f0f0f0;
+			text-transform: uppercase;
+			font-size: 10px;
+			font-weight: 700;
+			color: #000;
+			letter-spacing: .02em;
+		}
+		.pick-list-container .sku-table td:nth-child(2) { font-weight: 700; }
+	}
 </style>
 
 <div class="pick-list-container">
@@ -220,7 +277,7 @@
 				<label>Sample Box</label>
 				<input type="number" class="form-control" data-fieldname="custom_sample_box" step="1">
 			</div>
-			<div class="pl-field">
+			<div class="pl-field hl">
 				<label>Total Box</label>
 				<input type="number" class="form-control" data-fieldname="custom_total_box" step="1" readonly>
 			</div>
@@ -232,7 +289,7 @@
 				<label>Gross Weight</label>
 				<input type="number" class="form-control" data-fieldname="custom_gross_weight" step="0.01" readonly>
 			</div>
-			<div class="pl-field">
+			<div class="pl-field hl">
 				<label>Total Units</label>
 				<input type="number" class="form-control" data-fieldname="custom_total_unit" step="0.01" readonly>
 			</div>
