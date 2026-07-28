@@ -93,6 +93,7 @@ doctype_list_js = {
 jinja = {
 	"methods": [
 		"alpinos.utils.get_combined_items",
+		"alpinos.utils.pack_size",
 	],
 }
 
@@ -194,6 +195,7 @@ after_migrate = [
 	"alpinos.workflow_role_access.execute",
 	"alpinos.web_form_update.execute",
 	"alpinos.sales_order_print_format_patch.execute",
+	"alpinos.pick_list_print_format.execute",
 ]
 
 # Uninstallation

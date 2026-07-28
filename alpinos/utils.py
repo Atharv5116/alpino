@@ -177,7 +177,19 @@ def get_combined_items(doc):
 
 	return result
 
+def pack_size(item_code):
+	"""Units-per-box (box conversion factor) for a SKU as an int — the Pick List packing
+	sheet's PACK column. Returns '' when unknown; never raises inside a print render."""
+	try:
+		from alpinos.sales_order_api import get_box_conversion_factor
+		f = flt(get_box_conversion_factor(item_code))
+		return int(f) if f else ""
+	except Exception:
+		return ""
+
+
 # Expose to Jinja environment
 jinja_methods = {
-	"get_combined_items": get_combined_items
+	"get_combined_items": get_combined_items,
+	"pack_size": pack_size,
 }
