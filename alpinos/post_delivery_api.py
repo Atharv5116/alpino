@@ -54,6 +54,8 @@ def get_post_delivery_queue(start=0, page_length=20, search=None, status=None, c
 			dn.custom_lr_gr_no AS lr_awb_no,
 			so.custom_channel AS channel,
 			so.custom_grn_available AS grn_available,
+			so.custom_invoice_no AS invoice_no,
+			so.custom_invoice_pdf AS invoice_pdf,
 			pd.name AS post_delivery,
 			IFNULL(pd.post_delivery_status, 'Not Started') AS post_delivery_status,
 			IFNULL(pd.asn_status, 'Pending') AS asn_status,

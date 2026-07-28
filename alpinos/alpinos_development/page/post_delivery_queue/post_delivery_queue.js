@@ -24,6 +24,7 @@ var PDQ_GRN_COLORS = { Pending: 'gray', Partial: 'orange', Completed: 'green', R
 var PDQ_COLUMNS = [
 	{ label: 'Delivery Note', render: (d, h) => `<strong>${h.esc(d.delivery_note)}</strong>` },
 	{ label: 'Sales Order', render: (d, h) => h.esc(d.sales_order) },
+	{ label: 'Invoice', render: (d, h) => d.invoice_no ? (h.esc(d.invoice_no) + (d.invoice_pdf ? ` &nbsp;<a href="${h.esc(d.invoice_pdf)}" target="_blank" rel="noopener">PDF</a>` : '')) : '—' },
 	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || d.customer) },
 	{ label: 'Channel', render: (d, h) => h.esc(d.channel || '—') },
 	{ label: 'Dispatch Date', render: (d, h) => h.date(d.dispatch_date) },
