@@ -245,7 +245,8 @@ def get_pick_list_entry_list(
 	search="",
 	status="",
 	company="",
-	sales_order=""
+	sales_order="",
+	delivery_note=""
 ):
 	start = frappe.utils.cint(start)
 	page_length = frappe.utils.cint(page_length)
@@ -257,6 +258,16 @@ def get_pick_list_entry_list(
 		filters["company"] = company
 	if sales_order:
 		filters["custom_sales_order_id"] = sales_order
+	if delivery_note:
+		# Filter Pick Lists down to the one(s) that produced this Delivery Note —
+		# resolved via Delivery Note Item.against_pick_list. "__no_match__" forces an
+		# empty result when the DN maps to no Pick List (rather than ignoring the filter).
+		pls = list({
+			r for r in frappe.get_all(
+				"Delivery Note Item", filters={"parent": delivery_note}, pluck="against_pick_list"
+			) if r
+		})
+		filters["name"] = ["in", pls or ["__no_match__"]]
 
 	# A dedicated PL User only sees Pick Lists assigned to them. Warehouse
 	# admins/managers (and System Manager) keep full visibility.

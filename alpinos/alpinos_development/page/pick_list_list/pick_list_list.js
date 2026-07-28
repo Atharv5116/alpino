@@ -24,7 +24,6 @@ var PickListListPage = class {
 		this.setup_filters();
 		this._restore_view_prefs();
 		this.bind_events();
-		this._render_so_banner();
 		this.load_list();
 	}
 
@@ -103,6 +102,33 @@ var PickListListPage = class {
 			parent: w.find('.fld-company'),
 			render_input: true,
 		});
+		this._filter_fields.sales_order = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Link',
+				fieldname: 'sales_order',
+				label: __('Sales Order'),
+				options: 'Sales Order',
+			},
+			parent: w.find('.fld-sales_order'),
+			render_input: true,
+		});
+		this._filter_fields.delivery_note = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Link',
+				fieldname: 'delivery_note',
+				label: __('Delivery Note'),
+				options: 'Delivery Note',
+			},
+			parent: w.find('.fld-delivery_note'),
+			render_input: true,
+		});
+		// Opened from a Sales Order's "PL" button -> prefill the SO filter so the list
+		// shows exactly why it is scoped (replaces the old standalone banner).
+		if (this.so_filter && this._filter_fields.sales_order) {
+			const c = this._filter_fields.sales_order;
+			if (typeof c.set_input === 'function') c.set_input(this.so_filter);
+			else c.set_value(this.so_filter);
+		}
 	}
 
 	bind_events() {
@@ -140,6 +166,14 @@ var PickListListPage = class {
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
 			frappe.set_route('pick_list_entry', name);
+		});
+		// Clicking the Sales Order in a row opens the SO detail view directly (not the
+		// Pick List, and not a filtered list) — one SO per Pick List, so no list needed.
+		this.wrapper.on('click', '.pl-so-link', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			const so = $(e.currentTarget).data('so');
+			if (so) frappe.set_route('sales-order-entry-view', String(so));
 		});
 		this.wrapper.on('change', '.pl-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
@@ -212,7 +246,8 @@ var PickListListPage = class {
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
 			company: f.company.get_value() || '',
-			sales_order: this.so_filter || ''
+			sales_order: (f.sales_order && f.sales_order.get_value()) || '',
+			delivery_note: (f.delivery_note && f.delivery_note.get_value()) || ''
 		};
 	}
 
@@ -276,7 +311,7 @@ var PickListListPage = class {
 			tb.append(`<tr class="pl-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="pl-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
-				<td>${dash(d.custom_sales_order_id)}</td>
+				<td>${d.custom_sales_order_id ? '<a href="#" class="pl-so-link" data-so="' + esc(d.custom_sales_order_id) + '">' + esc(d.custom_sales_order_id) + '</a>' : '—'}</td>
 				<td>${dash(d.custom_customer_name)}</td>
 				<td>${dash(d.custom_po_no)}</td>
 				<td>${only_date(d.custom_order_date)}</td>
