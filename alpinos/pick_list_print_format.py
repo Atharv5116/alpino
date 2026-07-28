@@ -50,14 +50,14 @@ _HTML = r"""
     <thead>
       <tr>
         <th style="width:5%;">SR.</th>
-        <th style="width:22%;">SKU</th>
-        <th style="width:10%;">QTY</th>
-        <th style="width:8%;">BOX</th>
-        <th style="width:11%;">SAMPLE QTY</th>
-        <th style="width:16%;">BATCH CODE</th>
-        <th style="width:11%;">MFG</th>
-        <th style="width:11%;">EXP</th>
-        <th style="width:10%;">STOCK</th>
+        <th style="width:20%;">SKU</th>
+        <th style="width:15%; white-space:nowrap;">{{ doc.name }}</th>
+        <th style="width:7%;">{{ (doc.custom_total_unit | round | int) if doc.custom_total_unit else 0 }}</th>
+        <th style="width:10%;">SAMPLE QTY</th>
+        <th style="width:15%;">BATCH CODE</th>
+        <th style="width:10%;">MFG</th>
+        <th style="width:10%;">EXP</th>
+        <th style="width:8%;">STOCK</th>
       </tr>
     </thead>
     <tbody>
