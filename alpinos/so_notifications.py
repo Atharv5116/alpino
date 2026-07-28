@@ -7,7 +7,7 @@ best-effort and wrapped so a notification failure never breaks the workflow tran
 
 Event-driven notifications (N01, N03–N13, N15–N20) are fired from the workflow engine /
 action helpers. Sub-status ones (N06/N07/N08) fire from pick_list_on_update. ASN/GRN
-rejections (N19/N20) fire from the Post Delivery controller. Time-based reminders
+rejections (N19/N20) fire from the Post Dispatch controller. Time-based reminders
 (N02, N14, N21, N22, N23) run from run_daily_so_notifications (scheduler_events.daily).
 """
 
@@ -209,13 +209,13 @@ def n18_forced_dn_submitted(so, doc=None):
 def n19_asn_rejected(pd):
 	_send(_role_users(ECOM_COORD) + _role_users(ECOM_MGR),
 		_("ASN for {0} (DN {1}) has been rejected. Please review and re-upload.").format(pd.sales_order, pd.delivery_note),
-		doctype="Post Delivery", docname=pd.name, priority="high")
+		doctype="Post Dispatch", docname=pd.name, priority="high")
 
 
 def n20_grn_rejected(pd, rejected_qty):
 	_send(_role_users(SALES) + _role_users(ECOM_MGR),
 		_("GRN rejection received for {0} (DN {1}). Rejected Qty: {2}. Action required.").format(pd.sales_order, pd.delivery_note, rejected_qty),
-		doctype="Post Delivery", docname=pd.name, priority="high")
+		doctype="Post Dispatch", docname=pd.name, priority="high")
 
 
 # ===========================================================================
@@ -265,11 +265,11 @@ def _n14_future_dispatch_due():
 
 
 def _n21_grn_pending():
-	if not frappe.db.exists("DocType", "Post Delivery"):
+	if not frappe.db.exists("DocType", "Post Dispatch"):
 		return
 	cutoff = add_days(today(), -GRN_PENDING_DAYS)
 	rows = frappe.get_all(
-		"Post Delivery",
+		"Post Dispatch",
 		filters={"grn_available": 1, "grn_status": "Pending", "dispatch_date": ["<=", cutoff]},
 		fields=["name", "sales_order", "dispatch_date"],
 	)
@@ -279,7 +279,7 @@ def _n21_grn_pending():
 	for r in rows:
 		_send(recipients,
 			_("Reminder: GRN for {0} has been pending since {1}. Please follow up.").format(r.sales_order, r.dispatch_date),
-			doctype="Post Delivery", docname=r.name, priority="medium")
+			doctype="Post Dispatch", docname=r.name, priority="medium")
 
 
 def _n22_23_po_expiry():

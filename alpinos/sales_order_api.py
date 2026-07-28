@@ -1731,12 +1731,12 @@ def _attach_so_list_row_extras(rows):
 	):
 		inv_map[r.sales_order] = r.parent
 
-	# ASN details live on Post Delivery (one per dispatch) — collect them per SO so
+	# ASN details live on Post Dispatch (one per dispatch) — collect them per SO so
 	# the list can show a summary with the full per-DN breakdown on hover.
 	asn_map = {}
-	if frappe.db.exists("DocType", "Post Delivery"):
+	if frappe.db.exists("DocType", "Post Dispatch"):
 		for r in frappe.get_all(
-			"Post Delivery",
+			"Post Dispatch",
 			filters={"sales_order": ["in", names], "docstatus": ["<", 2]},
 			fields=["sales_order", "delivery_note", "asn_id", "asn_status", "asn_date"],
 			order_by="asn_date asc, modified asc",

@@ -40,9 +40,9 @@ ROLES = {
 	"Sales Admin": "Offline Sales: full access to Sales Orders; view Pick List / Delivery Note.",
 	"Sales Manager": "Offline Sales: create / edit / submit Sales Orders; view Pick List / Delivery Note.",
 	"Sales User": "Offline Sales: view Sales Orders / Pick List / Delivery Note.",
-	"E-Commerce Coordinator": "E-Com: create / edit / submit E-Com Sales Orders; ASN + GRN entry on Post Delivery; view Pick List / Delivery Note.",
-	"E-Commerce Manager": "E-Com: Coordinator access plus cancel Sales Orders and override ASN/GRN on Post Delivery.",
-	"E-Commerce Admin": "E-Com: full access to E-Com Sales Orders and Post Delivery.",
+	"E-Commerce Coordinator": "E-Com: create / edit / submit E-Com Sales Orders; ASN + GRN entry on Post Dispatch; view Pick List / Delivery Note.",
+	"E-Commerce Manager": "E-Com: Coordinator access plus cancel Sales Orders and override ASN/GRN on Post Dispatch.",
+	"E-Commerce Admin": "E-Com: full access to E-Com Sales Orders and Post Dispatch.",
 }
 
 

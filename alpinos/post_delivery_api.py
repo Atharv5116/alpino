@@ -1,9 +1,9 @@
 """
-Post Delivery — API for the work-queue page.
+Post Dispatch — API for the work-queue page.
 
 Queue = created Delivery Notes whose Sales Order is post-delivery-applicable
-(SO.custom_appointment_required) and whose Post Delivery entry isn't Completed yet.
-"Start Post Delivery" gets-or-creates the Post Delivery doc for a DN, auto-filling
+(SO.custom_appointment_required) and whose Post Dispatch entry isn't Completed yet.
+"Start Post Dispatch" gets-or-creates the Post Dispatch doc for a DN, auto-filling
 transport + GRN SKU rows from the Delivery Note.
 """
 
@@ -15,7 +15,7 @@ from frappe.utils import cint, flt
 @frappe.whitelist()
 def get_post_delivery_queue(start=0, page_length=20, search=None, status=None, customer=None):
 	"""Delivery Notes pending post-delivery (applicable + not yet Completed)."""
-	if not frappe.has_permission("Post Delivery", "read"):
+	if not frappe.has_permission("Post Dispatch", "read"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 	start = cint(start)
@@ -61,7 +61,7 @@ def get_post_delivery_queue(start=0, page_length=20, search=None, status=None, c
 			IFNULL(pd.appointment_status, 'Pending') AS appointment_status
 		FROM `tabDelivery Note` dn
 		INNER JOIN `tabSales Order` so ON so.name = dn.custom_sales_order_id
-		LEFT JOIN `tabPost Delivery` pd ON pd.delivery_note = dn.name
+		LEFT JOIN `tabPost Dispatch` pd ON pd.delivery_note = dn.name
 		WHERE {where}
 		ORDER BY dn.modified DESC
 		LIMIT %(page_length)s OFFSET %(start)s
@@ -77,11 +77,11 @@ def get_post_delivery_queue(start=0, page_length=20, search=None, status=None, c
 
 @frappe.whitelist()
 def start_post_delivery(delivery_note):
-	"""Get-or-create the Post Delivery doc for a Delivery Note; return its name."""
+	"""Get-or-create the Post Dispatch doc for a Delivery Note; return its name."""
 	if not delivery_note:
 		frappe.throw(_("Delivery Note is required."))
 
-	existing = frappe.db.get_value("Post Delivery", {"delivery_note": delivery_note}, "name")
+	existing = frappe.db.get_value("Post Dispatch", {"delivery_note": delivery_note}, "name")
 	if existing:
 		return {"name": existing, "created": 0}
 
@@ -96,7 +96,7 @@ def start_post_delivery(delivery_note):
 		as_dict=True,
 	) or {}
 
-	pd = frappe.new_doc("Post Delivery")
+	pd = frappe.new_doc("Post Dispatch")
 	pd.sales_order = sales_order
 	pd.delivery_note = delivery_note
 	pd.customer = dn.customer

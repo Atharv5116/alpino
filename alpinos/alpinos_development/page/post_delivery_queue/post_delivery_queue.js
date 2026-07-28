@@ -1,7 +1,7 @@
 frappe.pages['post-delivery-queue'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Post Delivery'),
+		title: __('Post Dispatch'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('post_delivery_queue'));
@@ -89,7 +89,7 @@ var PostDeliveryQueue = class {
 		});
 		w.on('click', '.pdq-open-btn', (e) => {
 			const pd = $(e.currentTarget).data('pd');
-			frappe.set_route('Form', 'Post Delivery', pd);
+			frappe.set_route('Form', 'Post Dispatch', pd);
 		});
 	}
 
@@ -97,10 +97,10 @@ var PostDeliveryQueue = class {
 		frappe.call({
 			method: 'alpinos.post_delivery_api.start_post_delivery',
 			args: { delivery_note },
-			freeze: true, freeze_message: __('Starting Post Delivery...'),
+			freeze: true, freeze_message: __('Starting Post Dispatch...'),
 			callback: (r) => {
 				if (r.message && r.message.name) {
-					frappe.set_route('Form', 'Post Delivery', r.message.name);
+					frappe.set_route('Form', 'Post Dispatch', r.message.name);
 				}
 			},
 		});
@@ -196,7 +196,7 @@ var PostDeliveryQueue = class {
 				if (d.post_delivery) {
 					return `<button type="button" class="btn btn-xs btn-default pdq-open-btn" data-pd="${esc(d.post_delivery)}">${__('Open')}</button>`;
 				}
-				return `<button type="button" class="btn btn-xs btn-primary pdq-start-btn" data-dn="${esc(d.delivery_note)}">${__('Start Post Delivery')}</button>`;
+				return `<button type="button" class="btn btn-xs btn-primary pdq-start-btn" data-dn="${esc(d.delivery_note)}">${__('Start Post Dispatch')}</button>`;
 			},
 		};
 		rows.forEach((d) => {

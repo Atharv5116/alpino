@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt, getdate, now
 
 
-class PostDelivery(Document):
+class PostDispatch(Document):
 	def validate(self):
 		self._validate_appointment_lock()
 		self._stamp_asn_upload()
@@ -99,7 +99,7 @@ class PostDelivery(Document):
 	def _compute_aggregates(self):
 		"""SO-level aggregate summary across all terms (BRD Module 3):
 		fill rate, total terms (submitted DNs), total dispatched qty, and the
-		GRN totals / Overall GRN Fill Rate across every Post Delivery of the SO."""
+		GRN totals / Overall GRN Fill Rate across every Post Dispatch of the SO."""
 		if not self.sales_order:
 			return
 		total_po = flt(frappe.db.get_value("Sales Order", self.sales_order, "total_qty")) or _so_ordered_qty(self.sales_order)
@@ -116,8 +116,8 @@ class PostDelivery(Document):
 		other = frappe.db.sql(
 			"""
 			SELECT IFNULL(SUM(gi.grn_qty), 0), IFNULL(SUM(gi.grn_rejected_qty), 0)
-			FROM `tabPost Delivery GRN Item` gi
-			INNER JOIN `tabPost Delivery` pd ON pd.name = gi.parent
+			FROM `tabPost Dispatch GRN Item` gi
+			INNER JOIN `tabPost Dispatch` pd ON pd.name = gi.parent
 			WHERE pd.sales_order = %(so)s AND pd.name != %(self)s
 			""",
 			{"so": self.sales_order, "self": self.name or ""},

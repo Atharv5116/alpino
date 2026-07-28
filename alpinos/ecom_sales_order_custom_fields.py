@@ -78,7 +78,7 @@ def setup_ecom_sales_order_fields():
 				label="Appointment Required",
 				fieldtype="Check",
 				insert_after="custom_ecom_section",
-				description="Auto-filled from Buyer Master; controls Post Delivery visibility.",
+				description="Auto-filled from Buyer Master; controls Post Dispatch visibility.",
 			),
 			dict(
 				fieldname="custom_grn_available",

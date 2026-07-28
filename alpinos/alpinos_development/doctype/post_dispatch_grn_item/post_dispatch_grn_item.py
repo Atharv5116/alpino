@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class PostDeliveryGRNItem(Document):
+class PostDispatchGRNItem(Document):
 	pass

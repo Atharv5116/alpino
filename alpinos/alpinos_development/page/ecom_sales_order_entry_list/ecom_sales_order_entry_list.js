@@ -383,7 +383,7 @@ var EcomSalesOrderListPage = class {
 				return btns.join(' ') || '—';
 			},
 			asn: (d) => {
-				// ASN details come from the SO's Post Delivery records (one per dispatch).
+				// ASN details come from the SO's Post Dispatch records (one per dispatch).
 				// Show a compact summary in the cell and the full per-DN breakdown on
 				// hover (title=) or tap/click (delegated .eso-asn handler in bind_events).
 				const list = Array.isArray(d.asn_details) ? d.asn_details : [];

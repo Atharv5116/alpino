@@ -11,7 +11,7 @@ Covers:
      partial statuses, auto-Complete on full dispatch
   4. Forced close: at-PL-submission path + lock (no new PL) + Forced Completed;
      single-PL lock for non-partial orders
-  5. Post Delivery: queue, start (transport/GRN seeding), GRN validations,
+  5. Post Dispatch: queue, start (transport/GRN seeding), GRN validations,
      status roll-up + reflect onto DN/SO, fill rate
   6. Notifications: Notification Log rows created for a test recipient
 
@@ -409,20 +409,20 @@ def run():
 		or (_ for _ in ()).throw(AssertionError(frappe.as_json(q["data"])))))
 
 	pd_name = start_post_delivery(dn3)["name"]
-	pdoc = frappe.get_doc("Post Delivery", pd_name)
+	pdoc = frappe.get_doc("Post Dispatch", pd_name)
 	check("post delivery seeded (transport + GRN rows + qty)", lambda: (
 		(pdoc.transporter == "ECOMTEST Transport" and flt(pdoc.dispatched_qty) == 20
 		 and len(pdoc.grn_items) == 1 and flt(pdoc.grn_items[0].dispatched_qty) == 20)
 		or (_ for _ in ()).throw(AssertionError(f"{pdoc.transporter}/{pdoc.dispatched_qty}/{len(pdoc.grn_items)}"))))
 
 	def _bad_grn():
-		p = frappe.get_doc("Post Delivery", pd_name)
+		p = frappe.get_doc("Post Dispatch", pd_name)
 		p.grn_items[0].grn_qty = 25  # > dispatched 20
 		p.save(ignore_permissions=True)
 	expect_throw("GRN qty > dispatched blocked", _bad_grn, "GRN Qty")
 
 	def _bad_reject():
-		p = frappe.get_doc("Post Delivery", pd_name)
+		p = frappe.get_doc("Post Dispatch", pd_name)
 		p.reload()
 		p.grn_items[0].grn_qty = 15
 		p.grn_items[0].grn_rejected_qty = 5
@@ -431,7 +431,7 @@ def run():
 	expect_throw("rejected qty without reason blocked", _bad_reject, "Rejection Reason")
 
 	def _good_pd():
-		p = frappe.get_doc("Post Delivery", pd_name)
+		p = frappe.get_doc("Post Dispatch", pd_name)
 		p.reload()
 		p.asn_status = "Accepted"
 		p.asn_id = f"ASN-{tag}"
@@ -443,7 +443,7 @@ def run():
 		p.grn_items[0].rejection_reason = "Damage"
 		p.save(ignore_permissions=True)
 	_good_pd()
-	pdoc = frappe.get_doc("Post Delivery", pd_name)
+	pdoc = frappe.get_doc("Post Dispatch", pd_name)
 	check("post delivery rolls up to Completed + ASN stamped", lambda: (
 		(pdoc.post_delivery_status == "Completed" and pdoc.asn_uploaded_by)
 		or (_ for _ in ()).throw(AssertionError(f"{pdoc.post_delivery_status}/{pdoc.asn_uploaded_by}"))))
@@ -473,7 +473,7 @@ def run():
 
 	# Appointment ID locks once the SO is terminal.
 	def _appt_after_terminal():
-		p = frappe.get_doc("Post Delivery", pd_name)
+		p = frappe.get_doc("Post Dispatch", pd_name)
 		p.appointment_id = "APT-LOCKED"
 		p.save(ignore_permissions=True)
 	expect_throw("appointment ID locked after terminal status", _appt_after_terminal, "Appointment ID")
@@ -589,11 +589,11 @@ def run():
 		check("role: Sales can confirm forced completion",
 			lambda: (so_status(so6) == "Forced Completed") or (_ for _ in ()).throw(AssertionError(so_status(so6))))
 
-		# ECOM Coordinator can run Post Delivery (queue + start).
+		# ECOM Coordinator can run Post Dispatch (queue + start).
 		frappe.set_user(u_ecom)
 		q6 = get_post_delivery_queue(search=so6)
 		pd6 = start_post_delivery(dn6)["name"]
-		check("role: ECOM Coordinator can start Post Delivery", lambda: (
+		check("role: ECOM Coordinator can start Post Dispatch", lambda: (
 			(bool(pd6) and any(r.get("delivery_note") == dn6 for r in q6["data"]))
 			or (_ for _ in ()).throw(AssertionError(f"pd={pd6}"))))
 	finally:

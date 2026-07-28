@@ -56,7 +56,7 @@
   {
    "fieldname": "details_section",
    "fieldtype": "Section Break",
-   "label": "Post Delivery"
+   "label": "Post Dispatch"
   },
   {
    "fieldname": "sales_order",
@@ -102,7 +102,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Post Delivery Status",
+   "label": "Post Dispatch Status",
    "options": "Not Started\nIn Progress\nCompleted",
    "read_only": 1
   },
@@ -282,7 +282,7 @@
    "fieldname": "grn_items",
    "fieldtype": "Table",
    "label": "GRN SKU",
-   "options": "Post Delivery GRN Item"
+   "options": "Post Dispatch GRN Item"
   },
   {
    "fieldname": "summary_section",
@@ -335,10 +335,10 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-12 12:00:00.000000",
+ "modified": "2026-07-28 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
- "name": "Post Delivery",
+ "name": "Post Dispatch",
  "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [

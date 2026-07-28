@@ -1,7 +1,7 @@
 """
-Post Delivery — reflect fields on Delivery Note + Sales Order.
+Post Dispatch — reflect fields on Delivery Note + Sales Order.
 
-The Post Delivery doc (one per DN) mirrors its status onto the linked Delivery Note
+The Post Dispatch doc (one per DN) mirrors its status onto the linked Delivery Note
 and Sales Order via these read-only fields (written with db.set_value since both are
 submitted). Run on after_migrate, after the e-com and DN custom-field setups.
 """
@@ -15,7 +15,7 @@ def setup_post_delivery_fields():
 		"Delivery Note": [
 			dict(
 				fieldname="custom_post_delivery_section",
-				label="Post Delivery",
+				label="Post Dispatch",
 				fieldtype="Section Break",
 				insert_after="custom_lr_gr_no",
 				collapsible=1,
@@ -23,16 +23,16 @@ def setup_post_delivery_fields():
 			),
 			dict(
 				fieldname="custom_post_delivery",
-				label="Post Delivery",
+				label="Post Dispatch",
 				fieldtype="Link",
-				options="Post Delivery",
+				options="Post Dispatch",
 				insert_after="custom_post_delivery_section",
 				read_only=1,
 				allow_on_submit=1,
 			),
 			dict(
 				fieldname="custom_post_delivery_status",
-				label="Post Delivery Status",
+				label="Post Dispatch Status",
 				fieldtype="Data",
 				insert_after="custom_post_delivery",
 				read_only=1,
@@ -71,7 +71,7 @@ def setup_post_delivery_fields():
 		"Sales Order": [
 			dict(
 				fieldname="custom_post_delivery_section",
-				label="Post Delivery",
+				label="Post Dispatch",
 				fieldtype="Section Break",
 				insert_after="custom_gst_exclusive_buyer",
 				collapsible=1,
@@ -79,7 +79,7 @@ def setup_post_delivery_fields():
 			),
 			dict(
 				fieldname="custom_post_delivery_status",
-				label="Post Delivery Status",
+				label="Post Dispatch Status",
 				fieldtype="Select",
 				options="\nNot Started\nIn Progress\nCompleted",
 				insert_after="custom_post_delivery_section",
@@ -160,18 +160,18 @@ def setup_post_delivery_fields():
 		],
 	}
 	create_custom_fields(custom_fields, update=True)
-	print("✅ Post Delivery reflect fields created on Delivery Note + Sales Order")
+	print("✅ Post Dispatch reflect fields created on Delivery Note + Sales Order")
 
 	_grant_post_delivery_role_perms()
 
 
 def _grant_post_delivery_role_perms():
-	"""Grant the E-Commerce roles access to Post Delivery in code (the roles are
+	"""Grant the E-Commerce roles access to Post Dispatch in code (the roles are
 	seeded in after_migrate, so they can't be referenced in the doctype JSON perms
 	which sync earlier). Idempotent."""
 	from frappe.permissions import add_permission, update_permission_property
 
-	if not frappe.db.exists("DocType", "Post Delivery"):
+	if not frappe.db.exists("DocType", "Post Dispatch"):
 		return
 
 	grants = {
@@ -182,9 +182,9 @@ def _grant_post_delivery_role_perms():
 	for role, props in grants.items():
 		if not frappe.db.exists("Role", role):
 			continue
-		if not frappe.db.exists("Custom DocPerm", {"parent": "Post Delivery", "role": role, "permlevel": 0}):
-			add_permission("Post Delivery", role, 0)
+		if not frappe.db.exists("Custom DocPerm", {"parent": "Post Dispatch", "role": role, "permlevel": 0}):
+			add_permission("Post Dispatch", role, 0)
 		for prop, val in props.items():
-			update_permission_property("Post Delivery", role, 0, prop, val, validate=False)
+			update_permission_property("Post Dispatch", role, 0, prop, val, validate=False)
 	frappe.db.commit()
-	print("✅ Post Delivery permissions granted to E-Commerce roles")
+	print("✅ Post Dispatch permissions granted to E-Commerce roles")
