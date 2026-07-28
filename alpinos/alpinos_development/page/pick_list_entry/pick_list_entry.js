@@ -47,14 +47,18 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 
 			page.main.find('#btn-print-packing').on('click', function() {
 				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
-					frappe.msgprint(__('Save the Pick List first, then print.'));
+					frappe.msgprint(__('Save the Pick List first, then download the PDF.'));
 					return;
 				}
-				const url = '/printview?doctype=' + encodeURIComponent('Pick List')
-					+ '&name=' + encodeURIComponent(page.pick_list_name)
-					+ '&format=' + encodeURIComponent('Pick List Packing Sheet')
-					+ '&trigger_print=1';
-				window.open(url, '_blank');
+				// Download the packing sheet PDF (same wkhtmltopdf endpoint the Sales Order uses).
+				const url =
+					'/api/method/frappe.utils.print_format.download_pdf?' +
+					'doctype=' + encodeURIComponent('Pick List') +
+					'&name=' + encodeURIComponent(page.pick_list_name) +
+					'&format=' + encodeURIComponent('Pick List Packing Sheet') +
+					'&no_letterhead=0';
+				const w = window.open(frappe.urllib.get_full_url(url));
+				if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF.'));
 			});
 
 			page.main.find('#btn-save-draft').on('click', function() {
