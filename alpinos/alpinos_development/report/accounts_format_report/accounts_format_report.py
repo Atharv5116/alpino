@@ -170,12 +170,47 @@ def execute(filters=None):
 	return get_columns(), _get_data(filters)
 
 
+def _buyer_master_scope_customers(filters):
+	"""Customers whose Buyer Master matches the parent and/or site-name filters — or
+	None when neither is set. Selecting a parent pulls the WHOLE family: the parent
+	master plus every child site whose parent_buyer is it."""
+	parent = (filters.get("buyer_master_parent") or "").strip()
+	site = (filters.get("site_name") or "").strip()
+	if not parent and not site:
+		return None
+	conditions = ["IFNULL(bm.customer, '') <> ''"]
+	params = {}
+	if parent:
+		conditions.append("(bm.name = %(parent)s OR bm.parent_buyer = %(parent)s)")
+		params["parent"] = parent
+	if site:
+		conditions.append("bm.site_name = %(site)s")
+		params["site"] = site
+	rows = frappe.db.sql(
+		"SELECT DISTINCT bm.customer FROM `tabBuyer Master` bm WHERE " + " AND ".join(conditions),
+		params, as_dict=True,
+	)
+	return {r.customer for r in rows}
+
+
 def _get_data(filters):
 	so_filters = {"docstatus": 1}
 	if filters.get("from_date") and filters.get("to_date"):
 		so_filters["transaction_date"] = ["between", [filters.from_date, filters.to_date]]
 	if filters.get("customer"):
 		so_filters["customer"] = filters.customer
+
+	# Buyer Master parent / site scoping: restrict the SO scan to the Customers whose
+	# Buyer Master is (or sits under) the selected parent and/or carries the selected site.
+	allowed_customers = _buyer_master_scope_customers(filters)
+	if allowed_customers is not None:
+		if not allowed_customers:
+			return []
+		if filters.get("customer"):
+			if filters.customer not in allowed_customers:
+				return []
+		else:
+			so_filters["customer"] = ["in", list(allowed_customers)]
 
 	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="transaction_date asc, name asc")
 

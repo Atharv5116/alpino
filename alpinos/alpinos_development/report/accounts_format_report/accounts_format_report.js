@@ -32,6 +32,18 @@ frappe.query_reports["Accounts Format Report"] = {
 			fieldtype: "Link",
 			options: "Alpino Customer Type",
 		},
+		{
+			fieldname: "buyer_master_parent",
+			label: "Buyer Master (Parent)",
+			fieldtype: "Link",
+			options: "Buyer Master",
+			get_query: () => ({ filters: { is_parent: 1 } }),
+		},
+		{
+			fieldname: "site_name",
+			label: "Site Name",
+			fieldtype: "Data",
+		},
 	],
 	onload: function (report) {
 		// The upload/download + PDF-fetch workflow lives on the "Invoice Sync" page.
