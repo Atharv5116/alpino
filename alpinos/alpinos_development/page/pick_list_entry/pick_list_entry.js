@@ -45,6 +45,18 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				frappe.set_route('pick_list_list');
 			});
 
+			page.main.find('#btn-print-packing').on('click', function() {
+				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
+					frappe.msgprint(__('Save the Pick List first, then print.'));
+					return;
+				}
+				const url = '/printview?doctype=' + encodeURIComponent('Pick List')
+					+ '&name=' + encodeURIComponent(page.pick_list_name)
+					+ '&format=' + encodeURIComponent('Pick List Packing Sheet')
+					+ '&trigger_print=1';
+				window.open(url, '_blank');
+			});
+
 			page.main.find('#btn-save-draft').on('click', function() {
 				page.save_pick_list_as_draft();
 			});
