@@ -428,6 +428,36 @@ def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
 )
 
 
+POC_ECOM_ROLES = ("E-Commerce Admin", "E-Commerce Coordinator", "E-Commerce Manager")
+POC_SALES_ROLES = ("Sales User", "Sales Manager")
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def poc_employee_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Buyer Master POC "Employee Name" link: Employees whose linked User holds the role(s)
+	for the buyer's Channel. E-com -> E-Commerce Admin/Coordinator/Manager; Offline /
+	General Trade (and anything else) -> Sales User / Sales Manager."""
+	channel = ((filters or {}).get("channel") or "").strip()
+	roles = list(POC_ECOM_ROLES if channel == "E-com" else POC_SALES_ROLES)
+	txt = txt or ""
+	placeholders = ", ".join(["%s"] * len(roles))
+	return frappe.db.sql(
+		f"""
+		SELECT DISTINCT e.name, e.employee_name
+		FROM `tabEmployee` e
+		INNER JOIN `tabHas Role` hr ON hr.parent = e.user_id AND hr.parenttype = 'User'
+		WHERE IFNULL(e.status, 'Active') = 'Active'
+			AND IFNULL(e.user_id, '') <> ''
+			AND hr.role IN ({placeholders})
+			AND (e.name LIKE %s OR IFNULL(e.employee_name, '') LIKE %s)
+		ORDER BY e.employee_name ASC
+		LIMIT %s OFFSET %s
+		""",
+		roles + [f"%{txt}%", f"%{txt}%", int(page_len), int(start)],
+	)
+
+
 @frappe.whitelist()
 def get_offline_buyer_master_details(obm_name):
 	"""Return all editable fields of an Buyer Master for the catalog edit dialog."""

@@ -12,6 +12,12 @@ frappe.ui.form.on("Buyer Master", {
 		frm.set_query("party_owner", () => ({
 			query: "alpinos.offline_buyer_api.party_owner_user_query",
 		}));
+		// POC "Employee Name" is scoped to the buyer's Channel: E-com -> E-Commerce
+		// role holders; Offline / General Trade -> Sales User / Sales Manager.
+		frm.set_query("poc_employee", () => ({
+			query: "alpinos.offline_buyer_api.poc_employee_query",
+			filters: { channel: frm.doc.channel || "" },
+		}));
 		frm.set_query("parent_buyer", () => ({
 			filters: {
 				is_parent: 1,
