@@ -188,8 +188,20 @@ def pack_size(item_code):
 		return ""
 
 
+def available_stock(item_code):
+	"""Total available (actual) stock for a SKU across all warehouses — the Pick List
+	packing sheet's Stock column. Returns '' when unknown; never raises inside a render."""
+	try:
+		res = frappe.db.sql("SELECT SUM(actual_qty) FROM `tabBin` WHERE item_code=%s", item_code)
+		v = flt(res[0][0]) if res and res[0][0] is not None else 0.0
+		return int(v) if v == int(v) else round(v, 2)
+	except Exception:
+		return ""
+
+
 # Expose to Jinja environment
 jinja_methods = {
 	"get_combined_items": get_combined_items,
 	"pack_size": pack_size,
+	"available_stock": available_stock,
 }
