@@ -45,15 +45,15 @@ _HTML = r"""
     <!-- ===== header block (shares the grid) ===== -->
     <tr>
       <td colspan="2" class="lbl">ACTUAL BOX</td>
-      <td colspan="2" class="val">{{ doc.custom_actual_box if doc.custom_actual_box is not none else "" }}</td>
+      <td colspan="2" class="val">{{ (doc.custom_actual_box | round | int) if doc.custom_actual_box is not none else "" }}</td>
       <td colspan="4" class="rl" rowspan="8">QC Attended By: {{ doc.custom_qc_attended_by or "" }}</td>
       <td rowspan="8"></td>
     </tr>
-    <tr><td colspan="2" class="lbl">SAMPLE BOX</td><td colspan="2" class="val">{{ doc.custom_sample_box if doc.custom_sample_box is not none else "" }}</td></tr>
-    <tr><td colspan="2" class="lbl">SAMPLE WEIGHT</td><td colspan="2" class="val">{{ doc.custom_sample_weight if doc.custom_sample_weight is not none else "" }}</td></tr>
-    <tr><td colspan="2" class="lbl">TOTAL BOX</td><td colspan="2" class="val hl">{{ doc.custom_total_box or 0 }}</td></tr>
+    <tr><td colspan="2" class="lbl">SAMPLE BOX</td><td colspan="2" class="val">{{ (doc.custom_sample_box | round | int) if doc.custom_sample_box else "" }}</td></tr>
+    <tr><td colspan="2" class="lbl">SAMPLE WEIGHT</td><td colspan="2" class="val">{{ ("%.2f"|format(doc.custom_sample_weight)) if doc.custom_sample_weight else "" }}</td></tr>
+    <tr><td colspan="2" class="lbl">TOTAL BOX</td><td colspan="2" class="val hl">{{ (doc.custom_total_box | round | int) if doc.custom_total_box is not none else 0 }}</td></tr>
     <tr><td colspan="2" class="lbl">GROSS WEIGHT</td><td colspan="2" class="val">{{ "%.2f"|format(doc.custom_gross_weight or 0) }}</td></tr>
-    <tr><td colspan="2" class="lbl">TOTAL UNITS</td><td colspan="2" class="val">{{ doc.custom_total_unit or 0 }}</td></tr>
+    <tr><td colspan="2" class="lbl">TOTAL UNITS</td><td colspan="2" class="val">{{ (doc.custom_total_unit | round | int) if doc.custom_total_unit is not none else 0 }}</td></tr>
     <tr><td colspan="2" class="lbl">PO NO.</td><td colspan="2" class="val">{{ doc.custom_po_no or "" }}</td></tr>
     <tr><td colspan="2" class="lbl">TRANSPORTER</td><td colspan="2" class="val">{{ doc.custom_transporter or "" }}</td></tr>
     <tr>
