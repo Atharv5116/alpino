@@ -348,9 +348,14 @@ def _get_data(filters):
 				plr = pl_map.get(item_code)
 				if plr:
 					unit, box = flt(plr.get("qty")), flt(plr.get("box"))
+				elif has_pl:
+					# Billable item on the Sales Order but NOT in the submitted Pick List —
+					# it wasn't picked/dispatched, so it doesn't belong on the billing report.
+					# (Marketing freebies / scheme / damage are from_picklist=False and are
+					# kept — they're recorded on the SO, never on the pick list.)
+					return
 				else:
-					unit = 0 if has_pl else flt(fallback_qty)
-					box = 0 if has_pl else flt(fallback_box)
+					unit, box = flt(fallback_qty), flt(fallback_box)
 
 			gst_pct = flt(it.get("custom_gst_percent"))
 			gst_rate = 100 + gst_pct
