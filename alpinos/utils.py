@@ -86,13 +86,14 @@ def get_combined_items(doc):
 				item_name = source_row.get("item_name")
 			if source_row.get("uom"):
 				uom = source_row.get("uom")
-			# Line total = the order's own selling price x qty. custom_selling_price is the
-			# per-unit GST-INCLUSIVE price (MRP incl GST less the discount, OR the price entered
-			# directly), so this equals the reference PDF's Amount and handles a price-baked
-			# discount. Using it directly — NOT the stored net amount (rate x qty) — avoids the
-			# net-rate rounding that rate x qty amplifies by qty (46.67 x 120 = 5600.40 vs the
-			# clean 49 x 120 = 5880.00).
-			line_amt = flt(flt(sp) * flt(qty), 2)
+			# Line total = selling price x qty, LESS the line's Additional Discount %, to match
+			# the saved amount (sales_order_api._calculate_sales_order_line_values:
+			# selling_price * qty * (1 - add_disc%)). custom_selling_price is the per-unit
+			# GST-INCLUSIVE price (MRP incl GST less flat/offer, OR the price entered directly);
+			# offer is already baked into it, additional discount is NOT — so only add_disc is
+			# applied here. Using selling_price directly — NOT the stored net rate x qty — avoids
+			# the net-rate rounding that qty amplifies (46.67 x 120 = 5600.40 vs 49 x 120 = 5880).
+			line_amt = flt(flt(sp) * flt(qty) * (100 - add_disc) / 100.0, 2)
 			if not line_amt:
 				line_amt = flt(source_row.get("amount"))
 		else:

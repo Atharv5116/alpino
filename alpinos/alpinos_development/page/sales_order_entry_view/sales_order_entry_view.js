@@ -770,11 +770,13 @@ var SalesOrderEntryView = class {
 				const rmk = this._has(it, 'custom_remarks') && String(it.custom_remarks).trim() !== ''
 					? this._esc(it.custom_remarks)
 					: '—';
-				// Amount = selling price x qty (GST-inclusive), matching the SO PDF. Using the
-				// per-unit price directly avoids the net-rate rounding that amount = rate x qty
-				// amplifies by qty (46.67 x 120 = 5600.40 -> 5880.40 vs 49 x 120 = 5880.00).
+				// Amount = selling price x qty LESS the line's Additional Discount % (GST-
+				// inclusive), matching the SO PDF and the saved amount
+				// (sales_order_api._calculate_sales_order_line_values). Using the per-unit price
+				// directly avoids the net-rate rounding that amount = rate x qty amplifies by
+				// qty (46.67 x 120 = 5600.40 -> 5880.40 vs 49 x 120 = 5880.00).
 				const amt = this._has(it, 'custom_selling_price')
-					? format_currency(flt(it.custom_selling_price) * flt(it.qty), rowCur)
+					? format_currency(flt(it.custom_selling_price) * flt(it.qty) * (100 - (flt(it.custom_additional_discount) || 0)) / 100.0, rowCur)
 					: (this._has(it, 'amount')
 						? format_currency(flt(it.amount) + flt(it.custom_item_tax || 0), rowCur)
 						: '—');
