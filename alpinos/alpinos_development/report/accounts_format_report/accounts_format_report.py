@@ -121,13 +121,12 @@ def get_columns():
 
 	cols = [
 		col("Invoice No", "invoice_no", 100),
-		col("Order Date", "order_date", 95, "Date"),
+		col("Dispatch Date", "dispatch_date", 95, "Date"),
 		col("Sales Order Id", "sales_order_id", 130),
 		col("Customer PO Number", "customer_po_number", 130),
 		col("Customer", "customer", 180),
 		col("P&L Name / Voucher Type", "pl_voucher", 180),
 		col("Registration Type", "registration_type", 110),
-		col("GST No", "gst_no", 140),
 		col("Alpino SKU", "alpino_sku", 120),
 		col("EAN/FSN", "ean_fsn", 130),
 		col("EAN/FSN Flag", "ean_fsn_flag", 90),
@@ -135,32 +134,36 @@ def get_columns():
 		col("UNIT", "unit", 70, "Float"),
 		col("Box", "box", 60, "Float"),
 		col("Alpino Product MRP", "alpino_mrp", 110, "Currency"),
-		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Flat Discount %", "flat_discount", 90, "Float"),
 		col("Additional Discount", "additional_discount", 100, "Float"),
 		col("Alpino GST Rate", "gst_rate", 90, "Float"),
-		col("Final Taxable", "final_taxable", 110, "Currency"),
-		col("CGST", "cgst", 90, "Currency"),
-		col("IGST", "igst", 90, "Currency"),
+		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Final Total Value", "final_total", 120, "Currency"),
+		col("Final Taxable", "final_taxable", 110, "Currency"),
+		col("IGST", "igst", 90, "Currency"),
+		col("CGST", "cgst", 90, "Currency"),
 		col("Is Billable", "is_billable", 80),
-		col("Mobile No", "mobile_no", 110),
-		col("Place Of Supply (Bill to State)", "bill_state", 130),
-		col("Bill to City", "bill_city", 110),
-		col("Bill to Pincode", "bill_pincode", 90),
 	]
-	for i in range(1, 7):
+	for i in range(1, 5):
 		cols.append(col(f"Bill to Address Line.{i}", f"bill_addr_{i}", 160))
 	cols += [
-		col("Ship to State", "ship_state", 120),
-		col("Ship to City", "ship_city", 110),
-		col("Ship to Pincode", "ship_pincode", 90),
+		col("Bill to City + Place Of Supply (Bill to State) + Bill to Pincode + Mobile No", "bill_combined", 260),
+		col("Place Of Supply (Bill to State)", "bill_state", 130),
+		col("Bill to Pincode", "bill_pincode", 90),
+		col("Bill To GST No", "bill_gst_no", 140),
 	]
-	for i in range(1, 7):
+	for i in range(1, 5):
 		cols.append(col(f"Ship to Address Line.{i}", f"ship_addr_{i}", 160))
 	cols += [
+		col("Ship to City + Ship to State + Ship to Pincode + Mobile No", "ship_combined", 260),
+		col("Ship to State", "ship_state", 120),
+		col("Ship to Pincode", "ship_pincode", 90),
+		col("Ship To GST No", "ship_gst_no", 140),
+		col("Warehouse", "warehouse", 130),
 		col("Tally Warehouse Id", "tally_warehouse_id", 110),
 		col("Channel", "channel", 120),
+		col("Site Name", "site_name", 130),
+		col("Order Date", "order_date", 95, "Date"),
 	]
 	return cols
 
@@ -302,31 +305,45 @@ def _get_data(filters):
 			or " ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")]))
 		ship_text = (so.get("custom_shipping_address_text") or "").strip() \
 			or " ".join(filter(None, [ship.get("address_line1"), ship.get("address_line2")]))
-		bill_lines = _split_address(bill_text)
-		ship_lines = _split_address(ship_text)
+		bill_lines = _split_address(bill_text, max_lines=4)
+		ship_lines = _split_address(ship_text, max_lines=4)
 
 		customer_name = obm.get("tally_buyer_name") or so.get("customer_name") or so.customer
 
+		mobile = obm.get("contact_no") or ""
+		bill_city = bill.get("city") or ""
+		bill_state = bill.get("state") or ""
+		bill_pincode = bill.get("pincode") or ""
+		ship_city = ship.get("city") or ""
+		ship_state = ship.get("state") or ""
+		ship_pincode = ship.get("pincode") or ""
+
 		header = {
 			"invoice_no": "",
-			"order_date": so.transaction_date,
+			"dispatch_date": so.get("custom_dispatch_date") or "",
 			"sales_order_id": so.name,
 			"customer_po_number": so.get("po_no") or "",
 			"customer": customer_name,
 			"pl_voucher": pl_voucher,
 			"registration_type": registration_type,
-			"gst_no": gst_no,
-			"mobile_no": obm.get("contact_no") or "",
-			"bill_state": bill.get("state") or "",
-			"bill_city": bill.get("city") or "",
-			"bill_pincode": bill.get("pincode") or "",
-			"ship_state": ship.get("state") or "",
-			"ship_city": ship.get("city") or "",
-			"ship_pincode": ship.get("pincode") or "",
+			# Bill To / Ship To GST No both use the buyer's GSTIN (Address has no gstin field);
+			# blank when the buyer is Unregistered.
+			"bill_gst_no": gst_no,
+			"ship_gst_no": gst_no,
+			"bill_state": bill_state,
+			"bill_pincode": bill_pincode,
+			# Combined single-cell address (city, state, pincode, mobile) per the Final Format.
+			"bill_combined": ", ".join(p for p in (bill_city, bill_state, bill_pincode, mobile) if p),
+			"ship_state": ship_state,
+			"ship_pincode": ship_pincode,
+			"ship_combined": ", ".join(p for p in (ship_city, ship_state, ship_pincode, mobile) if p),
+			"warehouse": so.get("set_warehouse") or "",
 			"tally_warehouse_id": obm.get("custom_tally_warehouse_id") or "T24",
 			"channel": channel,
+			"site_name": so.get("custom_site_name") or "",
+			"order_date": so.transaction_date,
 		}
-		for i in range(6):
+		for i in range(4):
 			header[f"bill_addr_{i+1}"] = bill_lines[i]
 			header[f"ship_addr_{i+1}"] = ship_lines[i]
 
