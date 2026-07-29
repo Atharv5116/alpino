@@ -17,14 +17,14 @@ DOC_TYPE = "Pick List"
 
 _HTML = r"""
 <style>
-  .plps { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 11px; }
+  .plps { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 12px; }
   .plps table { border-collapse: collapse; width: 100%; table-layout: fixed; }
-  .plps td, .plps th { border: 1px solid #000; padding: 3px 6px; word-wrap: break-word; overflow: hidden; }
+  .plps td, .plps th { border: 1px solid #000; padding: 5px 8px; word-wrap: break-word; overflow: hidden; }
   .plps .lbl { font-weight: bold; text-align: center; white-space: nowrap; }
   .plps .val { font-weight: bold; }
   .plps .rl  { font-weight: bold; vertical-align: top; }
-  .plps .hl  { background: #ffff00; text-align: center; }
-  .plps th   { background: #f0f0f0; font-size: 10px; text-transform: uppercase; text-align: center; }
+  .plps .hl  { text-align: center; }
+  .plps th   { font-size: 11px; text-transform: uppercase; text-align: center; font-weight: bold; }
   .plps td.sku { font-weight: bold; }
   .plps td.c   { text-align: center; }
 </style>
