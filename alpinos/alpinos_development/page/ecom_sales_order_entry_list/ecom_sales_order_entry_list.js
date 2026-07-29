@@ -99,6 +99,10 @@ var EcomSalesOrderListPage = class {
 			}, __('Import'));
 			this.page.add_inner_button(__('Import Excel'), () => this.open_import_dialog(), __('Import'));
 		}
+		this.btn_export_invoices = this.page.add_inner_button(__('Export Invoices'), () =>
+			this.export_selected_invoices()
+		);
+		if (this.btn_export_invoices) this.btn_export_invoices.hide();
 	}
 
 	open_import_dialog() {
@@ -198,8 +202,14 @@ var EcomSalesOrderListPage = class {
 			this.start = 0;
 			this.load_list();
 		});
+		this.wrapper.on('change', '.eso-list-select-all', (e) => {
+			const checked = $(e.target).prop('checked');
+			this.wrapper.find('.eso-list-row-select').prop('checked', checked);
+			this.update_selection();
+		});
+		this.wrapper.on('change', '.eso-list-row-select', () => this.update_selection());
 		this.wrapper.on('click', '.eso-list-row', (e) => {
-			if ($(e.target).closest('a,button').length) return;
+			if ($(e.target).closest('a,button,input[type="checkbox"]').length) return;
 			const name = $(e.currentTarget).data('name');
 			// Open the shared Sales Order view — same workflow action bar as offline
 			// (Approve, Create Pick List, Mark Delivered, ...). Edit from there.
@@ -339,6 +349,7 @@ var EcomSalesOrderListPage = class {
 
 	render_header() {
 		const tr = this.wrapper.find('.eso-list-table thead tr').empty();
+		tr.append('<th style="width:40px; text-align:center;"><input type="checkbox" class="eso-list-select-all"></th>');
 		this._columns.forEach((c) => {
 			if (!c.sort) {
 				tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`);
@@ -357,7 +368,7 @@ var EcomSalesOrderListPage = class {
 	render_rows(rows) {
 		const tb = this.wrapper.find('.eso-list-table tbody').empty();
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="${this._columns.length}" class="text-muted text-center">${__('No E-Com Sales Orders found')}</td></tr>`);
+			tb.append(`<tr><td colspan="${this._columns.length + 1}" class="text-muted text-center">${__('No E-Com Sales Orders found')}</td></tr>`);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
@@ -404,8 +415,10 @@ var EcomSalesOrderListPage = class {
 		};
 		rows.forEach((d) => {
 			const cells = this._columns.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`).join('');
-			tb.append(`<tr class="eso-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">${cells}</tr>`);
+			tb.append(`<tr class="eso-list-row" data-name="${esc(d.name)}" style="cursor:pointer;"><td style="text-align:center;"><input type="checkbox" class="eso-list-row-select" data-name="${esc(d.name)}"></td>${cells}</tr>`);
 		});
+		this.wrapper.find('.eso-list-select-all').prop('checked', false);
+		this.update_selection();
 	}
 
 	update_pager() {
@@ -419,5 +432,37 @@ var EcomSalesOrderListPage = class {
 		}
 		this.wrapper.find('.btn-eso-list-prev').prop('disabled', this.start <= 0);
 		this.wrapper.find('.btn-eso-list-next').prop('disabled', !this._last_meta.has_more);
+	}
+
+	_selected_names() {
+		const names = [];
+		this.wrapper.find('.eso-list-row-select:checked').each((i, el) => names.push($(el).data('name')));
+		return names;
+	}
+
+	update_selection() {
+		const all = this.wrapper.find('.eso-list-row-select');
+		const checked = this.wrapper.find('.eso-list-row-select:checked');
+		this.wrapper.find('.eso-list-select-all').prop('checked', all.length > 0 && checked.length === all.length);
+		if (checked.length > 0) {
+			if (this.btn_export_invoices) this.btn_export_invoices.show();
+			if (this.page.set_indicator) this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
+		} else {
+			if (this.btn_export_invoices) this.btn_export_invoices.hide();
+			if (this.page.clear_indicator) this.page.clear_indicator();
+		}
+	}
+
+	export_selected_invoices() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		const url =
+			'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
+			encodeURIComponent(JSON.stringify(names));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
 	}
 }
