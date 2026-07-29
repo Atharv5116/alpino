@@ -156,6 +156,10 @@ var SalesOrderEntryListPage = class {
 			this.download_selected_pdfs()
 		);
 		if (this.btn_download_pdf) this.btn_download_pdf.hide();
+		this.btn_export_invoices = this.page.add_inner_button(__('Export Invoices'), () =>
+			this.export_selected_invoices()
+		);
+		if (this.btn_export_invoices) this.btn_export_invoices.hide();
 	}
 
 	_selected_names() {
@@ -175,11 +179,13 @@ var SalesOrderEntryListPage = class {
 
 		if (checked.length > 0) {
 			if (this.btn_download_pdf) this.btn_download_pdf.show();
+			if (this.btn_export_invoices) this.btn_export_invoices.show();
 			if (this.page.set_indicator) {
 				this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
 			}
 		} else {
 			if (this.btn_download_pdf) this.btn_download_pdf.hide();
+			if (this.btn_export_invoices) this.btn_export_invoices.hide();
 			if (this.page.clear_indicator) this.page.clear_indicator();
 		}
 	}
@@ -196,6 +202,21 @@ var SalesOrderEntryListPage = class {
 			encodeURIComponent(JSON.stringify(names));
 		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDFs.'));
+	}
+
+	export_selected_invoices() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		// One fetched invoice PDF per order (custom_invoice_pdf, synced from the Google
+		// Sheet), bundled into a single ZIP. Orders without an invoice yet are skipped.
+		const url =
+			'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
+			encodeURIComponent(JSON.stringify(names));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
 	}
 
 	setup_filters() {
@@ -468,6 +489,7 @@ var SalesOrderEntryListPage = class {
 		const me = this;
 		me.wrapper.find('.so-list-select-all').prop('checked', false);
 		if (me.btn_download_pdf) me.btn_download_pdf.hide();
+		if (me.btn_export_invoices) me.btn_export_invoices.hide();
 		if (me.page.clear_indicator) me.page.clear_indicator();
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_sales_order_entry_list',

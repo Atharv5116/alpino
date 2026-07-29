@@ -674,6 +674,64 @@ def download_sales_orders_zip(names, no_letterhead=0):
 
 
 @frappe.whitelist()
+def download_sales_invoices_zip(names):
+	"""Bulk export the fetched Sales Invoice PDFs for the selected Sales Orders, bundled
+	into one ZIP. The invoice PDF lives in custom_invoice_pdf (populated by invoice sync
+	from the Google Sheet / Drive); each file is named by its invoice no, falling back to
+	the SO name. Orders without a fetched invoice PDF are skipped; if none have one it
+	raises rather than returning an empty zip.
+	"""
+	import json
+	import zipfile
+	from io import BytesIO
+	from frappe.utils.file_manager import get_file
+
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		frappe.throw(_("Please select at least one Sales Order."))
+
+	buf = BytesIO()
+	added = 0
+	used = {}
+	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+		for name in names:
+			# get_file / this loop respect read permission on the order.
+			if not frappe.has_permission("Sales Order", "read", doc=name):
+				continue
+			row = frappe.db.get_value(
+				"Sales Order", name, ["custom_invoice_pdf", "custom_invoice_no"], as_dict=True
+			) or {}
+			file_url = (row.get("custom_invoice_pdf") or "").strip()
+			if not file_url:
+				continue
+			try:
+				content = get_file(file_url)[1]
+				if isinstance(content, str):
+					content = content.encode("utf-8")
+			except Exception:
+				frappe.log_error(title="Bulk invoice export: cannot read {0} ({1})".format(file_url, name))
+				continue
+			base = str((row.get("custom_invoice_no") or name) or name).strip().replace("/", "-")
+			fname = base + ".pdf"
+			# two orders can share an invoice no — keep both files rather than overwrite.
+			if fname in used:
+				used[fname] += 1
+				fname = "{0} ({1}).pdf".format(base, used[fname])
+			else:
+				used[fname] = 0
+			zf.writestr(fname, content)
+			added += 1
+
+	if not added:
+		frappe.throw(_("None of the selected Sales Orders have a fetched invoice PDF yet."))
+
+	frappe.local.response.filename = "sales-invoices-{0}.zip".format(added)
+	frappe.local.response.filecontent = buf.getvalue()
+	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
 def get_customer_item_mrp(customer, item_code):
 	"""Fetch MRP for an item from Customer's Item MRP table"""
 	if not customer or not item_code:
