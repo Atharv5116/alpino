@@ -110,8 +110,21 @@ def _resolve_scp_from_text(customer, text, cache):
 				"state": row.get("state") or "",
 				"city": row.get("city") or "",
 				"pincode": row.get("pincode") or "",
+				# Owning Buyer Master of the matched address, so GST can follow it.
+				"buyer_master": row.get("buyer_master") or "",
 			}
 	return {}
+
+
+def _master_gst(master_name, cache):
+	"""GSTIN of a specific Buyer Master — the owner of a chosen billing/shipping
+	address. A buyer family can span several site-masters, each with its own GST No,
+	so the bill/ship GST follows whichever master owns that address. Cached."""
+	if not master_name:
+		return ""
+	if master_name not in cache:
+		cache[master_name] = frappe.db.get_value("Buyer Master", master_name, "gst_no") or ""
+	return cache[master_name]
 
 
 # ── column definitions ─────────────────────────────────────────────────────
@@ -136,6 +149,7 @@ def get_columns():
 		col("Alpino Product MRP", "alpino_mrp", 110, "Currency"),
 		col("Flat Discount %", "flat_discount", 90, "Float"),
 		col("Additional Discount", "additional_discount", 100, "Float"),
+		col("Cash Discount", "cash_discount", 90, "Float"),
 		col("Alpino GST Rate", "gst_rate", 90, "Float"),
 		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Final Total Value", "final_total", 120, "Currency"),
@@ -229,7 +243,7 @@ def _get_data(filters):
 		)
 		so_names = [s for s in so_names if s in picked]
 
-	item_cache, obm_cache, ct_channel_cache = {}, {}, {}
+	item_cache, obm_cache, ct_channel_cache, master_gst_cache = {}, {}, {}, {}
 
 	def item_info(code):
 		if code not in item_cache:
@@ -310,6 +324,13 @@ def _get_data(filters):
 
 		customer_name = obm.get("tally_buyer_name") or so.get("customer_name") or so.customer
 
+		# Bill/Ship GST follow the OWNING Buyer Master of each chosen address (a buyer
+		# family can span several site-masters, each with its own GSTIN). The owner is
+		# recovered above for free-text (e-com) addresses; structured/offline addresses
+		# fall back to this SO's buyer master. Address records carry no GSTIN of their own.
+		bill_gst = _master_gst(bill.get("buyer_master"), master_gst_cache) or gst_no
+		ship_gst = _master_gst(ship.get("buyer_master"), master_gst_cache) or gst_no
+
 		mobile = obm.get("contact_no") or ""
 		bill_city = bill.get("city") or ""
 		bill_state = bill.get("state") or ""
@@ -326,10 +347,10 @@ def _get_data(filters):
 			"customer": customer_name,
 			"pl_voucher": pl_voucher,
 			"registration_type": registration_type,
-			# Bill To / Ship To GST No both use the buyer's GSTIN (Address has no gstin field);
-			# blank when the buyer is Unregistered.
-			"bill_gst_no": gst_no,
-			"ship_gst_no": gst_no,
+			# Bill/Ship GST No come from the Buyer Master that owns each chosen address
+			# (Address records have no gstin field); blank when that master is Unregistered.
+			"bill_gst_no": bill_gst,
+			"ship_gst_no": ship_gst,
 			"bill_state": bill_state,
 			"bill_pincode": bill_pincode,
 			# Combined single-cell address (city, state, pincode, mobile) per the Final Format.
@@ -349,6 +370,11 @@ def _get_data(filters):
 
 		pl_map = _picklist_map(so.name)
 		has_pl = bool(pl_map)
+		# Cash discount %: the Sales Order applies it once, as a % of the grand total
+		# (apply_discount_on = "Grand Total"). Being a flat %, applying the SAME % to each
+		# line's GST-inclusive amount makes the report's lines sum to the SO grand total
+		# after cash discount — just distributed per row so it shows in the table.
+		cash_pct = flt(so.get("custom_cash_discount"))
 
 		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True):
 			it = item_info(item_code)
@@ -386,6 +412,9 @@ def _get_data(filters):
 					* (1 - flt(additional) / 100.0),
 					2,
 				)
+			# Deduct the cash discount % per line (freebies are 0, so unaffected).
+			if cash_pct:
+				final_total = flt(final_total * (1 - cash_pct / 100.0), 2)
 			final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
 			igst = flt(final_total - final_taxable, 2)
 			cgst = flt(igst / 2.0, 2)
@@ -414,6 +443,7 @@ def _get_data(filters):
 				"selling_price": flt(selling_price) or None,
 				"flat_discount": flt(flat),
 				"additional_discount": flt(offer) or flt(additional),
+				"cash_discount": cash_pct,
 				"gst_rate": gst_rate,
 				"final_taxable": final_taxable if is_priced else 0,
 				"cgst": cgst if is_priced else 0,
