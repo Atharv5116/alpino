@@ -26,6 +26,12 @@ from frappe.utils import flt
 # net_total + taxes must sit within this of the item value for a safe auto-fix.
 _TOLERANCE = 0.10
 
+# An order counts as over-charged only if the discount is off by more than ~a rupee. The
+# live calc rounds the intermediate net, so a correctly-computed order can sit a paisa or
+# two off this script's flat cash% x item_value formula (e.g. 8703.28 vs 8703.30) — that is
+# rounding noise, NOT a bug, so it must not be "corrected".
+_DISC_TOLERANCE = 1.00
+
 
 def _item_value(doc):
 	"""GST-inclusive order value = sum of selling_price x qty less each line's additional
@@ -81,7 +87,7 @@ def backfill(dry_run=1, limit=None):
 		correct_disc = flt(item_value * cash / 100.0, 2)
 		stored = flt(doc.get("custom_cash_discount_amount"))
 
-		if abs(stored - correct_disc) <= 0.01:
+		if abs(stored - correct_disc) <= _DISC_TOLERANCE:
 			already_ok += 1
 			continue
 
