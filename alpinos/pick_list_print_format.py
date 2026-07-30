@@ -82,8 +82,8 @@ _HTML = r"""
       <th>STOCK</th>
     </tr>
 
-    <!-- ===== item rows (only what's on this Pick List), ascending by SKU ===== -->
-    {% for row in (doc.locations | sort(attribute="item_code")) %}
+    <!-- ===== item rows (only what's on this Pick List), ascending by SKU No ===== -->
+    {% for row in sort_locations_by_sku(doc.locations) %}
     <tr>
       <td class="c">{{ loop.index }}</td>
       <td class="sku">{{ row.item_code }}</td>

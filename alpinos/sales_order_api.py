@@ -1943,9 +1943,12 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	for additional in so.get("custom_additional_units_damage_items") or []:
 		add_item_to_pick_list(additional, "Additional Units")
 
-	# Arrange the pickable rows in ascending SKU (item_code) order — so the Pick List
-	# form, its packing sheet and stickers all list items sorted the same way.
-	pick_list["locations"].sort(key=lambda l: (l.get("item_code") or ""))
+	# Arrange the pickable rows in ascending SKU No (Item.custom_sku_no) order — so the
+	# Pick List form, its packing sheet and stickers all list items sorted the same way.
+	# The skeleton rows carry custom_sku_no (fetched from the Item above); the resulting
+	# order is what gets saved as the Pick List Item sequence.
+	from alpinos.utils import sku_sort_key
+	pick_list["locations"].sort(key=lambda l: sku_sort_key(l.get("custom_sku_no")))
 
 	pick_list["combos"] = combos
 	from alpinos import partial_dispatch as pd

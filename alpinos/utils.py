@@ -178,6 +178,38 @@ def get_combined_items(doc):
 
 	return result
 
+def sku_sort_key(sku_no):
+	"""Natural ascending sort key for an Item's SKU No (custom_sku_no, a Data field):
+	numeric SKUs sort numerically (2 before 10), other codes sort lexically after them,
+	and blanks sort last. Shared by Pick List creation, the packing sheet and stickers
+	so all three order items the same way."""
+	v = (sku_no or "").strip()
+	if not v:
+		return (2, 0, "")
+	if v.isdigit():
+		return (0, int(v), "")
+	return (1, 0, v.lower())
+
+
+def sort_locations_by_sku(locations):
+	"""Return Pick List location rows ordered ascending by the Item's SKU No. The Pick
+	List Item row does NOT persist custom_sku_no, so it's read from the Item master
+	(cached) — this lets the packing sheet print sorted even for pick lists created
+	before SKU ordering was added."""
+	rows = list(locations or [])
+	cache = {}
+
+	def _sku(row):
+		code = row.get("item_code") if hasattr(row, "get") else getattr(row, "item_code", None)
+		if not code:
+			return ""
+		if code not in cache:
+			cache[code] = frappe.db.get_value("Item", code, "custom_sku_no") or ""
+		return cache[code]
+
+	return sorted(rows, key=lambda r: sku_sort_key(_sku(r)))
+
+
 def pack_size(item_code):
 	"""Units-per-box (box conversion factor) for a SKU as an int — the Pick List packing
 	sheet's PACK column. Returns '' when unknown; never raises inside a print render."""
@@ -205,4 +237,5 @@ jinja_methods = {
 	"get_combined_items": get_combined_items,
 	"pack_size": pack_size,
 	"available_stock": available_stock,
+	"sort_locations_by_sku": sort_locations_by_sku,
 }

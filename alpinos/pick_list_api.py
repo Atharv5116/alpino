@@ -142,16 +142,25 @@ def _collect_pick_list_stickers(doc):
 	# read it once outside the row loop and apply it to every sticker.
 	gate = doc.get("custom_gate") or ""
 
+	# SKU No (Item.custom_sku_no) per row — the Pick List Item doesn't store it, so read
+	# it from the Item master once and reuse for both sorting and the sticker value.
+	from alpinos.utils import sku_sort_key
+	sku_no_map = {}
+	for row in doc.locations or []:
+		code = row.item_code
+		if code and code not in sku_no_map:
+			sku_no_map[code] = frappe.db.get_value("Item", code, "custom_sku_no") or ""
+
 	# Match the page's section order (Items > Marketing Freebies > Scheme >
-	# Additional Units), then order ascending by SKU (item_code) within each section
-	# — same ascending-SKU arrangement as the Pick List form and packing sheet.
+	# Additional Units), then order ascending by SKU No within each section — same
+	# ascending-SKU arrangement as the Pick List form and packing sheet.
 	def _row_sort_key(row):
 		src = row.get("custom_source_table") or "Items"
 		try:
 			src_idx = SOURCE_TABLE_ORDER.index(src)
 		except ValueError:
 			src_idx = len(SOURCE_TABLE_ORDER)
-		return (src_idx, row.get("item_code") or "")
+		return (src_idx, sku_sort_key(sku_no_map.get(row.item_code, "")))
 
 	sorted_rows = sorted(doc.locations or [], key=_row_sort_key)
 
@@ -177,9 +186,7 @@ def _collect_pick_list_stickers(doc):
 	stickers = []
 	serial = 0
 	for row, boxes, is_sample in printable:
-		sku_no = ""
-		if row.item_code:
-			sku_no = frappe.db.get_value("Item", row.item_code, "custom_sku_no") or ""
+		sku_no = sku_no_map.get(row.item_code, "")
 		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
 		mfg_date = ""
 		if row.get("custom_mfg_date"):
