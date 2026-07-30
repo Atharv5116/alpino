@@ -95,6 +95,7 @@ jinja = {
 		"alpinos.utils.get_combined_items",
 		"alpinos.utils.pack_size",
 		"alpinos.utils.available_stock",
+		"alpinos.utils.sort_locations_by_sku",
 	],
 }
 
