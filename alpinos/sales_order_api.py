@@ -1943,6 +1943,10 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	for additional in so.get("custom_additional_units_damage_items") or []:
 		add_item_to_pick_list(additional, "Additional Units")
 
+	# Arrange the pickable rows in ascending SKU (item_code) order — so the Pick List
+	# form, its packing sheet and stickers all list items sorted the same way.
+	pick_list["locations"].sort(key=lambda l: (l.get("item_code") or ""))
+
 	pick_list["combos"] = combos
 	from alpinos import partial_dispatch as pd
 	pick_list["partial_order_allowed"] = int(pd.is_partial_order(sales_order))

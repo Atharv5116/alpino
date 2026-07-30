@@ -143,15 +143,15 @@ def _collect_pick_list_stickers(doc):
 	gate = doc.get("custom_gate") or ""
 
 	# Match the page's section order (Items > Marketing Freebies > Scheme >
-	# Additional Units), then preserve the existing row sequence within each
-	# section. Stickers come out in the same order the user sees on screen.
+	# Additional Units), then order ascending by SKU (item_code) within each section
+	# — same ascending-SKU arrangement as the Pick List form and packing sheet.
 	def _row_sort_key(row):
 		src = row.get("custom_source_table") or "Items"
 		try:
 			src_idx = SOURCE_TABLE_ORDER.index(src)
 		except ValueError:
 			src_idx = len(SOURCE_TABLE_ORDER)
-		return (src_idx, row.idx or 0)
+		return (src_idx, row.get("item_code") or "")
 
 	sorted_rows = sorted(doc.locations or [], key=_row_sort_key)
 
