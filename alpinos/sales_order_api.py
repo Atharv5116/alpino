@@ -425,21 +425,8 @@ def _apply_cash_discount(doc):
 		doc.discount_amount = 0
 		return
 
-	# Cash discount is a % of the GST-INCLUSIVE order value — i.e. the item "Amount"
-	# total (selling_price x qty, less the line's additional discount), which is what the
-	# user sees and expects "5% of" to apply to. Do NOT drive it off ERPNext's
-	# additional_discount_percentage on "Grand Total": that computes on net_total + taxes,
-	# where the GST gets added on top / double-counted, inflating the base well past the
-	# item amount (e.g. 5% of 1,74,066 became 9,573.65 instead of 8,703.30). Compute the
-	# amount ourselves and hand ERPNext a FIXED discount_amount to subtract from the total.
-	gross_incl = 0.0
-	for row in doc.get("items") or []:
-		calc = _calculate_sales_order_line_values(row)
-		gross_incl = flt(gross_incl + flt(calc.get("amount")) + flt(calc.get("gst_amount")), 2)
-
 	doc.apply_discount_on = "Grand Total"
-	doc.additional_discount_percentage = 0
-	doc.discount_amount = flt(gross_incl * cash_discount / 100.0, 2)
+	doc.additional_discount_percentage = cash_discount
 
 
 def _apply_clean_gst_amounts(doc):
