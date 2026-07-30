@@ -17,6 +17,7 @@ number from the Excel works even without Drive configured (only PDF fetch needs 
 
 import io
 import json
+import re
 
 import frappe
 from frappe import _
@@ -183,6 +184,21 @@ def _file_content(file_url):
 
 
 # ── Drive helpers ───────────────────────────────────────────────────────────
+def _folder_id(value):
+	"""Return a bare Drive folder ID from either an ID or a pasted Drive URL, e.g.
+	'https://drive.google.com/drive/folders/<id>?usp=sharing',
+	'https://drive.google.com/drive/u/0/folders/<id>' or '.../open?id=<id>'.
+	People routinely paste the whole URL into Drive Root Folder ID; feeding that to the
+	API as a parent id gives a 404 'File not found', so normalise it here."""
+	v = (value or "").strip()
+	if not v:
+		return ""
+	m = re.search(r"/folders/([a-zA-Z0-9_-]+)", v) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", v)
+	if m:
+		return m.group(1)
+	return v.rstrip("/").split("/")[-1].split("?")[0].strip()
+
+
 def _child_folder(drive, parent_id, name):
 	q = (
 		f"'{parent_id}' in parents and name = '{name}' "
@@ -203,7 +219,8 @@ def _resolve_month_folder(drive, root_id, fy_label, month, cache):
 	key = (fy_label, month)
 	if key in cache:
 		return cache[key]
-	parent = root_id
+	# root_id may be a pasted Drive URL — reduce it to the bare folder ID.
+	parent = _folder_id(root_id)
 	if fy_label:
 		parent = _child_folder(drive, parent, fy_label)
 		if not parent:
