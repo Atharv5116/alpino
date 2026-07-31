@@ -86,8 +86,8 @@ var PickListListPage = class {
 			df: {
 				fieldtype: 'Select',
 				fieldname: 'status',
-				label: __('Status'),
-				options: '\nDraft\nOpen\nCompleted\nCancelled\nClosed\nSubmitted',
+				label: __('Workflow Status'),
+				options: '\nDraft\nPicking Pending\nPicking In Progress\nSticker Pending\nSubmission Pending\nReady To Dispatch\nPartial Ready To Dispatch\nForced Ready To Dispatch\nDispatched\nCancelled',
 			},
 			parent: w.find('.fld-status'),
 			render_input: true,
@@ -221,7 +221,7 @@ var PickListListPage = class {
 			if (typeof saved.search === 'string') {
 				set_sync(f.search, saved.search);
 			}
-			const status_options = ['', 'Draft', 'Open', 'Completed', 'Cancelled', 'Closed', 'Submitted'];
+			const status_options = ['', 'Draft', 'Picking Pending', 'Picking In Progress', 'Sticker Pending', 'Submission Pending', 'Ready To Dispatch', 'Partial Ready To Dispatch', 'Forced Ready To Dispatch', 'Dispatched', 'Cancelled'];
 			if (typeof saved.status === 'string' && status_options.includes(saved.status)) {
 				set_sync(f.status, saved.status);
 			}

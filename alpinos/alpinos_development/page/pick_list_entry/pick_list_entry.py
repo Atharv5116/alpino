@@ -253,7 +253,9 @@ def get_pick_list_entry_list(
 
 	filters = {}
 	if status:
-		filters["status"] = status
+		# The Status filter reflects the custom workflow status (Picking Pending,
+		# Ready To Dispatch, Dispatched...), not ERPNext's docstatus-based status.
+		filters["custom_workflow_status"] = status
 	if company:
 		filters["company"] = company
 	if sales_order:
