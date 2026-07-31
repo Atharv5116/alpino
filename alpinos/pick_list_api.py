@@ -437,6 +437,45 @@ def generate_pick_list_stickers_bulk(pick_lists, paper="label"):
 
 
 @frappe.whitelist()
+def download_pick_list_pdfs_zip(pick_lists):
+	"""Bulk export the packing-sheet PDFs for the selected Pick Lists, bundled into one ZIP
+	(the list page's "Download PDF" action — mirrors the Sales Order list's Export). One
+	PDF per Pick List, named by the Pick List. Lists that can't be rendered are skipped;
+	raises rather than returning an empty zip."""
+	import json
+	import zipfile
+	from io import BytesIO
+
+	if isinstance(pick_lists, str):
+		pick_lists = json.loads(pick_lists)
+	if not pick_lists:
+		frappe.throw(frappe._("Please select at least one Pick List."))
+
+	buf = BytesIO()
+	added = 0
+	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+		for name in pick_lists:
+			if not frappe.has_permission("Pick List", "read", doc=name):
+				continue
+			try:
+				pdf = frappe.get_print("Pick List", name, print_format="Pick List Packing Sheet", as_pdf=True)
+			except Exception:
+				frappe.log_error(title="Bulk Pick List PDF export failed: {0}".format(name))
+				continue
+			if isinstance(pdf, str):
+				pdf = pdf.encode("latin-1", "ignore")
+			zf.writestr(str(name).replace("/", "-") + ".pdf", pdf)
+			added += 1
+
+	if not added:
+		frappe.throw(frappe._("Could not generate PDFs for the selected Pick Lists."))
+
+	frappe.local.response.filename = "pick-list-packing-sheets-{0}.zip".format(added)
+	frappe.local.response.filecontent = buf.getvalue()
+	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
 def update_pick_list_assignment(pick_list, assigned_to):
 	"""Lightweight assignment update — works on any docstatus.
 
