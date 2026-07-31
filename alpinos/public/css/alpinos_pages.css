@@ -816,3 +816,15 @@
 ) :is(.so-list-table, .eso-list-table) :is(td, th).text-right {
   white-space: nowrap;
 }
+
+/* ----------------------------------------------------------------------------
+   Pick List list page: cap width + centre instead of edge-to-edge full width, so
+   the title and Refresh don't strand in the far corners on wide monitors. Placed
+   last so it overrides the full-width max-width:100% rules above (same specificity,
+   later wins). Padding (20px) is inherited from those rules.
+   ---------------------------------------------------------------------------- */
+[data-page-route="pick_list_list"] :is(.page-head, .page-body) .container {
+  max-width: min(1680px, 100%) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
