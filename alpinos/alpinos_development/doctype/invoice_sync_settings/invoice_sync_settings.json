@@ -10,7 +10,10 @@
   "column_break_cfg",
   "drive_root_folder_id",
   "fy_label",
-  "pdf_extension"
+  "pdf_extension",
+  "section_po_drive",
+  "po_drive_root_folder_id",
+  "po_folder_prefix"
  ],
  "fields": [
   {
@@ -52,12 +55,30 @@
    "fieldname": "pdf_extension",
    "fieldtype": "Data",
    "label": "PDF File Extension"
+  },
+  {
+   "fieldname": "section_po_drive",
+   "fieldtype": "Section Break",
+   "label": "PO Drive Link"
+  },
+  {
+   "fieldname": "po_drive_root_folder_id",
+   "fieldtype": "Data",
+   "label": "PO Drive Root Folder ID",
+   "description": "Google Drive folder ID (or its URL) that DIRECTLY contains the Channel sub-folders. The PO file is looked up at <root>/<Channel>/<Customer>/<prefix Customer>/<PO No for PDF>. Uses the same Service Account above."
+  },
+  {
+   "default": "PO ",
+   "fieldname": "po_folder_prefix",
+   "fieldtype": "Data",
+   "label": "PO Folder Prefix",
+   "description": "Prefix for the innermost folder, combined with the customer name (e.g. 'PO ' -> 'PO ACME Traders'). Include a trailing space if you want one."
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-27 00:00:00.000000",
+ "modified": "2026-07-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Invoice Sync Settings",

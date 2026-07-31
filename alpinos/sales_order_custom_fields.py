@@ -122,6 +122,16 @@ def setup_sales_order_custom_fields():
 				description="Fetched from the PO PDF folder by 'PO No for PDF'.",
 			),
 			dict(
+				fieldname="custom_po_drive_url",
+				label="PO Drive Link",
+				fieldtype="Data",
+				options="URL",
+				insert_after="custom_po_pdf",
+				read_only=1,
+				allow_on_submit=1,
+				description="Google Drive link to the PO file, resolved from Channel / Customer / 'PO <Customer>' / <PO No for PDF>. Built by 'Fetch PO Drive Link'.",
+			),
+			dict(
 				fieldname="custom_site_name",
 				label="Site Name",
 				fieldtype="Data",
