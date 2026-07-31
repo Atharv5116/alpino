@@ -4,7 +4,7 @@
  "doctype": "Page",
  "icon": "fa fa-list",
  "idx": 0,
- "modified": "2026-07-08 17:30:00.000000",
+ "modified": "2026-07-30 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "sales-order-entry-list",
@@ -19,6 +19,12 @@
   },
   {
    "role": "System Manager"
+  },
+  {
+   "role": "Warehouse Manager"
+  },
+  {
+   "role": "Accounts User"
   }
  ],
  "standard": "Yes",

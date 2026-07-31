@@ -4,7 +4,7 @@
  "doctype": "Page",
  "icon": "fa fa-list",
  "idx": 0,
- "modified": "2026-07-12 12:00:00.000000",
+ "modified": "2026-07-30 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "ecom-sales-order-entry-list",
@@ -28,6 +28,9 @@
   },
   {
    "role": "E-Commerce Coordinator"
+  },
+  {
+   "role": "Warehouse Manager"
   }
  ],
  "standard": "Yes",

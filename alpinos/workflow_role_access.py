@@ -128,6 +128,8 @@ PERMISSION_MATRIX = {
 		"E-Commerce Coordinator": "SO_CREATE_SUBMIT",
 		"E-Commerce Manager": "SO_SALES_MANAGER",
 		"E-Commerce Admin": "FULL",
+		# Accounts: read-only visibility into SO / PL / DN (view lists + open records).
+		"Accounts User": "VIEW",
 	},
 	"Pick List": {
 		"Warehouse Admin": "FULL",
@@ -141,6 +143,7 @@ PERMISSION_MATRIX = {
 		"E-Commerce Coordinator": "VIEW",
 		"E-Commerce Manager": "VIEW",
 		"E-Commerce Admin": "VIEW",
+		"Accounts User": "VIEW",
 	},
 	"Delivery Note": {
 		"Warehouse Admin": "FULL",
@@ -154,6 +157,14 @@ PERMISSION_MATRIX = {
 		"E-Commerce Coordinator": "VIEW",
 		"E-Commerce Manager": "VIEW",
 		"E-Commerce Admin": "VIEW",
+		"Accounts User": "VIEW",
+	},
+	# Item master: read-only for the warehouse / sales managers. System Manager is the
+	# admin and already has full access. (Existing standard Item roles are left as-is;
+	# this only ensures these managers can VIEW the Item master.)
+	"Item": {
+		"Warehouse Manager": "VIEW",
+		"Sales Manager": "VIEW",
 	},
 	# BRD Module 1: the E-Commerce roles own the (E-Com) Buyer Master.
 	# Non-ECOM roles keep their read-only access from the supporting-masters list.

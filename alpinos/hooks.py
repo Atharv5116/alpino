@@ -194,6 +194,7 @@ after_migrate = [
 	"alpinos.quotation_client_script.create_quotation_client_script",
 	"alpinos.pick_list_client_script.create_pick_list_client_script",
 	"alpinos.item_customer_access.create_item_customer_access_client_script",
+	"alpinos.item_hide_stock_dashboard.create_item_hide_stock_dashboard_client_script",
 	"alpinos.workflow_role_access.execute",
 	"alpinos.web_form_update.execute",
 	"alpinos.sales_order_print_format_patch.execute",
