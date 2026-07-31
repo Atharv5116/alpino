@@ -210,13 +210,30 @@ var SalesOrderEntryListPage = class {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
-		// One fetched invoice PDF per order (custom_invoice_pdf, synced from the Google
-		// Sheet), bundled into a single ZIP. Orders without an invoice yet are skipped.
-		const url =
-			'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
-			encodeURIComponent(JSON.stringify(names));
-		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
-		if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
+		// Pre-check availability first so "none have an invoice" shows a clean message
+		// instead of a raw server-error page (the download opens in a new tab).
+		frappe.call({
+			method: 'alpinos.sales_order_api.sales_invoices_availability',
+			args: { names: JSON.stringify(names) },
+			callback: (r) => {
+				const m = r.message || {};
+				if (!m.available) {
+					frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
+					return;
+				}
+				if (m.missing && m.missing.length) {
+					frappe.show_alert(
+						{ message: __('{0} of {1} order(s) have an invoice — downloading those; {2} skipped.', [m.available, m.total, m.missing.length]), indicator: 'orange' },
+						7
+					);
+				}
+				const url =
+					'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
+					encodeURIComponent(JSON.stringify(names));
+				const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+				if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
+			},
+		});
 	}
 
 	setup_filters() {
