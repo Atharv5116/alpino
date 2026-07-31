@@ -159,15 +159,14 @@ PERMISSION_MATRIX = {
 		"E-Commerce Admin": "VIEW",
 		"Accounts User": "VIEW",
 	},
-	# Item master: read-only for Warehouse Manager, Sales Manager and the admin role
-	# (System Manager). NOTE: the System Manager *role* has NO inherent Item DocPerm — only
-	# the Administrator *user* bypasses permissions — so it is granted VIEW explicitly here.
-	# Existing standard Item roles are left untouched, so item selection elsewhere keeps
-	# working. If admins must also EDIT items, raise System Manager to FULL.
+	# Item master: read-only for Warehouse Manager + Sales Manager; the admin role
+	# (System Manager) gets full control. NOTE: the System Manager *role* has NO inherent
+	# Item DocPerm (only the Administrator *user* bypasses permissions), so it is granted
+	# explicitly here. Existing standard Item roles are left untouched.
 	"Item": {
 		"Warehouse Manager": "VIEW",
 		"Sales Manager": "VIEW",
-		"System Manager": "VIEW",
+		"System Manager": "MASTER_FULL",
 	},
 	# BRD Module 1: the E-Commerce roles own the (E-Com) Buyer Master.
 	# Non-ECOM roles keep their read-only access from the supporting-masters list.
