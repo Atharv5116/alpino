@@ -149,7 +149,6 @@ def get_columns():
 		col("Alpino Product MRP", "alpino_mrp", 110, "Currency"),
 		col("Flat Discount %", "flat_discount", 90, "Float"),
 		col("Additional Discount", "additional_discount", 100, "Float"),
-		col("Cash Discount", "cash_discount", 90, "Float"),
 		col("Alpino GST Rate", "gst_rate", 90, "Float"),
 		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Final Total Value", "final_total", 120, "Currency"),
@@ -178,6 +177,7 @@ def get_columns():
 		col("Channel", "channel", 120),
 		col("Site Name", "site_name", 130),
 		col("Order Date", "order_date", 95, "Date"),
+		col("Cash Discount", "cash_discount", 90, "Float"),
 	]
 	return cols
 
