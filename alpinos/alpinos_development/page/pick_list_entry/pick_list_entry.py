@@ -248,12 +248,16 @@ def get_pick_list_entry_list(
 	sales_order="",
 	delivery_note=""
 ):
+	if not frappe.has_permission("Pick List", "read"):
+		frappe.throw(frappe._("You are not permitted to view Pick Lists."), frappe.PermissionError)
 	start = frappe.utils.cint(start)
 	page_length = frappe.utils.cint(page_length)
 
 	filters = {}
 	if status:
-		filters["status"] = status
+		# The Status filter reflects the custom workflow status (Picking Pending,
+		# Ready To Dispatch, Dispatched...), not ERPNext's docstatus-based status.
+		filters["custom_workflow_status"] = status
 	if company:
 		filters["company"] = company
 	if sales_order:
@@ -478,6 +482,10 @@ def create_pick_list_as_draft(so_name, header, items, removed_rows=None, remaini
 	creation, the page navigates to the new doc and the row-action buttons
 	become available.
 	"""
+	# The entry page is open to all desk users, and _build_pick_list_from_mapping inserts
+	# with ignore_permissions — so gate here, else a view-only role could create Pick Lists.
+	if not frappe.has_permission("Pick List", "create"):
+		frappe.throw(frappe._("You are not permitted to create Pick Lists."), frappe.PermissionError)
 	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows, remaining_only)
 	frappe.db.commit()
 	return pick_list.name
@@ -487,6 +495,10 @@ def create_pick_list_as_draft(so_name, header, items, removed_rows=None, remaini
 def create_and_submit_pick_list(so_name, header, items, removed_rows=None,
                                 short_pick_action=None, short_pick_reason=None,
                                 future_dispatch_date=None, remaining_only=0):
+	if not frappe.has_permission("Pick List", "create"):
+		frappe.throw(frappe._("You are not permitted to create Pick Lists."), frappe.PermissionError)
+	if not frappe.has_permission("Pick List", "submit"):
+		frappe.throw(frappe._("You are not permitted to submit Pick Lists."), frappe.PermissionError)
 	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows, remaining_only)
 	_fill_short_pick_remarks(pick_list, short_pick_reason)
 	pick_list.submit()

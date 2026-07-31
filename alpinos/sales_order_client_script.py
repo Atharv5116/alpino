@@ -104,6 +104,14 @@ frappe.ui.form.on('Sales Order', {
                     } else {
                         // No pick list at all — allow creating
                         frm.add_custom_button(__('Create'), function() {
+                            // Set the sessionStorage cache to THIS SO up front — route_options
+                            // can be cleared before the entry page's load_data reads it, and
+                            // without a fresh cache it would fall back to a previous SO (showing
+                            // the wrong / previously-opened pick list).
+                            try {
+                                sessionStorage.setItem('alpinos_pick_list_entry_so_name', frm.doc.name);
+                                sessionStorage.setItem('alpinos_pick_list_entry_remaining_only', '0');
+                            } catch (e) {}
                             frappe.route_options = { "so_name": frm.doc.name };
                             frappe.set_route('pick_list_entry', 'New Pick List');
                         }, __('Pick List'));

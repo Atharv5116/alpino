@@ -128,6 +128,8 @@ PERMISSION_MATRIX = {
 		"E-Commerce Coordinator": "SO_CREATE_SUBMIT",
 		"E-Commerce Manager": "SO_SALES_MANAGER",
 		"E-Commerce Admin": "FULL",
+		# Accounts: read-only visibility into SO / PL / DN (view lists + open records).
+		"Accounts User": "VIEW",
 	},
 	"Pick List": {
 		"Warehouse Admin": "FULL",
@@ -141,6 +143,7 @@ PERMISSION_MATRIX = {
 		"E-Commerce Coordinator": "VIEW",
 		"E-Commerce Manager": "VIEW",
 		"E-Commerce Admin": "VIEW",
+		"Accounts User": "VIEW",
 	},
 	"Delivery Note": {
 		"Warehouse Admin": "FULL",
@@ -154,6 +157,16 @@ PERMISSION_MATRIX = {
 		"E-Commerce Coordinator": "VIEW",
 		"E-Commerce Manager": "VIEW",
 		"E-Commerce Admin": "VIEW",
+		"Accounts User": "VIEW",
+	},
+	# Item master: read-only for Warehouse Manager + Sales Manager; the admin role
+	# (System Manager) gets full control. NOTE: the System Manager *role* has NO inherent
+	# Item DocPerm (only the Administrator *user* bypasses permissions), so it is granted
+	# explicitly here. Existing standard Item roles are left untouched.
+	"Item": {
+		"Warehouse Manager": "VIEW",
+		"Sales Manager": "VIEW",
+		"System Manager": "MASTER_FULL",
 	},
 	# BRD Module 1: the E-Commerce roles own the (E-Com) Buyer Master.
 	# Non-ECOM roles keep their read-only access from the supporting-masters list.
@@ -392,7 +405,11 @@ def get_workflow_team_users(doctype, include_users=None):
 
 	Names passed in include_users are appended even without a matching role so
 	documents with an existing (legacy) assignee still display their value."""
-	roles = list(PERMISSION_MATRIX.get(doctype) or {})
+	# Only roles that can ACT on the doc (write / create / submit) are assignable — a
+	# VIEW-only role (e.g. Accounts User) is a read-only observer, not a picker/QC, so it
+	# must not appear in the Assign To / QC dropdowns.
+	role_levels = PERMISSION_MATRIX.get(doctype) or {}
+	roles = [r for r, lvl in role_levels.items() if "write" in _level_ptypes(lvl)]
 	if not roles:
 		frappe.throw(f"No workflow roles are defined for {doctype}.")
 

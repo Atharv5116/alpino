@@ -459,10 +459,28 @@ var EcomSalesOrderListPage = class {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
-		const url =
-			'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
-			encodeURIComponent(JSON.stringify(names));
-		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
-		if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
+		// Pre-check so "none have an invoice" shows a clean message, not a server error.
+		frappe.call({
+			method: 'alpinos.sales_order_api.sales_invoices_availability',
+			args: { names: JSON.stringify(names) },
+			callback: (r) => {
+				const m = r.message || {};
+				if (!m.available) {
+					frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
+					return;
+				}
+				if (m.missing && m.missing.length) {
+					frappe.show_alert(
+						{ message: __('{0} of {1} order(s) have an invoice — downloading those; {2} skipped.', [m.available, m.total, m.missing.length]), indicator: 'orange' },
+						7
+					);
+				}
+				const url =
+					'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
+					encodeURIComponent(JSON.stringify(names));
+				const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+				if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
+			},
+		});
 	}
 }

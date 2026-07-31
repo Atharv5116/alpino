@@ -816,3 +816,20 @@
 ) :is(.so-list-table, .eso-list-table) :is(td, th).text-right {
   white-space: nowrap;
 }
+
+/* ----------------------------------------------------------------------------
+   Pick List list page: cap width + centre instead of edge-to-edge full width, so
+   the title and Refresh don't strand in the far corners on wide monitors.
+   NOTE: the page BODY is <div class="container page-body"> — the container IS
+   .page-body itself, not a child — so it must be targeted directly; the head's
+   content sits in .page-head > .container. Cap BOTH so header and body line up.
+   Placed last to beat the full-width max-width:100% rules above.
+   ---------------------------------------------------------------------------- */
+[data-page-route="pick_list_list"] .page-head > .container,
+[data-page-route="pick_list_list"] .page-body.container,
+[data-page-route="pick_list_list"] .page-body {
+  max-width: min(1680px, 100%) !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}

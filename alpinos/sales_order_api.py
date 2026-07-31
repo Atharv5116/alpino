@@ -732,6 +732,28 @@ def download_sales_invoices_zip(names):
 
 
 @frappe.whitelist()
+def sales_invoices_availability(names):
+	"""How many of the selected Sales Orders have a fetched invoice PDF. Lets the list
+	page warn the user (a clean message) BEFORE opening the bulk-invoice download in a
+	new tab — otherwise 'none available' surfaces as a raw server-error page."""
+	import json
+
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		return {"available": 0, "missing": [], "total": 0}
+	available, missing = 0, []
+	for name in names:
+		if not frappe.has_permission("Sales Order", "read", doc=name):
+			continue
+		if (frappe.db.get_value("Sales Order", name, "custom_invoice_pdf") or "").strip():
+			available += 1
+		else:
+			missing.append(name)
+	return {"available": available, "missing": missing, "total": len(names)}
+
+
+@frappe.whitelist()
 def get_customer_item_mrp(customer, item_code):
 	"""Fetch MRP for an item from Customer's Item MRP table"""
 	if not customer or not item_code:

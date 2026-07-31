@@ -32,26 +32,25 @@ _HTML = r"""
   <table>
     <colgroup>
       <col style="width:5%">   <!-- SR -->
-      <col style="width:16%">  <!-- SKU -->
-      <col style="width:14%">  <!-- Pick List ID / Qty -->
-      <col style="width:8%">   <!-- Total Qty / Box -->
+      <col style="width:16%">  <!-- SKU (item code) -->
+      <col style="width:11%">  <!-- SKU No -->
+      <col style="width:13%">  <!-- Sales Order ID / Qty -->
+      <col style="width:8%">   <!-- Total Box / Box -->
       <col style="width:10%">  <!-- Sample Qty -->
-      <col style="width:15%">  <!-- Batch Code -->
+      <col style="width:14%">  <!-- Batch Code -->
       <col style="width:11%">  <!-- MFG -->
-      <col style="width:11%">  <!-- EXP -->
-      <col style="width:10%">  <!-- Stock -->
+      <col style="width:12%">  <!-- EXP -->
     </colgroup>
 
     <!-- ===== header block (shares the grid) ===== -->
     <tr>
       <td colspan="2" class="lbl">ACTUAL BOX</td>
       <td colspan="2" class="val">{{ (doc.custom_actual_box | round | int) if doc.custom_actual_box is not none else "" }}</td>
-      <td colspan="4" class="rl" rowspan="8">QC Attended By: {{ doc.custom_qc_attended_by or "" }}</td>
-      <td rowspan="8"></td>
+      <td colspan="5" class="rl" rowspan="8">QC Attended By: {{ doc.custom_qc_attended_by or "" }}</td>
     </tr>
     <tr><td colspan="2" class="lbl">SAMPLE BOX</td><td colspan="2" class="val">{{ (doc.custom_sample_box | round | int) if doc.custom_sample_box else "" }}</td></tr>
     <tr><td colspan="2" class="lbl">SAMPLE WEIGHT</td><td colspan="2" class="val">{{ ("%.2f"|format(doc.custom_sample_weight)) if doc.custom_sample_weight else "" }}</td></tr>
-    <tr><td colspan="2" class="lbl">TOTAL BOX</td><td colspan="2" class="val hl">{{ (doc.custom_total_box | round | int) if doc.custom_total_box is not none else 0 }}</td></tr>
+    <tr><td colspan="2" class="lbl">TOTAL BOX</td><td colspan="2" class="val">{{ (doc.custom_total_box | round | int) if doc.custom_total_box is not none else 0 }}</td></tr>
     <tr><td colspan="2" class="lbl">GROSS WEIGHT</td><td colspan="2" class="val">{{ "%.2f"|format(doc.custom_gross_weight or 0) }}</td></tr>
     <tr><td colspan="2" class="lbl">TOTAL UNITS</td><td colspan="2" class="val">{{ (doc.custom_total_unit | round | int) if doc.custom_total_unit is not none else 0 }}</td></tr>
     <tr><td colspan="2" class="lbl">PO NO.</td><td colspan="2" class="val">{{ doc.custom_po_no or "" }}</td></tr>
@@ -59,27 +58,25 @@ _HTML = r"""
     <tr>
       <td colspan="2" class="lbl">PARTY NAME</td>
       <td colspan="2" class="val">{{ doc.custom_customer_name or "" }}</td>
-      <td colspan="4" class="rl">PARTY CODE: {{ doc.custom_party_code or "" }}</td>
-      <td></td>
+      <td colspan="5" class="rl">PARTY CODE: {{ doc.custom_party_code or "" }}</td>
     </tr>
     <tr>
       <td colspan="2" class="lbl">DATE</td>
       <td colspan="2" class="val">{{ frappe.utils.formatdate(doc.custom_order_date, "dd-MM-yyyy") if doc.custom_order_date else "" }}</td>
-      <td colspan="4"></td>
-      <td></td>
+      <td colspan="5"></td>
     </tr>
 
     <!-- ===== items header row (same grid) ===== -->
     <tr>
       <th>SR.</th>
       <th>SKU</th>
-      <th>{{ doc.name }}</th>
-      <th class="hl">{{ (doc.custom_total_unit | round | int) if doc.custom_total_unit else 0 }}</th>
+      <th>SKU NO</th>
+      <th>{{ doc.custom_sales_order_id or doc.name }}</th>
+      <th class="hl">{{ (doc.custom_total_box | round | int) if doc.custom_total_box is not none else 0 }}</th>
       <th>SAMPLE QTY</th>
       <th>BATCH CODE</th>
       <th>MFG</th>
       <th>EXP</th>
-      <th>STOCK</th>
     </tr>
 
     <!-- ===== item rows (only what's on this Pick List), ascending by SKU No ===== -->
@@ -87,13 +84,13 @@ _HTML = r"""
     <tr>
       <td class="c">{{ loop.index }}</td>
       <td class="sku">{{ row.item_code }}</td>
+      <td class="sku">{{ frappe.db.get_value("Item", row.item_code, "custom_sku_no") or "" }}</td>
       <td class="c">{{ (row.qty | round | int) if row.qty else "" }}</td>
       <td class="c">{{ (row.custom_box | round | int) if row.custom_box else "" }}</td>
       <td class="c">{{ (row.custom_sample_quantity | round | int) if row.custom_sample_quantity else "" }}</td>
       <td>{{ row.custom_batch_code or row.batch_no or "" }}</td>
       <td class="c">{{ frappe.utils.formatdate(row.custom_mfg_date, "dd-MM-yyyy") if row.custom_mfg_date else "" }}</td>
       <td class="c">{{ frappe.utils.formatdate(row.custom_expiry_date, "dd-MM-yyyy") if row.custom_expiry_date else "" }}</td>
-      <td class="c">{{ available_stock(row.item_code) }}</td>
     </tr>
     {% endfor %}
   </table>

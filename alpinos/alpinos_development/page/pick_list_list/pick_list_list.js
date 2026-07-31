@@ -48,6 +48,10 @@ var PickListListPage = class {
 			this.download_stickers()
 		);
 		if (this.btn_download_stickers) this.btn_download_stickers.hide();
+		this.btn_download_pdf = this.page.add_inner_button(__('Download PDF'), () =>
+			this.download_pdfs()
+		);
+		if (this.btn_download_pdf) this.btn_download_pdf.hide();
 	}
 
 	_selected_names() {
@@ -71,6 +75,19 @@ var PickListListPage = class {
 		if (!w) frappe.msgprint(__('Please allow pop-ups to download the stickers PDF.'));
 	}
 
+	download_pdfs() {
+		const pick_lists = this._selected_names();
+		if (!pick_lists.length) {
+			frappe.msgprint(__('Please select at least one Pick List.'));
+			return;
+		}
+		const url =
+			'/api/method/alpinos.pick_list_api.download_pick_list_pdfs_zip?pick_lists=' +
+			encodeURIComponent(JSON.stringify(pick_lists));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF ZIP.'));
+	}
+
 	setup_filters() {
 		const w = this.wrapper;
 		this._filter_fields.search = frappe.ui.form.make_control({
@@ -86,8 +103,8 @@ var PickListListPage = class {
 			df: {
 				fieldtype: 'Select',
 				fieldname: 'status',
-				label: __('Status'),
-				options: '\nDraft\nOpen\nCompleted\nCancelled\nClosed\nSubmitted',
+				label: __('Workflow Status'),
+				options: '\nDraft\nPicking Pending\nPicking In Progress\nSticker Pending\nSubmission Pending\nReady To Dispatch\nPartial Ready To Dispatch\nForced Ready To Dispatch\nDispatched\nCancelled',
 			},
 			parent: w.find('.fld-status'),
 			render_input: true,
@@ -221,7 +238,7 @@ var PickListListPage = class {
 			if (typeof saved.search === 'string') {
 				set_sync(f.search, saved.search);
 			}
-			const status_options = ['', 'Draft', 'Open', 'Completed', 'Cancelled', 'Closed', 'Submitted'];
+			const status_options = ['', 'Draft', 'Picking Pending', 'Picking In Progress', 'Sticker Pending', 'Submission Pending', 'Ready To Dispatch', 'Partial Ready To Dispatch', 'Forced Ready To Dispatch', 'Dispatched', 'Cancelled'];
 			if (typeof saved.status === 'string' && status_options.includes(saved.status)) {
 				set_sync(f.status, saved.status);
 			}
@@ -256,6 +273,7 @@ var PickListListPage = class {
 		me.wrapper.find('.pl-list-select-all').prop('checked', false);
 		if (me.btn_bulk_edit) me.btn_bulk_edit.hide();
 		if (me.btn_download_stickers) me.btn_download_stickers.hide();
+		if (me.btn_download_pdf) me.btn_download_pdf.hide();
 		if (me.page && me.page.clear_indicator) me.page.clear_indicator();
 
 		frappe.call({
@@ -353,12 +371,14 @@ var PickListListPage = class {
 		if (checked_count > 0) {
 			if (this.btn_bulk_edit) this.btn_bulk_edit.show();
 			if (this.btn_download_stickers) this.btn_download_stickers.show();
+			if (this.btn_download_pdf) this.btn_download_pdf.show();
 			if (this.page && this.page.set_indicator) {
 				this.page.set_indicator(__('{0} selected', [checked_count]), 'orange');
 			}
 		} else {
 			if (this.btn_bulk_edit) this.btn_bulk_edit.hide();
 			if (this.btn_download_stickers) this.btn_download_stickers.hide();
+			if (this.btn_download_pdf) this.btn_download_pdf.hide();
 			if (this.page && this.page.clear_indicator) this.page.clear_indicator();
 		}
 	}
