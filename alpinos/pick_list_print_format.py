@@ -73,7 +73,7 @@ _HTML = r"""
     <tr>
       <th>SR.</th>
       <th>SKU</th>
-      <th>{{ doc.name }}</th>
+      <th>{{ doc.custom_sales_order_id or doc.name }}</th>
       <th class="hl">{{ (doc.custom_total_unit | round | int) if doc.custom_total_unit else 0 }}</th>
       <th>SAMPLE QTY</th>
       <th>BATCH CODE</th>
