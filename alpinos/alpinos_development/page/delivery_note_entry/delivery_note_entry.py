@@ -258,6 +258,8 @@ def get_delivery_note_list(
 	company="",
 	sales_order="",
 ):
+	if not frappe.has_permission("Delivery Note", "read"):
+		frappe.throw(frappe._("You are not permitted to view Delivery Notes."), frappe.PermissionError)
 	start = cint(start)
 	page_length = cint(page_length)
 

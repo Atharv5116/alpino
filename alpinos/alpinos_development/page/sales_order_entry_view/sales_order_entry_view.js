@@ -75,27 +75,33 @@ var SalesOrderEntryView = class {
 		}, __('PDF'));
 		// Edit re-opens the entry form on the SAME draft (shown for drafts only).
 		// E-com orders edit on the e-com entry page; offline on the offline one.
-		this.btn_edit_so = this.page.add_inner_button(__('Edit Order'), () => {
-			if (this._channel === 'E-com') {
-				frappe.route_options = { edit_eso: this._so_name };
-				frappe.set_route('ecom-sales-order-entry');
-			} else {
-				frappe.route_options = { edit_so: this._so_name };
-				frappe.set_route('sales-order-entry');
-			}
-		}, __('Order'));
-		if (this.btn_edit_so) this.btn_edit_so.hide();
-		// Duplicate prefills the entry form with this order's data; saving
-		// creates a NEW order (fresh workflow state, status and Created By).
-		this.page.add_inner_button(__('Duplicate'), () => {
-			if (this._channel === 'E-com') {
-				frappe.route_options = { duplicate_eso: this._so_name };
-				frappe.set_route('ecom-sales-order-entry');
-			} else {
-				frappe.route_options = { duplicate_so: this._so_name };
-				frappe.set_route('sales-order-entry');
-			}
-		}, __('Order'));
+		// Only for users who can actually write Sales Orders — view-only roles (e.g.
+		// Accounts User, Warehouse Manager) would otherwise see a dead-end Edit button.
+		if (frappe.model.can_write('Sales Order')) {
+			this.btn_edit_so = this.page.add_inner_button(__('Edit Order'), () => {
+				if (this._channel === 'E-com') {
+					frappe.route_options = { edit_eso: this._so_name };
+					frappe.set_route('ecom-sales-order-entry');
+				} else {
+					frappe.route_options = { edit_so: this._so_name };
+					frappe.set_route('sales-order-entry');
+				}
+			}, __('Order'));
+			if (this.btn_edit_so) this.btn_edit_so.hide();
+		}
+		// Duplicate prefills the entry form with this order's data; saving creates a NEW
+		// order — so only offer it to users who can create Sales Orders.
+		if (frappe.model.can_create('Sales Order')) {
+			this.page.add_inner_button(__('Duplicate'), () => {
+				if (this._channel === 'E-com') {
+					frappe.route_options = { duplicate_eso: this._so_name };
+					frappe.set_route('ecom-sales-order-entry');
+				} else {
+					frappe.route_options = { duplicate_so: this._so_name };
+					frappe.set_route('sales-order-entry');
+				}
+			}, __('Order'));
+		}
 		// Cancel: submitted orders only, and only for roles with cancel rights
 		// (server re-checks). The guard blocks with the linked Pick List /
 		// Delivery Note ID while one is still active.

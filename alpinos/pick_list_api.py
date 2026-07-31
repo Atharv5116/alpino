@@ -639,6 +639,8 @@ def bulk_edit_transporter(pick_lists, transporter):
 		frappe.throw("No Pick Lists selected or invalid input format.")
 
 	for pl in pick_lists:
+		if not frappe.has_permission("Pick List", "write", doc=pl):
+			frappe.throw(frappe._("You are not permitted to edit Pick List {0}.").format(pl), frappe.PermissionError)
 		frappe.db.set_value("Pick List", pl, "custom_transporter", transporter)
 
 	frappe.db.commit()
@@ -658,6 +660,8 @@ def bulk_edit_pick_lists(pick_lists, fieldname, value):
 		frappe.throw("Unauthorized field modification.")
 
 	for pl in pick_lists:
+		if not frappe.has_permission("Pick List", "write", doc=pl):
+			frappe.throw(frappe._("You are not permitted to edit Pick List {0}.").format(pl), frappe.PermissionError)
 		frappe.db.set_value("Pick List", pl, fieldname, value)
 
 	frappe.db.commit()
