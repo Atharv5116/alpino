@@ -149,8 +149,26 @@ def setup_delivery_note_alpinos():
 				reqd=1,
 				depends_on="eval:!doc.is_return",
 			),
+			dict(
+				fieldname="custom_removed_items",
+				label="Removed Items",
+				fieldtype="Table",
+				options="Alpinos Removed Pick List Item",
+				insert_after="custom_total_units_dn",
+				read_only=1,
+				collapsible=1,
+				depends_on="eval:!doc.is_return",
+				description="Audit log of SKUs removed from this Delivery Note before submit, with the reason supplied at removal.",
+			),
 		],
 		"Delivery Note Item": [
+			dict(
+				fieldname="custom_remark",
+				label="Remark",
+				fieldtype="Data",
+				insert_after="qty",
+				description="Mandatory when this DN qty is less than the Pick List qty.",
+			),
 			dict(
 				fieldname="custom_box",
 				label="Box",
@@ -158,7 +176,7 @@ def setup_delivery_note_alpinos():
 				insert_after="qty",
 				read_only=1,
 				default="0",
-				reqd=1,
+				reqd=0,
 			),
 			dict(
 				fieldname="custom_batch_code",

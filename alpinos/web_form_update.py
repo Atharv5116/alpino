@@ -14,7 +14,13 @@ def update_job_application_webform():
 		return
 	
 	web_form = frappe.get_doc("Web Form", "job-application")
-	
+
+	# Standard web forms can only be edited in developer mode — skip instead of
+	# crashing the migrate when the flag is off (or races during migrate).
+	if web_form.get("is_standard") and not frappe.conf.developer_mode:
+		print("ℹ️  job-application web form is standard and developer mode is off — skipping update")
+		return
+
 	# Fields to remove from web form (keep for HR but hide from candidates)
 	fields_to_hide = [
 		"country",
@@ -81,6 +87,17 @@ def update_job_application_webform():
 	"qualification_section",
 	"degree",
 ]
+
+	# The web form may only reference fields that actually exist on Job
+	# Applicant. Production carries extra DocFields added directly on the
+	# doctype; a fresh/test site may lack some — skip those (with a warning)
+	# instead of failing the whole migrate on Web Form validation.
+	available = {df.fieldname for df in frappe.get_meta("Job Applicant").fields}
+	missing = [f for f in field_order if f not in available]
+	if missing:
+		print(f"   ⚠️  Skipping web form fields missing on Job Applicant: {', '.join(missing)}")
+	field_order = [f for f in field_order if f in available]
+
 	
 	# Create a dict of existing fields for quick lookup (extract data as dict)
 	# Exclude fields that should be hidden/removed
@@ -133,7 +150,9 @@ def update_job_application_webform():
 	
 	# Ensure job_requisition field exists - explicitly add if missing
 	job_req_exists = any(f.fieldname == "job_requisition" for f in web_form.web_form_fields)
-	if not job_req_exists:
+	if not job_req_exists and "job_requisition" not in available:
+		print("   ⚠️  job_requisition does not exist on Job Applicant here — skipped.")
+	elif not job_req_exists:
 		print("   ⚠️  job_requisition not found, adding it explicitly...")
 		# Add job_requisition field explicitly
 		job_req_config = get_field_config("job_requisition")

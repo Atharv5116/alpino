@@ -1,0 +1,166 @@
+<div class="ecom-so-entry">
+
+	<!-- Section 1: Customer Details -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Customer Details</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-channel"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-customer"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-customer-type"></div></div>
+		</div>
+		<div class="row" style="margin-top: 4px;">
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-appointment-required"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-grn-available"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-partial-order-allowed"></div></div>
+			<div class="col-md-3 col-sm-6 eso-fld"><div class="fld-gst-exclusive-buyer"></div></div>
+		</div>
+	</div>
+
+	<!-- Section 2: Address -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Address</h6>
+		<div class="row">
+			<div class="col-md-4 col-sm-6 eso-fld"><div class="fld-site-name"></div></div>
+			<div class="col-md-4 col-sm-6 eso-fld"><div class="fld-billing-gstin"></div></div>
+			<div class="col-md-4 col-sm-6 eso-fld"><div class="fld-shipping-gstin"></div></div>
+		</div>
+		<div class="row">
+			<div class="col-md-6 col-sm-12 eso-fld"><div class="fld-billing-address"></div></div>
+			<div class="col-md-6 col-sm-12 eso-fld"><div class="fld-shipping-address"></div></div>
+		</div>
+	</div>
+
+	<!-- Section 3: PO Details -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">PO Details</h6>
+		<div class="alp-grid">
+			<div class="eso-fld"><div class="fld-po-number"></div></div>
+			<div class="eso-fld"><div class="fld-po-date"></div></div>
+			<div class="eso-fld"><div class="fld-po-expiry-date"></div></div>
+			<div class="eso-fld"><div class="fld-delivery-by-date"></div></div>
+			<div class="eso-fld"><div class="fld-dispatch-date"></div></div>
+		</div>
+	</div>
+
+	<!-- Section 4: Freebies flag -->
+	<div class="eso-card">
+		<div class="fld-is-freebie-po"></div>
+	</div>
+
+	<!-- Section 5: Ordered Products (hidden when Freebies PO) -->
+	<div class="eso-card eso-ordered-products">
+		<h6 class="eso-card-title">Ordered Products</h6>
+		<div class="alp-scroll eso-table-scroll">
+			<table class="table table-bordered eso-items-table so-table" style="font-size: 13px; margin-bottom: 0;">
+				<thead>
+					<tr>
+						<th style="min-width: 150px;">SKU</th>
+						<th style="min-width: 110px;">SKU Name</th>
+						<th style="width: 80px;">Qty</th>
+						<th style="width: 70px;">Box</th>
+						<th style="width: 96px;">MRP</th>
+						<th style="width: 80px;">Margin %</th>
+						<th style="width: 104px;">Selling Price</th>
+						<th style="width: 104px;">Amount</th>
+						<th style="width: 36px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button type="button" class="btn btn-sm btn-light btn-add-item" style="margin-top: 8px;">
+			<i class="fa fa-plus"></i> Add Row
+		</button>
+	</div>
+
+	<!-- Section 6: Freebies Table -->
+	<div class="eso-card eso-freebies-block">
+		<h6 class="eso-card-title eso-freebies-title">Freebies</h6>
+		<div class="alp-scroll eso-table-scroll">
+			<table class="table table-bordered eso-freebies-table so-table" style="font-size: 13px; margin-bottom: 0;">
+				<thead>
+					<tr>
+						<th style="min-width: 150px;">SKU</th>
+						<th style="min-width: 110px;">SKU Name</th>
+						<th style="width: 80px;">Qty</th>
+						<th style="width: 36px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button type="button" class="btn btn-sm btn-light btn-add-freebie" style="margin-top: 8px;">
+			<i class="fa fa-plus"></i> Add Freebie
+		</button>
+	</div>
+
+	<!-- Section 7: Sticker Attachments -->
+	<div class="eso-card eso-stickers-block">
+		<h6 class="eso-card-title">Sticker Attachments</h6>
+		<div class="eso-stickers-empty text-muted" style="font-size: 12px; margin-bottom: 8px;">No sticker files uploaded.</div>
+		<div class="alp-scroll">
+			<table class="table table-bordered eso-stickers-table so-table" style="font-size: 13px; margin-bottom: 0; display: none;">
+				<thead>
+					<tr>
+						<th style="min-width: 220px;">File</th>
+						<th style="min-width: 160px;">Remarks</th>
+						<th style="width: 36px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button type="button" class="btn btn-sm btn-light btn-eso-add-sticker" style="margin-top: 8px;">
+			<i class="fa fa-upload"></i> Upload Sticker
+		</button>
+	</div>
+
+	<!-- Order value (Save / Clear are in the page header, top-right) -->
+	<div class="eso-card alp-actions alp-actions--end">
+		<span class="text-muted eso-total"></span>
+	</div>
+
+	<!-- Recent E-Com Sales Orders -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Recent E-Com Sales Orders</h6>
+		<div class="recent-orders-list">
+			<p class="text-muted text-center">Loading...</p>
+		</div>
+	</div>
+</div>
+
+<style>
+	/* Card + section-title + table-header + row-hover styling now comes from the
+	   central design system: /assets/alpinos/css/alpinos_pages.css */
+	.ecom-so-entry .eso-fld { margin-bottom: 8px; }
+	/* Per-row awesomplete SKU dropdown must not be clipped by the table box.
+	   The JS switches open dropdowns inside .eso-table-scroll to fixed
+	   positioning so the .alp-scroll wrapper can clip the table without
+	   clipping the suggestion list. */
+	.ecom-so-entry .eso-items-table,
+	.ecom-so-entry .eso-freebies-table { overflow: visible !important; }
+	.ecom-so-entry .eso-items-table td,
+	.ecom-so-entry .eso-freebies-table td { overflow: visible !important; position: relative; vertical-align: middle; }
+	.ecom-so-entry .so-table thead th { white-space: nowrap; }
+	.ecom-so-entry .so-table th,
+	.ecom-so-entry .so-table td { padding: 4px 6px; }
+	.ecom-so-entry .eso-cell-input { width: 100%; min-width: 48px; }
+	.ecom-so-entry .awesomplete { position: relative; display: inline-block; width: 100%; }
+	.ecom-so-entry .awesomplete > ul {
+		z-index: 9999 !important;
+		position: absolute !important;
+		left: 0 !important;
+		right: auto !important;
+		min-width: min(320px, calc(100vw - 24px)) !important;
+		max-width: min(440px, calc(100vw - 24px)) !important;
+		max-height: 300px;
+		overflow-y: auto;
+		background: var(--card-bg, #fff);
+		border: 1px solid var(--border-color, #d1d5db);
+		border-radius: 6px;
+		box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+	}
+	.ecom-so-entry .awesomplete > ul > li { padding: 8px 12px; cursor: pointer; white-space: normal; word-wrap: break-word; }
+	.ecom-so-entry .awesomplete > ul > li:hover,
+	.ecom-so-entry .awesomplete > ul > li[aria-selected="true"] { background: var(--bg-color, #f5f5f5); }
+</style>

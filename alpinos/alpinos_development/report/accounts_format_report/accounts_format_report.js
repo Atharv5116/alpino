@@ -4,7 +4,7 @@ frappe.query_reports["Accounts Format Report"] = {
 			fieldname: "from_date",
 			label: "From Date",
 			fieldtype: "Date",
-			default: frappe.datetime.add_months(frappe.datetime.get_today(), -1),
+			default: frappe.datetime.get_today(),
 			reqd: 1,
 		},
 		{
@@ -31,6 +31,18 @@ frappe.query_reports["Accounts Format Report"] = {
 			label: "Customer Type",
 			fieldtype: "Link",
 			options: "Alpino Customer Type",
+		},
+		{
+			fieldname: "buyer_master_parent",
+			label: "Buyer Master (Parent)",
+			fieldtype: "Link",
+			options: "Buyer Master",
+			get_query: () => ({ filters: { is_parent: 1 } }),
+		},
+		{
+			fieldname: "site_name",
+			label: "Site Name",
+			fieldtype: "Data",
 		},
 	],
 	onload: function (report) {

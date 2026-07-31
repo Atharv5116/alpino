@@ -1,22 +1,36 @@
 frappe.pages['sales-order-entry-list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Sales Orders'),
+		title: __('Alpino Sales Orders'),
 		single_column: true,
 	});
-	page.main.html(frappe.render_template('sales_order_entry_list'));
-	new SalesOrderEntryListPage(page);
+	wrapper.__so_list_page = new SalesOrderEntryListPage(page);
 };
 
-const SO_STATUS_OPTIONS =
+// Frappe keeps custom pages cached, so on_page_load runs only once. Without this,
+// navigating back (e.g. after creating an entry) shows a blank/stale cached page until a
+// manual browser refresh. Re-render the body on every show (toolbar buttons are left
+// alone, so they don't duplicate).
+frappe.pages['sales-order-entry-list'].on_page_show = function (wrapper) {
+	if (wrapper.__so_list_page) wrapper.__so_list_page.render_body();
+};
+
+// Route key for alpinos.list_prefs — must stay the exact frappe.pages key.
+var SO_LIST_ROUTE = 'sales-order-entry-list';
+var SO_LIST_PAGE_LENGTHS = [20, 50, 100];
+
+var SO_STATUS_OPTIONS =
 	'\nDraft\nOn Hold\nTo Deliver and Bill\nTo Bill\nTo Deliver\nCompleted\nCancelled\nClosed';
 
-const SO_WORKFLOW_STATUS_OPTIONS =
+var SO_WORKFLOW_STATUS_OPTIONS =
 	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
 	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch' +
-	'\nDelivery Note Created\nDispatched\nCompleted\nCancelled';
+	'\nDelivery Note Created\nDispatched' +
+	'\nPartial Ready For Dispatch\nPartial Delivery Note Created\nPartial Dispatched' +
+	'\nForced Ready For Dispatch\nForced Delivery Note Created\nForced Dispatched\nForced Completed' +
+	'\nCompleted\nCancelled';
 
-const SO_WF_COLORS = {
+var SO_WF_COLORS = {
 	Draft: 'gray',
 	'Warehouse Approval Pending': 'orange',
 	'Future Dispatch': 'yellow',
@@ -27,11 +41,73 @@ const SO_WF_COLORS = {
 	'Ready For Dispatch': 'blue',
 	'Delivery Note Created': 'blue',
 	Dispatched: 'green',
+	'Partial Ready For Dispatch': 'blue',
+	'Partial Delivery Note Created': 'blue',
+	'Partial Dispatched': 'purple',
+	'Forced Ready For Dispatch': 'orange',
+	'Forced Delivery Note Created': 'orange',
+	'Forced Dispatched': 'red',
+	'Forced Completed': 'red',
 	Completed: 'green',
 	Cancelled: 'red',
 };
 
-class SalesOrderEntryListPage {
+// Dim placeholder dashes and bare zeros so real figures read first — visual
+// only, never hides a value. Skips cells holding controls / links / images.
+var ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
+function alpDimPlaceholderCells(root) {
+	if (!root || !root.querySelectorAll) return;
+	root.querySelectorAll('td').forEach((td) => {
+		if (td.querySelector('button, input, img, a')) return;
+		if (ALP_DIM_RE.test((td.textContent || '').trim())) td.classList.add('alp-dim');
+	});
+}
+
+// Role-based column layouts. Warehouse staff (without a sales role) get the
+// warehouse layout; everyone else — sales roles, System Manager — gets sales.
+// E-Com layout is specced but deferred (see project memory) — add here later.
+// `width` drives the <colgroup> so headers and data share one fixed column grid
+// (table-layout: fixed) instead of auto-sizing to content. Percentages are ratios
+// — the browser scales them to fill the table / its min-width.
+var SO_LIST_LAYOUTS = {
+	sales: [
+		{ label: 'ID', sort: 'name', width: '12%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'Customer Name', sort: 'customer_name', width: '19%', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Order Date', sort: 'transaction_date', width: '9%', render: (d, h) => h.date(d.transaction_date) },
+		{ label: 'PO No', sort: 'po_no', width: '12%', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '15%', render: (d, h) => h.wf(d) },
+		{ label: 'Links', cls: 'text-center', width: '6%', render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: '12%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '12%', render: (d, h) => h.money(d) },
+	],
+	warehouse: [
+		{ label: 'Customer Type', sort: 'order_type', width: '9%', render: (d, h) => h.esc(d.order_type || '—') },
+		{ label: 'ID', sort: 'name', width: '11%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'PO No', sort: 'po_no', width: '10%', render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Customer Name', sort: 'customer_name', width: '15%', render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: '9%', render: (d, h) => h.date(d.custom_dispatch_date) },
+		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: '9%', render: (d, h) => h.date(d.custom_po_expiry_date) },
+		{ label: 'Delivery Date', sort: 'delivery_date', width: '9%', render: (d, h) => h.date(d.delivery_date) },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '12%', render: (d, h) => h.wf(d) },
+		{ label: 'Links', cls: 'text-center', width: '5%', render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: '9%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '11%', render: (d, h) => h.money(d) },
+	],
+};
+
+function so_list_layout_for_user() {
+	const roles = frappe.user_roles || [];
+	const WAREHOUSE_ROLES = [
+		'Warehouse Admin', 'Warehouse Manager', 'Warehouse User',
+		'PL User', 'PL Manager', 'DN User', 'DN Manager',
+	];
+	const SALES_ROLES = ['Sales Admin', 'Sales Manager', 'Sales User'];
+	const isWarehouse = WAREHOUSE_ROLES.some((r) => roles.includes(r));
+	const isSales = SALES_ROLES.some((r) => roles.includes(r));
+	return isWarehouse && !isSales ? 'warehouse' : 'sales';
+}
+
+var SalesOrderEntryListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
@@ -39,14 +115,31 @@ class SalesOrderEntryListPage {
 		this.start = 0;
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
-		this.setup_toolbar();
+		this._sort = { field: '', dir: 'desc' };
+		this._columns = SO_LIST_LAYOUTS[so_list_layout_for_user()];
+		this.setup_toolbar(); // page-header buttons: added ONCE, never on re-render
+		this.render_body();
+	}
+
+	// (Re)render the page body + reload the list. Safe to call on every page show so a
+	// cached/blank wrapper is refreshed without a manual browser reload. Does NOT touch the
+	// page-header toolbar (re-adding those buttons would duplicate them).
+	render_body() {
+		this.page.main.html(frappe.render_template('sales_order_entry_list'));
+		this.wrapper = $(this.page.main);
+		this.render_header();
 		this.setup_filters();
+		// Restore the user's saved view (filters, sort, page size) BEFORE the
+		// first load and before events are bound, so nothing fires mid-restore.
+		this._restore_view_prefs();
 		this.bind_events();
 		this.wrapper.find('.so-list-filters-title').text(__('Filters'));
 		this.wrapper.find('.btn-so-list-apply').text(__('Apply'));
 		this.wrapper.find('.btn-so-list-clear').text(__('Clear'));
 		this.wrapper.find('.btn-so-list-prev').text(__('Previous'));
 		this.wrapper.find('.btn-so-list-next').text(__('Next'));
+		this.wrapper.find('.so-list-page-length').attr('title', __('Rows per page'));
+		this._init_filter_collapse();
 		this.load_list();
 	}
 
@@ -63,6 +156,10 @@ class SalesOrderEntryListPage {
 			this.download_selected_pdfs()
 		);
 		if (this.btn_download_pdf) this.btn_download_pdf.hide();
+		this.btn_export_invoices = this.page.add_inner_button(__('Export Invoices'), () =>
+			this.export_selected_invoices()
+		);
+		if (this.btn_export_invoices) this.btn_export_invoices.hide();
 	}
 
 	_selected_names() {
@@ -82,11 +179,13 @@ class SalesOrderEntryListPage {
 
 		if (checked.length > 0) {
 			if (this.btn_download_pdf) this.btn_download_pdf.show();
+			if (this.btn_export_invoices) this.btn_export_invoices.show();
 			if (this.page.set_indicator) {
 				this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
 			}
 		} else {
 			if (this.btn_download_pdf) this.btn_download_pdf.hide();
+			if (this.btn_export_invoices) this.btn_export_invoices.hide();
 			if (this.page.clear_indicator) this.page.clear_indicator();
 		}
 	}
@@ -103,6 +202,21 @@ class SalesOrderEntryListPage {
 			encodeURIComponent(JSON.stringify(names));
 		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDFs.'));
+	}
+
+	export_selected_invoices() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		// One fetched invoice PDF per order (custom_invoice_pdf, synced from the Google
+		// Sheet), bundled into a single ZIP. Orders without an invoice yet are skipped.
+		const url =
+			'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
+			encodeURIComponent(JSON.stringify(names));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
 	}
 
 	setup_filters() {
@@ -179,13 +293,26 @@ class SalesOrderEntryListPage {
 	}
 
 	bind_events() {
+		// render_body() calls this again on every page show. Direct handlers below are on
+		// freshly-rendered children (can't duplicate), but the delegated handlers are on the
+		// persistent container, so clear them first via the .solist namespace.
+		this.wrapper.off('.solist');
 		this.wrapper.find('.btn-so-list-apply').on('click', () => {
 			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-so-list-clear').on('click', () => {
 			Object.values(this._filter_fields).forEach((f) => f && f.set_value(''));
 			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		});
+		this.wrapper.find('.so-list-page-length').on('change', (e) => {
+			const v = cint($(e.currentTarget).val());
+			this.page_length = SO_LIST_PAGE_LENGTHS.includes(v) ? v : 20;
+			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-so-list-prev').on('click', () => {
@@ -198,18 +325,141 @@ class SalesOrderEntryListPage {
 				this.load_list();
 			}
 		});
-		this.wrapper.on('click', '.so-list-row', (e) => {
+		this.wrapper.on('click.solist', '.so-list-row', (e) => {
 			if ($(e.target).closest('a,button,input[type="checkbox"]').length) return;
 			const name = $(e.currentTarget).data('name');
 			if (!name) return;
 			frappe.set_route('sales-order-entry-view', name);
 		});
-		this.wrapper.on('change', '.so-list-select-all', (e) => {
+		this.wrapper.on('click.solist', '.so-list-link-btn', (e) => {
+			e.stopPropagation();
+			const $btn = $(e.currentTarget);
+			const so = $btn.data('so');
+			const route = $btn.data('route');
+			// PL / DN buttons carry the SO name -> open the list filtered to it.
+			if (so) frappe.route_options = { sales_order: String(so) };
+			if (Array.isArray(route)) frappe.set_route(...route);
+		});
+		this.wrapper.on('change.solist', '.so-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
 			this.wrapper.find('.so-list-row-select').prop('checked', checked);
 			this.update_selection();
 		});
-		this.wrapper.on('change', '.so-list-row-select', () => this.update_selection());
+		this.wrapper.on('change.solist', '.so-list-row-select', () => this.update_selection());
+		// Click a sortable header to sort; click again to flip direction.
+		this.wrapper.on('click.solist', '.so-sort-th', (e) => {
+			const field = $(e.currentTarget).data('sort');
+			if (this._sort.field === field) {
+				this._sort.dir = this._sort.dir === 'asc' ? 'desc' : 'asc';
+			} else {
+				this._sort.field = field;
+				this._sort.dir = 'asc';
+			}
+			this.start = 0;
+			this.render_header();
+			this._save_view_prefs();
+			this.load_list();
+		});
+		// Dynamic filters: apply as the user types/picks (debounced); the Apply
+		// button stays for an explicit trigger.
+		const apply = frappe.utils.debounce(() => {
+			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		}, 350);
+		Object.values(this._filter_fields).forEach((f) => {
+			if (f && f.$input) f.$input.on('input change awesomplete-selectcomplete', apply);
+		});
+	}
+
+	// Collapsible filter card. The toggle button is display:none above 768px
+	// (local style block in the page HTML), so desktop behaviour is unchanged;
+	// on phones the 8 stacked filter fields start collapsed to save a screenful.
+	_init_filter_collapse() {
+		const card = this.wrapper.find('.so-list-filters');
+		const btn = this.wrapper.find('.btn-so-list-toggle-filters');
+		if (!btn.length) return;
+		const sync = () => {
+			const collapsed = card.hasClass('so-list-filters-collapsed');
+			btn.text(collapsed ? __('Show Filters') : __('Hide Filters'));
+			btn.attr('aria-expanded', collapsed ? 'false' : 'true');
+		};
+		btn.on('click', () => {
+			card.toggleClass('so-list-filters-collapsed');
+			sync();
+		});
+		if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+			card.addClass('so-list-filters-collapsed');
+		}
+		sync();
+	}
+
+	// Per-user saved view: one snapshot of every user-adjustable piece of view
+	// state (filters + sort + page size — never the pagination offset), stored
+	// via the shared alpinos.list_prefs helper.
+	_save_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const f = this._filter_fields;
+		const val = (name) => (f[name] && f[name].get_value()) || '';
+		alpinos.list_prefs.save(SO_LIST_ROUTE, {
+			filters: {
+				search: val('search'),
+				status: val('status'),
+				workflow_status: val('workflow_status'),
+				company: val('company'),
+				customer: val('customer'),
+				from_date: val('from_date'),
+				to_date: val('to_date'),
+				additional_units_damage_filter: val('additional_units_damage_filter'),
+			},
+			sort_field: this._sort.field || '',
+			sort_dir: this._sort.dir === 'asc' ? 'asc' : 'desc',
+			page_length: this.page_length,
+		});
+	}
+
+	_restore_view_prefs() {
+		if (!window.alpinos || !alpinos.list_prefs) return;
+		const saved = alpinos.list_prefs.load(SO_LIST_ROUTE);
+		if (!saved || typeof saved !== 'object') return;
+
+		// Filters: only keys that map to an existing control; Select values must
+		// still be a known option (renamed statuses etc. are silently dropped).
+		const filters = saved.filters && typeof saved.filters === 'object' ? saved.filters : {};
+		Object.keys(filters).forEach((name) => {
+			const field = this._filter_fields[name];
+			const value = filters[name];
+			if (!field || typeof value !== 'string' || !value) return;
+			if (field.df.fieldtype === 'Select') {
+				const options = String(field.df.options || '').split('\n');
+				if (!options.includes(value)) return;
+			}
+			try {
+				// set_input applies synchronously, so the first load_list() sees
+				// the restored value via get_value(); set_value is promise-based
+				// and can land after the first request.
+				if (typeof field.set_input === 'function') field.set_input(value);
+				else field.set_value(value);
+			} catch (e) {
+				// A bad saved value must never break the page.
+			}
+		});
+
+		// Sort: only fields present in this user's column layout (sales vs
+		// warehouse layouts expose different sortable columns).
+		const sortable = this._columns.filter((c) => c.sort).map((c) => c.sort);
+		if (typeof saved.sort_field === 'string' && sortable.includes(saved.sort_field)) {
+			this._sort.field = saved.sort_field;
+			this._sort.dir = saved.sort_dir === 'asc' ? 'asc' : 'desc';
+			this.render_header(); // refresh the sort indicator
+		}
+
+		const pl = cint(saved.page_length);
+		if (SO_LIST_PAGE_LENGTHS.includes(pl)) this.page_length = pl;
+		this.wrapper.find('.so-list-page-length').val(String(this.page_length));
+
+		// Pagination offset is deliberately never restored — always page 1.
+		this.start = 0;
 	}
 
 	_args() {
@@ -221,6 +471,7 @@ class SalesOrderEntryListPage {
 		return {
 			start: this.start,
 			page_length: this.page_length,
+			channel: 'Offline',
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
 			workflow_status: f.workflow_status.get_value() || '',
@@ -229,6 +480,8 @@ class SalesOrderEntryListPage {
 			from_date: f.from_date.get_value() || '',
 			to_date: f.to_date.get_value() || '',
 			additional_units_damage_filter,
+			sort_field: this._sort.field || '',
+			sort_dir: this._sort.dir || 'desc',
 		};
 	}
 
@@ -236,6 +489,7 @@ class SalesOrderEntryListPage {
 		const me = this;
 		me.wrapper.find('.so-list-select-all').prop('checked', false);
 		if (me.btn_download_pdf) me.btn_download_pdf.hide();
+		if (me.btn_export_invoices) me.btn_export_invoices.hide();
 		if (me.page.clear_indicator) me.page.clear_indicator();
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_sales_order_entry_list',
@@ -256,47 +510,87 @@ class SalesOrderEntryListPage {
 		});
 	}
 
+	render_header() {
+		// Fixed column grid: a <colgroup> so the header row and every data row share
+		// the same intentional widths (checkbox col first, then each column's width).
+		const table = this.wrapper.find('.so-list-table');
+		let cg = table.children('colgroup');
+		if (!cg.length) { cg = $('<colgroup></colgroup>'); table.prepend(cg); }
+		cg.empty().append('<col style="width:3%">');
+		this._columns.forEach((c) => cg.append(`<col${c.width ? ` style="width:${c.width}"` : ''}>`));
+
+		const tr = this.wrapper.find('.so-list-table thead tr').empty();
+		tr.append(
+			'<th style="text-align: center;"><input type="checkbox" class="so-list-select-all"></th>'
+		);
+		this._columns.forEach((c) => {
+			if (!c.sort) {
+				tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`);
+				return;
+			}
+			const active = this._sort.field === c.sort;
+			const arrow = active ? (this._sort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
+			tr.append(
+				`<th class="${c.cls || ''} so-sort-th" data-sort="${c.sort}" ` +
+				`style="cursor:pointer; user-select:none; white-space:nowrap;" title="${__('Click to sort')}">` +
+				`${__(c.label)}<span class="text-muted" style="font-size:10px; opacity:${active ? 1 : 0.4};">${arrow}</span></th>`
+			);
+		});
+	}
+
 	render_rows(rows) {
 		const tb = this.wrapper.find('.so-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="11" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
+				`<tr><td colspan="${this._columns.length + 1}" class="text-muted text-center">${__('No Sales Orders found')}</td></tr>`
 			);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const helpers = {
+			esc,
+			date: (v) => (v && frappe.datetime.str_to_user(String(v))) || '—',
+			money: (d) => format_currency(d.grand_total || 0, d.currency),
+			wf: (d) => {
+				const wf = d.custom_workflow_status || '';
+				const c = SO_WF_COLORS[wf] || 'gray';
+				return wf ? `<span class="indicator-pill ${c}">${esc(wf)}</span>` : '—';
+			},
+			// Redirect buttons to the latest linked Pick List / Delivery Note /
+			// Sales Invoice — shown only when the doc exists AND the user's role
+			// can read that doctype.
+			links: (d) => {
+				const btns = [];
+				const mk = (label, route, title) =>
+					`<button type="button" class="btn btn-xs btn-default so-list-link-btn"
+						data-route='${esc(JSON.stringify(route))}' title="${esc(title)}">${label}</button>`;
+				// PL / DN open the LIST filtered to this Sales Order, so every linked
+				// Pick List / Delivery Note is shown (not just the latest one).
+				const mkList = (label, listRoute, title) =>
+					`<button type="button" class="btn btn-xs btn-default so-list-link-btn"
+						data-route='${esc(JSON.stringify([listRoute]))}' data-so="${esc(d.name)}" title="${esc(title)}">${label}</button>`;
+				if (d.pick_list && frappe.model.can_read('Pick List')) {
+					btns.push(mkList('PL', 'pick_list_list', __('Pick Lists for {0}', [d.name])));
+				}
+				if (d.delivery_note && frappe.model.can_read('Delivery Note')) {
+					btns.push(mkList('DN', 'delivery_note_entry_list', __('Delivery Notes for {0}', [d.name])));
+				}
+				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) {
+					btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
+				}
+				return btns.join(' ') || '—';
+			},
+		};
 		rows.forEach((d) => {
-			const gt = format_currency(d.grand_total || 0, d.currency);
-			const td = (d.transaction_date && frappe.datetime.str_to_user(d.transaction_date)) || '—';
-			const dd = (d.delivery_date && frappe.datetime.str_to_user(d.delivery_date)) || '—';
-			const hasAug =
-				d.custom_additional_units_damage !== undefined &&
-				d.custom_additional_units_damage !== null;
-			const augLabel = hasAug
-				? cint(d.custom_additional_units_damage)
-					? __('Yes')
-					: __('No')
-				: '—';
-			const augClass = hasAug && cint(d.custom_additional_units_damage) ? 'green' : 'gray';
-			const wf = d.custom_workflow_status || '';
-			const wfColor = SO_WF_COLORS[wf] || 'gray';
-			const wfCell = wf
-				? `<span class="indicator-pill ${wfColor}">${esc(wf)}</span>`
-				: '—';
+			const cells = this._columns
+				.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`)
+				.join('');
 			tb.append(`<tr class="so-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="so-list-row-select" data-name="${esc(d.name)}"></td>
-				<td><strong>${esc(d.name)}</strong></td>
-				<td>${esc(d.customer)}</td>
-				<td>${esc(d.customer_name)}</td>
-				<td>${esc(td)}</td>
-				<td>${esc(dd)}</td>
-				<td>${esc(d.company)}</td>
-				<td>${wfCell}</td>
-				<td><span class="indicator-pill blue">${esc(d.status)}</span></td>
-				<td class="text-center"><span class="indicator-pill ${augClass}">${esc(augLabel)}</span></td>
-				<td class="text-right">${gt}</td>
+				${cells}
 			</tr>`);
 		});
+		alpDimPlaceholderCells(tb && tb[0]);
 	}
 
 	update_pager() {

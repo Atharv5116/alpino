@@ -2,7 +2,7 @@
 
 One row per Sales Order line (main items + marketing freebies + scheme items +
 additional-unit/damage items, the latter at selling rate 0). Pulls from Sales Order,
-Offline Buyer Master, Item Master and the selected billing/shipping Addresses.
+Buyer Master, Item Master and the selected billing/shipping Addresses.
 
 Exports to Excel via the standard report view (Menu → Export).
 """
@@ -60,7 +60,7 @@ def _picklist_map(so_name):
 def _address(name):
 	if not name:
 		return {}
-	return (
+	return dict(
 		frappe.db.get_value(
 			"Address", name,
 			["state", "city", "pincode", "address_line1", "address_line2"],
@@ -70,6 +70,63 @@ def _address(name):
 	)
 
 
+def _has_scp(d):
+	"""True when an address dict carries any of state / city / pincode."""
+	return bool(d.get("state") or d.get("city") or d.get("pincode"))
+
+
+def _norm_addr(text):
+	"""Normalize an address string for matching: lowercase, collapse whitespace,
+	drop a trailing '(Billing)'/'(Shipping)' type suffix and stray punctuation."""
+	s = " ".join((text or "").replace("\n", " ").replace("\r", " ").split()).lower()
+	if "(" in s:  # the family-dropdown label carries a "(type)" suffix; strip defensively
+		s = s.split("(", 1)[0]
+	return s.strip().strip(",").strip()
+
+
+def _resolve_scp_from_text(customer, text, cache):
+	"""Recover {state, city, pincode} for a FREE-TEXT address (e-com orders store
+	the address as text, not an Address link) by matching it back to one of the
+	buyer family's Address records — composed the same way the entry page builds
+	the option value: 'line1, line2, city, state, pincode'."""
+	target = _norm_addr(text)
+	if not customer or not target:
+		return {}
+	if customer not in cache:
+		try:
+			from alpinos.sales_order_offline_buyer import get_customer_addresses_for_display
+			cache[customer] = get_customer_addresses_for_display(customer) or []
+		except Exception:
+			cache[customer] = []
+	for row in cache[customer]:
+		composed = _norm_addr(", ".join(
+			str(p) for p in [
+				row.get("address_line1"), row.get("address_line2"),
+				row.get("city"), row.get("state"), row.get("pincode"),
+			] if p and str(p).strip().upper() != "N/A"
+		))
+		if composed and composed == target:
+			return {
+				"state": row.get("state") or "",
+				"city": row.get("city") or "",
+				"pincode": row.get("pincode") or "",
+				# Owning Buyer Master of the matched address, so GST can follow it.
+				"buyer_master": row.get("buyer_master") or "",
+			}
+	return {}
+
+
+def _master_gst(master_name, cache):
+	"""GSTIN of a specific Buyer Master — the owner of a chosen billing/shipping
+	address. A buyer family can span several site-masters, each with its own GST No,
+	so the bill/ship GST follows whichever master owns that address. Cached."""
+	if not master_name:
+		return ""
+	if master_name not in cache:
+		cache[master_name] = frappe.db.get_value("Buyer Master", master_name, "gst_no") or ""
+	return cache[master_name]
+
+
 # ── column definitions ─────────────────────────────────────────────────────
 def get_columns():
 	def col(label, fn, w=120, ft="Data"):
@@ -77,13 +134,12 @@ def get_columns():
 
 	cols = [
 		col("Invoice No", "invoice_no", 100),
-		col("Order Date", "order_date", 95, "Date"),
+		col("Dispatch Date", "dispatch_date", 95, "Date"),
 		col("Sales Order Id", "sales_order_id", 130),
 		col("Customer PO Number", "customer_po_number", 130),
 		col("Customer", "customer", 180),
 		col("P&L Name / Voucher Type", "pl_voucher", 180),
 		col("Registration Type", "registration_type", 110),
-		col("GST No", "gst_no", 140),
 		col("Alpino SKU", "alpino_sku", 120),
 		col("EAN/FSN", "ean_fsn", 130),
 		col("EAN/FSN Flag", "ean_fsn_flag", 90),
@@ -91,32 +147,37 @@ def get_columns():
 		col("UNIT", "unit", 70, "Float"),
 		col("Box", "box", 60, "Float"),
 		col("Alpino Product MRP", "alpino_mrp", 110, "Currency"),
-		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Flat Discount %", "flat_discount", 90, "Float"),
 		col("Additional Discount", "additional_discount", 100, "Float"),
+		col("Cash Discount", "cash_discount", 90, "Float"),
 		col("Alpino GST Rate", "gst_rate", 90, "Float"),
-		col("Final Taxable", "final_taxable", 110, "Currency"),
-		col("CGST", "cgst", 90, "Currency"),
-		col("IGST", "igst", 90, "Currency"),
+		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Final Total Value", "final_total", 120, "Currency"),
+		col("Final Taxable", "final_taxable", 110, "Currency"),
+		col("IGST", "igst", 90, "Currency"),
+		col("CGST", "cgst", 90, "Currency"),
 		col("Is Billable", "is_billable", 80),
-		col("Mobile No", "mobile_no", 110),
-		col("Place Of Supply (Bill to State)", "bill_state", 130),
-		col("Bill to City", "bill_city", 110),
-		col("Bill to Pincode", "bill_pincode", 90),
 	]
-	for i in range(1, 7):
+	for i in range(1, 5):
 		cols.append(col(f"Bill to Address Line.{i}", f"bill_addr_{i}", 160))
 	cols += [
-		col("Ship to State", "ship_state", 120),
-		col("Ship to City", "ship_city", 110),
-		col("Ship to Pincode", "ship_pincode", 90),
+		col("Bill to City + Place Of Supply (Bill to State) + Bill to Pincode + Mobile No", "bill_combined", 260),
+		col("Place Of Supply (Bill to State)", "bill_state", 130),
+		col("Bill to Pincode", "bill_pincode", 90),
+		col("Bill To GST No", "bill_gst_no", 140),
 	]
-	for i in range(1, 7):
+	for i in range(1, 5):
 		cols.append(col(f"Ship to Address Line.{i}", f"ship_addr_{i}", 160))
 	cols += [
+		col("Ship to City + Ship to State + Ship to Pincode + Mobile No", "ship_combined", 260),
+		col("Ship to State", "ship_state", 120),
+		col("Ship to Pincode", "ship_pincode", 90),
+		col("Ship To GST No", "ship_gst_no", 140),
+		col("Warehouse", "warehouse", 130),
 		col("Tally Warehouse Id", "tally_warehouse_id", 110),
 		col("Channel", "channel", 120),
+		col("Site Name", "site_name", 130),
+		col("Order Date", "order_date", 95, "Date"),
 	]
 	return cols
 
@@ -126,6 +187,29 @@ def execute(filters=None):
 	return get_columns(), _get_data(filters)
 
 
+def _buyer_master_scope_customers(filters):
+	"""Customers whose Buyer Master matches the parent and/or site-name filters — or
+	None when neither is set. Selecting a parent pulls the WHOLE family: the parent
+	master plus every child site whose parent_buyer is it."""
+	parent = (filters.get("buyer_master_parent") or "").strip()
+	site = (filters.get("site_name") or "").strip()
+	if not parent and not site:
+		return None
+	conditions = ["IFNULL(bm.customer, '') <> ''"]
+	params = {}
+	if parent:
+		conditions.append("(bm.name = %(parent)s OR bm.parent_buyer = %(parent)s)")
+		params["parent"] = parent
+	if site:
+		conditions.append("bm.site_name = %(site)s")
+		params["site"] = site
+	rows = frappe.db.sql(
+		"SELECT DISTINCT bm.customer FROM `tabBuyer Master` bm WHERE " + " AND ".join(conditions),
+		params, as_dict=True,
+	)
+	return {r.customer for r in rows}
+
+
 def _get_data(filters):
 	so_filters = {"docstatus": 1}
 	if filters.get("from_date") and filters.get("to_date"):
@@ -133,9 +217,33 @@ def _get_data(filters):
 	if filters.get("customer"):
 		so_filters["customer"] = filters.customer
 
+	# Buyer Master parent / site scoping: restrict the SO scan to the Customers whose
+	# Buyer Master is (or sits under) the selected parent and/or carries the selected site.
+	allowed_customers = _buyer_master_scope_customers(filters)
+	if allowed_customers is not None:
+		if not allowed_customers:
+			return []
+		if filters.get("customer"):
+			if filters.customer not in allowed_customers:
+				return []
+		else:
+			so_filters["customer"] = ["in", list(allowed_customers)]
+
 	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="transaction_date asc, name asc")
 
-	item_cache, obm_cache, ct_channel_cache = {}, {}, {}
+	# Only report orders whose Pick List has been SUBMITTED — billing data should
+	# appear only once picking is done, not on unpicked/draft orders.
+	if so_names:
+		picked = set(
+			frappe.get_all(
+				"Pick List",
+				filters={"custom_sales_order_id": ["in", so_names], "docstatus": 1},
+				pluck="custom_sales_order_id",
+			)
+		)
+		so_names = [s for s in so_names if s in picked]
+
+	item_cache, obm_cache, ct_channel_cache, master_gst_cache = {}, {}, {}, {}
 
 	def item_info(code):
 		if code not in item_cache:
@@ -150,7 +258,7 @@ def _get_data(filters):
 	def obm_info(customer):
 		if customer not in obm_cache:
 			obm_cache[customer] = frappe.db.get_value(
-				"Offline Buyer Master", {"customer": customer},
+				"Buyer Master", {"customer": customer},
 				["tally_buyer_name", "tally_pl_name", "gst_type", "gst_no", "contact_no",
 				 "custom_tally_warehouse_id", "customer_type", "combine_product_bundles"],
 				as_dict=True,
@@ -163,6 +271,7 @@ def _get_data(filters):
 		return ct_channel_cache[customer_type]
 
 	data = []
+	addr_cache = {}  # customer -> family Address rows (for free-text state/city/pincode recovery)
 	for so_name in so_names:
 		so = frappe.get_doc("Sales Order", so_name)
 		obm = obm_info(so.customer)
@@ -183,51 +292,109 @@ def _get_data(filters):
 
 		bill = _address(so.get("customer_address"))
 		ship = _address(so.get("shipping_address_name"))
+		# Recover state/city/pincode when the address isn't a structured Address
+		# link (e-com orders keep it as free text) by matching the stored text
+		# back to the buyer family's Address records.
+		if not _has_scp(bill):
+			bill.update({k: v for k, v in _resolve_scp_from_text(
+				so.customer, so.get("custom_billing_address_text"), addr_cache).items() if v})
+		if not _has_scp(ship):
+			ship.update({k: v for k, v in _resolve_scp_from_text(
+				so.customer, so.get("custom_shipping_address_text"), addr_cache).items() if v})
+		# No distinct shipping address at all (common for offline orders) — the
+		# order ships to the billing address, so mirror its state/city/pincode.
+		if not _has_scp(ship):
+			ship["state"] = bill.get("state") or ""
+			ship["city"] = bill.get("city") or ""
+			ship["pincode"] = bill.get("pincode") or ""
 		if not pl_voucher:
 			pl_voucher = _voucher_type(registration_type, bill.get("state"))
 
-		bill_lines = _split_address(" ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")])))
-		ship_lines = _split_address(" ".join(filter(None, [ship.get("address_line1"), ship.get("address_line2")])))
+		# Address lines: e-com orders store the billing/shipping address as free
+		# text on the SO (custom_*_address_text) — that's what the user entered, so
+		# prefer it. Offline orders leave it blank and use the structured Address
+		# record (customer_address / shipping_address_name). State/city/pincode
+		# still come from the Address record (free text isn't parsed into those).
+		bill_text = (so.get("custom_billing_address_text") or "").strip() \
+			or " ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")]))
+		ship_text = (so.get("custom_shipping_address_text") or "").strip() \
+			or " ".join(filter(None, [ship.get("address_line1"), ship.get("address_line2")]))
+		bill_lines = _split_address(bill_text, max_lines=4)
+		ship_lines = _split_address(ship_text, max_lines=4)
 
 		customer_name = obm.get("tally_buyer_name") or so.get("customer_name") or so.customer
 
+		# Bill/Ship GST follow the OWNING Buyer Master of each chosen address (a buyer
+		# family can span several site-masters, each with its own GSTIN). The owner is
+		# recovered above for free-text (e-com) addresses; structured/offline addresses
+		# fall back to this SO's buyer master. Address records carry no GSTIN of their own.
+		bill_gst = _master_gst(bill.get("buyer_master"), master_gst_cache) or gst_no
+		ship_gst = _master_gst(ship.get("buyer_master"), master_gst_cache) or gst_no
+
+		mobile = obm.get("contact_no") or ""
+		bill_city = bill.get("city") or ""
+		bill_state = bill.get("state") or ""
+		bill_pincode = bill.get("pincode") or ""
+		ship_city = ship.get("city") or ""
+		ship_state = ship.get("state") or ""
+		ship_pincode = ship.get("pincode") or ""
+
 		header = {
 			"invoice_no": "",
-			"order_date": so.transaction_date,
+			"dispatch_date": so.get("custom_dispatch_date") or "",
 			"sales_order_id": so.name,
 			"customer_po_number": so.get("po_no") or "",
 			"customer": customer_name,
 			"pl_voucher": pl_voucher,
 			"registration_type": registration_type,
-			"gst_no": gst_no,
-			"mobile_no": obm.get("contact_no") or "",
-			"bill_state": bill.get("state") or "",
-			"bill_city": bill.get("city") or "",
-			"bill_pincode": bill.get("pincode") or "",
-			"ship_state": ship.get("state") or "",
-			"ship_city": ship.get("city") or "",
-			"ship_pincode": ship.get("pincode") or "",
+			# Bill/Ship GST No come from the Buyer Master that owns each chosen address
+			# (Address records have no gstin field); blank when that master is Unregistered.
+			"bill_gst_no": bill_gst,
+			"ship_gst_no": ship_gst,
+			"bill_state": bill_state,
+			"bill_pincode": bill_pincode,
+			# Combined single-cell address (city, state, pincode, mobile) per the Final Format.
+			"bill_combined": ", ".join(p for p in (bill_city, bill_state, bill_pincode, mobile) if p),
+			"ship_state": ship_state,
+			"ship_pincode": ship_pincode,
+			"ship_combined": ", ".join(p for p in (ship_city, ship_state, ship_pincode, mobile) if p),
+			"warehouse": so.get("set_warehouse") or "",
 			"tally_warehouse_id": obm.get("custom_tally_warehouse_id") or "T24",
 			"channel": channel,
+			"site_name": so.get("custom_site_name") or "",
+			"order_date": so.transaction_date,
 		}
-		for i in range(6):
+		for i in range(4):
 			header[f"bill_addr_{i+1}"] = bill_lines[i]
 			header[f"ship_addr_{i+1}"] = ship_lines[i]
 
 		pl_map = _picklist_map(so.name)
 		has_pl = bool(pl_map)
+		# Cash discount %: the Sales Order applies it once, as a % of the grand total
+		# (apply_discount_on = "Grand Total"). Being a flat %, applying the SAME % to each
+		# line's GST-inclusive amount makes the report's lines sum to the SO grand total
+		# after cash discount — just distributed per row so it shows in the table.
+		cash_pct = flt(so.get("custom_cash_discount"))
 
-		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced):
+		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True):
 			it = item_info(item_code)
-			# UNIT / Box come from the submitted Pick List (picked qty). If the SO has a
-			# submitted pick list but this item isn't in it, it wasn't picked → 0; if there
-			# is no submitted pick list at all, fall back to the ordered qty/box.
-			plr = pl_map.get(item_code)
-			if plr:
-				unit, box = flt(plr.get("qty")), flt(plr.get("box"))
+			# Every line — billable AND marketing freebies / scheme / damage — is taken from
+			# the submitted Pick List (all of them are added to it at creation), with UNIT /
+			# Box = picked qty. So the report simply mirrors the submitted pick list: a line
+			# not in it (not picked / removed) is dropped; with no submitted pick list at all,
+			# fall back to the ordered qty/box.
+			if not from_picklist:
+				unit, box = flt(fallback_qty), flt(fallback_box)
 			else:
-				unit = 0 if has_pl else flt(fallback_qty)
-				box = 0 if has_pl else flt(fallback_box)
+				plr = pl_map.get(item_code)
+				if plr:
+					unit, box = flt(plr.get("qty")), flt(plr.get("box"))
+				elif has_pl:
+					# On the Sales Order but NOT in the submitted Pick List — not
+					# picked/dispatched, so it is dropped from the report.
+					return
+				else:
+					unit, box = flt(fallback_qty), flt(fallback_box)
 
 			gst_pct = flt(it.get("custom_gst_percent"))
 			gst_rate = 100 + gst_pct
@@ -245,6 +412,9 @@ def _get_data(filters):
 					* (1 - flt(additional) / 100.0),
 					2,
 				)
+			# Deduct the cash discount % per line (freebies are 0, so unaffected).
+			if cash_pct:
+				final_total = flt(final_total * (1 - cash_pct / 100.0), 2)
 			final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
 			igst = flt(final_total - final_taxable, 2)
 			cgst = flt(igst / 2.0, 2)
@@ -273,6 +443,7 @@ def _get_data(filters):
 				"selling_price": flt(selling_price) or None,
 				"flat_discount": flt(flat),
 				"additional_discount": flt(offer) or flt(additional),
+				"cash_discount": cash_pct,
 				"gst_rate": gst_rate,
 				"final_taxable": final_taxable if is_priced else 0,
 				"cgst": cgst if is_priced else 0,
@@ -300,27 +471,36 @@ def _get_data(filters):
 		else:
 			import math
 			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
-			from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor
+			from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
 
 			exploded_items = {}
 
-			def add_item_to_exploded(item_code, qty, parent_offer, parent_additional):
-				mrp_val = 0
-				flat_val = 0
-				sp_val = 0
-				
-				res = get_offline_buyer_item_rate(so.customer, item_code)
-				if res and flt(res.get("mrp")) > 0:
-					mrp_val = flt(res.get("mrp"))
-					flat_val = flt(res.get("margin_percent"))
-					sp_val = flt(res.get("rate"))
+			def add_item_to_exploded(item_code, qty, parent_offer, parent_additional, source_row=None):
+				if source_row is not None:
+					# Plain saved Sales Order line: use its OWN stored pricing verbatim — never
+					# re-price from the (possibly since-changed) buyer catalog, so the report
+					# matches the SO view/PDF exactly (what the order was confirmed at).
+					mrp_val = flt(source_row.get("custom_customer_mrp") or 0)
+					flat_val = flt(source_row.get("custom_flat_discount") or 0)
+					sp_val = flt(source_row.get("custom_selling_price") or source_row.get("rate") or 0)
 				else:
-					res_mrp = get_customer_item_mrp(so.customer, item_code)
-					if res_mrp:
-						mrp_val = flt(res_mrp)
+					# Exploded bundle component — no saved SO line of its own, so derive the price
+					# from the buyer catalog (fallback to customer MRP / item valuation).
+					mrp_val = 0
+					flat_val = 0
+					sp_val = 0
+					res = get_offline_buyer_item_rate(so.customer, item_code)
+					if res and flt(res.get("mrp")) > 0:
+						mrp_val = flt(res.get("mrp"))
+						flat_val = flt(res.get("margin_percent"))
+						sp_val = flt(res.get("rate"))
 					else:
-						mrp_val = flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
-					sp_val = mrp_val * (1 - flat_val / 100.0)
+						res_mrp = get_customer_item_mrp(so.customer, item_code)
+						if res_mrp:
+							mrp_val = flt(res_mrp)
+						else:
+							mrp_val = flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
+						sp_val = mrp_val * (1 - flat_val / 100.0)
 
 				if item_code not in exploded_items:
 					exploded_items[item_code] = {
@@ -340,13 +520,22 @@ def _get_data(filters):
 					for p in packed:
 						add_item_to_exploded(p.item_code, flt(p.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
 				else:
-					pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
-					if pb_name:
-						pb_items = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
-						for p in pb_items:
-							add_item_to_exploded(p.item_code, flt(p.qty) * flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+					# alpinos custom bundle (custom_is_bundle / custom_product_mapping):
+					# no native Packed Items, so explode it the SAME way the Pick List
+					# does — otherwise the combo SKU (which isn't in the pick list, only
+					# its components are) reports qty 0.
+					comps = _bundle_components(r.item_code)
+					if comps:
+						for c in comps:
+							add_item_to_exploded(c.item, flt(r.qty) * flt(c.base_qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
 					else:
-						add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+						pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
+						if pb_name:
+							pb_items = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
+							for p in pb_items:
+								add_item_to_exploded(p.item_code, flt(p.qty) * flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
+						else:
+							add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0), source_row=r)
 
 			for code, item_dict in exploded_items.items():
 				cf = flt(get_box_conversion_factor(code))
@@ -358,15 +547,17 @@ def _get_data(filters):
 					item_dict["additional_discount"], is_priced=True,
 				)
 
-		# Marketing freebies / scheme items / additional-unit (damage) items — selling rate 0
+		# Marketing freebies / scheme items / additional-unit (damage) items — selling
+		# rate 0, qty taken straight from the Sales Order (not the pick list, which
+		# doesn't carry these free lines — they would otherwise report qty 0).
 		for r in (so.get("custom_marketing_freebies") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True)
 		for r in (so.get("custom_scheme_item_table") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True)
 		for r in (so.get("custom_additional_units_damage_items") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True)
 
 	return data

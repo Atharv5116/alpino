@@ -142,19 +142,31 @@ def _collect_pick_list_stickers(doc):
 	# read it once outside the row loop and apply it to every sticker.
 	gate = doc.get("custom_gate") or ""
 
+	# SKU No (Item.custom_sku_no) per row — the Pick List Item doesn't store it, so read
+	# it from the Item master once and reuse for both sorting and the sticker value.
+	from alpinos.utils import sku_sort_key
+	sku_no_map = {}
+	for row in doc.locations or []:
+		code = row.item_code
+		if code and code not in sku_no_map:
+			sku_no_map[code] = frappe.db.get_value("Item", code, "custom_sku_no") or ""
+
 	# Match the page's section order (Items > Marketing Freebies > Scheme >
-	# Additional Units), then preserve the existing row sequence within each
-	# section. Stickers come out in the same order the user sees on screen.
+	# Additional Units), then order ascending by SKU No within each section — same
+	# ascending-SKU arrangement as the Pick List form and packing sheet.
 	def _row_sort_key(row):
 		src = row.get("custom_source_table") or "Items"
 		try:
 			src_idx = SOURCE_TABLE_ORDER.index(src)
 		except ValueError:
 			src_idx = len(SOURCE_TABLE_ORDER)
-		return (src_idx, row.idx or 0)
+		return (src_idx, sku_sort_key(sku_no_map.get(row.item_code, "")))
 
 	sorted_rows = sorted(doc.locations or [], key=_row_sort_key)
-	stickers = []
+
+	# First pass: per-row box counts, so the counter can run continuously
+	# across the whole pick list (serial / grand total) in page order.
+	printable = []
 	for row in sorted_rows:
 		source_table = row.get("custom_source_table") or "Items"
 		is_sample = source_table in SAMPLE_SOURCE_TABLES
@@ -162,22 +174,32 @@ def _collect_pick_list_stickers(doc):
 		# falling back to 1 sticker per row when the count is zero so the
 		# freebie/scheme/additional-unit gets at least one printed label.
 		if is_sample:
-			total_box = int(flt(row.get("custom_sample_box") or 0)) or 1
+			boxes = int(flt(row.get("custom_sample_box") or 0)) or 1
 		else:
-			total_box = int(flt(row.get("custom_box") or 0))
-			if total_box <= 0:
+			boxes = int(flt(row.get("custom_box") or 0))
+			if boxes <= 0:
 				continue
-		sku_no = ""
-		if row.item_code:
-			sku_no = frappe.db.get_value("Item", row.item_code, "custom_sku_no") or ""
+		printable.append((row, boxes, is_sample))
+
+	grand_total = sum(boxes for _, boxes, _ in printable)
+
+	stickers = []
+	serial = 0
+	for row, boxes, is_sample in printable:
+		sku_no = sku_no_map.get(row.item_code, "")
 		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
-		for box_idx in range(1, total_box + 1):
+		mfg_date = ""
+		if row.get("custom_mfg_date"):
+			mfg_date = frappe.utils.formatdate(str(row.custom_mfg_date))
+		for _ in range(boxes):
+			serial += 1
 			stickers.append({
 				"sku_no": sku_no,
 				"sku_name": row.item_code or "",
 				"batch_no": batch_no,
-				"box_index": box_idx,
-				"total_box": total_box,
+				"mfg_date": mfg_date,
+				"box_index": serial,
+				"total_box": grand_total,
 				"party_name": party_name,
 				"po_no": po_no,
 				"dispatch_area": gate,
@@ -187,31 +209,185 @@ def _collect_pick_list_stickers(doc):
 	return stickers
 
 
-def _render_stickers_pdf(stickers, label):
-	"""Render a flat list of sticker dicts into a single sticker-sized PDF."""
+def _render_stickers_pdf(stickers, label, paper="label"):
+	"""Render a flat list of sticker dicts into a single PDF — one 100mm x 75mm
+	sticker per page.
+
+	`paper`:
+	  * "label" (default) — the page IS 100x75mm, so the sticker fills the whole
+	    label. For a 100x75mm label printer / roll.
+	  * "a4" — the SAME 100x75mm sticker centered on an A4 sheet (rest blank), for
+	    an ordinary A4 printer.
+
+	Both start from the identical 100x75mm render. wkhtmltopdf renders absolute
+	CSS lengths at a build-dependent scale (the box came out ~0.77x, ≈77x58mm, on
+	the production server), so straight after rendering we run
+	_normalize_stickers_to_exact_size() to force every page to a true 100x75mm.
+	For A4 we then compose that exact 100x75mm page, unscaled, onto a blank A4
+	page with pypdf — so the sticker keeps its exact physical size and just gets
+	A4 whitespace around it.
+
+	Calls pdfkit directly rather than frappe.utils.pdf.get_pdf ON PURPOSE:
+	get_pdf.prepare_options injects page-size=A4 alongside our page-width/height,
+	which wkhtmltopdf lets win — pushing the sticker into the corner of an A4 page.
+	Passing ONLY page-width/height yields an exact 100x75mm page.
+	"""
+	import pdfkit
+
 	html = frappe.render_template(
 		"alpinos/templates/print/pick_list_stickers.html",
 		{"stickers": stickers, "pick_list": label},
 	)
-	from frappe.utils.pdf import get_pdf
-	# 100mm x 75mm landscape, zero margins so the @page CSS is honoured exactly.
-	# Smart-shrinking left ON (default) — disabling it was pushing overflow
-	# content onto a second page when the content barely exceeded 75mm.
-	pdf_options = {
+	options = {
 		"page-width": "100mm",
 		"page-height": "75mm",
-		"orientation": "Landscape",
 		"margin-top": "0mm",
 		"margin-bottom": "0mm",
 		"margin-left": "0mm",
 		"margin-right": "0mm",
+		"encoding": "UTF-8",
+		"print-media-type": "",
+		"disable-smart-shrinking": "",
+		"disable-javascript": "",
+		"quiet": "",
+		# NOTE: deliberately no "zoom" here. wkhtmltopdf mis-scales absolute CSS
+		# lengths (mm/pt/px) by a factor that varies per build, and a --zoom fudge
+		# only ever fixed one build while breaking another. The exact size is
+		# enforced afterwards, geometrically, by _normalize_stickers_to_exact_size.
 	}
-	return get_pdf(html, options=pdf_options)
+	# output_path=False -> return the PDF as bytes.
+	label_pdf = pdfkit.from_string(html, False, options=options)
+	# wkhtmltopdf's absolute-length scale is build-dependent; force exact 100x75mm.
+	label_pdf = _normalize_stickers_to_exact_size(label_pdf)
+	if paper != "a4":
+		return label_pdf
+	return _compose_stickers_on_a4(label_pdf)
+
+
+def _normalize_stickers_to_exact_size(label_pdf):
+	"""Rescale every sticker page to a true 100mm x 75mm, whatever scale
+	wkhtmltopdf actually rendered at.
+
+	wkhtmltopdf renders absolute CSS lengths (mm/pt) at a build-dependent scale —
+	~1.0 on some builds, ~0.58 on the production server — so the nominally
+	100x75mm box lands at the wrong physical size (≈77x58mm on the server). We
+	can't fix that reliably with a --zoom constant, so we measure and correct.
+
+	Each sticker carries an invisible <a class="pl-cal"> anchor sized to the exact
+	100x75mm design box (see templates/print/pick_list_stickers.html). wkhtmltopdf
+	emits it as a PDF link annotation whose /Rect is the anchor's ACTUAL rendered
+	size — i.e. it reports the real scale directly. We read that rectangle, scale
+	every page (anchored at its top-left corner) so the box becomes exactly
+	100x75mm, reset the mediabox, and strip the calibration annotation.
+
+	The scale is identical for every page in one render, so it's measured once
+	from the first calibrated page and applied to all. Falls back to the
+	unmodified PDF if pypdf is missing or no calibration annotation is found — so
+	the worst case is the pre-existing behaviour, never an error.
+	"""
+	try:
+		import io
+		from pypdf import PdfReader, PdfWriter, Transformation
+		from pypdf.generic import RectangleObject
+	except Exception:
+		return label_pdf
+
+	pt = 72.0 / 25.4  # PDF points per mm
+	w_new, h_new = 100.0 * pt, 75.0 * pt
+
+	try:
+		reader = PdfReader(io.BytesIO(label_pdf))
+
+		# Find the calibration anchor's rendered rectangle on the first page that
+		# has one. Its width/height reveal wkhtmltopdf's real scale; its top-left
+		# corner (x0, y1 — PDF origin is bottom-left) is where content is anchored.
+		sx = sy = None
+		anchor_x0 = anchor_y1 = 0.0
+		for page in reader.pages:
+			annots = page.get("/Annots")
+			if not annots:
+				continue
+			for ref in annots:
+				obj = ref.get_object()
+				rect = obj.get("/Rect")
+				if obj.get("/Subtype") == "/Link" and rect:
+					v = [float(x) for x in rect]
+					aw, ah = abs(v[2] - v[0]), abs(v[3] - v[1])
+					if aw > 0 and ah > 0:
+						sx, sy = w_new / aw, h_new / ah
+						anchor_x0, anchor_y1 = min(v[0], v[2]), max(v[1], v[3])
+						break
+			if sx:
+				break
+
+		if not sx:
+			# No calibration annotation (unexpected) — leave the PDF untouched.
+			return label_pdf
+
+		writer = PdfWriter()
+		for page in reader.pages:
+			# Scale about the anchor's top-left corner so the box grows/shrinks to
+			# exactly 100x75mm while staying pinned to the page's top-left.
+			page.add_transformation(
+				Transformation(ctm=(sx, 0, 0, sy, -sx * anchor_x0, h_new - sy * anchor_y1))
+			)
+			page.mediabox = RectangleObject([0, 0, w_new, h_new])
+			page.cropbox = RectangleObject([0, 0, w_new, h_new])
+			if "/Annots" in page:
+				del page["/Annots"]  # drop the (now invisible) calibration link
+			writer.add_page(page)
+
+		out = io.BytesIO()
+		writer.write(out)
+		return out.getvalue()
+	except Exception:
+		# Never let a normalization glitch break sticker printing — fall back to
+		# the un-normalized PDF (the pre-existing behaviour). Guard the log call
+		# itself so it can't raise out of this handler.
+		try:
+			frappe.log_error(title="Pick List sticker size normalization failed")
+		except Exception:
+			pass
+		return label_pdf
+
+
+def _compose_stickers_on_a4(label_pdf):
+	"""Place each 100x75mm sticker page, unscaled, centered on its own A4 page.
+
+	Pure PDF geometry (pypdf) — no re-rendering — so the sticker keeps its exact
+	100x75mm physical size; only A4 whitespace is added around it. Falls back to
+	the original 100x75 PDF if pypdf is unavailable.
+	"""
+	try:
+		import io
+		from pypdf import PdfReader, PdfWriter
+	except Exception:
+		return label_pdf
+
+	pt = 72.0 / 25.4  # PDF points per mm
+	a4_w, a4_h = 210.0 * pt, 297.0 * pt
+
+	reader = PdfReader(io.BytesIO(label_pdf))
+	writer = PdfWriter()
+	for src in reader.pages:
+		page = writer.add_blank_page(width=a4_w, height=a4_h)
+		w = float(src.mediabox.width)
+		h = float(src.mediabox.height)
+		tx = (a4_w - w) / 2.0   # center horizontally
+		ty = (a4_h - h) / 2.0   # center vertically (PDF origin is bottom-left)
+		page.merge_translated_page(src, tx, ty)
+
+	out = io.BytesIO()
+	writer.write(out)
+	return out.getvalue()
 
 
 @frappe.whitelist()
-def generate_pick_list_stickers(pick_list):
+def generate_pick_list_stickers(pick_list, paper="label"):
 	"""Return a PDF stream of pick-list stickers — one per box per row.
+
+	`paper`: "label" (100x75mm page, for a label printer) or "a4" (A4 page with
+	the same 100x75mm sticker upright at the top-left). See _render_stickers_pdf.
 
 	Sticker layout fields (per sticker dict): see templates/print/pick_list_stickers.html.
 	Rows whose custom_source_table is in SAMPLE_SOURCE_TABLES are marked
@@ -229,12 +405,12 @@ def generate_pick_list_stickers(pick_list):
 	mark_sticker_printed(doc.name)
 
 	frappe.local.response.filename = "stickers-{0}.pdf".format(pick_list)
-	frappe.local.response.filecontent = _render_stickers_pdf(stickers, doc.name)
+	frappe.local.response.filecontent = _render_stickers_pdf(stickers, doc.name, paper=paper)
 	frappe.local.response.type = "download"
 
 
 @frappe.whitelist()
-def generate_pick_list_stickers_bulk(pick_lists):
+def generate_pick_list_stickers_bulk(pick_lists, paper="label"):
 	"""Return a single PDF of stickers for several Pick Lists at once.
 
 	`pick_lists` is a JSON list of Pick List names (sent by the list page's
@@ -256,7 +432,7 @@ def generate_pick_list_stickers_bulk(pick_lists):
 
 	label = pick_lists[0] if len(pick_lists) == 1 else "{0}-lists".format(len(pick_lists))
 	frappe.local.response.filename = "stickers-{0}.pdf".format(label)
-	frappe.local.response.filecontent = _render_stickers_pdf(stickers, label)
+	frappe.local.response.filecontent = _render_stickers_pdf(stickers, label, paper=paper)
 	frappe.local.response.type = "download"
 
 
@@ -722,6 +898,20 @@ def create_delivery_note_from_pick_list(pick_list_name):
 
 		if not (dn.get("custom_dispatch_to") or []):
 			dispatch_to = _format_address_text(dn.get("shipping_address_name"))
+			if not dispatch_to:
+				# E-com orders store the shipping address as free text on the SO
+				# (no ERPNext Address record), so shipping_address_name is blank —
+				# fall back to that text, else the billing text, so Dispatch To is
+				# populated (and the submit-time "Dispatch To required" check passes).
+				so_name = dn.get("custom_sales_order_id")
+				if so_name:
+					addr = frappe.db.get_value(
+						"Sales Order", so_name,
+						["custom_shipping_address_text", "custom_billing_address_text"],
+						as_dict=True,
+					) or {}
+					dispatch_to = (addr.get("custom_shipping_address_text")
+						or addr.get("custom_billing_address_text") or "").strip()
 			if dispatch_to:
 				dn.append("custom_dispatch_to", {"dispatch_to_address": dispatch_to})
 
@@ -739,3 +929,30 @@ def create_delivery_note_from_pick_list(pick_list_name):
 
 	return dn.name
 
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def warehouse_user_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link query for Pick List 'Assigned To' — only enabled users holding the
+	PL User or PL Manager role."""
+	txt = txt or ""
+	return frappe.db.sql(
+		"""
+		SELECT DISTINCT u.name, u.full_name
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` r ON r.parent = u.name AND r.role IN (%(role1)s, %(role2)s)
+		WHERE IFNULL(u.enabled, 0) = 1
+			AND u.name NOT IN ('Administrator', 'Guest')
+			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+		ORDER BY u.full_name ASC
+		LIMIT %(page_len)s OFFSET %(start)s
+		""",
+		{
+			"role1": "PL User",
+			"role2": "PL Manager",
+			"txt": f"%{txt}%",
+			"start": int(start or 0),
+			"page_len": int(page_len or 20),
+		},
+	)

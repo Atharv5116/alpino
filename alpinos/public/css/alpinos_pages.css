@@ -1,0 +1,818 @@
+/* ============================================================================
+   alpinos_pages.css — shared design system for the 10 alpinos ops desk pages
+   Scope: EVERY rule is limited to these page routes (data-page-route on the
+   frappe .page-container), so no other desk page is affected:
+
+     sales-order-entry, sales-order-entry-list, sales-order-entry-view,
+     ecom-sales-order-entry, ecom-sales-order-entry-list,
+     pick_list_entry, pick_list_list,
+     delivery_note_entry, delivery_note_entry_list,
+     post-delivery-queue
+
+   The only globally-defined class names are the opt-in .alp-* utilities,
+   which no existing page uses, so they cannot affect other pages.
+
+   Theme: only Frappe CSS vars are used for color, so light + dark both work.
+   ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+   1. FULL WIDTH — kill the bootstrap container cap on head + body
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(.page-head, .page-body) .container {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+/* Page-local width caps (inline styles and local <style> blocks) — must be
+   beaten with !important because several are inline style attributes. */
+[data-page-route="sales-order-entry"] .sales-order-entry,
+[data-page-route="sales-order-entry-list"] .sales-order-entry-list,
+[data-page-route="sales-order-entry-view"] .so-view-shell,
+[data-page-route="ecom-sales-order-entry"] .ecom-so-entry,
+[data-page-route="ecom-sales-order-entry-list"] .ecom-so-list,
+[data-page-route="delivery_note_entry"] .dn-container,
+[data-page-route="post-delivery-queue"] .post-delivery-queue {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Never let the page body itself scroll sideways on the list pages (their
+   tables already sit in overflow wrappers). NOT applied to the two SO entry
+   pages: they rely on overflow:visible for awesomplete dropdowns. */
+[data-page-route="sales-order-entry-list"] .layout-main-section,
+[data-page-route="ecom-sales-order-entry-list"] .layout-main-section,
+[data-page-route="pick_list_list"] .layout-main-section,
+[data-page-route="delivery_note_entry_list"] .layout-main-section,
+[data-page-route="post-delivery-queue"] .layout-main-section {
+  overflow-x: hidden;
+}
+
+/* ----------------------------------------------------------------------------
+   2. CARDS — modern dashboard look for every reported card class
+   !important is needed because most of these carry inline style attributes
+   or later-loading page-local <style> blocks.
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .eso-card,
+  .mt-ecom-card,
+  .so-view-card,
+  .so-view-order-details-wrap,
+  .so-list-filters,
+  .eso-list-filters,
+  .pl-list-filters,
+  .pl-pager,
+  .dn-header,
+  .dn-table-wrapper,
+  .total-card,
+  .dnl-filters,
+  .dnl-table-wrapper,
+  .dnl-pager,
+  .alp-card
+),
+[data-page-route="pick_list_entry"] #pl-sticker-attachments {
+  background: var(--card-bg, #fff) !important;
+  border: 1px solid var(--border-color, #e2e2e2) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06)) !important;
+  padding: 18px !important;
+  margin-bottom: 16px !important;
+}
+
+/* Cards nested inside cards (e.g. sub-blocks) should not double-pad rhythm */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry"]
+) .eso-card .eso-card {
+  box-shadow: none !important;
+  margin-bottom: 0 !important;
+}
+
+/* ----------------------------------------------------------------------------
+   3. SECTION TITLES — small caps label with a primary accent bar
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .eso-card-title,
+  .table-section-title,
+  .so-list-filters-title,
+  .alp-section-title
+) {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6c7680) !important;
+  margin: 0 0 12px 0 !important;
+  border-bottom: none !important;
+}
+
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .eso-card-title,
+  .table-section-title,
+  .so-list-filters-title,
+  .alp-section-title
+)::before {
+  content: "";
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--primary, #2490ef);
+}
+
+/* Secondary subtitles */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry"]
+) :is(.eso-subtitle, .eso-freebies-title) {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6c7680);
+}
+
+/* ----------------------------------------------------------------------------
+   4. DATA TABLES — headers, zebra, hover, cleaner borders
+   All table classes below only exist on the 10 routes; scoped anyway.
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .so-table,
+  .so-list-table,
+  .so-view-items-table,
+  .v-freebies,
+  .v-scheme,
+  .v-damage-items,
+  .so-view-kv,
+  .mt-stickers-table,
+  .eso-list-table,
+  .sku-table,
+  .pl-list-table,
+  .dn-table,
+  .dnl-table,
+  .pdq-table,
+  .recent-orders-list table
+) {
+  border-collapse: collapse;
+  border: 1px solid var(--border-color, #e2e2e2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Header row: muted small-caps on subtle background */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .so-table,
+  .so-list-table,
+  .so-view-items-table,
+  .v-freebies,
+  .v-scheme,
+  .v-damage-items,
+  .mt-stickers-table,
+  .eso-list-table,
+  .sku-table,
+  .pl-list-table,
+  .dn-table,
+  .dnl-table,
+  .pdq-table,
+  .recent-orders-list table
+) thead th {
+  background: var(--bg-color, #f8f8f8) !important;
+  color: var(--text-muted, #6c7680) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-color, #e2e2e2) !important;
+  border-top: none !important;
+  vertical-align: middle;
+}
+
+/* Cell polish: middle alignment, softer borders */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .so-table,
+  .so-list-table,
+  .so-view-items-table,
+  .v-freebies,
+  .v-scheme,
+  .v-damage-items,
+  .so-view-kv,
+  .mt-stickers-table,
+  .eso-list-table,
+  .sku-table,
+  .pl-list-table,
+  .dn-table,
+  .dnl-table,
+  .pdq-table,
+  .recent-orders-list table
+) :is(td, th) {
+  vertical-align: middle !important;
+  border-color: var(--border-color, #e2e2e2) !important;
+}
+
+/* Zebra: translucent overlay so it works in dark mode. Applied at tr level so
+   special inline-colored rows (bundle/combo/pending in pick_list_entry) win. */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .so-table,
+  .so-list-table,
+  .so-view-items-table,
+  .eso-list-table,
+  .sku-table,
+  .pl-list-table,
+  .dn-table,
+  .dnl-table,
+  .pdq-table,
+  .recent-orders-list table
+) tbody tr:nth-child(even) {
+  background-color: rgba(127, 127, 127, 0.045);
+}
+
+/* Row hover — clickable list rows get a stronger highlight + pointer feedback */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) :is(
+  .so-list-row,
+  .eso-list-row,
+  .pl-list-row,
+  .dnl-row,
+  .order-row
+):hover {
+  background-color: rgba(127, 127, 127, 0.09) !important;
+  box-shadow: inset 3px 0 0 var(--primary, #2490ef);
+  transition: background-color 0.12s ease;
+}
+
+/* Sticky table headers — ONLY inside scroll wrappers (never page-scroll
+   tables, where sticky headers would slide under the sticky desk navbar). */
+[data-page-route="pick_list_entry"] #tables-container .sku-table thead th,
+[data-page-route="pick_list_list"] .pl-list-table-wrapper .pl-list-table thead th,
+[data-page-route="delivery_note_entry"] .dn-table-wrapper .dn-table thead th,
+[data-page-route="delivery_note_entry_list"] .dnl-table-wrapper .dnl-table thead th,
+.alp-scroll table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+/* ----------------------------------------------------------------------------
+   5. INPUTS + BUTTONS inside these pages only
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) .layout-main-section :is(.form-control, .btn) {
+  border-radius: 6px;
+}
+
+/* Let the page-head action buttons wrap instead of clipping on small screens */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) .page-head .page-actions {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+/* ----------------------------------------------------------------------------
+   6. OPT-IN UTILITIES (new class names, used only by these pages)
+   ---------------------------------------------------------------------------- */
+
+/* Card utility for anonymous card divs (e.g. post-delivery-queue) — the card
+   rule in section 2 already includes .alp-card within route scope. Fallback
+   definition here so it also works inside frappe dialogs opened from a page. */
+.alp-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e2e2e2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06));
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+/* Horizontal scroll containment: the WRAPPER scrolls, the page never does.
+   Give the inner table a min-width so columns stay readable. */
+.alp-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.alp-scroll > table {
+  width: 100%;
+  min-width: 640px;
+  margin-bottom: 0;
+}
+.alp-scroll.alp-scroll--wide > table {
+  min-width: 900px;
+}
+.alp-scroll.alp-scroll--xwide > table {
+  min-width: 1100px;
+}
+
+/* Responsive field grid: as many columns as fit; 1 column on phones for free */
+.alp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+}
+.alp-grid > * {
+  min-width: 0;
+}
+
+/* Action bar: buttons that wrap cleanly on any width */
+.alp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.alp-actions--end {
+  justify-content: flex-end;
+}
+
+/* Section title utility (same look as section 3) for pages whose headings are
+   bare h6/divs with no class hook — mirrored here so it works standalone */
+.alp-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6c7680);
+  margin: 0 0 12px 0;
+}
+.alp-section-title::before {
+  content: "";
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--primary, #2490ef);
+}
+
+/* ----------------------------------------------------------------------------
+   7. RESPONSIVE BREAKPOINTS
+   ---------------------------------------------------------------------------- */
+
+@media (max-width: 992px) {
+  :is(
+    [data-page-route="sales-order-entry"],
+    [data-page-route="sales-order-entry-list"],
+    [data-page-route="sales-order-entry-view"],
+    [data-page-route="ecom-sales-order-entry"],
+    [data-page-route="ecom-sales-order-entry-list"],
+    [data-page-route="pick_list_entry"],
+    [data-page-route="pick_list_list"],
+    [data-page-route="delivery_note_entry"],
+    [data-page-route="delivery_note_entry_list"],
+    [data-page-route="post-delivery-queue"]
+  ) :is(
+    .eso-card,
+    .mt-ecom-card,
+    .so-view-card,
+    .so-view-order-details-wrap,
+    .so-list-filters,
+    .eso-list-filters,
+    .pl-list-filters,
+    .dn-header,
+    .dn-table-wrapper,
+    .dnl-filters,
+    .dnl-table-wrapper,
+    .alp-card
+  ) {
+    padding: 14px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* tighter page gutters */
+  :is(
+    [data-page-route="sales-order-entry"],
+    [data-page-route="sales-order-entry-list"],
+    [data-page-route="sales-order-entry-view"],
+    [data-page-route="ecom-sales-order-entry"],
+    [data-page-route="ecom-sales-order-entry-list"],
+    [data-page-route="pick_list_entry"],
+    [data-page-route="pick_list_list"],
+    [data-page-route="delivery_note_entry"],
+    [data-page-route="delivery_note_entry_list"],
+    [data-page-route="post-delivery-queue"]
+  ) :is(.page-head, .page-body) .container {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* pick_list_entry keeps a 2-col outer grid even at 480px in its local CSS —
+     force single column on phones (beats the page-local media query) */
+  [data-page-route="pick_list_entry"] .pl-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* delivery_note_entry: the Dispatch From textarea carries an inline
+     grid-column: span 3 that overflows the collapsed 2-col/1-col header grid —
+     full row is always safe */
+  [data-page-route="delivery_note_entry"] .dn-header > [style*="span 3"] {
+    grid-column: 1 / -1 !important;
+  }
+
+  /* sales-order-entry-view: 220px fixed label column eats narrow screens */
+  [data-page-route="sales-order-entry-view"] .so-view-kv td:first-child {
+    width: 110px !important;
+    max-width: 40% !important;
+  }
+
+  /* denser table text on phones (wrap or scroll — never hide) */
+  :is(
+    [data-page-route="sales-order-entry"],
+    [data-page-route="sales-order-entry-list"],
+    [data-page-route="sales-order-entry-view"],
+    [data-page-route="ecom-sales-order-entry"],
+    [data-page-route="ecom-sales-order-entry-list"],
+    [data-page-route="pick_list_entry"],
+    [data-page-route="pick_list_list"],
+    [data-page-route="delivery_note_entry"],
+    [data-page-route="delivery_note_entry_list"],
+    [data-page-route="post-delivery-queue"]
+  ) :is(
+    .so-table,
+    .so-list-table,
+    .so-view-items-table,
+    .v-freebies,
+    .v-scheme,
+    .v-damage-items,
+    .so-view-kv,
+    .mt-stickers-table,
+    .eso-list-table,
+    .sku-table,
+    .pl-list-table,
+    .dn-table,
+    .dnl-table,
+    .pdq-table,
+    .recent-orders-list table
+  ) :is(td, th) {
+    font-size: 12px !important;
+  }
+
+  /* bigger touch targets: standard controls and buttons (dense .input-xs /
+     .btn-xs grid cells stay compact on purpose) */
+  :is(
+    [data-page-route="sales-order-entry"],
+    [data-page-route="sales-order-entry-list"],
+    [data-page-route="sales-order-entry-view"],
+    [data-page-route="ecom-sales-order-entry"],
+    [data-page-route="ecom-sales-order-entry-list"],
+    [data-page-route="pick_list_entry"],
+    [data-page-route="pick_list_list"],
+    [data-page-route="delivery_note_entry"],
+    [data-page-route="delivery_note_entry_list"],
+    [data-page-route="post-delivery-queue"]
+  ) .layout-main-section :is(
+    .form-control:not(.input-xs),
+    .btn:not(.btn-xs)
+  ) {
+    min-height: 36px;
+  }
+
+  /* known no-wrap flex bars that collide on phones */
+  [data-page-route="pick_list_list"] .pl-pager,
+  [data-page-route="delivery_note_entry_list"] .dnl-pager,
+  [data-page-route="pick_list_list"] .pl-list-filter-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* delivery_note_entry button bar (anonymous .text-right div) */
+  [data-page-route="delivery_note_entry"] .dn-container > .text-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   11. STANDARD DESK FORMS — wider layout for the ops doctypes
+   Form pages carry data-page-route = the doctype name (FormFactory), so this
+   widens ONLY these forms — same effect as Frappe's own "Toggle Full Width",
+   but on by default. min() keeps very wide monitors readable.
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="Buyer Master"],
+  [data-page-route="Sales Order"],
+  [data-page-route="Pick List"],
+  [data-page-route="Delivery Note"]
+) :is(.page-head, .page-body) .container {
+  max-width: min(1680px, 100%) !important;
+  width: 100%;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+@media (max-width: 768px) {
+  :is(
+    [data-page-route="Buyer Master"],
+    [data-page-route="Sales Order"],
+    [data-page-route="Pick List"],
+    [data-page-route="Delivery Note"]
+  ) :is(.page-head, .page-body) .container {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   12. STATUS PILLS — let long multi-word workflow statuses wrap inside the cell
+   Frappe's .indicator-pill is a fixed height:20px inline-flex with centered
+   content, so a long label ("Warehouse Approval Pending") wraps and spills
+   above/below the pill. Allow it to grow and wrap cleanly.
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"]
+) .indicator-pill {
+  height: auto !important;
+  min-height: 20px;
+  white-space: normal;
+  line-height: 1.3;
+  text-align: left;
+  padding: 3px 10px !important;
+  border-radius: 100px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  border: 1px solid var(--alp-pill-bd, rgba(128, 128, 128, 0.24));
+  background: var(--alp-pill-bg, rgba(128, 128, 128, 0.14)) !important;
+  color: var(--alp-pill-fg, var(--text-muted, #5c6672)) !important;
+}
+/* Per-status tint (bg + readable ink + border). These var maps are harmless
+   globally — only the routed .indicator-pill rule above consumes them. Gray uses
+   a translucent neutral (Frappe's --bg-gray is near-white, so a gray chip would
+   otherwise be invisible on the white list); it also works in dark mode. */
+.indicator-pill.gray   { --alp-pill-bg: rgba(128, 128, 128, 0.14); --alp-pill-fg: var(--text-muted, #5c6672); --alp-pill-bd: rgba(128, 128, 128, 0.26); }
+.indicator-pill.orange { --alp-pill-bg: var(--bg-orange, #fdecd8); --alp-pill-fg: var(--text-on-orange, #9a5b06); --alp-pill-bd: rgba(154, 91, 6, 0.22); }
+.indicator-pill.yellow { --alp-pill-bg: var(--bg-yellow, #fbf0cd); --alp-pill-fg: var(--text-on-yellow, #836a0a); --alp-pill-bd: rgba(131, 106, 10, 0.22); }
+.indicator-pill.blue   { --alp-pill-bg: var(--bg-blue,   #e3eefb); --alp-pill-fg: var(--text-on-blue,   #12539d); --alp-pill-bd: rgba(18, 83, 157, 0.20); }
+.indicator-pill.green  { --alp-pill-bg: var(--bg-green,  #daf1e1); --alp-pill-fg: var(--text-on-green,  #1a7440); --alp-pill-bd: rgba(26, 116, 64, 0.20); }
+.indicator-pill.red    { --alp-pill-bg: var(--bg-red,    #fbe2e0); --alp-pill-fg: var(--text-on-red,    #a92e26); --alp-pill-bd: rgba(169, 46, 38, 0.20); }
+.indicator-pill.purple { --alp-pill-bg: var(--bg-purple, #ece2fa); --alp-pill-fg: var(--text-on-purple, #65389b); --alp-pill-bd: rgba(101, 56, 155, 0.20); }
+
+/* ----------------------------------------------------------------------------
+   13. SALES ORDER VIEW — centered, aligned document layout
+   Edge-to-edge put the title at the far left and the action buttons at the far
+   right while the cards sat inset, so nothing lined up. Constrain the page HEAD
+   and BODY to the SAME centered max-width so the heading, buttons and cards all
+   align within one column, with a small gap at the sides — looks professional.
+   ---------------------------------------------------------------------------- */
+[data-page-route="sales-order-entry-view"] :is(.page-head, .page-body) .container {
+  max-width: 1800px !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+/* Main content fills its container edge-to-edge (kill any column/gutter inset)
+   so the cards line up with the title and buttons above them. */
+[data-page-route="sales-order-entry-view"] .layout-main-section-wrapper,
+[data-page-route="sales-order-entry-view"] .layout-main-section {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: 0 0 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* ----------------------------------------------------------------------------
+   14. SALES ORDER LIST + VIEW — figure/total/address polish
+   Visual-only refinements (no fields moved or hidden): align all figures on the
+   decimal, emphasise the document's bottom-line total, tidy multi-line
+   addresses, and dim placeholder/zero values so real numbers read first.
+   ---------------------------------------------------------------------------- */
+/* Tabular figures so ₹ amounts, qty and discount % columns line up. */
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .so-view-items-table, .so-view-kv, .eso-list-table) td {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Totals tables read as a deliberate summary block; the bottom-line Grand / Net
+   total is emphasised (bigger + brand accent + a faint highlight row). */
+[data-page-route="sales-order-entry-view"] .so-view-money {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="grand_total"] td,
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="rounded_total"] td {
+  background: rgba(36, 144, 239, 0.06);
+}
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="grand_total"] strong,
+[data-page-route="sales-order-entry-view"] .so-view-money tr[data-row="rounded_total"] strong {
+  font-size: 15px;
+  color: var(--primary, #2490ef);
+}
+
+/* Tighter multi-line addresses (kill the loose blank-line gaps). */
+[data-page-route="sales-order-entry-view"] .so-view-address {
+  line-height: 1.4;
+}
+
+/* Placeholder dashes and bare zeros de-emphasised (class added by each page's
+   render — this never hides a value, it only dims it). */
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) .alp-dim {
+  color: var(--text-light, #b3b9c4) !important;
+}
+
+/* ----------------------------------------------------------------------------
+   15. SALES ORDER LIST — one aligned column for the whole page
+   The page head (title + Refresh / New Sales Order) already runs full-width, but
+   the body's layout section kept Frappe's gutter, so the cards sat inset — the
+   title and buttons didn't line up with the cards beneath them. Zero the body
+   gutter (as the view page already does) so title, buttons and every card share
+   the same left/right edge. Then put the table on a fixed column grid so the
+   columns stop auto-sizing to content.
+   ---------------------------------------------------------------------------- */
+/* Head + body share one centered column (same as the view page), so the title,
+   the Refresh / New Sales Order buttons and every card line up on the same
+   left/right edge. The body's default container cap is what kept the cards inset;
+   overriding it here (not just the inner gutter) is what actually pulls them out. */
+[data-page-route="sales-order-entry-list"] :is(.page-head, .page-body) .container,
+[data-page-route="ecom-sales-order-entry-list"] :is(.page-head, .page-body) .container {
+  max-width: 1800px !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.layout-main-section-wrapper, .layout-main-section) {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: 0 0 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Fixed column grid — headers and data share the <colgroup> widths instead of
+   sizing to content. Text wraps (never truncates/hides); figures and the ID stay
+   on one line. A min-width keeps it readable and scrolls inside .alp-scroll when
+   the viewport is narrow. */
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .eso-list-table) {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 1040px;
+}
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .eso-list-table) :is(td, th) {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+:is(
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="ecom-sales-order-entry-list"]
+) :is(.so-list-table, .eso-list-table) :is(td, th).text-right {
+  white-space: nowrap;
+}

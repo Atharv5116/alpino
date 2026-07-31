@@ -95,6 +95,40 @@ def setup_sales_order_custom_fields():
 				in_list_view=1,
 				description="Auto-set: today if before 2 PM, next working day if after 2 PM.",
 			),
+			dict(
+				fieldname="custom_po_expiry_date",
+				label="PO Expiry Date",
+				fieldtype="Date",
+				insert_after="po_date",
+				# BRD: editable until the order reaches a terminal status — the
+				# lock is enforced by validate_po_expiry_terminal_lock.
+				allow_on_submit=1,
+			),
+			dict(
+				fieldname="custom_po_no_for_pdf",
+				label="PO No for PDF",
+				fieldtype="Data",
+				insert_after="custom_po_expiry_date",
+				allow_on_submit=1,
+				description="File name (without .pdf) of the customer PO in the folder set in Alpino General Settings. Leaving this field fetches and attaches the PDF.",
+			),
+			dict(
+				fieldname="custom_po_pdf",
+				label="PO PDF",
+				fieldtype="Attach",
+				insert_after="custom_po_no_for_pdf",
+				read_only=1,
+				allow_on_submit=1,
+				description="Fetched from the PO PDF folder by 'PO No for PDF'.",
+			),
+			dict(
+				fieldname="custom_site_name",
+				label="Site Name",
+				fieldtype="Data",
+				insert_after="customer_name",
+				read_only=0,
+				description="Defaults from the customer's Buyer Master (site_name) when blank; editable per order. Shown on the entry page instead of Company.",
+			),
 			# Invoice (external) — populated by the Invoice PDF sync; shown only once Dispatched.
 			dict(
 				fieldname="custom_invoice_section",
@@ -195,6 +229,13 @@ def setup_sales_order_custom_fields():
 		# ============================================================
 		"Sales Order Item": [
 			dict(
+				fieldname="custom_remarks",
+				label="Remarks",
+				fieldtype="Data",
+				insert_after="qty",
+				description="Mandatory when this order qty is less than the Quotation qty.",
+			),
+			dict(
 				fieldname="custom_product_image",
 				label="Product Image",
 				fieldtype="Attach Image",
@@ -269,33 +310,10 @@ def setup_sales_order_custom_fields():
 				description="Auto-calculated or editable tax amount per item.",
 			),
 		],
-		"Sales Order Marketing Freebie": [
-			dict(
-				fieldname="custom_selling_price",
-				label="Selling Price",
-				fieldtype="Currency",
-				insert_after="item_name",
-				read_only=1,
-			),
-		],
-		"Sales Order Scheme Item": [
-			dict(
-				fieldname="custom_selling_price",
-				label="Selling Price",
-				fieldtype="Currency",
-				insert_after="item_name",
-				read_only=1,
-			),
-		],
-		"Sales Order Additional Units Item": [
-			dict(
-				fieldname="custom_selling_price",
-				label="Selling Price",
-				fieldtype="Currency",
-				insert_after="item_name",
-				read_only=1,
-			),
-		],
+		# Selling Price removed from the Marketing Freebie / Scheme Item /
+		# Additional Units Item child tables (deleted in
+		# _delete_obsolete_sales_order_custom_fields). The main Order Items table
+		# keeps its Selling Price.
 	}
 
 	create_custom_fields(custom_fields, update=True)
@@ -497,6 +515,10 @@ def _delete_obsolete_sales_order_custom_fields():
 	"""Drop legacy fields that duplicated standard behaviour (safe if missing)."""
 	obsolete = [
 		("Sales Order Item", "custom_item_mrp"),
+		# Selling Price removed from these three child tables (kept on Order Items).
+		("Sales Order Marketing Freebie", "custom_selling_price"),
+		("Sales Order Scheme Item", "custom_selling_price"),
+		("Sales Order Additional Units Item", "custom_selling_price"),
 	]
 	for doctype, fieldname in obsolete:
 		name = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "name")

@@ -34,6 +34,13 @@ SO_SUBMISSION_PENDING = "Submission Pending"
 SO_READY = "Ready For Dispatch"
 SO_DN_CREATED = "Delivery Note Created"
 SO_DISPATCHED = "Dispatched"
+SO_PARTIAL_READY = "Partial Ready For Dispatch"
+SO_PARTIAL_DN_CREATED = "Partial Delivery Note Created"
+SO_PARTIAL_DISPATCHED = "Partial Dispatched"
+SO_FORCED_READY = "Forced Ready For Dispatch"
+SO_FORCED_DN_CREATED = "Forced Delivery Note Created"
+SO_FORCED_DISPATCHED = "Forced Dispatched"
+SO_FORCED_COMPLETED = "Forced Completed"
 SO_COMPLETED = "Completed"
 SO_CANCELLED = "Cancelled"
 
@@ -56,6 +63,8 @@ PL_PICKING = "Picking In Progress"
 PL_STICKER_PENDING = "Sticker Pending"
 PL_SUBMISSION_PENDING = "Submission Pending"
 PL_READY = "Ready To Dispatch"
+PL_PARTIAL_READY = "Partial Ready To Dispatch"
+PL_FORCED_READY = "Forced Ready To Dispatch"
 PL_DISPATCHED = "Dispatched"
 PL_CANCELLED = "Cancelled"
 
@@ -213,16 +222,15 @@ def _apply_pick_list_status(doc):
 
 
 def refresh_todays_dispatch():
-	"""Daily scheduled job: flip submitted Sales Orders whose dispatch date has
-	arrived (<= today) to "Today's Dispatch", as long as they are still in the
-	warehouse queue (no submitted Pick List yet). This is what makes the status
-	date-driven — an order parked for a future date becomes Today's Dispatch on
-	its day automatically."""
+	"""Daily scheduled job: flip APPROVED, future-dated Sales Orders to "Today's
+	Dispatch" on the day their dispatch date arrives. Only Future Dispatch orders
+	are flipped — Warehouse Approval Pending is a manual gate (approve_sales_order)
+	and must never be auto-approved by this job."""
 	rows = frappe.get_all(
 		"Sales Order",
 		filters={
 			"docstatus": 1,
-			"custom_workflow_status": ["in", [SO_WAREHOUSE_PENDING, SO_FUTURE_DISPATCH]],
+			"custom_workflow_status": SO_FUTURE_DISPATCH,
 		},
 		fields=["name", "custom_dispatch_date"],
 	)
@@ -246,13 +254,13 @@ def sales_order_validate(doc, method=None):
 
 
 def sales_order_on_submit(doc, method=None):
-	# Date-driven: an order already due today (dispatch date <= today) shows as
-	# Today's Dispatch; otherwise it waits in the warehouse queue until its
-	# dispatch date arrives (the daily job flips it then).
-	dd = doc.get("custom_dispatch_date")
-	status = SO_TODAYS_DISPATCH if (dd and getdate(dd) <= getdate(today())) else SO_WAREHOUSE_PENDING
-	doc.db_set("custom_workflow_status", status, update_modified=False)
-	_notify(lambda: _notify_so_submitted(doc))
+	# "Send for Warehouse Approval" always lands in Warehouse Approval Pending —
+	# the approval stage must never be skipped. The date-driven Today's Dispatch
+	# transition happens afterwards via refresh_todays_dispatch (the daily job
+	# flips due-today orders forward), so it's the stage after, not instead.
+	doc.db_set("custom_workflow_status", SO_WAREHOUSE_PENDING, update_modified=False)
+	from alpinos import so_notifications as son
+	_notify(lambda: son.n01_so_submitted(doc))
 
 
 def sales_order_on_cancel(doc, method=None):
@@ -260,20 +268,43 @@ def sales_order_on_cancel(doc, method=None):
 	doc.db_set("custom_workflow_status", SO_CANCELLED, update_modified=False)
 
 
-def _guard_sales_order_cancellation(doc):
-	if _active_delivery_notes_for_so(doc.name):
-		frappe.throw(
-			frappe._(
-				"Sales Order cannot be cancelled because a linked Delivery Note exists. "
-				"Please cancel the Delivery Note and Pick List first."
-			)
+_ENTRY_PAGE_ROUTES = {
+	"Sales Order": "sales-order-entry-view",
+	"Pick List": "pick_list_entry",
+	"Delivery Note": "delivery_note_entry",
+}
+
+
+def _linked_doc_refs(doctype, names):
+	"""Linked-document IDs for cancellation guard messages. Rendered as links
+	to the doctype's entry page only when the current user may read that
+	doctype — otherwise plain IDs, so users without access see the ID but
+	cannot navigate to it."""
+	if frappe.has_permission(doctype, "read"):
+		route = _ENTRY_PAGE_ROUTES[doctype]
+		return ", ".join(
+			f'<a href="/app/{route}/{frappe.utils.quote(n)}">{frappe.utils.escape_html(n)}</a>'
+			for n in names
 		)
-	if _active_pick_lists_for_so(doc.name):
+	return ", ".join(frappe.utils.escape_html(n) for n in names)
+
+
+def _guard_sales_order_cancellation(doc):
+	dns = _active_delivery_notes_for_so(doc.name)
+	if dns:
 		frappe.throw(
 			frappe._(
-				"Sales Order cannot be cancelled because a linked Pick List exists. "
+				"Sales Order cannot be cancelled because linked Delivery Note {0} exists. "
+				"Please cancel the Delivery Note (and Pick List) first."
+			).format(_linked_doc_refs("Delivery Note", dns))
+		)
+	pls = _active_pick_lists_for_so(doc.name)
+	if pls:
+		frappe.throw(
+			frappe._(
+				"Sales Order cannot be cancelled because linked Pick List {0} exists. "
 				"Please cancel the Pick List first."
-			)
+			).format(_linked_doc_refs("Pick List", pls))
 		)
 
 
@@ -297,22 +328,63 @@ def _sync_so_from_pick_list(so, pl_status):
 
 
 def pick_list_after_insert(doc, method=None):
+	from alpinos import so_notifications as son
+
+	so = _so_of_pick_list(doc)
+	prev_so = frappe.db.get_value("Sales Order", so, "custom_workflow_status") if so else None
 	# Set the Pick List's own status; mirror any active picking stage onto the SO.
 	status = _apply_pick_list_status(doc)
-	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
+	_sync_so_from_pick_list(so, status)
+	if so:
+		if prev_so == SO_FUTURE_DISPATCH:
+			_notify(lambda: son.n05_pl_from_future_dispatch(so, doc.name))
+		else:
+			_notify(lambda: son.n03_pl_created(so, doc.name))
+	if doc.get("custom_assigned_to"):
+		_notify(lambda: son.n06_pl_assigned(doc))
 
 
 def pick_list_on_update(doc, method=None):
 	if doc.docstatus != 0:
 		return
+	from alpinos import so_notifications as son
+
+	old_status = doc.get("custom_workflow_status")
 	status = _apply_pick_list_status(doc)
 	_sync_so_from_pick_list(_so_of_pick_list(doc), status)
+	if status != old_status:
+		if status == PL_STICKER_PENDING:
+			_notify(lambda: son.n07_sticker_pending(doc))
+		elif status == PL_SUBMISSION_PENDING:
+			_notify(lambda: son.n08_submission_pending(doc))
+	# Assignment notice: only on a real re-assignment of an EXISTING doc.
+	# On insert, has_value_changed() is True (no prior value) and
+	# pick_list_after_insert already fires n06 — guard against the double-send.
+	if (
+		doc.get_doc_before_save()
+		and doc.has_value_changed("custom_assigned_to")
+		and doc.get("custom_assigned_to")
+	):
+		_notify(lambda: son.n06_pl_assigned(doc))
 
 
 def pick_list_on_submit(doc, method=None):
-	doc.db_set("custom_workflow_status", PL_READY, update_modified=False)
-	_set_status("Sales Order", _so_of_pick_list(doc), SO_READY)
-	_notify(lambda: _notify_pl_submitted(doc))
+	from alpinos import partial_dispatch as pd
+	from alpinos.forced_close import is_force_closed
+
+	so = _so_of_pick_list(doc)
+	if so and is_force_closed(so):
+		doc.db_set("custom_workflow_status", PL_FORCED_READY, update_modified=False)
+		_set_status("Sales Order", so, SO_FORCED_READY)
+	# Partial order still short of full coverage -> partial ready statuses.
+	elif so and pd.is_partial_round(so):
+		doc.db_set("custom_workflow_status", PL_PARTIAL_READY, update_modified=False)
+		_set_status("Sales Order", so, SO_PARTIAL_READY)
+	else:
+		doc.db_set("custom_workflow_status", PL_READY, update_modified=False)
+		_set_status("Sales Order", so, SO_READY)
+	from alpinos import so_notifications as son
+	_notify(lambda: son.n09_pl_submitted(doc, so))
 
 
 def pick_list_on_cancel(doc, method=None):
@@ -325,12 +397,13 @@ def pick_list_on_cancel(doc, method=None):
 
 
 def _guard_pick_list_cancellation(doc):
-	if _active_delivery_notes_for_pick_list(doc.name):
+	dns = _active_delivery_notes_for_pick_list(doc.name)
+	if dns:
 		frappe.throw(
 			frappe._(
-				"Pick List cannot be cancelled because a linked Delivery Note exists. "
+				"Pick List cannot be cancelled because linked Delivery Note {0} exists. "
 				"Please cancel the Delivery Note first."
-			)
+			).format(_linked_doc_refs("Delivery Note", dns))
 		)
 
 
@@ -341,33 +414,84 @@ def _guard_pick_list_cancellation(doc):
 def delivery_note_after_insert(doc, method=None):
 	if doc.get("is_return"):
 		return
-	_set_status("Sales Order", _so_of_delivery_note(doc), SO_DN_CREATED)
+	from alpinos import partial_dispatch as pd
+	from alpinos.forced_close import is_force_closed
+
+	so = _so_of_delivery_note(doc)
+	if so and is_force_closed(so):
+		_set_status("Sales Order", so, SO_FORCED_DN_CREATED)
+	elif so and pd.is_partial_round(so):
+		_set_status("Sales Order", so, SO_PARTIAL_DN_CREATED)
+	else:
+		_set_status("Sales Order", so, SO_DN_CREATED)
 
 
 def delivery_note_on_submit(doc, method=None):
 	if doc.get("is_return"):
 		return
+	from alpinos import partial_dispatch as pd
+	from alpinos.forced_close import is_force_closed
+
+	from alpinos import so_notifications as son
+
 	pl = _pick_list_of_delivery_note(doc)
 	if pl:
 		_set_status("Pick List", pl, PL_DISPATCHED)
-	_set_status("Sales Order", _so_of_delivery_note(doc), SO_DISPATCHED)
-	_notify(lambda: _notify_dn_dispatched(doc))
+	so = _so_of_delivery_note(doc)
+	if so:
+		if is_force_closed(so):
+			# Forced chain: dispatch what's picked, order stays locked until Sales confirms.
+			_set_status("Sales Order", so, SO_FORCED_DISPATCHED)
+			_notify(lambda: son.n18_forced_dn_submitted(so, doc))
+		elif pd.is_partial_order(so):
+			# Auto-complete once cumulative dispatched covers the full order;
+			# otherwise the order stays in the partial chain (no Partial Completed).
+			if pd.so_fully_dispatched(so):
+				_set_status("Sales Order", so, SO_COMPLETED)
+				_notify(lambda: son.n16_auto_completed(so, doc))
+			else:
+				_set_status("Sales Order", so, SO_PARTIAL_DISPATCHED)
+				_notify(lambda: son.n15_partial_dn_submitted(so, doc))
+		else:
+			_set_status("Sales Order", so, SO_DISPATCHED)
+			_notify(lambda: son.n11_dn_dispatched(doc, so))
 
 
 def delivery_note_on_cancel(doc, method=None):
 	if doc.get("is_return"):
 		return
+	from alpinos import partial_dispatch as pd
+
+	so = _so_of_delivery_note(doc)
+	partial = bool(so and pd.is_partial_round(so))
 	pl = _pick_list_of_delivery_note(doc)
 	if pl and frappe.db.get_value("Pick List", pl, "docstatus") == 1:
-		_set_status("Pick List", pl, PL_READY)
-	so = _so_of_delivery_note(doc)
+		_set_status("Pick List", pl, PL_PARTIAL_READY if partial else PL_READY)
 	if so and frappe.db.get_value("Sales Order", so, "custom_workflow_status") != SO_CANCELLED:
-		_set_status("Sales Order", so, SO_READY)
+		_set_status("Sales Order", so, _recompute_so_status(so))
 
 
 # ---------------------------------------------------------------------------
 # User actions (no document event to hang off)
 # ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def cancel_document(doctype, name):
+	"""Cancel a Sales Order / Pick List / Delivery Note from its entry page.
+
+	Requires cancel permission on the doctype (the page only shows the button
+	when the user has it; this is the server-side enforcement). Cancellation
+	guards run via on_cancel and block with the linked document's ID when a
+	downstream document is still active."""
+	if doctype not in _ENTRY_PAGE_ROUTES:
+		frappe.throw(frappe._("Cancellation is not supported for {0}.").format(doctype))
+	doc = frappe.get_doc(doctype, name)
+	doc.check_permission("cancel")
+	if doc.docstatus != 1:
+		frappe.throw(frappe._("Only submitted documents can be cancelled."))
+	doc.cancel()
+	return {"name": doc.name, "docstatus": doc.docstatus}
+
 
 @frappe.whitelist()
 def submit_sales_order(sales_order):
@@ -381,6 +505,21 @@ def submit_sales_order(sales_order):
 	# Frappe enforces the submit permission inside doc.submit().
 	doc.submit()
 	return frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
+
+
+@frappe.whitelist()
+def approve_sales_order(sales_order):
+	"""Warehouse approves an order pending approval -> it enters the dispatch queue:
+	Today's Dispatch if the dispatch date is due (<= today), else Future Dispatch."""
+	_require_roles(WAREHOUSE_ROLES)
+	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
+	if cur != SO_WAREHOUSE_PENDING:
+		frappe.throw(frappe._("Only an order Pending Warehouse Approval can be approved."))
+	dd = frappe.db.get_value("Sales Order", sales_order, "custom_dispatch_date")
+	new_status = SO_TODAYS_DISPATCH if (dd and getdate(dd) <= getdate(today())) else SO_FUTURE_DISPATCH
+	_set_status("Sales Order", sales_order, new_status)
+	frappe.db.commit()
+	return {"status": new_status}
 
 
 @frappe.whitelist()
@@ -414,6 +553,9 @@ def mark_future_dispatch(sales_order, expected_date):
 		if frappe.db.get_value("Pick List", pl, "docstatus") == 0:
 			frappe.db.set_value("Pick List", pl, "custom_dispatch_date", expected_date, update_modified=False)
 	frappe.db.commit()
+	if new_status == SO_FUTURE_DISPATCH:
+		from alpinos import so_notifications as son
+		_notify(lambda: son.n04_future_dispatch(sales_order))
 	return new_status
 
 
@@ -431,6 +573,8 @@ def mark_delivered(sales_order):
 		update_modified=False,
 	)
 	frappe.db.commit()
+	from alpinos import so_notifications as son
+	_notify(lambda: son.n12_completed(sales_order))
 	return SO_COMPLETED
 
 
@@ -548,13 +692,23 @@ def _recompute_so_status(so):
 
 	cur = frappe.db.get_value("Sales Order", so, "custom_workflow_status")
 
+	# Force-closed orders are locked to their forced terminal state.
+	if frappe.db.get_value("Sales Order", so, "custom_force_closed"):
+		return cur if cur in (SO_FORCED_DISPATCHED, SO_FORCED_COMPLETED) else SO_FORCED_COMPLETED
+
+	from alpinos import partial_dispatch as pd
+	partial = pd.is_partial_order(so)
+
 	if frappe.get_all("Delivery Note", filters={"custom_sales_order_id": so, "docstatus": 1, "is_return": 0}, limit=1):
+		if partial:
+			# Auto-complete when fully dispatched, else stay in the partial chain.
+			return SO_COMPLETED if pd.so_fully_dispatched(so) else SO_PARTIAL_DISPATCHED
 		# Preserve a manually-confirmed Completed; otherwise it's Dispatched.
 		return SO_COMPLETED if cur == SO_COMPLETED else SO_DISPATCHED
 	if frappe.get_all("Delivery Note", filters={"custom_sales_order_id": so, "docstatus": 0, "is_return": 0}, limit=1):
-		return SO_DN_CREATED
+		return SO_PARTIAL_DN_CREATED if pd.is_partial_round(so) else SO_DN_CREATED
 	if frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 1}, limit=1):
-		return SO_READY
+		return SO_PARTIAL_READY if pd.is_partial_round(so) else SO_READY
 	# A draft Pick List that is being picked mirrors its stage onto the SO.
 	draft_pls = frappe.get_all("Pick List", filters={"custom_sales_order_id": so, "docstatus": 0}, pluck="name")
 	if draft_pls:

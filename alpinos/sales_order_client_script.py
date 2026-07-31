@@ -60,6 +60,16 @@ frappe.ui.form.on('Sales Order', {
 
     refresh: function(frm) {
         set_variant_item_queries(frm);
+
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Fetch PO PDF'), function() {
+                if (!frm.doc.custom_po_no_for_pdf) {
+                    frappe.msgprint(__('Set "PO No for PDF" first.'));
+                    return;
+                }
+                _fetch_po_pdf(frm);
+            });
+        }
         
         if (!frm.is_new()) {
             frappe.call({
@@ -98,8 +108,34 @@ frappe.ui.form.on('Sales Order', {
 
     custom_cash_discount: function(frm) {
         calculate_cash_discount(frm);
+    },
+
+    // Leaving the field fetches the PO PDF from the folder configured in
+    // Alpino General Settings (file name = this value + .pdf).
+    custom_po_no_for_pdf: function(frm) {
+        if (frm.doc.custom_po_no_for_pdf && !frm.is_new()) {
+            _fetch_po_pdf(frm);
+        }
     }
 });
+
+function _fetch_po_pdf(frm) {
+    frappe.call({
+        method: 'alpinos.po_pdf.fetch_po_pdf',
+        args: {
+            sales_order: frm.doc.name,
+            po_no_for_pdf: frm.doc.custom_po_no_for_pdf || ''
+        },
+        freeze: true,
+        freeze_message: __('Fetching PO PDF...'),
+        callback: function(r) {
+            if (r.message && r.message.file_url) {
+                frappe.show_alert({ message: __('PO PDF attached: {0}', [r.message.file_name]), indicator: 'green' }, 5);
+                frm.reload_doc();
+            }
+        }
+    });
+}
 
 frappe.ui.form.on('Sales Order Item', {
     item_code: function(frm, cdt, cdn) {

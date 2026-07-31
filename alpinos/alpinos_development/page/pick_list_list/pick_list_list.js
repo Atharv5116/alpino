@@ -1,25 +1,43 @@
 frappe.pages['pick_list_list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Pick Lists'),
+		title: __('Alpino Pick Lists'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('pick_list_list'));
 	wrapper.page_instance = new PickListListPage(page);
 };
 
-class PickListListPage {
+var PickListListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
 		this.page_length = 20;
 		this.start = 0;
+		this._prefs_route = 'pick_list_list';
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
+		// Opened from a Sales Order's "PL" button -> show every Pick List of that SO.
+		this.so_filter = (frappe.route_options && frappe.route_options.sales_order) || '';
+		if (frappe.route_options) delete frappe.route_options.sales_order;
 		this.setup_toolbar();
 		this.setup_filters();
+		this._restore_view_prefs();
 		this.bind_events();
 		this.load_list();
+	}
+
+	_render_so_banner() {
+		let $b = this.wrapper.find('.pl-so-filter-banner');
+		if (!this.so_filter) { $b.remove(); return; }
+		if (!$b.length) {
+			$b = $('<div class="pl-so-filter-banner" style="margin-bottom:12px; padding:8px 12px; border-radius:6px; background:var(--bg-color,#f4f5f6); border:1px solid var(--border-color,#d1d8dd); display:flex; align-items:center; gap:10px;"></div>');
+			this.wrapper.find('.pl-list-container').prepend($b);
+		}
+		$b.html('<span>Showing Pick Lists for Sales Order <strong>' + frappe.utils.escape_html(this.so_filter) + '</strong></span>');
+		$('<button type="button" class="btn btn-xs btn-default">Show all</button>')
+			.appendTo($b)
+			.on('click', () => { this.so_filter = ''; this.start = 0; this._render_so_banner(); this.load_list(); });
 	}
 
 	setup_toolbar() {
@@ -84,16 +102,53 @@ class PickListListPage {
 			parent: w.find('.fld-company'),
 			render_input: true,
 		});
+		this._filter_fields.sales_order = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Link',
+				fieldname: 'sales_order',
+				label: __('Sales Order'),
+				options: 'Sales Order',
+			},
+			parent: w.find('.fld-sales_order'),
+			render_input: true,
+		});
+		this._filter_fields.delivery_note = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Link',
+				fieldname: 'delivery_note',
+				label: __('Delivery Note'),
+				options: 'Delivery Note',
+			},
+			parent: w.find('.fld-delivery_note'),
+			render_input: true,
+		});
+		// Opened from a Sales Order's "PL" button -> prefill the SO filter so the list
+		// shows exactly why it is scoped (replaces the old standalone banner).
+		if (this.so_filter && this._filter_fields.sales_order) {
+			const c = this._filter_fields.sales_order;
+			if (typeof c.set_input === 'function') c.set_input(this.so_filter);
+			else c.set_value(this.so_filter);
+		}
 	}
 
 	bind_events() {
 		this.wrapper.find('.btn-pl-list-apply').on('click', () => {
 			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-pl-list-clear').on('click', () => {
 			Object.values(this._filter_fields).forEach((f) => f && f.set_value(''));
 			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		});
+		this.wrapper.find('.pl-list-page-size').on('change', (e) => {
+			const v = cint($(e.currentTarget).val());
+			this.page_length = [20, 50, 100].includes(v) ? v : 20;
+			$(e.currentTarget).val(String(this.page_length));
+			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-pl-list-prev').on('click', () => {
@@ -112,6 +167,14 @@ class PickListListPage {
 			if (!name) return;
 			frappe.set_route('pick_list_entry', name);
 		});
+		// Clicking the Sales Order in a row opens the SO detail view directly (not the
+		// Pick List, and not a filtered list) — one SO per Pick List, so no list needed.
+		this.wrapper.on('click', '.pl-so-link', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			const so = $(e.currentTarget).data('so');
+			if (so) frappe.set_route('sales-order-entry-view', String(so));
+		});
 		this.wrapper.on('change', '.pl-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
 			this.wrapper.find('.pl-list-row-select').prop('checked', checked);
@@ -122,6 +185,59 @@ class PickListListPage {
 		});
 	}
 
+	_save_view_prefs() {
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		const f = this._filter_fields;
+		alpinos.list_prefs.save(this._prefs_route, {
+			search: (f.search && f.search.get_value()) || '',
+			status: (f.status && f.status.get_value()) || '',
+			company: (f.company && f.company.get_value()) || '',
+			page_length: this.page_length,
+		});
+	}
+
+	_restore_view_prefs() {
+		// Runs before the first load_list(): apply the saved per-user view to
+		// the instance AND the visible controls. Every value is validated so a
+		// stale/renamed key can never break the page. Pagination offset is
+		// intentionally never restored — the list always opens on page 1.
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		let saved = {};
+		try {
+			saved = alpinos.list_prefs.load(this._prefs_route) || {};
+		} catch (e) {
+			saved = {};
+		}
+		const f = this._filter_fields;
+		// set_input applies synchronously, so the first load_list() sees the
+		// restored values via get_value(); set_value is promise-based and can
+		// land after the first request.
+		const set_sync = (c, v) => {
+			if (!c) return;
+			if (typeof c.set_input === 'function') c.set_input(v);
+			else c.set_value(v);
+		};
+		try {
+			if (typeof saved.search === 'string') {
+				set_sync(f.search, saved.search);
+			}
+			const status_options = ['', 'Draft', 'Open', 'Completed', 'Cancelled', 'Closed', 'Submitted'];
+			if (typeof saved.status === 'string' && status_options.includes(saved.status)) {
+				set_sync(f.status, saved.status);
+			}
+			if (typeof saved.company === 'string') {
+				set_sync(f.company, saved.company);
+			}
+			const pl = cint(saved.page_length);
+			if ([20, 50, 100].includes(pl)) {
+				this.page_length = pl;
+			}
+		} catch (e) {
+			// A malformed saved state must never block the page.
+		}
+		this.wrapper.find('.pl-list-page-size').val(String(this.page_length));
+	}
+
 	_args() {
 		const f = this._filter_fields;
 		return {
@@ -129,7 +245,9 @@ class PickListListPage {
 			page_length: this.page_length,
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
-			company: f.company.get_value() || ''
+			company: f.company.get_value() || '',
+			sales_order: (f.sales_order && f.sales_order.get_value()) || '',
+			delivery_note: (f.delivery_note && f.delivery_note.get_value()) || ''
 		};
 	}
 
@@ -163,7 +281,7 @@ class PickListListPage {
 		const tb = this.wrapper.find('.pl-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="7" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
+				`<tr><td colspan="13" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
 			);
 			return;
 		}
@@ -178,8 +296,9 @@ class PickListListPage {
 			'Cancelled': 'red',
 		};
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const dash = (v) => (v == null || v === '' ? '—' : esc(v));
+		const only_date = (v) => (v ? String(v).substring(0, 10) : '—');
 		rows.forEach((d) => {
-			const td = d.custom_order_date || '—';
 			let status_color = 'blue';
 			if (d.status === 'Draft') status_color = 'red';
 			else if (d.status === 'Completed' || d.status === 'Submitted') status_color = 'green';
@@ -192,9 +311,15 @@ class PickListListPage {
 			tb.append(`<tr class="pl-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="pl-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
-				<td>${esc(d.custom_customer_name)}</td>
-				<td>${esc(td)}</td>
-				<td>${esc(d.company)}</td>
+				<td>${d.custom_sales_order_id ? '<a href="#" class="pl-so-link" data-so="' + esc(d.custom_sales_order_id) + '">' + esc(d.custom_sales_order_id) + '</a>' : '—'}</td>
+				<td>${dash(d.custom_customer_name)}</td>
+				<td>${dash(d.custom_po_no)}</td>
+				<td>${only_date(d.custom_order_date)}</td>
+				<td>${only_date(d.custom_dispatch_date)}</td>
+				<td>${dash(d.company)}</td>
+				<td>${dash(d.custom_transporter)}</td>
+				<td>${dash(d.custom_assigned_to)}</td>
+				<td style="text-align:right;">${d.custom_total_box == null ? '—' : esc(d.custom_total_box)}</td>
 				<td>${wfCell}</td>
 				<td><span class="indicator-pill ${status_color}">${esc(d.status)}</span></td>
 			</tr>`);

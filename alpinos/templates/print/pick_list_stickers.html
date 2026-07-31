@@ -1,27 +1,37 @@
 {# Pick List sticker — 100mm x 75mm, one per page.
 
-   Mirrors the spec sketch's two-column layout:
+   Layout (per approved mock, 2026-07-09):
 
 	+----------------------------------------------+
-	|                                              |
-	|   36                              NCR1KG     |  ← SKU# (huge) | SKU name
-	|                                              |
-	|   A1/50                           03BC12     |  ← Gate/Total | Batch
-	|                                   BATCH      |
-	|   1/50                            BZ         |  ← Counter | PO
-	|                                   PO         |
-	|   ──────────────────────────────────────     |
-	|   XYZ SUPPLIMENT                             |  ← Party (bottom)
+	|   36        NCR1KG                 SAMPLE    |  ← SKU# (huge) | SKU code | SAMPLE (3rd col, sample boxes only)
+	|             05-07-2026                       |  ← MFG date (value only, no label)
+	|                                   03BC12     |  ← Batch
+	|   A1/7/15                                    |  ← Gate / running box no. / grand total (continuous across ALL items)
+	|                                  BZ-4521     |  ← PO No (value only, SKU#-sized, auto-shrinks when long)
+	|   XYZ SUPPLIMENT                             |  ← Party (bottom, no divider line — outer border only)
 	+----------------------------------------------+
 
    Every cell positioned absolutely in mm so wkhtmltopdf can't shift it.
+
+   EXACT SIZING — wkhtmltopdf renders absolute CSS lengths (mm/pt) at a
+   build-dependent scale (≈1.0 on some builds, ≈0.58 on others), so the 100x75mm
+   box came out physically wrong (e.g. ~77x58mm on the production server). We do
+   NOT fight that with a --zoom fudge (it's build-specific and unreliable).
+   Instead each sticker carries an invisible <a class="pl-cal"> anchor sized to
+   the exact 100x75mm design box: wkhtmltopdf emits it as a PDF link annotation
+   whose rectangle reveals the ACTUAL rendered scale. A post-processing step
+   (_normalize_stickers_to_exact_size in pick_list_api.py) reads that rectangle
+   and scales every page to a true 100x75mm, then strips the anchor. This is
+   exact on any wkhtmltopdf build. Keep the anchor; keep the layout in mm.
 #}
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
 <style>
-	@page { size: 100mm 75mm; margin: 0; }
+	/* Page size comes from the wkhtmltopdf options (100mm x 75mm) — a CSS
+	   size here paginates in webkit's own px scale and splits stickers. */
+	@page { margin: 0; }
 	html, body { margin: 0; padding: 0; }
 	body {
 		font-family: "Helvetica Neue", "Helvetica", "Arial", sans-serif;
@@ -36,12 +46,27 @@
 		page-break-after: always;
 		page-break-inside: avoid;
 		overflow: hidden;
-		border: 0.4mm solid #111;
 	}
 	.sticker:last-child { page-break-after: auto; }
 
-	/* Left column — SKU# big at the top, then a single
-	   "<gate> / <current> / <total>" line below it. */
+	/* Calibration anchor AND the visible sticker outline are the same element,
+	   on purpose: the box border lives here (not on .sticker) so the rectangle
+	   wkhtmltopdf reports for the link annotation is EXACTLY the drawn border.
+	   The post-processor (_normalize_stickers_to_exact_size) reads that rectangle
+	   to learn the real render scale, rescales every page to a true 100x75mm so
+	   this border lands at exactly 100x75mm, then deletes the annotation. Keeping
+	   the border on .sticker instead would offset the anchor by the border width
+	   (absolute positioning is relative to the padding box) and leave the box
+	   ~0.3mm short. */
+	.pl-cal {
+		position: absolute;
+		top: 0; left: 0;
+		width: 100mm; height: 75mm;
+		display: block;
+		border: 0.4mm solid #111;
+	}
+
+	/* Column 1 — SKU# big at the top-left, gate / serial / total below. */
 	.sku-no {
 		position: absolute;
 		top: 4mm; left: 5mm;
@@ -49,41 +74,53 @@
 	}
 	.gate-counter {
 		position: absolute;
-		top: 34mm; left: 5mm;
+		top: 36mm; left: 5mm;
 		font-size: 26pt; font-weight: 900; line-height: 1; letter-spacing: 0.5px;
 	}
-	.gate-counter small {
-		display: block;
-		font-size: 7pt; font-weight: 500;
-		color: #6b7280; letter-spacing: 1.5px;
-		margin-bottom: 1mm;
+
+	/* Column 2 — SKU code beside the SKU#, MFG date (value only) below it.
+	   Kept left of the SAMPLE box: capped width, long codes wrap to a second
+	   line instead of running underneath it. */
+	.sku-code {
+		position: absolute;
+		top: 5mm; left: 30mm;
+		max-width: 48mm;
+		font-size: 20pt; font-weight: 800; line-height: 1.1;
+		word-wrap: break-word;
+	}
+	.mfg-date {
+		position: absolute;
+		top: 19mm; left: 30mm;
+		font-size: 12pt; font-weight: 800; line-height: 1;
 	}
 
-	/* Right column — SKU name, Batch (label above value), PO (label above value). */
-	.sku-name {
+	/* Column 3 — SAMPLE marker (sample boxes only), black, compact top-right. */
+	.sample-col {
 		position: absolute;
-		top: 5mm; right: 5mm;
-		font-size: 16pt; font-weight: 800; line-height: 1.1; text-align: right;
+		top: 3mm; right: 3mm;
+		font-size: 9pt; font-weight: 900; letter-spacing: 1px;
+		border: 0.4mm solid #111;
+		padding: 0.7mm 1.6mm;
+		border-radius: 1mm;
 	}
+
+	/* Batch (value only) on the right. */
 	.batch-block {
 		position: absolute;
 		top: 25mm; right: 5mm; text-align: right;
+		font-size: 13pt; font-weight: 800; line-height: 1;
 	}
-	.batch-block .lbl { display: block; font-size: 7pt; font-weight: 600; color: #6b7280; letter-spacing: 1.5px; margin-bottom: 1mm; }
-	.batch-block .val { font-size: 13pt; font-weight: 800; line-height: 1; }
-	.po-block {
-		position: absolute;
-		top: 42mm; right: 5mm; text-align: right;
-	}
-	.po-block .lbl { display: block; font-size: 7pt; font-weight: 600; color: #6b7280; letter-spacing: 1.5px; margin-bottom: 1mm; }
-	.po-block .val { font-size: 22pt; font-weight: 900; line-height: 1; }
 
-	/* Party — bottom band */
-	.divider {
+	/* PO No — value only, same size as the SKU#; long numbers shrink to fit. */
+	.po-val {
 		position: absolute;
-		left: 5mm; right: 5mm; bottom: 9mm;
-		border-top: 0.3mm solid #111;
+		top: 46mm; right: 5mm; text-align: right;
+		font-size: 48pt; font-weight: 900; line-height: 1; letter-spacing: 1px;
 	}
+	.po-val.po-md { font-size: 38pt; }
+	.po-val.po-sm { font-size: 30pt; top: 50mm; }
+
+	/* Party — bottom band, no divider line (outer border only). */
 	.party {
 		position: absolute;
 		left: 5mm; right: 5mm; bottom: 3mm;
@@ -91,20 +128,12 @@
 		text-transform: uppercase; letter-spacing: 1px;
 	}
 
-	/* SAMPLE styling */
-	.sample-flag {
-		position: absolute; top: 2mm; left: 2mm;
-		background: #dc2626; color: #fff;
-		padding: 0.5mm 2mm;
-		font-size: 8pt; font-weight: 800; letter-spacing: 1px;
-		border-radius: 1mm;
-		z-index: 5;
-	}
+	/* SAMPLE watermark — black, faint. */
 	.sample-watermark {
 		position: absolute; top: 50%; left: 50%;
 		transform: translate(-50%, -50%) rotate(-22deg);
 		font-size: 60pt; font-weight: 900;
-		color: rgba(220, 38, 38, 0.14);
+		color: rgba(17, 17, 17, 0.10);
 		letter-spacing: 8px;
 		pointer-events: none;
 		z-index: 0;
@@ -124,30 +153,24 @@
 {% else %}
 	{% for s in stickers %}
 		<div class="sticker">
+			<a class="pl-cal" href="https://sticker.invalid/pl-cal"></a>
 			{% if s.is_sample %}
-				<div class="sample-watermark">SAMPLE</div>
-				<div class="sample-flag">SAMPLE</div>
+				<div class="sample-col">SAMPLE</div>
 			{% endif %}
 
 			<div class="sku-no">{{ s.sku_no or "—" }}</div>
+			{% if s.sku_name %}<div class="sku-code">{{ s.sku_name }}</div>{% endif %}
+			{% if s.mfg_date %}<div class="mfg-date">{{ s.mfg_date }}</div>{% endif %}
+
 			<div class="gate-counter">
 				{{ s.dispatch_area or "—" }} / {{ s.box_index }} / {{ s.total_box }}
 			</div>
 
-			{% if s.sku_name %}<div class="sku-name">{{ s.sku_name }}</div>{% endif %}
-			{% if s.batch_no %}
-			<div class="batch-block">
-				<span class="val">{{ s.batch_no }}</span>
-			</div>
-			{% endif %}
 			{% if s.po_no %}
-			<div class="po-block">
-				<span class="lbl">PO NO.</span>
-				<span class="val">{{ s.po_no }}</span>
-			</div>
+				{% set _len = s.po_no | length %}
+				<div class="po-val {% if _len > 12 %}po-sm{% elif _len > 8 %}po-md{% endif %}">{{ s.po_no }}</div>
 			{% endif %}
 
-			<div class="divider"></div>
 			{% if s.party_name %}<div class="party">{{ s.party_name }}</div>{% endif %}
 		</div>
 	{% endfor %}

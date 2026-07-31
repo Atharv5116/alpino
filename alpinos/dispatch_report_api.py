@@ -44,6 +44,7 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 		result_items.append({
 			"item_code": ic,
 			"item_name": item["item_name"] or ic,
+			"color": item.get("color") or "",
 			"sequence": item["sequence"] or 0,
 			"today_dispatch": today_dispatch,
 			"pending_dispatch": pending_dispatch,
@@ -95,7 +96,8 @@ def _get_sequenced_items():
 	"""Return all items that have a sequence assigned, ordered by sequence."""
 	return frappe.db.sql(
 		"""
-		SELECT name AS item_code, item_name, custom_sequence AS sequence
+		SELECT name AS item_code, item_name, custom_sequence AS sequence,
+			custom_color AS color
 		FROM `tabItem`
 		WHERE disabled = 0
 		  AND COALESCE(custom_sequence, 0) > 0

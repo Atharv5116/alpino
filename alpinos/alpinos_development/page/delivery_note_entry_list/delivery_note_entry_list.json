@@ -4,7 +4,7 @@
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-05-28 12:00:00.000000",
+ "modified": "2026-07-08 17:30:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "delivery_note_entry_list",
@@ -15,5 +15,5 @@
  "standard": "Yes",
  "style": null,
  "system_page": 0,
- "title": "Delivery Notes"
+ "title": "Alpino Delivery Notes"
 }

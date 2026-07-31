@@ -3,6 +3,9 @@ import frappe
 DELIVERY_NOTE_CLIENT_SCRIPT = """
 frappe.ui.form.on('Delivery Note', {
 	refresh(frm) {
+		configure_dn_grid_actions(frm);
+		apply_dn_qty_permission(frm);
+		frm.set_query('custom_assigned_to', () => ({ query: 'alpinos.workflow_role_access.dn_assigned_to_query' }));
 		if (frm.doc.is_return) return;
 		sync_sales_order_from_items(frm);
 		sync_all_items_from_pick_list(frm).then(() => recalc_dn_totals(frm));
@@ -62,6 +65,17 @@ frappe.ui.form.on('Delivery Note Item', {
 		recalc_dn_totals(frm);
 	}
 });
+
+function apply_dn_qty_permission(frm) {
+	// Quantity is read-only on the standard form unless the user holds an
+	// authorized role (mirrors the entry page and server-side guard).
+	const authorized = ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'];
+	const can_edit = (frappe.user_roles || []).some(r => authorized.indexOf(r) !== -1);
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid) return;
+	grid.update_docfield_property('qty', 'read_only', can_edit ? 0 : 1);
+	grid.refresh();
+}
 
 function sync_sales_order_from_items(frm) {
 	const rows = frm.doc.items || [];
@@ -159,6 +173,65 @@ function recalc_dn_totals(frm) {
 		frm.set_value('custom_total_units_dn', total_units);
 		frm.set_value('custom_dn_order_gross_weight', gross);
 	});
+}
+
+// --- SKU removal requires a mandatory reason (logged to custom_removed_items) ---
+function configure_dn_grid_actions(frm) {
+	const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+	if (!grid) return;
+	frm.custom_buttons && frm.custom_buttons["Remove Selected Row"] && frm.custom_buttons["Remove Selected Row"].remove();
+	// Returns and submitted docs keep native grid behaviour.
+	if (frm.doc.is_return || frm.doc.docstatus !== 0) {
+		grid.cannot_delete_rows = 0;
+		grid.cannot_delete_all_rows = 0;
+		grid.refresh();
+		return;
+	}
+	// Disable native row deletion — removal must go through the reason prompt.
+	grid.cannot_delete_rows = 1;
+	grid.cannot_delete_all_rows = 1;
+	frm.add_custom_button("Remove Selected Row", () => prompt_remove_selected_dn_row(frm), "Delivery Note Actions");
+	grid.refresh();
+}
+
+function get_one_selected_dn_row(frm) {
+	const grid = frm.fields_dict.items.grid;
+	const selected = grid.get_selected_children ? grid.get_selected_children() : [];
+	if (!selected.length) {
+		frappe.msgprint(__("Tick the row you want to remove, then press the button again."));
+		return null;
+	}
+	if (selected.length > 1) {
+		frappe.msgprint(__("Tick only one row at a time."));
+		return null;
+	}
+	return selected[0];
+}
+
+function prompt_remove_selected_dn_row(frm) {
+	const row = get_one_selected_dn_row(frm);
+	if (!row) return;
+	frappe.prompt(
+		[{ fieldname: "reason", fieldtype: "Small Text", label: "Reason for Removal", reqd: 1 }],
+		(values) => {
+			frm.add_child("custom_removed_items", {
+				item_code: row.item_code,
+				item_name: row.item_name,
+				removed_qty: flt(row.qty),
+				removed_box: flt(row.custom_box),
+				batch_no: row.batch_no || row.custom_batch_code || null,
+				reason: values.reason,
+				removed_by: frappe.session.user,
+				removed_on: frappe.datetime.now_datetime(),
+			});
+			frm.refresh_field("custom_removed_items");
+			frm.doc.items = (frm.doc.items || []).filter((r) => r.name !== row.name);
+			frm.refresh_field("items");
+			recalc_dn_totals(frm);
+		},
+		__("Remove Row"),
+		__("Confirm")
+	);
 }
 """
 

@@ -3,7 +3,7 @@ frappe.pages['pick_list_entry'] = frappe.pages['pick_list_entry'] || {};
 frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: 'Pick List Entry',
+		title: 'Alpino Pick List Entry',
 		single_column: true
 	});
 	wrapper.page_instance = page;
@@ -11,6 +11,27 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	page.set_primary_action('Submit', () => {
 		page.save_pick_list();
 	});
+
+	// Cancel: only for submitted Pick Lists AND users whose role grants cancel
+	// (shown/hidden in render_data; the server enforces the permission too).
+	// The cancellation guard blocks with the linked Delivery Note's ID when
+	// one is still active.
+	page.btn_cancel_pl = page.add_inner_button(__('Cancel Pick List'), function() {
+		frappe.confirm(__('Cancel Pick List {0}?', [page.pick_list_name]), function() {
+			frappe.call({
+				method: 'alpinos.workflow_engine.cancel_document',
+				args: { doctype: 'Pick List', name: page.pick_list_name },
+				freeze: true,
+				freeze_message: __('Cancelling...'),
+				callback: function(r) {
+					if (r.exc) return;
+					frappe.show_alert({ message: __('Pick List cancelled'), indicator: 'red' });
+					page.load_data();
+				}
+			});
+		});
+	});
+	if (page.btn_cancel_pl) page.btn_cancel_pl.hide();
 
 	try {
 		let html = frappe.render_template("pick_list_entry", {});
@@ -22,6 +43,22 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			// Setup static listeners
 			page.main.find('#btn-go-to-list').on('click', function() {
 				frappe.set_route('pick_list_list');
+			});
+
+			page.main.find('#btn-print-packing').on('click', function() {
+				if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
+					frappe.msgprint(__('Save the Pick List first, then download the PDF.'));
+					return;
+				}
+				// Download the packing sheet PDF (same wkhtmltopdf endpoint the Sales Order uses).
+				const url =
+					'/api/method/frappe.utils.print_format.download_pdf?' +
+					'doctype=' + encodeURIComponent('Pick List') +
+					'&name=' + encodeURIComponent(page.pick_list_name) +
+					'&format=' + encodeURIComponent('Pick List Packing Sheet') +
+					'&no_letterhead=0';
+				const w = window.open(frappe.urllib.get_full_url(url));
+				if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF.'));
 			});
 
 			page.main.find('#btn-save-draft').on('click', function() {
@@ -70,9 +107,27 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					frappe.msgprint(__('Save the Pick List first, then generate stickers.'));
 					return;
 				}
-				let url = '/api/method/alpinos.pick_list_api.generate_pick_list_stickers'
-					+ '?pick_list=' + encodeURIComponent(page.pick_list_name);
-				window.open(url, '_blank');
+				const open_stickers = (paper) => {
+					const url = '/api/method/alpinos.pick_list_api.generate_pick_list_stickers'
+						+ '?pick_list=' + encodeURIComponent(page.pick_list_name)
+						+ '&paper=' + encodeURIComponent(paper);
+					window.open(url, '_blank');
+				};
+				// Same 100x75 mm sticker either way — only the paper differs.
+				const d = new frappe.ui.Dialog({
+					title: __('Generate Stickers'),
+					fields: [{
+						fieldtype: 'HTML',
+						options: `<p class="text-muted" style="margin-bottom:0;">${__(
+							'Each sticker is 100 &times; 75 mm. Pick the paper you are printing on — the box comes out the same size on both.'
+						)}</p>`,
+					}],
+					primary_action_label: __('Label Printer (100 &times; 75)'),
+					primary_action() { d.hide(); open_stickers('label'); },
+					secondary_action_label: __('A4 Sheet'),
+					secondary_action() { d.hide(); open_stickers('a4'); },
+				});
+				d.show();
 			});
 
 			page.main.find('#btn-create-delivery-note').on('click', function() {
@@ -107,19 +162,28 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			// keyed by the page route so a refresh keeps the SO context.
 			let so_name = (frappe.route_options && frappe.route_options.so_name) || null;
 			const cache_key = 'alpinos_pick_list_entry_so_name';
+			const rem_key = 'alpinos_pick_list_entry_remaining_only';
+			// Partial "Create PL for Remaining Qty" flag — pre-fills outstanding qty only.
+			let remaining_only = (frappe.route_options && frappe.route_options.remaining_only) ? 1 : 0;
 			if (so_name) {
-				try { sessionStorage.setItem(cache_key, so_name); } catch (e) {}
+				try { sessionStorage.setItem(cache_key, so_name); sessionStorage.setItem(rem_key, String(remaining_only)); } catch (e) {}
 			} else {
-				try { so_name = sessionStorage.getItem(cache_key); } catch (e) {}
+				try {
+					so_name = sessionStorage.getItem(cache_key);
+					remaining_only = cint(sessionStorage.getItem(rem_key));
+				} catch (e) {}
 			}
 			if (!so_name) {
 				page.main.html('<h3>Missing Sales Order context for New Pick List.</h3><p>Open a Sales Order and click the "Create Pick List" button to start a new Pick List Entry.</p>');
 				return;
 			}
 			page.so_name = so_name;
+			// Remember the round type so create/draft rebuild the mapping the same
+			// way (custom_ordered_qty must snapshot the remaining qty, not full).
+			page.remaining_only = remaining_only ? 1 : 0;
 			frappe.call({
 				method: 'alpinos.sales_order_api.get_pick_list_mapping_data',
-				args: { sales_order: so_name },
+				args: { sales_order: so_name, remaining_only: remaining_only },
 				callback: function(r) {
 					if (r.message) {
 						page.render_data(r.message);
@@ -186,6 +250,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		} else {
 			$stopPicking.hide();
 		}
+		// Cancel: submitted docs only, and only when the role has cancel rights.
+		if (page.btn_cancel_pl) {
+			const can_cancel = frappe.model.can_cancel && frappe.model.can_cancel('Pick List');
+			if (data.docstatus === 1 && can_cancel) page.btn_cancel_pl.show();
+			else page.btn_cancel_pl.hide();
+		}
 		if (data.docstatus === 1) {
 			page.clear_primary_action();
 			$draftBtn.hide();
@@ -229,6 +299,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_po_no"]').val(data.custom_po_no);
 		page.main.find('[data-fieldname="custom_transporter"]').val(data.custom_transporter);
 		page.main.find('[data-fieldname="custom_gate"]').val(data.custom_gate || '');
+		page.main.find('[data-fieldname="created_by"]').val(data.owner_full_name || data.owner || frappe.session.user_fullname || frappe.session.user);
 		page.main.find('[data-fieldname="custom_customer_name"]').val(data.custom_customer_name);
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
@@ -293,7 +364,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let html = `
 				<div class="table-section-title">${title}</div>
-				<div class="sku-table-wrapper">
+				<div class="sku-table-wrapper alp-scroll alp-scroll--wide">
 				<table class="sku-table" data-table-name="${title}">
 					<thead>
 						<tr>
@@ -318,9 +389,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let batch_readonly = itemsLocked ? 'readonly' : '';
 			let input_disabled = itemsLocked ? 'disabled' : '';
-			// Batch Code / MFG / Expiry are only enterable for batch-tracked items.
-			let no_batch = !cint(row.has_batch_no);
-			let batch_lock = (itemsLocked || no_batch) ? 'readonly tabindex="-1"' : '';
+			// Batch Code / MFG / Expiry are always enterable — non-batch-tracked
+			// items carry the code as free text (custom_batch_code) through the
+			// whole cycle instead of a Batch master link.
+			let batch_lock = itemsLocked ? 'readonly tabindex="-1"' : '';
 			
 			// Exploded bundle component: qty & box are derived from the combo order,
 			// so both are locked; the row is tinted and tagged with its bundle SKU.
@@ -339,18 +411,18 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let box_readonly = (!itemsLocked && (title === "Items" || title === "Marketing Freebies")) ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
-				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:#f5f3ff;"' : ''}>
+				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:rgba(124,58,237,0.08);"' : ''}>
 					<td>${idx + 1}</td>
-					<td data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#7c3aed;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}</td>
+					<td data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}</td>
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
 					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="1" min="0" ${input_disabled} ${box_readonly}/></td>
 					<td>
-						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock} placeholder="${no_batch ? 'No batch tracking' : ''}">
+						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock}>
 					</td>
-					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" max="9999-12-31" ${batch_lock}></td>
-					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" max="9999-12-31" ${batch_lock}></td>
+					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" min="2000-01-01" max="9999-12-31" ${batch_lock}></td>
+					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" min="2000-01-01" max="9999-12-31" ${batch_lock}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
 					<td class="row-actions-cell">
 						${data.docstatus !== 1 ? `
@@ -378,12 +450,19 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		// COMBO mapping table — one row per component, each combo shaded distinctly so
 		// multiple combos in one order are easy to tell apart. Read-only reference: it
 		// tells the picker how the exploded component qtys above pack back into combos.
-		const COMBO_SHADES = ['#eef6ff', '#fff7ed', '#f0fdf4', '#fdf2f8', '#f1f5f9'];
+			// Translucent shades so the tint reads on both light and dark themes.
+		const COMBO_SHADES = [
+			'rgba(59,130,246,0.10)',
+			'rgba(249,115,22,0.10)',
+			'rgba(34,197,94,0.10)',
+			'rgba(236,72,153,0.10)',
+			'rgba(100,116,139,0.12)',
+		];
 		const create_combo_table = (combos) => {
 			if (!combos || !combos.length) return;
 			let html = `
 				<div class="table-section-title">Combos</div>
-				<div class="sku-table-wrapper">
+				<div class="sku-table-wrapper alp-scroll alp-scroll--wide">
 				<table class="sku-table" data-table-name="Combos">
 					<thead>
 						<tr>
@@ -408,7 +487,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					html += `<tr style="background:${shade};">`;
 					html += `<td>${sr}</td>`;
 					if (j === 0) {
-						html += `<td rowspan="${comps.length}" style="vertical-align:middle;font-weight:600;">${frappe.utils.escape_html(combo.combo_sku || '')}<div style="font-weight:400;color:#6b7280;font-size:11px;">${frappe.utils.escape_html(combo.combo_name || '')}</div></td>`;
+						html += `<td rowspan="${comps.length}" style="vertical-align:middle;font-weight:600;">${frappe.utils.escape_html(combo.combo_sku || '')}<div style="font-weight:400;color:var(--text-muted, #6b7280);font-size:11px;">${frappe.utils.escape_html(combo.combo_name || '')}</div></td>`;
 						html += `<td rowspan="${comps.length}" style="vertical-align:middle;">${flt(combo.ordered_qty || 0)}</td>`;
 					}
 					html += `<td data-item-code="${c.item_code}">${frappe.utils.escape_html(c.item_code || '')}</td>`;
@@ -422,6 +501,25 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			container.append(html);
 		};
 		create_combo_table(data.combos);
+
+		// Sticker attachments from the linked Sales Order (E-com & MT) — read-only.
+		const render_sticker_attachments = (stickers) => {
+			const $box = page.main.find('#pl-sticker-attachments');
+			const $body = $box.find('.pl-sticker-body').empty();
+			if (!stickers || !stickers.length) {
+				$box.hide();
+				return;
+			}
+			const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+			stickers.forEach((s) => {
+				$body.append(`<tr>
+					<td><a href="${esc(s.attachment)}" target="_blank">${esc(s.file_name || s.attachment)}</a></td>
+					<td>${esc(s.remarks || '')}</td>
+				</tr>`);
+			});
+			$box.show();
+		};
+		render_sticker_attachments(data.custom_sticker_attachments);
 
 		// Removed Items audit table — server-persisted rows for saved PLs,
 		// plus any pending client-side removals on a new (unsaved) PL.
@@ -444,7 +542,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				return;
 			}
 			let rows_html = removed.map((r, idx) => `
-				<tr ${r.is_pending ? 'style="background:#fffbeb;"' : ''}>
+				<tr ${r.is_pending ? 'style="background:rgba(245,158,11,0.14);"' : ''}>
 					<td>${idx + 1}</td>
 					<td>${frappe.utils.escape_html(r.item_code || '')}</td>
 					<td>${frappe.utils.escape_html(r.item_name || '')}</td>
@@ -459,7 +557,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let html = `
 				<div id="removed-items-section">
 					<div class="table-section-title">Removed Items</div>
-					<div class="sku-table-wrapper">
+					<div class="sku-table-wrapper alp-scroll alp-scroll--wide">
 					<table class="sku-table">
 						<thead>
 							<tr>
@@ -577,11 +675,17 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
+		// A native <input type="date"> reports a valid value even for a half-typed
+		// year ("20" -> 0020), which fired the EXP/MFG checks before the user had
+		// finished the date. Only react once the year is a full 4 digits.
+		const yearComplete = (d) => parseInt(String(d || '').split('-')[0], 10) >= 1000;
+
 		// EXP must be >= MFG; clear exp if user enters an earlier date than mfg.
 		container.on('change.alpinosRowEvents', '.exp-input', function() {
 			let tr = $(this).closest('tr');
 			let mfg = tr.find('.mfg-input').val();
 			let exp = $(this).val();
+			if (!yearComplete(exp) || (mfg && !yearComplete(mfg))) return; // still typing
 			if (mfg && exp && exp < mfg) {
 				frappe.msgprint(__('Expiry Date cannot be earlier than Manufacturing Date.'));
 				$(this).val('');
@@ -595,7 +699,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let mfg = $(this).val();
 			let exp_input = tr.find('.exp-input');
 			let exp = exp_input.val();
-			if (mfg && exp && exp < mfg) {
+			if (!yearComplete(mfg)) return; // still typing the year — don't validate/auto-fill yet
+			if (mfg && exp && yearComplete(exp) && exp < mfg) {
 				frappe.msgprint(__('Expiry Date cannot be earlier than Manufacturing Date. Clearing expiry; re-enter it.'));
 				exp_input.val('');
 				exp = '';
@@ -633,13 +738,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_batch_details',
 					args: { batch_no: val, item_code: item_code },
 					callback: function(res) {
-						if (res.message) {
+						// Free-text codes with no Batch master return {} — leave any
+						// manually entered MFG/Expiry untouched in that case.
+						if (res.message && (res.message.manufacturing_date || res.message.expiry_date)) {
 							// Ensure format is YYYY-MM-DD for date inputs
 							let mfg = res.message.manufacturing_date ? frappe.datetime.str_to_obj(res.message.manufacturing_date) : null;
 							let exp = res.message.expiry_date ? frappe.datetime.str_to_obj(res.message.expiry_date) : null;
 
-							tr.find('.mfg-input').val(mfg ? frappe.datetime.obj_to_str(mfg) : '');
-							tr.find('.exp-input').val(exp ? frappe.datetime.obj_to_str(exp) : '');
+							if (mfg) tr.find('.mfg-input').val(frappe.datetime.obj_to_str(mfg));
+							if (exp) tr.find('.exp-input').val(frappe.datetime.obj_to_str(exp));
 
 							// Customer-type expiry warning (Task 7) — soft alert only.
 							let sales_order = page.main.find('[data-fieldname="custom_sales_order_id"]').val()
@@ -682,9 +789,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// Fetch users for QC + Assigned To dropdowns (same enabled System Users list).
+		// Fetch users for QC + Assigned To dropdowns — only the warehouse/sales
+		// workflow team (roles from the Pick List permission matrix), plus any
+		// already-saved assignee so legacy values still display.
 		frappe.call({
-			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_users',
+			method: 'alpinos.workflow_role_access.get_workflow_team_users',
+			args: {
+				doctype: 'Pick List',
+				include_users: [data.custom_assigned_to, data.custom_qc_attended_by].filter(Boolean)
+			},
 			callback: function(res) {
 				if(res.message) {
 					let qc_select = page.main.find('[data-fieldname="custom_qc_attended_by"]');
@@ -891,6 +1004,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		// Gather item data and validate
 		let items = [];
 		let validation_error = false;
+		let is_short_pick = false;
 		page.main.find('.sku-table tbody tr').each(function() {
 			let tr = $(this);
 			let table_name = tr.closest('table').attr('data-table-name');
@@ -900,13 +1014,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let qty_val = flt(tr.find('.qty-input').val());
 			let ordered_qty = flt(tr.find('.ordered-qty-cell').text());
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
-			
+
 			if (qty_val > ordered_qty) {
 				frappe.msgprint(__("Row for item {0}: Picked Qty ({1}) cannot be greater than Ordered Qty ({2})", [item_code, qty_val, ordered_qty]));
 				validation_error = true;
 				return false; // Break loop
 			}
-			
+			// Short pick on a real order line -> the shortfall needs a decision.
+			if (ordered_qty > 0 && qty_val < ordered_qty) is_short_pick = true;
+
 			items.push({
 				name: tr.attr('data-name'),
 				item_code: item_code,
@@ -929,41 +1045,144 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		}
 
 		let removed_rows = page._pending_removals || [];
+		// A removed SKU also leaves the order short for this round.
+		if (removed_rows && removed_rows.length) is_short_pick = true;
 
-		if (page.pick_list_name === 'New Pick List') {
-			frappe.call({
-				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_and_submit_pick_list',
-				args: {
-					so_name: page.so_name,
-					header: header_data,
-					items: items,
-					removed_rows: removed_rows
-				},
-				freeze: true,
-				callback: function(r) {
-					if(!r.exc && r.message) {
-						frappe.show_alert({message: "Pick List Created and Submitted Successfully", indicator: "green"});
-						frappe.set_route('pick_list_list');
+		const doSubmit = (extra) => {
+			extra = extra || {};
+			if (page.pick_list_name === 'New Pick List') {
+				frappe.call({
+					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_and_submit_pick_list',
+					args: {
+						so_name: page.so_name,
+						header: header_data,
+						items: items,
+						removed_rows: removed_rows,
+						short_pick_action: extra.short_pick_action || null,
+						short_pick_reason: extra.short_pick_reason || null,
+						future_dispatch_date: extra.future_dispatch_date || null,
+						remaining_only: page.remaining_only || 0
+					},
+					freeze: true,
+					callback: function(r) {
+						if(!r.exc && r.message) {
+							frappe.show_alert({message: "Pick List Created and Submitted Successfully", indicator: "green"});
+							frappe.set_route('pick_list_list');
+						}
 					}
-				}
+				});
+			} else {
+				frappe.call({
+					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.save_pick_list_data',
+					args: {
+						name: page.pick_list_name,
+						header: header_data,
+						items: items,
+						short_pick_action: extra.short_pick_action || null,
+						short_pick_reason: extra.short_pick_reason || null,
+						future_dispatch_date: extra.future_dispatch_date || null
+					},
+					freeze: true,
+					callback: function(r) {
+						if(!r.exc) {
+							frappe.show_alert({message: "Pick List Submitted Successfully", indicator: "green"});
+							frappe.set_route('pick_list_list');
+						}
+					}
+				});
+			}
+		};
+
+		if (is_short_pick) {
+			page.resolve_partial_allowed(function(partialAllowed) {
+				page.show_short_pick_modal(partialAllowed, doSubmit);
 			});
 		} else {
-			frappe.call({
-				method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.save_pick_list_data',
-				args: {
-					name: page.pick_list_name,
-					header: header_data,
-					items: items
-				},
-				freeze: true,
-				callback: function(r) {
-					if(!r.exc) {
-						frappe.show_alert({message: "Pick List Submitted Successfully", indicator: "green"});
-						frappe.set_route('pick_list_list');
-					}
-				}
-			});
+			doSubmit({});
 		}
+	};
+
+	// Resolve whether the order permits partial dispatch (drives the modal options).
+	page.resolve_partial_allowed = function(cb) {
+		const done = (so) => {
+			if (!so) return cb(0);
+			page.so_name = so;
+			frappe.db.get_value('Sales Order', so, 'custom_partial_order_allowed').then((r) => {
+				cb(cint((r.message || {}).custom_partial_order_allowed));
+			});
+		};
+		if (page.so_name) {
+			done(page.so_name);
+		} else if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
+			frappe.db.get_value('Pick List', page.pick_list_name, 'custom_sales_order_id').then((r) => {
+				done((r.message || {}).custom_sales_order_id);
+			});
+		} else {
+			cb(0);
+		}
+	};
+
+	// Short-pick decision: Partial (with a future dispatch date) or Forced Close.
+	page.show_short_pick_modal = function(partialAllowed, onConfirm) {
+		const actions = ['Forced Close'];
+		if (cint(partialAllowed)) actions.unshift('Partial');
+		const d = new frappe.ui.Dialog({
+			title: __('Short Pick — Choose Action'),
+			fields: [
+				{
+					fieldtype: 'HTML',
+					options: `<p>${__('Picked qty is less than ordered. Choose how to handle the shortfall.')}</p>`
+				},
+				{
+					fieldtype: 'Select',
+					fieldname: 'reason',
+					label: __('Reason for Short Picking'),
+					options: ['Damage', 'Stock Shortage', 'Expiry', 'Others'].join('\n'),
+					reqd: 1
+				},
+				{
+					fieldtype: 'Select',
+					fieldname: 'action',
+					label: __('Action'),
+					options: actions.join('\n'),
+					default: actions[0],
+					reqd: 1
+				},
+				{
+					fieldtype: 'Date',
+					fieldname: 'future_dispatch_date',
+					label: __('Future Dispatch Date (remaining qty)'),
+					depends_on: "eval:doc.action=='Partial'",
+					mandatory_depends_on: "eval:doc.action=='Partial'"
+				},
+				{
+					fieldtype: 'HTML',
+					options: `<p class="text-danger small">${__('Forced Close permanently closes the order at the dispatched qty — no further Pick List / Delivery Note can be created.')}</p>`
+				}
+			],
+			primary_action_label: __('Submit Pick List'),
+			primary_action(v) {
+				if (v.action === 'Partial' && !v.future_dispatch_date) {
+					frappe.msgprint(__('Set a Future Dispatch Date for the remaining qty.'));
+					return;
+				}
+				if (v.action === 'Forced Close') {
+					d.hide();
+					frappe.confirm(
+						__('Force Close permanently abandons the remaining qty. Continue?'),
+						() => onConfirm({ short_pick_action: v.action, short_pick_reason: v.reason })
+					);
+					return;
+				}
+				d.hide();
+				onConfirm({
+					short_pick_action: v.action,
+					short_pick_reason: v.reason,
+					future_dispatch_date: v.future_dispatch_date
+				});
+			}
+		});
+		d.show();
 	};
 
 	// Save edits on an existing draft without submitting it. Reuses the same
@@ -1066,7 +1285,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		let removed_rows = page._pending_removals || [];
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_pick_list_as_draft',
-			args: { so_name: page.so_name, header: header_data, items: items, removed_rows: removed_rows },
+			args: { so_name: page.so_name, header: header_data, items: items, removed_rows: removed_rows, remaining_only: page.remaining_only || 0 },
 			freeze: true,
 			freeze_message: __('Saving as draft...'),
 			callback: function(r) {

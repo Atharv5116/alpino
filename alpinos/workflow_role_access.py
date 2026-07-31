@@ -40,6 +40,9 @@ ROLES = {
 	"Sales Admin": "Offline Sales: full access to Sales Orders; view Pick List / Delivery Note.",
 	"Sales Manager": "Offline Sales: create / edit / submit Sales Orders; view Pick List / Delivery Note.",
 	"Sales User": "Offline Sales: view Sales Orders / Pick List / Delivery Note.",
+	"E-Commerce Coordinator": "E-Com: create / edit / submit E-Com Sales Orders; ASN + GRN entry on Post Dispatch; view Pick List / Delivery Note.",
+	"E-Commerce Manager": "E-Com: Coordinator access plus cancel Sales Orders and override ASN/GRN on Post Dispatch.",
+	"E-Commerce Admin": "E-Com: full access to E-Com Sales Orders and Post Dispatch.",
 }
 
 
@@ -97,6 +100,15 @@ def _level_ptypes(level):
 	if level == "SO_SALES_MANAGER":
 		# VIEW / CREATE / EDIT plus submit + cancel per SO workflow + cancellation rules
 		return _VIEW | {"write", "create", "submit", "cancel"}
+	if level == "SO_CREATE_SUBMIT":
+		# VIEW / CREATE / EDIT / submit — no cancel (E-Commerce Coordinator)
+		return _VIEW | {"write", "create", "submit"}
+	if level == "CREATE_EDIT":
+		# masters (non-submittable): view + create + edit
+		return _VIEW | {"write", "create"}
+	if level == "MASTER_FULL":
+		# masters (non-submittable): full control without submit/cancel/amend
+		return _VIEW | {"write", "create", "delete", "share"}
 	raise ValueError(f"Unknown access level: {level}")
 
 
@@ -110,6 +122,12 @@ PERMISSION_MATRIX = {
 		"Sales Admin": "FULL",
 		"Sales Manager": "SO_SALES_MANAGER",
 		"Sales User": "VIEW",
+		# E-Com channel (BRD): Coordinator creates/submits, Manager may cancel,
+		# Admin has full control. Channel separation is by the entry pages/list
+		# filters — docperms are on the shared Sales Order doctype.
+		"E-Commerce Coordinator": "SO_CREATE_SUBMIT",
+		"E-Commerce Manager": "SO_SALES_MANAGER",
+		"E-Commerce Admin": "FULL",
 	},
 	"Pick List": {
 		"Warehouse Admin": "FULL",
@@ -120,6 +138,9 @@ PERMISSION_MATRIX = {
 		"Sales Admin": "VIEW",
 		"Sales Manager": "VIEW",
 		"Sales User": "VIEW",
+		"E-Commerce Coordinator": "VIEW",
+		"E-Commerce Manager": "VIEW",
+		"E-Commerce Admin": "VIEW",
 	},
 	"Delivery Note": {
 		"Warehouse Admin": "FULL",
@@ -130,6 +151,16 @@ PERMISSION_MATRIX = {
 		"Sales Admin": "VIEW",
 		"Sales Manager": "VIEW",
 		"Sales User": "VIEW",
+		"E-Commerce Coordinator": "VIEW",
+		"E-Commerce Manager": "VIEW",
+		"E-Commerce Admin": "VIEW",
+	},
+	# BRD Module 1: the E-Commerce roles own the (E-Com) Buyer Master.
+	# Non-ECOM roles keep their read-only access from the supporting-masters list.
+	"Buyer Master": {
+		"E-Commerce Coordinator": "CREATE_EDIT",
+		"E-Commerce Manager": "CREATE_EDIT",
+		"E-Commerce Admin": "MASTER_FULL",
 	},
 }
 
@@ -179,7 +210,7 @@ SUPPORTING_READ_DOCTYPES = [
 	"Address",
 	"Contact",
 	"Company",
-	"Offline Buyer Master",
+	"Buyer Master",
 	"Alpino Customer Type",
 	"Sales Taxes and Charges Template",
 	"Tax Category",
@@ -201,6 +232,9 @@ SUPPORTING_READ_ROLES = [
 	"Sales Admin",
 	"Sales Manager",
 	"Sales User",
+	"E-Commerce Coordinator",
+	"E-Commerce Manager",
+	"E-Commerce Admin",
 ]
 
 # Read-only ptype bundle for a supporting master.
@@ -243,6 +277,13 @@ SALES_ORDER_STATUSES = "\n".join(
 		"Ready For Dispatch",
 		"Delivery Note Created",
 		"Dispatched",
+		"Partial Ready For Dispatch",
+		"Partial Delivery Note Created",
+		"Partial Dispatched",
+		"Forced Ready For Dispatch",
+		"Forced Delivery Note Created",
+		"Forced Dispatched",
+		"Forced Completed",
 		"Completed",
 		"Cancelled",
 	]
@@ -256,6 +297,8 @@ PICK_LIST_STATUSES = "\n".join(
 		"Sticker Pending",
 		"Submission Pending",
 		"Ready To Dispatch",
+		"Partial Ready To Dispatch",
+		"Forced Ready To Dispatch",
 		"Dispatched",
 		"Cancelled",
 	]
@@ -338,6 +381,105 @@ def _setup_status_fields():
 	# We only add a Select tracking field here, so skipping that unrelated
 	# whole-doctype check is safe and avoids breaking migrate.
 	create_custom_fields(custom_fields, ignore_validate=True, update=True)
+
+
+@frappe.whitelist()
+def get_workflow_team_users(doctype, include_users=None):
+	"""Enabled System Users holding any of the workflow roles defined for the
+	doctype in PERMISSION_MATRIX (the warehouse + sales teams). Used by the
+	Assign To / QC dropdowns on the Pick List and Delivery Note entry pages so
+	they only offer workflow team members instead of every user on the site.
+
+	Names passed in include_users are appended even without a matching role so
+	documents with an existing (legacy) assignee still display their value."""
+	roles = list(PERMISSION_MATRIX.get(doctype) or {})
+	if not roles:
+		frappe.throw(f"No workflow roles are defined for {doctype}.")
+
+	role_holders = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", roles], "parenttype": "User"},
+		pluck="parent",
+		distinct=True,
+	)
+	users = []
+	if role_holders:
+		users = frappe.get_all(
+			"User",
+			filters={"name": ["in", role_holders], "enabled": 1, "user_type": "System User"},
+			pluck="name",
+			order_by="full_name asc",
+		)
+
+	if isinstance(include_users, str):
+		include_users = frappe.parse_json(include_users) or []
+	for extra in include_users or []:
+		if extra and extra not in users and frappe.db.exists("User", extra):
+			users.append(extra)
+	return users
+
+
+# ---------------------------------------------------------------------------
+# Delivery Note "Assigned To" — restricted to DN User / DN Manager
+# ---------------------------------------------------------------------------
+DN_ASSIGN_ROLES = ["DN User", "DN Manager"]
+
+
+@frappe.whitelist()
+def get_dn_assignable_users(include_users=None):
+	"""Enabled System Users holding the DN User or DN Manager role — the only
+	users offered in the Delivery Note 'Assigned To' dropdown on the entry page.
+
+	Names in include_users are appended even without a matching role so a DN with
+	an existing (legacy) assignee still shows its value."""
+	role_holders = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", DN_ASSIGN_ROLES], "parenttype": "User"},
+		pluck="parent",
+		distinct=True,
+	)
+	users = []
+	if role_holders:
+		users = frappe.get_all(
+			"User",
+			filters={"name": ["in", role_holders], "enabled": 1, "user_type": "System User"},
+			pluck="name",
+			order_by="full_name asc",
+		)
+	if isinstance(include_users, str):
+		include_users = frappe.parse_json(include_users) or []
+	for extra in include_users or []:
+		if extra and extra not in users and frappe.db.exists("User", extra):
+			users.append(extra)
+	return users
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def dn_assigned_to_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link-field query for Delivery Note.custom_assigned_to — restricts the
+	standard-form picker to DN User / DN Manager holders."""
+	txt = txt or ""
+	return frappe.db.sql(
+		"""
+		SELECT DISTINCT u.name, u.full_name
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` r ON r.parent = u.name AND r.role IN (%(role1)s, %(role2)s)
+		WHERE IFNULL(u.enabled, 0) = 1
+			AND u.user_type = 'System User'
+			AND u.name NOT IN ('Administrator', 'Guest')
+			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+		ORDER BY u.full_name ASC
+		LIMIT %(page_len)s OFFSET %(start)s
+		""",
+		{
+			"role1": "DN User",
+			"role2": "DN Manager",
+			"txt": f"%{txt}%",
+			"start": int(start or 0),
+			"page_len": int(page_len or 20),
+		},
+	)
 
 
 # ---------------------------------------------------------------------------

@@ -9,10 +9,10 @@ QUOTATION_CLIENT_SCRIPT = """
 frappe.ui.form.on('Quotation', {
     setup(frm) {
         frm.set_query('quotation_to', () => ({
-            filters: { name: ['in', ['Customer', 'Lead', 'Prospect', 'Offline Buyer Master']] },
+            filters: { name: ['in', ['Customer', 'Lead', 'Prospect', 'Buyer Master']] },
         }));
         frm.set_query('party_name', () => {
-            if (frm.doc.quotation_to === 'Offline Buyer Master') {
+            if (frm.doc.quotation_to === 'Buyer Master') {
                 return { filters: { customer: ['!=', ''] } };
             }
             return {};
@@ -46,7 +46,7 @@ frappe.ui.form.on('Quotation', {
     },
 
     party_name(frm) {
-        if (frm.doc.quotation_to === 'Offline Buyer Master') {
+        if (frm.doc.quotation_to === 'Buyer Master') {
             sync_obm_quotation_header(frm);
         } else if (frm.doc.quotation_to === 'Customer' && frm.doc.party_name) {
             frappe.db.get_value('Customer', frm.doc.party_name, 'custom_order_type', (r) => {
@@ -81,12 +81,12 @@ function disable_rounded_total(frm) {
 
 function fix_dynamic_link_for_obm(frm) {
     // ERPNext's QuotationController.refresh() sets frappe.dynamic_link.doctype to
-    // "Offline Buyer Master", which causes SQL errors ("Unknown column 'offline_buyer_master'")
+    // "Buyer Master", which causes SQL errors ("Unknown column 'offline_buyer_master'")
     // in Address/Contact queries. Reset to "Customer" using the resolved customer.
     if (
-        frm.doc.quotation_to === 'Offline Buyer Master' &&
+        frm.doc.quotation_to === 'Buyer Master' &&
         frappe.dynamic_link &&
-        frappe.dynamic_link.doctype === 'Offline Buyer Master'
+        frappe.dynamic_link.doctype === 'Buyer Master'
     ) {
         const resolved = frm.doc.custom_resolved_customer || frm.doc.party_name;
         frappe.dynamic_link = {
@@ -104,9 +104,9 @@ function fix_dynamic_link_for_obm(frm) {
 }
 
 function apply_quotation_party_layout(frm) {
-    const obm = frm.doc.quotation_to === 'Offline Buyer Master';
+    const obm = frm.doc.quotation_to === 'Buyer Master';
     if (obm) {
-        frm.set_df_property('party_name', 'label', __('Offline Buyer Master'));
+        frm.set_df_property('party_name', 'label', __('Buyer Master'));
         if (frm.doc.party_name) {
             sync_obm_quotation_header(frm);
         }
@@ -132,7 +132,7 @@ function apply_quotation_address_queries(frm) {
         frm.set_query('shipping_address_name', () => customer_addr(frm.doc.party_name));
         return;
     }
-    if (frm.doc.quotation_to === 'Offline Buyer Master' && frm.doc.custom_resolved_customer) {
+    if (frm.doc.quotation_to === 'Buyer Master' && frm.doc.custom_resolved_customer) {
         frm.set_query('customer_address', () =>
             customer_addr(frm.doc.custom_resolved_customer)
         );

@@ -1,0 +1,31 @@
+<div class="attendance-batch-list">
+	<ul class="nav nav-pills abl-tabs" style="margin-bottom: 12px; gap: 4px;">
+		<li class="nav-item"><a class="nav-link active" data-engine="All" href="#">All <span class="badge abl-count" data-engine="All"></span></a></li>
+		<li class="nav-item"><a class="nav-link" data-engine="HO/Admin" href="#">HO/Admin <span class="badge abl-count" data-engine="HO/Admin"></span></a></li>
+		<li class="nav-item"><a class="nav-link" data-engine="WH ESSL" href="#">WH ESSL <span class="badge abl-count" data-engine="WH ESSL"></span></a></li>
+		<li class="nav-item"><a class="nav-link" data-engine="Offline Sales" href="#">Offline Sales <span class="badge abl-count" data-engine="Offline Sales"></span></a></li>
+	</ul>
+
+	<div class="abl-table-wrapper" style="overflow-x: auto;">
+		<table class="table table-bordered table-hover" style="background: var(--card-bg);">
+			<thead>
+				<tr>
+					<th style="width: 60px;">Sr No</th>
+					<th>ID</th>
+					<th>Attendance Month</th>
+					<th>Engine</th>
+					<th>Employees</th>
+					<th>Status</th>
+					<th style="width: 140px;">Action</th>
+				</tr>
+			</thead>
+			<tbody class="abl-rows">
+				<tr><td colspan="7" class="text-muted text-center">Loading…</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<div class="abl-more text-center" style="display: none; margin-bottom: 16px;">
+		<button class="btn btn-sm btn-default abl-load-more">Load More</button>
+	</div>
+</div>

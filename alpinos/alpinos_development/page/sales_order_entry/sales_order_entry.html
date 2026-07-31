@@ -3,6 +3,25 @@
 	position: relative;
 	display: inline-block;
 }
+/* Billing / Shipping address: fill the whole row and stand taller so long
+   addresses are readable (the autocomplete wrapper is inline-block, which
+   otherwise shrinks it to a small chip). */
+.sales-order-entry .field-billing-address,
+.sales-order-entry .field-shipping-address {
+	flex: 0 0 100%;
+	max-width: 100%;
+}
+.sales-order-entry .field-billing-address .awesomplete,
+.sales-order-entry .field-shipping-address .awesomplete {
+	display: block;
+	width: 100%;
+}
+.sales-order-entry .field-billing-address .awesomplete input,
+.sales-order-entry .field-shipping-address .awesomplete input {
+	width: 100%;
+	min-height: 42px;
+	font-size: 14px;
+}
 .sales-order-entry .awesomplete > ul {
 	z-index: 9999 !important;
 	position: absolute !important;
@@ -29,84 +48,131 @@
 }
 .sales-order-entry .items-table,
 .sales-order-entry .freebies-table,
-.sales-order-entry .scheme-table {
+.sales-order-entry .scheme-table,
+.sales-order-entry .additional-units-table {
 	overflow: visible !important;
 }
 .sales-order-entry .items-table td,
 .sales-order-entry .freebies-table td,
-.sales-order-entry .scheme-table td {
+.sales-order-entry .scheme-table td,
+.sales-order-entry .additional-units-table td {
 	overflow: visible !important;
 	position: relative;
 }
+/* Card look and section-title styling come from the central
+   alpinos_pages.css (eso-card / eso-card-title / eso-subtitle).
+   Only spacing not covered centrally stays here. */
+.sales-order-entry .eso-subtitle {
+	margin-top: 8px;
+	margin-bottom: 10px;
+	border-top: 1px solid var(--border-color);
+	padding-top: 12px;
+}
+.sales-order-entry .eso-fld {
+	margin-bottom: 8px;
+}
+.sales-order-entry .so-table {
+	font-size: 12px;
+	margin-bottom: 0;
+}
+.sales-order-entry .so-table thead th {
+	white-space: nowrap;
+}
+/* Compact cell padding for the wide 15-column items table. On narrow screens
+   the table scrolls inside its .alp-scroll wrapper instead of pushing the
+   page wider. */
+.sales-order-entry .items-table th,
+.sales-order-entry .items-table td {
+	padding: 4px 5px;
+	vertical-align: middle;
+}
+.sales-order-entry .items-table .control-value,
+.sales-order-entry .items-table input {
+	font-size: 12px;
+}
+/* Phones: the fixed 350px dropdown floor is wider than the viewport minus
+   card padding; let the list shrink to fit instead of clipping. */
+@media (max-width: 576px) {
+	.sales-order-entry .awesomplete > ul {
+		min-width: 0 !important;
+		max-width: calc(100vw - 32px) !important;
+	}
+}
 </style>
-<div class="sales-order-entry" style="max-width: 1200px; margin: 0 auto; padding: 15px;">
+<div class="sales-order-entry" style="padding: 12px;">
 
 	<p class="text-muted" style="font-size: 12px; margin-bottom: 12px;">
-		<strong>Customer</strong> is limited to customers on <strong>Offline Buyer Master</strong> (same as Sales Order). Main-line <strong>SKU</strong> lists all saleable <strong>variants</strong>. If that SKU has margin on the master for this customer, MRP and margin fill automatically; otherwise MRP comes from Customer Item MRP or Item standard rate—edit the row as needed.
+		<strong>Customer</strong> is limited to customers on <strong>Buyer Master</strong> (same as Sales Order). Main-line <strong>SKU</strong> lists all saleable <strong>variants</strong>. If that SKU has margin on the master for this customer, MRP and margin fill automatically; otherwise MRP comes from Customer Item MRP or Item standard rate—edit the row as needed.
 	</p>
 
-	<!-- Header Fields -->
-	<div class="so-header" style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+	<!-- Customer & Order Details (all header fields must stay inside .so-header) -->
+	<div class="so-header eso-card">
+		<h6 class="eso-card-title">Customer Details</h6>
 		<div class="row">
-			<div class="col-md-4 field-customer"></div>
-			<div class="col-md-4 field-company"></div>
-			<div class="col-md-4 field-order-type"></div>
-			<div class="col-md-4 field-delivery-date"></div>
-			<div class="col-md-4 field-dispatch-date"></div>
-			<div class="col-md-4 field-customer-po"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-customer"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-company"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-order-type"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-created-by"></div>
 		</div>
-		<div class="row" style="margin-top: 12px;">
-			<div class="col-md-6 field-billing-address"></div>
-			<div class="col-md-6 field-shipping-address"></div>
+
+		<h6 class="eso-subtitle">PO &amp; Dispatch</h6>
+		<div class="row">
+			<div class="col-md-4 col-sm-6 eso-fld field-customer-po"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-po-expiry"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-po-pdf-no"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-delivery-date"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-dispatch-date"></div>
 		</div>
-		<div class="row" style="margin-top: 12px;">
-			<div class="col-md-6 field-tax-template"></div>
+
+		<h6 class="eso-subtitle">Address &amp; Tax</h6>
+		<div class="row">
+			<div class="col-md-6 eso-fld field-billing-address"></div>
+			<div class="col-md-6 eso-fld field-shipping-address"></div>
+			<div class="col-md-6 eso-fld field-tax-template"></div>
 		</div>
 	</div>
 
-	<!-- Items Table -->
-	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
-		<h5 style="margin-bottom: 15px; font-weight: 600;">Order Items</h5>
-		<div style="overflow: visible;">
-			<table class="table table-bordered items-table" style="font-size: 13px;">
-				<thead style="background: var(--bg-color);">
+	<!-- Order Items -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Order Items</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered items-table so-table">
+				<thead>
 					<tr>
-						<th style="width: 36px;">#</th>
-						<th style="width: 56px;">Product Image</th>
-						<th style="min-width: 124px;">SKU</th>
-						<th style="min-width: 96px;">SKU Name</th>
-						<th style="width: 62px;">Qty</th>
-						<th style="width: 62px;">Box</th>
-						<th style="width: 86px;">MRP</th>
-						<th style="width: 88px;">Selling Price</th>
-						<th style="width: 64px;">GST %</th>
-						<th style="width: 76px;">Flat Disc. %</th>
-						<th style="width: 76px;">Offer %</th>
-						<th style="width: 78px;">Add. Disc. %</th>
-						<th style="width: 90px;">Amount</th>
-						<th style="width: 36px;"></th>
+						<th style="width: 28px;">#</th>
+						<th style="width: 44px;">Image</th>
+						<th style="min-width: 92px;">SKU</th>
+						<th style="min-width: 84px;">SKU Name</th>
+						<th style="width: 50px;">Qty</th>
+						<th style="width: 50px;">Box</th>
+						<th style="width: 62px;">MRP</th>
+						<th style="width: 66px;">Sell Price</th>
+						<th style="width: 44px;">GST %</th>
+						<th style="width: 54px;">Flat %</th>
+						<th style="width: 54px;">Offer %</th>
+						<th style="width: 56px;">Add %</th>
+						<th style="min-width: 82px;">Remarks</th>
+						<th style="width: 74px;">Amount</th>
+						<th style="width: 30px;"></th>
 					</tr>
 				</thead>
 				<tbody></tbody>
 			</table>
 		</div>
-		<button class="btn btn-sm btn-light btn-add-row" style="margin-top: 5px;">
+		<button class="btn btn-sm btn-light btn-add-row" style="margin-top: 8px;">
 			<i class="fa fa-plus"></i> Add Row
 		</button>
 	</div>
 
-	<!-- Other Details Section -->
-	<div class="other-details-section" style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
-
-		<!-- Marketing Freebies -->
-		<div style="margin-top: 20px;">
-			<h5 style="margin-bottom: 10px; font-weight: 600;">Marketing Freebies</h5>
-			<table class="table table-bordered freebies-table" style="font-size: 13px;">
-				<thead style="background: var(--bg-color);">
+	<!-- Other Details -->
+	<div class="other-details-section eso-card">
+		<h6 class="eso-card-title">Marketing Freebies</h6>
+		<div class="alp-scroll">
+			<table class="table table-bordered freebies-table so-table">
+				<thead>
 					<tr>
 						<th style="min-width: 140px;">Item</th>
 						<th>Item Name</th>
-						<th style="width: 100px;">Selling Price</th>
 						<th style="width: 80px;">Qty</th>
 						<th>Remarks</th>
 						<th style="width: 40px;"></th>
@@ -114,20 +180,18 @@
 				</thead>
 				<tbody></tbody>
 			</table>
-			<button class="btn btn-sm btn-light btn-add-freebie">
-				<i class="fa fa-plus"></i> Add Freebie
-			</button>
 		</div>
+		<button class="btn btn-sm btn-light btn-add-freebie" style="margin-top: 8px;">
+			<i class="fa fa-plus"></i> Add Freebie
+		</button>
 
-		<!-- Scheme Item Table -->
-		<div style="margin-top: 20px;">
-			<h5 style="margin-bottom: 10px; font-weight: 600;">Scheme Item Table</h5>
-			<table class="table table-bordered scheme-table" style="font-size: 13px;">
-				<thead style="background: var(--bg-color);">
+		<h6 class="eso-subtitle">Scheme Item Table</h6>
+		<div class="alp-scroll">
+			<table class="table table-bordered scheme-table so-table">
+				<thead>
 					<tr>
 						<th style="min-width: 140px;">SKU</th>
 						<th>SKU Name</th>
-						<th style="width: 100px;">Selling Price</th>
 						<th style="width: 80px;">Qty</th>
 						<th>Scheme</th>
 						<th style="width: 40px;"></th>
@@ -135,50 +199,45 @@
 				</thead>
 				<tbody></tbody>
 			</table>
-			<button class="btn btn-sm btn-light btn-add-scheme">
-				<i class="fa fa-plus"></i> Add Scheme Item
-			</button>
 		</div>
+		<button class="btn btn-sm btn-light btn-add-scheme" style="margin-top: 8px;">
+			<i class="fa fa-plus"></i> Add Scheme Item
+		</button>
 
-		<!-- Additional Units - Damage Checkbox -->
-		<div style="margin-top: 20px;">
-			<div class="field-additional-units-damage"></div>
-		</div>
+		<div class="field-additional-units-damage" style="margin-top: 16px;"></div>
 
-		<!-- Additional Units - Damage Item Table (conditional) -->
-		<div class="additional-units-section" style="margin-top: 20px; display: none;">
-			<h5 style="margin-bottom: 10px; font-weight: 600;">Additional Units - Damage Items</h5>
-			<table class="table table-bordered additional-units-table" style="font-size: 13px;">
-				<thead style="background: var(--bg-color);">
-					<tr>
-						<th style="min-width: 140px;">SKU</th>
-						<th>SKU Name</th>
-						<th style="width: 100px;">Selling Price</th>
-						<th style="width: 80px;">Qty</th>
-						<th>Previous Order No / ID</th>
-						<th style="min-width: 120px;">Remark</th>
-						<th style="width: 40px;"></th>
-					</tr>
-				</thead>
-				<tbody></tbody>
-			</table>
-			<button class="btn btn-sm btn-light btn-add-additional-units">
+		<div class="additional-units-section" style="margin-top: 12px; display: none;">
+			<h6 class="eso-subtitle">Additional Units - Damage Items</h6>
+			<div class="alp-scroll">
+				<table class="table table-bordered additional-units-table so-table">
+					<thead>
+						<tr>
+							<th style="min-width: 140px;">SKU</th>
+							<th>SKU Name</th>
+							<th style="width: 80px;">Qty</th>
+							<th>Previous Order No / ID</th>
+							<th style="min-width: 120px;">Remark</th>
+							<th style="width: 40px;"></th>
+						</tr>
+					</thead>
+					<tbody></tbody>
+				</table>
+			</div>
+			<button class="btn btn-sm btn-light btn-add-additional-units" style="margin-top: 8px;">
 				<i class="fa fa-plus"></i> Add Additional Unit
 			</button>
 		</div>
 
-		<div style="margin-top: 20px;">
-			<h5 style="margin-bottom: 15px; font-weight: 600;">Cash Discount</h5>
-			<div class="field-cash-discount"></div>
-		</div>
+		<h6 class="eso-subtitle">Cash Discount</h6>
+		<div class="field-cash-discount"></div>
 	</div>
 
 	<!-- Totals -->
-	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+	<div class="eso-card">
 		<div class="row">
 			<div class="col-md-6"></div>
 			<div class="col-md-6">
-				<table class="table" style="font-size: 14px;">
+				<table class="table" style="font-size: 14px; margin-bottom: 0;">
 					<tr>
 						<td class="text-right" style="border: none;"><strong>Total Qty:</strong></td>
 						<td class="text-right total-qty" style="border: none; font-weight: 600;">0</td>
@@ -208,9 +267,9 @@
 		</div>
 	</div>
 
-	<!-- Recent Sales Orders List -->
-	<div style="background: var(--card-bg); border-radius: 8px; padding: 20px; border: 1px solid var(--border-color);">
-		<h5 style="margin-bottom: 15px; font-weight: 600;">Recent Sales Orders</h5>
+	<!-- Recent Sales Orders -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Recent Sales Orders</h6>
 		<div class="recent-orders-list">
 			<p class="text-muted text-center">Loading...</p>
 		</div>

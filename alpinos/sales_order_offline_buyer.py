@@ -3,38 +3,102 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 
-def _customers_with_offline_buyer_master_query(txt, start, page_len):
-	"""Customers that have a row in Offline Buyer Master (same pool for Sales Order + Catalog)."""
+def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None, parents_only=False):
+	"""Customers that have a row in Buyer Master (same pool for Sales Order + Catalog).
+
+	channel: "Offline" -> offline + legacy(blank) buyers, "E-com" -> e-com buyers only,
+	None -> any channel.
+	parents_only: True -> top-level buyer masters only (an explicit parent
+	   is_parent=1 OR a standalone buyer with no parent_buyer — i.e. the root of its
+	   family). CHILD sites are hidden; the Sales Order / e-com entry pages pick the
+	   root, then narrow to a site + its addresses. This keeps standalone buyers
+	   selectable instead of vanishing. False (default, e.g. Catalog) -> non-parent
+	   buyers only.
+	"""
 	txt = txt or ""
+	params = {"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)}
+	if parents_only:
+		# root = an explicit parent OR a buyer with no parent (its own single-node family)
+		parent_clause = "AND (IFNULL(m.is_parent, 0) = 1 OR IFNULL(m.parent_buyer, '') = '')"
+	else:
+		parent_clause = "AND IFNULL(m.is_parent, 0) = 0"
+	channel_clause = ""
+	if channel == "Offline":
+		channel_clause = "AND (IFNULL(m.channel, '') = '' OR m.channel = 'Offline')"
+	elif channel == "E-com":
+		channel_clause = "AND m.channel = 'E-com'"
+	# MUST return positional tuples: Frappe's link search (build_for_autosuggest)
+	# indexes each result as item[0]/item[1:], so dicts raise KeyError: 0.
+	# With Customer.show_title_field_in_link enabled (see _ensure_customer_title_in_link),
+	# the dropdown and selected value show the customer NAME (title) and the docname
+	# ("<business name> - <gst>") as the muted description — which disambiguates
+	# same-named customers by their GSTIN. Searching by GSTIN also works.
 	return frappe.db.sql(
-		"""
+		f"""
 		SELECT c.name, c.customer_name
 		FROM `tabCustomer` c
-		INNER JOIN `tabOffline Buyer Master` m ON m.customer = c.name
+		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
 		WHERE IFNULL(c.disabled, 0) = 0
-			AND IFNULL(m.is_parent, 0) = 0
-			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s)
-		ORDER BY c.name ASC
+			{parent_clause}
+			{channel_clause}
+			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s OR m.gst_no LIKE %(txt)s)
+		GROUP BY c.name, c.customer_name
+		ORDER BY c.customer_name ASC
 		LIMIT %(page_len)s OFFSET %(start)s
 		""",
-		{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
+		params,
 	)
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Limit Sales Order Customer link to customers that have an Offline Buyer Master."""
-	return _customers_with_offline_buyer_master_query(txt, start, page_len)
+	"""Limit offline Sales Order Customer link to offline (or legacy) PARENT Buyer Masters.
+
+	Only parents show; the Site Name dropdown then narrows to a child site and its
+	addresses. GST follows the chosen billing address, so anchoring on the parent
+	stays tax-correct."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="Offline", parents_only=True)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def ecom_sales_order_customer_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Limit E-Com Sales Order Customer link to E-com channel PARENT Buyer Masters.
+
+	Only parents show; the Site Name dropdown narrows to a child site and its
+	addresses."""
+	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="E-com", parents_only=True)
+
+
+def ensure_customer_title_in_link():
+	"""Show the customer NAME (title_field = customer_name) in every Customer link
+	field instead of the '<business name> - <gst>' docname — the SO / e-com
+	customer dropdowns and elsewhere. The docname still appears as the muted
+	description, disambiguating same-named customers by their GSTIN. Idempotent;
+	wired into after_migrate."""
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	if not frappe.utils.cint(frappe.db.get_value("DocType", "Customer", "show_title_field_in_link")):
+		make_property_setter(
+			doctype="Customer",
+			fieldname=None,  # DocType-level property
+			property="show_title_field_in_link",
+			value="1",
+			property_type="Check",
+			for_doctype=True,
+		)
+		frappe.clear_cache(doctype="Customer")
+		print("✅ Customer link fields now show the customer name (show_title_field_in_link)")
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def catalog_customer_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Same customer list as Sales Order — only customers linked in Offline Buyer Master."""
+	"""Same customer list as Sales Order — only customers linked in Buyer Master."""
 	return _customers_with_offline_buyer_master_query(txt, start, page_len)
 
 
@@ -45,7 +109,7 @@ def get_offline_buyer_item_rate(customer, item_code):
 		return None
 
 	obm_name = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		{"customer": customer},
 		"name",
 		order_by="modified desc",
@@ -56,9 +120,9 @@ def get_offline_buyer_item_rate(customer, item_code):
 	catalog = frappe.db.sql(
 		"""
 		SELECT obil.mrp, IFNULL(obil.margin_percent, 0) AS margin_percent, IFNULL(obil.selling_rate, 0) AS selling_rate
-		FROM `tabOffline Buyer Item` obil
-		INNER JOIN `tabOffline Buyer Items` obi
-			ON obi.name = obil.parent AND obil.parenttype = 'Offline Buyer Items'
+		FROM `tabBuyer Item` obil
+		INNER JOIN `tabBuyer Items` obi
+			ON obi.name = obil.parent AND obil.parenttype = 'Buyer Items'
 		WHERE IFNULL(obi.docstatus, 0) < 2
 			AND obi.buyer = %(customer)s
 			AND obil.item_code = %(item_code)s
@@ -82,8 +146,8 @@ def get_offline_buyer_item_rate(customer, item_code):
 		}
 
 	margin_pct = frappe.db.get_value(
-		"Offline Buyer Margin",
-		{"parent": obm_name, "parenttype": "Offline Buyer Master", "sku": item_code},
+		"Buyer Margin",
+		{"parent": obm_name, "parenttype": "Buyer Master", "sku": item_code},
 		"margin_percent",
 	)
 	if margin_pct is None:
@@ -104,15 +168,20 @@ def get_offline_buyer_item_rate(customer, item_code):
 
 @frappe.whitelist()
 def get_offline_buyer_for_customer(customer):
-	"""Return Offline Buyer Master name and trade customer_type for a linked ERPNext Customer.
+	"""Return Buyer Master name and trade customer_type for a linked ERPNext Customer.
 	Fallback to Customer.custom_order_type if not defined on OBM."""
 	if not customer:
 		return {"offline_buyer_master": None, "customer_type": None}
 
 	row = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		{"customer": customer},
-		["name", "customer_type"],
+		[
+			"name", "customer_type", "site_name", "channel",
+			"appointment_required", "grn_available",
+			"partial_order_allowed", "gst_exclusive_buyer",
+			"gst_no", "shipping_address",
+		],
 		as_dict=True,
 	)
 
@@ -124,6 +193,14 @@ def get_offline_buyer_for_customer(customer):
 	return {
 		"offline_buyer_master": row.get("name") if row else None,
 		"customer_type": cust_type,
+		"site_name": (row.get("site_name") if row else None) or "",
+		"channel": (row.get("channel") if row else None) or "",
+		# Order-behaviour flags (auto-populated onto the SO, overridable per order).
+		"appointment_required": int(row.get("appointment_required") or 0) if row else 0,
+		"grn_available": int(row.get("grn_available") or 0) if row else 0,
+		"partial_order_allowed": int(row.get("partial_order_allowed") or 0) if row else 0,
+		"gst_exclusive_buyer": int(row.get("gst_exclusive_buyer") or 0) if row else 0,
+		"gst_no": (row.get("gst_no") if row else None) or "",
 	}
 
 
@@ -138,20 +215,55 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 	if not meta.has_field("custom_offline_buyer_master"):
 		return
 
+	has_site_field = meta.has_field("custom_site_name")
+
 	if not doc.customer:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None
 		return
 
 	row = frappe.db.get_value(
-		"Offline Buyer Master",
+		"Buyer Master",
 		{"customer": doc.customer},
-		["name", "customer_type"],
+		[
+			"name", "customer_type", "site_name", "channel",
+			"appointment_required", "grn_available",
+			"partial_order_allowed", "gst_exclusive_buyer",
+		],
 		as_dict=True,
 	)
 	if row:
 		doc.custom_offline_buyer_master = row.get("name")
 		doc.custom_offline_buyer_customer_type = row.get("customer_type")
+		# Site name is user-editable — only default it when blank. Priority:
+		# the selected shipping address's site (OBM per-address site_name is
+		# synced onto Address.custom_site_name), then the OBM header site_name.
+		if has_site_field and not (doc.get("custom_site_name") or "").strip():
+			addr_site = ""
+			if doc.get("shipping_address_name"):
+				addr_site = (
+					frappe.db.get_value(
+						"Address", doc.shipping_address_name, "custom_site_name"
+					)
+					or ""
+				)
+			doc.custom_site_name = addr_site or row.get("site_name") or ""
+		# Channel: default from the buyer only when the entry path hasn't set it.
+		# The offline/e-com entry pages set custom_channel explicitly.
+		if meta.has_field("custom_channel") and not (doc.get("custom_channel") or "").strip():
+			doc.custom_channel = row.get("channel") or "Offline"
+		# Order-behaviour flags: default from the buyer on new orders (raw form /
+		# import robustness). Editable overrides on existing orders are preserved,
+		# and the create API sets flags.skip_ecom_flag_default when it owns them.
+		if (
+			meta.has_field("custom_appointment_required")
+			and doc.is_new()
+			and not getattr(doc.flags, "skip_ecom_flag_default", False)
+		):
+			doc.custom_appointment_required = int(row.get("appointment_required") or 0)
+			doc.custom_grn_available = int(row.get("grn_available") or 0)
+			doc.custom_partial_order_allowed = int(row.get("partial_order_allowed") or 0)
+			doc.custom_gst_exclusive_buyer = int(row.get("gst_exclusive_buyer") or 0)
 	else:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None
@@ -246,7 +358,7 @@ def _ensure_address_doc(
 
 
 def _offline_buyer_addresses_for_addresses_table(obm_doc):
-	"""Map Offline Buyer Address child rows to ERPNext Address names for Customer."""
+	"""Map Buyer Address child rows to ERPNext Address names for Customer."""
 
 	customer = obm_doc.customer
 	all_rows = list(obm_doc.get("addresses") or [])
@@ -329,7 +441,7 @@ def _primary_ob_address_row(obm_doc):
 
 
 def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None):
-	"""Derive one or more ERPNext Shipping Address records from the Offline Buyer Master.
+	"""Derive one or more ERPNext Shipping Address records from the Buyer Master.
 
 	Priority:
 	  1. If 'Shipping Same as Primary' is checked → use the billing default.
@@ -427,29 +539,57 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 
 
 def _offline_buyer_address_sync(customer: str):
-	"""Create missing ERPNext Address rows from Offline Buyer Master; return billing/shipping defaults."""
+	"""Materialise ERPNext Address rows from the Buyer Master(s); return billing/shipping defaults.
+
+	Syncs EVERY Buyer Master in the family (parent + children / all masters that
+	share a family customer), not just the customer's own. A customer can own
+	several buyer masters — one per site — and each site's addresses must be
+	materialised so the entry page can offer them; syncing only one master is why a
+	sibling site's address never appeared in the dropdown. Each Address is tagged
+	with its own master's Site Name so the dropdowns can be narrowed by site.
+	Returned defaults are the customer's own (primary) master's billing/shipping."""
 
 	if not customer:
 		return {"default_billing": None, "default_shipping": None}
 
-	master_name = frappe.db.get_value(
-		"Offline Buyer Master",
-		{"customer": customer},
-		"name",
-		order_by="modified desc",
+	family = buyer_family_customers(customer)
+	masters = (
+		frappe.get_all(
+			"Buyer Master",
+			filters={"customer": ["in", family]},
+			pluck="name",
+			order_by="modified desc",
+		)
+		if family
+		else []
 	)
-	if not master_name:
+	if not masters:
 		return {"default_billing": None, "default_shipping": None}
 
-	doc = frappe.get_doc("Offline Buyer Master", master_name)
-	mapped = _offline_buyer_addresses_for_addresses_table(doc)
-	billing = mapped["billing_default"]
-	shipping = _ensure_shipping_address_from_obm(doc, billing) or billing
+	own_master = frappe.db.get_value(
+		"Buyer Master", {"customer": customer}, "name", order_by="modified desc"
+	)
+
+	default_billing = default_shipping = None
+	first_billing = first_shipping = None
+	for master_name in masters:
+		doc = frappe.get_doc("Buyer Master", master_name)
+		mapped = _offline_buyer_addresses_for_addresses_table(doc)
+		billing = mapped["billing_default"]
+		shipping = _ensure_shipping_address_from_obm(doc, billing) or billing
+		if first_billing is None and billing:
+			first_billing, first_shipping = billing, (shipping or billing)
+		if master_name == own_master:
+			default_billing, default_shipping = billing, (shipping or billing)
+
+	# The customer's own master had no usable address → fall back to the first that did.
+	if default_billing is None:
+		default_billing, default_shipping = first_billing, first_shipping
 
 	return {
-		"default_billing": billing,
-		"default_shipping": shipping or billing,
-		"offline_buyer_master": master_name,
+		"default_billing": default_billing,
+		"default_shipping": default_shipping or default_billing,
+		"offline_buyer_master": own_master,
 	}
 
 
@@ -503,15 +643,31 @@ def _ensure_contact_for_obm(obm_doc):
 
 	contact.first_name = first_name
 
-	if email and not any(_nz(e.email_id) == email for e in (contact.get("email_ids") or [])):
-		contact.append("email_ids", {"email_id": email, "is_primary": 1})
+	# The buyer's email is the SOLE primary — clear any other primary first, else Frappe's
+	# Contact validation ("Only one Email ID can be set as primary") rejects the save when
+	# the contact already had a primary email.
+	if email:
+		seen_email = False
+		for e in contact.get("email_ids") or []:
+			hit = _nz(e.email_id) == email
+			e.is_primary = 1 if hit else 0
+			seen_email = seen_email or hit
+		if not seen_email:
+			contact.append("email_ids", {"email_id": email, "is_primary": 1})
 
-	for ph, is_primary in ((phone, 1), (alt_phone, 0)):
-		if ph and not any(_nz(p.phone) == ph for p in (contact.get("phone_nos") or [])):
-			contact.append(
-				"phone_nos",
-				{"phone": ph, "is_primary_phone": is_primary, "is_primary_mobile_no": is_primary},
-			)
+	# Likewise the main phone is the sole primary phone + mobile; the alt phone is added
+	# non-primary (a second primary phone/mobile would hit the same validation).
+	if phone:
+		seen_phone = False
+		for p in contact.get("phone_nos") or []:
+			hit = _nz(p.phone) == phone
+			p.is_primary_phone = 1 if hit else 0
+			p.is_primary_mobile_no = 1 if hit else 0
+			seen_phone = seen_phone or hit
+		if not seen_phone:
+			contact.append("phone_nos", {"phone": phone, "is_primary_phone": 1, "is_primary_mobile_no": 1})
+	if alt_phone and not any(_nz(p.phone) == alt_phone for p in (contact.get("phone_nos") or [])):
+		contact.append("phone_nos", {"phone": alt_phone, "is_primary_phone": 0, "is_primary_mobile_no": 0})
 
 	contact.save(ignore_permissions=True)
 	return contact.name
@@ -521,7 +677,7 @@ def sync_obm_to_customer_party(obm_doc):
 	"""Create/refresh ERPNext Address + Contact for the OBM's Customer and set
 	them as the customer's primary address/contact.
 
-	Runs on every Offline Buyer Master save (via on_update) and from the
+	Runs on every Buyer Master save (via on_update) and from the
 	backfill job for existing customers. All underlying helpers are idempotent,
 	so repeated runs reuse existing Address/Contact records instead of
 	duplicating them.
@@ -547,7 +703,7 @@ def sync_obm_to_customer_party(obm_doc):
 
 @frappe.whitelist()
 def sync_single_offline_buyer_master(offline_buyer_master):
-	"""Re-sync one Offline Buyer Master's Address + Contact onto its Customer.
+	"""Re-sync one Buyer Master's Address + Contact onto its Customer.
 
 	Administrator only — backs the "Sync to Customer" button on the OBM form.
 	"""
@@ -555,13 +711,90 @@ def sync_single_offline_buyer_master(offline_buyer_master):
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("Only the Administrator can run this action."), frappe.PermissionError)
 
-	doc = frappe.get_doc("Offline Buyer Master", offline_buyer_master)
+	doc = frappe.get_doc("Buyer Master", offline_buyer_master)
 	if not doc.customer or not frappe.db.exists("Customer", doc.customer):
-		frappe.throw(_("This Offline Buyer Master has no linked Customer yet."))
+		frappe.throw(_("This Buyer Master has no linked Customer yet."))
 
 	result = sync_obm_to_customer_party(doc)
 	frappe.db.commit()
 	return result
+
+
+@frappe.whitelist()
+def report_duplicate_buyer_masters(customer=None):
+	"""Read-only: list Customers that have MORE THAN ONE Buyer Master — the cause
+	of the 'Only one Buyer Master is allowed per Customer' error on edit, and of
+	buyers behaving oddly in the Sales Order customer dropdown.
+
+	Run:
+	  bench --site <site> execute alpinos.sales_order_offline_buyer.report_duplicate_buyer_masters
+	Pass customer='<name>' to check a single customer.
+	"""
+	params = {}
+	cond = ""
+	if customer:
+		cond = "AND b.customer = %(customer)s"
+		params["customer"] = customer
+	rows = frappe.db.sql(
+		f"""
+		SELECT b.customer,
+			COUNT(*) AS n,
+			GROUP_CONCAT(b.name ORDER BY b.modified DESC SEPARATOR ' | ') AS buyer_masters,
+			GROUP_CONCAT(IFNULL(NULLIF(b.channel, ''), '(blank)') ORDER BY b.modified DESC SEPARATOR ' | ') AS channels,
+			GROUP_CONCAT(IFNULL(b.is_parent, 0) ORDER BY b.modified DESC SEPARATOR ' | ') AS is_parent
+		FROM `tabBuyer Master` b
+		WHERE IFNULL(b.customer, '') != '' {cond}
+		GROUP BY b.customer
+		HAVING n > 1
+		ORDER BY n DESC
+		""",
+		params,
+		as_dict=True,
+	)
+	return {"duplicate_customers": len(rows), "rows": rows}
+
+
+@frappe.whitelist()
+def clean_customer_names_strip_gst(commit=True):
+	"""One-off cleanup: strip a trailing ' - <gstin/pan>' that leaked into
+	Customer.customer_name, keeping the docname (id) unchanged.
+
+	The buyer -> Customer flow names the Customer DOCNAME '<business name> - <gst>'
+	(kept unique), but the DISPLAY name (customer_name) should be just the
+	business name. Older records ended up with the GST in customer_name too;
+	this restores the clean business name while the id stays '<name> - <gst>'.
+
+	Idempotent and safe to re-run. Run with:
+	  bench --site <site> execute alpinos.sales_order_offline_buyer.clean_customer_names_strip_gst
+	"""
+	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
+		frappe.throw(_("Only an Administrator / System Manager can run this."), frappe.PermissionError)
+
+	rows = frappe.db.sql(
+		"""
+		SELECT c.name, c.customer_name, c.tax_id
+		FROM `tabCustomer` c
+		INNER JOIN `tabBuyer Master` m ON m.customer = c.name
+		WHERE IFNULL(c.tax_id, '') != '' AND IFNULL(c.customer_name, '') != ''
+		GROUP BY c.name, c.customer_name, c.tax_id
+		""",
+		as_dict=True,
+	)
+	fixed = []
+	for r in rows:
+		cn = (r.get("customer_name") or "").strip()
+		tax = (r.get("tax_id") or "").strip()
+		suffix = f" - {tax}"
+		if tax and cn.endswith(suffix):
+			cleaned = cn[: -len(suffix)].strip()
+			if cleaned and cleaned != cn:
+				# Update the display name only; the docname (id) is untouched so
+				# the GST-disambiguated unique id is preserved.
+				frappe.db.set_value("Customer", r.get("name"), "customer_name", cleaned, update_modified=False)
+				fixed.append({"customer_id": r.get("name"), "from": cn, "to": cleaned})
+	if commit:
+		frappe.db.commit()
+	return {"scanned": len(rows), "fixed_count": len(fixed), "fixed": fixed[:100]}
 
 
 def _customer_has_linked(doctype, customer):
@@ -580,11 +813,11 @@ def _customer_has_linked(doctype, customer):
 
 @frappe.whitelist()
 def report_offline_buyers_missing_customer_party():
-	"""List customers whose Offline Buyer Master holds address/contact data but
+	"""List customers whose Buyer Master holds address/contact data but
 	whose Customer record is still missing the linked Address and/or Contact.
 
 	These are exactly the records the backfill would fix. Returns one row per
-	Offline Buyer Master with flags for what's missing.
+	Buyer Master with flags for what's missing.
 
 	Run with:
 	  bench --site <site> execute \
@@ -592,7 +825,7 @@ def report_offline_buyers_missing_customer_party():
 	"""
 
 	masters = frappe.get_all(
-		"Offline Buyer Master",
+		"Buyer Master",
 		filters={"customer": ["is", "set"]},
 		fields=[
 			"name",
@@ -612,7 +845,7 @@ def report_offline_buyers_missing_customer_party():
 			continue
 
 		has_addr_rows = bool(
-			frappe.db.exists("Offline Buyer Address", {"parent": m.name})
+			frappe.db.exists("Buyer Address", {"parent": m.name})
 		)
 		obm_has_address = has_addr_rows or bool(_nz(m.address))
 		obm_has_contact = bool(
@@ -637,7 +870,7 @@ def report_offline_buyers_missing_customer_party():
 			)
 
 	# Readable summary in the bench console.
-	print(f"\n{len(rows)} Offline Buyer Master record(s) need a Customer Address/Contact:\n")
+	print(f"\n{len(rows)} Buyer Master record(s) need a Customer Address/Contact:\n")
 	if rows:
 		print(f"{'Customer':<24} {'Business Name':<32} {'Addr?':<7} {'Contact?':<8} OBM")
 		print("-" * 100)
@@ -656,7 +889,7 @@ def report_offline_buyers_missing_customer_party():
 @frappe.whitelist()
 def backfill_offline_buyer_addresses_and_contacts():
 	"""Maintenance job: create ERPNext Address + Contact for every existing
-	Offline Buyer Master that already has a linked Customer.
+	Buyer Master that already has a linked Customer.
 
 	Run with:
 	  bench --site <site> execute \
@@ -664,7 +897,7 @@ def backfill_offline_buyer_addresses_and_contacts():
 	"""
 
 	names = frappe.get_all(
-		"Offline Buyer Master",
+		"Buyer Master",
 		filters={"customer": ["is", "set"]},
 		pluck="name",
 	)
@@ -672,7 +905,7 @@ def backfill_offline_buyer_addresses_and_contacts():
 	processed, errors = 0, []
 	for nm in names:
 		try:
-			doc = frappe.get_doc("Offline Buyer Master", nm)
+			doc = frappe.get_doc("Buyer Master", nm)
 			if not doc.customer or not frappe.db.exists("Customer", doc.customer):
 				continue
 			sync_obm_to_customer_party(doc)
@@ -687,69 +920,315 @@ def backfill_offline_buyer_addresses_and_contacts():
 
 @frappe.whitelist()
 def sync_offline_buyer_master_addresses(customer):
-	"""Lazy-sync Offline Buyer Address table + shipping panel into ERPNext Address (linked to Customer).
+	"""Lazy-sync Buyer Address table + shipping panel into ERPNext Address (linked to Customer).
 
 	Desk Sales Order Entry uses this as default Billing/Shipping picks; Address Link fields stay a full customer list.
 	"""
 	return _offline_buyer_address_sync(customer)
 
 
-@frappe.whitelist()
-def get_customer_addresses_for_display(customer):
-	"""Return addresses linked to a Customer with a human-readable display string for Autocomplete."""
+def buyer_family_customers(customer):
+	"""Customers of every Buyer Master in the same parent family (parent + all
+	its children, including this one). A buyer with no parent returns just itself."""
 	if not customer:
 		return []
-
-	rows = frappe.db.sql(
+	obm = frappe.db.get_value(
+		"Buyer Master", {"customer": customer},
+		["name", "is_parent", "parent_buyer"], as_dict=True,
+	)
+	if not obm:
+		return [customer]
+	root = obm.parent_buyer or (obm.name if cint(obm.is_parent) else None)
+	if not root:
+		return [customer]
+	family = frappe.db.sql_list(
 		"""
-		SELECT a.name, a.address_type,
-			a.address_line1, a.address_line2,
-			a.city, a.state, a.country, a.pincode
-		FROM `tabAddress` a
-		INNER JOIN `tabDynamic Link` dl
-			ON dl.parent = a.name
-			AND dl.parenttype = 'Address'
-			AND dl.link_doctype = 'Customer'
-			AND dl.link_name = %(customer)s
-		ORDER BY a.address_type, a.name
+		SELECT DISTINCT customer FROM `tabBuyer Master`
+		WHERE IFNULL(customer, '') != ''
+			AND (name = %(root)s OR parent_buyer = %(root)s)
 		""",
-		{"customer": customer},
-		as_dict=True,
+		{"root": root},
+	)
+	if customer not in family:
+		family.append(customer)
+	return family
+
+
+def buyer_family_masters(customer):
+	"""Every Buyer Master in the family (parent + children / all masters that share a
+	family customer), as dicts of name + customer + site_name. This is the address
+	source of truth for the entry page — a customer can own several masters (one per
+	site), so we enumerate masters, not just customers."""
+	family = buyer_family_customers(customer)
+	if not family:
+		return []
+	return frappe.get_all(
+		"Buyer Master",
+		filters={"customer": ["in", family]},
+		fields=["name", "customer", "site_name"],
+		order_by="creation asc",
 	)
 
-	for row in rows:
-		parts = []
-		for p in [row.address_line1, row.address_line2, row.city, row.state, row.pincode]:
-			if p:
-				# Remove newlines so the label matches the single-line Autocomplete input text
-				clean_p = " ".join(str(p).replace("\n", " ").replace("\r", " ").split())
-				if clean_p:
-					parts.append(clean_p)
-		row.display = "{} ({})".format(", ".join(parts), row.address_type or "Address")
 
-	return rows
+def _masters_owning_site(master_names, site):
+	"""Buyer Master(s) that OWN a Site — the master's own Site Name is it, OR one of
+	its Buyer Address rows carries it. A master can host several sites, and picking
+	any one of them shows that master's WHOLE address book; so a site resolves to its
+	master(s), not to a single address row."""
+	site = (site or "").strip()
+	if not site or not master_names:
+		return set()
+	owners = set(
+		frappe.db.sql_list(
+			"SELECT name FROM `tabBuyer Master` WHERE name IN %(m)s AND site_name = %(s)s",
+			{"m": tuple(master_names), "s": site},
+		)
+	)
+	owners.update(
+		frappe.db.sql_list(
+			"""
+			SELECT DISTINCT parent FROM `tabBuyer Address`
+			WHERE parent IN %(m)s AND parenttype = 'Buyer Master' AND site_name = %(s)s
+			""",
+			{"m": tuple(master_names), "s": site},
+		)
+	)
+	return owners
+
+
+@frappe.whitelist()
+def get_customer_family_sites(customer):
+	"""Distinct Site Names across the buyer family (parent + all children) — the
+	options for the Site Name dropdown on the SO / e-com entry pages.
+
+	Sites live in TWO places on the Buyer Master(s): the master's own site_name AND
+	each Buyer Address row's site_name (a master can host several sites). Union both
+	straight from the masters so every site the family has is offered."""
+	if not customer:
+		return []
+	masters = buyer_family_masters(customer)
+	if not masters:
+		return []
+	master_names = [m.name for m in masters]
+	sites = {(m.site_name or "").strip() for m in masters if (m.site_name or "").strip()}
+	sites.update(
+		frappe.db.sql_list(
+			"""
+			SELECT DISTINCT site_name FROM `tabBuyer Address`
+			WHERE parent IN %(m)s AND parenttype = 'Buyer Master'
+				AND IFNULL(site_name, '') != ''
+			""",
+			{"m": tuple(master_names)},
+		)
+	)
+	return sorted(s for s in sites if (s or "").strip())
+
+
+def _address_name_for_buyer_row(customer, line1, city, pincode):
+	"""Match a Buyer Address row back to the ERPNext Address the buyer-master sync
+	materialised for it. Matches on customer + line1 + pincode + city, treating a
+	blank row city as the 'N/A' placeholder the sync stores for cityless rows."""
+	line1 = (line1 or "")[:240]
+	if not line1:
+		return None
+	found = frappe.db.sql(
+		"""
+		SELECT a.name
+		FROM `tabAddress` a
+		INNER JOIN `tabDynamic Link` dl
+			ON dl.parent = a.name AND dl.parenttype = 'Address'
+			AND dl.link_doctype = 'Customer' AND dl.link_name = %(cust)s
+		WHERE IFNULL(a.address_line1, '') = %(l1)s
+			AND IFNULL(a.pincode, '') = %(pin)s
+			AND (IFNULL(a.city, '') = %(city)s OR (%(city)s = '' AND a.city = 'N/A'))
+		ORDER BY a.creation ASC
+		LIMIT 1
+		""",
+		{"cust": customer, "l1": line1, "city": _nz(city), "pin": _nz(pincode)},
+	)
+	return found[0][0] if found else None
+
+
+@frappe.whitelist()
+def get_customer_addresses_for_display(customer, site_name=None):
+	"""Addresses for the Autocomplete on the SO / e-com entry pages, sourced DIRECTLY
+	from the Buyer Master(s) in the family.
+
+	- site_name blank -> every address row of every Buyer Master in the family
+	  (parent + children / all masters sharing a family customer).
+	- site_name set   -> the Buyer Master(s) that OWN that site (the master's own
+	  Site Name is it, OR one of its address rows carries it); ALL of those masters'
+	  addresses are then offered — a master can host several sites, and picking any
+	  one shows the master's WHOLE address book.
+
+	Each row keeps its is_primary / is_shipping ticks so the page routes Primary rows
+	to Billing and Shipping rows to Shipping (a row ticked both appears in both).
+	Read-only: rows are matched to the ERPNext Address the buyer-master sync already
+	created (so GST can follow the billing address); a row without a materialised
+	Address yet is skipped. Return rows keep the Address component fields
+	(address_line1/2, city, state, pincode) other callers rely on."""
+	if not customer:
+		return []
+	site_name = (site_name or "").strip()
+	masters = buyer_family_masters(customer)
+	if not masters:
+		return []
+
+	if site_name:
+		owners = _masters_owning_site([m.name for m in masters], site_name)
+		if owners:
+			masters = [m for m in masters if m.name in owners]
+
+	family_custs = {m.customer for m in masters if m.customer}
+	multi = len(family_custs) > 1
+	owner_names = {}
+	if multi:
+		for cust, cname in frappe.db.sql(
+			"SELECT name, customer_name FROM `tabCustomer` WHERE name IN %(f)s",
+			{"f": tuple(family_custs)},
+		):
+			owner_names[cust] = cname or cust
+
+	seen = set()
+	out = []
+	for m in masters:
+		obm = frappe.get_doc("Buyer Master", m.name)
+		for brow in obm.get("addresses") or []:
+			line1 = _nz(brow.get("address_line"))
+			if not line1:
+				continue
+			addr_name = _address_name_for_buyer_row(
+				obm.customer, line1, brow.get("city"), brow.get("pincode")
+			)
+			if not addr_name:
+				continue  # not materialised as an Address yet (sync creates it first)
+			addr = frappe.db.get_value(
+				"Address",
+				addr_name,
+				[
+					"address_line1", "address_line2", "city", "state",
+					"country", "pincode", "custom_site_name", "address_type",
+				],
+				as_dict=True,
+			) or {}
+			parts = []
+			for p in [
+				addr.get("address_line1"), addr.get("address_line2"),
+				addr.get("city"), addr.get("state"), addr.get("pincode"),
+			]:
+				clean_p = " ".join(str(p or "").replace("\n", " ").replace("\r", " ").split())
+				if clean_p and clean_p.upper() != "N/A":
+					parts.append(clean_p)
+			value = ", ".join(parts)
+			if not value:
+				continue
+			is_primary = int(brow.get("is_primary") or 0)
+			is_shipping = int(brow.get("is_shipping") or 0)
+			# Type/suffix from the ROW's own ticks (not the deduped Address's type) so a
+			# shared address used for both billing and shipping is offered in both.
+			addr_type = "Billing" if is_primary else ("Shipping" if is_shipping else "Billing")
+			suffix = "Billing" if is_primary else ("Shipping" if is_shipping else "Address")
+			if multi and obm.customer and obm.customer != customer:
+				suffix += " — " + owner_names.get(obm.customer, obm.customer)
+			display = "{} ({})".format(value, suffix)
+			# Collapse identical entries — same owner + same address text + same
+			# Primary/Shipping role — that repeated Buyer Address rows can produce.
+			key = (obm.customer, value, is_primary, is_shipping)
+			if key in seen:
+				continue
+			seen.add(key)
+			out.append(frappe._dict({
+				"name": addr_name,
+				"value": value,
+				"display": display,
+				"address_line1": addr.get("address_line1"),
+				"address_line2": addr.get("address_line2"),
+				"city": addr.get("city"),
+				"state": addr.get("state"),
+				"country": addr.get("country"),
+				"pincode": addr.get("pincode"),
+				"custom_site_name": addr.get("custom_site_name"),
+				"address_type": addr_type,
+				"is_primary": is_primary,
+				"is_shipping": is_shipping,
+				"site_name": _nz(brow.get("site_name")),
+				"buyer_master": obm.name,
+			}))
+
+	return out
+
+
+def upsert_buyer_catalog_selling_rate(customer, item_code, selling_rate, mrp=None):
+	"""Persist the SO line's Selling Price into the buyer's catalogue (Buyer Items).
+
+	Creates the catalogue in the backend when the buyer doesn't have one yet —
+	without it the next rate fetch falls back to MRP and the entered price is
+	lost (get_offline_buyer_item_rate only returns a stored selling_rate)."""
+	selling_rate = flt(selling_rate, 2)
+	if not customer or not item_code or selling_rate <= 0:
+		return
+	if not frappe.db.exists("Buyer Master", {"customer": customer}):
+		return
+
+	obi_name = frappe.db.get_value(
+		"Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, "name",
+		order_by="modified desc",
+	)
+	if obi_name:
+		doc = frappe.get_doc("Buyer Items", obi_name)
+	else:
+		doc = frappe.new_doc("Buyer Items")
+		doc.title = "{} Catalogue".format(
+			frappe.db.get_value("Customer", customer, "customer_name") or customer
+		)
+		doc.buyer = customer
+
+	mrp = flt(mrp)
+	margin = flt((1 - selling_rate / mrp) * 100, 2) if mrp > 0 else 0.0
+	row = next((r for r in doc.get("items") or [] if r.item_code == item_code), None)
+	if row:
+		if flt(row.selling_rate, 2) == selling_rate and (not mrp or flt(row.mrp, 2) == mrp):
+			return  # unchanged — don't churn the catalogue's modified stamp
+		row.selling_rate = selling_rate
+		if mrp:
+			row.mrp = mrp
+			row.margin_percent = margin
+	else:
+		doc.append("items", {
+			"item_code": item_code,
+			"selling_rate": selling_rate,
+			"mrp": mrp or 0,
+			"margin_percent": margin,
+		})
+
+	doc.flags.ignore_permissions = True
+	doc.flags.ignore_mandatory = True
+	if doc.is_new():
+		doc.insert()
+	else:
+		doc.save()
 
 
 def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
-	"""If the Flat Disc % on the Sales Order differs from the Offline Buyer Margin/Catalog, update the master."""
+	"""If the Flat Disc % on the Sales Order differs from the Buyer Margin/Catalog, update the master."""
 	new_margin = flt(new_margin, 2)
 	if new_margin <= 0:
 		return
-	obm_name = frappe.db.get_value("Offline Buyer Master", {"customer": customer}, "name")
+	obm_name = frappe.db.get_value("Buyer Master", {"customer": customer}, "name")
 	if not obm_name:
 		return
 
-	# 1. Update in Offline Buyer Items (Catalog)
-	obi_list = frappe.db.get_all("Offline Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, order_by="modified desc")
+	# 1. Update in Buyer Items (Catalog)
+	obi_list = frappe.db.get_all("Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, order_by="modified desc")
 	for obi in obi_list:
 		frappe.db.sql("""
-			UPDATE `tabOffline Buyer Item`
+			UPDATE `tabBuyer Item`
 			SET margin_percent = %s
 			WHERE parent = %s AND item_code = %s AND IFNULL(margin_percent, 0) != %s
 		""", (new_margin, obi.name, item_code, new_margin))
 
-	# 2. Update in Offline Buyer Master (Margin table)
-	doc = frappe.get_doc("Offline Buyer Master", obm_name)
+	# 2. Update in Buyer Master (Margin table)
+	doc = frappe.get_doc("Buyer Master", obm_name)
 	updated = False
 	found = False
 	for row in doc.get("margins") or []:
@@ -768,22 +1247,25 @@ def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
 		
 	if updated:
 		doc.flags.ignore_permissions = True
+		# Background margin sync during SO creation — must not trip mandatory
+		# fields (e.g. Channel) missing on legacy Buyer Master rows.
+		doc.flags.ignore_mandatory = True
 		doc.save()
 
 
 def validate_sales_order_offline_buyer_customer(doc, method=None):
-	"""Ensure Sales Order customer is linked to an Offline Buyer Master (UI also restricts the link)."""
+	"""Ensure Sales Order customer is linked to an Buyer Master (UI also restricts the link)."""
 	if doc.docstatus != 0:
 		return
 	if getattr(doc.flags, "ignore_offline_buyer_customer_check", False):
 		return
 	if not doc.customer:
 		return
-	if frappe.db.exists("DocType", "Offline Buyer Master") and not frappe.db.exists(
-		"Offline Buyer Master", {"customer": doc.customer}
+	if frappe.db.exists("DocType", "Buyer Master") and not frappe.db.exists(
+		"Buyer Master", {"customer": doc.customer}
 	):
 		frappe.throw(
-			_("Customer {0} is not linked to an Offline Buyer Master. Only offline-buyer customers can be selected.").format(
+			_("Customer {0} is not linked to an Buyer Master. Only offline-buyer customers can be selected.").format(
 				frappe.bold(doc.customer)
 			),
 			title=_("Invalid Customer"),

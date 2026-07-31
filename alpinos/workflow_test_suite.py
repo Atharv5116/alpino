@@ -108,10 +108,10 @@ def _ensure_fixtures():
 		if not frappe.db.exists(gd["doctype"], nm):
 			frappe.get_doc(gd).insert(ignore_permissions=True)
 
-	# Offline Buyer Master so the customer passes the offline-buyer SO check.
-	if not frappe.db.exists("Offline Buyer Master", {"customer": CUSTOMER}):
+	# Buyer Master so the customer passes the offline-buyer SO check.
+	if not frappe.db.exists("Buyer Master", {"customer": CUSTOMER}):
 		frappe.get_doc({
-			"doctype": "Offline Buyer Master", "customer": CUSTOMER,
+			"doctype": "Buyer Master", "customer": CUSTOMER,
 			"customer_business_name": "WF Test Business", "customer_type": ORDER_TYPE,
 			"gst_type": "Unregistered Business", "level": "N/A", "payment_term": "NA",
 			"email": "wfbuyer@test.com", "contact_no": "9999999999", "contact_person": "WF Tester",

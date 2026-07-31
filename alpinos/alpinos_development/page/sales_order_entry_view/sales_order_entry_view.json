@@ -4,7 +4,7 @@
  "doctype": "Page",
  "icon": "fa fa-eye",
  "idx": 0,
- "modified": "2026-05-08 17:35:00.000000",
+ "modified": "2026-07-08 17:30:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "sales-order-entry-view",
@@ -23,5 +23,5 @@
  ],
  "standard": "Yes",
  "system_page": 0,
- "title": "Sales Order Entry View"
+ "title": "Alpino Sales Order View"
 }

@@ -41,6 +41,7 @@ def get_delivery_note_data(name):
 			"custom_box": item.get("custom_box") or 0,
 			"batch_no": item.get("batch_no") or "",
 			"custom_batch_code": item.get("custom_batch_code") or "",
+			"custom_remark": item.get("custom_remark") or "",
 			"custom_mfg_date": str(item.get("custom_mfg_date") or ""),
 			"custom_expiry_date": str(item.get("custom_expiry_date") or ""),
 			"against_pick_list": item.get("against_pick_list") or "",
@@ -49,6 +50,8 @@ def get_delivery_note_data(name):
 	return {
 		"name": dn.name,
 		"docstatus": dn.docstatus,
+		"owner": dn.owner,
+		"owner_full_name": frappe.utils.get_fullname(dn.owner),
 		"posting_date": formatdate(str(dn.posting_date)) if dn.posting_date else "",
 		"custom_sales_order_id": dn.get("custom_sales_order_id") or "",
 		"pick_list_name": pick_list_name,
@@ -78,6 +81,15 @@ _EDITABLE_HEADER_FIELDS = {
 }
 
 
+_DN_QTY_EDIT_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager", "PL Manager"}
+
+
+def _can_edit_dn_qty():
+	"""Only authorized roles may change Delivery Note item quantities; everyone
+	else re-posts the (read-only) qty unchanged."""
+	return bool(set(frappe.get_roles()) & _DN_QTY_EDIT_ROLES)
+
+
 def _apply_items_changes(dn, items):
 	"""Apply qty edits and row removals from the page to dn.items."""
 	if items is None:
@@ -85,6 +97,7 @@ def _apply_items_changes(dn, items):
 
 	items = json.loads(items) if isinstance(items, str) else items
 	by_name = {row.name: row for row in dn.items}
+	can_edit_qty = _can_edit_dn_qty()
 
 	to_remove = []
 	for entry in items:
@@ -95,11 +108,15 @@ def _apply_items_changes(dn, items):
 		if entry.get("delete"):
 			to_remove.append(row)
 			continue
-		if "qty" in entry and entry.get("qty") not in (None, ""):
+		# Qty is read-only unless the user holds an authorized role. Unauthorized
+		# edits are silently ignored (the page re-posts the existing qty on submit).
+		if can_edit_qty and "qty" in entry and entry.get("qty") not in (None, ""):
 			try:
 				row.qty = float(entry["qty"])
 			except (TypeError, ValueError):
 				frappe.throw(f"Invalid quantity for row {row.idx}.")
+		if "custom_remark" in entry and entry.get("custom_remark") is not None:
+			row.custom_remark = (entry.get("custom_remark") or "").strip() or None
 
 	for row in to_remove:
 		dn.remove(row)
@@ -177,11 +194,24 @@ def _backfill_item_dates_from_pick_list(dn):
 			item.set(attr, value)
 			changed = True
 
+	from alpinos.pick_list_api import _ensure_batch_exists
+
 	for item in dn.items:
 		pl = pl_data.get(item.get("pick_list_item")) or {}
 
 		# Batch first — Pick List's custom_batch_code is the source of truth.
-		_fill(item, "batch_no", pl.get("custom_batch_code"))
+		# The free-text code always lands in custom_batch_code; batch_no (a Link
+		# to Batch) is only set when a real Batch master exists or can be created
+		# (batch-tracked items) — a bare string there fails DN submit.
+		_fill(item, "custom_batch_code", pl.get("custom_batch_code"))
+		if not item.get("batch_no") and item.get("custom_batch_code"):
+			bn = _ensure_batch_exists(
+				item.get("item_code"),
+				item.custom_batch_code,
+				pl.get("custom_mfg_date"),
+				pl.get("custom_expiry_date"),
+			)
+			_fill(item, "batch_no", bn)
 		_fill(item, "custom_box", pl.get("custom_box"))
 		_fill(item, "custom_mfg_date", pl.get("custom_mfg_date"))
 		_fill(item, "custom_expiry_date", pl.get("custom_expiry_date"))
@@ -226,6 +256,7 @@ def get_delivery_note_list(
 	search="",
 	status="",
 	company="",
+	sales_order="",
 ):
 	start = cint(start)
 	page_length = cint(page_length)
@@ -235,6 +266,8 @@ def get_delivery_note_list(
 		filters["status"] = status
 	if company:
 		filters["company"] = company
+	if sales_order:
+		filters["custom_sales_order_id"] = sales_order
 
 	# A dedicated DN User only sees Delivery Notes assigned to them. Warehouse
 	# admins/managers (and System Manager) keep full visibility.
@@ -264,6 +297,11 @@ def get_delivery_note_list(
 			"company",
 			"status",
 			"docstatus",
+			"custom_sales_order_id",
+			"custom_transporter_name",
+			"custom_lr_gr_no",
+			"custom_assigned_to",
+			"custom_total_boxes",
 		],
 		order_by="creation desc",
 		limit_start=start,

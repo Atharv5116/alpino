@@ -1,4 +1,4 @@
-"""Patch ERPNext Quotation._make_customer for Offline Buyer Master party_type."""
+"""Patch ERPNext Quotation._make_customer for Buyer Master party_type."""
 
 import frappe
 
@@ -18,8 +18,8 @@ def apply_quotation_obm_customer_patch() -> None:
 			["quotation_to", "party_name"],
 			as_dict=1,
 		)
-		if q and q.quotation_to == "Offline Buyer Master" and q.party_name:
-			cust = frappe.db.get_value("Offline Buyer Master", q.party_name, "customer")
+		if q and q.quotation_to == "Buyer Master" and q.party_name:
+			cust = frappe.db.get_value("Buyer Master", q.party_name, "customer")
 			if cust:
 				return frappe.get_doc("Customer", cust)
 		return _orig(source_name, ignore_permissions=ignore_permissions)

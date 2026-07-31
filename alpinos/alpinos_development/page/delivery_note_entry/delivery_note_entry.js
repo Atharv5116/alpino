@@ -3,7 +3,7 @@ frappe.pages['delivery_note_entry'] = frappe.pages['delivery_note_entry'] || {};
 frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: 'Delivery Note Entry',
+		title: 'Alpino Delivery Note Entry',
 		single_column: true
 	});
 	wrapper.page_instance = page;
@@ -25,6 +25,26 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	page.main.find('#btn-dn-save').on('click', function() {
 		page.save_dn(false);
 	});
+	// Cancel: created hidden; apply_mode shows it for submitted DNs when the
+	// user's role has cancel rights. Cancelling reverts the linked Pick List /
+	// Sales Order statuses via the workflow engine.
+	page.btn_cancel_dn = page.add_inner_button(__('Cancel Delivery Note'), function() {
+		frappe.confirm(__('Cancel Delivery Note {0}?', [page.dn_name]), function() {
+			frappe.call({
+				method: 'alpinos.workflow_engine.cancel_document',
+				args: { doctype: 'Delivery Note', name: page.dn_name },
+				freeze: true,
+				freeze_message: __('Cancelling...'),
+				callback: function(r) {
+					if (r.exc) return;
+					frappe.show_alert({ message: __('Delivery Note cancelled'), indicator: 'red' });
+					page.load_data(page.dn_name);
+				}
+			});
+		});
+	});
+	if (page.btn_cancel_dn) page.btn_cancel_dn.hide();
+
 	page.main.find('#btn-dn-submit').on('click', function() {
 		frappe.confirm(__('Submit this Delivery Note? This cannot be undone.'), function() {
 			page.save_dn(true);
@@ -64,6 +84,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('[data-fieldname="custom_transporter_name"]').val(data.custom_transporter_name || '');
 		$main.find('[data-fieldname="vehicle_no"]').val(data.vehicle_no || '');
 		$main.find('[data-fieldname="custom_dispatch_date"]').val(data.custom_dispatch_date || '');
+		$main.find('[data-fieldname="created_by"]').val(data.owner_full_name || data.owner || '');
 		page.populate_assigned_to_select(data.custom_assigned_to || '');
 
 		// Totals
@@ -89,6 +110,11 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			// (real Batch master), else fall back to the picker's free-text
 			// custom_batch_code so manually-entered codes still show up.
 			var batch_display = item.batch_no || item.custom_batch_code || '';
+			// Remark — server makes it mandatory when qty is reduced below the
+			// Pick List qty on submit.
+			var remark_cell = draft
+				? `<input type="text" class="form-control input-xs dn-item-remark" data-row-name="${frappe.utils.escape_html(item.name || '')}" value="${frappe.utils.escape_html(item.custom_remark || '')}" style="padding:2px 4px; height:28px; min-width:110px;">`
+				: frappe.utils.escape_html(item.custom_remark || '');
 			$tbody.append(`
 				<tr data-row-name="${frappe.utils.escape_html(item.name || '')}">
 					<td>${idx + 1}</td>
@@ -99,12 +125,13 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 					<td>${frappe.utils.escape_html(batch_display)}</td>
 					<td>${mfg}</td>
 					<td>${exp}</td>
+					<td>${remark_cell}</td>
 					${action_cell}
 				</tr>
 			`);
 		});
 		if (!data.items || data.items.length === 0) {
-			$tbody.append('<tr><td colspan="9" class="text-muted text-center">No items</td></tr>');
+			$tbody.append('<tr><td colspan="10" class="text-muted text-center">No items</td></tr>');
 		}
 
 		// Show/hide the action column header for draft
@@ -185,19 +212,31 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('#btn-dn-save').toggle(draft);
 		$main.find('#btn-dn-submit').toggle(draft);
 		$main.find('#btn-dn-print').toggle(submitted);
+		// Cancel: submitted docs only, and only when the role has cancel rights
+		// (server enforces the permission again in cancel_document).
+		if (page.btn_cancel_dn) {
+			var can_cancel_dn = frappe.model.can_cancel && frappe.model.can_cancel('Delivery Note');
+			if (submitted && can_cancel_dn) page.btn_cancel_dn.show();
+			else page.btn_cancel_dn.hide();
+		}
 		$main.find('#btn-dn-dispatch-to-add').toggle(draft);
 		$main.find('.dn-dispatch-to-input').prop('readonly', !draft);
 		$main.find('.dn-dispatch-to-remove').toggle(draft);
 
-		// DN Users can only enter the LR/AWB and submit — they cannot edit the
-		// product qty, Dispatch From / To, or the assignment.
+		// Quantity is read-only by default — only authorized roles may modify it.
 		var _roles = frappe.user_roles || [];
-		var _isDNUser = _roles.indexOf('DN User') !== -1 &&
-			!_roles.some(function (r) {
-				return ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'].indexOf(r) !== -1;
-			});
-		if (_isDNUser) {
+		var _AUTHORIZED_QTY_ROLES = ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'];
+		var _canEditQty = _roles.some(function (r) {
+			return _AUTHORIZED_QTY_ROLES.indexOf(r) !== -1;
+		});
+		if (draft && !_canEditQty) {
 			$main.find('.dn-item-qty').prop('readonly', true);
+		}
+
+		// DN Users can only enter the LR/AWB and submit — they cannot edit the
+		// Dispatch From / To or the assignment (qty is already gated above).
+		var _isDNUser = _roles.indexOf('DN User') !== -1 && !_canEditQty;
+		if (_isDNUser) {
 			$main.find('.dn-item-remove').hide();
 			$main.find('.dn-dispatch-to-input').prop('readonly', true);
 			$main.find('#btn-dn-dispatch-to-add').hide();
@@ -206,14 +245,14 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			$main.find('[data-fieldname="custom_assigned_to"]').prop('disabled', true);
 		}
 
-		// Status banner
+		// Status banner — colors come from the page <style> classes (theme-aware
+		// via Frappe vars), not inline hexes, so dark mode works.
 		var $banner = $main.find('#dn-status-banner');
+		$banner.removeClass('dn-banner-submitted dn-banner-cancelled');
 		if (submitted) {
-			$banner.css({ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9' })
-				.text('Submitted — read only').show();
+			$banner.addClass('dn-banner-submitted').text('Submitted — read only').show();
 		} else if (cancelled) {
-			$banner.css({ background: '#ffebee', color: '#c62828', border: '1px solid #ffcdd2' })
-				.text('Cancelled').show();
+			$banner.addClass('dn-banner-cancelled').text('Cancelled').show();
 		} else {
 			$banner.hide();
 		}
@@ -241,7 +280,12 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			return;
 		}
 		frappe.call({
-			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_users',
+			// Only DN User / DN Manager holders; the current assignee is kept
+			// even without a matching role so legacy values still display.
+			method: 'alpinos.workflow_role_access.get_dn_assignable_users',
+			args: {
+				include_users: [current_value].filter(Boolean)
+			},
 			callback: function(r) {
 				if (!r.message) return;
 				$select.empty().append('<option value=""></option>');
@@ -272,9 +316,11 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			var name = $tr.attr('data-row-name');
 			if (!name) return;
 			var $qty = $tr.find('.dn-item-qty');
+			var $remark = $tr.find('.dn-item-remark');
 			rows.push({
 				name: name,
 				qty: $qty.length ? $qty.val() : undefined,
+				custom_remark: $remark.length ? $remark.val() : undefined,
 			});
 		});
 		// Also collect removed rows (compare against original)
@@ -360,6 +406,6 @@ frappe.pages['delivery_note_entry'].on_page_show = function(wrapper) {
 		wrapper.page_instance.main.html('<h3 class="text-muted text-center" style="margin-top: 50px;">No Delivery Note specified.</h3>');
 		return;
 	}
-	wrapper.page_instance.set_title('Delivery Note - ' + dn_name);
+	wrapper.page_instance.set_title('Alpino Delivery Note - ' + dn_name);
 	wrapper.page_instance.load_data(dn_name);
 };

@@ -1,25 +1,44 @@
 frappe.pages['delivery_note_entry_list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Delivery Notes'),
+		title: __('Alpino Delivery Notes'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('delivery_note_entry_list'));
 	wrapper.page_instance = new DeliveryNoteListPage(page);
 };
 
-class DeliveryNoteListPage {
+var DeliveryNoteListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
 		this.page_length = 20;
 		this.start = 0;
+		this._prefs_route = 'delivery_note_entry_list';
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
+		// Opened from a Sales Order's "DN" button -> show every Delivery Note of that SO.
+		this.so_filter = (frappe.route_options && frappe.route_options.sales_order) || '';
+		if (frappe.route_options) delete frappe.route_options.sales_order;
 		this.setup_toolbar();
 		this.setup_filters();
 		this.bind_events();
+		this._restore_view_prefs();
+		this._render_so_banner();
 		this.load_list();
+	}
+
+	_render_so_banner() {
+		let $b = this.wrapper.find('.dnl-so-filter-banner');
+		if (!this.so_filter) { $b.remove(); return; }
+		if (!$b.length) {
+			$b = $('<div class="dnl-so-filter-banner" style="margin-bottom:12px; padding:8px 12px; border-radius:6px; background:var(--bg-color,#f4f5f6); border:1px solid var(--border-color,#d1d8dd); display:flex; align-items:center; gap:10px;"></div>');
+			this.wrapper.find('.dnl-container').prepend($b);
+		}
+		$b.html('<span>Showing Delivery Notes for Sales Order <strong>' + frappe.utils.escape_html(this.so_filter) + '</strong></span>');
+		$('<button type="button" class="btn btn-xs btn-default">Show all</button>')
+			.appendTo($b)
+			.on('click', () => { this.so_filter = ''; this.start = 0; this._render_so_banner(); this.load_list(); });
 	}
 
 	setup_toolbar() {
@@ -62,11 +81,19 @@ class DeliveryNoteListPage {
 	bind_events() {
 		this.wrapper.find('.btn-dnl-apply').on('click', () => {
 			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-dnl-clear').on('click', () => {
 			Object.values(this._filter_fields).forEach((f) => f && f.set_value(''));
 			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		});
+		this.wrapper.find('.dnl-page-size').on('change', (e) => {
+			this.page_length = cint($(e.currentTarget).val()) || 20;
+			this.start = 0;
+			this._save_view_prefs();
 			this.load_list();
 		});
 		this.wrapper.find('.btn-dnl-prev').on('click', () => {
@@ -87,6 +114,44 @@ class DeliveryNoteListPage {
 		});
 	}
 
+	// Persist the current view (filters + page size) for this user. Never
+	// persists the pagination offset — a fresh visit always starts at page 1.
+	_save_view_prefs() {
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		const f = this._filter_fields;
+		alpinos.list_prefs.save(this._prefs_route, {
+			search: (f.search && f.search.get_value()) || '',
+			status: (f.status && f.status.get_value()) || '',
+			company: (f.company && f.company.get_value()) || '',
+			page_length: this.page_length,
+		});
+	}
+
+	// Apply the saved view (if any) to instance state AND the UI controls,
+	// before the first data load. Unknown/invalid keys are ignored.
+	_restore_view_prefs() {
+		if (!(window.alpinos && alpinos.list_prefs)) return;
+		const saved = alpinos.list_prefs.load(this._prefs_route);
+		if (!saved || typeof saved !== 'object') return;
+		const f = this._filter_fields;
+		['search', 'status', 'company'].forEach((k) => {
+			const v = saved[k];
+			if (typeof v !== 'string' || !v || !f[k]) return;
+			// set_input applies synchronously so the first load_list()
+			// reads the restored values via get_value().
+			if (typeof f[k].set_input === 'function') {
+				f[k].set_input(v);
+			} else {
+				f[k].set_value(v);
+			}
+		});
+		const pl = cint(saved.page_length);
+		if ([20, 50, 100].includes(pl)) {
+			this.page_length = pl;
+			this.wrapper.find('.dnl-page-size').val(String(pl));
+		}
+	}
+
 	_args() {
 		const f = this._filter_fields;
 		return {
@@ -95,6 +160,7 @@ class DeliveryNoteListPage {
 			search: f.search.get_value() || '',
 			status: f.status.get_value() || '',
 			company: f.company.get_value() || '',
+			sales_order: this.so_filter || '',
 		};
 	}
 
@@ -122,10 +188,12 @@ class DeliveryNoteListPage {
 	render_rows(rows) {
 		const tb = this.wrapper.find('.dnl-table tbody').empty();
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="6" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
+			tb.append(`<tr><td colspan="11" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const dash = (v) => (v == null || v === '' ? '—' : esc(v));
+		const only_date = (v) => (v ? String(v).substring(0, 10) : '—');
 		rows.forEach((d) => {
 			// Show the workflow-aligned status: Draft -> Dispatched -> Cancelled.
 			let wf = 'Draft';
@@ -140,11 +208,16 @@ class DeliveryNoteListPage {
 			const customer = d.custom_dn_so_customer_name || d.customer_name || '';
 			tb.append(`<tr class="dnl-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td><strong>${esc(d.name)}</strong></td>
-				<td>${esc(customer)}</td>
-				<td>${esc(d.posting_date || '—')}</td>
-				<td>${esc(d.custom_dispatch_date || '—')}</td>
-				<td>${esc(d.company)}</td>
 				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
+				<td>${dash(d.custom_sales_order_id)}</td>
+				<td>${dash(customer)}</td>
+				<td>${only_date(d.posting_date)}</td>
+				<td>${only_date(d.custom_dispatch_date)}</td>
+				<td>${dash(d.company)}</td>
+				<td>${dash(d.custom_transporter_name)}</td>
+				<td>${dash(d.custom_lr_gr_no)}</td>
+				<td>${dash(d.custom_assigned_to)}</td>
+				<td style="text-align:right;">${d.custom_total_boxes == null ? '—' : esc(d.custom_total_boxes)}</td>
 			</tr>`);
 		});
 	}

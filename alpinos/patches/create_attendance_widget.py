@@ -242,7 +242,8 @@ function checkIn(){
 }
 
 // Check-in type/reason dialog for biometric companies (web check-in rules enabled).
-// Reason box appears only for "Other" and accepts letters only.
+// Reason box appears only for "Other" and accepts letters and spaces (words) —
+// a whitespace-only reason is rejected by the trim + required check.
 function showCheckinTypeDialog(onConfirm, onCancel){
   const d = new frappe.ui.Dialog({
     title: "Check In",
@@ -259,8 +260,8 @@ function showCheckinTypeDialog(onConfirm, onCancel){
           frappe.msgprint("Please enter a reason for 'Other'.");
           return;
         }
-        if(!/^[A-Za-z]+$/.test(reason)){
-          frappe.msgprint("Reason must contain letters only (no numbers, spaces or special characters).");
+        if(!/^[A-Za-z]+( +[A-Za-z]+)*$/.test(reason)){
+          frappe.msgprint("Reason must contain letters and spaces only (no numbers or special characters).");
           return;
         }
       }
@@ -279,14 +280,14 @@ function showCheckinTypeDialog(onConfirm, onCancel){
       <option value="Meeting">Meeting</option>
       <option value="Other">Other</option>
     </select>
-    <textarea class="form-control checkin-reason-input" rows="2" placeholder="Enter the reason (letters only)" style="display:none;"></textarea>
+    <textarea class="form-control checkin-reason-input" rows="2" placeholder="Enter the reason (letters and spaces only)" style="display:none;"></textarea>
   `);
   d.$body.find(".checkin-type-select").on("change", function(){
     d.$body.find(".checkin-reason-input").toggle($(this).val() === "Other");
   });
-  // Block disallowed characters as the user types (letters only).
+  // Block disallowed characters as the user types (letters and spaces only).
   d.$body.find(".checkin-reason-input").on("input", function(){
-    this.value = this.value.replace(/[^A-Za-z]/g, "");
+    this.value = this.value.replace(/[^A-Za-z ]/g, "");
   });
   d.show();
 }
