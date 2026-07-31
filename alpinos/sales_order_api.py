@@ -1263,6 +1263,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	if so.get("custom_po_no_for_pdf"):
 		from alpinos.po_pdf import maybe_fetch_po_pdf
 		maybe_fetch_po_pdf(so.name)
+		from alpinos.po_drive_link import maybe_build_po_drive_url
+		maybe_build_po_drive_url(so.name)
 	_so_tax_logger().info(
 		"[create] inserted so=%s template=%s tax_rows=%s total_taxes=%s grand_total=%s",
 		so.name,
@@ -1312,6 +1314,8 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 	if so.get("custom_po_no_for_pdf"):
 		from alpinos.po_pdf import maybe_fetch_po_pdf
 		maybe_fetch_po_pdf(so.name)
+		from alpinos.po_drive_link import maybe_build_po_drive_url
+		maybe_build_po_drive_url(so.name)
 	return {"name": so.name, "docstatus": so.docstatus}
 
 

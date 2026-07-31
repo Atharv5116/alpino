@@ -69,6 +69,13 @@ frappe.ui.form.on('Sales Order', {
                 }
                 _fetch_po_pdf(frm);
             });
+            frm.add_custom_button(__('Fetch PO Drive Link'), function() {
+                if (!frm.doc.custom_po_no_for_pdf) {
+                    frappe.msgprint(__('Set "PO No for PDF" first.'));
+                    return;
+                }
+                _fetch_po_drive_link(frm);
+            });
         }
         
         if (!frm.is_new()) {
@@ -115,6 +122,7 @@ frappe.ui.form.on('Sales Order', {
     custom_po_no_for_pdf: function(frm) {
         if (frm.doc.custom_po_no_for_pdf && !frm.is_new()) {
             _fetch_po_pdf(frm);
+            _fetch_po_drive_link(frm);
         }
     }
 });
@@ -131,6 +139,27 @@ function _fetch_po_pdf(frm) {
         callback: function(r) {
             if (r.message && r.message.file_url) {
                 frappe.show_alert({ message: __('PO PDF attached: {0}', [r.message.file_name]), indicator: 'green' }, 5);
+                frm.reload_doc();
+            }
+        }
+    });
+}
+
+function _fetch_po_drive_link(frm) {
+    frappe.call({
+        method: 'alpinos.po_drive_link.build_po_drive_url',
+        args: {
+            sales_order: frm.doc.name,
+            po_no_for_pdf: frm.doc.custom_po_no_for_pdf || ''
+        },
+        freeze: true,
+        freeze_message: __('Building PO Drive link...'),
+        callback: function(r) {
+            if (r.message && r.message.url) {
+                frappe.show_alert({
+                    message: r.message.note || __('PO Drive link ready'),
+                    indicator: r.message.note ? 'orange' : 'green'
+                }, 6);
                 frm.reload_doc();
             }
         }
