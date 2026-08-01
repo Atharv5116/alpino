@@ -52,6 +52,12 @@ clears each one. Keyword arguments:
                          to the row. This deliberately bypasses the "a GSTIN can
                          belong to only one buyer" rule — only for mirroring
                          legacy data (default False)
+    renumber_collisions  when a sheet ID names a *different* buyer on this site,
+                         import the row as a new buyer under a freshly generated
+                         ID instead of overwriting that record. Refused when the
+                         ID is used as a Parent Buyer by other rows (default False)
+    skip_records         Buyer Master IDs to leave out entirely — a list, or one
+                         comma-separated string
     on_missing_sku       "skip" the margin row (default) or "blank" its SKU
     force                import despite blocking issues; bad records just fail
     limit                only process the first N records (smoke test)
@@ -201,7 +207,8 @@ SEVERITY = {
 	"duplicate-gstin": ("blocking", "allow_duplicate_gst=True"),
 	"duplicate-customer": ("blocking", "needs the per-site customer-ID derivation in buyer_master.py"),
 	"customer-taken": ("blocking", "needs the per-site customer-ID derivation in buyer_master.py"),
-	"id-collision": ("blocking", "update_existing=False to skip them, or force=True to overwrite"),
+	"id-collision": ("blocking", "renumber_collisions=True to import them under a fresh ID"),
+	"id-collision-parent": ("blocking", "fix the sheet — the ID is a Parent Buyer, so it cannot be renumbered"),
 	"parent-not-found": ("blocking", "fix the sheet"),
 	"parent-and-is-parent": ("blocking", "fix the sheet"),
 	"mandatory": ("blocking", "fix the sheet"),
@@ -377,12 +384,38 @@ def analyse(records):
 	# Sheet IDs that already name a *different* buyer on this site. Updating one
 	# blends the two: the sheet's values land on top, while fields blank in the
 	# sheet keep the old record's data (a stale GSTIN, say).
-	occupied = {}
+	occupied, existing_gst = {}, {}
 	if resolved[DOCTYPE]:
 		for row in frappe.get_all(
-			DOCTYPE, filters={"name": ["in", list(resolved[DOCTYPE])]}, fields=["name", "customer_business_name"]
+			DOCTYPE,
+			filters={"name": ["in", list(resolved[DOCTYPE])]},
+			fields=["name", "customer_business_name", "gst_no"],
 		):
 			occupied[row.name] = (row.customer_business_name or "").strip()
+			existing_gst[row.name] = (row.gst_no or "").strip().upper()
+
+	# IDs another row depends on — those can never be renumbered.
+	referenced_parents = {(r["doc"].get("parent_buyer") or "").strip() for r in records}
+
+	# GSTINs already held by buyers on this site. A new row carrying one of them
+	# fails the same "one GSTIN per buyer" rule, even though nothing in the
+	# sheet looks duplicated — so seed the owner map from the DB, not just the
+	# sheet, and let both conflicts flow through one check.
+	sheet_gsts = {
+		(r["doc"].get("gst_no") or "").strip().upper()
+		for r in records
+		if r["doc"].get("gst_type") == "Registered Business"
+	} - {""}
+	gst_owner = {}
+	if sheet_gsts:
+		for row in frappe.get_all(
+			DOCTYPE,
+			filters={"gst_no": ["in", list(sheet_gsts)]},
+			fields=["name", "gst_no", "parent_buyer", "is_parent"],
+		):
+			key = (row.gst_no or "").strip().upper()
+			if key not in gst_owner:
+				gst_owner[key] = (row.name, row.parent_buyer or (row.name if row.is_parent else None))
 
 	names = {r["name"] for r in records}
 	issues, gst_dupes, cust_conflicts = [], set(), set()
@@ -402,7 +435,7 @@ def analyse(records):
 			}
 		)
 
-	gst_owner, customer_owner = {}, {}
+	customer_owner = {}
 
 	for rec in records:
 		d = rec["doc"]
@@ -413,7 +446,7 @@ def analyse(records):
 		if here is not None and here.lower() != sheet_biz.lower():
 			add(
 				rec,
-				"id-collision",
+				"id-collision-parent" if rec["name"] in referenced_parents else "id-collision",
 				f"{rec['name']} already exists on this site as '{here}', not '{sheet_biz}'",
 				rec["name"],
 			)
@@ -470,9 +503,22 @@ def analyse(records):
 			add(rec, "gstin-format", f"invalid GSTIN format '{gst}'", gst)
 		if gst and d.get("gst_type") == "Registered Business":
 			root, prev = _family_root(rec), gst_owner.get(gst)
+			if prev and prev[0] == rec["name"]:
+				prev = None  # that holder is this very buyer, already in the DB
 			if prev and not (root and prev[1] and root == prev[1]):
-				add(rec, "duplicate-gstin", f"GSTIN {gst} is also on {prev[0]}, an unrelated buyer", gst)
-				gst_dupes.add(rec["name"])
+				# validate() only re-checks a GST that changed, so a buyer already
+				# carrying this exact GSTIN here imports without tripping the rule.
+				if existing_gst.get(rec["name"]) == gst:
+					add(
+						rec,
+						"duplicate-gstin",
+						f"GSTIN {gst} is also on {prev[0]}, an unrelated buyer — already recorded here, so it is not re-checked",
+						gst,
+						severity="auto",
+					)
+				else:
+					add(rec, "duplicate-gstin", f"GSTIN {gst} is also on {prev[0]}, an unrelated buyer", gst)
+					gst_dupes.add(rec["name"])
 			else:
 				gst_owner[gst] = (rec["name"], root)
 
@@ -512,7 +558,14 @@ def analyse(records):
 	return issues, resolved, gst_dupes, cust_conflicts
 
 
-def _effective_severity(issue, create_masters, clear_missing_links, allow_duplicate_gst, update_existing=True):
+def _effective_severity(
+	issue,
+	create_masters,
+	clear_missing_links,
+	allow_duplicate_gst,
+	update_existing=True,
+	renumber_collisions=False,
+):
 	"""A blocking issue drops to 'auto' once the flag that handles it is on."""
 	cat = issue["category"]
 	if cat in ("missing-state", "missing-city") and create_masters:
@@ -521,9 +574,27 @@ def _effective_severity(issue, create_masters, clear_missing_links, allow_duplic
 		return "auto"
 	if cat == "duplicate-gstin" and allow_duplicate_gst:
 		return "auto"
-	if cat == "id-collision" and not update_existing:
-		return "auto"  # the record is skipped, so nothing gets overwritten
+	if cat == "id-collision" and (renumber_collisions or not update_existing):
+		return "auto"  # renumbered, or skipped — either way nothing is overwritten
 	return issue["severity"]
+
+
+def _apply_skips(records, skip_records):
+	"""Drop records the caller asked to leave out, by Buyer Master ID."""
+	if not skip_records:
+		return records
+	if isinstance(skip_records, str):
+		skip = {s.strip() for s in skip_records.split(",") if s.strip()}
+	else:
+		skip = {str(s).strip() for s in skip_records}
+	kept = [r for r in records if r["name"] not in skip]
+	dropped = len(records) - len(kept)
+	if dropped:
+		print(f"  skipping {dropped} record(s) by request: {sorted(skip)}")
+	missing = skip - {r["name"] for r in records}
+	if missing:
+		print(f"  (skip_records not found in the sheet: {sorted(missing)})")
+	return kept
 
 
 def _sibling(path, suffix):
@@ -540,17 +611,19 @@ def preflight(
 	clear_missing_links=False,
 	allow_duplicate_gst=False,
 	update_existing=True,
+	renumber_collisions=False,
+	skip_records=None,
 	report_path=None,
 ):
 	"""Report everything that would block the import. Writes nothing to the DB."""
-	records = parse(path)
+	records = _apply_skips(parse(path), skip_records)
 	if limit:
 		records = records[: int(limit)]
 	issues, resolved, _, _ = analyse(records)
 
 	for i in issues:
 		i["severity"] = _effective_severity(
-			i, create_masters, clear_missing_links, allow_duplicate_gst, update_existing
+			i, create_masters, clear_missing_links, allow_duplicate_gst, update_existing, renumber_collisions
 		)
 	blocking = [i for i in issues if i["severity"] == "blocking"]
 
@@ -798,6 +871,8 @@ def run(
 	create_masters=False,
 	clear_missing_links=False,
 	allow_duplicate_gst=False,
+	renumber_collisions=False,
+	skip_records=None,
 	on_missing_sku="skip",
 	force=False,
 	limit=None,
@@ -810,16 +885,21 @@ def run(
 	if on_missing_sku not in ("skip", "blank"):
 		frappe.throw("on_missing_sku must be 'skip' or 'blank'")
 
-	records = parse(path)
+	records = _apply_skips(parse(path), skip_records)
 	if limit:
 		records = records[: int(limit)]
 	issues, resolved, gst_dupes, cust_conflicts = analyse(records)
 	blocking = [
 		i
 		for i in issues
-		if _effective_severity(i, create_masters, clear_missing_links, allow_duplicate_gst, update_existing)
+		if _effective_severity(
+			i, create_masters, clear_missing_links, allow_duplicate_gst, update_existing, renumber_collisions
+		)
 		== "blocking"
 	]
+	renumber = (
+		{i["name"] for i in issues if i["category"] == "id-collision"} if renumber_collisions else set()
+	)
 
 	if blocking and not force:
 		names = {i["name"] for i in blocking}
@@ -862,7 +942,11 @@ def run(
 			notes = _sanitise(rec, cache, on_missing_sku, clear_missing_links)
 			if rec.get("dropped_customer"):
 				notes.append(f"customer '{rec['dropped_customer']}' is taken — the controller derives a site-scoped ID")
-			exists = frappe.db.exists(DOCTYPE, name)
+			# The sheet's ID belongs to a different buyer here, so this row is a
+			# new buyer that happens to collide. Insert it under a fresh ID
+			# instead of overwriting the record already sitting on that ID.
+			renumbered = name in renumber
+			exists = frappe.db.exists(DOCTYPE, name) and not renumbered
 			if exists and not update_existing:
 				results.append([name, rec["line"], "skipped", "already exists", ""])
 				skipped += 1
@@ -887,7 +971,7 @@ def run(
 			else:
 				doc = frappe.new_doc(DOCTYPE)
 				doc.update(rec["doc"])
-				if not doc.get("customer_id"):
+				if not doc.get("customer_id") and not renumbered:
 					doc.customer_id = name  # what before_insert intends, but name is unset there
 
 			for a in rec["addresses"]:
@@ -899,6 +983,12 @@ def run(
 				doc.save(ignore_permissions=True)
 				updated += 1
 				action = "updated"
+			elif renumbered:
+				doc.insert(ignore_permissions=True)  # let autoname pick a free ID
+				frappe.db.set_value(DOCTYPE, doc.name, "customer_id", doc.name, update_modified=False)
+				created += 1
+				action = "created"
+				notes.append(f"sheet ID {name} belongs to another buyer here — inserted as {doc.name}")
 			else:
 				# set_name forces the sheet's own ID, so parent_buyer resolves
 				doc.insert(ignore_permissions=True, set_name=name)
@@ -916,7 +1006,7 @@ def run(
 				notes.append(f"customer renamed by the controller: '{wanted_customer}' -> '{doc.customer}'")
 
 			frappe.db.commit()
-			cache.add(DOCTYPE, name)
+			cache.add(DOCTYPE, doc.name)
 			results.append([name, rec["line"], action, "", "; ".join(notes)])
 		except Exception as e:
 			frappe.db.rollback()
