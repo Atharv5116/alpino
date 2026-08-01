@@ -159,14 +159,14 @@ PERMISSION_MATRIX = {
 		"E-Commerce Admin": "VIEW",
 		"Accounts User": "VIEW",
 	},
-	# Item master: read-only for Warehouse Manager + Sales Manager; the admin role
-	# (System Manager) gets full control. NOTE: the System Manager *role* has NO inherent
-	# Item DocPerm (only the Administrator *user* bypasses permissions), so it is granted
-	# explicitly here. Existing standard Item roles are left untouched.
+	# Item master: available to Warehouse Manager + Sales Manager (read-only) and
+	# Sales Admin (full control). The "admin" in the access spec is the Sales Admin role,
+	# NOT System Manager (that was a misread — corrected here). Existing standard Item
+	# roles are left untouched; the stale System Manager grant is revoked in _REVOKE below.
 	"Item": {
 		"Warehouse Manager": "VIEW",
 		"Sales Manager": "VIEW",
-		"System Manager": "MASTER_FULL",
+		"Sales Admin": "MASTER_FULL",
 	},
 	# BRD Module 1: the E-Commerce roles own the (E-Com) Buyer Master.
 	# Non-ECOM roles keep their read-only access from the supporting-masters list.
@@ -200,6 +200,58 @@ def _setup_permissions():
 		# never trip on a transient half-configured row.
 		validate_permissions_for_doctype(doctype)
 		frappe.clear_cache(doctype=doctype)
+
+
+# Custom DocPerm rows a previous pass created that the matrix above no longer wants —
+# removed so the matrix stays the single source of truth. (Item's "admin" moved from
+# System Manager to Sales Admin, so the old System Manager Item grant is dropped.)
+_REVOKE = {
+	"Item": ["System Manager"],
+}
+
+
+def _revoke_stale_perms():
+	for doctype, roles in _REVOKE.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		for role in roles:
+			if frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0}):
+				frappe.db.delete("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0})
+		frappe.clear_cache(doctype=doctype)
+
+
+# Custom desk pages -> extra roles allowed to OPEN them (page-level access only). The
+# DocPerm matrix still governs what they can DO once inside — Warehouse roles are VIEW-only
+# on the Sales Order, so they open these pages read-only. The e-com list opens each order in
+# 'sales-order-entry-view', so granting that page covers the e-com "view" too. Applied via a
+# direct Has Role insert (never page.save(), which rewrites the JSON in developer_mode);
+# runs in after_migrate, AFTER the page JSON sync, so the extra roles survive every migrate.
+PAGE_ACCESS = {
+	"sales-order-entry-list": ["Warehouse Admin"],
+	"sales-order-entry-view": ["Warehouse Admin"],
+	"ecom-sales-order-entry-list": ["Warehouse Admin"],
+}
+
+
+def _setup_page_access():
+	for page_name, roles in PAGE_ACCESS.items():
+		if not frappe.db.exists("Page", page_name):
+			continue
+		for role in roles:
+			if not frappe.db.exists("Role", role):
+				continue
+			if frappe.db.exists("Has Role", {"parenttype": "Page", "parent": page_name, "role": role}):
+				continue
+			frappe.get_doc(
+				{
+					"doctype": "Has Role",
+					"parenttype": "Page",
+					"parentfield": "roles",
+					"parent": page_name,
+					"role": role,
+				}
+			).insert(ignore_permissions=True)
+	frappe.clear_cache()
 
 
 # Supporting master/transaction doctypes that SO/PL/DN creation and processing
@@ -507,7 +559,9 @@ def execute():
 	_setup_roles()
 	_setup_status_fields()
 	_setup_permissions()
+	_revoke_stale_perms()
 	_setup_supporting_read_access()
+	_setup_page_access()
 	# Phase 2: bring existing Sales Orders / Pick Lists to a correct workflow
 	# status now that the fields exist. Idempotent.
 	from alpinos.workflow_engine import backfill_workflow_statuses

@@ -329,7 +329,7 @@ var PickListListPage = class {
 			tb.append(`<tr class="pl-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="pl-list-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
-				<td>${d.custom_sales_order_id ? '<a href="#" class="pl-so-link" data-so="' + esc(d.custom_sales_order_id) + '">' + esc(d.custom_sales_order_id) + '</a>' : '—'}</td>
+				<td>${d.custom_sales_order_id ? '<button type="button" class="btn btn-xs btn-default pl-so-link" data-so="' + esc(d.custom_sales_order_id) + '" title="' + __('Open Sales Order') + '">' + esc(d.custom_sales_order_id) + '</button>' : '—'}</td>
 				<td>${dash(d.custom_customer_name)}</td>
 				<td>${dash(d.custom_po_no)}</td>
 				<td>${only_date(d.custom_order_date)}</td>
