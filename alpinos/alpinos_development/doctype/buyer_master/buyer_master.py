@@ -28,6 +28,44 @@ def _map_customer_type(obm_customer_type):
 	return (obm_customer_type or "").strip()
 
 
+def _customer_is_free(customer_id, doc):
+	"""True when this buyer may own that Customer — it is unused, or already ours."""
+	if not frappe.db.exists("Customer", customer_id):
+		return True
+	return not frappe.db.get_value(
+		"Buyer Master", {"customer": customer_id, "name": ("!=", doc.name or "")}, "name"
+	)
+
+
+def _customer_id_for_obm(doc):
+	"""The Customer ID this buyer should own.
+
+	"<Business> - <GST/PAN>" names the GST entity. One entity often trades from
+	many sites, though, and every site is its own Buyer Master — so only the
+	first of them can carry the GST-based ID. The rest fall back to
+	"<Business> - <Site Name>", which is the shape the existing data already
+	uses, and to the buyer's own ID if even that is taken.
+
+	Deriving the same ID every time is what lets a Buyer Master export be
+	re-imported: the Customer column becomes reproducible instead of a value
+	the sheet has to carry.
+	"""
+	biz_name = (doc.customer_business_name or "").strip()
+	tax_id = (doc.gst_no or doc.pan_no or "").strip()
+
+	base = f"{biz_name} - {tax_id}" if tax_id else biz_name
+	if _customer_is_free(base, doc):
+		return base
+
+	site_name = (doc.site_name or "").strip()
+	if site_name:
+		scoped = f"{biz_name} - {site_name}"
+		if _customer_is_free(scoped, doc):
+			return scoped
+
+	return f"{biz_name} - {doc.name}" if doc.name else base
+
+
 def _ensure_customer_for_obm(doc):
 	"""Create or refresh ERPNext Customer from business name (no manual Customer pick list)."""
 	biz_name = (doc.customer_business_name or "").strip()
@@ -36,13 +74,15 @@ def _ensure_customer_for_obm(doc):
 	# stays the plain business name: that is what Sales Orders, Pick Lists and
 	# stickers display.
 	tax_id = (doc.gst_no or doc.pan_no or "").strip()
-	unique_id = f"{biz_name} - {tax_id}" if tax_id else biz_name
 
 	if not biz_name:
 		frappe.throw(_("Customer (Business Name) is required."), title=_("Missing business name"))
 
-	# A customer for this GST entity may already exist (e.g. re-linking) — adopt it.
-	if not doc.customer and frappe.db.exists("Customer", unique_id):
+	unique_id = _customer_id_for_obm(doc)
+
+	# A customer for this GST entity may already exist (e.g. re-linking) — adopt
+	# it, unless another Buyer Master got there first.
+	if not doc.customer and frappe.db.exists("Customer", unique_id) and _customer_is_free(unique_id, doc):
 		doc.customer = unique_id
 
 	cg, territory = _selling_defaults()
@@ -73,8 +113,8 @@ def _ensure_customer_for_obm(doc):
 			cust.parent_customer = parent_customer
 		cust.flags.ignore_mandatory = True
 		cust.save(ignore_permissions=True)
-		# Keep the ID as "business - GST/PAN" when it drifted (renames update
-		# every linked document). Skipped when the target ID is already taken.
+		# Keep the ID on the derived value when it drifted (renames update every
+		# linked document). Skipped when another buyer already owns that ID.
 		if tax_id and cust.name != unique_id and not frappe.db.exists("Customer", unique_id):
 			try:
 				frappe.rename_doc("Customer", cust.name, unique_id, force=True)
@@ -101,8 +141,12 @@ def _ensure_customer_for_obm(doc):
 		cust.parent_customer = parent_customer
 	if company:
 		cust.append("companies", {"company": company})
-	# Docname = "business - GST/PAN" (unique per GST entity); display name plain.
-	cust.insert(ignore_permissions=True, set_name=unique_id if tax_id else None)
+	# Docname = "business - GST/PAN" (unique per GST entity), or the site-scoped
+	# fallback when a sibling site already holds it; display name stays plain.
+	# Without a tax id AND without a collision there is nothing to disambiguate,
+	# so leave the naming to the site's Customer naming setting.
+	force_name = unique_id if (tax_id or unique_id != biz_name) else None
+	cust.insert(ignore_permissions=True, set_name=force_name)
 	doc.customer = cust.name
 
 
@@ -199,10 +243,13 @@ class BuyerMaster(Document):
 					title=_("Duplicate GST"),
 				)
 
+		# Only meaningful once a Customer is linked. A blank one filters on
+		# "customer IS NULL", so a single unlinked row would block every new
+		# buyer with a duplicate warning naming nothing.
 		filters = {"customer": self.customer}
 		if not self.is_new():
 			filters["name"] = ["!=", self.name]
-		if frappe.db.count("Buyer Master", filters):
+		if self.customer and frappe.db.count("Buyer Master", filters):
 			frappe.throw(
 				_("Only one Buyer Master is allowed per Customer. Another record already uses {0}.").format(
 					frappe.bold(self.customer)
