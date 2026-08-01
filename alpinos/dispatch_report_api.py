@@ -169,10 +169,10 @@ def _merge_dispatch_data(target, extra):
 
 def _get_pending_data(date):
 	"""
-	Pending dispatch: Sales Order items for orders not yet completed/cancelled where either
-	- custom_dispatch_date <= date  (overdue + today's pending), or
-	- the order is parked as "Future Dispatch" with a dispatch date beyond the selected date
-	  (future-scheduled orders — still pending, just planned for later).
+	Pending dispatch: Sales Order items for orders parked as "Future Dispatch"
+	(custom_workflow_status = 'Future Dispatch') whose dispatch date is beyond the selected
+	report date — i.e. future-scheduled orders still waiting to be dispatched. Orders that
+	are due/overdue are shown in the dispatch flow, not here.
 	"""
 	rows = frappe.db.sql(
 		"""
@@ -182,10 +182,8 @@ def _get_pending_data(date):
 			COALESCE(so.order_type, 'Other') AS customer_type
 		FROM `tabSales Order` so
 		JOIN `tabSales Order Item` soi ON soi.parent = so.name
-		WHERE (
-				so.custom_dispatch_date <= %(date)s
-				OR (so.custom_workflow_status = 'Future Dispatch' AND so.custom_dispatch_date > %(date)s)
-			)
+		WHERE so.custom_workflow_status = 'Future Dispatch'
+		  AND so.custom_dispatch_date > %(date)s
 		  AND so.docstatus = 1
 		  AND so.status NOT IN ('Completed', 'Cancelled', 'Closed')
 		GROUP BY soi.item_code, so.order_type
@@ -282,7 +280,7 @@ def _build_summary(date, customer_types, dispatch_data, pending_data):
 	total_gw = sum(gw_by_ct.values())
 
 	# Box totals per CT from Sales Order Items (pending) — same set as _get_pending_data:
-	# overdue/due (custom_dispatch_date <= date) plus Future Dispatch orders scheduled later.
+	# Future Dispatch orders scheduled beyond the selected date.
 	so_box = frappe.db.sql(
 		"""
 		SELECT
@@ -290,10 +288,8 @@ def _build_summary(date, customer_types, dispatch_data, pending_data):
 			SUM(soi.custom_box) AS box
 		FROM `tabSales Order` so
 		JOIN `tabSales Order Item` soi ON soi.parent = so.name
-		WHERE (
-				so.custom_dispatch_date <= %(date)s
-				OR (so.custom_workflow_status = 'Future Dispatch' AND so.custom_dispatch_date > %(date)s)
-			)
+		WHERE so.custom_workflow_status = 'Future Dispatch'
+		  AND so.custom_dispatch_date > %(date)s
 		  AND so.docstatus = 1
 		  AND so.status NOT IN ('Completed', 'Cancelled', 'Closed')
 		GROUP BY so.order_type
