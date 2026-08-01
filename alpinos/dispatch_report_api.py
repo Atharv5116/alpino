@@ -27,7 +27,7 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 	if include_material_issue:
 		_merge_dispatch_data(dispatch_data, _get_material_issue_data(date))
 	pending_data = _get_pending_data(date)
-	stock_data = _get_stock_data(warehouse)
+	stock_data = _get_stock_data(warehouse, date)
 	inward_data = _get_inward_data()
 	summary = _build_summary(date, customer_types, dispatch_data, pending_data)
 
@@ -191,23 +191,31 @@ def _get_pending_data(date):
 	return _aggregate_by_item(rows)
 
 
-def _get_stock_data(warehouse):
-	"""Current stock from Bin for the given warehouse (or all warehouses if blank)."""
+def _get_stock_data(warehouse, date):
+	"""Stock balance as of the report date (end of that day) from the Stock Ledger.
+
+	Each Stock Ledger Entry carries the qty delta (actual_qty) of a transaction, so the
+	running balance on a date = SUM(actual_qty) of all non-cancelled entries up to and
+	including that date. For today this equals the current stock (Bin); for a past date it
+	is the historical balance, and for a future date it is the current balance (no later
+	entries yet)."""
+	params = {"date": date}
+	wh_cond = ""
 	if warehouse:
-		rows = frappe.db.get_all(
-			"Bin",
-			filters={"warehouse": warehouse},
-			fields=["item_code", "actual_qty"],
-		)
-	else:
-		rows = frappe.db.sql(
-			"""
-			SELECT item_code, SUM(actual_qty) AS actual_qty
-			FROM `tabBin`
-			GROUP BY item_code
-			""",
-			as_dict=True,
-		)
+		wh_cond = "AND warehouse = %(warehouse)s"
+		params["warehouse"] = warehouse
+	rows = frappe.db.sql(
+		f"""
+		SELECT item_code, SUM(actual_qty) AS actual_qty
+		FROM `tabStock Ledger Entry`
+		WHERE is_cancelled = 0
+		  AND posting_date <= %(date)s
+		  {wh_cond}
+		GROUP BY item_code
+		""",
+		params,
+		as_dict=True,
+	)
 	return {r["item_code"]: (r["actual_qty"] or 0) for r in rows}
 
 
