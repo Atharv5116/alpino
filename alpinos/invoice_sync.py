@@ -148,20 +148,10 @@ def process_invoice_excel(file_url):
 
 		if not drive or frappe.db.get_value("Sales Order", so_id, "custom_invoice_pdf"):
 			continue
-		so_date = frappe.db.get_value("Sales Order", so_id, "transaction_date")
-		month = _month_label(so_date) if so_date else None
-		folder = _resolve_month_folder(drive, s.drive_root_folder_id, s.get("fy_label") or "", month, folder_cache)
-		if not folder:
-			missing.append(f"{invoice_no} (folder {s.get('fy_label') or ''}/{month} not found)")
+		file_url, err = _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext)
+		if err:
+			missing.append(f"{invoice_no} ({err})")
 			continue
-		file_id = _find_file(drive, folder, invoice_no, ext)
-		if not file_id:
-			missing.append(f"{invoice_no} (PDF not found)")
-			continue
-		from frappe.utils.file_manager import save_file
-
-		f = save_file(f"{invoice_no}{ext}", _download(drive, file_id), "Sales Order", so_id, is_private=1)
-		frappe.db.set_value("Sales Order", so_id, "custom_invoice_pdf", f.file_url, update_modified=False)
 		fetched += 1
 
 	frappe.db.commit()
@@ -172,6 +162,70 @@ def process_invoice_excel(file_url):
 		"missing": missing,
 		"skipped": skipped,
 	}
+
+
+def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None):
+	"""Resolve the month folder, find the invoice PDF (filename == invoice_no) and attach it to
+	the Sales Order's custom_invoice_pdf. Returns (file_url, error): error is a short string when
+	the folder/PDF isn't found, else None with file_url set. Shared by the bulk Excel sync and
+	the single-order resync."""
+	ext = ext or (s.get("pdf_extension") or ".pdf")
+	so_date = frappe.db.get_value("Sales Order", so_id, "transaction_date")
+	month = _month_label(so_date) if so_date else None
+	if not month:
+		return None, "Sales Order has no date"
+	folder = _resolve_month_folder(drive, s.drive_root_folder_id, s.get("fy_label") or "", month, folder_cache)
+	if not folder:
+		return None, f"folder {s.get('fy_label') or ''}/{month} not found"
+	file_id = _find_file(drive, folder, invoice_no, ext)
+	if not file_id:
+		return None, "PDF not found"
+	from frappe.utils.file_manager import save_file
+
+	f = save_file(f"{invoice_no}{ext}", _download(drive, file_id), "Sales Order", so_id, is_private=1)
+	frappe.db.set_value("Sales Order", so_id, "custom_invoice_pdf", f.file_url, update_modified=False)
+	return f.file_url, None
+
+
+# Roles allowed to resync an invoice PDF on a Sales Order (accounts feature).
+_INVOICE_RESYNC_ROLES = {"Accounts User", "Accounts Manager", "System Manager"}
+
+
+@frappe.whitelist()
+def resync_invoice_pdf(sales_order):
+	"""Re-fetch a single Sales Order's invoice PDF from Drive: remove the currently attached PDF
+	and pull it fresh (filename == the order's Invoice No). Accounts-only feature."""
+	if not (_INVOICE_RESYNC_ROLES & set(frappe.get_roles())):
+		frappe.throw(_("You are not permitted to resync invoice PDFs."), frappe.PermissionError)
+	if not sales_order or not frappe.db.exists("Sales Order", sales_order):
+		frappe.throw(_("Sales Order not found."))
+
+	invoice_no = (frappe.db.get_value("Sales Order", sales_order, "custom_invoice_no") or "").strip()
+	if not invoice_no:
+		frappe.throw(_("This Sales Order has no Invoice No to resync."))
+
+	s = _settings()
+	if not _drive_enabled(s):
+		frappe.throw(_("Invoice Drive sync is not enabled/configured in Invoice Sync Settings."))
+	drive = _drive_service(s)
+
+	# Empty the current value first: delete the attached File(s) and clear the field, so the
+	# resync always pulls a fresh copy even if one is already present.
+	old = (frappe.db.get_value("Sales Order", sales_order, "custom_invoice_pdf") or "").strip()
+	if old:
+		for fname in frappe.get_all(
+			"File",
+			filters={"file_url": old, "attached_to_doctype": "Sales Order", "attached_to_name": sales_order},
+			pluck="name",
+		):
+			frappe.delete_doc("File", fname, ignore_permissions=True, force=True)
+	frappe.db.set_value("Sales Order", sales_order, "custom_invoice_pdf", "", update_modified=False)
+
+	file_url, err = _fetch_invoice_pdf(drive, s, sales_order, invoice_no, {})
+	frappe.db.commit()
+	if err:
+		return {"ok": False, "file_url": "", "message": _("Could not fetch invoice {0}: {1}").format(invoice_no, err)}
+	return {"ok": True, "file_url": file_url, "message": _("Invoice {0} re-synced.").format(invoice_no)}
 
 
 def _file_content(file_url):

@@ -62,20 +62,34 @@ frappe.ui.form.on('Sales Order', {
         set_variant_item_queries(frm);
 
         if (!frm.is_new()) {
+            // All document fetch/sync actions live under one "Documents" dropdown.
             frm.add_custom_button(__('Fetch PO PDF'), function() {
                 if (!frm.doc.custom_po_no_for_pdf) {
                     frappe.msgprint(__('Set "PO No for PDF" first.'));
                     return;
                 }
                 _fetch_po_pdf(frm);
-            });
+            }, __('Documents'));
             frm.add_custom_button(__('Fetch PO Drive Link'), function() {
                 if (!frm.doc.custom_po_no_for_pdf) {
                     frappe.msgprint(__('Set "PO No for PDF" first.'));
                     return;
                 }
                 _fetch_po_drive_link(frm);
-            });
+            }, __('Documents'));
+
+            // Resync Invoice PDF — accounts feature: shown only when a PDF is already
+            // attached. Empties the current value and re-fetches it from Drive by Invoice No.
+            var _acct_roles = ['Accounts User', 'Accounts Manager', 'System Manager'];
+            var _is_accounts = (frappe.user_roles || []).some(function(r) { return _acct_roles.indexOf(r) !== -1; });
+            if (_is_accounts && frm.doc.custom_invoice_pdf) {
+                frm.add_custom_button(__('Resync Invoice PDF'), function() {
+                    frappe.confirm(
+                        __('Remove the current invoice PDF and re-fetch it from Drive (Invoice No {0})?', [frm.doc.custom_invoice_no || '—']),
+                        function() { _resync_invoice_pdf(frm); }
+                    );
+                }, __('Documents'));
+            }
         }
         
         if (!frm.is_new()) {
@@ -149,6 +163,20 @@ function _fetch_po_pdf(frm) {
                 frappe.show_alert({ message: __('PO PDF attached: {0}', [r.message.file_name]), indicator: 'green' }, 5);
                 frm.reload_doc();
             }
+        }
+    });
+}
+
+function _resync_invoice_pdf(frm) {
+    frappe.call({
+        method: 'alpinos.invoice_sync.resync_invoice_pdf',
+        args: { sales_order: frm.doc.name },
+        freeze: true,
+        freeze_message: __('Re-syncing invoice PDF...'),
+        callback: function(r) {
+            var m = r.message || {};
+            frappe.show_alert({ message: m.message || __('Done'), indicator: m.ok ? 'green' : 'orange' }, 6);
+            frm.reload_doc();
         }
     });
 }
