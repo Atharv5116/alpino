@@ -116,17 +116,6 @@ def _resolve_scp_from_text(customer, text, cache):
 	return {}
 
 
-def _master_gst(master_name, cache):
-	"""GSTIN of a specific Buyer Master — the owner of a chosen billing/shipping
-	address. A buyer family can span several site-masters, each with its own GST No,
-	so the bill/ship GST follows whichever master owns that address. Cached."""
-	if not master_name:
-		return ""
-	if master_name not in cache:
-		cache[master_name] = frappe.db.get_value("Buyer Master", master_name, "gst_no") or ""
-	return cache[master_name]
-
-
 # ── column definitions ─────────────────────────────────────────────────────
 def get_columns():
 	def col(label, fn, w=120, ft="Data"):
@@ -243,7 +232,7 @@ def _get_data(filters):
 		)
 		so_names = [s for s in so_names if s in picked]
 
-	item_cache, obm_cache, ct_channel_cache, master_gst_cache = {}, {}, {}, {}
+	item_cache, obm_cache, ct_channel_cache = {}, {}, {}
 
 	def item_info(code):
 		if code not in item_cache:
@@ -324,12 +313,11 @@ def _get_data(filters):
 
 		customer_name = obm.get("tally_buyer_name") or so.get("customer_name") or so.customer
 
-		# Bill/Ship GST follow the OWNING Buyer Master of each chosen address (a buyer
-		# family can span several site-masters, each with its own GSTIN). The owner is
-		# recovered above for free-text (e-com) addresses; structured/offline addresses
-		# fall back to this SO's buyer master. Address records carry no GSTIN of their own.
-		bill_gst = _master_gst(bill.get("buyer_master"), master_gst_cache) or gst_no
-		ship_gst = _master_gst(ship.get("buyer_master"), master_gst_cache) or gst_no
+		# Bill/Ship GST No are read directly from the Sales Order's own GST fields, which
+		# the SO save hook keeps site-wise (from custom_offline_buyer_master's gst_no).
+		# Fall back to this SO's buyer master gst_no for older orders not yet re-saved.
+		bill_gst = so.get("custom_billing_gstin") or so.get("tax_id") or gst_no or ""
+		ship_gst = so.get("custom_shipping_gstin") or so.get("custom_billing_gstin") or so.get("tax_id") or gst_no or ""
 
 		mobile = obm.get("contact_no") or ""
 		bill_city = bill.get("city") or ""
