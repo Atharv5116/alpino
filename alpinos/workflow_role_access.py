@@ -228,7 +228,14 @@ def _revoke_stale_perms():
 # runs in after_migrate, AFTER the page JSON sync, so the extra roles survive every migrate.
 PAGE_ACCESS = {
 	"sales-order-entry-list": ["Warehouse Admin"],
-	"sales-order-entry-view": ["Warehouse Admin"],
+	# The e-com list opens each order in sales-order-entry-view, so the E-Commerce roles
+	# need access to that shared view page too (alongside Warehouse Admin).
+	"sales-order-entry-view": [
+		"Warehouse Admin",
+		"E-Commerce Admin",
+		"E-Commerce Manager",
+		"E-Commerce Coordinator",
+	],
 	"ecom-sales-order-entry-list": ["Warehouse Admin"],
 }
 
