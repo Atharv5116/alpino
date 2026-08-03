@@ -7,8 +7,52 @@ Buyer Master, Item Master and the selected billing/shipping Addresses.
 Exports to Excel via the standard report view (Menu → Export).
 """
 
+import re
+
 import frappe
 from frappe.utils import flt, getdate
+
+
+# Indian States + UTs — longest-first so "Uttar Pradesh" wins over a bare "Pradesh" match.
+_INDIAN_STATES = sorted(
+	[
+		"Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
+		"Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa",
+		"Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka",
+		"Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya",
+		"Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+		"Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+	],
+	key=len,
+	reverse=True,
+)
+
+
+def _scp_from_free_text(text):
+	"""Best-effort {state, city, pincode} pulled straight from a free-text address — the SAME
+	source as the printed address lines — so the combined city/state/pincode cell stays
+	consistent with them even when the text can't be matched to a structured family Address.
+	State is matched against the India state/UT list; pincode is the 6-digit token; city is the
+	comma part just before the state."""
+	t = (text or "").strip()
+	if not t:
+		return {"state": "", "city": "", "pincode": ""}
+	state = ""
+	for s in _INDIAN_STATES:
+		if re.search(r"\b" + re.escape(s) + r"\b", t, re.IGNORECASE):
+			state = s
+			break
+	m = re.search(r"\b(\d{6})\b", t)
+	pincode = m.group(1) if m else ""
+	city = ""
+	if state:
+		parts = [p.strip() for p in t.replace(" - ", ", ").split(",") if p.strip()]
+		for i, p in enumerate(parts):
+			if re.search(r"\b" + re.escape(state) + r"\b", p, re.IGNORECASE):
+				if i > 0:
+					city = parts[i - 1]
+				break
+	return {"state": state, "city": city, "pincode": pincode}
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -281,15 +325,25 @@ def _get_data(filters):
 
 		bill = _address(so.get("customer_address"))
 		ship = _address(so.get("shipping_address_name"))
-		# Recover state/city/pincode when the address isn't a structured Address
-		# link (e-com orders keep it as free text) by matching the stored text
-		# back to the buyer family's Address records.
-		if not _has_scp(bill):
-			bill.update({k: v for k, v in _resolve_scp_from_text(
-				so.customer, so.get("custom_billing_address_text"), addr_cache).items() if v})
-		if not _has_scp(ship):
-			ship.update({k: v for k, v in _resolve_scp_from_text(
-				so.customer, so.get("custom_shipping_address_text"), addr_cache).items() if v})
+		# City / State / Pincode MUST come from the same source as the printed address lines.
+		# When the SO carries a free-text address (e-com), the lines are that text — so resolve
+		# state/city/pincode from the text (matched back to a family Address) and let it WIN
+		# over the structured customer_address, which can point at a different/generic site and
+		# show the wrong state. Offline orders (no free text) keep the Address record's scp.
+		bill_free = (so.get("custom_billing_address_text") or "").strip()
+		ship_free = (so.get("custom_shipping_address_text") or "").strip()
+		if bill_free:
+			bill_scp = _resolve_scp_from_text(so.customer, bill_free, addr_cache) or {}
+			free_scp = _scp_from_free_text(bill_free)  # same text as the printed lines
+			bill["state"] = bill_scp.get("state") or free_scp.get("state") or ""
+			bill["city"] = bill_scp.get("city") or free_scp.get("city") or ""
+			bill["pincode"] = bill_scp.get("pincode") or free_scp.get("pincode") or ""
+		if ship_free:
+			ship_scp = _resolve_scp_from_text(so.customer, ship_free, addr_cache) or {}
+			free_scp = _scp_from_free_text(ship_free)
+			ship["state"] = ship_scp.get("state") or free_scp.get("state") or ""
+			ship["city"] = ship_scp.get("city") or free_scp.get("city") or ""
+			ship["pincode"] = ship_scp.get("pincode") or free_scp.get("pincode") or ""
 		# No distinct shipping address at all (common for offline orders) — the
 		# order ships to the billing address, so mirror its state/city/pincode.
 		if not _has_scp(ship):
@@ -302,8 +356,8 @@ def _get_data(filters):
 		# Address lines: e-com orders store the billing/shipping address as free
 		# text on the SO (custom_*_address_text) — that's what the user entered, so
 		# prefer it. Offline orders leave it blank and use the structured Address
-		# record (customer_address / shipping_address_name). State/city/pincode
-		# still come from the Address record (free text isn't parsed into those).
+		# record (customer_address / shipping_address_name). State/city/pincode were
+		# resolved from the same source above, so they stay consistent with these lines.
 		bill_text = (so.get("custom_billing_address_text") or "").strip() \
 			or " ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")]))
 		ship_text = (so.get("custom_shipping_address_text") or "").strip() \
