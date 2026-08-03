@@ -204,6 +204,27 @@ def get_offline_buyer_for_customer(customer):
 	}
 
 
+def _gst_for_site(site_name, fallback=""):
+	"""Site-wise GST No: the gst_no of the Buyer Master that owns an address (Buyer Address
+	child row) whose site_name matches — so the SO carries the SELECTED SITE's GSTIN, not
+	the family parent's. Falls back to `fallback` (the customer's buyer master gst) when the
+	site can't be resolved to a registered master."""
+	if site_name:
+		rows = frappe.db.sql(
+			"""
+			SELECT bm.gst_no
+			FROM `tabBuyer Address` ba
+			JOIN `tabBuyer Master` bm ON bm.name = ba.parent
+			WHERE ba.site_name = %s AND IFNULL(bm.gst_no, '') <> ''
+			LIMIT 1
+			""",
+			site_name,
+		)
+		if rows and rows[0][0]:
+			return rows[0][0]
+	return fallback or ""
+
+
 def sync_sales_order_offline_buyer_fields(doc, method=None):
 	"""Keep OBM link and trade Customer Type on Sales Order in sync with Customer (save/API/import)."""
 	if doc.docstatus != 0:
@@ -235,15 +256,6 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 	if row:
 		doc.custom_offline_buyer_master = row.get("name")
 		doc.custom_offline_buyer_customer_type = row.get("customer_type")
-		# GST No is taken SITE-WISE from this buyer master (the SO's own
-		# custom_offline_buyer_master = the selected site's OBM), NOT the family parent —
-		# so the Sales Order always carries that site's GSTIN. Blank for an Unregistered site.
-		_site_gst = (row.get("gst_no") or "").strip().upper()
-		doc.tax_id = _site_gst
-		if meta.has_field("custom_billing_gstin"):
-			doc.custom_billing_gstin = _site_gst
-		if meta.has_field("custom_shipping_gstin"):
-			doc.custom_shipping_gstin = _site_gst
 		# Site name is user-editable — only default it when blank. Priority:
 		# the selected shipping address's site (OBM per-address site_name is
 		# synced onto Address.custom_site_name), then the OBM header site_name.
@@ -257,6 +269,17 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 					or ""
 				)
 			doc.custom_site_name = addr_site or row.get("site_name") or ""
+		# GST No is taken SITE-WISE: the Buyer Master that owns the chosen site (its Buyer
+		# Address child row's site_name == the SO's site) carries that site's GSTIN — NOT the
+		# family parent. Falls back to the customer's buyer master gst_no when the site can't
+		# be resolved. Blank for an Unregistered site with no registered site master.
+		_site = (doc.get("custom_site_name") or "").strip() if has_site_field else ""
+		_site_gst = (_gst_for_site(_site, row.get("gst_no")) or "").strip().upper()
+		doc.tax_id = _site_gst
+		if meta.has_field("custom_billing_gstin"):
+			doc.custom_billing_gstin = _site_gst
+		if meta.has_field("custom_shipping_gstin"):
+			doc.custom_shipping_gstin = _site_gst
 		# Channel: default from the buyer only when the entry path hasn't set it.
 		# The offline/e-com entry pages set custom_channel explicitly.
 		if meta.has_field("custom_channel") and not (doc.get("custom_channel") or "").strip():
