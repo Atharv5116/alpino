@@ -228,13 +228,22 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 		[
 			"name", "customer_type", "site_name", "channel",
 			"appointment_required", "grn_available",
-			"partial_order_allowed", "gst_exclusive_buyer",
+			"partial_order_allowed", "gst_exclusive_buyer", "gst_no",
 		],
 		as_dict=True,
 	)
 	if row:
 		doc.custom_offline_buyer_master = row.get("name")
 		doc.custom_offline_buyer_customer_type = row.get("customer_type")
+		# GST No is taken SITE-WISE from this buyer master (the SO's own
+		# custom_offline_buyer_master = the selected site's OBM), NOT the family parent —
+		# so the Sales Order always carries that site's GSTIN. Blank for an Unregistered site.
+		_site_gst = (row.get("gst_no") or "").strip().upper()
+		doc.tax_id = _site_gst
+		if meta.has_field("custom_billing_gstin"):
+			doc.custom_billing_gstin = _site_gst
+		if meta.has_field("custom_shipping_gstin"):
+			doc.custom_shipping_gstin = _site_gst
 		# Site name is user-editable — only default it when blank. Priority:
 		# the selected shipping address's site (OBM per-address site_name is
 		# synced onto Address.custom_site_name), then the OBM header site_name.
