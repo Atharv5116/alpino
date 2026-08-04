@@ -684,6 +684,18 @@
 .indicator-pill.red    { --alp-pill-bg: var(--bg-red,    #fbe2e0); --alp-pill-fg: var(--text-on-red,    #a92e26); --alp-pill-bd: rgba(169, 46, 38, 0.20); }
 .indicator-pill.purple { --alp-pill-bg: var(--bg-purple, #ece2fa); --alp-pill-fg: var(--text-on-purple, #65389b); --alp-pill-bd: rgba(101, 56, 155, 0.20); }
 
+/* E-com list: keep the Workflow Status pill on one line and give its column
+   enough width so a long label never overflows onto the Created By column.
+   Lives here (a fingerprinted public asset) rather than the page inline style
+   so bench build reliably cache-busts it. */
+[data-page-route="ecom-sales-order-entry-list"] .eso-list-table .indicator-pill {
+  white-space: nowrap !important;
+}
+[data-page-route="ecom-sales-order-entry-list"] .eso-list-table .eso-col-wf {
+  min-width: 170px !important;
+  white-space: nowrap !important;
+}
+
 /* ----------------------------------------------------------------------------
    13. SALES ORDER VIEW — centered, aligned document layout
    Edge-to-edge put the title at the far left and the action buttons at the far
