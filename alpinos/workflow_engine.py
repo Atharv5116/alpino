@@ -716,6 +716,15 @@ def _recompute_so_status(so):
 		for stage in (PL_SUBMISSION_PENDING, PL_STICKER_PENDING, PL_PICKING):  # most advanced first
 			if stage in statuses:
 				return PL_TO_SO_STATUS[stage]
+	# Warehouse approval is a MANUAL gate. A never-approved order (still Pending,
+	# or with no status yet) must never be auto-advanced into the dispatch queue
+	# by this date-driven recompute — which runs on every migrate via
+	# backfill_workflow_statuses. Only orders already past approval (Future/Today's
+	# Dispatch, or returning from a cancelled Pick List/DN with a picking-stage
+	# status) get the date-driven flip below. This mirrors refresh_todays_dispatch,
+	# which likewise refuses to auto-approve Pending orders.
+	if cur in (None, "", SO_WAREHOUSE_PENDING):
+		return SO_WAREHOUSE_PENDING
 	# Otherwise the warehouse-queue status is date-driven:
 	# due today (or overdue) -> Today's Dispatch; future -> waiting / parked.
 	dd = frappe.db.get_value("Sales Order", so, "custom_dispatch_date")
