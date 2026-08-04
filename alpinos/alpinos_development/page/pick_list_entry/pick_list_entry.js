@@ -600,23 +600,25 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				let qty = flt(tr.find('.qty-input').val());
 				let factor = flt(tr.attr('data-conversion-factor')) || 1;
 				let weight_per_box = flt(tr.attr('data-weight-per-box')) || 0;
-				let box = cint(tr.find('.box-input').val());
-				
+				let box = flt(tr.find('.box-input').val());
+
+				// Sample Box aggregates the box count of ALL tables (main items + the sample
+				// tables); actual_box / weights stay split by table for reference. Decimals kept.
+				sample_box += box;
 				if (table_name === "Items") {
 					actual_box += box;
 					gross_weight += box * weight_per_box;
 				} else {
-					sample_box += box;
 					sample_weight += box * weight_per_box;
 				}
 
 				total_unit += qty;
 			});
 
-			page.main.find('[data-fieldname="custom_actual_box"]').val(cint(actual_box));
-			page.main.find('[data-fieldname="custom_sample_box"]').val(cint(sample_box));
+			page.main.find('[data-fieldname="custom_actual_box"]').val(flt(actual_box, 2));
+			page.main.find('[data-fieldname="custom_sample_box"]').val(flt(sample_box, 2));
 			page.main.find('[data-fieldname="custom_sample_weight"]').val(flt(sample_weight, 2));
-			page.main.find('[data-fieldname="custom_total_box"]').val(cint(actual_box + sample_box));
+			page.main.find('[data-fieldname="custom_total_box"]').val(flt(sample_box, 2));
 			page.main.find('[data-fieldname="custom_gross_weight"]').val(flt(gross_weight, 2));
 			page.main.find('[data-fieldname="custom_total_unit"]').val(flt(total_unit, 2));
 		};
@@ -715,16 +717,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// Header ACTUAL BOX or SAMPLE BOX changes update TOTAL BOX in real-time
+		// SAMPLE BOX is the grand total of all tables' box counts, so TOTAL BOX mirrors it.
+		// Decimals are allowed (no round-to-int).
 		page.main.find('[data-fieldname="custom_actual_box"], [data-fieldname="custom_sample_box"]').off('input change').on('input change', function() {
-			let val = $(this).val();
-			if (val && String(val).indexOf('.') !== -1) {
-				val = Math.round(parseFloat(val));
-				$(this).val(val);
-			}
-			let actual = cint(page.main.find('[data-fieldname="custom_actual_box"]').val() || 0);
-			let sample = cint(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
-			page.main.find('[data-fieldname="custom_total_box"]').val(actual + sample);
+			let sample = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
+			page.main.find('[data-fieldname="custom_total_box"]').val(flt(sample, 2));
 		});
 		
 		// Setup Batch auto-fetch logic (delegated so split rows fire it too).

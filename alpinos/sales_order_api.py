@@ -1205,6 +1205,7 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 				"item_code": ic,
 				"item_name": iname,
 				"qty": flt(freebie.get("qty")),
+				"box": flt(freebie.get("box")),
 				"remarks": freebie.get("remarks") or "",
 			},
 		)
@@ -1222,6 +1223,7 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 				"item_code": ic,
 				"item_name": iname,
 				"qty": flt(scheme.get("qty")),
+				"box": flt(scheme.get("box")),
 				"scheme": sch_txt,
 			},
 		)
@@ -1240,6 +1242,7 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 					"item_code": ic,
 					"item_name": iname,
 					"qty": flt(row.get("qty")),
+					"box": flt(row.get("box")),
 					"previous_order_id": row.get("previous_order_id") or "",
 					"remarks": row.get("remarks") or "",
 				},
@@ -1378,6 +1381,7 @@ def get_so_entry_payload(sales_order):
 			"item_code": r.item_code,
 			"item_name": r.get("item_name") or "",
 			"qty": flt(r.qty),
+			"box": flt(r.get("box")),
 			"remarks": r.get("remarks") or "",
 			# item_group so the entry page can exempt Marketing Material freebies
 			# from the "must be an ordered item" rule without an extra lookup.
@@ -1391,6 +1395,7 @@ def get_so_entry_payload(sales_order):
 			"item_code": r.item_code,
 			"item_name": r.get("item_name") or "",
 			"qty": flt(r.qty),
+			"box": flt(r.get("box")),
 			"scheme": r.get("scheme") or "",
 		}
 		for r in (doc.get("custom_scheme_item_table") or [])
@@ -1401,6 +1406,7 @@ def get_so_entry_payload(sales_order):
 			"item_code": r.item_code,
 			"item_name": r.get("item_name") or "",
 			"qty": flt(r.qty),
+			"box": flt(r.get("box")),
 			"previous_order_id": r.get("previous_order_id") or "",
 			"remarks": r.get("remarks") or "",
 		}
@@ -1879,7 +1885,8 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 		box = flt(item_row.get("custom_box"), 2)
 		factor = get_box_conversion_factor(item_row.item_code) or 1
 		if source_table in ["Marketing Freebies", "Scheme Table", "Additional Units"]:
-			box = 0.0
+			# Sample-table rows now carry their own editable box on the SO — use it.
+			box = flt(item_row.get("box"), 2)
 		# Exploded bundle components: box is derived from the component qty, not entered.
 		if box_override is not None:
 			box = flt(box_override, 2)

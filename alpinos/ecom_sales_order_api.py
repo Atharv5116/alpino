@@ -415,7 +415,7 @@ def get_ecom_so_entry_payload(sales_order):
 		})
 
 	freebies = [
-		{"item_code": r.item_code, "item_name": r.get("item_name") or "", "qty": flt(r.qty)}
+		{"item_code": r.item_code, "item_name": r.get("item_name") or "", "qty": flt(r.qty), "box": flt(r.get("box"))}
 		for r in (doc.get("custom_marketing_freebies") or [])
 	]
 

@@ -1297,6 +1297,27 @@ var SalesOrderEntry = class {
 		}
 	}
 
+	// Sample tables (freebies / scheme / additional units): one-time auto-fill of the box
+	// count from qty ÷ conversion factor (decimals kept), fetching the factor on demand.
+	// After the auto-fill the box is freely editable and does NOT drive qty back.
+	_sample_autofill_box(rows, idx) {
+		let row = rows[idx];
+		if (!row || !row.item_code) return;
+		let me = this;
+		let apply = function(cf) {
+			if (!cf) return;
+			row.box = flt(flt(row.qty) / flt(cf), 2);
+			if (row._box_field) row._box_field.set_value(row.box);
+		};
+		let cf = this._box_cache[row.item_code];
+		if (cf) { apply(cf); return; }
+		frappe.call({
+			method: 'alpinos.sales_order_api.get_box_conversion_factor',
+			args: { item_code: row.item_code },
+			callback: function(r) { if (r.message) { me._box_cache[row.item_code] = r.message; apply(r.message); } }
+		});
+	}
+
 	calc_row_amount(idx, $row, selling_price_edited) {
 		let item = this.items[idx];
 		let qty = flt(item.qty);
@@ -1474,6 +1495,7 @@ var SalesOrderEntry = class {
 				<td class="freebie-item"></td>
 				<td class="freebie-name"><span class="text-muted">-</span></td>
 				<td class="freebie-qty"></td>
+				<td class="freebie-box"></td>
 				<td class="freebie-remarks"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-freebie"><i class="fa fa-trash"></i></button></td>
 			</tr>
@@ -1524,7 +1546,20 @@ var SalesOrderEntry = class {
 			only_input: true
 		});
 		qty_field.$input && qty_field.$input.css('width', '70px');
-		qty_field.$input.on('change', function() { me.freebies[idx].qty = flt(qty_field.get_value()); });
+		qty_field.$input.on('change', function() {
+			me.freebies[idx].qty = flt(qty_field.get_value());
+			me._sample_autofill_box(me.freebies, idx);
+		});
+
+		let box_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Float', fieldname: `freebie_box_${idx}` },
+			parent: $row.find('.freebie-box'),
+			render_input: true,
+			only_input: true
+		});
+		box_field.$input && box_field.$input.css('width', '60px');
+		box_field.$input.on('change', function() { me.freebies[idx].box = flt(box_field.get_value()); });
+		row_data._box_field = box_field;
 
 		let remarks_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', fieldname: `freebie_remarks_${idx}` },
@@ -1537,6 +1572,7 @@ var SalesOrderEntry = class {
 		if (data && data.item_code) {
 			item_field.set_value(data.item_code);
 			if (data.qty) qty_field.set_value(data.qty);
+			if (data.box) box_field.set_value(data.box);
 			if (data.remarks) remarks_field.set_value(data.remarks);
 			if (data.item_name) {
 				$row.find('.freebie-name span').text(data.item_name).removeClass('text-muted');
@@ -1563,6 +1599,7 @@ var SalesOrderEntry = class {
 				<td class="scheme-item"></td>
 				<td class="scheme-name"><span class="text-muted">-</span></td>
 				<td class="scheme-qty"></td>
+				<td class="scheme-box"></td>
 				<td class="scheme-scheme"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-scheme"><i class="fa fa-trash"></i></button></td>
 			</tr>
@@ -1596,7 +1633,20 @@ var SalesOrderEntry = class {
 			only_input: true
 		});
 		qty_field.$input && qty_field.$input.css('width', '70px');
-		qty_field.$input.on('change', function() { me.scheme_items[idx].qty = flt(qty_field.get_value()); });
+		qty_field.$input.on('change', function() {
+			me.scheme_items[idx].qty = flt(qty_field.get_value());
+			me._sample_autofill_box(me.scheme_items, idx);
+		});
+
+		let box_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Float', fieldname: `scheme_box_${idx}` },
+			parent: $row.find('.scheme-box'),
+			render_input: true,
+			only_input: true
+		});
+		box_field.$input && box_field.$input.css('width', '60px');
+		box_field.$input.on('change', function() { me.scheme_items[idx].box = flt(box_field.get_value()); });
+		row_data._box_field = box_field;
 
 		let scheme_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', fieldname: `scheme_val_${idx}` },
@@ -1609,6 +1659,7 @@ var SalesOrderEntry = class {
 		if (data && data.item_code) {
 			item_field.set_value(data.item_code);
 			if (data.qty) qty_field.set_value(data.qty);
+			if (data.box) box_field.set_value(data.box);
 			if (data.scheme) scheme_field.set_value(data.scheme);
 			if (data.item_name) {
 				$row.find('.scheme-name span').text(data.item_name).removeClass('text-muted');
@@ -1644,6 +1695,7 @@ var SalesOrderEntry = class {
 				<td class="au-item"></td>
 				<td class="au-name"><span class="text-muted">-</span></td>
 				<td class="au-qty"></td>
+				<td class="au-box"></td>
 				<td class="au-prev-order"></td>
 				<td class="au-remarks"></td>
 				<td class="text-center"><button class="btn btn-xs btn-danger remove-additional-unit"><i class="fa fa-trash"></i></button></td>
@@ -1678,7 +1730,20 @@ var SalesOrderEntry = class {
 			only_input: true
 		});
 		qty_field.$input && qty_field.$input.css('width', '70px');
-		qty_field.$input.on('change', function() { me.additional_units_items[idx].qty = flt(qty_field.get_value()); });
+		qty_field.$input.on('change', function() {
+			me.additional_units_items[idx].qty = flt(qty_field.get_value());
+			me._sample_autofill_box(me.additional_units_items, idx);
+		});
+
+		let box_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Float', fieldname: `au_box_${idx}` },
+			parent: $row.find('.au-box'),
+			render_input: true,
+			only_input: true
+		});
+		box_field.$input && box_field.$input.css('width', '60px');
+		box_field.$input.on('change', function() { me.additional_units_items[idx].box = flt(box_field.get_value()); });
+		row_data._box_field = box_field;
 
 		let prev_order_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', fieldname: `au_prev_order_${idx}` },
@@ -1699,6 +1764,7 @@ var SalesOrderEntry = class {
 		if (data && data.item_code) {
 			item_field.set_value(data.item_code);
 			if (data.qty) qty_field.set_value(data.qty);
+			if (data.box) box_field.set_value(data.box);
 			if (data.previous_order_id) prev_order_field.set_value(data.previous_order_id);
 			if (data.remarks) remarks_field.set_value(data.remarks);
 			if (data.item_name) {
@@ -1816,6 +1882,7 @@ var SalesOrderEntry = class {
 			item_code: f.item_code,
 			item_name: f.item_name || '',
 			qty: f.qty,
+			box: flt(f.box),
 			remarks: f.remarks || '',
 			item_group: f.item_group || ''
 		}));
@@ -1855,6 +1922,7 @@ var SalesOrderEntry = class {
 			item_code: s.item_code,
 			item_name: s.item_name || '',
 			qty: s.qty,
+			box: flt(s.box),
 			scheme: s.scheme || ''
 		}));
 
@@ -1862,6 +1930,7 @@ var SalesOrderEntry = class {
 			item_code: s.item_code,
 			item_name: s.item_name || '',
 			qty: s.qty,
+			box: flt(s.box),
 			previous_order_id: s.previous_order_id || '',
 			remarks: s.remarks || ''
 		}));
