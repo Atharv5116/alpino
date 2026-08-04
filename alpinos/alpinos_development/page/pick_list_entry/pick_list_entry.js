@@ -401,14 +401,14 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 
 			let box_val = "";
 			if (title === "Items") {
-				box_val = (row.custom_box !== undefined && row.custom_box !== null) ? cint(row.custom_box) : 0;
+				box_val = (row.custom_box !== undefined && row.custom_box !== null) ? flt(row.custom_box, 2) : 0;
 			} else {
-				box_val = (row.custom_box !== undefined && row.custom_box !== null && cint(row.custom_box) !== 0) ? cint(row.custom_box) : "";
+				box_val = (row.custom_box !== undefined && row.custom_box !== null && flt(row.custom_box) !== 0) ? flt(row.custom_box, 2) : "";
 			}
-			// Box is editable for Items (including exploded combo/bundle components)
-			// and for Marketing Freebies; locked for Scheme / Additional Units, and
-			// whenever items are locked (submitted, or PL User before Start Picking).
-			let box_readonly = (!itemsLocked && (title === "Items" || title === "Marketing Freebies")) ? '' : 'readonly tabindex="-1"';
+			// Box is editable (in decimals) across every table — Items, exploded
+			// combo/bundle components, and all the sample tables — and only locked
+			// when items are locked (submitted, or PL User before Start Picking).
+			let box_readonly = !itemsLocked ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
 				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:rgba(124,58,237,0.08);"' : ''}>
@@ -417,7 +417,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
-					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="1" min="0" ${input_disabled} ${box_readonly}/></td>
+					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="0.01" min="0" ${input_disabled} ${box_readonly}/></td>
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock}>
 					</td>
@@ -941,7 +941,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 								<td>${sku_no_text}</td>
 								<td class="ordered-qty-cell">${ordered_qty_text}</td>
 								<td><input type="number" class="form-control input-sm qty-input" value="${new_qty}" min="0"/></td>
-								<td><input type="number" class="form-control input-sm box-input" value="${split_box}" step="1" min="0" ${table_name === 'Items' ? '' : 'readonly tabindex="-1"'}/></td>
+								<td><input type="number" class="form-control input-sm box-input" value="${split_box}" step="0.01" min="0"/></td>
 								<td><input type="text" class="form-control input-sm batch-input" list="batch-list" value=""></td>
 								<td><input type="date" class="form-control input-sm mfg-input" value="" max="9999-12-31"></td>
 								<td><input type="date" class="form-control input-sm exp-input" value="" max="9999-12-31"></td>
