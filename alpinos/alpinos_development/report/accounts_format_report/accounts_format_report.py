@@ -293,7 +293,7 @@ def _get_data(filters):
 			obm_cache[customer] = frappe.db.get_value(
 				"Buyer Master", {"customer": customer},
 				["tally_buyer_name", "tally_pl_name", "gst_type", "gst_no", "contact_no",
-				 "custom_tally_warehouse_id", "customer_type", "combine_product_bundles"],
+				 "custom_tally_warehouse_id", "custom_tally_warehouse", "customer_type", "combine_product_bundles"],
 				as_dict=True,
 			) or {}
 		return obm_cache[customer]
@@ -400,7 +400,9 @@ def _get_data(filters):
 			"ship_state": ship_state,
 			"ship_pincode": ship_pincode,
 			"ship_combined": ", ".join(p for p in (ship_city, ship_state, ship_pincode, mobile) if p),
-			"warehouse": so.get("set_warehouse") or "",
+			# Warehouse column comes from the buyer's Buyer Master (Tally Warehouse);
+			# fall back to the SO's set_warehouse for buyers that have not set it yet.
+			"warehouse": obm.get("custom_tally_warehouse") or so.get("set_warehouse") or "",
 			"tally_warehouse_id": obm.get("custom_tally_warehouse_id") or "T24",
 			"channel": channel,
 			"site_name": so.get("custom_site_name") or "",
