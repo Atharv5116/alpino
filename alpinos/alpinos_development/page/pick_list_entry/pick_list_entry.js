@@ -602,13 +602,14 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				let weight_per_box = flt(tr.attr('data-weight-per-box')) || 0;
 				let box = flt(tr.find('.box-input').val());
 
-				// Sample Box aggregates the box count of ALL tables (main items + the sample
-				// tables); actual_box / weights stay split by table for reference. Decimals kept.
-				sample_box += box;
+				// Actual Box = the main Items table; Sample Box = the three sample
+				// tables (Marketing Freebies / Scheme / Additional Units) only.
+				// Total Box = actual + sample. Decimals kept throughout.
 				if (table_name === "Items") {
 					actual_box += box;
 					gross_weight += box * weight_per_box;
 				} else {
+					sample_box += box;
 					sample_weight += box * weight_per_box;
 				}
 
@@ -618,7 +619,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.find('[data-fieldname="custom_actual_box"]').val(flt(actual_box, 2));
 			page.main.find('[data-fieldname="custom_sample_box"]').val(flt(sample_box, 2));
 			page.main.find('[data-fieldname="custom_sample_weight"]').val(flt(sample_weight, 2));
-			page.main.find('[data-fieldname="custom_total_box"]').val(flt(sample_box, 2));
+			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual_box + sample_box, 2));
 			page.main.find('[data-fieldname="custom_gross_weight"]').val(flt(gross_weight, 2));
 			page.main.find('[data-fieldname="custom_total_unit"]').val(flt(total_unit, 2));
 		};
@@ -715,8 +716,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		// SAMPLE BOX is the grand total of all tables' box counts, so TOTAL BOX mirrors it.
 		// Decimals are allowed (no round-to-int).
 		page.main.find('[data-fieldname="custom_actual_box"], [data-fieldname="custom_sample_box"]').off('input change').on('input change', function() {
+			let actual = flt(page.main.find('[data-fieldname="custom_actual_box"]').val() || 0);
 			let sample = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
-			page.main.find('[data-fieldname="custom_total_box"]').val(flt(sample, 2));
+			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual + sample, 2));
 		});
 		
 		// Setup Batch auto-fetch logic (delegated so split rows fire it too).
