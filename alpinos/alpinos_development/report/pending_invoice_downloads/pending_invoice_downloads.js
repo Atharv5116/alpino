@@ -1,7 +1,8 @@
 frappe.query_reports["Pending Invoice Downloads"] = {
 	filters: [
-		{ fieldname: "from_date", label: __("From Date"), fieldtype: "Date" },
-		{ fieldname: "to_date", label: __("To Date"), fieldtype: "Date" },
+		{ fieldname: "sales_order", label: __("Sales Order ID"), fieldtype: "Data" },
+		{ fieldname: "order_date", label: __("Order Date"), fieldtype: "Date" },
+		{ fieldname: "dispatch_date", label: __("Dispatch Date"), fieldtype: "Date" },
 		{ fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" },
 	],
 	onload: function (report) {
