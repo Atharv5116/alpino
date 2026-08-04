@@ -890,16 +890,27 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 
 @frappe.whitelist()
 def get_box_conversion_factor(item_code):
-	"""Fetch Box UOM conversion factor from Item's UOM table"""
+	"""Fetch Box UOM conversion factor from the Item's UOM table.
+
+	Variants inherit their template's UOM rows ("will also apply for variants"),
+	but those rows stay physically on the template — the variant has none of its
+	own. So when the variant has no Box row, fall back to its template."""
 	if not item_code:
 		return None
 
-	conversion_factor = frappe.db.get_value(
-		"UOM Conversion Detail",
-		{"parent": item_code, "parenttype": "Item", "uom": "Box"},
-		"conversion_factor"
-	)
-	return flt(conversion_factor) if conversion_factor else None
+	def _box_cf(code):
+		cf = frappe.db.get_value(
+			"UOM Conversion Detail",
+			{"parent": code, "parenttype": "Item", "uom": "Box"},
+			"conversion_factor",
+		)
+		return flt(cf) if cf else None
+
+	cf = _box_cf(item_code)
+	if cf:
+		return cf
+	template = frappe.db.get_value("Item", item_code, "variant_of")
+	return _box_cf(template) if template else None
 
 
 def _parse_request_child_list(val):
