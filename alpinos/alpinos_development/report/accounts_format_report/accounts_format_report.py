@@ -83,22 +83,28 @@ def _voucher_type(registration_type, state):
 
 
 def _picklist_map(so_name):
-	"""Per-item picked qty + box from the SUBMITTED Pick List(s) of this Sales Order.
-	Picked qty uses picked_qty, falling back to qty when picked_qty is 0."""
+	"""Per-(item, source table) picked qty + box from the SUBMITTED Pick List(s) of
+	this Sales Order. Keyed by (item_code, source_table) so the same SKU appearing in
+	both the Items section and a sample section (Marketing Freebies / Scheme /
+	Additional Units) reports each section's qty on its own row — not their sum on
+	both. Picked qty uses picked_qty, falling back to qty when picked_qty is 0."""
 	rows = frappe.db.sql(
 		"""
 		SELECT pli.item_code,
+			CASE WHEN IFNULL(pli.custom_source_table, '') IN
+				('Marketing Freebies', 'Scheme Table', 'Additional Units')
+				THEN pli.custom_source_table ELSE 'Items' END AS src,
 			SUM(IFNULL(NULLIF(pli.picked_qty, 0), pli.qty)) AS qty,
 			SUM(IFNULL(pli.custom_box, 0)) AS box
 		FROM `tabPick List Item` pli
 		INNER JOIN `tabPick List` pl ON pl.name = pli.parent AND pl.docstatus = 1
 		WHERE pl.custom_sales_order_id = %(so)s OR pli.sales_order = %(so)s
-		GROUP BY pli.item_code
+		GROUP BY pli.item_code, src
 		""",
 		{"so": so_name},
 		as_dict=True,
 	)
-	return {r.item_code: r for r in rows}
+	return {(r.item_code, r.src): r for r in rows}
 
 
 def _address(name):
@@ -420,17 +426,18 @@ def _get_data(filters):
 		# after cash discount — just distributed per row so it shows in the table.
 		cash_pct = flt(so.get("custom_cash_discount"))
 
-		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True):
+		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items"):
 			it = item_info(item_code)
 			# Every line — billable AND marketing freebies / scheme / damage — is taken from
 			# the submitted Pick List (all of them are added to it at creation), with UNIT /
 			# Box = picked qty. So the report simply mirrors the submitted pick list: a line
 			# not in it (not picked / removed) is dropped; with no submitted pick list at all,
-			# fall back to the ordered qty/box.
+			# fall back to the ordered qty/box. Keyed per source table so a SKU present in
+			# both the Items and a sample section reports each section's qty separately.
 			if not from_picklist:
 				unit, box = flt(fallback_qty), flt(fallback_box)
 			else:
-				plr = pl_map.get(item_code)
+				plr = pl_map.get((item_code, source_table))
 				if plr:
 					unit, box = flt(plr.get("qty")), flt(plr.get("box"))
 				elif has_pl:
@@ -596,12 +603,12 @@ def _get_data(filters):
 		# doesn't carry these free lines — they would otherwise report qty 0).
 		for r in (so.get("custom_marketing_freebies") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Marketing Freebies")
 		for r in (so.get("custom_scheme_item_table") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Scheme Table")
 		for r in (so.get("custom_additional_units_damage_items") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True)
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Additional Units")
 
 	return data
