@@ -1840,6 +1840,17 @@ def _attach_so_list_row_extras(rows):
 	):
 		inv_map[r.sales_order] = r.parent
 
+	# Invoice No (from invoice sync) — drives the per-row "SI" extract button, which
+	# re-fetches this order's invoice PDF from Drive on demand, any number of times.
+	invno_map = {}
+	for r in frappe.get_all(
+		"Sales Order",
+		filters={"name": ["in", names]},
+		fields=["name", "custom_invoice_no"],
+	):
+		if (r.get("custom_invoice_no") or "").strip():
+			invno_map[r.name] = r.custom_invoice_no
+
 	# ASN details live on Post Dispatch (one per dispatch) — collect them per SO so
 	# the list can show a summary with the full per-DN breakdown on hover.
 	asn_map = {}
@@ -1867,6 +1878,7 @@ def _attach_so_list_row_extras(rows):
 		r["pick_list"] = pl_map.get(r.name) or ""
 		r["delivery_note"] = dn_map.get(r.name) or ""
 		r["sales_invoice"] = inv_map.get(r.name) or ""
+		r["invoice_no"] = invno_map.get(r.name) or ""
 		r["asn_details"] = asn_map.get(r.name) or []
 
 @frappe.whitelist()

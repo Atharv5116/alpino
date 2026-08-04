@@ -357,6 +357,30 @@ var SalesOrderEntryListPage = class {
 			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
+		// SI: extract / re-fetch this order's invoice PDF from Drive on demand. Unlike
+		// the bulk extract (which skips orders that already have one), this always
+		// re-pulls a fresh copy, so it can be clicked any number of times.
+		this.wrapper.on('click.solist', '.so-list-si-btn', (e) => {
+			e.stopPropagation();
+			const $btn = $(e.currentTarget);
+			const so = String($btn.data('so') || '');
+			if (!so) return;
+			$btn.prop('disabled', true);
+			frappe.call({
+				method: 'alpinos.invoice_sync.resync_invoice_pdf',
+				args: { sales_order: so },
+				callback: (r) => {
+					$btn.prop('disabled', false);
+					const m = r.message || {};
+					if (m.ok) {
+						frappe.show_alert({ message: m.message || __('Invoice extracted.'), indicator: 'green' }, 5);
+					} else {
+						frappe.msgprint(m.message || __('Could not extract invoice.'));
+					}
+				},
+				error: () => $btn.prop('disabled', false),
+			});
+		});
 		this.wrapper.on('change.solist', '.so-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
 			this.wrapper.find('.so-list-row-select').prop('checked', checked);
@@ -594,6 +618,14 @@ var SalesOrderEntryListPage = class {
 				}
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) {
 					btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
+				}
+				// SI: on-demand invoice-PDF extract (repeatable). Only for accounts
+				// users and only when the order has an Invoice No to fetch.
+				const canResyncInvoice = (frappe.user_roles || []).some((r) =>
+					['Accounts User', 'Accounts Manager', 'System Manager'].includes(r));
+				if (d.invoice_no && canResyncInvoice) {
+					btns.push(`<button type="button" class="btn btn-xs btn-default so-list-si-btn"
+						data-so="${esc(d.name)}" title="${esc(__('Extract / re-fetch invoice PDF {0}', [d.invoice_no]))}">SI</button>`);
 				}
 				return btns.join(' ') || '—';
 			},
