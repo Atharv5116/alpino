@@ -17,6 +17,8 @@ def execute(filters=None):
 
 	columns = [
 		{"label": _("Sales Order"), "fieldname": "sales_order", "fieldtype": "Link", "options": "Sales Order", "width": 160},
+		{"label": _("Order Date"), "fieldname": "order_date", "fieldtype": "Date", "width": 110},
+		{"label": _("Dispatch Date"), "fieldname": "dispatch_date", "fieldtype": "Date", "width": 120},
 		{"label": _("Pick List"), "fieldname": "pick_list", "fieldtype": "Link", "options": "Pick List", "width": 160},
 		{"label": _("Invoice ID"), "fieldname": "invoice_id", "fieldtype": "Data", "width": 150},
 		{"label": _("LR Number"), "fieldname": "lr_number", "fieldtype": "Data", "width": 140},
@@ -32,12 +34,15 @@ def execute(filters=None):
 		"so.docstatus < 2",
 	]
 	params = {}
-	if filters.get("from_date"):
-		conditions.append("so.transaction_date >= %(from_date)s")
-		params["from_date"] = filters["from_date"]
-	if filters.get("to_date"):
-		conditions.append("so.transaction_date <= %(to_date)s")
-		params["to_date"] = filters["to_date"]
+	if filters.get("sales_order"):
+		conditions.append("so.name LIKE %(sales_order)s")
+		params["sales_order"] = "%" + filters["sales_order"] + "%"
+	if filters.get("order_date"):
+		conditions.append("so.transaction_date = %(order_date)s")
+		params["order_date"] = filters["order_date"]
+	if filters.get("dispatch_date"):
+		conditions.append("so.custom_dispatch_date = %(dispatch_date)s")
+		params["dispatch_date"] = filters["dispatch_date"]
 	if filters.get("customer"):
 		conditions.append("so.customer = %(customer)s")
 		params["customer"] = filters["customer"]
@@ -45,6 +50,8 @@ def execute(filters=None):
 	rows = frappe.db.sql(
 		"""
 		SELECT so.name AS sales_order,
+			so.transaction_date AS order_date,
+			so.custom_dispatch_date AS dispatch_date,
 			so.custom_invoice_no AS invoice_id,
 			COALESCE(NULLIF(so.po_no, ''), NULLIF(so.custom_po_number, ''), '') AS customer_po_no,
 			so.customer_name AS customer_name,
