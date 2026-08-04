@@ -160,6 +160,10 @@ var SalesOrderEntryListPage = class {
 			this.export_selected_invoices()
 		);
 		if (this.btn_export_invoices) this.btn_export_invoices.hide();
+		// Always-visible entry to the pending-download report.
+		this.page.add_inner_button(__('Pending Invoices'), () =>
+			frappe.set_route('query-report', 'Pending Invoice Downloads')
+		);
 	}
 
 	_selected_names() {
@@ -217,21 +221,13 @@ var SalesOrderEntryListPage = class {
 			args: { names: JSON.stringify(names) },
 			callback: (r) => {
 				const m = r.message || {};
-				// "available" = orders with a PDF not yet downloaded. Nothing new to pull:
 				if (!m.available) {
-					if (m.already_downloaded) {
-						frappe.msgprint(__('All selected invoices have already been downloaded.'));
-					} else {
-						frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
-					}
+					frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
 					return;
 				}
-				const skipped = [];
-				if (m.already_downloaded) skipped.push(__('{0} already downloaded', [m.already_downloaded]));
-				if (m.missing && m.missing.length) skipped.push(__('{0} without invoice', [m.missing.length]));
-				if (skipped.length) {
+				if (m.missing && m.missing.length) {
 					frappe.show_alert(
-						{ message: __('Downloading {0} invoice(s); {1} skipped.', [m.available, skipped.join(', ')]), indicator: 'orange' },
+						{ message: __('{0} of {1} order(s) have an invoice — downloading those; {2} skipped.', [m.available, m.total, m.missing.length]), indicator: 'orange' },
 						7
 					);
 				}
@@ -240,9 +236,6 @@ var SalesOrderEntryListPage = class {
 					encodeURIComponent(JSON.stringify(names));
 				const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 				if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
-				// The downloaded orders are now flagged server-side; refresh so their
-				// state (and any already-downloaded messaging) is current.
-				setTimeout(() => this.load_list(), 1500);
 			},
 		});
 	}

@@ -695,23 +695,16 @@ def download_sales_invoices_zip(names):
 	added = 0
 	used = {}
 	exported = []
-	skipped_already_downloaded = 0
 	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
 		for name in names:
 			# get_file / this loop respect read permission on the order.
 			if not frappe.has_permission("Sales Order", "read", doc=name):
 				continue
 			row = frappe.db.get_value(
-				"Sales Order", name,
-				["custom_invoice_pdf", "custom_invoice_no", "custom_invoice_downloaded"],
-				as_dict=True,
+				"Sales Order", name, ["custom_invoice_pdf", "custom_invoice_no"], as_dict=True
 			) or {}
 			file_url = (row.get("custom_invoice_pdf") or "").strip()
 			if not file_url:
-				continue
-			# Each invoice is bulk-downloaded only once: skip orders already marked.
-			if row.get("custom_invoice_downloaded"):
-				skipped_already_downloaded += 1
 				continue
 			try:
 				content = get_file(file_url)[1]
@@ -733,11 +726,11 @@ def download_sales_invoices_zip(names):
 			exported.append(name)
 
 	if not added:
-		if skipped_already_downloaded:
-			frappe.throw(_("All selected invoices have already been downloaded."))
 		frappe.throw(_("None of the selected Sales Orders have a fetched invoice PDF yet."))
 
-	# Mark exactly the ones exported here as downloaded, so a repeat bulk export skips them.
+	# Mark the exported orders as downloaded so they drop off the "Pending Invoice
+	# Downloads" report. No skip/validation here — a bulk export always downloads
+	# everything selected that has a PDF, even if downloaded before.
 	for name in exported:
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
 	frappe.db.commit()
@@ -757,37 +750,25 @@ def sales_invoices_availability(names):
 	if isinstance(names, str):
 		names = json.loads(names)
 	if not names:
-		return {"available": 0, "already_downloaded": 0, "missing": [], "total": 0}
-	available, already_downloaded, missing = 0, 0, []
+		return {"available": 0, "missing": [], "total": 0}
+	available, missing = 0, []
 	for name in names:
 		if not frappe.has_permission("Sales Order", "read", doc=name):
 			continue
-		row = frappe.db.get_value(
-			"Sales Order", name, ["custom_invoice_pdf", "custom_invoice_downloaded"], as_dict=True
-		) or {}
-		if (row.get("custom_invoice_pdf") or "").strip():
-			# "available" = has a PDF and not yet downloaded (what a bulk export will pull).
-			if row.get("custom_invoice_downloaded"):
-				already_downloaded += 1
-			else:
-				available += 1
+		if (frappe.db.get_value("Sales Order", name, "custom_invoice_pdf") or "").strip():
+			available += 1
 		else:
 			missing.append(name)
-	return {
-		"available": available,
-		"already_downloaded": already_downloaded,
-		"missing": missing,
-		"total": len(names),
-	}
+	return {"available": available, "missing": missing, "total": len(names)}
 
 
 @frappe.whitelist()
 def download_single_invoice(name):
 	"""Download one Sales Order's fetched invoice PDF (the per-row SI button).
 
-	Streams the PDF directly (not a zip) and marks the order as downloaded so the
-	bulk export skips it — but the button itself never blocks, so it can be used any
-	number of times."""
+	Streams the PDF directly (not a zip) and marks the order as downloaded so it
+	drops off the Pending Invoice Downloads report — but the button itself never
+	blocks, so it can be used any number of times."""
 	from frappe.utils.file_manager import get_file
 
 	if not name or not frappe.db.exists("Sales Order", name):
