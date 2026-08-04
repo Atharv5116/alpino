@@ -233,9 +233,34 @@ def available_stock(item_code):
 
 
 # Expose to Jinja environment
+def site_buyer_master(site_name, fallback=None):
+	"""Buyer Master doc for a SITE — the master that owns a Buyer Address child row whose
+	site_name matches — so the SO print shows that site's contact / email / GST, not the
+	family parent's. Falls back to `fallback` (a Buyer Master name, e.g. the SO's
+	custom_offline_buyer_master) when the site can't be resolved. Used by the SO print format."""
+	name = None
+	if site_name:
+		rows = frappe.db.sql(
+			"""
+			SELECT bm.name FROM `tabBuyer Address` ba
+			JOIN `tabBuyer Master` bm ON bm.name = ba.parent
+			WHERE ba.site_name = %s
+			LIMIT 1
+			""",
+			site_name,
+		)
+		if rows:
+			name = rows[0][0]
+	name = name or fallback
+	if name and frappe.db.exists("Buyer Master", name):
+		return frappe.get_doc("Buyer Master", name)
+	return None
+
+
 jinja_methods = {
 	"get_combined_items": get_combined_items,
 	"pack_size": pack_size,
 	"available_stock": available_stock,
 	"sort_locations_by_sku": sort_locations_by_sku,
+	"site_buyer_master": site_buyer_master,
 }

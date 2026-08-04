@@ -55,6 +55,14 @@ SALES_ORDER_PF_REWRITES = [
 		"{% set site_name_obm = frappe.db.get_value('Buyer Master', doc.custom_offline_buyer_master, 'site_name') if doc.get('custom_offline_buyer_master') else '' %}",
 		"{% set site_name_obm = doc.get('custom_site_name') or (frappe.db.get_value('Buyer Master', doc.custom_offline_buyer_master, 'site_name') if doc.get('custom_offline_buyer_master') else '') %}",
 	),
+	# Buyer contact/GST (Phone, Email, GST Type, GSTIN/PAN) must be SITE-WISE: resolve the
+	# Buyer Master from the SO's site (matched to a Buyer Address child row) instead of the
+	# family parent in custom_offline_buyer_master. All buyer fields read obm_doc, so this one
+	# swap fixes every buyer detail. Falls back to custom_offline_buyer_master.
+	(
+		"{% set obm_doc = frappe.get_doc('Buyer Master', doc.custom_offline_buyer_master) if doc.get('custom_offline_buyer_master') else None %}",
+		"{% set obm_doc = site_buyer_master(doc.get('custom_site_name'), doc.get('custom_offline_buyer_master')) %}",
+	),
 	(
 		"{{ frappe.utils.fmt_money(doc.grand_total or 0, currency=doc.currency) }}",
 		"{{ frappe.utils.fmt_money(doc.rounded_total or doc.grand_total or 0, currency=doc.currency) }}",
