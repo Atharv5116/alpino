@@ -1007,10 +1007,9 @@ var SalesOrderEntry = class {
 		});
 		box_field.$input && box_field.$input.css('width', '44px');
 		box_field.$input.on('change', function() {
+			// Box is freely editable (decimals allowed) after the one-time qty conversion;
+			// it does NOT drive qty, so nothing else is recomputed here.
 			me.items[idx].box = flt(box_field.get_value());
-			me.calc_qty_from_box(idx, $row);
-			// Preserve the unit Selling Price (box drives qty, not the unit price).
-			me.calc_row_amount(idx, $row, true);
 		});
 		row_data._box_field = box_field;
 
@@ -1277,13 +1276,12 @@ var SalesOrderEntry = class {
 	}
 
 	calc_box_from_qty(idx, $row) {
-		// Derive box count for display only — the typed qty is never rounded up.
-		// Whole-box compliance (qty + freebies as a multiple of the box factor)
-		// is validated on save instead.
+		// One-time convenience: fill the box count from qty ÷ conversion factor, keeping
+		// decimals. Once filled the box is freely editable and does NOT drive qty back.
 		let item = this.items[idx];
 		let cf = this._box_cache[item.item_code];
 		if (cf) {
-			item.box = Math.ceil(flt(item.qty) / flt(cf));
+			item.box = flt(flt(item.qty) / flt(cf), 2);
 			item._box_field.set_value(item.box);
 		}
 	}
