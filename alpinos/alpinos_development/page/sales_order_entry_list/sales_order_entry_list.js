@@ -217,13 +217,21 @@ var SalesOrderEntryListPage = class {
 			args: { names: JSON.stringify(names) },
 			callback: (r) => {
 				const m = r.message || {};
+				// "available" = orders with a PDF not yet downloaded. Nothing new to pull:
 				if (!m.available) {
-					frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
+					if (m.already_downloaded) {
+						frappe.msgprint(__('All selected invoices have already been downloaded.'));
+					} else {
+						frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
+					}
 					return;
 				}
-				if (m.missing && m.missing.length) {
+				const skipped = [];
+				if (m.already_downloaded) skipped.push(__('{0} already downloaded', [m.already_downloaded]));
+				if (m.missing && m.missing.length) skipped.push(__('{0} without invoice', [m.missing.length]));
+				if (skipped.length) {
 					frappe.show_alert(
-						{ message: __('{0} of {1} order(s) have an invoice — downloading those; {2} skipped.', [m.available, m.total, m.missing.length]), indicator: 'orange' },
+						{ message: __('Downloading {0} invoice(s); {1} skipped.', [m.available, skipped.join(', ')]), indicator: 'orange' },
 						7
 					);
 				}
@@ -232,6 +240,9 @@ var SalesOrderEntryListPage = class {
 					encodeURIComponent(JSON.stringify(names));
 				const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 				if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
+				// The downloaded orders are now flagged server-side; refresh so their
+				// state (and any already-downloaded messaging) is current.
+				setTimeout(() => this.load_list(), 1500);
 			},
 		});
 	}
@@ -357,29 +368,18 @@ var SalesOrderEntryListPage = class {
 			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
-		// SI: extract / re-fetch this order's invoice PDF from Drive on demand. Unlike
-		// the bulk extract (which skips orders that already have one), this always
-		// re-pulls a fresh copy, so it can be clicked any number of times.
+		// SI: download this single order's already-fetched invoice PDF (no resync).
+		// Can be used any number of times; it also marks the order downloaded so the
+		// bulk export skips it.
 		this.wrapper.on('click.solist', '.so-list-si-btn', (e) => {
 			e.stopPropagation();
-			const $btn = $(e.currentTarget);
-			const so = String($btn.data('so') || '');
+			const so = String($(e.currentTarget).data('so') || '');
 			if (!so) return;
-			$btn.prop('disabled', true);
-			frappe.call({
-				method: 'alpinos.invoice_sync.resync_invoice_pdf',
-				args: { sales_order: so },
-				callback: (r) => {
-					$btn.prop('disabled', false);
-					const m = r.message || {};
-					if (m.ok) {
-						frappe.show_alert({ message: m.message || __('Invoice extracted.'), indicator: 'green' }, 5);
-					} else {
-						frappe.msgprint(m.message || __('Could not extract invoice.'));
-					}
-				},
-				error: () => $btn.prop('disabled', false),
-			});
+			const w = window.open(
+				'/api/method/alpinos.sales_order_api.download_single_invoice?name=' + encodeURIComponent(so),
+				'_blank'
+			);
+			if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoice.'));
 		});
 		this.wrapper.on('change.solist', '.so-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
@@ -619,13 +619,10 @@ var SalesOrderEntryListPage = class {
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) {
 					btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
 				}
-				// SI: on-demand invoice-PDF extract (repeatable). Only for accounts
-				// users and only when the order has an Invoice No to fetch.
-				const canResyncInvoice = (frappe.user_roles || []).some((r) =>
-					['Accounts User', 'Accounts Manager', 'System Manager'].includes(r));
-				if (d.invoice_no && canResyncInvoice) {
+				// SI: download this order's invoice PDF (only when one is fetched).
+				if (d.has_invoice_pdf) {
 					btns.push(`<button type="button" class="btn btn-xs btn-default so-list-si-btn"
-						data-so="${esc(d.name)}" title="${esc(__('Extract / re-fetch invoice PDF {0}', [d.invoice_no]))}">SI</button>`);
+						data-so="${esc(d.name)}" title="${esc(__('Download invoice PDF {0}', [d.invoice_no || '']))}">SI</button>`);
 				}
 				return btns.join(' ') || '—';
 			},

@@ -164,6 +164,14 @@ def setup_sales_order_custom_fields():
 				read_only=1,
 				description="External invoice PDF fetched from the Drive folder (filename = Invoice No).",
 			),
+			dict(
+				fieldname="custom_invoice_downloaded",
+				label="Invoice Downloaded",
+				fieldtype="Check",
+				insert_after="custom_invoice_pdf",
+				read_only=1,
+				description="Set once the invoice PDF has been downloaded (bulk export or the per-row SI button). Bulk export skips orders already marked, so each invoice is downloaded only once.",
+			),
 			# Cash Discount section (visible in Totals area)
 			dict(
 				fieldname="custom_cash_discount_section",
