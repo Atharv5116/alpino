@@ -6,33 +6,43 @@ import frappe
 from frappe.utils import cint, flt, now_datetime
 
 
-def _drop_foreign_customer_addresses(dn):
-	"""Clear a billing/shipping Address link that is not registered to this DN's
-	customer.
+def _link_family_addresses_to_customer(dn):
+	"""Make the DN's billing/shipping Address validate against its own customer.
 
-	Alpino's Buyer Master address book materialises a site's Address under every
-	sibling master in the family, so a Sales Order (and the Delivery Note mapped
-	from it) can carry an Address whose Dynamic Link points at a sibling customer.
-	ERPNext's validate_party_address then throws "Billing Address does not belong
-	to the customer" and blocks DN creation. The printed and dispatch address is
-	taken from the SO free-text fields (custom_billing/shipping_address_text), so
-	dropping only the mismatched link is safe — a link that IS the customer's is
-	kept untouched."""
+	A Buyer Master family shares one address book: a customer can own several
+	masters (one per site), and picking any site shows that owning master's whole
+	address book. So a Sales Order placed on the family's PARENT customer can carry
+	a site Address whose Dynamic Link points at the CHILD master's customer that
+	owns the site. The address content is correct, but ERPNext's
+	validate_party_address checks the Dynamic Link and throws "Billing Address does
+	not belong to the customer", blocking DN creation from the Pick List.
+
+	Fix: when the Address is linked to a customer in the SAME buyer family, add the
+	missing Dynamic Link to this DN's customer too, so the DN validates AND keeps
+	its (correct) address. A genuinely foreign address — not in the family — is
+	left untouched so a real data error still surfaces rather than being masked."""
+	from alpinos.sales_order_offline_buyer import buyer_family_customers
+
 	customer = dn.get("customer")
 	if not customer:
 		return
+	family = set(buyer_family_customers(customer))
 	for field in ("customer_address", "shipping_address_name"):
 		addr = dn.get(field)
-		if addr and not frappe.db.exists(
+		if not addr:
+			continue
+		linked = frappe.get_all(
 			"Dynamic Link",
-			{
-				"parenttype": "Address",
-				"parent": addr,
-				"link_doctype": "Customer",
-				"link_name": customer,
-			},
-		):
-			dn.set(field, None)
+			filters={"parenttype": "Address", "parent": addr, "link_doctype": "Customer"},
+			pluck="link_name",
+		)
+		if customer in linked:
+			continue  # already this customer's address — nothing to do
+		if not any(c in family for c in linked):
+			continue  # genuinely foreign address — leave it so the real error shows
+		addr_doc = frappe.get_doc("Address", addr)
+		addr_doc.append("links", {"link_doctype": "Customer", "link_name": customer})
+		addr_doc.save(ignore_permissions=True)
 
 
 def _format_address_text(address_name: Optional[str]) -> str:
@@ -896,7 +906,7 @@ def create_delivery_note_from_pick_list(pick_list_name):
 			if not delivery_note.items:
 				delivery_note = None
 				continue
-			_drop_foreign_customer_addresses(delivery_note)
+			_link_family_addresses_to_customer(delivery_note)
 			delivery_note.flags.ignore_mandatory = True
 			delivery_note.save()
 		return delivery_note
