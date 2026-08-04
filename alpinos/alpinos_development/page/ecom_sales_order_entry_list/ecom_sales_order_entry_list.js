@@ -482,19 +482,12 @@ var EcomSalesOrderListPage = class {
 			callback: (r) => {
 				const m = r.message || {};
 				if (!m.available) {
-					if (m.already_downloaded) {
-						frappe.msgprint(__('All selected invoices have already been downloaded.'));
-					} else {
-						frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
-					}
+					frappe.msgprint(__('None of the selected Sales Orders have a fetched invoice PDF yet.'));
 					return;
 				}
-				const skipped = [];
-				if (m.already_downloaded) skipped.push(__('{0} already downloaded', [m.already_downloaded]));
-				if (m.missing && m.missing.length) skipped.push(__('{0} without invoice', [m.missing.length]));
-				if (skipped.length) {
+				if (m.missing && m.missing.length) {
 					frappe.show_alert(
-						{ message: __('Downloading {0} invoice(s); {1} skipped.', [m.available, skipped.join(', ')]), indicator: 'orange' },
+						{ message: __('{0} of {1} order(s) have an invoice — downloading those; {2} skipped.', [m.available, m.total, m.missing.length]), indicator: 'orange' },
 						7
 					);
 				}
@@ -503,7 +496,6 @@ var EcomSalesOrderListPage = class {
 					encodeURIComponent(JSON.stringify(names));
 				const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 				if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
-				setTimeout(() => this.load_list(), 1500);
 			},
 		});
 	}
