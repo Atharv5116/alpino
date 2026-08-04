@@ -648,20 +648,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let table_name = tr.closest('table').attr('data-table-name');
 			if (table_name === "Items") {
 				let factor = flt(tr.attr('data-conversion-factor')) || 1;
-				let box = Math.ceil(picked / factor);
+				let box = flt(picked / factor, 2);
 				tr.find('.box-input').val(box);
 			}
 
 			page.recalculate_totals();
 		});
 
-		// Box manual input updates totals.
+		// Box manual input updates totals. Decimals are allowed — do not round.
 		container.on('input.alpinosRowEvents change.alpinosRowEvents', '.box-input', function() {
-			let val = $(this).val();
-			if (val && val.indexOf('.') !== -1) {
-				val = Math.round(parseFloat(val));
-				$(this).val(val);
-			}
 			page.recalculate_totals();
 		});
 
