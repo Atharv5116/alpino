@@ -9,6 +9,7 @@
   "item_name",
   "column_break_1",
   "qty",
+  "box",
   "remarks"
  ],
  "fields": [
@@ -38,6 +39,12 @@
    "label": "Quantity"
   },
   {
+   "fieldname": "box",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Box"
+  },
+  {
    "fieldname": "remarks",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -47,7 +54,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-04-20 12:00:00.000000",
+ "modified": "2026-08-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Sales Order Marketing Freebie",

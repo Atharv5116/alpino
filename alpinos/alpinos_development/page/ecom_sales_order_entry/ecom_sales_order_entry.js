@@ -320,7 +320,7 @@ var EcomSalesOrderEntry = class {
 			<td class="cell-sku"></td>
 			<td class="cell-name"><span class="text-muted" style="font-size:12px;">-</span></td>
 			<td class="cell-qty"></td>
-			<td class="cell-box text-right readonly-cell">—</td>
+			<td class="cell-box"></td>
 			<td class="cell-mrp"></td>
 			<td class="cell-margin"></td>
 			<td class="cell-selling"></td>
@@ -347,9 +347,23 @@ var EcomSalesOrderEntry = class {
 			$i.on('input change', () => { row[field] = flt($i.val()); me.recalc_row(row); });
 			return $i;
 		};
-		row._qty = mk_input('.cell-qty', 'qty');
+		// Qty auto-fills Box (Qty ÷ conversion factor, in decimals) once the item
+		// is chosen — a one-time convert. Box stays editable afterwards and edits
+		// do NOT flow back into Qty.
+		row._qty = $('<input type="number" class="form-control input-xs eso-cell-input" min="0">');
+		if (flt(row.qty)) row._qty.val(flt(row.qty));
+		$row.find('.cell-qty').append(row._qty);
+		row._qty.on('input change', () => {
+			row.qty = flt(row._qty.val());
+			me._recalc_box(row);
+			me.recalc_row(row);
+		});
 		row._mrp = mk_input('.cell-mrp', 'mrp');
 		row._margin = mk_input('.cell-margin', 'margin_percent', 'max="90"');
+		row._box = $('<input type="number" class="form-control input-xs eso-cell-input" min="0" step="0.01">');
+		if (flt(row.box)) row._box.val(flt(row.box));
+		$row.find('.cell-box').append(row._box);
+		row._box.on('input change', () => { row.box = flt(row._box.val()); });
 
 		// Selling Price is editable (like the offline Sales Order): typing MRP or
 		// Margin recomputes it, but the user can override it directly — and the
@@ -390,16 +404,27 @@ var EcomSalesOrderEntry = class {
 				row._$row.find('.cell-name').html(frappe.utils.escape_html(row.item_name)).removeClass('text-muted');
 				row._mrp.val(flt(row.mrp) || '');
 				row._margin.val(flt(row.margin_percent) || '');
+				// Only auto-convert when Box is still empty — never clobber a Box
+				// already typed by the user or loaded from a saved order.
+				if (!flt(row.box)) me._recalc_box(row);
 				me.recalc_row(row);
 			},
 		});
+	}
+
+	// One-time Qty → Box conversion (decimals). Only fires on Qty / item change;
+	// a manual Box edit is never overwritten by MRP / Margin / Selling edits.
+	_recalc_box(row) {
+		if (row.box_factor && flt(row.qty)) {
+			row.box = flt(flt(row.qty) / row.box_factor, 2);
+			if (row._box) row._box.val(flt(row.box) || '');
+		}
 	}
 
 	// Driven by MRP / Margin / Qty edits: recompute selling price from margin and
 	// reflect it into the (editable) selling-price input.
 	recalc_row(row) {
 		row.selling_price = flt(flt(row.mrp) * (1 - flt(row.margin_percent) / 100), 2);
-		if (row.box_factor && row.qty) row.box = Math.ceil(flt(row.qty) / row.box_factor);
 		if (row._selling) row._selling.val(flt(row.selling_price) || '');
 		this._paint_row(row);
 		this.render_total();
@@ -413,14 +438,12 @@ var EcomSalesOrderEntry = class {
 			row.margin_percent = flt((1 - flt(row.selling_price) / mrp) * 100, 2);
 			if (row._margin) row._margin.val(row.margin_percent || '');
 		}
-		if (row.box_factor && row.qty) row.box = Math.ceil(flt(row.qty) / row.box_factor);
 		this._paint_row(row);
 		this.render_total();
 	}
 
 	_paint_row(row) {
 		if (!row._$row) return;
-		row._$row.find('.cell-box').text(flt(row.box) ? flt(row.box) : '—');
 		const amount = flt(row.qty) * flt(row.selling_price);
 		row._$row.find('.cell-amount').text(format_number(amount, null, 2));
 	}
@@ -434,13 +457,14 @@ var EcomSalesOrderEntry = class {
 	// ---- freebies (inline Add Freebie) -------------------------------------
 	add_freebie_row(data) {
 		const me = this;
-		const row = Object.assign({ item_code: '', item_name: '', qty: 0 }, data || {});
+		const row = Object.assign({ item_code: '', item_name: '', qty: 0, box: 0 }, data || {});
 		this.freebies.push(row);
 
 		const $row = $(`<tr>
 			<td class="cell-sku"></td>
 			<td class="cell-name"><span class="text-muted" style="font-size:12px;">-</span></td>
 			<td class="cell-qty"></td>
+			<td class="cell-box"></td>
 			<td class="text-center"><button type="button" class="btn btn-xs btn-danger btn-del-row">&times;</button></td>
 		</tr>`);
 		this.wrapper.find('.eso-freebies-table tbody').append($row);
@@ -464,7 +488,14 @@ var EcomSalesOrderEntry = class {
 		const $q = $('<input type="number" class="form-control input-xs eso-cell-input" min="0">');
 		if (flt(row.qty)) $q.val(flt(row.qty));
 		$row.find('.cell-qty').append($q);
-		$q.on('input change', () => { row.qty = flt($q.val()); });
+		$q.on('input change', () => { row.qty = flt($q.val()); me._freebie_autofill_box(row); });
+
+		// Editable Box, auto-filled once from Qty ÷ conversion factor.
+		const $b = $('<input type="number" class="form-control input-xs eso-cell-input" min="0" step="0.01">');
+		if (flt(row.box)) $b.val(flt(row.box));
+		$row.find('.cell-box').append($b);
+		$b.on('input change', () => { row.box = flt($b.val()); });
+		row._box = $b;
 
 		$row.find('.btn-del-row').on('click', () => {
 			const i = me.freebies.indexOf(row);
@@ -477,6 +508,26 @@ var EcomSalesOrderEntry = class {
 			if (data.item_code) sku_field.set_value(data.item_code);
 		}
 		return row;
+	}
+
+	// Freebies have no MRP/margin lookup, so fetch the item's box conversion
+	// factor on demand (cached) and fill Box = Qty ÷ factor. Box stays editable.
+	_freebie_autofill_box(row) {
+		if (!row.item_code) return;
+		const me = this;
+		const apply = (cf) => {
+			if (!cf) return;
+			row.box = flt(flt(row.qty) / flt(cf), 2);
+			if (row._box) row._box.val(flt(row.box) || '');
+		};
+		if (!this._box_cache) this._box_cache = {};
+		const cf = this._box_cache[row.item_code];
+		if (cf) { apply(cf); return; }
+		frappe.call({
+			method: 'alpinos.sales_order_api.get_box_conversion_factor',
+			args: { item_code: row.item_code },
+			callback: (r) => { if (r.message) { me._box_cache[row.item_code] = r.message; apply(r.message); } },
+		});
 	}
 
 	toggle_freebie_po() {
@@ -596,7 +647,7 @@ var EcomSalesOrderEntry = class {
 		if (freebie_po) {
 			items = valid_freebies.map((f) => ({
 				item_code: f.item_code, qty: flt(f.qty),
-				custom_box: 0, custom_customer_mrp: 0, custom_selling_price: 0,
+				custom_box: flt(f.box), custom_customer_mrp: 0, custom_selling_price: 0,
 				margin_percent: 0, custom_gst_percent: 0,
 			}));
 			freebies = [];
@@ -606,7 +657,7 @@ var EcomSalesOrderEntry = class {
 				custom_customer_mrp: flt(r.mrp), custom_selling_price: flt(r.selling_price),
 				margin_percent: flt(r.margin_percent), custom_gst_percent: flt(r.gst_percent),
 			}));
-			freebies = valid_freebies.map((f) => ({ item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty) }));
+			freebies = valid_freebies.map((f) => ({ item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty), box: flt(f.box) }));
 		}
 		return {
 			customer: this.f_customer.get_value(),
@@ -735,7 +786,7 @@ var EcomSalesOrderEntry = class {
 					selling_price: flt(it.custom_selling_price),
 				}));
 				(d.freebies || []).forEach((f) => this.add_freebie_row({
-					item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty),
+					item_code: f.item_code, item_name: f.item_name, qty: flt(f.qty), box: flt(f.box),
 				}));
 				this.stickers = (d.sticker_attachments || []).map((s) => ({
 					attachment: s.attachment || '', file_name: s.file_name || '', remarks: s.remarks || '',
