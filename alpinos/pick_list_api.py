@@ -6,6 +6,35 @@ import frappe
 from frappe.utils import cint, flt, now_datetime
 
 
+def _drop_foreign_customer_addresses(dn):
+	"""Clear a billing/shipping Address link that is not registered to this DN's
+	customer.
+
+	Alpino's Buyer Master address book materialises a site's Address under every
+	sibling master in the family, so a Sales Order (and the Delivery Note mapped
+	from it) can carry an Address whose Dynamic Link points at a sibling customer.
+	ERPNext's validate_party_address then throws "Billing Address does not belong
+	to the customer" and blocks DN creation. The printed and dispatch address is
+	taken from the SO free-text fields (custom_billing/shipping_address_text), so
+	dropping only the mismatched link is safe — a link that IS the customer's is
+	kept untouched."""
+	customer = dn.get("customer")
+	if not customer:
+		return
+	for field in ("customer_address", "shipping_address_name"):
+		addr = dn.get(field)
+		if addr and not frappe.db.exists(
+			"Dynamic Link",
+			{
+				"parenttype": "Address",
+				"parent": addr,
+				"link_doctype": "Customer",
+				"link_name": customer,
+			},
+		):
+			dn.set(field, None)
+
+
 def _format_address_text(address_name: Optional[str]) -> str:
 	"""Return a plain-text, comma-separated address for the given Address name.
 
@@ -867,6 +896,7 @@ def create_delivery_note_from_pick_list(pick_list_name):
 			if not delivery_note.items:
 				delivery_note = None
 				continue
+			_drop_foreign_customer_addresses(delivery_note)
 			delivery_note.flags.ignore_mandatory = True
 			delivery_note.save()
 		return delivery_note
