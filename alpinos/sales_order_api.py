@@ -910,7 +910,14 @@ def get_box_conversion_factor(item_code):
 	if cf:
 		return cf
 	template = frappe.db.get_value("Item", item_code, "variant_of")
-	return _box_cf(template) if template else None
+	if template:
+		cf = _box_cf(template)
+		if cf:
+			return cf
+	# No explicit "Box" UOM on the item or its template: default the factor to 1
+	# so box still mirrors qty ("at least something comes in box"), matching the
+	# behaviour we had before. A real Box UOM factor always takes precedence.
+	return 1.0
 
 
 def _parse_request_child_list(val):
