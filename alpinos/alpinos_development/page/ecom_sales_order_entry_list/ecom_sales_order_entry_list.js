@@ -104,6 +104,12 @@ var EcomSalesOrderListPage = class {
 			this.export_selected_invoices()
 		);
 		if (this.btn_export_invoices) this.btn_export_invoices.hide();
+		// Bulk order-file (PDF) download for the selected orders — same as the
+		// offline Sales Order list.
+		this.btn_download_pdf = this.page.add_inner_button(__('Download PDFs'), () =>
+			this.download_selected_pdfs()
+		);
+		if (this.btn_download_pdf) this.btn_download_pdf.hide();
 	}
 
 	open_import_dialog() {
@@ -463,11 +469,27 @@ var EcomSalesOrderListPage = class {
 		this.wrapper.find('.eso-list-select-all').prop('checked', all.length > 0 && checked.length === all.length);
 		if (checked.length > 0) {
 			if (this.btn_export_invoices) this.btn_export_invoices.show();
+			if (this.btn_download_pdf) this.btn_download_pdf.show();
 			if (this.page.set_indicator) this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
 		} else {
 			if (this.btn_export_invoices) this.btn_export_invoices.hide();
+			if (this.btn_download_pdf) this.btn_download_pdf.hide();
 			if (this.page.clear_indicator) this.page.clear_indicator();
 		}
+	}
+
+	download_selected_pdfs() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		// One PDF per order, bundled into a single ZIP download.
+		const url =
+			'/api/method/alpinos.sales_order_api.download_sales_orders_zip?names=' +
+			encodeURIComponent(JSON.stringify(names));
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDFs.'));
 	}
 
 	export_selected_invoices() {
