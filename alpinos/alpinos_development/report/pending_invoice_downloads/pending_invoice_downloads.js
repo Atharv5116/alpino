@@ -5,8 +5,28 @@ frappe.query_reports["Pending Invoice Downloads"] = {
 		{ fieldname: "dispatch_date", label: __("Dispatch Date"), fieldtype: "Date" },
 		{ fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" },
 	],
+	// Query reports have no reliable row checkboxes, so each row gets its own
+	// Download link (only when the invoice PDF is actually fetched). The header
+	// button downloads everything currently shown.
+	formatter: function (value, row, column, data, default_formatter) {
+		if (column.fieldname === "download") {
+			if (data && data.sales_order && data.pdf_ready === "Yes") {
+				const url =
+					"/api/method/alpinos.sales_order_api.download_single_invoice?name=" +
+					encodeURIComponent(data.sales_order);
+				return `<a href="${url}" style="font-weight:600;">${__("Download")}</a>`;
+			}
+			return `<span class="text-muted">${data && data.invoice_id ? __("No PDF") : "—"}</span>`;
+		}
+		return default_formatter(value, row, column, data);
+	},
 	onload: function (report) {
-		const doDownload = (names) => {
+		report.page.add_inner_button(__("Download All"), function () {
+			const names = (report.data || []).map((r) => r.sales_order).filter(Boolean);
+			if (!names.length) {
+				frappe.msgprint(__("No pending invoices to download."));
+				return;
+			}
 			const url =
 				"/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=" +
 				encodeURIComponent(JSON.stringify(names));
@@ -15,27 +35,8 @@ frappe.query_reports["Pending Invoice Downloads"] = {
 				frappe.msgprint(__("Please allow pop-ups to download the invoices."));
 				return;
 			}
-			// Downloading marks these orders, so refresh to drop them off the list.
+			// Downloading marks those orders, so refresh to drop them off the list.
 			setTimeout(() => report.refresh(), 2500);
-		};
-
-		// Tick rows and download just those; with nothing ticked, offer to download all.
-		report.page.add_inner_button(__("Download Selected"), function () {
-			const checked = (report.get_checked_items && report.get_checked_items()) || [];
-			const names = checked.map((r) => r.sales_order).filter(Boolean);
-			if (names.length) {
-				doDownload(names);
-				return;
-			}
-			const all = (report.data || []).map((r) => r.sales_order).filter(Boolean);
-			if (!all.length) {
-				frappe.msgprint(__("No pending invoices to download."));
-				return;
-			}
-			frappe.confirm(
-				__("No rows are ticked. Download all {0} pending invoice(s)?", [all.length]),
-				() => doDownload(all)
-			);
 		});
 	},
 };

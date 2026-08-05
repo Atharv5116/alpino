@@ -26,6 +26,8 @@ def execute(filters=None):
 		{"label": _("Customer"), "fieldname": "customer_name", "fieldtype": "Data", "width": 220},
 		# Whether the PDF is actually fetched yet — a download can only pull rows that have one.
 		{"label": _("PDF Ready"), "fieldname": "pdf_ready", "fieldtype": "Data", "width": 90},
+		# Per-row download link (rendered by the report JS formatter).
+		{"label": _("Download"), "fieldname": "download", "fieldtype": "Data", "width": 110},
 	]
 
 	conditions = [
