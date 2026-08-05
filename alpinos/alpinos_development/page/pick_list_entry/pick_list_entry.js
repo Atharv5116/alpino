@@ -394,10 +394,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			// whole cycle instead of a Batch master link.
 			let batch_lock = itemsLocked ? 'readonly tabindex="-1"' : '';
 			
-			// Exploded bundle component: qty & box are derived from the combo order,
-			// so both are locked; the row is tinted and tagged with its bundle SKU.
+			// Exploded bundle component: tinted and tagged with its combo SKU. Qty and
+			// Box are editable like any other row (a component can be partially picked),
+			// only locked when items are locked (submitted, or PL User before picking).
 			let is_bundle_comp = !!row.custom_bundle_parent;
-			let comp_lock = is_bundle_comp ? 'readonly tabindex="-1"' : '';
 
 			let box_val = "";
 			if (title === "Items") {
@@ -416,7 +416,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}</td>
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
-					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled} ${comp_lock}/></td>
+					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled}/></td>
 					<td><input type="number" class="form-control input-sm box-input" value="${box_val}" step="0.01" min="0" ${input_disabled} ${box_readonly}/></td>
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock}>
