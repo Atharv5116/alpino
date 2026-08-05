@@ -1945,6 +1945,9 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 		# PO No. is intentionally NOT fetched from the Sales Order — the picker enters it
 		# manually on the Pick List before submit (it's required at submit, not at draft).
 		"custom_po_no": "",
+		# Default Gate / Transporter for a new Pick List — pre-filled but freely editable.
+		"custom_gate": "G-3",
+		"custom_transporter": "Delhivery",
 		"pick_manually": 1,
 		"locations": []
 	})
