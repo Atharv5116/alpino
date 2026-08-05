@@ -16,18 +16,18 @@ def execute(filters=None):
 	filters = filters or {}
 
 	columns = [
+		# Per-row download link (rendered by the report JS formatter) + whether the
+		# PDF is actually fetched. Kept at the front so they are always visible.
+		{"label": _("Download"), "fieldname": "download", "fieldtype": "Data", "width": 110},
+		{"label": _("PDF Ready"), "fieldname": "pdf_ready", "fieldtype": "Data", "width": 90},
 		{"label": _("Sales Order"), "fieldname": "sales_order", "fieldtype": "Link", "options": "Sales Order", "width": 160},
+		{"label": _("Invoice ID"), "fieldname": "invoice_id", "fieldtype": "Data", "width": 130},
 		{"label": _("Order Date"), "fieldname": "order_date", "fieldtype": "Date", "width": 110},
 		{"label": _("Dispatch Date"), "fieldname": "dispatch_date", "fieldtype": "Date", "width": 120},
 		{"label": _("Pick List"), "fieldname": "pick_list", "fieldtype": "Link", "options": "Pick List", "width": 160},
-		{"label": _("Invoice ID"), "fieldname": "invoice_id", "fieldtype": "Data", "width": 150},
 		{"label": _("LR Number"), "fieldname": "lr_number", "fieldtype": "Data", "width": 140},
 		{"label": _("Customer PO No"), "fieldname": "customer_po_no", "fieldtype": "Data", "width": 170},
 		{"label": _("Customer"), "fieldname": "customer_name", "fieldtype": "Data", "width": 220},
-		# Whether the PDF is actually fetched yet — a download can only pull rows that have one.
-		{"label": _("PDF Ready"), "fieldname": "pdf_ready", "fieldtype": "Data", "width": 90},
-		# Per-row download link (rendered by the report JS formatter).
-		{"label": _("Download"), "fieldname": "download", "fieldtype": "Data", "width": 110},
 	]
 
 	conditions = [
