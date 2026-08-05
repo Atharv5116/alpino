@@ -1,0 +1,35 @@
+<style>
+	/* Page-local layout glue only; cards/tables/scroll come from alpinos_pages.css.
+	   No apostrophes in this file. */
+	.invoice-download-queue .idq-fld-col { margin-bottom: 10px; }
+	.invoice-download-queue .idq-list-header { justify-content: space-between; margin-bottom: 12px; }
+	.invoice-download-queue .idq-table th, .invoice-download-queue .idq-table td { vertical-align: middle; }
+	.invoice-download-queue .idq-table td.idq-check-col, .invoice-download-queue .idq-table th.idq-check-col { text-align: center; width: 40px; }
+</style>
+<div class="invoice-download-queue">
+	<div class="alp-card idq-filters-card">
+		<h6 class="alp-section-title">Filters</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 idq-fld-col"><div class="fld-sales-order"></div></div>
+			<div class="col-md-2 col-sm-6 idq-fld-col"><div class="fld-order-date"></div></div>
+			<div class="col-md-2 col-sm-6 idq-fld-col"><div class="fld-dispatch-date"></div></div>
+			<div class="col-md-3 col-sm-6 idq-fld-col"><div class="fld-customer"></div></div>
+		</div>
+		<div class="alp-actions">
+			<button type="button" class="btn btn-primary btn-sm btn-idq-apply">Apply</button>
+			<button type="button" class="btn btn-default btn-sm btn-idq-clear">Clear</button>
+		</div>
+	</div>
+
+	<div class="alp-card idq-list-card">
+		<div class="alp-actions idq-list-header">
+			<span class="text-muted idq-count"></span>
+		</div>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered idq-table">
+				<thead><tr></tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+</div>

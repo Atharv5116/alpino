@@ -162,9 +162,9 @@ var SalesOrderEntryListPage = class {
 			this.export_selected_invoices()
 		);
 		if (this.btn_export_invoices) this.btn_export_invoices.hide();
-		// Always-visible entry to the pending-download report.
+		// Always-visible entry to the tick-and-download invoice queue page.
 		this.page.add_inner_button(__('Pending Invoices'), () =>
-			frappe.set_route('query-report', 'Pending Invoice Downloads')
+			frappe.set_route('invoice-download-queue')
 		);
 	}
 
