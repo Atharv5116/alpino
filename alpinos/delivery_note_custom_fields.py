@@ -36,6 +36,17 @@ def setup_delivery_note_alpinos():
 				depends_on="eval:!doc.is_return",
 			),
 			dict(
+				fieldname="custom_invoice_no",
+				label="Invoice ID",
+				fieldtype="Data",
+				insert_after="custom_dn_so_customer_name",
+				fetch_from="custom_sales_order_id.custom_invoice_no",
+				read_only=1,
+				in_list_view=1,
+				depends_on="eval:!doc.is_return",
+				description="Invoice No from the linked Sales Order (invoice sync).",
+			),
+			dict(
 				fieldname="custom_dispatch_date",
 				label="Dispatch Date",
 				fieldtype="Datetime",

@@ -10,7 +10,7 @@ Exports to Excel via the standard report view (Menu → Export).
 import re
 
 import frappe
-from frappe.utils import flt, getdate
+from frappe.utils import cint, flt, getdate
 
 
 # Indian States + UTs — longest-first so "Uttar Pradesh" wins over a bare "Pradesh" match.
@@ -271,7 +271,8 @@ def _get_data(filters):
 	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="transaction_date asc, name asc")
 
 	# Only report orders whose Pick List has been SUBMITTED — billing data should
-	# appear only once picking is done, not on unpicked/draft orders.
+	# appear only once picking is done, not on unpicked/draft orders. docstatus=1
+	# also means CANCELLED Pick Lists (docstatus=2) never qualify an order here.
 	if so_names:
 		picked = set(
 			frappe.get_all(
@@ -281,6 +282,17 @@ def _get_data(filters):
 			)
 		)
 		so_names = [s for s in so_names if s in picked]
+
+	# By default hide orders whose invoice PDF has already been fetched (invoice
+	# done). "Show All" reveals them again. Orders with an Invoice No assigned but
+	# no PDF yet still show — with the number visible in the Invoice No column.
+	if so_names and not cint(filters.get("show_all")):
+		pdf_rows = frappe.get_all(
+			"Sales Order", filters={"name": ["in", so_names]},
+			fields=["name", "custom_invoice_pdf"],
+		)
+		fetched = {r.name for r in pdf_rows if (r.get("custom_invoice_pdf") or "").strip()}
+		so_names = [s for s in so_names if s not in fetched]
 
 	item_cache, obm_cache, ct_channel_cache = {}, {}, {}
 
@@ -388,7 +400,8 @@ def _get_data(filters):
 		ship_pincode = ship.get("pincode") or ""
 
 		header = {
-			"invoice_no": "",
+			# Invoice No assigned by the Excel invoice-sync import (blank until then).
+			"invoice_no": so.get("custom_invoice_no") or "",
 			"dispatch_date": so.get("custom_dispatch_date") or "",
 			"sales_order_id": so.name,
 			"customer_po_number": so.get("po_no") or "",

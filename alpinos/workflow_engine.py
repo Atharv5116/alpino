@@ -34,6 +34,7 @@ SO_SUBMISSION_PENDING = "Submission Pending"
 SO_READY = "Ready For Dispatch"
 SO_DN_CREATED = "Delivery Note Created"
 SO_DISPATCHED = "Dispatched"
+SO_INVOICE_READY = "Invoice Ready"  # ready for invoice generation; trigger TBD
 SO_PARTIAL_READY = "Partial Ready For Dispatch"
 SO_PARTIAL_DN_CREATED = "Partial Delivery Note Created"
 SO_PARTIAL_DISPATCHED = "Partial Dispatched"

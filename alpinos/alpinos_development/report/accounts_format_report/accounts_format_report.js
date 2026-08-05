@@ -44,6 +44,12 @@ frappe.query_reports["Accounts Format Report"] = {
 			label: "Site Name",
 			fieldtype: "Data",
 		},
+		{
+			fieldname: "show_all",
+			label: "Show All (incl. fetched invoices)",
+			fieldtype: "Check",
+			default: 0,
+		},
 	],
 	onload: function (report) {
 		// The upload/download + PDF-fetch workflow lives on the "Invoice Sync" page.

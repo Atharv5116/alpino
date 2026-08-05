@@ -302,6 +302,7 @@ def get_delivery_note_list(
 			"custom_sales_order_id",
 			"custom_transporter_name",
 			"custom_lr_gr_no",
+			"custom_invoice_no",
 			"custom_assigned_to",
 			"custom_total_boxes",
 		],
