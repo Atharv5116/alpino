@@ -15,6 +15,21 @@ frappe.query_reports["Accounts Format Report"] = {
 			reqd: 1,
 		},
 		{
+			fieldname: "sales_order",
+			label: "Sales Order ID",
+			fieldtype: "Data",
+		},
+		{
+			fieldname: "order_date",
+			label: "Order Date",
+			fieldtype: "Date",
+		},
+		{
+			fieldname: "dispatch_date",
+			label: "Dispatch Date",
+			fieldtype: "Date",
+		},
+		{
 			fieldname: "customer",
 			label: "Customer",
 			fieldtype: "Link",

@@ -255,6 +255,12 @@ def _get_data(filters):
 		so_filters["transaction_date"] = ["between", [filters.from_date, filters.to_date]]
 	if filters.get("customer"):
 		so_filters["customer"] = filters.customer
+	if filters.get("sales_order"):
+		so_filters["name"] = ["like", "%" + filters.get("sales_order") + "%"]
+	if filters.get("order_date"):
+		so_filters["transaction_date"] = filters.get("order_date")
+	if filters.get("dispatch_date"):
+		so_filters["custom_dispatch_date"] = filters.get("dispatch_date")
 
 	# Buyer Master parent / site scoping: restrict the SO scan to the Customers whose
 	# Buyer Master is (or sits under) the selected parent and/or carries the selected site.
