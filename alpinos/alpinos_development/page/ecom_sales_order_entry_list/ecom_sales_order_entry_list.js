@@ -18,7 +18,7 @@ var ESO_STATUS_OPTIONS =
 
 var ESO_WF_STATUS_OPTIONS =
 	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
-	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch\nDelivery Note Created\nDispatched\nInvoice Ready' +
+	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch\nDelivery Note Created\nDispatched' +
 	'\nPartial Ready For Dispatch\nPartial Delivery Note Created\nPartial Dispatched' +
 	'\nForced Ready For Dispatch\nForced Delivery Note Created\nForced Dispatched' +
 	'\nCompleted\nForced Completed\nCancelled';
@@ -34,7 +34,6 @@ var ESO_WF_COLORS = {
 	'Ready For Dispatch': 'blue',
 	'Delivery Note Created': 'blue',
 	Dispatched: 'green',
-	'Invoice Ready': 'blue',
 	'Partial Ready For Dispatch': 'blue',
 	'Partial Delivery Note Created': 'blue',
 	'Partial Dispatched': 'purple',
