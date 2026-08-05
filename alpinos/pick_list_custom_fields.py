@@ -46,6 +46,16 @@ def setup_pick_list_custom_fields():
 				reqd=1,
 			),
 			dict(
+				fieldname="custom_invoice_no",
+				label="Invoice ID",
+				fieldtype="Data",
+				insert_after="custom_order_date",
+				fetch_from="custom_sales_order_id.custom_invoice_no",
+				read_only=1,
+				in_list_view=1,
+				description="Invoice No from the linked Sales Order (invoice sync).",
+			),
+			dict(
 				fieldname="custom_qc_attended_by",
 				label="QC Attended By",
 				fieldtype="Link",

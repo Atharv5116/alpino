@@ -188,7 +188,7 @@ var DeliveryNoteListPage = class {
 	render_rows(rows) {
 		const tb = this.wrapper.find('.dnl-table tbody').empty();
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="11" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
+			tb.append(`<tr><td colspan="12" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
@@ -216,6 +216,7 @@ var DeliveryNoteListPage = class {
 				<td>${dash(d.company)}</td>
 				<td>${dash(d.custom_transporter_name)}</td>
 				<td>${dash(d.custom_lr_gr_no)}</td>
+				<td>${dash(d.custom_invoice_no)}</td>
 				<td>${dash(d.custom_assigned_to)}</td>
 				<td style="text-align:right;">${d.custom_total_boxes == null ? '—' : esc(d.custom_total_boxes)}</td>
 			</tr>`);

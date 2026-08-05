@@ -25,7 +25,7 @@ var SO_STATUS_OPTIONS =
 var SO_WORKFLOW_STATUS_OPTIONS =
 	'\nDraft\nWarehouse Approval Pending\nFuture Dispatch\nToday\'s Dispatch\nWarehouse Approved' +
 	'\nPicking In Progress\nSubmission Pending\nReady For Dispatch' +
-	'\nDelivery Note Created\nDispatched' +
+	'\nDelivery Note Created\nDispatched\nInvoice Ready' +
 	'\nPartial Ready For Dispatch\nPartial Delivery Note Created\nPartial Dispatched' +
 	'\nForced Ready For Dispatch\nForced Delivery Note Created\nForced Dispatched\nForced Completed' +
 	'\nCompleted\nCancelled';
@@ -41,6 +41,7 @@ var SO_WF_COLORS = {
 	'Ready For Dispatch': 'blue',
 	'Delivery Note Created': 'blue',
 	Dispatched: 'green',
+	'Invoice Ready': 'blue',
 	'Partial Ready For Dispatch': 'blue',
 	'Partial Delivery Note Created': 'blue',
 	'Partial Dispatched': 'purple',
@@ -75,10 +76,11 @@ var SO_LIST_LAYOUTS = {
 		{ label: 'Customer Name', sort: 'customer_name', width: '19%', render: (d, h) => h.esc(d.customer_name) },
 		{ label: 'Order Date', sort: 'transaction_date', width: '9%', render: (d, h) => h.date(d.transaction_date) },
 		{ label: 'PO No', sort: 'po_no', width: '12%', render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '15%', render: (d, h) => h.wf(d) },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '14%', render: (d, h) => h.wf(d) },
+		{ label: 'Invoice No', sort: 'custom_invoice_no', width: '10%', render: (d, h) => h.esc(d.invoice_no || '—') },
 		{ label: 'Links', cls: 'text-center', width: '6%', render: (d, h) => h.links(d) },
-		{ label: 'Created By', sort: 'owner', width: '12%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '12%', render: (d, h) => h.money(d) },
+		{ label: 'Created By', sort: 'owner', width: '11%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '11%', render: (d, h) => h.money(d) },
 	],
 	warehouse: [
 		{ label: 'Customer Type', sort: 'order_type', width: '9%', render: (d, h) => h.esc(d.order_type || '—') },
@@ -89,6 +91,7 @@ var SO_LIST_LAYOUTS = {
 		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: '9%', render: (d, h) => h.date(d.custom_po_expiry_date) },
 		{ label: 'Delivery Date', sort: 'delivery_date', width: '9%', render: (d, h) => h.date(d.delivery_date) },
 		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '12%', render: (d, h) => h.wf(d) },
+		{ label: 'Invoice No', sort: 'custom_invoice_no', width: '9%', render: (d, h) => h.esc(d.invoice_no || '—') },
 		{ label: 'Links', cls: 'text-center', width: '5%', render: (d, h) => h.links(d) },
 		{ label: 'Created By', sort: 'owner', width: '9%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
 		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '11%', render: (d, h) => h.money(d) },

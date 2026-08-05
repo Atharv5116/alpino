@@ -349,6 +349,7 @@ SALES_ORDER_STATUSES = "\n".join(
 		"Ready For Dispatch",
 		"Delivery Note Created",
 		"Dispatched",
+		"Invoice Ready",
 		"Partial Ready For Dispatch",
 		"Partial Delivery Note Created",
 		"Partial Dispatched",

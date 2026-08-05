@@ -295,7 +295,7 @@ def get_pick_list_entry_list(
 			"name", "custom_customer_name", "custom_order_date", "company",
 			"status", "custom_workflow_status", "custom_sales_order_id",
 			"custom_po_no", "custom_transporter", "custom_assigned_to",
-			"custom_dispatch_date", "custom_total_box",
+			"custom_dispatch_date", "custom_total_box", "custom_invoice_no",
 		],
 		order_by="creation desc",
 		limit_start=start,

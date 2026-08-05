@@ -299,7 +299,7 @@ var PickListListPage = class {
 		const tb = this.wrapper.find('.pl-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="13" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
+				`<tr><td colspan="14" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
 			);
 			return;
 		}
@@ -339,6 +339,7 @@ var PickListListPage = class {
 				<td>${dash(d.custom_assigned_to)}</td>
 				<td style="text-align:right;">${d.custom_total_box == null ? '—' : esc(d.custom_total_box)}</td>
 				<td>${wfCell}</td>
+				<td>${dash(d.custom_invoice_no)}</td>
 				<td><span class="indicator-pill ${status_color}">${esc(d.status)}</span></td>
 			</tr>`);
 		});
