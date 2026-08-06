@@ -54,6 +54,13 @@ var SalesOrderEntryView = class {
 			this._channel === 'E-com' ? 'ecom-sales-order-entry-list' : 'sales-order-entry-list'
 		);
 		this.page.add_menu_item(__('Back to Sales Order List'), goToList);
+		// Resync Invoice PDF (accounts only): remove the current invoice PDF and
+		// re-fetch it from Drive by Invoice No. The server re-checks the role and
+		// that the order has an Invoice No, so it's safe to always offer here.
+		const _acctRoles = ['Accounts User', 'Accounts Manager', 'System Manager'];
+		if ((frappe.user_roles || []).some((r) => _acctRoles.indexOf(r) !== -1)) {
+			this.page.add_menu_item(__('Resync Invoice PDF'), () => this.resync_invoice_pdf());
+		}
 		// Always-visible: jump back to the list, and Download PDF (any status).
 		this.page.add_inner_button(__('Sales Order List'), goToList);
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf(), __('PDF'));
@@ -514,6 +521,29 @@ var SalesOrderEntryView = class {
 				}
 			});
 		});
+	}
+
+	resync_invoice_pdf() {
+		const me = this;
+		frappe.confirm(
+			__('Remove the current invoice PDF (if any) and re-fetch it from Drive by Invoice No?'),
+			() => {
+				frappe.call({
+					method: 'alpinos.invoice_sync.resync_invoice_pdf',
+					args: { sales_order: me._so_name },
+					freeze: true,
+					freeze_message: __('Re-syncing invoice PDF...'),
+					callback: (r) => {
+						const m = r.message || {};
+						if (m.ok) {
+							frappe.show_alert({ message: m.message || __('Invoice PDF re-synced.'), indicator: 'green' }, 6);
+						} else if (m.message) {
+							frappe.msgprint(m.message);
+						}
+					},
+				});
+			}
+		);
 	}
 
 	setup() {
