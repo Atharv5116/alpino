@@ -142,21 +142,30 @@ def process_invoice_excel(file_url):
 	ext = s.get("pdf_extension") or ".pdf"
 	folder_cache = {}
 
+	from alpinos.alpinos_development.doctype.invoice_sync_log.invoice_sync_log import log_invoice_sync
+
 	updated, fetched, missing, skipped = 0, 0, [], []
 	for so_id, invoice_no in mapping.items():
 		if not frappe.db.exists("Sales Order", so_id):
 			skipped.append(f"{so_id} (not found)")
+			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order not found")
 			continue
 		frappe.db.set_value("Sales Order", so_id, "custom_invoice_no", invoice_no, update_modified=False)
 		updated += 1
 
-		if not drive or frappe.db.get_value("Sales Order", so_id, "custom_invoice_pdf"):
+		if not drive:
+			log_invoice_sync(so_id, invoice_no, "Failed", "Invoice Drive sync not configured")
+			continue
+		if frappe.db.get_value("Sales Order", so_id, "custom_invoice_pdf"):
+			log_invoice_sync(so_id, invoice_no, "Success", "Invoice PDF already present")
 			continue
 		file_url, err = _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext)
 		if err:
 			missing.append(f"{invoice_no} ({err})")
+			log_invoice_sync(so_id, invoice_no, "Failed", err)
 			continue
 		fetched += 1
+		log_invoice_sync(so_id, invoice_no, "Success")
 
 	frappe.db.commit()
 	return {
@@ -225,10 +234,14 @@ def resync_invoice_pdf(sales_order):
 			frappe.delete_doc("File", fname, ignore_permissions=True, force=True)
 	frappe.db.set_value("Sales Order", sales_order, "custom_invoice_pdf", "", update_modified=False)
 
+	from alpinos.alpinos_development.doctype.invoice_sync_log.invoice_sync_log import log_invoice_sync
+
 	file_url, err = _fetch_invoice_pdf(drive, s, sales_order, invoice_no, {})
 	frappe.db.commit()
 	if err:
+		log_invoice_sync(sales_order, invoice_no, "Failed", err, sync_type="Resync")
 		return {"ok": False, "file_url": "", "message": _("Could not fetch invoice {0}: {1}").format(invoice_no, err)}
+	log_invoice_sync(sales_order, invoice_no, "Success", sync_type="Resync")
 	return {"ok": True, "file_url": file_url, "message": _("Invoice {0} re-synced.").format(invoice_no)}
 
 
