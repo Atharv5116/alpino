@@ -26,6 +26,7 @@ var SalesOrderEntry = class {
 		this.scheme_items = [];
 		this.additional_units_items = [];
 		this._box_cache = {};
+		this._box_round_mode = 'decimal';
 		this.setup();
 	}
 
@@ -146,6 +147,7 @@ var SalesOrderEntry = class {
 		me.order_type_field.set_value(d.order_type || '');
 		me.delivery_date_field.set_value(d.delivery_date || '');
 		me.cash_discount_field.set_value(flt(d.custom_cash_discount));
+		me._refresh_box_round_mode();
 
 		frappe.call({
 			method: 'alpinos.sales_order_offline_buyer.sync_offline_buyer_master_addresses',
@@ -307,7 +309,7 @@ var SalesOrderEntry = class {
 		this.site_name_field.$input && this.site_name_field.$input.on('input', function() {
 			me._site_name_manual = true;
 			// Cleared the site -> address dropdowns go back to the whole family.
-			if (!$(this).val()) me._reload_addresses_for_site();
+			if (!$(this).val()) { me._reload_addresses_for_site(); me._refresh_box_round_mode(); }
 		});
 		// Picking a site from the dropdown narrows the address dropdowns to that
 		// site's buyer master. awesomplete-selectcomplete only fires on a real user
@@ -315,6 +317,7 @@ var SalesOrderEntry = class {
 		this.site_name_field.$input && this.site_name_field.$input.on('awesomplete-selectcomplete', function() {
 			me._site_name_manual = true;
 			me._reload_addresses_for_site();
+			me._refresh_box_round_mode();
 		});
 		// Dropdown options = every Site Name in the buyer family (parent + children).
 		me._load_family_sites = function(customer) {
@@ -465,6 +468,7 @@ var SalesOrderEntry = class {
 							// Modern Trade: reveal + default the e-com extra fields.
 							me.apply_mt_buyer_flags(r.message);
 							me.toggle_mt_ecom();
+							me._refresh_box_round_mode();
 						}
 					});
 					frappe.call({
@@ -495,7 +499,7 @@ var SalesOrderEntry = class {
 
 		this.order_type_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Link', options: 'Alpino Customer Type', label: 'Customer Type', fieldname: 'order_type', reqd: 1,
-				onchange: () => me.toggle_mt_ecom() },
+				onchange: () => { me.toggle_mt_ecom(); me._refresh_box_round_mode(); } },
 			parent: header.find('.field-order-type'),
 			render_input: true
 		});
@@ -1275,13 +1279,40 @@ var SalesOrderEntry = class {
 		});
 	}
 
+	// Apply the order's box rounding mode to qty ÷ factor: 'up' -> ceil,
+	// 'down' -> floor, else decimals (2dp). Mode comes from the Alpino Customer
+	// Type (Round Up / Round Down), unless the site's Buyer Master excludes it.
+	_round_box(qty, factor) {
+		let cf = flt(factor);
+		if (!cf) return 0;
+		let raw = flt(qty) / cf;
+		let mode = this._box_round_mode || 'decimal';
+		if (mode === 'up') return Math.ceil(raw);
+		if (mode === 'down') return Math.floor(raw);
+		return flt(raw, 2);
+	}
+
+	// Fetch the box rounding mode for the current customer / site / customer type.
+	_refresh_box_round_mode() {
+		let me = this;
+		let customer = this.customer_field ? this.customer_field.get_value() : '';
+		let site = this.site_name_field ? this.site_name_field.get_value() : '';
+		let ctype = this.order_type_field ? this.order_type_field.get_value() : '';
+		if (!customer && !ctype && !site) { me._box_round_mode = 'decimal'; return; }
+		frappe.call({
+			method: 'alpinos.sales_order_api.get_box_rounding_mode',
+			args: { customer: customer || '', site_name: site || '', customer_type: ctype || '' },
+			callback: function(r) { me._box_round_mode = r.message || 'decimal'; }
+		});
+	}
+
 	calc_box_from_qty(idx, $row) {
-		// One-time convenience: fill the box count from qty ÷ conversion factor, keeping
-		// decimals. Once filled the box is freely editable and does NOT drive qty back.
+		// One-time convenience: fill the box count from qty ÷ conversion factor, rounded
+		// per the order's mode. Once filled the box is freely editable and does NOT drive qty back.
 		let item = this.items[idx];
 		let cf = this._box_cache[item.item_code];
 		if (cf) {
-			item.box = flt(flt(item.qty) / flt(cf), 2);
+			item.box = this._round_box(item.qty, cf);
 			item._box_field.set_value(item.box);
 		}
 	}
@@ -1306,7 +1337,7 @@ var SalesOrderEntry = class {
 		let me = this;
 		let apply = function(cf) {
 			if (!cf) return;
-			row.box = flt(flt(row.qty) / flt(cf), 2);
+			row.box = me._round_box(row.qty, cf);
 			if (row._box_field) row._box_field.set_value(row.box);
 		};
 		let cf = this._box_cache[row.item_code];

@@ -11,7 +11,10 @@
   "channel",
   "abbreviation",
   "sequence",
-  "min_expiry_days"
+  "min_expiry_days",
+  "box_conversion_section",
+  "round_up",
+  "round_down"
  ],
  "fields": [
   {
@@ -50,11 +53,28 @@
    "in_list_view": 1,
    "non_negative": 1,
    "description": "Batches selected on Pick List / Delivery Note for this customer type must have at least this many days remaining to expiry from the dispatch date. Leave blank to disable the check."
+  },
+  {
+   "fieldname": "box_conversion_section",
+   "fieldtype": "Section Break",
+   "label": "Box Conversion"
+  },
+  {
+   "fieldname": "round_up",
+   "fieldtype": "Check",
+   "label": "Round Up",
+   "description": "Box auto-fill rounds UP: box = ceil(qty / conversion factor). e.g. factor 12, qty 13 -> 2 boxes. Overridden to decimal when the site's Buyer Master has Box Conversion Exclusion checked."
+  },
+  {
+   "fieldname": "round_down",
+   "fieldtype": "Check",
+   "label": "Round Down",
+   "description": "Box auto-fill rounds DOWN: box = floor(qty / conversion factor). e.g. factor 12, qty 13-23 -> 1 box, 24 -> 2 boxes. Round Up takes precedence if both are ticked."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-27 00:00:00.000000",
+ "modified": "2026-08-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Alpino Customer Type",

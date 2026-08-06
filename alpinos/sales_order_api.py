@@ -960,6 +960,48 @@ def get_box_conversion_factor(item_code):
 	return 1.0
 
 
+@frappe.whitelist()
+def get_box_rounding_mode(customer=None, site_name=None, customer_type=None):
+	"""How box auto-fill should round qty / conversion factor for an order:
+
+	  'decimal' -> qty / factor kept in decimals (current behaviour)
+	  'up'      -> ceil(qty / factor)
+	  'down'    -> floor(qty / factor)
+
+	Precedence:
+	  1. If the site's owning Buyer Master has Box Conversion Exclusion checked -> 'decimal'.
+	  2. Else the Alpino Customer Type's Round Up / Round Down (Round Up wins if both).
+	  3. Else 'decimal' (default)."""
+	site_name = (site_name or "").strip()
+	if site_name:
+		# Buyer Master that owns this site — either the master's own Site Name, or a
+		# Buyer Address child row carrying it. If it excludes box conversion -> decimal.
+		excluded = frappe.db.sql(
+			"""
+			SELECT 1 FROM `tabBuyer Master` bm
+			WHERE IFNULL(bm.box_conversion_exclusion, 0) = 1
+				AND (bm.site_name = %(s)s
+					OR EXISTS (SELECT 1 FROM `tabBuyer Address` ba
+						WHERE ba.parent = bm.name AND ba.site_name = %(s)s))
+			LIMIT 1
+			""",
+			{"s": site_name},
+		)
+		if excluded:
+			return "decimal"
+
+	ctype = (customer_type or "").strip()
+	if not ctype and customer:
+		ctype = frappe.db.get_value("Customer", customer, "custom_order_type") or ""
+	if ctype:
+		row = frappe.db.get_value("Alpino Customer Type", ctype, ["round_up", "round_down"], as_dict=True) or {}
+		if row.get("round_up"):
+			return "up"
+		if row.get("round_down"):
+			return "down"
+	return "decimal"
+
+
 def _parse_request_child_list(val):
 	"""Desk sends table data JSON-stringified; normalize to a list safely."""
 	import json
