@@ -531,13 +531,56 @@ def _get_data(filters):
 
 		# Main item lines (priced)
 		if not combine_product_bundles:
+			from alpinos.sales_order_api import _bundle_components
+
+			def _combo_components(r):
+				"""[(component_item, base_qty)] for a bundle SO line, else None — same
+				sources as the combine path (native packed items, custom mapping,
+				Product Bundle)."""
+				packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
+				oq = flt(r.qty) or 1
+				if packed:
+					return [(p.item_code, (flt(p.qty) / oq) if oq else flt(p.qty)) for p in packed]
+				comps = _bundle_components(r.item_code)
+				if comps:
+					return [(c.item, flt(c.base_qty)) for c in comps]
+				pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
+				if pb_name:
+					pbis = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
+					return [(p.item_code, flt(p.qty)) for p in pbis]
+				return None
+
 			for r in so.items:
-				emit(
-					r.item_code, r.qty, r.get("custom_box"),
-					r.get("custom_customer_mrp"), r.get("custom_selling_price"),
-					r.get("custom_flat_discount"), r.get("custom_offer"),
-					r.get("custom_additional_discount"), is_priced=True,
-				)
+				comps = _combo_components(r)
+				if comps:
+					# Bundle kept whole (not combined): the combo SKU is never in the
+					# Pick List — only its components are. Derive the combo's picked
+					# qty (component picked / base qty) and box from the pick list so
+					# the combo line still shows instead of being dropped.
+					combo_qty, combo_box, found = None, 0.0, False
+					for (citem, base) in comps:
+						base = base or 1
+						plr = pl_map.get((citem, "Items"))
+						if plr:
+							found = True
+							q = flt(plr.get("qty")) / base
+							combo_qty = q if combo_qty is None else min(combo_qty, q)
+							combo_box += flt(plr.get("box"))
+					if has_pl and not found:
+						continue  # combo not picked / removed
+					emit(
+						r.item_code, combo_qty if combo_qty is not None else flt(r.qty),
+						combo_box, r.get("custom_customer_mrp"), r.get("custom_selling_price"),
+						r.get("custom_flat_discount"), r.get("custom_offer"),
+						r.get("custom_additional_discount"), is_priced=True, from_picklist=False,
+					)
+				else:
+					emit(
+						r.item_code, r.qty, r.get("custom_box"),
+						r.get("custom_customer_mrp"), r.get("custom_selling_price"),
+						r.get("custom_flat_discount"), r.get("custom_offer"),
+						r.get("custom_additional_discount"), is_priced=True,
+					)
 		else:
 			import math
 			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
