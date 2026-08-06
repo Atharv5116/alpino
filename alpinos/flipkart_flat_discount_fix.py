@@ -101,30 +101,58 @@ def run(apply=0, so_ids=None):
 			continue
 
 		old_gt = flt(so.grand_total)
+		old_gross = sum(flt(it.amount) for it in so.items)
+		if not old_gross:
+			print("SKIP  zero line total:", name)
+			continue
+
+		# These Flipkart orders carry a GST-INCLUSIVE rate (grand_total == sum of
+		# line amounts). Do NOT re-run calculate_taxes_and_totals — it treats the
+		# rate as tax-exclusive and re-adds 5%. Instead set each changed line's rate
+		# to MRP x 0.63 and scale every monetary field by the resulting change so the
+		# GST-inclusive structure (grand = rate x qty) is preserved to the paisa.
 		changed = []
 		for it in so.items:
 			if int(round(flt(it.custom_flat_discount))) != int(OLD_FLAT):
 				continue
 			mrp = flt(it.custom_customer_mrp)
+			old_rate = flt(it.rate) or 1.0
 			old_sp = flt(it.custom_selling_price)
-			new_sp = _new_price(mrp)
-			# Flat discount drives the rate; clear any margin/discount so the rate
-			# is exactly the new selling price and the amount recomputes cleanly.
+			new_rate = _new_price(mrp)            # MRP x 0.63, GST-inclusive
+			ratio = new_rate / old_rate
 			it.custom_flat_discount = NEW_FLAT
-			it.custom_selling_price = new_sp
-			it.price_list_rate = new_sp
-			it.rate = new_sp
+			it.custom_selling_price = new_rate
+			it.rate = it.base_rate = new_rate
+			it.price_list_rate = it.base_price_list_rate = new_rate
+			it.net_rate = it.base_net_rate = flt(flt(it.net_rate) * ratio, 2)
+			it.amount = it.base_amount = flt(new_rate * flt(it.qty), 2)
+			it.net_amount = it.base_net_amount = flt(flt(it.net_amount) * ratio, 2)
 			it.discount_amount = 0
 			it.discount_percentage = 0
 			it.margin_type = ""
 			it.margin_rate_or_amount = 0
-			changed.append((it.item_code, mrp, old_sp, new_sp, flt(it.qty)))
+			changed.append((it.item_code, mrp, old_sp, new_rate, flt(it.qty)))
 
 		if not changed:
 			print("----  no 38% lines:", name)
 			continue
 
-		so.calculate_taxes_and_totals()
+		new_gross = sum(flt(it.amount) for it in so.items)
+		factor = new_gross / old_gross
+		for f in (
+			"total", "base_total", "net_total", "base_net_total",
+			"total_taxes_and_charges", "base_total_taxes_and_charges",
+			"grand_total", "base_grand_total", "rounded_total", "base_rounded_total",
+		):
+			if so.get(f) is not None:
+				so.set(f, flt(flt(so.get(f)) * factor, 2))
+		for tx in (so.taxes or []):
+			tx.tax_amount = tx.base_tax_amount = flt(flt(tx.tax_amount) * factor, 2)
+			tx.tax_amount_after_discount_amount = flt(flt(tx.tax_amount_after_discount_amount) * factor, 2)
+			if tx.get("base_tax_amount_after_discount_amount") is not None:
+				tx.base_tax_amount_after_discount_amount = tx.tax_amount
+			tx.total = tx.base_total = flt(flt(tx.total) * factor, 2)
+
 		new_gt = flt(so.grand_total)
 		print(f"==== {name}: {len(changed)} line(s), grand_total {old_gt} -> {new_gt}")
 		for ic, mrp, osp, nsp, q in changed:
