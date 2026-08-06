@@ -22,6 +22,7 @@ var EcomSalesOrderEntry = class {
 		this.stickers = []; // [{attachment, file_name, remarks}]
 		this.editing = null; // SO name when editing a draft
 		this._site_manual = false;
+		this._box_round_mode = 'decimal';
 		this.make_fields();
 		this.setup_header_actions();
 		this.bind_events();
@@ -68,6 +69,7 @@ var EcomSalesOrderEntry = class {
 		this.f_customer_type = mk('.fld-customer-type', {
 			fieldtype: 'Link', options: 'Alpino Customer Type', fieldname: 'customer_type',
 			label: __('Customer Type'), reqd: 1,
+			onchange: () => this._refresh_box_round_mode(),
 		});
 
 		this.f_appointment = mk('.fld-appointment-required', {
@@ -95,9 +97,10 @@ var EcomSalesOrderEntry = class {
 			this.f_site.$input.on('awesomplete-selectcomplete', () => {
 				this._site_manual = true;
 				this._reload_ecom_addresses_for_site();
+				this._refresh_box_round_mode();
 			});
 			this.f_site.$input.on('input', (e) => {
-				if (!$(e.target).val()) this._reload_ecom_addresses_for_site();
+				if (!$(e.target).val()) { this._reload_ecom_addresses_for_site(); this._refresh_box_round_mode(); }
 			});
 		}
 		this.f_bill_gstin = mk('.fld-billing-gstin', {
@@ -278,6 +281,7 @@ var EcomSalesOrderEntry = class {
 				this.f_bill_gstin.set_value(b.gstin || '');
 				this.f_ship_addr.set_value(s.address || '');
 				this.f_ship_gstin.set_value(s.gstin || '');
+				this._refresh_box_round_mode();
 			},
 		});
 	}
@@ -414,9 +418,35 @@ var EcomSalesOrderEntry = class {
 
 	// One-time Qty → Box conversion (decimals). Only fires on Qty / item change;
 	// a manual Box edit is never overwritten by MRP / Margin / Selling edits.
+	// Apply the order's box rounding mode to qty / factor: 'up' -> ceil,
+	// 'down' -> floor, else decimals. Mode from the Alpino Customer Type unless
+	// the site's Buyer Master excludes box conversion.
+	_round_box(qty, factor) {
+		const cf = flt(factor);
+		if (!cf) return 0;
+		const raw = flt(qty) / cf;
+		const mode = this._box_round_mode || 'decimal';
+		if (mode === 'up') return Math.ceil(raw);
+		if (mode === 'down') return Math.floor(raw);
+		return flt(raw, 2);
+	}
+
+	_refresh_box_round_mode() {
+		const me = this;
+		const customer = this.f_customer ? this.f_customer.get_value() : '';
+		const site = this.f_site ? this.f_site.get_value() : '';
+		const ctype = this.f_customer_type ? this.f_customer_type.get_value() : '';
+		if (!customer && !ctype && !site) { me._box_round_mode = 'decimal'; return; }
+		frappe.call({
+			method: 'alpinos.sales_order_api.get_box_rounding_mode',
+			args: { customer: customer || '', site_name: site || '', customer_type: ctype || '' },
+			callback: (r) => { me._box_round_mode = r.message || 'decimal'; },
+		});
+	}
+
 	_recalc_box(row) {
 		if (row.box_factor && flt(row.qty)) {
-			row.box = flt(flt(row.qty) / row.box_factor, 2);
+			row.box = this._round_box(row.qty, row.box_factor);
 			if (row._box) row._box.val(flt(row.box) || '');
 		}
 	}
@@ -517,7 +547,7 @@ var EcomSalesOrderEntry = class {
 		const me = this;
 		const apply = (cf) => {
 			if (!cf) return;
-			row.box = flt(flt(row.qty) / flt(cf), 2);
+			row.box = me._round_box(row.qty, cf);
 			if (row._box) row._box.val(flt(row.box) || '');
 		};
 		if (!this._box_cache) this._box_cache = {};
@@ -764,6 +794,7 @@ var EcomSalesOrderEntry = class {
 				this.f_gst_excl.set_value(cint(fl.gst_exclusive_buyer));
 				this.f_site.set_value(d.site_name || '');
 				this._site_manual = true;
+				this._refresh_box_round_mode();
 				this.f_bill_gstin.set_value(d.billing_gstin || '');
 				this.f_ship_gstin.set_value(d.shipping_gstin || '');
 				this.f_bill_addr.set_value(d.billing_address || '');

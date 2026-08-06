@@ -40,6 +40,7 @@
   "custom_tally_warehouse_id",
   "custom_tally_warehouse",
   "combine_product_bundles",
+  "box_conversion_exclusion",
   "address_section",
   "addresses",
   "contact_section",
@@ -279,6 +280,12 @@
    "label": "Combine Product Bundles"
   },
   {
+   "description": "If ticked, box auto-fill for orders placed on this buyer's sites stays in DECIMAL (qty / conversion factor) and ignores the customer type's Round Up / Round Down.",
+   "fieldname": "box_conversion_exclusion",
+   "fieldtype": "Check",
+   "label": "Box Conversion Exclusion"
+  },
+  {
    "description": "Each Site's Primary row is its Billing Address, and its Shipping rows are its Shipping Addresses. A buyer can host several sites, so you can mark one Primary per Site (give each site a Site Name).",
    "fieldname": "address_section",
    "fieldtype": "Section Break",
@@ -459,7 +466,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-04 12:00:00.000000",
+ "modified": "2026-08-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Buyer Master",
