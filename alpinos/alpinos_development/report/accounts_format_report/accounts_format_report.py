@@ -531,7 +531,11 @@ def _get_data(filters):
 
 		# Main item lines (priced)
 		if not combine_product_bundles:
-			from alpinos.sales_order_api import _bundle_components
+			# NOT combined: show the bundle's COMPONENT items individually (each its
+			# own line with its own picked qty), never the combo SKU and never rolled
+			# up. The Pick List holds the components, so each shows its picked qty.
+			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
+			from alpinos.sales_order_api import get_customer_item_mrp, _bundle_components
 
 			def _combo_components(r):
 				"""[(component_item, base_qty)] for a bundle SO line, else None — same
@@ -550,31 +554,35 @@ def _get_data(filters):
 					return [(p.item_code, flt(p.qty)) for p in pbis]
 				return None
 
+			def _component_price(item_code):
+				res = get_offline_buyer_item_rate(so.customer, item_code)
+				if res and flt(res.get("mrp")) > 0:
+					return flt(res.get("mrp")), flt(res.get("margin_percent")), flt(res.get("rate"))
+				res_mrp = get_customer_item_mrp(so.customer, item_code)
+				mrp = flt(res_mrp) if res_mrp else flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
+				return mrp, 0.0, mrp
+
+			# Emit each item at most once (a component / standalone SKU has a single
+			# merged Pick List row, so a second emit would double-count its picked qty).
+			emitted = set()
 			for r in so.items:
 				comps = _combo_components(r)
 				if comps:
-					# Bundle kept whole (not combined): the combo SKU is never in the
-					# Pick List — only its components are. Derive the combo's picked
-					# qty (component picked / base qty) and box from the pick list so
-					# the combo line still shows instead of being dropped.
-					combo_qty, combo_box, found = None, 0.0, False
 					for (citem, base) in comps:
-						base = base or 1
-						plr = pl_map.get((citem, "Items"))
-						if plr:
-							found = True
-							q = flt(plr.get("qty")) / base
-							combo_qty = q if combo_qty is None else min(combo_qty, q)
-							combo_box += flt(plr.get("box"))
-					if has_pl and not found:
-						continue  # combo not picked / removed
-					emit(
-						r.item_code, combo_qty if combo_qty is not None else flt(r.qty),
-						combo_box, r.get("custom_customer_mrp"), r.get("custom_selling_price"),
-						r.get("custom_flat_discount"), r.get("custom_offer"),
-						r.get("custom_additional_discount"), is_priced=True, from_picklist=False,
-					)
+						if citem in emitted:
+							continue
+						emitted.add(citem)
+						mrp_v, flat_v, sp_v = _component_price(citem)
+						emit(
+							citem, flt(r.qty) * (base or 1), 0,
+							mrp_v, sp_v, flat_v,
+							r.get("custom_offer"), r.get("custom_additional_discount"),
+							is_priced=True,
+						)
 				else:
+					if r.item_code in emitted:
+						continue
+					emitted.add(r.item_code)
 					emit(
 						r.item_code, r.qty, r.get("custom_box"),
 						r.get("custom_customer_mrp"), r.get("custom_selling_price"),
