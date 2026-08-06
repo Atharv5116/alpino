@@ -315,7 +315,18 @@ def get_delivery_note_list(
 	if has_more:
 		rows = rows[:page_length]
 
+	# Invoice No lives on the Sales Order (set after the DN is made), so show the
+	# SO's live value rather than the DN's fetched-at-save copy which is usually empty.
+	so_ids = list({r.custom_sales_order_id for r in rows if r.get("custom_sales_order_id")})
+	inv_by_so = {}
+	if so_ids:
+		for so in frappe.get_all(
+			"Sales Order", filters={"name": ["in", so_ids]}, fields=["name", "custom_invoice_no"]
+		):
+			inv_by_so[so.name] = so.custom_invoice_no or ""
+
 	for r in rows:
+		r["custom_invoice_no"] = inv_by_so.get(r.get("custom_sales_order_id"), "")
 		if r.get("custom_dispatch_date"):
 			try:
 				r["custom_dispatch_date"] = formatdate(str(r["custom_dispatch_date"])[:10])

@@ -305,7 +305,19 @@ def get_pick_list_entry_list(
 	has_more = len(data) > page_length
 	if has_more:
 		data = data[:page_length]
-		
+
+	# Invoice No lives on the Sales Order and is set AFTER the Pick List is made,
+	# so the PL's own fetched copy is usually stale/empty — show the SO's live value.
+	so_ids = list({r.custom_sales_order_id for r in data if r.get("custom_sales_order_id")})
+	inv_by_so = {}
+	if so_ids:
+		for r in frappe.get_all(
+			"Sales Order", filters={"name": ["in", so_ids]}, fields=["name", "custom_invoice_no"]
+		):
+			inv_by_so[r.name] = r.custom_invoice_no or ""
+	for r in data:
+		r["custom_invoice_no"] = inv_by_so.get(r.get("custom_sales_order_id"), "")
+
 	return {
 		"data": data,
 		"has_more": has_more,

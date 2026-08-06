@@ -128,6 +128,10 @@ def process_invoice_excel(file_url):
 			continue
 		so_id = str(r[so_idx]).strip() if r[so_idx] is not None else ""
 		invoice = str(r[inv_idx]).strip() if len(r) > inv_idx and r[inv_idx] is not None else ""
+		# Only the LAST 4 characters are the actual Invoice ID (e.g. "abcd4567" ->
+		# "4567") — that's what the SO stores and what the Drive PDF is named by.
+		if invoice:
+			invoice = invoice[-4:]
 		if so_id and invoice:
 			mapping[so_id] = invoice
 
