@@ -82,6 +82,33 @@ def run_margin(apply=0, customer=None):
 		print(f"\nDRY RUN margin: {n_item} Buyer Item + {n_margin} Buyer Margin row(s) would change.")
 
 
+def diag_margin(customer=None):
+	"""Find where the Flipkart 38% margin actually lives (run_margin found nothing)."""
+	customer = customer or FLIPKART_CUSTOMER
+	print("customer:", customer, "| exists:", frappe.db.exists("Customer", customer))
+
+	print("\nBuyer Master rows for this customer:",
+		  frappe.get_all("Buyer Master", filters={"customer": customer}, fields=["name", "customer"]))
+	print("Buyer Master customer LIKE %Flipkart%:",
+		  frappe.get_all("Buyer Master", filters={"customer": ["like", "%Flipkart%"]}, fields=["name", "customer"]))
+
+	cats = frappe.get_all("Buyer Items", filters={"buyer": customer}, fields=["name", "buyer"])
+	print("\nBuyer Items catalogs (buyer == customer):", cats)
+	cats_like = frappe.get_all("Buyer Items", filters={"buyer": ["like", "%Flipkart%"]}, fields=["name", "buyer"])
+	print("Buyer Items catalogs (buyer LIKE %Flipkart%):", cats_like)
+	for c in (cats or cats_like):
+		rows = frappe.get_all("Buyer Item", filters={"parent": c.name},
+							  fields=["item_code", "mrp", "margin_percent", "selling_rate"], limit=8)
+		print(f"  catalog {c.name} (buyer={c.buyer}) sample rows:")
+		for r in rows:
+			print("    ", r)
+
+	from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
+	print("\nget_offline_buyer_item_rate for sample Flipkart SKUs:")
+	for sku in ("SP-DC-1000", "SO-CH-1000", "PB-NCR-1000", "PB-CHSM-400"):
+		print("  ", sku, "->", get_offline_buyer_item_rate(customer, sku))
+
+
 def run(apply=0, so_ids=None):
 	"""Preview (default) or apply the 38% -> 37% flat-discount fix on the Flipkart SOs."""
 	apply = int(apply or 0)
