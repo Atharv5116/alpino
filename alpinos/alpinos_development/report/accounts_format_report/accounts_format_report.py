@@ -457,6 +457,16 @@ def _get_data(filters):
 				unit, box = flt(fallback_qty), flt(fallback_box)
 			else:
 				plr = pl_map.get((item_code, source_table))
+				if not plr and source_table == "Items":
+					# Exploded bundle components can land under a source table other
+					# than "Items" depending on how the Pick List was built, so the
+					# exact (item, "Items") key can miss and the component would be
+					# dropped. Fall back to this item's TOTAL picked qty/box across all
+					# sections (a genuinely-unpicked item sums to 0 and still drops).
+					tq = sum(flt(v.get("qty")) for (ic, _s), v in pl_map.items() if ic == item_code)
+					tb = sum(flt(v.get("box")) for (ic, _s), v in pl_map.items() if ic == item_code)
+					if tq:
+						plr = {"qty": tq, "box": tb}
 				if plr:
 					unit, box = flt(plr.get("qty")), flt(plr.get("box"))
 				elif has_pl:
