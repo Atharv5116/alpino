@@ -539,144 +539,144 @@ def _get_data(filters):
 		if val is not None:
 			combine_product_bundles = bool(val)
 
-		# Main item lines (priced)
-		if not combine_product_bundles:
-			# NOT combined: show the bundle's COMPONENT items individually (each its
-			# own line with its own picked qty), never the combo SKU and never rolled
-			# up. The Pick List holds the components, so each shows its picked qty.
-			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
-			from alpinos.sales_order_api import get_customer_item_mrp, _bundle_components
+		# ── Main item lines (priced) ────────────────────────────────────────
+		# ONE ROW PER SALES ORDER LINE's own contribution — a combo's components are
+		# never merged into a standalone line of the same SKU. For 2 x ITEMC (a combo of
+		# 2 x ITEMA + 3 x ITEMB) ordered alongside 1 x ITEMA:
+		#   Combine Product Bundles ON  -> ITEMA 4, ITEMB 6 (the combo, exploded), ITEMA 1
+		#   Combine Product Bundles OFF -> ITEMC 2, ITEMA 1  (as entered, like the PDF —
+		#       utils.get_combined_items returns doc.items untouched when the flag is off)
+		#
+		# Qty still follows the submitted Pick List, but it has to be allocated back onto
+		# the SO lines first: the Pick List only ever holds EXPLODED components, so a combo
+		# SKU is never in it by name, and a component that is ALSO ordered standalone sits
+		# in ONE merged picked row shared by both lines. Walking the lines in order and
+		# consuming picked stock as we go (a combo unit eats base_qty of each component)
+		# keeps the lines from double-counting that shared row, and still shrinks or drops
+		# a line that was short-picked / removed.
+		import math
+		from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
+		from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
 
-			def _combo_components(r):
-				"""[(component_item, base_qty)] for a bundle SO line, else None — same
-				sources as the combine path (native packed items, custom mapping,
-				Product Bundle)."""
-				packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
-				oq = flt(r.qty) or 1
-				if packed:
-					return [(p.item_code, (flt(p.qty) / oq) if oq else flt(p.qty)) for p in packed]
-				comps = _bundle_components(r.item_code)
-				if comps:
-					return [(c.item, flt(c.base_qty)) for c in comps]
-				pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
-				if pb_name:
-					pbis = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
-					return [(p.item_code, flt(p.qty)) for p in pbis]
-				return None
+		def _combo_components(r):
+			"""[(component_item, qty_per_combo_unit)] for a bundle SO line, else None —
+			native packed items, the alpinos custom mapping, or a Product Bundle."""
+			packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
+			oq = flt(r.qty) or 1
+			if packed:
+				return [(p.item_code, (flt(p.qty) / oq) if oq else flt(p.qty)) for p in packed]
+			comps = _bundle_components(r.item_code)
+			if comps:
+				return [(c.item, flt(c.base_qty)) for c in comps]
+			pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
+			if pb_name:
+				pbis = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
+				return [(p.item_code, flt(p.qty)) for p in pbis]
+			return None
 
-			def _component_price(item_code):
-				res = get_offline_buyer_item_rate(so.customer, item_code)
-				if res and flt(res.get("mrp")) > 0:
-					return flt(res.get("mrp")), flt(res.get("margin_percent")), flt(res.get("rate"))
-				res_mrp = get_customer_item_mrp(so.customer, item_code)
-				mrp = flt(res_mrp) if res_mrp else flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
-				return mrp, 0.0, mrp
+		def _component_price(item_code):
+			"""(mrp, flat%, selling price) for an exploded component from the buyer
+			catalog — it has no saved Sales Order line of its own to price it from."""
+			res = get_offline_buyer_item_rate(so.customer, item_code)
+			if res and flt(res.get("mrp")) > 0:
+				return flt(res.get("mrp")), flt(res.get("margin_percent")), flt(res.get("rate"))
+			res_mrp = get_customer_item_mrp(so.customer, item_code)
+			mrp = flt(res_mrp) if res_mrp else flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
+			return mrp, 0.0, mrp
 
-			# Emit each item at most once (a component / standalone SKU has a single
-			# merged Pick List row, so a second emit would double-count its picked qty).
-			emitted = set()
-			for r in so.items:
-				comps = _combo_components(r)
-				if comps:
-					for (citem, base) in comps:
-						if citem in emitted:
-							continue
-						emitted.add(citem)
-						mrp_v, flat_v, sp_v = _component_price(citem)
-						emit(
-							citem, flt(r.qty) * (base or 1), 0,
-							mrp_v, sp_v, flat_v,
-							r.get("custom_offer"), r.get("custom_additional_discount"),
-							is_priced=True,
-						)
-				else:
-					if r.item_code in emitted:
+		# Picked-but-not-yet-allocated stock per item, from the submitted Pick List.
+		avail, box_pool = {}, {}
+		for (ic, src), v in pl_map.items():
+			if src == "Items":
+				avail[ic] = flt(avail.get(ic, 0.0)) + flt(v.get("qty"))
+				box_pool[ic] = flt(box_pool.get(ic, 0.0)) + flt(v.get("box"))
+		for (ic, _src), v in pl_map.items():
+			# Exploded components can land under a source table other than "Items"
+			# depending on how the Pick List was built; fall back to the item's total
+			# picked qty when it has no "Items" row at all (same fallback as emit()).
+			if ic not in avail:
+				avail[ic] = sum(flt(x.get("qty")) for (c, _s), x in pl_map.items() if c == ic)
+				box_pool[ic] = sum(flt(x.get("box")) for (c, _s), x in pl_map.items() if c == ic)
+		picked_total = dict(avail)  # snapshot, before the lines consume it
+
+		def _take(item_code, want):
+			"""Consume up to `want` of item_code from the unallocated picked stock."""
+			got = min(flt(avail.get(item_code, 0.0)), flt(want))
+			if got > 0:
+				avail[item_code] = flt(avail.get(item_code, 0.0)) - got
+			return got
+
+		def _box_share(item_code, units):
+			"""This line's slice of the item's PICKED boxes, pro rata on units. The Pick
+			List merges a component shared by a combo line and a standalone line into one
+			row, so its box count has to be split the same way its qty is — a line that
+			takes the whole picked qty keeps the whole box count."""
+			tot = flt(picked_total.get(item_code, 0.0))
+			if not tot or not flt(units):
+				return 0.0
+			return flt(round(flt(box_pool.get(item_code, 0.0)) * flt(units) / tot))
+
+		for r in so.items:
+			ordered = flt(r.qty)
+			comps = _combo_components(r)
+			if not has_pl:
+				picked = ordered
+			elif comps:
+				# Whole combos the remaining picked components can still cover.
+				picked = ordered
+				for (citem, per) in comps:
+					per = flt(per) or 1
+					picked = min(picked, math.floor(flt(avail.get(citem, 0.0)) / per))
+				picked = max(flt(picked), 0.0)
+				for (citem, per) in comps:
+					_take(citem, picked * (flt(per) or 1))
+			else:
+				picked = _take(r.item_code, ordered)
+
+			if has_pl and not picked:
+				# Nothing of this line survived in the Pick List — not dispatched.
+				continue
+
+			if comps and combine_product_bundles:
+				# Combined: this combo line explodes into its own component rows, priced
+				# from the buyer catalog. Kept separate from any standalone line of the
+				# same SKU, which reports its own qty at its own confirmed price.
+				for (citem, per) in comps:
+					cqty = picked * (flt(per) or 1)
+					if not cqty:
 						continue
-					emitted.add(r.item_code)
+					if has_pl:
+						cbox = _box_share(citem, cqty)
+					else:
+						cf = flt(get_box_conversion_factor(citem))
+						cbox = math.ceil(cqty / cf) if cf else 0
+					mrp_v, flat_v, sp_v = _component_price(citem)
 					emit(
-						r.item_code, r.qty, r.get("custom_box"),
-						r.get("custom_customer_mrp"), r.get("custom_selling_price"),
-						r.get("custom_flat_discount"), r.get("custom_offer"),
-						r.get("custom_additional_discount"), is_priced=True,
+						citem, cqty, cbox,
+						mrp_v, sp_v, flat_v,
+						r.get("custom_offer"), r.get("custom_additional_discount"),
+						is_priced=True, from_picklist=False,
 					)
-		else:
-			import math
-			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
-			from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
+				continue
 
-			exploded_items = {}
+			# The line itself: a plain item (either mode), or the combo SKU as entered
+			# when Combine Product Bundles is off — with its own stored pricing. A combo
+			# SKU has no picked row of its own, so its Box is its components' picked boxes.
+			if not has_pl:
+				box = flt(r.get("custom_box"))
+			elif comps:
+				box = sum(_box_share(citem, picked * (flt(per) or 1)) for (citem, per) in comps)
+			else:
+				box = _box_share(r.item_code, picked)
 
-			def add_item_to_exploded(item_code, qty, parent_offer, parent_additional, source_row=None):
-				if source_row is not None:
-					# Plain saved Sales Order line: use its OWN stored pricing verbatim — never
-					# re-price from the (possibly since-changed) buyer catalog, so the report
-					# matches the SO view/PDF exactly (what the order was confirmed at).
-					mrp_val = flt(source_row.get("custom_customer_mrp") or 0)
-					flat_val = flt(source_row.get("custom_flat_discount") or 0)
-					sp_val = flt(source_row.get("custom_selling_price") or source_row.get("rate") or 0)
-				else:
-					# Exploded bundle component — no saved SO line of its own, so derive the price
-					# from the buyer catalog (fallback to customer MRP / item valuation).
-					mrp_val = 0
-					flat_val = 0
-					sp_val = 0
-					res = get_offline_buyer_item_rate(so.customer, item_code)
-					if res and flt(res.get("mrp")) > 0:
-						mrp_val = flt(res.get("mrp"))
-						flat_val = flt(res.get("margin_percent"))
-						sp_val = flt(res.get("rate"))
-					else:
-						res_mrp = get_customer_item_mrp(so.customer, item_code)
-						if res_mrp:
-							mrp_val = flt(res_mrp)
-						else:
-							mrp_val = flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
-						sp_val = mrp_val * (1 - flat_val / 100.0)
-
-				if item_code not in exploded_items:
-					exploded_items[item_code] = {
-						"item_code": item_code,
-						"qty": 0.0,
-						"mrp": mrp_val,
-						"flat_discount": flat_val,
-						"offer": parent_offer,
-						"additional_discount": parent_additional,
-						"selling_price": sp_val,
-					}
-				exploded_items[item_code]["qty"] += qty
-
-			for r in so.items:
-				packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
-				if packed:
-					for p in packed:
-						add_item_to_exploded(p.item_code, flt(p.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
-				else:
-					# alpinos custom bundle (custom_is_bundle / custom_product_mapping):
-					# no native Packed Items, so explode it the SAME way the Pick List
-					# does — otherwise the combo SKU (which isn't in the pick list, only
-					# its components are) reports qty 0.
-					comps = _bundle_components(r.item_code)
-					if comps:
-						for c in comps:
-							add_item_to_exploded(c.item, flt(r.qty) * flt(c.base_qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
-					else:
-						pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
-						if pb_name:
-							pb_items = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
-							for p in pb_items:
-								add_item_to_exploded(p.item_code, flt(p.qty) * flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0))
-						else:
-							add_item_to_exploded(r.item_code, flt(r.qty), flt(r.get("custom_offer") or 0), flt(r.get("custom_additional_discount") or 0), source_row=r)
-
-			for code, item_dict in exploded_items.items():
-				cf = flt(get_box_conversion_factor(code))
-				box = math.ceil(item_dict["qty"] / cf) if cf else 0
-				emit(
-					code, item_dict["qty"], box,
-					item_dict["mrp"], item_dict["selling_price"],
-					item_dict["flat_discount"], item_dict["offer"],
-					item_dict["additional_discount"], is_priced=True,
-				)
+			emit(
+				r.item_code, picked, box,
+				r.get("custom_customer_mrp"),
+				r.get("custom_selling_price") or r.get("rate"),
+				r.get("custom_flat_discount"), r.get("custom_offer"),
+				r.get("custom_additional_discount"), is_priced=True,
+				from_picklist=False,
+			)
 
 		# Marketing freebies / scheme items / additional-unit (damage) items — selling
 		# rate 0, qty taken straight from the Sales Order (not the pick list, which
