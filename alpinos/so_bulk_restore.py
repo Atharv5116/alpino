@@ -13,12 +13,18 @@
 #   bench --site <site> execute alpinos.so_bulk_restore.run --kwargs "{'csv_path': '...', 'apply': 1}"
 
 import csv
+import os
 import re
 
 import frappe
 from frappe.utils import cint, flt
 
 PARENT_DT = "Sales Order"
+
+# Default CSV location on the server (kept OUT of the repo — it holds customer PII).
+# Upload the export here once, then run() needs no csv_path:
+#   scp ~/Downloads/"Sales Order (9).csv" frappe@<server>:~/so_restore_9.csv
+DEFAULT_CSV = os.path.expanduser("~/so_restore_9.csv")
 
 # CSV child-table suffix -> child doctype
 CHILD_TABLES = {
@@ -134,9 +140,17 @@ def _child_col_index(hdr, suffix, child_map):
 	return cols, key_i
 
 
-def run(csv_path, apply=0, limit=None):
+def run(csv_path=None, apply=0, limit=None):
 	apply = cint(apply)
 	limit = cint(limit) if limit else None
+	csv_path = csv_path or DEFAULT_CSV
+	if not os.path.exists(csv_path):
+		print(f"CSV not found at: {csv_path}")
+		print("Upload the export there once (no repo/PII involved), e.g. from your Mac:")
+		print('  scp ~/Downloads/"Sales Order (9).csv" frappe@<server>:~/so_restore_9.csv')
+		print("or pass an explicit path: --kwargs \"{'csv_path': '/full/path.csv'}\"")
+		return
+	print(f"source: {csv_path}")
 	hdr, data = _load(csv_path)
 	ci, groups = _group(hdr, data)
 	if limit:
