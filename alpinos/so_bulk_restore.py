@@ -140,10 +140,22 @@ def _child_col_index(hdr, suffix, child_map):
 	return cols, key_i
 
 
+def _resolve_csv_path(csv_path):
+	"""Accept a filesystem path, a Frappe File URL (/files/... or /private/files/...),
+	or nothing (fall back to DEFAULT_CSV)."""
+	if not csv_path:
+		return DEFAULT_CSV
+	if csv_path.startswith("/private/files/"):
+		return frappe.get_site_path("private", "files", csv_path[len("/private/files/"):])
+	if csv_path.startswith("/files/"):
+		return frappe.get_site_path("public", "files", csv_path[len("/files/"):])
+	return csv_path
+
+
 def run(csv_path=None, apply=0, limit=None):
 	apply = cint(apply)
 	limit = cint(limit) if limit else None
-	csv_path = csv_path or DEFAULT_CSV
+	csv_path = _resolve_csv_path(csv_path)
 	if not os.path.exists(csv_path):
 		print(f"CSV not found at: {csv_path}")
 		print("Upload the export there once (no repo/PII involved), e.g. from your Mac:")
