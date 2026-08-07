@@ -152,9 +152,10 @@ def _resolve_csv_path(csv_path):
 	return csv_path
 
 
-def run(csv_path=None, apply=0, limit=None):
+def run(csv_path=None, apply=0, limit=None, prefix="U"):
 	apply = cint(apply)
 	limit = cint(limit) if limit else None
+	prefix = prefix or ""
 	csv_path = _resolve_csv_path(csv_path)
 	if not os.path.exists(csv_path):
 		print(f"CSV not found at: {csv_path}")
@@ -191,13 +192,16 @@ def run(csv_path=None, apply=0, limit=None):
 							 "Alpino Customer Type": set()}
 	status_ct = {}
 	for gp in groups:
-		if frappe.db.exists("Sales Order", gp["id"]):
-			existing.append(gp["id"])
+		if frappe.db.exists("Sales Order", prefix + gp["id"]):
+			existing.append(prefix + gp["id"])
 		prow = gp["rows"][0]
 		st = (prow[ci["Status"]] if "Status" in ci else "").strip()
 		status_ct[st] = status_ct.get(st, 0) + 1
 		_collect_missing(gp, ci, child_maps, missing)
 
+	if prefix:
+		sample = groups[0]["id"] if groups else "SOR-..."
+		print(f"prefix: {prefix!r}  (e.g. {sample} -> {prefix + sample})")
 	print(f"orders: {len(groups)} | status: {status_ct}")
 	if existing:
 		print(f"ALREADY EXIST (will be skipped): {len(existing)} -> {existing[:10]}{'...' if len(existing)>10 else ''}")
@@ -215,14 +219,14 @@ def run(csv_path=None, apply=0, limit=None):
 
 	created, skipped, failed = 0, 0, []
 	for gp in groups:
-		if gp["id"] in existing:
+		if (prefix + gp["id"]) in existing:
 			skipped += 1
 			continue
 		try:
-			_create_one(gp, ci, parent_cols, child_maps)
+			_create_one(gp, ci, parent_cols, child_maps, prefix)
 			created += 1
 		except Exception as e:
-			failed.append((gp["id"], str(e)[:150]))
+			failed.append((prefix + gp["id"], str(e)[:150]))
 			frappe.db.rollback()
 	frappe.db.commit()
 	print(f"\nAPPLIED: created {created}, skipped {skipped} existing, failed {len(failed)}.")
@@ -265,7 +269,7 @@ def _collect_missing(gp, ci, child_maps, missing):
 				missing["Warehouse"].add(r[wh_i].strip())
 
 
-def _create_one(gp, ci, parent_cols, child_maps):
+def _create_one(gp, ci, parent_cols, child_maps, prefix=""):
 	prow = gp["rows"][0]
 	doc = frappe.new_doc(PARENT_DT)
 
@@ -296,8 +300,8 @@ def _create_one(gp, ci, parent_cols, child_maps):
 			if row:
 				doc.append(tf, row)
 
-	# preserve the exact name + skip all recompute / validation / link checks
-	doc.name = gp["id"]
+	# preserve the (optionally prefixed) name + skip all recompute / validation / link checks
+	doc.name = prefix + gp["id"]
 	doc.flags.name_set = True
 	doc.flags.ignore_validate = True
 	doc.flags.ignore_mandatory = True
