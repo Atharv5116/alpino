@@ -49,8 +49,8 @@ SITE_MAP = {
 
 def _derive(so, new_site):
 	"""What the site change should cascade to — mirrors the entry page."""
-	buyer_gst = frappe.db.get_value("Buyer Master", {"customer": so.customer}, "gst_no")
-	gstin = (_gst_for_site(new_site, buyer_gst) or "").strip().upper()
+	# Site-wise GST only — no fallback to the family parent's GSTIN (blank if unresolved).
+	gstin = (_gst_for_site(new_site, "") or "").strip().upper()
 
 	addrs = get_customer_addresses_for_display(so.customer, new_site) or []
 	billing = next((a for a in addrs if a.get("is_primary")), addrs[0] if addrs else None)

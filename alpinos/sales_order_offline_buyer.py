@@ -204,6 +204,49 @@ def get_offline_buyer_for_customer(customer):
 	}
 
 
+# GST state (first two digits of a GSTIN) -> India state/UT name.
+_GST_STATE_CODES = {
+	"Jammu and Kashmir": "01", "Himachal Pradesh": "02", "Punjab": "03", "Chandigarh": "04",
+	"Uttarakhand": "05", "Haryana": "06", "Delhi": "07", "Rajasthan": "08", "Uttar Pradesh": "09",
+	"Bihar": "10", "Sikkim": "11", "Arunachal Pradesh": "12", "Nagaland": "13", "Manipur": "14",
+	"Mizoram": "15", "Tripura": "16", "Meghalaya": "17", "Assam": "18", "West Bengal": "19",
+	"Jharkhand": "20", "Odisha": "21", "Chhattisgarh": "22", "Madhya Pradesh": "23", "Gujarat": "24",
+	"Dadra and Nagar Haveli and Daman and Diu": "26", "Maharashtra": "27", "Karnataka": "29",
+	"Goa": "30", "Lakshadweep": "31", "Kerala": "32", "Tamil Nadu": "33", "Puducherry": "34",
+	"Andaman and Nicobar Islands": "35", "Telangana": "36", "Andhra Pradesh": "37", "Ladakh": "38",
+}
+
+
+def gst_state_code(gstin):
+	"""First two digits of a GSTIN (the state code), or '' when not a valid GSTIN prefix."""
+	g = (gstin or "").strip()
+	return g[:2] if len(g) >= 2 and g[:2].isdigit() else ""
+
+
+def validate_gstin_state_match(gstin, state):
+	"""(ok, expected_code, gstin_code): ok is True when either side is unknown or they match.
+	Used to flag a GSTIN whose state code doesn't match the bill-to state."""
+	gc = gst_state_code(gstin)
+	ec = _GST_STATE_CODES.get((state or "").strip())
+	if not gc or not ec:
+		return True, ec or "", gc
+	return gc == ec, ec, gc
+
+
+def site_exists_in_buyer_family(customer, site_name):
+	"""True when `site_name` is a real site of `customer`'s Buyer Master family — either a
+	master's header Site Name or one of its Buyer Address rows. Used to guard imports."""
+	site_name = (site_name or "").strip()
+	if not customer or not site_name:
+		return False
+	masters = [m.name for m in (buyer_family_masters(customer) or [])]
+	if not masters:
+		return False
+	if frappe.db.exists("Buyer Master", {"name": ["in", masters], "site_name": site_name}):
+		return True
+	return bool(frappe.db.exists("Buyer Address", {"parent": ["in", masters], "site_name": site_name}))
+
+
 def _gst_for_site(site_name, fallback=""):
 	"""Site-wise GST No: the gst_no of the Buyer Master that owns an address (Buyer Address
 	child row) whose site_name matches — so the SO carries the SELECTED SITE's GSTIN, not
@@ -273,13 +316,26 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 		# Address child row's site_name == the SO's site) carries that site's GSTIN — NOT the
 		# family parent. Falls back to the customer's buyer master gst_no when the site can't
 		# be resolved. Blank for an Unregistered site with no registered site master.
+		# GST is SITE-WISE: only the GSTIN of the Buyer Master that owns the chosen site.
+		# If the site is missing / can't be resolved to a registered site master, leave GST
+		# BLANK — never fall back to the family parent's GSTIN.
 		_site = (doc.get("custom_site_name") or "").strip() if has_site_field else ""
-		_site_gst = (_gst_for_site(_site, row.get("gst_no")) or "").strip().upper()
+		_site_gst = (_gst_for_site(_site, "") or "").strip().upper()
 		doc.tax_id = _site_gst
 		if meta.has_field("custom_billing_gstin"):
 			doc.custom_billing_gstin = _site_gst
 		if meta.has_field("custom_shipping_gstin"):
 			doc.custom_shipping_gstin = _site_gst
+		# Validate the GSTIN's state code against the bill-to state (soft flag). Only when
+		# a structured billing Address carries a state — free-text imports simply skip it.
+		if _site_gst and doc.get("customer_address"):
+			_bstate = frappe.db.get_value("Address", doc.customer_address, "state") or ""
+			ok, ec, gc = validate_gstin_state_match(_site_gst, _bstate)
+			if not ok:
+				frappe.msgprint(
+					_("Billing GSTIN state code {0} doesn't match the bill-to state ({1}, expected {2}).").format(gc, _bstate, ec),
+					indicator="orange", alert=True,
+				)
 		# Channel: default from the buyer only when the entry path hasn't set it.
 		# The offline/e-com entry pages set custom_channel explicitly.
 		if meta.has_field("custom_channel") and not (doc.get("custom_channel") or "").strip():
