@@ -1981,7 +1981,8 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 		"purpose": "Delivery",
 		"custom_sales_order_id": so.name,
 		"custom_customer_name": so.customer_name,
-		"custom_party_code": so.customer,
+		# Party Code = the customer's PO number; falls back to the Customer name.
+		"custom_party_code": so.po_no or so.customer_name or so.customer,
 		"custom_order_date": so.transaction_date,
 		"custom_dispatch_date": str(so.custom_dispatch_date) if so.custom_dispatch_date else "",
 		# PO No. is intentionally NOT fetched from the Sales Order — the picker enters it

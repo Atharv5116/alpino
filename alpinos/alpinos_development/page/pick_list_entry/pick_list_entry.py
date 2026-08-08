@@ -95,6 +95,13 @@ def get_pick_list_data(name):
 			order_by="idx",
 		)
 
+	# Party Code = the linked Sales Order's PO number; falls back to the Customer
+	# name. Derived on load so existing pick lists (stored value may be the old
+	# customer) display correctly too.
+	_so = doc.get("custom_sales_order_id")
+	_po = frappe.db.get_value("Sales Order", _so, "po_no") if _so else None
+	doc_dict["custom_party_code"] = _po or doc.get("custom_customer_name") or doc_dict.get("custom_party_code") or ""
+
 	return doc_dict
 
 @frappe.whitelist()
