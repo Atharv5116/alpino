@@ -406,22 +406,22 @@ var PickListListPage = class {
 					label: __('Select Field'),
 					options: [
 						{ value: 'custom_transporter', label: __('Transporter') },
-						{ value: 'custom_qc_attended_by', label: __('QC Attended By') }
+						{ value: 'custom_qc_attended_by', label: __('QC Attended By') },
+						{ value: 'custom_dispatch_date', label: __('Dispatch Date') }
 					],
 					reqd: 1,
 					onchange: function() {
 						let val = dialog.get_value('field');
-						if (val === 'custom_transporter') {
-							dialog.set_df_property('transporter_value', 'hidden', 0);
-							dialog.set_df_property('transporter_value', 'reqd', 1);
-							dialog.set_df_property('qc_value', 'hidden', 1);
-							dialog.set_df_property('qc_value', 'reqd', 0);
-						} else {
-							dialog.set_df_property('transporter_value', 'hidden', 1);
-							dialog.set_df_property('transporter_value', 'reqd', 0);
-							dialog.set_df_property('qc_value', 'hidden', 0);
-							dialog.set_df_property('qc_value', 'reqd', 1);
-						}
+						const value_field = {
+							custom_transporter: 'transporter_value',
+							custom_qc_attended_by: 'qc_value',
+							custom_dispatch_date: 'dispatch_value'
+						};
+						['transporter_value', 'qc_value', 'dispatch_value'].forEach((f) => {
+							const active = value_field[val] === f;
+							dialog.set_df_property(f, 'hidden', active ? 0 : 1);
+							dialog.set_df_property(f, 'reqd', active ? 1 : 0);
+						});
 					}
 				},
 				{
@@ -444,12 +444,21 @@ var PickListListPage = class {
 							}
 						};
 					}
+				},
+				{
+					fieldname: 'dispatch_value',
+					fieldtype: 'Date',
+					label: __('New Dispatch Date'),
+					default: frappe.datetime.get_today(),
+					hidden: 1
 				}
 			],
 			primary_action_label: __('Update'),
 			primary_action: function(values) {
 				let fieldname = values.field;
-				let val = fieldname === 'custom_transporter' ? values.transporter_value : values.qc_value;
+				let val = fieldname === 'custom_transporter' ? values.transporter_value
+					: fieldname === 'custom_dispatch_date' ? values.dispatch_value
+					: values.qc_value;
 				
 				frappe.call({
 					method: 'alpinos.pick_list_api.bulk_edit_pick_lists',

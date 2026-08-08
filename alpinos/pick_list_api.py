@@ -695,7 +695,7 @@ def bulk_edit_pick_lists(pick_lists, fieldname, value):
 	if not pick_lists or not isinstance(pick_lists, list):
 		frappe.throw("No Pick Lists selected or invalid input format.")
 
-	if fieldname not in ["custom_transporter", "custom_qc_attended_by"]:
+	if fieldname not in ["custom_transporter", "custom_qc_attended_by", "custom_dispatch_date"]:
 		frappe.throw("Unauthorized field modification.")
 
 	for pl in pick_lists:

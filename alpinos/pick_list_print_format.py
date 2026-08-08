@@ -58,7 +58,7 @@ _HTML = r"""
     <tr>
       <td colspan="2" class="lbl">PARTY NAME</td>
       <td colspan="2" class="val">{{ doc.custom_customer_name or "" }}</td>
-      <td colspan="5" class="rl">PARTY CODE: {{ doc.custom_party_code or "" }}</td>
+      <td colspan="5" class="rl">PARTY CODE: {{ (frappe.db.get_value("Sales Order", doc.custom_sales_order_id, "po_no") if doc.custom_sales_order_id else "") or doc.custom_customer_name or doc.custom_party_code or "" }}</td>
     </tr>
     <tr>
       <td colspan="2" class="lbl">DATE</td>
@@ -83,7 +83,7 @@ _HTML = r"""
     {% for row in sort_locations_by_sku(doc.locations) %}
     <tr>
       <td class="c">{{ loop.index }}</td>
-      <td class="sku">{{ row.item_code }}</td>
+      <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div style="font-size:10px; font-weight:normal;">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}</td>
       <td class="sku">{{ frappe.db.get_value("Item", row.item_code, "custom_sku_no") or "" }}</td>
       <td class="c">{{ (row.qty | round | int) if row.qty else "" }}</td>
       <td class="c">{{ (row.custom_box | round | int) if row.custom_box else "" }}</td>

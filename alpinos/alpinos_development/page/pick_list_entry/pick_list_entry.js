@@ -617,7 +617,13 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 
 			page.main.find('[data-fieldname="custom_actual_box"]').val(flt(actual_box, 2));
-			page.main.find('[data-fieldname="custom_sample_box"]').val(flt(sample_box, 2));
+			// Sample Box = sum of the three sample tables' boxes, UNLESS the user has
+			// manually overridden the total — then keep their entered value.
+			if (page._sample_box_manual) {
+				sample_box = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
+			} else {
+				page.main.find('[data-fieldname="custom_sample_box"]').val(flt(sample_box, 2));
+			}
 			page.main.find('[data-fieldname="custom_sample_weight"]').val(flt(sample_weight, 2));
 			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual_box + sample_box, 2));
 			page.main.find('[data-fieldname="custom_gross_weight"]').val(flt(gross_weight, 2));
@@ -658,6 +664,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 
 		// Box manual input updates totals. Decimals are allowed — do not round.
 		container.on('input.alpinosRowEvents change.alpinosRowEvents', '.box-input', function() {
+			// A change to a sample-table row re-derives the Sample Box total (drops any override).
+			let tbl = $(this).closest('table').attr('data-table-name');
+			if (tbl && tbl !== 'Items') page._sample_box_manual = false;
 			page.recalculate_totals();
 		});
 
@@ -716,6 +725,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		// SAMPLE BOX is the grand total of all tables' box counts, so TOTAL BOX mirrors it.
 		// Decimals are allowed (no round-to-int).
 		page.main.find('[data-fieldname="custom_actual_box"], [data-fieldname="custom_sample_box"]').off('input change').on('input change', function() {
+			// Editing the Sample Box total directly marks it a manual override so the
+			// row-sum recompute won't wipe it.
+			if ($(this).attr('data-fieldname') === 'custom_sample_box') page._sample_box_manual = true;
 			let actual = flt(page.main.find('[data-fieldname="custom_actual_box"]').val() || 0);
 			let sample = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
 			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual + sample, 2));
@@ -974,8 +986,19 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			);
 		});
 
-		// Run initial recalculation
+		// Run initial recalculation. Preserve a manual Sample Box override that was
+		// saved on the doc (its stored value differs from the row-derived sum).
+		let _stored_sample = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
+		page._sample_box_manual = false;
 		page.recalculate_totals();
+		let _computed_sample = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
+		if (page.pick_list_name && page.pick_list_name !== 'New Pick List'
+			&& Math.abs(_stored_sample - _computed_sample) > 0.001) {
+			page._sample_box_manual = true;
+			page.main.find('[data-fieldname="custom_sample_box"]').val(flt(_stored_sample, 2));
+			let _actual = flt(page.main.find('[data-fieldname="custom_actual_box"]').val() || 0);
+			page.main.find('[data-fieldname="custom_total_box"]').val(flt(_actual + _stored_sample, 2));
+		}
 	};
 	
 	page.save_pick_list = function() {
@@ -1087,12 +1110,57 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		};
 
-		if (is_short_pick) {
-			page.resolve_partial_allowed(function(partialAllowed) {
-				page.show_short_pick_modal(partialAllowed, doSubmit);
+		const proceed = () => {
+			if (is_short_pick) {
+				page.resolve_partial_allowed(function(partialAllowed) {
+					page.show_short_pick_modal(partialAllowed, doSubmit);
+				});
+			} else {
+				doSubmit({});
+			}
+		};
+		// Validate the Dispatch Date on submit (update-to-today / keep-same), then
+		// confirm submission, before the (optional) short-pick flow.
+		page._dispatch_date_gate(header_data, is_short_pick, proceed);
+	};
+
+	// On submit: if the Dispatch Date isn't today, offer to update it to today; then
+	// confirm the submission. A short pick has its own "Submit Pick List" modal, so
+	// the generic submit confirmation is skipped in that case.
+	page._dispatch_date_gate = function(header_data, is_short_pick, proceed) {
+		const today = frappe.datetime.get_today();
+		const current = String(header_data.custom_dispatch_date || '').split(' ')[0];
+
+		const confirm_submit = () => {
+			if (is_short_pick) { proceed(); return; }
+			frappe.confirm(__('Do you want to submit the Pick List?'), proceed);
+		};
+
+		if (current && current !== today) {
+			const d = new frappe.ui.Dialog({
+				title: __('Dispatch Date'),
+				fields: [{
+					fieldtype: 'HTML',
+					options: `<p>${__('Dispatch Date is <b>{0}</b>. Do you want to update it to today (<b>{1}</b>)?',
+						[frappe.datetime.str_to_user(current), frappe.datetime.str_to_user(today)])}</p>`
+				}],
+				primary_action_label: __('Update to Today'),
+				primary_action() {
+					d.hide();
+					header_data.custom_dispatch_date = today;
+					page.main.find('[data-fieldname="custom_dispatch_date"]').val(today);
+					frappe.show_alert({
+						message: __('Dispatch Date updated to {0}.', [frappe.datetime.str_to_user(today)]),
+						indicator: 'green'
+					});
+					confirm_submit();
+				},
+				secondary_action_label: __('Keep Same'),
+				secondary_action() { d.hide(); confirm_submit(); }
 			});
+			d.show();
 		} else {
-			doSubmit({});
+			confirm_submit();
 		}
 	};
 
