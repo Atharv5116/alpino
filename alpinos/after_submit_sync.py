@@ -91,6 +91,44 @@ def delivery_note_on_update_after_submit(doc, method=None):
 	frappe.db.set_value("Delivery Note", doc.name, "custom_changed_after_submit", 1, update_modified=False)
 
 
+_AFTER_SUBMIT_EDITABLE = {
+	"Pick List": {"custom_transporter", "custom_dispatch_date"},
+	"Delivery Note": {"custom_transporter_name", "custom_lr_gr_no", "custom_dispatch_date"},
+}
+
+
+@frappe.whitelist()
+def update_after_submit_fields(doctype, name, values):
+	"""Save Transporter / LR No / Dispatch Date edits on a SUBMITTED Pick List / Delivery
+	Note (from the custom entry pages). doc.save() runs update_after_submit, which fires
+	on_update_after_submit -> PL<->DN propagation + Field Change Log audit."""
+	import json
+
+	if isinstance(values, str):
+		values = json.loads(values)
+	allowed = _AFTER_SUBMIT_EDITABLE.get(doctype)
+	if not allowed:
+		frappe.throw(frappe._("After-submit editing is not allowed for {0}.").format(doctype))
+	frappe.has_permission(doctype, "write", doc=name, throw=True)
+
+	doc = frappe.get_doc(doctype, name)
+	if doc.docstatus != 1:
+		frappe.throw(frappe._("Only a submitted {0} can be updated here.").format(doctype))
+
+	changed = False
+	for f, v in (values or {}).items():
+		if f in allowed and doc.meta.has_field(f):
+			v = v or None
+			if str(doc.get(f) or "") != str(v or ""):
+				doc.set(f, v)
+				changed = True
+	if changed:
+		doc.flags.ignore_permissions = True
+		doc.save()
+		frappe.db.commit()
+	return {"ok": True, "changed": changed}
+
+
 def ensure_after_submit_fields():
 	"""Idempotently make the watched fields editable after submit and add the
 	'Changed After Submission' indicator to Pick List + Delivery Note. Run on migrate."""

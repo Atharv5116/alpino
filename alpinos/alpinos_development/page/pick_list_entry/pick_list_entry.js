@@ -33,6 +33,36 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	});
 	if (page.btn_cancel_pl) page.btn_cancel_pl.hide();
 
+	// Edit Transporter / Dispatch Date AFTER submission — propagates to the linked
+	// Delivery Note(s) and is audited (Field Change Log). Shown only on submitted PLs.
+	page.btn_edit_after_submit = page.add_inner_button(__('Edit Transporter / Dispatch'), function() {
+		const d = new frappe.ui.Dialog({
+			title: __('Edit After Submission'),
+			fields: [
+				{ fieldtype: 'Data', fieldname: 'custom_transporter', label: __('Transporter'),
+				  default: page.main.find('[data-fieldname="custom_transporter"]').val() || '' },
+				{ fieldtype: 'Date', fieldname: 'custom_dispatch_date', label: __('Dispatch Date'),
+				  default: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || '' },
+			],
+			primary_action_label: __('Update'),
+			primary_action(v) {
+				frappe.call({
+					method: 'alpinos.after_submit_sync.update_after_submit_fields',
+					args: { doctype: 'Pick List', name: page.pick_list_name, values: v },
+					freeze: true,
+					callback: (r) => {
+						if (r.exc) return;
+						d.hide();
+						frappe.show_alert({ message: __('Updated. Changes propagated to the Delivery Note and logged.'), indicator: 'green' }, 6);
+						page.load_data();
+					},
+				});
+			},
+		});
+		d.show();
+	});
+	if (page.btn_edit_after_submit) page.btn_edit_after_submit.hide();
+
 	try {
 		let html = frappe.render_template("pick_list_entry", {});
 		if (!html) {
@@ -255,6 +285,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			const can_cancel = frappe.model.can_cancel && frappe.model.can_cancel('Pick List');
 			if (data.docstatus === 1 && can_cancel) page.btn_cancel_pl.show();
 			else page.btn_cancel_pl.hide();
+		}
+		if (page.btn_edit_after_submit) {
+			if (data.docstatus === 1) page.btn_edit_after_submit.show();
+			else page.btn_edit_after_submit.hide();
 		}
 		if (data.docstatus === 1) {
 			page.clear_primary_action();

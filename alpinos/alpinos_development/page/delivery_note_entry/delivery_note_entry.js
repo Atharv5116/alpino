@@ -45,6 +45,39 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	});
 	if (page.btn_cancel_dn) page.btn_cancel_dn.hide();
 
+	// Edit Transporter / LR No / Dispatch Date AFTER submission — Transporter & Dispatch
+	// Date propagate back to the Pick List (even if submitted) and all changes are audited.
+	page.btn_edit_after_submit = page.add_inner_button(__('Edit Transporter / LR / Dispatch'), function() {
+		frappe.db.get_value('Delivery Note', page.dn_name,
+			['custom_transporter_name', 'custom_lr_gr_no', 'custom_dispatch_date']).then((r) => {
+			const cur = (r && r.message) || {};
+			const d = new frappe.ui.Dialog({
+				title: __('Edit After Submission'),
+				fields: [
+					{ fieldtype: 'Data', fieldname: 'custom_transporter_name', label: __('Transporter'), default: cur.custom_transporter_name || '' },
+					{ fieldtype: 'Data', fieldname: 'custom_lr_gr_no', label: __('LR No.'), default: cur.custom_lr_gr_no || '' },
+					{ fieldtype: 'Date', fieldname: 'custom_dispatch_date', label: __('Dispatch Date'), default: cur.custom_dispatch_date || '' },
+				],
+				primary_action_label: __('Update'),
+				primary_action(v) {
+					frappe.call({
+						method: 'alpinos.after_submit_sync.update_after_submit_fields',
+						args: { doctype: 'Delivery Note', name: page.dn_name, values: v },
+						freeze: true,
+						callback: (res) => {
+							if (res.exc) return;
+							d.hide();
+							frappe.show_alert({ message: __('Updated. Transporter/Dispatch propagated to the Pick List and logged.'), indicator: 'green' }, 6);
+							page.load_data(page.dn_name);
+						},
+					});
+				},
+			});
+			d.show();
+		});
+	});
+	if (page.btn_edit_after_submit) page.btn_edit_after_submit.hide();
+
 	page.main.find('#btn-dn-submit').on('click', function() {
 		frappe.confirm(__('Submit this Delivery Note? This cannot be undone.'), function() {
 			page.save_dn(true);
@@ -218,6 +251,10 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			var can_cancel_dn = frappe.model.can_cancel && frappe.model.can_cancel('Delivery Note');
 			if (submitted && can_cancel_dn) page.btn_cancel_dn.show();
 			else page.btn_cancel_dn.hide();
+		}
+		if (page.btn_edit_after_submit) {
+			if (submitted) page.btn_edit_after_submit.show();
+			else page.btn_edit_after_submit.hide();
 		}
 		$main.find('#btn-dn-dispatch-to-add').toggle(draft);
 		$main.find('.dn-dispatch-to-input').prop('readonly', !draft);
