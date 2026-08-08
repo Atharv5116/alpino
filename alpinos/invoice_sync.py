@@ -204,6 +204,48 @@ def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None):
 _INVOICE_RESYNC_ROLES = {"Accounts User", "Accounts Manager", "System Manager"}
 
 
+def can_resync_invoices():
+	"""True when the current user holds a role permitted to resync invoice PDFs."""
+	return bool(_INVOICE_RESYNC_ROLES & set(frappe.get_roles()))
+
+
+@frappe.whitelist()
+def resync_invoices_bulk(sales_orders):
+	"""Resync invoice PDFs for many Sales Orders at once (any order type / channel).
+	Each order is logged to the Invoice Sync Log; returns per-order results + counts so
+	the list page can report "Invoice Resynced Successfully (N)" and keep its selection."""
+	import json
+
+	if isinstance(sales_orders, str):
+		sales_orders = json.loads(sales_orders)
+	if not (_INVOICE_RESYNC_ROLES & set(frappe.get_roles())):
+		frappe.throw(_("You are not permitted to resync invoice PDFs."), frappe.PermissionError)
+	if not sales_orders:
+		frappe.throw(_("No Sales Orders selected."))
+
+	from alpinos.alpinos_development.doctype.invoice_sync_log.invoice_sync_log import log_invoice_sync
+
+	success, failed, results = 0, 0, []
+	for so in sales_orders:
+		try:
+			r = resync_invoice_pdf(so) or {}
+			ok = bool(r.get("ok"))
+			success += 1 if ok else 0
+			failed += 0 if ok else 1
+			results.append({"sales_order": so, "ok": ok, "message": r.get("message") or ""})
+		except Exception as e:
+			failed += 1
+			inv = (frappe.db.get_value("Sales Order", so, "custom_invoice_no") or "")
+			log_invoice_sync(so, inv, "Failed", str(e)[:500], sync_type="Resync")
+			results.append({"sales_order": so, "ok": False, "message": str(e)[:200]})
+	frappe.db.commit()
+
+	msg = _("Invoice Resynced Successfully: {0}").format(success)
+	if failed:
+		msg += _("  |  Failed: {0}").format(failed)
+	return {"ok": failed == 0, "success": success, "failed": failed, "message": msg, "results": results}
+
+
 @frappe.whitelist()
 def resync_invoice_pdf(sales_order):
 	"""Re-fetch a single Sales Order's invoice PDF from Drive: remove the currently attached PDF

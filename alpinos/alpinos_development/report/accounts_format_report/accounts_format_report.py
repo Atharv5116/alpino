@@ -251,16 +251,13 @@ def _buyer_master_scope_customers(filters):
 
 def _get_data(filters):
 	so_filters = {"docstatus": 1}
+	# Dispatch Date is the primary date filter (Order Date From/To removed).
 	if filters.get("from_date") and filters.get("to_date"):
-		so_filters["transaction_date"] = ["between", [filters.from_date, filters.to_date]]
+		so_filters["custom_dispatch_date"] = ["between", [filters.from_date, filters.to_date]]
 	if filters.get("customer"):
 		so_filters["customer"] = filters.customer
 	if filters.get("sales_order"):
 		so_filters["name"] = ["like", "%" + filters.get("sales_order") + "%"]
-	if filters.get("order_date"):
-		so_filters["transaction_date"] = filters.get("order_date")
-	if filters.get("dispatch_date"):
-		so_filters["custom_dispatch_date"] = filters.get("dispatch_date")
 
 	# Buyer Master parent / site scoping: restrict the SO scan to the Customers whose
 	# Buyer Master is (or sits under) the selected parent and/or carries the selected site.
@@ -274,7 +271,7 @@ def _get_data(filters):
 		else:
 			so_filters["customer"] = ["in", list(allowed_customers)]
 
-	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="transaction_date asc, name asc")
+	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="custom_dispatch_date asc, name asc")
 
 	# Only report orders whose Pick List has been SUBMITTED — billing data should
 	# appear only once picking is done, not on unpicked/draft orders. docstatus=1
