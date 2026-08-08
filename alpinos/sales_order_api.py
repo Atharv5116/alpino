@@ -363,7 +363,7 @@ def _line_flat_discount(item):
 	return flt(item.get("buyer_margin_percent") or item.get("custom_buyer_margin_percent"))
 
 
-def _calculate_sales_order_line_values(item):
+def _calculate_sales_order_line_values(item, gst_exclusive=False):
 	qty = flt(item.get("qty"))
 	mrp = flt(item.get("custom_customer_mrp"))
 	flat_discount = _line_flat_discount(item)
@@ -392,9 +392,11 @@ def _calculate_sales_order_line_values(item):
 	final_incl = gross_incl - (gross_incl * additional_discount_pct / 100.0)
 	final_incl = max(final_incl, 0)
 
-	div = 1 + (gst_pct / 100.0)
+	# GST-EXCLUSIVE buyers: the selling price IS the taxable value — no GST is folded in,
+	# so net == the (post-discount) amount and the SO line carries no GST.
+	div = 1.0 if gst_exclusive else (1 + (gst_pct / 100.0))
 	net_amount = (final_incl / div) if div else final_incl
-	gst_amount = max(final_incl - net_amount, 0)
+	gst_amount = 0.0 if gst_exclusive else max(final_incl - net_amount, 0)
 
 	return {
 		# Store net values in rate/amount; GST can be calculated by Taxes & Charges template.
@@ -436,13 +438,14 @@ def _apply_clean_gst_amounts(doc):
 	custom_item_tax on every row and recomputes the doc totals (net_total, the On-Net-Total
 	GST rows, grand_total, rounded_total). Called AFTER calculate_taxes_and_totals so these
 	clean values are what actually gets saved. Idempotent."""
+	gst_exclusive = int(doc.get("custom_gst_exclusive_buyer") or 0)
 	net_total = 0.0
 	for row in doc.get("items") or []:
 		# Use the SAME engine the entry page uses — it applies flat/offer/additional
 		# discount + GST and rounds the net ONCE (round(gross/1.05,2) = 5600.00), unlike
 		# ERPNext's rate x qty (46.67 x 120 = 5600.40). Do NOT reinvent the gross here or a
 		# discount gets missed.
-		calc = _calculate_sales_order_line_values(row)
+		calc = _calculate_sales_order_line_values(row, gst_exclusive)
 		if not calc["rate"] and not calc["amount"]:
 			# nothing to re-derive from -> keep whatever ERPNext computed for this row
 			net_total = flt(net_total + flt(row.net_amount), 2)
@@ -513,13 +516,21 @@ def validate_sales_order_pricing(doc, method=None):
 	_apply_tax_template_from_party(doc)
 	_apply_cash_discount(doc)
 
+	# GST-EXCLUSIVE buyer (e.g. Amazon FBF): Selling Price / Amount / Grand Total stay
+	# exclusive of GST — the SO carries NO GST rows (grand = net). The Accounts Format
+	# Report adds the applicable GST separately for accounting.
+	gst_exclusive = int(doc.get("custom_gst_exclusive_buyer") or 0)
+	if gst_exclusive:
+		doc.taxes_and_charges = ""
+		doc.set("taxes", [])
+
 	round_per_unit = _buyer_rounds_per_unit(doc.get("customer"))
 	for row in doc.get("items") or []:
 		# Buyer-wise "Round Off Per Unit Amount": round the per-unit selling price to the
 		# nearest rupee FIRST, so amount / net / tax / totals all follow the rounded value.
 		if round_per_unit and flt(row.get("custom_selling_price")):
 			row.custom_selling_price = round(flt(row.get("custom_selling_price")))
-		calc = _calculate_sales_order_line_values(row)
+		calc = _calculate_sales_order_line_values(row, gst_exclusive)
 		if not calc["rate"] and not calc["amount"]:
 			continue
 		if calc["flat_discount"] and not flt(row.get("custom_flat_discount")):

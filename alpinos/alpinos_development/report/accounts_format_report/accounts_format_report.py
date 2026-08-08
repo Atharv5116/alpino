@@ -330,6 +330,8 @@ def _get_data(filters):
 		so = frappe.get_doc("Sales Order", so_name)
 		# Buyer-wise "Round Off Per Unit Amount": report the rounded per-unit selling price.
 		_round_pu = bool(frappe.db.get_value("Buyer Master", {"customer": so.customer}, "round_off_per_unit"))
+		# GST-EXCLUSIVE buyer: SO value is the taxable; the report adds GST separately.
+		_gst_excl = int(so.get("custom_gst_exclusive_buyer") or 0)
 		obm = obm_info(so.customer)
 		# Customer type sits on the SO (Alpino Customer Type); fall back to the OBM master.
 		cust_type = so.get("custom_offline_buyer_customer_type") or obm.get("customer_type") or ""
@@ -484,9 +486,9 @@ def _get_data(filters):
 				mrp, selling_price = 0, 0
 			
 			if selling_price:
-				final_total = flt(flt(selling_price) * flt(unit) * (1 - flt(additional) / 100.0), 2)
+				base_line = flt(flt(selling_price) * flt(unit) * (1 - flt(additional) / 100.0), 2)
 			else:
-				final_total = flt(
+				base_line = flt(
 					flt(mrp) * flt(unit)
 					* (1 - flt(flat) / 100.0)
 					* (1 - flt(offer) / 100.0)
@@ -495,10 +497,21 @@ def _get_data(filters):
 				)
 			# Deduct the cash discount % per line (freebies are 0, so unaffected).
 			if cash_pct:
-				final_total = flt(final_total * (1 - cash_pct / 100.0), 2)
-			final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
-			igst = flt(final_total - final_taxable, 2)
-			cgst = flt(igst / 2.0, 2)
+				base_line = flt(base_line * (1 - cash_pct / 100.0), 2)
+
+			if _gst_excl:
+				# GST-EXCLUSIVE buyer: the SO line value IS the taxable; add GST on top.
+				# Final Total = Taxable + Applicable GST% (no inclusive back-calculation,
+				# no extra rounding of the taxable).
+				final_taxable = base_line
+				igst = flt(final_taxable * gst_pct / 100.0, 2)
+				cgst = flt(igst / 2.0, 2)
+				final_total = flt(final_taxable + igst, 2)
+			else:
+				final_total = base_line
+				final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
+				igst = flt(final_total - final_taxable, 2)
+				cgst = flt(igst / 2.0, 2)
 
 			# EAN/FSN by the order's customer type: Amazon needs EAN, Flipkart needs FSN.
 			# Flag "Missing" only for those two when the required code is absent; else blank.
