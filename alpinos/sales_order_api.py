@@ -488,6 +488,14 @@ def _apply_clean_gst_amounts(doc):
 		doc.rounding_adjustment = doc.base_rounding_adjustment = flt(rt - grand, 2)
 
 
+def _buyer_rounds_per_unit(customer):
+	"""True when the customer's Buyer Master has 'Round Off Per Unit Amount' enabled —
+	the per-unit selling price is then rounded to the nearest whole rupee. Buyer-wise."""
+	if not customer:
+		return False
+	return bool(frappe.db.get_value("Buyer Master", {"customer": customer}, "round_off_per_unit"))
+
+
 def validate_sales_order_pricing(doc, method=None):
 	"""Keep saved Sales Order rows aligned with the custom entry-page calculation."""
 	_so_tax_logger().info(
@@ -505,7 +513,12 @@ def validate_sales_order_pricing(doc, method=None):
 	_apply_tax_template_from_party(doc)
 	_apply_cash_discount(doc)
 
+	round_per_unit = _buyer_rounds_per_unit(doc.get("customer"))
 	for row in doc.get("items") or []:
+		# Buyer-wise "Round Off Per Unit Amount": round the per-unit selling price to the
+		# nearest rupee FIRST, so amount / net / tax / totals all follow the rounded value.
+		if round_per_unit and flt(row.get("custom_selling_price")):
+			row.custom_selling_price = round(flt(row.get("custom_selling_price")))
 		calc = _calculate_sales_order_line_values(row)
 		if not calc["rate"] and not calc["amount"]:
 			continue

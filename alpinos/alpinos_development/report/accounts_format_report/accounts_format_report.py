@@ -328,6 +328,8 @@ def _get_data(filters):
 	addr_cache = {}  # customer -> family Address rows (for free-text state/city/pincode recovery)
 	for so_name in so_names:
 		so = frappe.get_doc("Sales Order", so_name)
+		# Buyer-wise "Round Off Per Unit Amount": report the rounded per-unit selling price.
+		_round_pu = bool(frappe.db.get_value("Buyer Master", {"customer": so.customer}, "round_off_per_unit"))
 		obm = obm_info(so.customer)
 		# Customer type sits on the SO (Alpino Customer Type); fall back to the OBM master.
 		cust_type = so.get("custom_offline_buyer_customer_type") or obm.get("customer_type") or ""
@@ -444,6 +446,8 @@ def _get_data(filters):
 
 		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items"):
 			it = item_info(item_code)
+			if _round_pu and selling_price:
+				selling_price = round(flt(selling_price))
 			# Every line — billable AND marketing freebies / scheme / damage — is taken from
 			# the submitted Pick List (all of them are added to it at creation), with UNIT /
 			# Box = picked qty. So the report simply mirrors the submitted pick list: a line
