@@ -171,6 +171,30 @@ def _fix_renamed_doctype_refs():
 			)
 
 
+_GST_EXCL_NOTE_MARKER = "alp-gst-excl-note"
+
+
+def _inject_gst_exclusive_note():
+	"""Prepend a highlighted note to the 'Sales Order' format that renders only for
+	GST-Exclusive buyers. Idempotent (keyed on a marker class); a safe prepend that
+	leaves the rest of the layout untouched."""
+	if not frappe.db.exists("Print Format", PF_NAME):
+		return
+	html = frappe.db.get_value("Print Format", PF_NAME, "html") or ""
+	if not html or _GST_EXCL_NOTE_MARKER in html:
+		return
+	note = (
+		"{% if doc.custom_gst_exclusive_buyer %}"
+		'<div class="' + _GST_EXCL_NOTE_MARKER + '" style="border:1px solid #ffe69c; '
+		'background:#fff3cd; color:#664d03; padding:6px 10px; margin:0 0 8px 0; '
+		'font-size:11px; font-weight:bold; border-radius:4px;">'
+		"MRP is inclusive of GST. Selling Price, Amount and Grand Total are exclusive of GST."
+		"</div>{% endif %}\n"
+	)
+	frappe.db.set_value("Print Format", PF_NAME, "html", note + html)
+	frappe.logger("alpinos").info("Injected GST-exclusive note into '%s'." % PF_NAME)
+
+
 def execute():
 	"""Patch the 'Sales Order' print format to explode product bundles, and repair
 	the renamed buyer-master doctype reference in all print formats.
@@ -186,6 +210,9 @@ def execute():
 	# and show the rounded grand total. Runs before the bundle-loop early-returns
 	# below so it always applies.
 	_apply_sales_order_pf_rewrites()
+
+	# Highlighted note for GST-Exclusive buyers (Amazon FBF etc.). Safe idempotent prepend.
+	_inject_gst_exclusive_note()
 
 	# Collapse the totals footer to Sub Total (incl GST) -> Rounding -> Cash Disc ->
 	# Grand Total. Handled separately from the tuple rewrites (see note above).
