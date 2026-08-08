@@ -110,6 +110,42 @@ var EcomSalesOrderListPage = class {
 			this.download_selected_pdfs()
 		);
 		if (this.btn_download_pdf) this.btn_download_pdf.hide();
+		// Bulk Resync Invoice (role-gated) — keeps the selection so Export Invoices /
+		// Download PDFs can run immediately after.
+		this._can_resync = ['Accounts User', 'Accounts Manager', 'System Manager']
+			.some((r) => (frappe.user_roles || []).includes(r));
+		if (this._can_resync) {
+			this.btn_resync_invoices = this.page.add_inner_button(__('Resync Invoice'), () =>
+				this.resync_selected_invoices()
+			);
+			if (this.btn_resync_invoices) this.btn_resync_invoices.hide();
+		}
+	}
+
+	resync_selected_invoices() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.invoice_sync.resync_invoices_bulk',
+			args: { sales_orders: names },
+			freeze: true,
+			freeze_message: __('Resyncing invoices...'),
+			callback: (r) => {
+				if (r.exc || !r.message) return;
+				const m = r.message;
+				frappe.show_alert(
+					{
+						message: m.message || __('Invoice Resynced Successfully ({0})', [m.success || 0]),
+						indicator: m.failed ? 'orange' : 'green',
+					},
+					7
+				);
+				// Do NOT clear the selection — the same orders stay ticked for Export Invoices.
+			},
+		});
 	}
 
 	open_import_dialog() {
@@ -470,10 +506,12 @@ var EcomSalesOrderListPage = class {
 		if (checked.length > 0) {
 			if (this.btn_export_invoices) this.btn_export_invoices.show();
 			if (this.btn_download_pdf) this.btn_download_pdf.show();
+			if (this.btn_resync_invoices) this.btn_resync_invoices.show();
 			if (this.page.set_indicator) this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
 		} else {
 			if (this.btn_export_invoices) this.btn_export_invoices.hide();
 			if (this.btn_download_pdf) this.btn_download_pdf.hide();
+			if (this.btn_resync_invoices) this.btn_resync_invoices.hide();
 			if (this.page.clear_indicator) this.page.clear_indicator();
 		}
 	}

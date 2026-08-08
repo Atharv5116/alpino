@@ -41,6 +41,7 @@
   "custom_tally_warehouse",
   "combine_product_bundles",
   "box_conversion_exclusion",
+  "round_off_per_unit",
   "address_section",
   "addresses",
   "contact_section",
@@ -286,6 +287,12 @@
    "label": "Box Conversion Exclusion"
   },
   {
+   "description": "If ticked, the per-unit Selling Price on this buyer's orders is rounded to the nearest whole rupee (on import/entry), and the Accounts Format Report uses the rounded value. Buyer-wise.",
+   "fieldname": "round_off_per_unit",
+   "fieldtype": "Check",
+   "label": "Round Off Per Unit Amount"
+  },
+  {
    "description": "Each Site's Primary row is its Billing Address, and its Shipping rows are its Shipping Addresses. A buyer can host several sites, so you can mark one Primary per Site (give each site a Site Name).",
    "fieldname": "address_section",
    "fieldtype": "Section Break",
@@ -466,7 +473,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-05 12:00:00.000000",
+ "modified": "2026-08-07 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Buyer Master",

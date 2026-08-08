@@ -706,6 +706,13 @@ var SalesOrderEntry = class {
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-partial"></div></div>
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-gst-excl"></div></div>
 				</div>
+				<div class="row mt-gst-excl-note" style="display:none;">
+					<div class="col-md-12" style="margin-bottom:8px;">
+						<div style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:600;">
+							MRP is inclusive of GST. Selling Price, Amount and Grand Total are exclusive of GST.
+						</div>
+					</div>
+				</div>
 				<div class="row">
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-po-number"></div></div>
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-po-date"></div></div>
@@ -747,6 +754,11 @@ var SalesOrderEntry = class {
 		this.mt_stickers = []; // [{attachment, file_name, remarks}]
 		$card.find('.btn-mt-add-sticker').on('click', () => this.upload_mt_sticker());
 		this.$mt_card = $card;
+		// Show the GST-Exclusive note ("MRP inclusive; Selling/Amount/Grand exclusive").
+		this._toggle_gst_excl_note = () => {
+			this.$mt_card && this.$mt_card.find('.mt-gst-excl-note').toggle(!!cint(this.mt.gst_excl.get_value()));
+		};
+		this.mt.gst_excl.$input && this.mt.gst_excl.$input.on('change', () => this._toggle_gst_excl_note());
 	}
 
 	upload_mt_sticker() {
@@ -810,6 +822,7 @@ var SalesOrderEntry = class {
 			this.mt.grn.set_value(cint(fl.grn_available));
 			this.mt.partial.set_value(cint(fl.partial_order_allowed));
 			this.mt.gst_excl.set_value(cint(fl.gst_exclusive_buyer));
+			this._toggle_gst_excl_note && this._toggle_gst_excl_note();
 			this.mt.po_number.set_value(s.po_number || '');
 			this.mt.po_date.set_value(s.po_date || '');
 			this.mt.delivery_by.set_value(s.delivery_by_date || '');
@@ -828,6 +841,7 @@ var SalesOrderEntry = class {
 		this.mt.grn.set_value(cint(buyer.grn_available));
 		this.mt.partial.set_value(cint(buyer.partial_order_allowed));
 		this.mt.gst_excl.set_value(cint(buyer.gst_exclusive_buyer));
+		this._toggle_gst_excl_note && this._toggle_gst_excl_note();
 		if (buyer.gst_no) {
 			if (!this.mt.billing_gstin.get_value()) this.mt.billing_gstin.set_value(buyer.gst_no);
 			if (!this.mt.shipping_gstin.get_value()) this.mt.shipping_gstin.set_value(buyer.gst_no);

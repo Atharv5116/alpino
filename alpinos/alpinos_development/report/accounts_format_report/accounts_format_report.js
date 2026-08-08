@@ -2,14 +2,14 @@ frappe.query_reports["Accounts Format Report"] = {
 	filters: [
 		{
 			fieldname: "from_date",
-			label: "From Date",
+			label: "Dispatch Date From",
 			fieldtype: "Date",
 			default: frappe.datetime.get_today(),
 			reqd: 1,
 		},
 		{
 			fieldname: "to_date",
-			label: "To Date",
+			label: "Dispatch Date To",
 			fieldtype: "Date",
 			default: frappe.datetime.get_today(),
 			reqd: 1,
@@ -18,16 +18,6 @@ frappe.query_reports["Accounts Format Report"] = {
 			fieldname: "sales_order",
 			label: "Sales Order ID",
 			fieldtype: "Data",
-		},
-		{
-			fieldname: "order_date",
-			label: "Order Date",
-			fieldtype: "Date",
-		},
-		{
-			fieldname: "dispatch_date",
-			label: "Dispatch Date",
-			fieldtype: "Date",
 		},
 		{
 			fieldname: "customer",

@@ -251,16 +251,13 @@ def _buyer_master_scope_customers(filters):
 
 def _get_data(filters):
 	so_filters = {"docstatus": 1}
+	# Dispatch Date is the primary date filter (Order Date From/To removed).
 	if filters.get("from_date") and filters.get("to_date"):
-		so_filters["transaction_date"] = ["between", [filters.from_date, filters.to_date]]
+		so_filters["custom_dispatch_date"] = ["between", [filters.from_date, filters.to_date]]
 	if filters.get("customer"):
 		so_filters["customer"] = filters.customer
 	if filters.get("sales_order"):
 		so_filters["name"] = ["like", "%" + filters.get("sales_order") + "%"]
-	if filters.get("order_date"):
-		so_filters["transaction_date"] = filters.get("order_date")
-	if filters.get("dispatch_date"):
-		so_filters["custom_dispatch_date"] = filters.get("dispatch_date")
 
 	# Buyer Master parent / site scoping: restrict the SO scan to the Customers whose
 	# Buyer Master is (or sits under) the selected parent and/or carries the selected site.
@@ -274,7 +271,7 @@ def _get_data(filters):
 		else:
 			so_filters["customer"] = ["in", list(allowed_customers)]
 
-	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="transaction_date asc, name asc")
+	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="custom_dispatch_date asc, name asc")
 
 	# Only report orders whose Pick List has been SUBMITTED — billing data should
 	# appear only once picking is done, not on unpicked/draft orders. docstatus=1
@@ -331,6 +328,10 @@ def _get_data(filters):
 	addr_cache = {}  # customer -> family Address rows (for free-text state/city/pincode recovery)
 	for so_name in so_names:
 		so = frappe.get_doc("Sales Order", so_name)
+		# Buyer-wise "Round Off Per Unit Amount": report the rounded per-unit selling price.
+		_round_pu = bool(frappe.db.get_value("Buyer Master", {"customer": so.customer}, "round_off_per_unit"))
+		# GST-EXCLUSIVE buyer: SO value is the taxable; the report adds GST separately.
+		_gst_excl = int(so.get("custom_gst_exclusive_buyer") or 0)
 		obm = obm_info(so.customer)
 		# Customer type sits on the SO (Alpino Customer Type); fall back to the OBM master.
 		cust_type = so.get("custom_offline_buyer_customer_type") or obm.get("customer_type") or ""
@@ -447,6 +448,8 @@ def _get_data(filters):
 
 		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items"):
 			it = item_info(item_code)
+			if _round_pu and selling_price:
+				selling_price = round(flt(selling_price))
 			# Every line — billable AND marketing freebies / scheme / damage — is taken from
 			# the submitted Pick List (all of them are added to it at creation), with UNIT /
 			# Box = picked qty. So the report simply mirrors the submitted pick list: a line
@@ -483,9 +486,9 @@ def _get_data(filters):
 				mrp, selling_price = 0, 0
 			
 			if selling_price:
-				final_total = flt(flt(selling_price) * flt(unit) * (1 - flt(additional) / 100.0), 2)
+				base_line = flt(flt(selling_price) * flt(unit) * (1 - flt(additional) / 100.0), 2)
 			else:
-				final_total = flt(
+				base_line = flt(
 					flt(mrp) * flt(unit)
 					* (1 - flt(flat) / 100.0)
 					* (1 - flt(offer) / 100.0)
@@ -494,10 +497,21 @@ def _get_data(filters):
 				)
 			# Deduct the cash discount % per line (freebies are 0, so unaffected).
 			if cash_pct:
-				final_total = flt(final_total * (1 - cash_pct / 100.0), 2)
-			final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
-			igst = flt(final_total - final_taxable, 2)
-			cgst = flt(igst / 2.0, 2)
+				base_line = flt(base_line * (1 - cash_pct / 100.0), 2)
+
+			if _gst_excl:
+				# GST-EXCLUSIVE buyer: the SO line value IS the taxable; add GST on top.
+				# Final Total = Taxable + Applicable GST% (no inclusive back-calculation,
+				# no extra rounding of the taxable).
+				final_taxable = base_line
+				igst = flt(final_taxable * gst_pct / 100.0, 2)
+				cgst = flt(igst / 2.0, 2)
+				final_total = flt(final_taxable + igst, 2)
+			else:
+				final_total = base_line
+				final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
+				igst = flt(final_total - final_taxable, 2)
+				cgst = flt(igst / 2.0, 2)
 
 			# EAN/FSN by the order's customer type: Amazon needs EAN, Flipkart needs FSN.
 			# Flag "Missing" only for those two when the required code is absent; else blank.
