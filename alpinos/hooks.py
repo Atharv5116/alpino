@@ -200,6 +200,7 @@ after_migrate = [
 	"alpinos.web_form_update.execute",
 	"alpinos.sales_order_print_format_patch.execute",
 	"alpinos.pick_list_print_format.execute",
+	"alpinos.after_submit_sync.ensure_after_submit_fields",
 ]
 
 # Uninstallation
@@ -365,6 +366,7 @@ doc_events = {
 		],
 		"on_update": "alpinos.workflow_engine.pick_list_on_update",
 		"on_submit": "alpinos.workflow_engine.pick_list_on_submit",
+		"on_update_after_submit": "alpinos.after_submit_sync.pick_list_on_update_after_submit",
 		"on_cancel": [
 			"alpinos.workflow_engine.pick_list_on_cancel",
 			"alpinos.stock_reservation.release_for_cancelled_pick_list",
@@ -383,6 +385,7 @@ doc_events = {
 			"alpinos.workflow_engine.delivery_note_on_submit",
 			"alpinos.stock_reservation.release_leftover_after_delivery_note",
 		],
+		"on_update_after_submit": "alpinos.after_submit_sync.delivery_note_on_update_after_submit",
 		"on_cancel": "alpinos.workflow_engine.delivery_note_on_cancel",
 	},
 	"Batch": {
