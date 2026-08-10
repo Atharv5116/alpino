@@ -395,6 +395,7 @@ def _calculate_sales_order_line_values(item, gst_exclusive=False):
 			"flat_discount": flat_discount,
 			"gst_amount": flt(item.get("custom_item_tax")),
 			"selling_price": selling_price,
+			"computed": False,
 		}
 
 	# Apply additional discount directly on selling price
@@ -415,6 +416,7 @@ def _calculate_sales_order_line_values(item, gst_exclusive=False):
 		"flat_discount": flat_discount,
 		"gst_amount": flt(gst_amount, 2),
 		"selling_price": flt(selling_price, 2),
+		"computed": True,
 	}
 
 
@@ -456,8 +458,10 @@ def _apply_clean_gst_amounts(doc):
 		# ERPNext's rate x qty (46.67 x 120 = 5600.40). Do NOT reinvent the gross here or a
 		# discount gets missed.
 		calc = _calculate_sales_order_line_values(row, gst_exclusive)
-		if not calc["rate"] and not calc["amount"]:
-			# nothing to re-derive from -> keep whatever ERPNext computed for this row
+		if not calc.get("computed"):
+			# _calculate couldn't derive a value (no qty / no price basis) -> keep whatever
+			# ERPNext computed. A legitimately-computed 0 (e.g. Flat 100% = free) is NOT this
+			# case and must fall through so the 0 amount is applied, not the MRP fallback.
 			net_total = flt(net_total + flt(row.net_amount), 2)
 			continue
 		net = flt(calc["amount"])
@@ -541,7 +545,7 @@ def validate_sales_order_pricing(doc, method=None):
 		if round_per_unit and flt(row.get("custom_selling_price")):
 			row.custom_selling_price = round(flt(row.get("custom_selling_price")))
 		calc = _calculate_sales_order_line_values(row, gst_exclusive)
-		if not calc["rate"] and not calc["amount"]:
+		if not calc.get("computed"):
 			continue
 		if calc["flat_discount"] and not flt(row.get("custom_flat_discount")):
 			row.custom_flat_discount = calc["flat_discount"]
