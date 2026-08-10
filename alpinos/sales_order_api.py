@@ -555,6 +555,30 @@ def validate_sales_order_pricing(doc, method=None):
 	)
 
 
+def _buyer_excludes_box_conversion(customer, site_name):
+	"""True when Box Conversion Exclusion is set on the Buyer Master owning the SO's site
+	(or, as a fallback, the customer's Buyer Master) — partial boxes are allowed, so the
+	whole-box multiple rule is skipped."""
+	site_name = (site_name or "").strip()
+	if site_name and frappe.db.sql(
+		"""
+		SELECT 1 FROM `tabBuyer Master` bm
+		WHERE IFNULL(bm.box_conversion_exclusion, 0) = 1
+			AND (bm.site_name = %(s)s
+				OR EXISTS (SELECT 1 FROM `tabBuyer Address` ba
+					WHERE ba.parent = bm.name AND ba.site_name = %(s)s))
+		LIMIT 1
+		""",
+		{"s": site_name},
+	):
+		return True
+	if customer and frappe.db.get_value(
+		"Buyer Master", {"customer": customer, "box_conversion_exclusion": 1}, "name"
+	):
+		return True
+	return False
+
+
 def validate_so_freebies_and_box_multiples(doc, method=None):
 	"""Two Sales Order save rules (drafts only):
 
@@ -588,6 +612,11 @@ def validate_so_freebies_and_box_multiples(doc, method=None):
 				"order Items table. Freebies can only be given for ordered items."
 			)
 		freebie_qty[row.item_code] = freebie_qty.get(row.item_code, 0) + flt(row.qty)
+
+	# Box Conversion Exclusion (per site / buyer): partial boxes are allowed for this
+	# buyer's sites, so the whole-box multiple rule does not apply.
+	if _buyer_excludes_box_conversion(doc.get("customer"), doc.get("custom_site_name")):
+		return
 
 	for item_code, qty in order_qty.items():
 		cf = get_box_conversion_factor(item_code)
