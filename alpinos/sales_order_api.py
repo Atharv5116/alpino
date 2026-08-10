@@ -6,7 +6,7 @@ These bypass child table permission issues when called from client scripts.
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate
-from math import ceil
+from math import ceil, floor
 
 
 DEFAULT_SO_COMPANY = "Alpino Health Foods Pvt. Ltd."
@@ -1278,11 +1278,19 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 		factor = get_box_conversion_factor(item_code)
 		if factor:
 			# qty stays exactly as entered — whole-box compliance (incl. freebie
-			# top-ups) is enforced by validate_so_freebies_and_box_multiples.
-			# Box count is derived for display/downstream use only.
+			# top-ups) is enforced by validate_so_freebies_and_box_multiples. The box
+			# count is derived for display and rounded the SAME way the entry page does
+			# (Box Conversion Exclusion -> decimal, else the customer type's Round Up /
+			# Round Down) — so a 0.33 box on an excluded buyer is NOT forced up to 1.
+			mode = get_box_rounding_mode(customer, site_name, order_type)
+			decimal_box = mode in ("decimal", "exclude")
 			if not qty and custom_box:
-				qty = flt(ceil(custom_box) * factor)
-			custom_box = ceil(qty / factor) if qty else ceil(custom_box)
+				qty = flt((flt(custom_box) if decimal_box else ceil(custom_box)) * factor)
+			if qty:
+				raw = qty / factor
+				custom_box = ceil(raw) if mode == "up" else (floor(raw) if mode == "down" else flt(raw, 2))
+			else:
+				custom_box = flt(custom_box, 2) if decimal_box else ceil(custom_box)
 
 		calc = _calculate_sales_order_line_values(
 			{
