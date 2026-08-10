@@ -378,7 +378,11 @@ def _calculate_sales_order_line_values(item, gst_exclusive=False):
 	if not selling_price and mrp:
 		selling_price = flt(mrp * (1 - flat_discount / 100.0) * (1 - offer_pct / 100.0), 2)
 
-	if not qty or not selling_price:
+	# A selling price of 0 is VALID when there's a price basis (e.g. Flat Discount 100%
+	# -> free): compute a 0 amount rather than falling back to the MRP-based figure, which
+	# would leave the line at 0 while the grand total stayed MRP x qty. Only fall back when
+	# there's genuinely nothing to price from (no qty, or no selling price AND no MRP).
+	if not qty or (not selling_price and not mrp):
 		return {
 			"rate": flt(item.get("rate")),
 			"amount": flt(item.get("amount")),
