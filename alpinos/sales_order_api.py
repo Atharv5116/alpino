@@ -374,8 +374,14 @@ def _calculate_sales_order_line_values(item, gst_exclusive=False):
 	# Round the selling price to 2 decimals up front: Currency fields DISPLAY 2 dp but
 	# can store more, so a computed price like 49.0033 shows as "49.00" yet makes
 	# "49.00 x qty" look wrong in the amount. Pricing is a 2-dp figure — keep it that way.
-	selling_price = flt(item.get("custom_selling_price") or item.get("selling_price"), 2)
-	if not selling_price and mrp:
+	# custom_selling_price is the source of truth. When it's explicitly provided (even 0,
+	# e.g. Flat Discount 100% = free) use it as-is — do NOT let a 0 fall through to a
+	# non-zero selling_price / MRP. Only when it's absent do we fall back to a sent
+	# selling_price, then derive from MRP x (1-flat%) x (1-offer%).
+	csp = item.get("custom_selling_price")
+	csp_given = csp is not None and str(csp).strip() != ""
+	selling_price = flt(csp, 2) if csp_given else flt(item.get("selling_price") or 0, 2)
+	if not csp_given and not selling_price and mrp:
 		selling_price = flt(mrp * (1 - flat_discount / 100.0) * (1 - offer_pct / 100.0), 2)
 
 	# A selling price of 0 is VALID when there's a price basis (e.g. Flat Discount 100%
