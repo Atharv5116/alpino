@@ -26,7 +26,7 @@ frappe.pages["invoice-sync"].on_page_load = function (wrapper) {
 			allow_multiple: false,
 			restrictions: { allowed_file_types: [".xlsx", ".xls"] },
 			on_success: (file_doc) => {
-				frappe.dom.freeze(__("Processing invoices & fetching PDFs..."));
+				frappe.dom.freeze(__("Queuing invoice sync..."));
 				frappe.call({
 					method: "alpinos.invoice_sync.process_invoice_excel",
 					args: { file_url: file_doc.file_url },
@@ -62,6 +62,13 @@ frappe.pages["invoice-sync"].on_page_load = function (wrapper) {
 
 	function show_result(m) {
 		if (!m) return;
+		if (m.queued) {
+			$result.html(
+				`<div class="alert alert-info">${frappe.utils.escape_html(m.message || __("Invoice sync started in the background."))} ` +
+				`<a href="/app/invoice-sync-log" target="_blank">${__("Open Invoice Sync Log")}</a></div>`
+			);
+			return;
+		}
 		let html =
 			`<div class="alert alert-info">${__("Invoices mapped")}: <b>${m.invoices_mapped || 0}</b>, ` +
 			`${__("PDFs fetched")}: <b>${m.pdfs_fetched || 0}</b>`;
