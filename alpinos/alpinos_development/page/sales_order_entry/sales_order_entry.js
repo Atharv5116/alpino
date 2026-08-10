@@ -1946,23 +1946,12 @@ var SalesOrderEntry = class {
 		valid_items.forEach(i => {
 			order_qty_by_code[i.item_code] = (order_qty_by_code[i.item_code] || 0) + flt(i.qty);
 		});
-		// Box Conversion Exclusion: partial boxes are allowed, so skip the whole-box qty-multiple rule.
-		if (me._box_round_mode !== 'exclude') for (let item_code of Object.keys(order_qty_by_code)) {
-			let cf = flt(me._box_cache[item_code]);
-			if (!cf) continue;
-			let has_freebies = freebies.some(f => f.item_code === item_code);
-			let freebie_qty = freebies.filter(f => f.item_code === item_code)
-				.reduce((s, f) => s + flt(f.qty), 0);
-			let qty = order_qty_by_code[item_code];
-			let total = qty + freebie_qty;
-			let rem = total % cf;
-			if (Math.min(rem, cf - rem) > 0.0001) {
-				let detail = has_freebies
-					? __('ordered qty {0} + freebies {1} = {2}', [qty, freebie_qty, total])
-					: __('ordered qty {0}', [qty]);
-				return frappe.throw(__('{0}: a box holds {1} units — {2} must be a multiple of {3}.', [item_code.bold(), cf, detail, cf]));
-			}
-		}
+		// The whole-box qty-multiple rule is enforced SERVER-SIDE only
+		// (validate_so_freebies_and_box_multiples), which resolves Box Conversion
+		// Exclusion synchronously at save time (excluded buyers may order partial boxes).
+		// The old client check relied on a cached box mode that is stale when EDITING an
+		// existing order, which produced false "must be a multiple" errors.
+		void order_qty_by_code;
 
 		let scheme_items = this.scheme_items.filter(s => s.item_code).map(s => ({
 			item_code: s.item_code,
