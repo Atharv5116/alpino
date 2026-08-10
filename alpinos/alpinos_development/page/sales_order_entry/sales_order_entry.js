@@ -1134,8 +1134,12 @@ var SalesOrderEntry = class {
 			if (data.mrp !== undefined && data.mrp !== null && data.mrp !== '') {
 				mrp_field.set_value(data.mrp);
 			}
-			if (data.custom_selling_price !== undefined || data.selling_price !== undefined) {
-				selling_price_field.set_value(data.custom_selling_price || data.selling_price || 0);
+			// custom_selling_price is the source of truth — a stored 0 (e.g. Flat 100%
+			// = free) is valid and must NOT fall back to the MRP-based selling_price.
+			if (data.custom_selling_price !== undefined && data.custom_selling_price !== null) {
+				selling_price_field.set_value(flt(data.custom_selling_price));
+			} else if (data.selling_price !== undefined && data.selling_price !== null) {
+				selling_price_field.set_value(flt(data.selling_price));
 			}
 			if (data.flat_discount !== undefined && data.flat_discount !== null && data.flat_discount !== '') {
 				flat_disc_field.set_value(data.flat_discount);
@@ -1159,9 +1163,10 @@ var SalesOrderEntry = class {
 			if (data.item_image) {
 				this._set_row_image($row, data.item_image);
 			}
-			if (data.amount !== undefined && data.amount !== null) {
-				$row.find('.item-amount').text(format_currency(data.amount));
-			}
+			// Recompute the line amount from the loaded price fields (using the stored
+			// selling price) so a stale stored amount — e.g. an old MRP-based value on a
+			// Flat 100% line — is corrected on load instead of painted over the computed one.
+			this.calc_row_amount(idx, $row, true);
 		}
 	}
 
