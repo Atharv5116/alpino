@@ -96,7 +96,6 @@ def download_report_excel(from_date, to_date, channel=None, customer=None, custo
 
 
 # ── upload + process ────────────────────────────────────────────────────────
-@frappe.whitelist()
 def _set_invoice_no_retry(so_id, invoice_no, attempts=3):
 	"""Write the SO's invoice no in its OWN short transaction and commit, so the row
 	lock is released immediately (never held across the slow Drive fetch). Retries
@@ -116,6 +115,7 @@ def _set_invoice_no_retry(so_id, invoice_no, attempts=3):
 	return False
 
 
+@frappe.whitelist()
 def process_invoice_excel(file_url):
 	"""Parse the uploaded Excel (Sales Order Id + Invoice No), store the invoice number on each
 	Sales Order and, when Drive is configured, fetch & attach the matching invoice PDF."""
