@@ -1946,7 +1946,8 @@ var SalesOrderEntry = class {
 		valid_items.forEach(i => {
 			order_qty_by_code[i.item_code] = (order_qty_by_code[i.item_code] || 0) + flt(i.qty);
 		});
-		for (let item_code of Object.keys(order_qty_by_code)) {
+		// Box Conversion Exclusion: partial boxes are allowed, so skip the whole-box qty-multiple rule.
+		if (me._box_round_mode !== 'exclude') for (let item_code of Object.keys(order_qty_by_code)) {
 			let cf = flt(me._box_cache[item_code]);
 			if (!cf) continue;
 			let has_freebies = freebies.some(f => f.item_code === item_code);
