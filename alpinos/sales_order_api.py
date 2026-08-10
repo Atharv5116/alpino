@@ -1020,28 +1020,17 @@ def get_box_rounding_mode(customer=None, site_name=None, customer_type=None):
 	  'decimal' -> qty / factor kept in decimals (current behaviour)
 	  'up'      -> ceil(qty / factor)
 	  'down'    -> floor(qty / factor)
+	  'exclude' -> like decimal, AND the whole-box qty-multiple rule is skipped
 
 	Precedence:
-	  1. If the site's owning Buyer Master has Box Conversion Exclusion checked -> 'decimal'.
+	  1. Box Conversion Exclusion (site or the customer's Buyer Master) -> 'exclude'.
 	  2. Else the Alpino Customer Type's Round Up / Round Down (Round Up wins if both).
 	  3. Else 'decimal' (default)."""
-	site_name = (site_name or "").strip()
-	if site_name:
-		# Buyer Master that owns this site — either the master's own Site Name, or a
-		# Buyer Address child row carrying it. If it excludes box conversion -> decimal.
-		excluded = frappe.db.sql(
-			"""
-			SELECT 1 FROM `tabBuyer Master` bm
-			WHERE IFNULL(bm.box_conversion_exclusion, 0) = 1
-				AND (bm.site_name = %(s)s
-					OR EXISTS (SELECT 1 FROM `tabBuyer Address` ba
-						WHERE ba.parent = bm.name AND ba.site_name = %(s)s))
-			LIMIT 1
-			""",
-			{"s": site_name},
-		)
-		if excluded:
-			return "decimal"
+	# Box Conversion Exclusion (site, or the customer's Buyer Master) -> partial boxes
+	# allowed. Distinct 'exclude' marker: rounding-wise it behaves like decimal, and it
+	# also tells the entry page to SKIP the whole-box qty-multiple rule.
+	if _buyer_excludes_box_conversion(customer, site_name):
+		return "exclude"
 
 	ctype = (customer_type or "").strip()
 	if not ctype and customer:
