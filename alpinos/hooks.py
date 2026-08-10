@@ -141,6 +141,7 @@ patches = [
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
+	"alpinos.employee_field_visibility.execute",
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
 	"alpinos.employee_naming_config.setup_employee_manual_naming",
 	"alpinos.impersonate.create_impersonate_role",
