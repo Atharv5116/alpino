@@ -154,6 +154,32 @@ def process_invoice_excel(file_url):
 		if so_id and invoice:
 			mapping[so_id] = invoice
 
+	if not mapping:
+		frappe.throw(_("No valid Sales Order / Invoice rows found in the sheet."))
+
+	# Process in the background — a large sheet with a per-SO Drive fetch each would
+	# otherwise exceed the web-request (gateway) timeout (504). Results land in the
+	# Invoice Sync Log.
+	frappe.enqueue(
+		"alpinos.invoice_sync._run_invoice_sync",
+		queue="long",
+		timeout=3600,
+		mapping=mapping,
+		enqueue_after_commit=True,
+	)
+	return {
+		"queued": True,
+		"count": len(mapping),
+		"message": _(
+			"Syncing {0} invoice(s) in the background. Check the Invoice Sync Log for results."
+		).format(len(mapping)),
+	}
+
+
+def _run_invoice_sync(mapping):
+	"""Background worker: per Sales Order store the invoice number (its own short
+	transaction) and, when Drive is configured, fetch + attach the invoice PDF. Every
+	outcome is written to the Invoice Sync Log."""
 	s = _settings()
 	drive = None
 	if _drive_enabled(s):
