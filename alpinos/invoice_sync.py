@@ -97,6 +97,25 @@ def download_report_excel(from_date, to_date, channel=None, customer=None, custo
 
 # ── upload + process ────────────────────────────────────────────────────────
 @frappe.whitelist()
+def _set_invoice_no_retry(so_id, invoice_no, attempts=3):
+	"""Write the SO's invoice no in its OWN short transaction and commit, so the row
+	lock is released immediately (never held across the slow Drive fetch). Retries
+	briefly on a row-lock timeout (1205) so one busy Sales Order doesn't fail the whole
+	upload. Returns True on success."""
+	import time
+
+	for i in range(attempts):
+		try:
+			frappe.db.set_value("Sales Order", so_id, "custom_invoice_no", invoice_no, update_modified=False)
+			frappe.db.commit()
+			return True
+		except Exception:
+			frappe.db.rollback()
+			if i < attempts - 1:
+				time.sleep(0.4 * (i + 1))
+	return False
+
+
 def process_invoice_excel(file_url):
 	"""Parse the uploaded Excel (Sales Order Id + Invoice No), store the invoice number on each
 	Sales Order and, when Drive is configured, fetch & attach the matching invoice PDF."""
@@ -149,23 +168,36 @@ def process_invoice_excel(file_url):
 		if not frappe.db.exists("Sales Order", so_id):
 			skipped.append(f"{so_id} (not found)")
 			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order not found")
+			frappe.db.commit()
 			continue
-		frappe.db.set_value("Sales Order", so_id, "custom_invoice_no", invoice_no, update_modified=False)
+		# Each SO update is its own short transaction (commit inside the helper), so the
+		# row lock never stays held during the slow Drive fetch below — this is what was
+		# causing the 1205 "Lock wait timeout" on bulk uploads.
+		if not _set_invoice_no_retry(so_id, invoice_no):
+			skipped.append(f"{so_id} (locked)")
+			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order was locked — try again")
+			frappe.db.commit()
+			continue
 		updated += 1
 
 		if not drive:
 			log_invoice_sync(so_id, invoice_no, "Failed", "Invoice Drive sync not configured")
+			frappe.db.commit()
 			continue
 		if frappe.db.get_value("Sales Order", so_id, "custom_invoice_pdf"):
 			log_invoice_sync(so_id, invoice_no, "Success", "Invoice PDF already present")
+			frappe.db.commit()
 			continue
-		file_url, err = _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext)
+		# Slow network fetch — no SO row lock is held at this point.
+		fetched_url, err = _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext)
 		if err:
 			missing.append(f"{invoice_no} ({err})")
 			log_invoice_sync(so_id, invoice_no, "Failed", err)
+			frappe.db.commit()
 			continue
 		fetched += 1
 		log_invoice_sync(so_id, invoice_no, "Success")
+		frappe.db.commit()
 
 	frappe.db.commit()
 	return {
