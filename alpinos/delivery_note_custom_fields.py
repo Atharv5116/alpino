@@ -89,8 +89,8 @@ def setup_delivery_note_alpinos():
 				insert_after="custom_transporter_section",
 				reqd=1,
 				depends_on="eval:!doc.is_return",
-				read_only=1,
-				description="Fetched from the linked Pick List's Transporter — not editable on the Delivery Note.",
+				allow_on_submit=1,
+				description="Seeded from the linked Pick List's Transporter; editable in Draft — a change propagates back to the Pick List.",
 			),
 			dict(
 				fieldname="custom_lr_gr_no",

@@ -107,6 +107,63 @@ def _picklist_map(so_name):
 	return {(r.item_code, r.src): r for r in rows}
 
 
+def _pl_header(so_name):
+	"""Dispatch header info from the SUBMITTED Pick List(s) of this Sales Order:
+	Transporter, PL PO No, Gate No, Total Box (sticker grand total) and the latest
+	PL / Delivery Note modified datetime — one value set per order."""
+	pls = frappe.db.sql(
+		"""
+		SELECT custom_transporter, custom_po_no, custom_gate, custom_total_box, modified
+		FROM `tabPick List`
+		WHERE custom_sales_order_id = %(so)s AND docstatus = 1
+		ORDER BY modified DESC
+		""",
+		{"so": so_name}, as_dict=True,
+	)
+	if not pls:
+		return {}
+	# Total Box = the sticker grand total across the SO's submitted Pick List(s). The
+	# Pick List stores it on custom_total_box (item boxes + combined sample boxes),
+	# computed by the SAME combine_sample_boxes() the sticker generator uses.
+	total_box = sum(flt(p.custom_total_box) for p in pls)
+	# Latest Delivery Note modified for this SO (drafts + submitted), so "PL / DN
+	# Updated On" reflects a post-dispatch DN edit too, not just the Pick List.
+	dn_mod = frappe.db.sql(
+		"""
+		SELECT MAX(dn.modified) AS m
+		FROM `tabDelivery Note` dn
+		INNER JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
+		WHERE dni.against_sales_order = %(so)s AND dn.docstatus < 2
+		""",
+		{"so": so_name},
+	)
+	updated_on = pls[0].modified
+	if dn_mod and dn_mod[0][0] and dn_mod[0][0] > updated_on:
+		updated_on = dn_mod[0][0]
+	return {
+		"transporter": pls[0].custom_transporter or "",
+		"pl_po_no": pls[0].custom_po_no or "",
+		"gate_no": pls[0].custom_gate or "",
+		"total_box": total_box,
+		"pl_dn_updated_on": updated_on,
+	}
+
+
+def _combined_addr(city, state, pincode, mobile, pin_label):
+	"""Labeled single-cell address per the Final Format:
+	'City - <city> , State - <state> , <pin_label> - <pincode> , (M) - <mobile>'."""
+	parts = []
+	if city:
+		parts.append(f"City - {city}")
+	if state:
+		parts.append(f"State - {state}")
+	if pincode:
+		parts.append(f"{pin_label} - {pincode}")
+	if mobile:
+		parts.append(f"(M) - {mobile}")
+	return " , ".join(parts)
+
+
 def _address(name):
 	if not name:
 		return {}
@@ -171,32 +228,28 @@ def get_columns():
 	def col(label, fn, w=120, ft="Data"):
 		return {"label": label, "fieldname": fn, "fieldtype": ft, "width": w}
 
+	# Column order follows the client's Final Format (Accounts_Format ... Final_Formate).
 	cols = [
 		col("Invoice No", "invoice_no", 100),
 		col("Dispatch Date", "dispatch_date", 95, "Date"),
 		col("Sales Order Id", "sales_order_id", 130),
 		col("Customer PO Number", "customer_po_number", 130),
 		col("Customer", "customer", 180),
-		col("P&L Name / Voucher Type", "pl_voucher", 180),
-		col("Registration Type", "registration_type", 110),
+		col("Site Name", "site_name", 130),
 		col("Alpino SKU", "alpino_sku", 120),
-		col("EAN/FSN", "ean_fsn", 130),
-		col("EAN/FSN Flag", "ean_fsn_flag", 90),
 		col("Alpino Product Name", "alpino_product_name", 220),
 		col("UNIT", "unit", 70, "Float"),
 		col("Box", "box", 60, "Float"),
-		col("Alpino Product MRP", "alpino_mrp", 110, "Currency"),
 		col("Flat Discount %", "flat_discount", 90, "Float"),
-		col("Additional Discount", "additional_discount", 100, "Float"),
-		col("Alpino GST Rate", "gst_rate", 90, "Float"),
-		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Final Total Value", "final_total", 120, "Currency"),
 		col("Final Taxable", "final_taxable", 110, "Currency"),
 		col("IGST", "igst", 90, "Currency"),
 		col("CGST", "cgst", 90, "Currency"),
 		col("Is Billable", "is_billable", 80),
+		col("Less Qty", "less_qty", 80, "Float"),
+		col("Less Qty Amount", "less_qty_amount", 100, "Currency"),
 	]
-	for i in range(1, 5):
+	for i in range(1, 4):
 		cols.append(col(f"Bill to Address Line.{i}", f"bill_addr_{i}", 160))
 	cols += [
 		col("Bill to City + Place Of Supply (Bill to State) + Bill to Pincode + Mobile No", "bill_combined", 260),
@@ -204,7 +257,7 @@ def get_columns():
 		col("Bill to Pincode", "bill_pincode", 90),
 		col("Bill To GST No", "bill_gst_no", 140),
 	]
-	for i in range(1, 5):
+	for i in range(1, 4):
 		cols.append(col(f"Ship to Address Line.{i}", f"ship_addr_{i}", 160))
 	cols += [
 		col("Ship to City + Ship to State + Ship to Pincode + Mobile No", "ship_combined", 260),
@@ -213,10 +266,25 @@ def get_columns():
 		col("Ship To GST No", "ship_gst_no", 140),
 		col("Warehouse", "warehouse", 130),
 		col("Tally Warehouse Id", "tally_warehouse_id", 110),
+		col("EAN/FSN", "ean_fsn", 130),
+		col("EAN/FSN Flag", "ean_fsn_flag", 90),
+		col("Alpino Product MRP", "alpino_mrp", 110, "Currency"),
+		col("Additional Discount", "additional_discount", 100, "Float"),
+		col("Alpino GST Rate", "gst_rate", 90, "Float"),
+		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Channel", "channel", 120),
-		col("Site Name", "site_name", 130),
 		col("Order Date", "order_date", 95, "Date"),
+		col("P&L Name / Voucher Type", "pl_voucher", 180),
+		col("Registration Type", "registration_type", 110),
+		col("Offer Discount", "offer_discount", 100, "Float"),
 		col("Cash Discount", "cash_discount", 90, "Float"),
+		col("Selling Price GST Excl. Flag", "gst_excl_flag", 130),
+		col("Item Type", "item_type", 120),
+		col("Transporter", "transporter", 140),
+		col("Total Box", "total_box", 80, "Float"),
+		col("PL PO NO", "pl_po_no", 120),
+		col("Gate No", "gate_no", 80),
+		col("PL / DN Updated On", "pl_dn_updated_on", 140, "Datetime"),
 	]
 	return cols
 
@@ -304,7 +372,8 @@ def _get_data(filters):
 			item_cache[code] = frappe.db.get_value(
 				"Item", code,
 				["custom_tally_sku", "custom_tally_item_name", "item_name", "custom_ean_no",
-				 "custom_fsn_no", "custom_is_billable", "valuation_rate", "custom_gst_percent"],
+				 "custom_fsn_no", "custom_is_billable", "valuation_rate", "custom_gst_percent",
+				 "item_group"],
 				as_dict=True,
 			) or {}
 		return item_cache[code]
@@ -387,8 +456,8 @@ def _get_data(filters):
 			or " ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")]))
 		ship_text = (so.get("custom_shipping_address_text") or "").strip() \
 			or " ".join(filter(None, [ship.get("address_line1"), ship.get("address_line2")]))
-		bill_lines = _split_address(bill_text, max_lines=4)
-		ship_lines = _split_address(ship_text, max_lines=4)
+		bill_lines = _split_address(bill_text, max_lines=3)
+		ship_lines = _split_address(ship_text, max_lines=3)
 
 		customer_name = obm.get("tally_buyer_name") or so.get("customer_name") or so.customer
 
@@ -421,11 +490,11 @@ def _get_data(filters):
 			"ship_gst_no": ship_gst,
 			"bill_state": bill_state,
 			"bill_pincode": bill_pincode,
-			# Combined single-cell address (city, state, pincode, mobile) per the Final Format.
-			"bill_combined": ", ".join(p for p in (bill_city, bill_state, bill_pincode, mobile) if p),
+			# Combined single-cell address (labeled: City / State / Pincode / Mobile) per Final Format.
+			"bill_combined": _combined_addr(bill_city, bill_state, bill_pincode, mobile, "Bill To Pincode"),
 			"ship_state": ship_state,
 			"ship_pincode": ship_pincode,
-			"ship_combined": ", ".join(p for p in (ship_city, ship_state, ship_pincode, mobile) if p),
+			"ship_combined": _combined_addr(ship_city, ship_state, ship_pincode, mobile, "Ship To Pincode"),
 			# Warehouse column comes from the buyer's Buyer Master (Tally Warehouse);
 			# fall back to the SO's set_warehouse for buyers that have not set it yet.
 			"warehouse": obm.get("custom_tally_warehouse") or so.get("set_warehouse") or "",
@@ -433,8 +502,15 @@ def _get_data(filters):
 			"channel": channel,
 			"site_name": so.get("custom_site_name") or "",
 			"order_date": so.transaction_date,
+			# GST-exclusive buyer flag (whole SO) — shown per Final Format.
+			"gst_excl_flag": "Yes" if _gst_excl else "",
+			# Less Qty / Less Qty Amount: columns reserved per Final Format, source TBD.
+			"less_qty": None,
+			"less_qty_amount": None,
 		}
-		for i in range(4):
+		# Dispatch header (Transporter / PL PO / Gate / Total Box / PL·DN Updated On).
+		header.update(_pl_header(so.name))
+		for i in range(3):
 			header[f"bill_addr_{i+1}"] = bill_lines[i]
 			header[f"ship_addr_{i+1}"] = ship_lines[i]
 
@@ -536,7 +612,10 @@ def _get_data(filters):
 				"alpino_mrp": mrp,
 				"selling_price": flt(selling_price) or None,
 				"flat_discount": flt(flat),
-				"additional_discount": flt(offer) or flt(additional),
+				# Offer and Additional are now distinct columns in the Final Format.
+				"offer_discount": flt(offer),
+				"additional_discount": flt(additional),
+				"item_type": it.get("item_group") or "",
 				"cash_discount": cash_pct,
 				"gst_rate": gst_rate,
 				"final_taxable": final_taxable if is_priced else 0,

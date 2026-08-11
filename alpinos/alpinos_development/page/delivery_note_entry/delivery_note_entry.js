@@ -222,12 +222,13 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		var cancelled = page.docstatus === 2;
 
 		// Editable header fields — only when draft.
-		// vehicle_no (Picklist PO No.) and custom_transporter_name are pulled
-		// from the linked Pick List on DN create and rendered read-only,
-		// so they're not in this list.
+		// Transporter is seeded from the Pick List on DN create but is editable in
+		// Draft; a change propagates back to the Pick List and is logged on both docs.
+		// vehicle_no (Picklist PO No.) is still read-only (synced from the Pick List).
 		var editable_fields = [
 			'custom_lr_gr_no',
 			'custom_dispatch_from',
+			'custom_transporter_name',
 		];
 		editable_fields.forEach(function(fn) {
 			var $el = $main.find('[data-fieldname="' + fn + '"]');
@@ -296,14 +297,14 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	};
 
 	page.collect_header = function() {
-		// vehicle_no (Picklist PO No.) and custom_transporter_name are synced
-		// from the linked Pick List during DN creation. They're read-only on
-		// the page and intentionally not included here.
+		// vehicle_no (Picklist PO No.) is synced from the linked Pick List and read-only.
+		// Transporter IS editable in Draft, so it's collected here and saved back.
 		var $main = page.main;
 		return {
 			custom_lr_gr_no: ($main.find('[data-fieldname="custom_lr_gr_no"]').val() || '').trim() || null,
 			custom_dispatch_from: ($main.find('[data-fieldname="custom_dispatch_from"]').val() || '').trim() || null,
 			custom_assigned_to: $main.find('[data-fieldname="custom_assigned_to"]').val() || null,
+			custom_transporter_name: ($main.find('[data-fieldname="custom_transporter_name"]').val() || '').trim() || null,
 		};
 	};
 
