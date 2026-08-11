@@ -168,6 +168,66 @@ DEFAULT_DN_DISPATCH_FROM = (
 )
 
 
+def combine_sample_boxes(sample_infos):
+	"""Combine sample-box fractions continuously across the sample sections.
+
+	`sample_infos` is the ordered list of sample rows (Marketing Freebies → Scheme →
+	Additional Units, SKU-ascending within each), every entry a dict carrying at least
+	`frac` = qty / box-conversion-factor (the row's fractional box count) and `sku_name`.
+
+	Decimal box quantities are combined to complete whole boxes WITHOUT resetting between
+	sections: a SKU's whole-box part prints one single-SKU box each, and its leftover
+	fraction accumulates into a shared "mixed" box that shows every contributing SKU code.
+
+	Example: SKU1=0.56, SKU2=2.44, SKU3=3.00 →
+	  SKU1(0.56)+SKU2(0.44) = 1 mixed box (SKU1 & SKU2), SKU2 remainder = 2 boxes,
+	  SKU3 = 3 boxes → 6 boxes total.
+
+	Returns an ordered list of box units, each {'parts': [info, ...], 'is_mixed': bool}.
+	A trailing partial box (fractions that never reached a full box) still ships as one box.
+	"""
+	EPS = 1e-9
+	units = []
+	carry = 0.0        # fraction of the box currently being filled
+	carry_parts = []   # rows contributing to that box
+
+	def _mixed(parts):
+		return len({p.get("sku_name") for p in parts}) > 1
+
+	for info in sample_infos:
+		remaining = flt(info.get("frac"))
+		if remaining <= EPS:
+			continue
+		# 1. Top off a box already in progress (carried from earlier sections/rows).
+		if carry > EPS:
+			take = min(1.0 - carry, remaining)
+			carry += take
+			remaining -= take
+			carry_parts.append(info)
+			if carry >= 1.0 - EPS:
+				units.append({"parts": carry_parts, "is_mixed": _mixed(carry_parts)})
+				carry, carry_parts = 0.0, []
+		# 2. Whole boxes from the integer part — one single-SKU box each.
+		full = int(remaining + EPS)
+		for _ in range(full):
+			units.append({"parts": [info], "is_mixed": False})
+		remaining -= full
+		# 3. Leftover fraction opens / continues the next shared box.
+		if remaining > EPS:
+			carry += remaining
+			carry_parts.append(info)
+	# Any unfilled remainder still occupies one physical box.
+	if carry > EPS and carry_parts:
+		units.append({"parts": carry_parts, "is_mixed": _mixed(carry_parts)})
+	return units
+
+
+def _sample_frac(row):
+	"""Fractional box count for a sample row: qty / box-conversion-factor (unrounded)."""
+	factor = flt(get_box_conversion_factor(row.item_code)) if row.item_code else 0
+	return flt(row.qty) / (factor or 1)
+
+
 def _collect_pick_list_stickers(doc):
 	"""Build the flat list of sticker dicts for one Pick List doc.
 
@@ -203,47 +263,71 @@ def _collect_pick_list_stickers(doc):
 
 	sorted_rows = sorted(doc.locations or [], key=_row_sort_key)
 
-	# First pass: per-row box counts, so the counter can run continuously
-	# across the whole pick list (serial / grand total) in page order.
-	printable = []
+	def _row_meta(row):
+		mfg_date = ""
+		if row.get("custom_mfg_date"):
+			mfg_date = frappe.utils.formatdate(str(row.custom_mfg_date))
+		return {
+			"sku_no": sku_no_map.get(row.item_code, ""),
+			"sku_name": row.item_code or "",
+			"batch_no": row.get("batch_no") or row.get("custom_batch_code") or "",
+			"mfg_date": mfg_date,
+		}
+
+	# Build printable box units in page order. Item rows print one single-SKU box per
+	# custom_box, exactly as before. Sample rows (Marketing Freebies / Scheme /
+	# Additional Units) have their FRACTIONAL boxes (qty / conversion factor) combined
+	# continuously across all three sections, so leftover fractions share a "mixed"
+	# box whose sticker lists every contributing SKU code (see combine_sample_boxes).
+	item_units, sample_infos = [], []
 	for row in sorted_rows:
 		source_table = row.get("custom_source_table") or "Items"
-		is_sample = source_table in SAMPLE_SOURCE_TABLES
-		# Items rows: use custom_box. Sample-table rows: use custom_sample_box,
-		# falling back to 1 sticker per row when the count is zero so the
-		# freebie/scheme/additional-unit gets at least one printed label.
-		if is_sample:
-			boxes = int(flt(row.get("custom_sample_box") or 0)) or 1
+		if source_table in SAMPLE_SOURCE_TABLES:
+			info = _row_meta(row)
+			info["frac"] = _sample_frac(row)
+			sample_infos.append(info)
 		else:
 			boxes = int(flt(row.get("custom_box") or 0))
 			if boxes <= 0:
 				continue
-		printable.append((row, boxes, is_sample))
+			meta = _row_meta(row)
+			item_units += [{"parts": [meta], "is_mixed": False, "is_sample": False}] * boxes
 
-	grand_total = sum(boxes for _, boxes, _ in printable)
+	sample_units = combine_sample_boxes(sample_infos)
+	for u in sample_units:
+		u["is_sample"] = True
+
+	all_units = item_units + sample_units
+	grand_total = len(all_units)
 
 	stickers = []
-	serial = 0
-	for row, boxes, is_sample in printable:
-		sku_no = sku_no_map.get(row.item_code, "")
-		batch_no = row.get("batch_no") or row.get("custom_batch_code") or ""
-		mfg_date = ""
-		if row.get("custom_mfg_date"):
-			mfg_date = frappe.utils.formatdate(str(row.custom_mfg_date))
-		for _ in range(boxes):
-			serial += 1
-			stickers.append({
-				"sku_no": sku_no,
-				"sku_name": row.item_code or "",
-				"batch_no": batch_no,
-				"mfg_date": mfg_date,
-				"box_index": serial,
-				"total_box": grand_total,
-				"party_name": party_name,
-				"po_no": po_no,
-				"dispatch_area": gate,
-				"is_sample": is_sample,
-			})
+	for serial, unit in enumerate(all_units, start=1):
+		parts = unit["parts"]
+		if unit.get("is_mixed"):
+			# Mixed box — one physical box holding more than one SKU. Show every code
+			# ("<sku#> <code>" per SKU, joined) and mark the box number as MIX.
+			sku_no = "MIX"
+			sku_name = " + ".join(
+				(f"{p['sku_no']} {p['sku_name']}").strip() for p in parts
+			)
+			batch_no = " / ".join(dict.fromkeys(p["batch_no"] for p in parts if p["batch_no"]))
+			mfg_date = " / ".join(dict.fromkeys(p["mfg_date"] for p in parts if p["mfg_date"]))
+		else:
+			p = parts[0]
+			sku_no, sku_name = p["sku_no"], p["sku_name"]
+			batch_no, mfg_date = p["batch_no"], p["mfg_date"]
+		stickers.append({
+			"sku_no": sku_no,
+			"sku_name": sku_name,
+			"batch_no": batch_no,
+			"mfg_date": mfg_date,
+			"box_index": serial,
+			"total_box": grand_total,
+			"party_name": party_name,
+			"po_no": po_no,
+			"dispatch_area": gate,
+			"is_sample": unit.get("is_sample", False),
+		})
 
 	return stickers
 

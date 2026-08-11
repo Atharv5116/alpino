@@ -52,10 +52,10 @@ def _sync_order_information(doc):
 
 def _sync_rows_and_totals(doc):
 	actual_box = 0.0
-	sample_box = 0.0
 	sample_weight = 0.0
 	gross_weight = 0.0
 	total_unit = 0.0
+	sample_infos = []  # {sku_name, frac} per sample row, for continuous box combining
 
 	for row in doc.locations or []:
 		qty = flt(row.qty)
@@ -100,15 +100,23 @@ def _sync_rows_and_totals(doc):
 			actual_box += row_box
 			gross_weight += row_box * row_weight_per_box
 		else:
-			sample_box += row_box
+			# Sample rows carry FRACTIONAL boxes (qty / factor); they are combined
+			# continuously across the sample sections below, not summed per row.
+			sample_infos.append({"sku_name": row.item_code, "frac": qty / factor})
 			sample_weight += row_box * row_weight_per_box
 
 		total_unit += qty
 
+	# Sample Box = number of physical boxes after combining decimal quantities across
+	# Marketing Freebies + Scheme + Additional Units (mixed boxes shared between SKUs).
+	# Single source of truth with the sticker generator, so form/report/stickers agree.
+	from alpinos.pick_list_api import combine_sample_boxes
+	sample_box = len(combine_sample_boxes(sample_infos))
+
 	doc.custom_actual_box = int(round(actual_box))
-	doc.custom_sample_box = int(round(sample_box))
+	doc.custom_sample_box = sample_box
 	doc.custom_sample_weight = flt(sample_weight, 2)
-	doc.custom_total_box = int(round(actual_box + sample_box))
+	doc.custom_total_box = int(round(actual_box)) + sample_box
 	doc.custom_gross_weight = flt(gross_weight, 2)
 	doc.custom_total_unit = flt(total_unit, 2)
 

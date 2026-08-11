@@ -91,6 +91,34 @@ def delivery_note_on_update_after_submit(doc, method=None):
 	frappe.db.set_value("Delivery Note", doc.name, "custom_changed_after_submit", 1, update_modified=False)
 
 
+# Draft Delivery Note: which field edits propagate to the Pick List while still in Draft.
+_DN_DRAFT_WATCH = {
+	"custom_transporter_name": ("Transporter", "custom_transporter"),
+}
+
+
+def delivery_note_on_update_draft(doc, method=None):
+	"""While a Delivery Note is still in DRAFT, a Transporter edit propagates to the
+	linked Pick List(s) and is logged on both docs. (A submitted DN goes through
+	delivery_note_on_update_after_submit instead.) Fires on every draft save but only
+	acts on a genuine change vs the pre-save value, so creating a DN — which just
+	inherits the Pick List's transporter — never loops back onto the Pick List."""
+	if doc.docstatus != 0:
+		return
+	changes = _changed(doc, _DN_DRAFT_WATCH)
+	if not changes:
+		return
+	pls = _pick_lists_for_dn(doc)
+	for f, (old, new) in changes.items():
+		label, pl_field = _DN_DRAFT_WATCH[f]
+		log_field_change("Delivery Note", doc.name, label, old, new, after_submit=0)
+		for pl in pls:
+			cur = frappe.db.get_value("Pick List", pl, pl_field)
+			if str(cur or "") != str(new or ""):
+				frappe.db.set_value("Pick List", pl, pl_field, new, update_modified=False)
+				log_field_change("Pick List", pl, label + " (from Delivery Note)", cur, new, after_submit=0)
+
+
 _AFTER_SUBMIT_EDITABLE = {
 	"Pick List": {"custom_transporter", "custom_dispatch_date"},
 	"Delivery Note": {"custom_transporter_name", "custom_lr_gr_no", "custom_dispatch_date"},
@@ -158,5 +186,14 @@ def ensure_after_submit_fields():
 		for f in fields:
 			if frappe.get_meta(dt).has_field(f):
 				make_property_setter(dt, f, "allow_on_submit", 1, "Check", validate_fields_for_doctype=False)
+
+	# Delivery Note Transporter must be EDITABLE in Draft (BRD). It was originally
+	# read-only ("fetched from Pick List"); a draft edit now propagates back to the
+	# Pick List. A read-only field's changes are dropped by doc.save(), so clear it.
+	if frappe.get_meta("Delivery Note").has_field("custom_transporter_name"):
+		make_property_setter(
+			"Delivery Note", "custom_transporter_name", "read_only", 0, "Check",
+			validate_fields_for_doctype=False,
+		)
 	frappe.clear_cache(doctype="Pick List")
 	frappe.clear_cache(doctype="Delivery Note")

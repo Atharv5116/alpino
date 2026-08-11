@@ -74,10 +74,12 @@ _EDITABLE_HEADER_FIELDS = {
 	"custom_lr_gr_no",
 	"custom_dispatch_from",
 	"custom_assigned_to",
-	# vehicle_no (Picklist PO No.) and custom_transporter_name are now
-	# synced from Pick List during DN creation and rendered read-only on
-	# the entry page — intentionally omitted from this set so the page
-	# cannot overwrite them.
+	# Transporter is seeded from the Pick List at DN creation but is editable while
+	# the DN is in Draft; a change here propagates back to the Pick List and is logged
+	# on both docs (delivery_note_on_update_draft).
+	"custom_transporter_name",
+	# vehicle_no (Picklist PO No.) is still synced from Pick List and rendered
+	# read-only on the entry page — intentionally omitted so the page can't overwrite it.
 }
 
 

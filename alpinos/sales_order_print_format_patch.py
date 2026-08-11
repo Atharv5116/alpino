@@ -195,6 +195,44 @@ def _inject_gst_exclusive_note():
 	frappe.logger("alpinos").info("Injected GST-exclusive note into '%s'." % PF_NAME)
 
 
+# ── Selling Price column (BRD: add a Selling Price column after MRP) ──────────
+_SP_MRP_TH = '<th class=\'right\' style="color: #000; font-weight: 800;">MRP</th>'
+_SP_TH = '<th class=\'right\' style="color: #000; font-weight: 800;">Selling Price</th>'
+_SP_MRP_TD = "<td class='right'>{{ frappe.utils.fmt_money(row.custom_customer_mrp or 0, currency=doc.currency) }}</td>"
+_SP_TD = "<td class='right'>{{ frappe.utils.fmt_money(row.custom_selling_price or 0, currency=doc.currency) }}</td>"
+
+
+def _add_selling_price_column():
+	"""Add a 'Selling Price' column to the main items table of the 'Sales Order'
+	format, immediately after MRP. Inserting a cell widens the row from 9 to 10
+	columns, so the section-title colspan (9->10) and the totals-footer label
+	colspans (8->9) are bumped to match. Idempotent: keyed on the Selling Price
+	header already being present; logs and skips if the MRP anchors have drifted."""
+	if not frappe.db.exists("Print Format", PF_NAME):
+		return
+	html = frappe.db.get_value("Print Format", PF_NAME, "html") or ""
+	if not html or _SP_TH in html:
+		return  # empty, or already added
+	if _SP_MRP_TH not in html or _SP_MRP_TD not in html:
+		frappe.log_error(
+			title="Sales Order print format: Selling Price column skipped",
+			message="MRP header/body cell not found — format edited on-site?",
+		)
+		return
+	html = html.replace(_SP_MRP_TH, _SP_MRP_TH + _SP_TH, 1)  # header cell after MRP
+	html = html.replace(_SP_MRP_TD, _SP_MRP_TD + _SP_TD, 1)  # body cell after MRP
+	# Section title spanned all 9 columns; now 10.
+	html = html.replace(
+		"<tr><th colspan='9' class='center bg-grey'",
+		"<tr><th colspan='10' class='center bg-grey'",
+	)
+	# Totals-footer label cells (Sub Total / Cash Disc / Grand Total) spanned 8; now 9.
+	html = html.replace("colspan='8' class='right bold'", "colspan='9' class='right bold'")
+	frappe.db.set_value("Print Format", PF_NAME, "html", html)
+	frappe.db.commit()
+	frappe.logger("alpinos").info("Added 'Selling Price' column to '%s' items table." % PF_NAME)
+
+
 def execute():
 	"""Patch the 'Sales Order' print format to explode product bundles, and repair
 	the renamed buyer-master doctype reference in all print formats.
@@ -213,6 +251,9 @@ def execute():
 
 	# Highlighted note for GST-Exclusive buyers (Amazon FBF etc.). Safe idempotent prepend.
 	_inject_gst_exclusive_note()
+
+	# Add a 'Selling Price' column after MRP in the items table (widens table colspans).
+	_add_selling_price_column()
 
 	# Collapse the totals footer to Sub Total (incl GST) -> Rounding -> Cash Disc ->
 	# Grand Total. Handled separately from the tuple rewrites (see note above).
