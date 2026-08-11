@@ -268,6 +268,29 @@ def _gst_for_site(site_name, fallback=""):
 	return fallback or ""
 
 
+# Order-behaviour flags that are read SITE-WISE (from the Buyer Master owning the chosen
+# site's address), not from the family parent. GST-Exclusive Buyer is per-site (e.g. an
+# Amazon FBF site) so it must follow the site, exactly like GST No does.
+def _flag_for_site(site_name, field, fallback=0):
+	"""Value of a Buyer Master flag for the SELECTED SITE — the master that owns a Buyer
+	Address child row whose site_name matches — falling back to `fallback` (the family
+	master's value) when the site can't be resolved. `field` is a fixed column name."""
+	if site_name:
+		rows = frappe.db.sql(
+			"""
+			SELECT bm.`{field}`
+			FROM `tabBuyer Address` ba
+			JOIN `tabBuyer Master` bm ON bm.name = ba.parent
+			WHERE ba.site_name = %s
+			LIMIT 1
+			""".format(field=field),
+			site_name,
+		)
+		if rows:
+			return int(rows[0][0] or 0)
+	return int(fallback or 0)
+
+
 def sync_sales_order_offline_buyer_fields(doc, method=None):
 	"""Keep OBM link and trade Customer Type on Sales Order in sync with Customer (save/API/import)."""
 	if doc.docstatus != 0:
@@ -326,6 +349,14 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 			doc.custom_billing_gstin = _site_gst
 		if meta.has_field("custom_shipping_gstin"):
 			doc.custom_shipping_gstin = _site_gst
+		# GST-Exclusive Buyer is a SITE-WISE property, exactly like GST No: always reflect
+		# the Buyer Master that owns the chosen site — on every save and for every entry path
+		# (offline / e-com / import), NOT the family parent picked up in `row`. Falls back to
+		# the family master's value only when the site can't be resolved.
+		if meta.has_field("custom_gst_exclusive_buyer"):
+			doc.custom_gst_exclusive_buyer = _flag_for_site(
+				_site, "gst_exclusive_buyer", row.get("gst_exclusive_buyer")
+			)
 		# Validate the GSTIN's state code against the bill-to state (soft flag). Only when
 		# a structured billing Address carries a state — free-text imports simply skip it.
 		if _site_gst and doc.get("customer_address"):
@@ -351,7 +382,6 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 			doc.custom_appointment_required = int(row.get("appointment_required") or 0)
 			doc.custom_grn_available = int(row.get("grn_available") or 0)
 			doc.custom_partial_order_allowed = int(row.get("partial_order_allowed") or 0)
-			doc.custom_gst_exclusive_buyer = int(row.get("gst_exclusive_buyer") or 0)
 	else:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None
