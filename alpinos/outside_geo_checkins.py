@@ -86,13 +86,17 @@ def download_outside_geo_checkins(from_date=None, to_date=None):
 	if not res.get("allowed"):
 		frappe.throw(frappe._("Not permitted."), frappe.PermissionError)
 
-	rows = [["Employee Name", "Department", "Check-In Date", "Check-In Time", "Reason", "Explanation / Remarks"]]
+	def _dir(lt):
+		return "Check-In" if lt == "IN" else ("Check-Out" if lt == "OUT" else (lt or ""))
+
+	rows = [["Employee Name", "Department", "Check-In Date", "Check-In Time", "Type", "Reason", "Explanation / Remarks"]]
 	for it in res.get("items", []):
 		rows.append([
 			it.get("employee_name") or it.get("employee") or "",
 			it.get("department") or "",
 			it.get("date") or "",
 			it.get("checkin_time") or "",
+			_dir(it.get("log_type")),
 			it.get("reason") or "",
 			it.get("remarks") or "",
 		])

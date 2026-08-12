@@ -49,6 +49,9 @@ function esc(s) {
     return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
   });
 }
+function dirLabel(lt) {
+  return lt === "IN" ? "Check-In" : (lt === "OUT" ? "Check-Out" : (lt || ""));
+}
 var th = "padding:6px 10px;border:1px solid #e5e7eb;text-align:left;background:#f9fafb;font-weight:600;color:#374151;";
 var td = "padding:6px 10px;border:1px solid #e5e7eb;";
 var PAGE = 8;
@@ -64,6 +67,7 @@ function draw() {
     + "<th style='" + th + "'>Department</th>"
     + "<th style='" + th + "'>Check-In Date</th>"
     + "<th style='" + th + "'>Check-In Time</th>"
+    + "<th style='" + th + "'>Type</th>"
     + "<th style='" + th + "'>Reason</th>"
     + "<th style='" + th + "'>Explanation / Remarks</th>"
     + "</tr></thead><tbody>";
@@ -74,6 +78,7 @@ function draw() {
       + "<td style='" + td + "'>" + esc(it.department) + "</td>"
       + "<td style='" + td + "'>" + esc(it.date) + "</td>"
       + "<td style='" + td + "'>" + esc(it.checkin_time) + "</td>"
+      + "<td style='" + td + "'>" + esc(dirLabel(it.log_type)) + "</td>"
       + "<td style='" + td + "'>" + esc(it.reason) + "</td>"
       + "<td style='" + td + "'>" + esc(it.remarks) + "</td>"
       + "</tr>";
