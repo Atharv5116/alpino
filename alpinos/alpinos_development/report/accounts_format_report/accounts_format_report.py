@@ -10,7 +10,7 @@ Exports to Excel via the standard report view (Menu → Export).
 import re
 
 import frappe
-from frappe.utils import cint, flt, getdate
+from frappe.utils import cint, flt, formatdate, getdate
 
 
 # Indian States + UTs — longest-first so "Uttar Pradesh" wins over a bare "Pradesh" match.
@@ -233,7 +233,10 @@ def get_columns():
 	# Column order follows the client's Final Format (Accounts_Format ... Final_Formate).
 	cols = [
 		col("Invoice No", "invoice_no", 100),
-		col("Dispatch Date", "dispatch_date", 95, "Date"),
+		# Dispatch / Order dates are emitted as dd-MM-yyyy TEXT (not Date) so the Excel
+		# export shows the same format as the on-screen report (a Date value exports as a
+		# datetime like "2026-08-12 00:00:00").
+		col("Dispatch Date", "dispatch_date", 95),
 		col("Sales Order Id", "sales_order_id", 130),
 		col("Customer PO Number", "customer_po_number", 130),
 		col("Customer", "customer", 180),
@@ -275,7 +278,7 @@ def get_columns():
 		col("Alpino GST Rate", "gst_rate", 90, "Float"),
 		col("Selling Price", "selling_price", 100, "Currency"),
 		col("Channel", "channel", 120),
-		col("Order Date", "order_date", 95, "Date"),
+		col("Order Date", "order_date", 95),
 		col("P&L Name / Voucher Type", "pl_voucher", 180),
 		col("Registration Type", "registration_type", 110),
 		col("Offer Discount", "offer_discount", 100, "Float"),
@@ -480,7 +483,8 @@ def _get_data(filters):
 		header = {
 			# Invoice No assigned by the Excel invoice-sync import (blank until then).
 			"invoice_no": so.get("custom_invoice_no") or "",
-			"dispatch_date": so.get("custom_dispatch_date") or "",
+			# dd-MM-yyyy text so the export matches the on-screen format.
+			"dispatch_date": formatdate(so.get("custom_dispatch_date"), "dd-MM-yyyy") if so.get("custom_dispatch_date") else "",
 			"sales_order_id": so.name,
 			"customer_po_number": so.get("po_no") or "",
 			"customer": customer_name,
@@ -503,7 +507,7 @@ def _get_data(filters):
 			"tally_warehouse_id": obm.get("custom_tally_warehouse_id") or "T24",
 			"channel": channel,
 			"site_name": so.get("custom_site_name") or "",
-			"order_date": so.transaction_date,
+			"order_date": formatdate(so.transaction_date, "dd-MM-yyyy") if so.transaction_date else "",
 			# GST-exclusive buyer flag (whole SO) — shown per Final Format.
 			"gst_excl_flag": "Yes" if _gst_excl else "",
 			# Less Qty / Less Qty Amount: columns reserved per Final Format, source TBD.
