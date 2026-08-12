@@ -140,10 +140,12 @@ def _pl_header(so_name):
 	updated_on = pls[0].modified
 	if dn_mod and dn_mod[0][0] and dn_mod[0][0] > updated_on:
 		updated_on = dn_mod[0][0]
+	# Gate No is shown labeled in the cell, e.g. "Gate No. : G-3" (raw "G-3" from the PL).
+	_gate = (pls[0].custom_gate or "").strip()
 	return {
 		"transporter": pls[0].custom_transporter or "",
 		"pl_po_no": pls[0].custom_po_no or "",
-		"gate_no": pls[0].custom_gate or "",
+		"gate_no": ("Gate No. : " + _gate) if _gate else "",
 		"total_box": total_box,
 		"pl_dn_updated_on": updated_on,
 	}
