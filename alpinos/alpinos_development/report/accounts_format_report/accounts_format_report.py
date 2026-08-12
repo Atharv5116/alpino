@@ -107,6 +107,25 @@ def _picklist_map(so_name):
 	return {(r.item_code, r.src): r for r in rows}
 
 
+def _scp_for_site(site_name):
+	"""{city, state, pincode} from the Buyer Master Address child row for a site — the
+	STRUCTURED source, correct even when the free-text address is misspelled (e.g. a
+	'Maharastra' typo that the state-name matcher can't resolve). Used only as a fallback
+	when the address-line parsing leaves city/state/pincode blank."""
+	if not site_name:
+		return {}
+	rows = frappe.db.sql(
+		"""
+		SELECT city, state, pincode
+		FROM `tabBuyer Address`
+		WHERE site_name = %s AND (IFNULL(city,'') <> '' OR IFNULL(state,'') <> '')
+		LIMIT 1
+		""",
+		site_name, as_dict=True,
+	)
+	return dict(rows[0]) if rows else {}
+
+
 def _address(name):
 	if not name:
 		return {}
@@ -369,6 +388,15 @@ def _get_data(filters):
 			ship["state"] = ship_scp.get("state") or free_scp.get("state") or ""
 			ship["city"] = ship_scp.get("city") or free_scp.get("city") or ""
 			ship["pincode"] = ship_scp.get("pincode") or free_scp.get("pincode") or ""
+		# Structured fallback: when city/state/pincode couldn't be resolved from the address
+		# text (e.g. a misspelled state like "Maharastra"), fill them from the SITE's Buyer
+		# Master Address child row (structured, correct). Only fills blanks.
+		site_scp = _scp_for_site(so.get("custom_site_name"))
+		if site_scp:
+			for _d in (bill, ship):
+				_d["state"] = _d.get("state") or site_scp.get("state") or ""
+				_d["city"] = _d.get("city") or site_scp.get("city") or ""
+				_d["pincode"] = _d.get("pincode") or site_scp.get("pincode") or ""
 		# No distinct shipping address at all (common for offline orders) — the
 		# order ships to the billing address, so mirror its state/city/pincode.
 		if not _has_scp(ship):
