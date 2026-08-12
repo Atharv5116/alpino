@@ -43,6 +43,7 @@ SO_FORCED_DISPATCHED = "Forced Dispatched"
 SO_FORCED_COMPLETED = "Forced Completed"
 SO_COMPLETED = "Completed"
 SO_CANCELLED = "Cancelled"
+SO_REJECTED = "Rejected"
 
 # SO stages that may still be steered by Pick List progress (never regress past
 # these — once a DN exists or the order is dispatched, PL edits must not pull it
@@ -56,6 +57,11 @@ SO_EARLY_STAGES = {
 	SO_STICKER_PENDING,
 	SO_SUBMISSION_PENDING,
 }
+
+# Warehouse can REJECT an order once it has reached the warehouse workflow, up to the
+# point a Pick List is submitted (SO_EARLY_STAGES). After that a Pick List / Delivery
+# Note carries picked/reserved stock, so rejection is blocked — cancel those first.
+SO_REJECTABLE = set(SO_EARLY_STAGES)
 
 PL_DRAFT = "Draft"
 PL_PICKING_PENDING = "Picking Pending"
@@ -520,6 +526,23 @@ def approve_sales_order(sales_order):
 	_set_status("Sales Order", sales_order, new_status)
 	frappe.db.commit()
 	return {"status": new_status}
+
+
+@frappe.whitelist()
+def reject_sales_order(sales_order):
+	"""Warehouse Admin / Manager rejects an order that has reached the warehouse
+	workflow -> Rejected (terminal). Allowed only up to Ready For Dispatch and while
+	no Pick List has been submitted, so a rejection never strands picked/dispatched
+	stock — cancel a submitted Pick List first if the order got that far."""
+	_require_roles(WAREHOUSE_ROLES)
+	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
+	if cur not in SO_REJECTABLE:
+		frappe.throw(frappe._("This order can't be rejected at its current stage ({0}).").format(cur or "—"))
+	if frappe.db.exists("Pick List", {"custom_sales_order_id": sales_order, "docstatus": 1}):
+		frappe.throw(frappe._("Cancel the submitted Pick List before rejecting this order."))
+	_set_status("Sales Order", sales_order, SO_REJECTED)
+	frappe.db.commit()
+	return {"status": SO_REJECTED}
 
 
 @frappe.whitelist()

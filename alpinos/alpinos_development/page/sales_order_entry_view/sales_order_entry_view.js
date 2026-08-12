@@ -129,6 +129,25 @@ var SalesOrderEntryView = class {
 			});
 		}, __('Order'));
 		if (this.btn_cancel_so) this.btn_cancel_so.hide();
+		// Reject — Warehouse Admin / Manager rejects an order in the early warehouse
+		// stages (before a Pick List is submitted). Sets status to Rejected.
+		this.btn_reject_so = this.page.add_inner_button(__('Reject Order'), () => {
+			const me = this;
+			frappe.confirm(__('Reject Sales Order {0}? It will be marked Rejected.', [me._so_name]), () => {
+				frappe.call({
+					method: 'alpinos.workflow_engine.reject_sales_order',
+					args: { sales_order: me._so_name },
+					freeze: true,
+					freeze_message: __('Rejecting...'),
+					callback: (r) => {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Sales Order rejected'), indicator: 'red' });
+						me.load_order(me._so_name);
+					}
+				});
+			});
+		}, __('Order'));
+		if (this.btn_reject_so) this.btn_reject_so.hide();
 		// The main "next stage" action is set as the page primary action by
 		// update_actions(). This is the only stage-secondary inline button.
 		this.btn_future_dispatch = this.page.add_inner_button(
@@ -206,6 +225,7 @@ var SalesOrderEntryView = class {
 				Completed: 'green',
 				'Forced Completed': 'red',
 				Cancelled: 'red',
+				Rejected: 'red',
 			};
 			if (status && me.page.set_indicator) {
 				me.page.set_indicator(status, colorMap[status] || 'gray');
@@ -231,6 +251,17 @@ var SalesOrderEntryView = class {
 					!cint(pl.force_closed) && cint(pl.has_pick_list) && cint(pl.has_remaining_qty);
 				if (can_force) me.btn_force_close.show();
 				else me.btn_force_close.hide();
+			}
+
+			// Reject — Warehouse Admin / Manager, early warehouse stages only (before a
+			// Pick List is submitted). Server re-checks the stage + submitted-PL guard.
+			if (me.btn_reject_so) {
+				const _rejectable = [
+					'Warehouse Approval Pending', 'Future Dispatch', "Today's Dispatch",
+					'Warehouse Approved', 'Picking In Progress', 'Sticker Pending', 'Submission Pending',
+				].includes(status);
+				if (isWarehouse && docstatus === 1 && _rejectable) me.btn_reject_so.show();
+				else me.btn_reject_so.hide();
 			}
 
 			// PRIMARY action = the clear "next stage" step for this stage + role.

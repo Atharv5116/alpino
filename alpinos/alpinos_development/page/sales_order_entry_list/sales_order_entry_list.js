@@ -28,7 +28,7 @@ var SO_WORKFLOW_STATUS_OPTIONS =
 	'\nDelivery Note Created\nDispatched' +
 	'\nPartial Ready For Dispatch\nPartial Delivery Note Created\nPartial Dispatched' +
 	'\nForced Ready For Dispatch\nForced Delivery Note Created\nForced Dispatched\nForced Completed' +
-	'\nCompleted\nCancelled';
+	'\nCompleted\nCancelled\nRejected';
 
 var SO_WF_COLORS = {
 	Draft: 'gray',
@@ -50,6 +50,7 @@ var SO_WF_COLORS = {
 	'Forced Completed': 'red',
 	Completed: 'green',
 	Cancelled: 'red',
+	Rejected: 'red',
 };
 
 // Dim placeholder dashes and bare zeros so real figures read first — visual
@@ -352,6 +353,17 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-au-damage-filter'),
 			render_input: true,
 		});
+		// Show All — reveal Dispatched / Cancelled / Rejected (warehouse view) and all
+		// channels. Default off.
+		this._filter_fields.show_all = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Check',
+				fieldname: 'show_all',
+				label: __('Show All'),
+			},
+			parent: w.find('.fld-show-all'),
+			render_input: true,
+		});
 	}
 
 	bind_events() {
@@ -555,6 +567,7 @@ var SalesOrderEntryListPage = class {
 			from_date: f.from_date.get_value() || '',
 			to_date: f.to_date.get_value() || '',
 			additional_units_damage_filter,
+			show_all: f.show_all && f.show_all.get_value() ? 1 : 0,
 			sort_field: this._sort.field || '',
 			sort_dir: this._sort.dir || 'desc',
 		};

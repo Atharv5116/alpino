@@ -43,6 +43,58 @@ var DeliveryNoteListPage = class {
 
 	setup_toolbar() {
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
+		// Bulk LR No. update — Warehouse Admin / Manager only.
+		const isWarehouse = ['Warehouse Admin', 'Warehouse Manager', 'System Manager']
+			.some((r) => frappe.user.has_role(r));
+		if (isWarehouse) {
+			this.page.add_inner_button(__('Download LR Excel'), () => {
+				window.open(
+					'/api/method/alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.download_lr_excel',
+					'_blank'
+				);
+			}, __('LR'));
+			this.page.add_inner_button(__('Upload LR Excel'), () => this.upload_lr_excel(), __('LR'));
+		}
+	}
+
+	upload_lr_excel() {
+		const me = this;
+		new frappe.ui.FileUploader({
+			allow_multiple: false,
+			restrictions: { allowed_file_types: ['.xlsx', '.xls'] },
+			on_success: (file_doc) => {
+				frappe.dom.freeze(__('Updating LR numbers & submitting...'));
+				frappe.call({
+					method: 'alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.upload_lr_excel',
+					args: { file_url: file_doc.file_url },
+					always: () => frappe.dom.unfreeze(),
+					callback: (r) => {
+						if (r.exc || !r.message) return;
+						me._show_lr_result(r.message);
+						me.load_list();
+					},
+				});
+			},
+		});
+	}
+
+	_show_lr_result(m) {
+		let html = '<p><b>' + frappe.utils.escape_html(m.message || '') + '</b></p>';
+		if ((m.failed || []).length) {
+			html += '<table class="table table-bordered" style="font-size:12px;"><thead><tr>' +
+				'<th>Row</th><th>Sales Order</th><th>Reason</th></tr></thead><tbody>';
+			m.failed.forEach((f) => {
+				html += '<tr><td>' + f.row + '</td><td>' +
+					frappe.utils.escape_html(f.sales_order || '') + '</td><td>' +
+					frappe.utils.escape_html(f.reason || '') + '</td></tr>';
+			});
+			html += '</tbody></table>';
+		}
+		frappe.msgprint({
+			title: __('LR Update Result'),
+			message: html,
+			indicator: (m.failed || []).length ? 'orange' : 'green',
+		});
 	}
 
 	setup_filters() {

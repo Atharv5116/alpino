@@ -81,13 +81,16 @@ _HTML = r"""
 
     <!-- ===== item rows (only what's on this Pick List), ascending by SKU No ===== -->
     {% for row in sort_locations_by_sku(doc.locations) %}
+    {# Sample rows (marketing freebies / scheme / additional units) show their picked qty
+       in the Sample Qty column; the main Qty column stays empty for them. #}
+    {% set _is_sample = row.custom_source_table in ['Marketing Freebies', 'Scheme Table', 'Additional Units'] %}
     <tr>
       <td class="c">{{ loop.index }}</td>
       <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div style="font-size:10px; font-weight:normal;">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}</td>
       <td class="sku">{{ frappe.db.get_value("Item", row.item_code, "custom_sku_no") or "" }}</td>
-      <td class="c">{{ (row.qty | round | int) if row.qty else "" }}</td>
+      <td class="c">{{ (row.qty | round | int) if (row.qty and not _is_sample) else "" }}</td>
       <td class="c">{{ (row.custom_box | round | int) if row.custom_box else "" }}</td>
-      <td class="c">{{ (row.custom_sample_quantity | round | int) if row.custom_sample_quantity else "" }}</td>
+      <td class="c">{{ (row.qty | round | int) if (row.qty and _is_sample) else "" }}</td>
       <td>{{ row.custom_batch_code or row.batch_no or "" }}</td>
       <td class="c">{{ frappe.utils.formatdate(row.custom_mfg_date, "dd-MM-yyyy") if row.custom_mfg_date else "" }}</td>
       <td class="c">{{ frappe.utils.formatdate(row.custom_expiry_date, "dd-MM-yyyy") if row.custom_expiry_date else "" }}</td>

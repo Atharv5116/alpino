@@ -54,6 +54,11 @@ def get_delivery_note_data(name):
 		"owner_full_name": frappe.utils.get_fullname(dn.owner),
 		"posting_date": formatdate(str(dn.posting_date)) if dn.posting_date else "",
 		"custom_sales_order_id": dn.get("custom_sales_order_id") or "",
+		# Invoice Id is assigned on the Sales Order (invoice sync) — show the SO's live value.
+		"custom_invoice_no": (
+			frappe.db.get_value("Sales Order", dn.get("custom_sales_order_id"), "custom_invoice_no")
+			if dn.get("custom_sales_order_id") else ""
+		) or "",
 		"pick_list_name": pick_list_name,
 		"custom_lr_gr_no": dn.get("custom_lr_gr_no") or "",
 		"custom_dispatch_from": dn.get("custom_dispatch_from") or "",
@@ -345,4 +350,105 @@ def get_delivery_note_list(
 		"has_more": has_more,
 		"start": start,
 		"page_length": page_length,
+	}
+
+
+# ── Bulk LR No. update (Warehouse Admin / Manager) ───────────────────────────
+_LR_BULK_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager"}
+
+
+def _require_lr_roles():
+	if not (set(frappe.get_roles()) & _LR_BULK_ROLES):
+		frappe.throw(frappe._("Only Warehouse Admin / Manager can bulk-update LR No."))
+
+
+def _so_po_invoice(so_id):
+	"""(Customer PO, Invoice No) for a Sales Order — PO prefers the e-com PO number."""
+	if not so_id:
+		return "", ""
+	r = frappe.db.get_value(
+		"Sales Order", so_id, ["po_no", "custom_po_number", "custom_invoice_no"], as_dict=True
+	) or {}
+	return (r.get("custom_po_number") or r.get("po_no") or ""), (r.get("custom_invoice_no") or "")
+
+
+@frappe.whitelist()
+def download_lr_excel():
+	"""Excel of DRAFT Delivery Notes dispatching TODAY, for bulk LR No. entry. Exactly four
+	columns: Sales Order ID, Customer PO / PO Number, Invoice No., LR No. (blank for input)."""
+	_require_lr_roles()
+	from frappe.utils.xlsxutils import make_xlsx
+
+	today = frappe.utils.today()
+	dns = frappe.get_all(
+		"Delivery Note",
+		filters={"docstatus": 0, "custom_dispatch_date": today},
+		fields=["name", "custom_sales_order_id"],
+		order_by="name",
+	)
+	rows = [["Sales Order ID", "Customer PO / PO Number", "Invoice No.", "LR No."]]
+	for dn in dns:
+		po, inv = _so_po_invoice(dn.get("custom_sales_order_id"))
+		rows.append([dn.get("custom_sales_order_id") or "", po, inv, ""])
+
+	xlsx = make_xlsx(rows, "LR Update")
+	frappe.response["filename"] = f"LR_Update_{today}.xlsx"
+	frappe.response["filecontent"] = xlsx.getvalue()
+	frappe.response["type"] = "binary"
+
+
+@frappe.whitelist()
+def upload_lr_excel(file_url):
+	"""Read a filled LR Excel, set LR No. on the matching DRAFT Delivery Note (by Sales
+	Order ID), validate it's filled, and SUBMIT the Delivery Note. Returns a summary plus
+	per-row failures (row number, Sales Order ID, reason)."""
+	_require_lr_roles()
+	import io
+
+	try:
+		import openpyxl
+	except Exception:
+		frappe.throw(frappe._("openpyxl is required to read the uploaded Excel."))
+
+	from frappe.utils.file_manager import get_file
+
+	content = get_file(file_url)[1]
+	wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+	ws = wb.active
+
+	updated, failed = 0, []
+	for idx, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+		so_id = (str(r[0]).strip() if r and len(r) > 0 and r[0] not in (None, "") else "")
+		lr = (str(r[3]).strip() if r and len(r) > 3 and r[3] not in (None, "") else "")
+		if not so_id:
+			continue  # skip blank rows
+		if not lr:
+			failed.append({"row": idx, "sales_order": so_id, "reason": "LR No. is blank"})
+			continue
+		dns = frappe.get_all(
+			"Delivery Note", filters={"docstatus": 0, "custom_sales_order_id": so_id}, pluck="name"
+		)
+		if not dns:
+			failed.append({"row": idx, "sales_order": so_id, "reason": "No draft Delivery Note found"})
+			continue
+		if len(dns) > 1:
+			failed.append({"row": idx, "sales_order": so_id, "reason": "Multiple draft Delivery Notes — update individually"})
+			continue
+		try:
+			dn = frappe.get_doc("Delivery Note", dns[0])
+			dn.custom_lr_gr_no = lr
+			dn.flags.ignore_permissions = True
+			dn.submit()  # runs validate (LR mandatory now satisfied) + on_submit
+			frappe.db.commit()
+			updated += 1
+		except Exception as e:
+			frappe.db.rollback()
+			failed.append({"row": idx, "sales_order": so_id, "reason": str(e)[:200]})
+
+	return {
+		"updated": updated,
+		"failed": failed,
+		"message": frappe._("{0} Delivery Notes updated and submitted successfully. {1} rows failed.").format(
+			updated, len(failed)
+		),
 	}
