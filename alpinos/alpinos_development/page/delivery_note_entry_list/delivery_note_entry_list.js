@@ -47,14 +47,30 @@ var DeliveryNoteListPage = class {
 		const isWarehouse = ['Warehouse Admin', 'Warehouse Manager', 'System Manager']
 			.some((r) => frappe.user.has_role(r));
 		if (isWarehouse) {
-			this.page.add_inner_button(__('Download LR Excel'), () => {
-				window.open(
-					'/api/method/alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.download_lr_excel',
-					'_blank'
-				);
-			}, __('LR'));
+			this.page.add_inner_button(__('Download LR Excel'), () => this.download_lr_excel(), __('LR'));
 			this.page.add_inner_button(__('Upload LR Excel'), () => this.upload_lr_excel(), __('LR'));
 		}
+	}
+
+	_selected_names() {
+		const names = [];
+		this.wrapper.find('.dnl-row-select:checked').each((i, el) => {
+			names.push($(el).data('name'));
+		});
+		return names;
+	}
+
+	// Ticked rows win; with nothing ticked this stays the old behaviour —
+	// every draft Delivery Note dispatching today.
+	download_lr_excel() {
+		const base =
+			'/api/method/alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.download_lr_excel';
+		const names = this._selected_names();
+		const url = names.length
+			? base + '?delivery_notes=' + encodeURIComponent(JSON.stringify(names))
+			: base;
+		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+		if (!w) frappe.msgprint(__('Please allow pop-ups to download the LR Excel.'));
 	}
 
 	upload_lr_excel() {
@@ -164,6 +180,24 @@ var DeliveryNoteListPage = class {
 			if (!name) return;
 			frappe.set_route('delivery_note_entry', name);
 		});
+		this.wrapper.on('change', '.dnl-select-all', (e) => {
+			this.wrapper.find('.dnl-row-select').prop('checked', $(e.target).prop('checked'));
+			this.update_selection();
+		});
+		this.wrapper.on('change', '.dnl-row-select', () => this.update_selection());
+	}
+
+	// Selection lives on the rows currently rendered, so it clears whenever the
+	// list reloads (filter, page size, paging).
+	update_selection() {
+		const boxes = this.wrapper.find('.dnl-row-select');
+		const checked = this.wrapper.find('.dnl-row-select:checked').length;
+		this.wrapper.find('.dnl-select-all').prop('checked', !!boxes.length && checked === boxes.length);
+		if (checked && this.page.set_indicator) {
+			this.page.set_indicator(__('{0} selected', [checked]), 'orange');
+		} else if (this.page.clear_indicator) {
+			this.page.clear_indicator();
+		}
 	}
 
 	// Persist the current view (filters + page size) for this user. Never
@@ -239,8 +273,10 @@ var DeliveryNoteListPage = class {
 
 	render_rows(rows) {
 		const tb = this.wrapper.find('.dnl-table tbody').empty();
+		this.wrapper.find('.dnl-select-all').prop('checked', false);
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="12" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
+			tb.append(`<tr><td colspan="13" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
+			this.update_selection();
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
@@ -259,6 +295,7 @@ var DeliveryNoteListPage = class {
 			}
 			const customer = d.custom_dn_so_customer_name || d.customer_name || '';
 			tb.append(`<tr class="dnl-row" data-name="${esc(d.name)}" style="cursor:pointer;">
+				<td style="text-align:center;"><input type="checkbox" class="dnl-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
 				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
 				<td>${dash(d.custom_sales_order_id)}</td>
