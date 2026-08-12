@@ -358,6 +358,7 @@ SALES_ORDER_STATUSES = "\n".join(
 		"Forced Completed",
 		"Completed",
 		"Cancelled",
+		"Rejected",
 	]
 )
 

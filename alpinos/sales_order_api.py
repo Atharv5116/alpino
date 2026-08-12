@@ -1803,6 +1803,7 @@ def get_sales_order_entry_list(
 	channel=None,
 	sort_field=None,
 	sort_dir=None,
+	show_all=None,
 ):
 	"""Paginated Sales Order rows for Alpinos custom list page (respects DocPerm / user rules).
 
@@ -1816,12 +1817,16 @@ def get_sales_order_entry_list(
 	page_length = min(max(cint(page_length) or 20, 1), 100)
 
 	filters = {}
+	show_all = cint(show_all)
 	channel = (channel or "").strip()
-	if channel == "E-com":
-		filters["custom_channel"] = "E-com"
-	elif channel == "Offline":
-		# Offline + legacy(blank) rows.
-		filters["custom_channel"] = ["in", ["Offline", ""]]
+	# "Show All" shows orders irrespective of channel (spec), so the channel filter is
+	# only applied when Show All is off.
+	if not show_all:
+		if channel == "E-com":
+			filters["custom_channel"] = "E-com"
+		elif channel == "Offline":
+			# Offline + legacy(blank) rows.
+			filters["custom_channel"] = ["in", ["Offline", ""]]
 	if status:
 		filters["status"] = str(status).strip()
 	if workflow_status:
@@ -1857,13 +1862,11 @@ def get_sales_order_entry_list(
 	elif td:
 		filters["transaction_date"] = ["<=", td]
 
-	# A dedicated Warehouse Manager / Warehouse Admin sees the whole warehouse work
-	# queue — every stage from "waiting for approval" through dispatch-in-progress — not
-	# just "Warehouse Approval Pending". The old single-status filter hid an order the
-	# moment it left that status (e.g. the daily job flipping it to Today's
-	# Dispatch), so warehouse orders vanished from their list. Users who also hold
-	# a broad/sales/admin role keep full visibility. An explicit status filter
-	# chosen in the UI is respected.
+	# A dedicated Warehouse Manager / Warehouse Admin sees EVERY workflow stage except
+	# Draft. Dispatched + Cancelled + Rejected are terminal/negative and are hidden by
+	# default; the "Show All" checkbox reveals them (Draft stays hidden even then). Users
+	# who also hold a broad/sales/admin role keep full visibility. An explicit status
+	# filter chosen in the UI is respected.
 	_roles = set(frappe.get_roles())
 	_warehouse_roles = {"Warehouse Manager", "Warehouse Admin"}
 	_override_roles = {
@@ -1873,15 +1876,12 @@ def get_sales_order_entry_list(
 		"Sales Manager",
 		"Sales User",
 	}
-	_WAREHOUSE_QUEUE = [
-		"Warehouse Approval Pending", "Future Dispatch", "Today's Dispatch", "Warehouse Approved",
-		"Picking In Progress", "Submission Pending", "Ready For Dispatch", "Delivery Note Created",
-		"Partial Ready For Dispatch", "Partial Delivery Note Created", "Partial Dispatched",
-		"Forced Ready For Dispatch", "Forced Delivery Note Created", "Forced Dispatched",
-	]
 	if (_roles & _warehouse_roles) and not (_roles & _override_roles):
 		if "custom_workflow_status" not in filters:  # respect an explicit UI status filter
-			filters["custom_workflow_status"] = ["in", _WAREHOUSE_QUEUE]
+			_hidden = ["Draft"]  # Draft is never shown to the warehouse
+			if not show_all:
+				_hidden += ["Dispatched", "Cancelled", "Rejected"]
+			filters["custom_workflow_status"] = ["not in", _hidden]
 
 	or_filters = None
 	search = (search or "").strip()

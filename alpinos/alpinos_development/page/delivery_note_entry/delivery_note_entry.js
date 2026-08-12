@@ -110,6 +110,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		var $main = page.main;
 		$main.find('[data-fieldname="posting_date"]').val(data.posting_date || '');
 		$main.find('[data-fieldname="custom_sales_order_id"]').val(data.custom_sales_order_id || '');
+		$main.find('[data-fieldname="custom_invoice_no"]').val(data.custom_invoice_no || '');
 		$main.find('[data-fieldname="pick_list_name"]').val(data.pick_list_name || '');
 		$main.find('[data-fieldname="custom_lr_gr_no"]').val(data.custom_lr_gr_no || '');
 		$main.find('[data-fieldname="custom_dispatch_from"]').val(data.custom_dispatch_from || '');
