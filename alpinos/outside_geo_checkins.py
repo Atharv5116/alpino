@@ -59,3 +59,32 @@ def get_outside_geo_checkins(from_date=None, to_date=None):
 			}
 		)
 	return {"allowed": True, "items": items, "total": len(items)}
+
+
+@frappe.whitelist()
+def download_outside_geo_checkins(from_date=None, to_date=None):
+	"""Excel export of the outside-geo-location check-ins for a date range (HR only).
+	Reuses get_outside_geo_checkins so the permission gate and query stay in one place."""
+	from frappe.utils.xlsxutils import make_xlsx
+
+	res = get_outside_geo_checkins(from_date, to_date)
+	if not res.get("allowed"):
+		frappe.throw(frappe._("Not permitted."), frappe.PermissionError)
+
+	rows = [["Employee Name", "Department", "Check-In Date", "Check-In Time", "Reason", "Explanation / Remarks"]]
+	for it in res.get("items", []):
+		rows.append([
+			it.get("employee_name") or it.get("employee") or "",
+			it.get("department") or "",
+			it.get("date") or "",
+			it.get("checkin_time") or "",
+			it.get("reason") or "",
+			it.get("remarks") or "",
+		])
+
+	fd = getdate(from_date) if from_date else getdate()
+	td = getdate(to_date) if to_date else getdate()
+	xlsx = make_xlsx(rows, "Outside Geo Checkins")
+	frappe.response["filename"] = f"Outside_Geo_Checkins_{fd}_{td}.xlsx"
+	frappe.response["filecontent"] = xlsx.getvalue()
+	frappe.response["type"] = "binary"
