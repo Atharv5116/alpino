@@ -1892,6 +1892,10 @@ def get_sales_order_entry_list(
 			["name", "like", like],
 			["customer", "like", like],
 			["customer_name", "like", like],
+			# PO number — e-com stores it on custom_po_number, offline on po_no. The
+			# search box advertises "ID, customer, PO", so both must be searchable.
+			["custom_po_number", "like", like],
+			["po_no", "like", like],
 		]
 
 	fields = [
