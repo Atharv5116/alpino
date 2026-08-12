@@ -2,6 +2,57 @@ import frappe
 from frappe.utils import flt
 import math
 
+def _doc_tax_rate(doc):
+	"""Combined On-Net-Total tax rate on the order (IGST 5%, or CGST 2.5% + SGST 2.5% = 5).
+	0 for a GST-Exclusive buyer, whose SO carries no tax rows at all."""
+	return flt(
+		sum(
+			flt(t.get("rate"))
+			for t in (doc.get("taxes") or [])
+			if t.get("charge_type") == "On Net Total"
+		)
+	)
+
+
+def _inclusive_line_amount(row, doc_tax_rate=0.0):
+	"""GST-INCLUSIVE line total for a saved Sales Order Item — the figure the printed Grand
+	Total is built from, unlike the stored row.amount, which is the NET (taxable) value.
+
+	In preference order:
+	  1. net + the line's own stored GST (custom_item_tax). Both come from the same
+	     single-rounded figure in sales_order_api, so this reconstructs selling price x qty
+	     to the paisa and ties to the Grand Total by construction.
+	  2. selling price x qty, LESS the line's Additional Discount % — for rows saved before
+	     per-line GST was stored. custom_selling_price is the per-unit GST-inclusive price
+	     (offer already baked in, additional discount not). Uses the selling price and NOT
+	     the stored net rate x qty, whose per-unit rounding qty amplifies (46.67 x 120 =
+	     5600.40 vs 49 x 120 / 1.05 = 5600.00).
+	  3. that figure grossed up by the order's own tax rate, when the line carries no GST %
+	     of its own while the order does tax it (an item with no custom_gst_percent). The
+	     pricing engine then treats the selling price as EXCLUSIVE (net == amount) and
+	     ERPNext charges On-Net-Total tax across the whole net, so the gross-up is what the
+	     Grand Total actually contains.
+
+	GST-Exclusive buyers fall through to the stored amount: no line tax, no doc taxes, and
+	their selling price IS the taxable value — every branch returns the same figure.
+	"""
+	net = flt(row.get("amount"))
+	tax = flt(row.get("custom_item_tax"))
+	if tax:
+		return flt(net + tax, 2)
+
+	sp = flt(row.get("custom_selling_price"))
+	if sp:
+		add_disc = flt(row.get("custom_additional_discount"))
+		base = flt(sp * flt(row.get("qty")) * (100 - add_disc) / 100.0, 2)
+	else:
+		base = net
+
+	if doc_tax_rate and not flt(row.get("custom_gst_percent")):
+		return flt(base * (100 + doc_tax_rate) / 100.0, 2)
+	return base
+
+
 def get_combined_items(doc):
 	"""Explodes product bundles and groups items if combine_product_bundles is checked on the Buyer Master.
 
@@ -22,9 +73,17 @@ def get_combined_items(doc):
 		if val is not None:
 			combine_product_bundles = bool(val)
 
+	doc_tax_rate = _doc_tax_rate(doc)
+
 	if not combine_product_bundles:
-		# Return items as they are
-		return doc.items
+		# Rows as they are — but with the SAME GST-inclusive Amount the combined path below
+		# produces. The saved row.amount is the NET (taxable) line total while the printed
+		# Grand Total is GST-inclusive, so returning the rows untouched left the PDF's Sub
+		# Total short by exactly the GST. Copies, so doc.items is never mutated.
+		return [
+			frappe._dict(dict(r.as_dict(), amount=_inclusive_line_amount(r, doc_tax_rate)))
+			for r in doc.items
+		]
 
 	from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
 	from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
@@ -86,16 +145,10 @@ def get_combined_items(doc):
 				item_name = source_row.get("item_name")
 			if source_row.get("uom"):
 				uom = source_row.get("uom")
-			# Line total = selling price x qty, LESS the line's Additional Discount %, to match
-			# the saved amount (sales_order_api._calculate_sales_order_line_values:
-			# selling_price * qty * (1 - add_disc%)). custom_selling_price is the per-unit
-			# GST-INCLUSIVE price (MRP incl GST less flat/offer, OR the price entered directly);
-			# offer is already baked into it, additional discount is NOT — so only add_disc is
-			# applied here. Using selling_price directly — NOT the stored net rate x qty — avoids
-			# the net-rate rounding that qty amplifies (46.67 x 120 = 5600.40 vs 49 x 120 = 5880).
-			line_amt = flt(flt(sp) * flt(qty) * (100 - add_disc) / 100.0, 2)
-			if not line_amt:
-				line_amt = flt(source_row.get("amount"))
+			# GST-INCLUSIVE line total (see _inclusive_line_amount) — the same helper the
+			# non-combined path uses, so both print the same Amount and the PDF's Sub Total
+			# ties to the Grand Total either way.
+			line_amt = _inclusive_line_amount(source_row, doc_tax_rate)
 		else:
 			# Exploded bundle component: no saved price -> derive from the buyer catalog.
 			mrp = 0
