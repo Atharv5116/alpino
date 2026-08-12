@@ -16,6 +16,13 @@ HTML = """
     <span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>Outside Geo-Location Check-ins</span>
     <span id="alp-outgeo-sub" style="font-size:11px;color:#9ca3af;">Today</span>
   </div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+    <input type="date" id="alp-outgeo-from" style="padding:5px 8px;font-size:12px;border:1px solid #d1d5db;border-radius:8px;color:#374151;">
+    <span style="color:#9ca3af;font-size:12px;">to</span>
+    <input type="date" id="alp-outgeo-to" style="padding:5px 8px;font-size:12px;border:1px solid #d1d5db;border-radius:8px;color:#374151;">
+    <button id="alp-outgeo-apply" style="padding:6px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;color:#374151;cursor:pointer;">Apply</button>
+    <button id="alp-outgeo-export" style="padding:6px 14px;font-size:12px;border:1px solid #2563eb;border-radius:8px;background:#2563eb;color:#ffffff;cursor:pointer;">Export Excel</button>
+  </div>
   <div id="alp-outgeo-body" style="font-size:12px;color:#4b5563;overflow-x:auto;"></div>
 </div>
 """
@@ -25,66 +32,98 @@ var root = root_element;
 var widget = root.querySelector("#alp-outgeo-widget");
 var body = root.querySelector("#alp-outgeo-body");
 var sub = root.querySelector("#alp-outgeo-sub");
-if (body) body.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
+var fromEl = root.querySelector("#alp-outgeo-from");
+var toEl = root.querySelector("#alp-outgeo-to");
+var applyBtn = root.querySelector("#alp-outgeo-apply");
+var exportBtn = root.querySelector("#alp-outgeo-export");
 
-frappe.call({
-  method: "alpinos.outside_geo_checkins.get_outside_geo_checkins",
-  freeze: false,
-  callback: function (r) {
-    if (r.exc) { if (widget) widget.style.display = "none"; return; }
-    var data = r.message || {};
-    if (!data.allowed) { if (widget) widget.style.display = "none"; return; }
-    var items = data.items || [];
-    if (!items.length) {
-      if (sub) sub.textContent = "Today \\u00b7 none";
-      body.innerHTML = "<span style='color:#16a34a;'>No outside-location check-ins today.</span>";
-      return;
-    }
-    if (sub) sub.textContent = "Today \\u00b7 " + items.length + " total";
-    function esc(s) {
-      return (s == null ? "" : String(s)).replace(/[&<>\"']/g, function (c) {
-        return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
-      });
-    }
-    var th = "padding:6px 10px;border:1px solid #e5e7eb;text-align:left;background:#f9fafb;font-weight:600;color:#374151;";
-    var td = "padding:6px 10px;border:1px solid #e5e7eb;";
-    var PAGE = 8;
-    var shown = PAGE;
-    function render() {
-      var n = Math.min(shown, items.length);
-      var html = "<table style='border-collapse:collapse;font-size:12px;width:100%;'>"
-        + "<thead><tr>"
-        + "<th style='" + th + "'>Employee Name</th>"
-        + "<th style='" + th + "'>Department</th>"
-        + "<th style='" + th + "'>Check-In Date</th>"
-        + "<th style='" + th + "'>Check-In Time</th>"
-        + "<th style='" + th + "'>Reason</th>"
-        + "<th style='" + th + "'>Explanation / Remarks</th>"
-        + "</tr></thead><tbody>";
-      for (var i = 0; i < n; i++) {
-        var it = items[i];
-        html += "<tr>"
-          + "<td style='" + td + "'>" + esc(it.employee_name || it.employee) + "</td>"
-          + "<td style='" + td + "'>" + esc(it.department) + "</td>"
-          + "<td style='" + td + "'>" + esc(it.date) + "</td>"
-          + "<td style='" + td + "'>" + esc(it.checkin_time) + "</td>"
-          + "<td style='" + td + "'>" + esc(it.reason) + "</td>"
-          + "<td style='" + td + "'>" + esc(it.remarks) + "</td>"
-          + "</tr>";
+var today = frappe.datetime.get_today();
+if (fromEl && !fromEl.value) fromEl.value = today;
+if (toEl && !toEl.value) toEl.value = today;
+
+function esc(s) {
+  return (s == null ? "" : String(s)).replace(/[&<>\"']/g, function (c) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+  });
+}
+var th = "padding:6px 10px;border:1px solid #e5e7eb;text-align:left;background:#f9fafb;font-weight:600;color:#374151;";
+var td = "padding:6px 10px;border:1px solid #e5e7eb;";
+var PAGE = 8;
+var _items = [];
+var _shown = PAGE;
+
+function draw() {
+  var items = _items;
+  var n = Math.min(_shown, items.length);
+  var html = "<table style='border-collapse:collapse;font-size:12px;width:100%;'>"
+    + "<thead><tr>"
+    + "<th style='" + th + "'>Employee Name</th>"
+    + "<th style='" + th + "'>Department</th>"
+    + "<th style='" + th + "'>Check-In Date</th>"
+    + "<th style='" + th + "'>Check-In Time</th>"
+    + "<th style='" + th + "'>Reason</th>"
+    + "<th style='" + th + "'>Explanation / Remarks</th>"
+    + "</tr></thead><tbody>";
+  for (var i = 0; i < n; i++) {
+    var it = items[i];
+    html += "<tr>"
+      + "<td style='" + td + "'>" + esc(it.employee_name || it.employee) + "</td>"
+      + "<td style='" + td + "'>" + esc(it.department) + "</td>"
+      + "<td style='" + td + "'>" + esc(it.date) + "</td>"
+      + "<td style='" + td + "'>" + esc(it.checkin_time) + "</td>"
+      + "<td style='" + td + "'>" + esc(it.reason) + "</td>"
+      + "<td style='" + td + "'>" + esc(it.remarks) + "</td>"
+      + "</tr>";
+  }
+  html += "</tbody></table>";
+  if (items.length > n) {
+    html += "<div style='margin-top:10px;text-align:center;'>"
+      + "<button id='alp-outgeo-more' style='padding:6px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;color:#374151;cursor:pointer;'>Load more (" + (items.length - n) + ")</button>"
+      + "</div>";
+  }
+  body.innerHTML = html;
+  var btn = root.querySelector("#alp-outgeo-more");
+  if (btn) btn.onclick = function () { _shown += PAGE; draw(); };
+}
+
+function load() {
+  var f = (fromEl && fromEl.value) || today;
+  var t = (toEl && toEl.value) || today;
+  if (body) body.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
+  frappe.call({
+    method: "alpinos.outside_geo_checkins.get_outside_geo_checkins",
+    args: { from_date: f, to_date: t },
+    freeze: false,
+    callback: function (r) {
+      if (r.exc) { if (widget) widget.style.display = "none"; return; }
+      var data = r.message || {};
+      if (!data.allowed) { if (widget) widget.style.display = "none"; return; }
+      var items = data.items || [];
+      var rangeLabel = (f === t) ? f : (f + " \\u2192 " + t);
+      if (!items.length) {
+        if (sub) sub.textContent = rangeLabel + " \\u00b7 none";
+        body.innerHTML = "<span style='color:#16a34a;'>No outside-location check-ins in this range.</span>";
+        return;
       }
-      html += "</tbody></table>";
-      if (items.length > n) {
-        html += "<div style='margin-top:10px;text-align:center;'>"
-          + "<button id='alp-outgeo-more' style='padding:6px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;color:#374151;cursor:pointer;'>Load more (" + (items.length - n) + ")</button>"
-          + "</div>";
-      }
-      body.innerHTML = html;
-      var btn = root.querySelector("#alp-outgeo-more");
-      if (btn) btn.onclick = function () { shown += PAGE; render(); };
-    }
-    render();
-  },
-});
+      if (sub) sub.textContent = rangeLabel + " \\u00b7 " + items.length + " total";
+      _items = items;
+      _shown = PAGE;
+      draw();
+    },
+  });
+}
+
+if (applyBtn) applyBtn.onclick = load;
+if (exportBtn) exportBtn.onclick = function () {
+  var f = (fromEl && fromEl.value) || today;
+  var t = (toEl && toEl.value) || today;
+  window.open(
+    "/api/method/alpinos.outside_geo_checkins.download_outside_geo_checkins?from_date="
+      + encodeURIComponent(f) + "&to_date=" + encodeURIComponent(t),
+    "_blank"
+  );
+};
+load();
 """
 
 
