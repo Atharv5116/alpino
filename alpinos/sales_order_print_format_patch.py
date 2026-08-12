@@ -200,37 +200,55 @@ _SP_MRP_TH = '<th class=\'right\' style="color: #000; font-weight: 800;">MRP</th
 _SP_TH = '<th class=\'right\' style="color: #000; font-weight: 800;">Selling Price</th>'
 _SP_MRP_TD = "<td class='right'>{{ frappe.utils.fmt_money(row.custom_customer_mrp or 0, currency=doc.currency) }}</td>"
 _SP_TD = "<td class='right'>{{ frappe.utils.fmt_money(row.custom_selling_price or 0, currency=doc.currency) }}</td>"
+# The items table declares column widths via a <colgroup>. Adding a 10th column WITHOUT a
+# matching <col> collapses the last (Amount) column and stretches the rows on strict PDF
+# renderers, so the new Selling Price column needs its own <col> (reusing the MRP width;
+# "col-selling" is only an idempotency marker).
+_SP_COL_OLD = '<col class="col-mrp"><col class="col-flat">'
+_SP_COL_NEW = '<col class="col-mrp"><col class="col-mrp col-selling"><col class="col-flat">'
 
 
 def _add_selling_price_column():
-	"""Add a 'Selling Price' column to the main items table of the 'Sales Order'
-	format, immediately after MRP. Inserting a cell widens the row from 9 to 10
-	columns, so the section-title colspan (9->10) and the totals-footer label
-	colspans (8->9) are bumped to match. Idempotent: keyed on the Selling Price
-	header already being present; logs and skips if the MRP anchors have drifted."""
+	"""Add a 'Selling Price' column to the main items table of the 'Sales Order' format,
+	immediately after MRP. Inserting a cell widens the row from 9 to 10 columns, so the
+	section-title colspan (9->10), the totals-footer label colspans (8->9) AND the
+	<colgroup> (a 10th <col>) are all bumped to match. Idempotent, and self-repairing: an
+	earlier version added the column but left the 9-col <colgroup>, which collapsed the
+	Amount column — this now back-fills the missing <col> on those formats too."""
 	if not frappe.db.exists("Print Format", PF_NAME):
 		return
 	html = frappe.db.get_value("Print Format", PF_NAME, "html") or ""
-	if not html or _SP_TH in html:
-		return  # empty, or already added
-	if _SP_MRP_TH not in html or _SP_MRP_TD not in html:
-		frappe.log_error(
-			title="Sales Order print format: Selling Price column skipped",
-			message="MRP header/body cell not found — format edited on-site?",
-		)
+	if not html:
 		return
-	html = html.replace(_SP_MRP_TH, _SP_MRP_TH + _SP_TH, 1)  # header cell after MRP
-	html = html.replace(_SP_MRP_TD, _SP_MRP_TD + _SP_TD, 1)  # body cell after MRP
-	# Section title spanned all 9 columns; now 10.
-	html = html.replace(
-		"<tr><th colspan='9' class='center bg-grey'",
-		"<tr><th colspan='10' class='center bg-grey'",
-	)
-	# Totals-footer label cells (Sub Total / Cash Disc / Grand Total) spanned 8; now 9.
-	html = html.replace("colspan='8' class='right bold'", "colspan='9' class='right bold'")
-	frappe.db.set_value("Print Format", PF_NAME, "html", html)
-	frappe.db.commit()
-	frappe.logger("alpinos").info("Added 'Selling Price' column to '%s' items table." % PF_NAME)
+	changed = False
+
+	# (1) Header + body cell + colspans — only on a format that doesn't have the column yet.
+	if _SP_TH not in html:
+		if _SP_MRP_TH not in html or _SP_MRP_TD not in html:
+			frappe.log_error(
+				title="Sales Order print format: Selling Price column skipped",
+				message="MRP header/body cell not found — format edited on-site?",
+			)
+		else:
+			html = html.replace(_SP_MRP_TH, _SP_MRP_TH + _SP_TH, 1)  # header cell after MRP
+			html = html.replace(_SP_MRP_TD, _SP_MRP_TD + _SP_TD, 1)  # body cell after MRP
+			html = html.replace(
+				"<tr><th colspan='9' class='center bg-grey'",
+				"<tr><th colspan='10' class='center bg-grey'",
+			)
+			html = html.replace("colspan='8' class='right bold'", "colspan='9' class='right bold'")
+			changed = True
+
+	# (2) Matching <col> in the items-table colgroup. Runs even when the column already
+	#     exists, to repair formats the earlier version left with a 9-col colgroup.
+	if "col-selling" not in html and _SP_COL_OLD in html:
+		html = html.replace(_SP_COL_OLD, _SP_COL_NEW, 1)
+		changed = True
+
+	if changed:
+		frappe.db.set_value("Print Format", PF_NAME, "html", html)
+		frappe.db.commit()
+		frappe.logger("alpinos").info("Patched Selling Price column / colgroup on '%s'." % PF_NAME)
 
 
 def execute():
