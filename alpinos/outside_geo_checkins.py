@@ -34,9 +34,13 @@ def get_outside_geo_checkins(from_date=None, to_date=None):
 			"employee_name",
 			"time",
 			"log_type",
+			# OUT (check-out) fields
 			"custom_outside_reason",
 			"custom_outside_remarks",
 			"checkout_reason",
+			# IN (check-in) fields — the type the employee picks + free text for "Other"
+			"custom_checkin_type",
+			"custom_checkin_reason",
 		],
 		order_by="time desc",
 		limit=500,
@@ -54,8 +58,19 @@ def get_outside_geo_checkins(from_date=None, to_date=None):
 				"date": dt.strftime("%d-%m-%Y") if dt else "",
 				"checkin_time": dt.strftime("%H:%M") if dt else "",
 				"log_type": r.get("log_type"),
-				"reason": r.get("custom_outside_reason") or r.get("checkout_reason") or "",
-				"remarks": r.get("custom_outside_remarks") or "",
+				# Reason source depends on direction: a check-IN captures a type
+				# (Client/Vendor / Shoot / Meeting / Other) with free text for "Other";
+				# a check-OUT captures the outside/checkout reason.
+				"reason": (
+					(r.get("custom_checkin_type") or "")
+					if r.get("log_type") == "IN"
+					else (r.get("custom_outside_reason") or r.get("checkout_reason") or "")
+				),
+				"remarks": (
+					(r.get("custom_checkin_reason") or "")
+					if r.get("log_type") == "IN"
+					else (r.get("custom_outside_remarks") or "")
+				),
 			}
 		)
 	return {"allowed": True, "items": items, "total": len(items)}
