@@ -133,10 +133,27 @@ var SalesOrderEntryView = class {
 		// stages (before a Pick List is submitted). Sets status to Rejected.
 		this.btn_reject_so = this.page.add_inner_button(__('Reject Order'), () => {
 			const me = this;
-			frappe.confirm(__('Reject Sales Order {0}? It will be marked Rejected.', [me._so_name]), () => {
+			// A reason is mandatory and is stored on the order — the server rejects
+			// a blank one too, so the reason can't be lost by skipping the dialog.
+			const d = new frappe.ui.Dialog({
+				title: __('Reject Sales Order {0}', [me._so_name]),
+				fields: [{
+					fieldtype: 'Small Text',
+					fieldname: 'reason',
+					label: __('Reason for Rejection'),
+					reqd: 1,
+				}],
+				primary_action_label: __('Reject Order'),
+				primary_action(values) {
+					const reason = (values.reason || '').trim();
+					if (!reason) {
+						frappe.msgprint(__('Please enter a reason for rejection.'));
+						return;
+					}
+					d.hide();
 				frappe.call({
 					method: 'alpinos.workflow_engine.reject_sales_order',
-					args: { sales_order: me._so_name },
+					args: { sales_order: me._so_name, reason: reason },
 					freeze: true,
 					freeze_message: __('Rejecting...'),
 					callback: (r) => {
@@ -145,7 +162,9 @@ var SalesOrderEntryView = class {
 						me.load_order(me._so_name);
 					}
 				});
+				},
 			});
+			d.show();
 		}, __('Order'));
 		if (this.btn_reject_so) this.btn_reject_so.hide();
 		// The main "next stage" action is set as the page primary action by

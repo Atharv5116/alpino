@@ -35,6 +35,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 
 	// Edit Transporter / Dispatch Date AFTER submission — propagates to the linked
 	// Delivery Note(s) and is audited (Field Change Log). Shown only on submitted PLs.
+	page.btn_change_log = page.add_inner_button(__('Change Log'), function() {
+		alpinos_show_change_log('Pick List', page.pick_list_name);
+	});
 	page.btn_edit_after_submit = page.add_inner_button(__('Edit Transporter / Dispatch'), function() {
 		const d = new frappe.ui.Dialog({
 			title: __('Edit After Submission'),

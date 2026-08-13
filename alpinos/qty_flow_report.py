@@ -61,6 +61,58 @@ def _remarks(rows, field):
 	return {k: "; ".join(v) for k, v in out.items()}
 
 
+
+# --- role-based channel scope -------------------------------------------------
+# E-commerce roles see only E-com orders and Sales roles only Offline ones, in the
+# report AND in its export (Frappe re-runs execute() to export, so filtering here
+# covers both). Warehouse / Accounts / System roles work across both channels, and
+# anyone holding roles on both sides is treated as unrestricted rather than
+# arbitrarily picking one.
+_ECOM_ROLES = {"E-Commerce Admin", "E-Commerce Manager", "E-Commerce Coordinator"}
+_OFFLINE_ROLES = {"Sales Admin", "Sales Manager", "Sales User", "Sales Master Manager"}
+_UNRESTRICTED_ROLES = {
+	"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager",
+	"Warehouse User", "Accounts Manager", "Accounts User",
+}
+
+
+def user_channel_scope():
+	"""'E-com', 'Offline', or None when the user may see every channel."""
+	roles = set(frappe.get_roles())
+	if roles & _UNRESTRICTED_ROLES:
+		return None
+	is_ecom = bool(roles & _ECOM_ROLES)
+	is_offline = bool(roles & _OFFLINE_ROLES)
+	if is_ecom and not is_offline:
+		return "E-com"
+	if is_offline and not is_ecom:
+		return "Offline"
+	return None
+
+
+def _channel_filter(scope):
+	"""Sales Order filter value for a scope. Legacy rows carry a blank channel and
+	are Offline by convention (same rule the Sales Order list page uses)."""
+	if scope == "E-com":
+		return "E-com"
+	if scope == "Offline":
+		return ["in", ["Offline", ""]]
+	return None
+
+
+def _allowed_sales_orders(so_names, scope):
+	"""Subset of so_names the current user may see, as a set. Empty scope = all."""
+	if not scope or not so_names:
+		return set(so_names or [])
+	return set(
+		frappe.get_all(
+			"Sales Order",
+			filters={"name": ["in", list(so_names)], "custom_channel": _channel_filter(scope)},
+			pluck="name",
+		)
+	)
+
+
 def _date_conditions(filters, fieldname):
 	out = []
 	if filters.get("from_date"):
@@ -93,6 +145,10 @@ def _pairs_quo_so(filters):
 	conds = [["docstatus", "<", 2]] + _date_conditions(filters, "transaction_date")
 	if filters.get("down_id"):
 		conds.append(["name", "=", filters["down_id"]])
+	scope = user_channel_scope()
+	if scope:
+		conds.append(["custom_channel", "=", _channel_filter(scope)] if scope == "E-com"
+			else ["custom_channel", "in", ["Offline", ""]])
 	for so in frappe.get_all(
 		"Sales Order", filters=conds, pluck="name",
 		order_by="transaction_date desc, name desc", limit_page_length=0,
@@ -138,10 +194,14 @@ def _pairs_so_pl(filters):
 		conds.append(["name", "=", filters["down_id"]])
 	if filters.get("up_id"):
 		conds.append(["custom_sales_order_id", "=", filters["up_id"]])
-	for pl in frappe.get_all(
+	pls = frappe.get_all(
 		"Pick List", filters=conds, fields=["name", "custom_sales_order_id"],
 		order_by="creation desc", limit_page_length=0,
-	):
+	)
+	allowed = _allowed_sales_orders({p.custom_sales_order_id for p in pls}, user_channel_scope())
+	for pl in pls:
+		if pl.custom_sales_order_id not in allowed:
+			continue
 		so = pl.custom_sales_order_id
 		# Only main order lines — freebies / scheme rows have their own source
 		# tables and would inflate the picked qty.
@@ -160,10 +220,16 @@ def _pairs_pl_dn(filters):
 	conds += _date_conditions(filters, "posting_date")
 	if filters.get("down_id"):
 		conds.append(["name", "=", filters["down_id"]])
-	for dn in frappe.get_all(
-		"Delivery Note", filters=conds, pluck="name",
+	dns = frappe.get_all(
+		"Delivery Note", filters=conds, fields=["name", "custom_sales_order_id"],
 		order_by="posting_date desc, name desc", limit_page_length=0,
-	):
+	)
+	allowed = _allowed_sales_orders({d.custom_sales_order_id for d in dns if d.custom_sales_order_id},
+		user_channel_scope())
+	for _dn in dns:
+		if _dn.custom_sales_order_id and _dn.custom_sales_order_id not in allowed:
+			continue
+		dn = _dn.name
 		items = frappe.get_all(
 			"Delivery Note Item", filters={"parent": dn},
 			fields=["item_code", "qty", "custom_remark", "against_pick_list"],

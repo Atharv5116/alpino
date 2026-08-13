@@ -529,20 +529,27 @@ def approve_sales_order(sales_order):
 
 
 @frappe.whitelist()
-def reject_sales_order(sales_order):
+def reject_sales_order(sales_order, reason=None):
 	"""Warehouse Admin / Manager rejects an order that has reached the warehouse
 	workflow -> Rejected (terminal). Allowed only up to Ready For Dispatch and while
 	no Pick List has been submitted, so a rejection never strands picked/dispatched
-	stock — cancel a submitted Pick List first if the order got that far."""
+	stock — cancel a submitted Pick List first if the order got that far.
+
+	A reason is mandatory and is stored on the order, so why an order was rejected
+	is answerable later without digging through the version history."""
 	_require_roles(WAREHOUSE_ROLES)
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(frappe._("Please enter a reason for rejection."))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
 	if cur not in SO_REJECTABLE:
 		frappe.throw(frappe._("This order can't be rejected at its current stage ({0}).").format(cur or "—"))
 	if frappe.db.exists("Pick List", {"custom_sales_order_id": sales_order, "docstatus": 1}):
 		frappe.throw(frappe._("Cancel the submitted Pick List before rejecting this order."))
+	frappe.db.set_value("Sales Order", sales_order, "custom_rejection_reason", reason, update_modified=False)
 	_set_status("Sales Order", sales_order, SO_REJECTED)
 	frappe.db.commit()
-	return {"status": SO_REJECTED}
+	return {"status": SO_REJECTED, "reason": reason}
 
 
 @frappe.whitelist()

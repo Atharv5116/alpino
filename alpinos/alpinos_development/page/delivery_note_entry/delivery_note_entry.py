@@ -403,9 +403,15 @@ def download_lr_excel(delivery_notes=None):
 		dns = [fetched[n] for n in names if n in fetched]
 		suffix = "selected"
 	else:
+		# custom_dispatch_date is a Datetime, so an exact "= today" (a date) matches
+		# only 00:00:00 and misses every DN dispatching today at a real time — the
+		# sheet came back empty. Use a full-day range.
 		dns = frappe.get_all(
 			"Delivery Note",
-			filters={"docstatus": 0, "custom_dispatch_date": today},
+			filters={
+				"docstatus": 0,
+				"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
+			},
 			fields=["name", "custom_sales_order_id", "custom_lr_gr_no"],
 			order_by="name",
 		)

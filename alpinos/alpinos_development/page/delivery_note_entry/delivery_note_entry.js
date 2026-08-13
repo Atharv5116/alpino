@@ -47,6 +47,11 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 
 	// Edit Transporter / LR No / Dispatch Date AFTER submission — Transporter & Dispatch
 	// Date propagate back to the Pick List (even if submitted) and all changes are audited.
+	// Same audit trail as the Pick List page — Transporter / LR No. / Dispatch Date
+	// edits are logged by after_submit_sync and shown here.
+	page.btn_change_log = page.add_inner_button(__('Change Log'), function() {
+		alpinos_show_change_log('Delivery Note', page.dn_name);
+	});
 	page.btn_edit_after_submit = page.add_inner_button(__('Edit Transporter / LR / Dispatch'), function() {
 		frappe.db.get_value('Delivery Note', page.dn_name,
 			['custom_transporter_name', 'custom_lr_gr_no', 'custom_dispatch_date']).then((r) => {

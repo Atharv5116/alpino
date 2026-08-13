@@ -181,6 +181,15 @@ def setup_sales_order_custom_fields():
 				hidden=1,
 				description="Set by a one-time patch on invoices already downloaded before download tracking became per-user. There is no record of who took those, so they stay off everyone's pending list instead of reappearing for the whole team.",
 			),
+			dict(
+				fieldname="custom_rejection_reason",
+				label="Rejection Reason",
+				fieldtype="Small Text",
+				insert_after="custom_invoice_downloaded_legacy",
+				read_only=1,
+				depends_on="eval:doc.custom_workflow_status=='Rejected'",
+				description="Why the warehouse rejected this order. Captured when Reject is used and kept for future reference.",
+			),
 			# Cash Discount section (visible in Totals area)
 			dict(
 				fieldname="custom_cash_discount_section",

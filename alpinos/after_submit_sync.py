@@ -197,3 +197,29 @@ def ensure_after_submit_fields():
 		)
 	frappe.clear_cache(doctype="Pick List")
 	frappe.clear_cache(doctype="Delivery Note")
+
+
+@frappe.whitelist()
+def get_field_change_log(reference_doctype, reference_name):
+	"""Change history for one Pick List / Delivery Note — what changed, from what to
+	what, by whom and when. Feeds the "Change Log" dialog on both entry pages, so the
+	audit trail is visible where the edit happens rather than only in the doctype list."""
+	if reference_doctype not in ("Pick List", "Delivery Note"):
+		frappe.throw(frappe._("Unsupported document type."))
+	if not frappe.has_permission(reference_doctype, "read", doc=reference_name):
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+
+	rows = frappe.get_all(
+		"Field Change Log",
+		filters={"reference_doctype": reference_doctype, "reference_name": reference_name},
+		fields=["field_label", "previous_value", "new_value", "changed_by", "changed_on"],
+		order_by="changed_on desc",
+		limit_page_length=200,
+	)
+	fullnames = {}
+	for r in rows:
+		user = r.get("changed_by")
+		if user and user not in fullnames:
+			fullnames[user] = frappe.utils.get_fullname(user)
+		r["changed_by_name"] = fullnames.get(user) or user or ""
+	return {"rows": rows}
