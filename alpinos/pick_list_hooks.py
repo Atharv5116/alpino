@@ -102,7 +102,12 @@ def _sync_rows_and_totals(doc):
 		else:
 			# Sample rows carry FRACTIONAL boxes (qty / factor); they are combined
 			# continuously across the sample sections below, not summed per row.
-			sample_infos.append({"sku_name": row.item_code, "frac": qty / factor})
+			# Shared with the sticker generator so the form's Sample Box and the
+			# printed stickers can't disagree — including the one-box fallback for
+			# items with no Box UOM conversion.
+			from alpinos.pick_list_api import sample_box_fraction
+
+			sample_infos.append({"sku_name": row.item_code, "frac": sample_box_fraction(row)})
 			sample_weight += row_box * row_weight_per_box
 
 		total_unit += qty

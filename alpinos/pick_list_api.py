@@ -222,10 +222,32 @@ def combine_sample_boxes(sample_infos):
 	return units
 
 
-def _sample_frac(row):
-	"""Fractional box count for a sample row: qty / box-conversion-factor (unrounded)."""
+def sample_box_fraction(row):
+	"""Box count for a sample row.
+
+	The Pick List row already carries the box count the warehouse entered on the
+	entry page (custom_box), and that is exactly what the page's Sample Box total
+	sums — so the stickers follow it, the same way item rows do. Recomputing from
+	quantity instead is what printed 50 stickers for a 50-unit freebie booked as
+	one box.
+
+	Only a row with no box count falls back to qty / Box-conversion-factor, and to
+	a single box when the item has no Box conversion at all: dividing by 1 there
+	reads "one unit = one box" and puts a sticker on every piece."""
+	box = flt(row.get("custom_box"))
+	if box > 0:
+		return box
+	qty = flt(row.qty)
+	if qty <= 0:
+		return 0.0
 	factor = flt(get_box_conversion_factor(row.item_code)) if row.item_code else 0
-	return flt(row.qty) / (factor or 1)
+	if factor > 0:
+		return qty / factor
+	return 1.0
+
+
+# Kept for callers that still use the old private name.
+_sample_frac = sample_box_fraction
 
 
 def _collect_pick_list_stickers(doc):
@@ -284,7 +306,7 @@ def _collect_pick_list_stickers(doc):
 		source_table = row.get("custom_source_table") or "Items"
 		if source_table in SAMPLE_SOURCE_TABLES:
 			info = _row_meta(row)
-			info["frac"] = _sample_frac(row)
+			info["frac"] = sample_box_fraction(row)
 			sample_infos.append(info)
 		else:
 			boxes = int(flt(row.get("custom_box") or 0))
