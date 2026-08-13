@@ -53,11 +53,12 @@ frappe.ui.form.on('Pick List', {
 	},
 	
 	custom_actual_box(frm) {
-		frm.set_value('custom_total_box', cint(frm.doc.custom_actual_box || 0) + cint(frm.doc.custom_sample_box || 0));
+		// Box counts carry decimals (4.17) — cint here flattened what the entry page stored.
+		frm.set_value('custom_total_box', flt(flt(frm.doc.custom_actual_box || 0) + flt(frm.doc.custom_sample_box || 0), 2));
 	},
 	
 	custom_sample_box(frm) {
-		frm.set_value('custom_total_box', cint(frm.doc.custom_actual_box || 0) + cint(frm.doc.custom_sample_box || 0));
+		frm.set_value('custom_total_box', flt(flt(frm.doc.custom_actual_box || 0) + flt(frm.doc.custom_sample_box || 0), 2));
 	}
 });
 
@@ -338,10 +339,10 @@ function recalculate_pick_list_totals(frm) {
 		total_unit += flt(row.qty);
 	});
 
-	frm.set_value('custom_actual_box', cint(actual_box));
-	frm.set_value('custom_sample_box', cint(sample_box));
+	frm.set_value('custom_actual_box', flt(actual_box, 2));
+	frm.set_value('custom_sample_box', flt(sample_box, 2));
 	frm.set_value('custom_sample_weight', flt(sample_weight, 2));
-	frm.set_value('custom_total_box', cint(actual_box + sample_box));
+	frm.set_value('custom_total_box', flt(actual_box + sample_box, 2));
 	frm.set_value('custom_gross_weight', flt(gross_weight, 2));
 	frm.set_value('custom_total_unit', flt(total_unit, 2));
 

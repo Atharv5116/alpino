@@ -1,6 +1,5 @@
 import frappe
 from frappe.utils import flt, now_datetime
-from math import ceil
 
 from alpinos.sales_order_api import get_box_conversion_factor
 
@@ -71,13 +70,15 @@ def _sync_rows_and_totals(doc):
 			)
 
 		table_name = row.custom_source_table or "Items"
+		# Box counts are fractional — 50 units at 12 per box is 4.17, and the entry
+		# page stores exactly that (flt(qty / factor, 2)). Rounding here overwrote
+		# what the warehouse entered the moment anything saved the doc through the
+		# ORM — submit, a workflow action, Delivery Note creation — and dragged
+		# Gross Weight (box x weight per box) down with it.
 		if not flt(row.custom_box):
-			if table_name == "Items":
-				row.custom_box = int(ceil(qty / factor)) if qty else 0
-			else:
-				row.custom_box = 0
+			row.custom_box = flt(qty / factor, 2) if (table_name == "Items" and qty) else 0
 		else:
-			row.custom_box = int(round(flt(row.custom_box)))
+			row.custom_box = flt(row.custom_box, 2)
 
 		if row.batch_no:
 			batch_details = frappe.db.get_value(
@@ -118,10 +119,13 @@ def _sync_rows_and_totals(doc):
 	from alpinos.pick_list_api import combine_sample_boxes
 	sample_box = len(combine_sample_boxes(sample_infos))
 
-	doc.custom_actual_box = int(round(actual_box))
+	# Actual / Total Box keep their decimals too — they are the sum of the rows'
+	# fractional boxes, and the entry page shows them that way (7.17 / 8.17).
+	# Sample Box stays whole: it counts physical boxes, not fractions of one.
+	doc.custom_actual_box = flt(actual_box, 2)
 	doc.custom_sample_box = sample_box
 	doc.custom_sample_weight = flt(sample_weight, 2)
-	doc.custom_total_box = int(round(actual_box)) + sample_box
+	doc.custom_total_box = flt(actual_box + sample_box, 2)
 	doc.custom_gross_weight = flt(gross_weight, 2)
 	doc.custom_total_unit = flt(total_unit, 2)
 
