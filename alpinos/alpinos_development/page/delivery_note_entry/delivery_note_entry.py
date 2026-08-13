@@ -380,9 +380,14 @@ def download_lr_excel():
 	from frappe.utils.xlsxutils import make_xlsx
 
 	today = frappe.utils.today()
+	# custom_dispatch_date is a Datetime, so an exact "= today" (a date) only matches
+	# 00:00:00 and misses any DN dispatching today at a real time — use a full-day range.
 	dns = frappe.get_all(
 		"Delivery Note",
-		filters={"docstatus": 0, "custom_dispatch_date": today},
+		filters={
+			"docstatus": 0,
+			"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
+		},
 		fields=["name", "custom_sales_order_id"],
 		order_by="name",
 	)
