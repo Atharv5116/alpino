@@ -16,6 +16,16 @@ PF_NAME = "Pick List Packing Sheet"
 DOC_TYPE = "Pick List"
 
 _HTML = r"""
+{#- Box counts are fractional on the Pick List entry page (50 units at 12 per box
+    reads 4.17), so the sheet prints them the same way the screen does: two
+    decimals, and no ".0" tail on a whole number. Rounding to int here is what made
+    the PDF disagree with the Pick List it was printed from. -#}
+{%- macro boxnum(v) -%}
+  {%- if v is not none -%}
+    {%- set n = v | float | round(2) -%}
+    {{- (n | int) if n == (n | int) else n -}}
+  {%- endif -%}
+{%- endmacro -%}
 <style>
   .plps { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 12px; }
   .plps table { border-collapse: collapse; width: 100%; table-layout: fixed; }
@@ -45,12 +55,12 @@ _HTML = r"""
     <!-- ===== header block (shares the grid) ===== -->
     <tr>
       <td colspan="2" class="lbl">ACTUAL BOX</td>
-      <td colspan="2" class="val">{{ (doc.custom_actual_box | round | int) if doc.custom_actual_box is not none else "" }}</td>
+      <td colspan="2" class="val">{{ boxnum(doc.custom_actual_box) if doc.custom_actual_box is not none else "" }}</td>
       <td colspan="5" class="rl" rowspan="8">QC Attended By: {{ doc.custom_qc_attended_by or "" }}</td>
     </tr>
-    <tr><td colspan="2" class="lbl">SAMPLE BOX</td><td colspan="2" class="val">{{ (doc.custom_sample_box | round | int) if doc.custom_sample_box else "" }}</td></tr>
+    <tr><td colspan="2" class="lbl">SAMPLE BOX</td><td colspan="2" class="val">{{ boxnum(doc.custom_sample_box) if doc.custom_sample_box else "" }}</td></tr>
     <tr><td colspan="2" class="lbl">SAMPLE WEIGHT</td><td colspan="2" class="val">{{ ("%.2f"|format(doc.custom_sample_weight)) if doc.custom_sample_weight else "" }}</td></tr>
-    <tr><td colspan="2" class="lbl">TOTAL BOX</td><td colspan="2" class="val">{{ (doc.custom_total_box | round | int) if doc.custom_total_box is not none else 0 }}</td></tr>
+    <tr><td colspan="2" class="lbl">TOTAL BOX</td><td colspan="2" class="val">{{ boxnum(doc.custom_total_box) if doc.custom_total_box is not none else 0 }}</td></tr>
     <tr><td colspan="2" class="lbl">GROSS WEIGHT</td><td colspan="2" class="val">{{ "%.2f"|format(doc.custom_gross_weight or 0) }}</td></tr>
     <tr><td colspan="2" class="lbl">TOTAL UNITS</td><td colspan="2" class="val">{{ (doc.custom_total_unit | round | int) if doc.custom_total_unit is not none else 0 }}</td></tr>
     <tr><td colspan="2" class="lbl">PO NO.</td><td colspan="2" class="val">{{ doc.custom_po_no or "" }}</td></tr>
@@ -72,7 +82,7 @@ _HTML = r"""
       <th>SKU</th>
       <th>SKU NO</th>
       <th>{{ doc.custom_sales_order_id or doc.name }}</th>
-      <th class="hl">{{ (doc.custom_total_box | round | int) if doc.custom_total_box is not none else 0 }}</th>
+      <th class="hl">{{ boxnum(doc.custom_total_box) if doc.custom_total_box is not none else 0 }}</th>
       <th>SAMPLE QTY</th>
       <th>BATCH CODE</th>
       <th>MFG</th>
@@ -89,7 +99,7 @@ _HTML = r"""
       <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div style="font-size:10px; font-weight:normal;">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}</td>
       <td class="sku">{{ frappe.db.get_value("Item", row.item_code, "custom_sku_no") or "" }}</td>
       <td class="c">{{ (row.qty | round | int) if (row.qty and not _is_sample) else "" }}</td>
-      <td class="c">{{ (row.custom_box | round | int) if row.custom_box else "" }}</td>
+      <td class="c">{{ boxnum(row.custom_box) if row.custom_box else "" }}</td>
       <td class="c">{{ (row.qty | round | int) if (row.qty and _is_sample) else "" }}</td>
       <td>{{ row.custom_batch_code or row.batch_no or "" }}</td>
       <td class="c">{{ frappe.utils.formatdate(row.custom_mfg_date, "dd-MM-yyyy") if row.custom_mfg_date else "" }}</td>
