@@ -397,7 +397,7 @@ def download_lr_excel(delivery_notes=None):
 			for d in frappe.get_all(
 				"Delivery Note",
 				filters={"name": ["in", names]},
-				fields=["name", "custom_sales_order_id"],
+				fields=["name", "custom_sales_order_id", "custom_lr_gr_no"],
 			)
 		}
 		dns = [fetched[n] for n in names if n in fetched]
@@ -406,7 +406,7 @@ def download_lr_excel(delivery_notes=None):
 		dns = frappe.get_all(
 			"Delivery Note",
 			filters={"docstatus": 0, "custom_dispatch_date": today},
-			fields=["name", "custom_sales_order_id"],
+			fields=["name", "custom_sales_order_id", "custom_lr_gr_no"],
 			order_by="name",
 		)
 		suffix = today
@@ -414,7 +414,8 @@ def download_lr_excel(delivery_notes=None):
 	rows = [["Sales Order ID", "Customer PO / PO Number", "Invoice No.", "LR No."]]
 	for dn in dns:
 		po, inv = _so_po_invoice(dn.get("custom_sales_order_id"))
-		rows.append([dn.get("custom_sales_order_id") or "", po, inv, ""])
+		# Show the DN's existing LR No so it can be reviewed; blank ones stay blank for entry.
+		rows.append([dn.get("custom_sales_order_id") or "", po, inv, dn.get("custom_lr_gr_no") or ""])
 
 	xlsx = make_xlsx(rows, "LR Update")
 	frappe.response["filename"] = f"LR_Update_{suffix}.xlsx"
