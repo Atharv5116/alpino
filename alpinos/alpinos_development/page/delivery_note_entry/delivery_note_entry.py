@@ -373,51 +373,31 @@ def _so_po_invoice(so_id):
 
 
 @frappe.whitelist()
-def download_lr_excel(delivery_notes=None):
-	"""Excel for bulk LR No. entry — exactly four columns: Sales Order ID, Customer PO / PO
-	Number, Invoice No., LR No. (blank for input).
-
-	`delivery_notes` (JSON list of DN names, from the rows ticked on the list page) exports
-	exactly those, in the order given. Without it the sheet covers every DRAFT Delivery Note
-	dispatching TODAY, which is what the button did before selection existed."""
+def download_lr_excel():
+	"""Excel of DRAFT Delivery Notes dispatching TODAY, for bulk LR No. entry. Exactly four
+	columns: Sales Order ID, Customer PO / PO Number, Invoice No., LR No. (blank for input)."""
 	_require_lr_roles()
 	from frappe.utils.xlsxutils import make_xlsx
 
 	today = frappe.utils.today()
-	names = frappe.parse_json(delivery_notes) if delivery_notes else None
-	if isinstance(names, str):
-		names = [names]
-	names = [n for n in (names or []) if n]
-
-	if names:
-		# Keep the caller's order — the sheet then reads down the list the same
-		# way the rows were ticked on screen.
-		fetched = {
-			d["name"]: d
-			for d in frappe.get_all(
-				"Delivery Note",
-				filters={"name": ["in", names]},
-				fields=["name", "custom_sales_order_id"],
-			)
-		}
-		dns = [fetched[n] for n in names if n in fetched]
-		suffix = "selected"
-	else:
-		dns = frappe.get_all(
-			"Delivery Note",
-			filters={"docstatus": 0, "custom_dispatch_date": today},
-			fields=["name", "custom_sales_order_id"],
-			order_by="name",
-		)
-		suffix = today
-
+	# custom_dispatch_date is a Datetime, so an exact "= today" (a date) only matches
+	# 00:00:00 and misses any DN dispatching today at a real time — use a full-day range.
+	dns = frappe.get_all(
+		"Delivery Note",
+		filters={
+			"docstatus": 0,
+			"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
+		},
+		fields=["name", "custom_sales_order_id"],
+		order_by="name",
+	)
 	rows = [["Sales Order ID", "Customer PO / PO Number", "Invoice No.", "LR No."]]
 	for dn in dns:
 		po, inv = _so_po_invoice(dn.get("custom_sales_order_id"))
 		rows.append([dn.get("custom_sales_order_id") or "", po, inv, ""])
 
 	xlsx = make_xlsx(rows, "LR Update")
-	frappe.response["filename"] = f"LR_Update_{suffix}.xlsx"
+	frappe.response["filename"] = f"LR_Update_{today}.xlsx"
 	frappe.response["filecontent"] = xlsx.getvalue()
 	frappe.response["type"] = "binary"
 
