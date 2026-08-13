@@ -170,7 +170,16 @@ def setup_sales_order_custom_fields():
 				fieldtype="Check",
 				insert_after="custom_invoice_pdf",
 				read_only=1,
-				description="Set once the invoice PDF has been downloaded (bulk export or the per-row SI button). Bulk export skips orders already marked, so each invoice is downloaded only once.",
+				description="Set once anyone has downloaded the invoice PDF (bulk export or the per-row SI button). Who downloaded it is tracked per user in Alpino Invoice Download — that, not this flag, decides whose Pending Invoice Downloads list the order drops off.",
+			),
+			dict(
+				fieldname="custom_invoice_downloaded_legacy",
+				label="Invoice Downloaded (Pre Per-User)",
+				fieldtype="Check",
+				insert_after="custom_invoice_downloaded",
+				read_only=1,
+				hidden=1,
+				description="Set by a one-time patch on invoices already downloaded before download tracking became per-user. There is no record of who took those, so they stay off everyone's pending list instead of reappearing for the whole team.",
 			),
 			# Cash Discount section (visible in Totals area)
 			dict(

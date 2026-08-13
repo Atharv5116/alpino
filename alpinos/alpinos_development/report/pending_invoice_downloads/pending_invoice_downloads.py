@@ -3,9 +3,11 @@
 """Pending Invoice Downloads.
 
 Sales Orders whose invoice has been assigned an Invoice No (via invoice sync) but
-has NOT yet been downloaded (custom_invoice_downloaded = 0). From the report the
-accounts team ticks rows and hits "Download Selected" to pull the invoice PDFs;
-downloading marks them, so they drop off this list.
+which the CURRENT USER has not downloaded yet. From the report the accounts team
+ticks rows and hits "Download Selected" to pull the invoice PDFs; downloading
+records an Alpino Invoice Download row for that user, so the order drops off
+their list while remaining on everyone else's — two people can work the same day's
+invoices without one hiding them from the other.
 """
 
 import frappe
@@ -30,12 +32,20 @@ def execute(filters=None):
 		{"label": _("Customer"), "fieldname": "customer_name", "fieldtype": "Data", "width": 220},
 	]
 
+	# Pending is per user: an order drops off the list of whoever downloaded it and
+	# stays on everyone else's. The legacy flag covers orders downloaded before the
+	# switch to per-user tracking, when there was no record of who had taken them —
+	# those stay hidden from everybody rather than reappearing for the whole team.
 	conditions = [
 		"IFNULL(so.custom_invoice_no, '') <> ''",
-		"IFNULL(so.custom_invoice_downloaded, 0) = 0",
+		"IFNULL(so.custom_invoice_downloaded_legacy, 0) = 0",
+		"""NOT EXISTS (
+			SELECT 1 FROM `tabAlpino Invoice Download` aid
+			WHERE aid.sales_order = so.name AND aid.user = %(download_user)s
+		)""",
 		"so.docstatus < 2",
 	]
-	params = {}
+	params = {"download_user": frappe.session.user}
 	if filters.get("sales_order"):
 		conditions.append("so.name LIKE %(sales_order)s")
 		params["sales_order"] = "%" + filters["sales_order"] + "%"

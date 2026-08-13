@@ -796,10 +796,18 @@ def download_sales_invoices_zip(names):
 		frappe.throw(_("None of the selected Sales Orders have a fetched invoice PDF yet."))
 
 	# Mark the exported orders as downloaded so they drop off the "Pending Invoice
-	# Downloads" report. No skip/validation here — a bulk export always downloads
+	# Downloads" list. No skip/validation here — a bulk export always downloads
 	# everything selected that has a PDF, even if downloaded before.
+	# The pending list is per-user: the log row is what hides the order from THIS
+	# user, while the flag stays as "someone has downloaded this" for the order
+	# list's SI indicator.
+	from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
+		log as log_invoice_download,
+	)
+
 	for name in exported:
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
+		log_invoice_download(name)
 	frappe.db.commit()
 
 	frappe.local.response.filename = "sales-invoices-{0}.zip".format(added)
@@ -852,9 +860,14 @@ def download_single_invoice(name):
 	if isinstance(content, str):
 		content = content.encode("utf-8")
 	base = str((row.get("custom_invoice_no") or name) or name).strip().replace("/", "-")
+	from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
+		log as log_invoice_download,
+	)
+
 	if not frappe.db.get_value("Sales Order", name, "custom_invoice_downloaded"):
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
-		frappe.db.commit()
+	log_invoice_download(name)
+	frappe.db.commit()
 	frappe.local.response.filename = base + ".pdf"
 	frappe.local.response.filecontent = content
 	frappe.local.response.type = "download"

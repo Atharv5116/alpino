@@ -32,3 +32,4 @@ alpinos.patches.v1_0.repair_buyer_child_tables
 alpinos.patches.v1_0.repair_buyer_child_columns
 alpinos.patches.v1_0.plain_customer_names
 alpinos.patches.v1_0.plain_customer_names_v2
+alpinos.patches.v1_0.mark_legacy_invoice_downloads
