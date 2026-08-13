@@ -309,7 +309,13 @@ def _collect_pick_list_stickers(doc):
 			info["frac"] = sample_box_fraction(row)
 			sample_infos.append(info)
 		else:
-			boxes = int(flt(row.get("custom_box") or 0))
+			# Box counts are fractional on the entry page (50 units at 12/box =
+			# 4.17). That last part-filled box still ships, so it gets a sticker:
+			# round UP, don't truncate. flt(..., 3) first so float noise on a
+			# whole number can't add a phantom box.
+			from math import ceil
+
+			boxes = int(ceil(flt(row.get("custom_box") or 0, 3)))
 			if boxes <= 0:
 				continue
 			meta = _row_meta(row)
