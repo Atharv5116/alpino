@@ -110,6 +110,12 @@ var EcomSalesOrderListPage = class {
 			this.download_selected_pdfs()
 		);
 		if (this.btn_download_pdf) this.btn_download_pdf.hide();
+		// Order + Invoice: one merged PDF, each order's Sales Order PDF followed by its
+		// fetched invoice PDF — SO1, Invoice1, SO2, Invoice2, ...
+		this.btn_order_invoice = this.page.add_inner_button(__('Order + Invoice'), () =>
+			this.download_orders_with_invoices()
+		);
+		if (this.btn_order_invoice) this.btn_order_invoice.hide();
 		// Bulk Resync Invoice (role-gated) — keeps the selection so Export Invoices /
 		// Download PDFs can run immediately after.
 		this._can_resync = ['Accounts User', 'Accounts Manager', 'System Manager']
@@ -506,11 +512,13 @@ var EcomSalesOrderListPage = class {
 		if (checked.length > 0) {
 			if (this.btn_export_invoices) this.btn_export_invoices.show();
 			if (this.btn_download_pdf) this.btn_download_pdf.show();
+			if (this.btn_order_invoice) this.btn_order_invoice.show();
 			if (this.btn_resync_invoices) this.btn_resync_invoices.show();
 			if (this.page.set_indicator) this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
 		} else {
 			if (this.btn_export_invoices) this.btn_export_invoices.hide();
 			if (this.btn_download_pdf) this.btn_download_pdf.hide();
+			if (this.btn_order_invoice) this.btn_order_invoice.hide();
 			if (this.btn_resync_invoices) this.btn_resync_invoices.hide();
 			if (this.page.clear_indicator) this.page.clear_indicator();
 		}
@@ -528,6 +536,40 @@ var EcomSalesOrderListPage = class {
 			encodeURIComponent(JSON.stringify(names));
 		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDFs.'));
+	}
+
+	download_orders_with_invoices() {
+		const names = this._selected_names();
+		if (!names.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		const open_merged = () => {
+			// One merged PDF: each Sales Order PDF immediately followed by its invoice PDF.
+			const url =
+				'/api/method/alpinos.sales_order_api.download_orders_with_invoices_pdf?names=' +
+				encodeURIComponent(JSON.stringify(names));
+			const w = window.open(frappe.urllib.get_full_url(url), '_blank');
+			if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF.'));
+		};
+		// Warn when some selected orders have no fetched invoice yet — those still download
+		// with just their Sales Order (no invoice after it).
+		frappe.call({
+			method: 'alpinos.sales_order_api.sales_invoices_availability',
+			args: { names: JSON.stringify(names) },
+			callback: (r) => {
+				if (r.exc || !r.message) return;
+				const m = r.message;
+				if (m.available < m.total) {
+					frappe.confirm(
+						__('{0} of {1} selected orders have no fetched invoice yet — those will download with only the Sales Order. Continue?', [m.available, m.total]),
+						open_merged
+					);
+				} else {
+					open_merged();
+				}
+			},
+		});
 	}
 
 	export_selected_invoices() {

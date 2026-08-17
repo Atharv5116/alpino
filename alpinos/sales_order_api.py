@@ -816,6 +816,76 @@ def download_sales_invoices_zip(names):
 
 
 @frappe.whitelist()
+def download_orders_with_invoices_pdf(names, no_letterhead=0):
+	"""Bulk 'Order + Invoice' download: ONE merged PDF where each Sales Order's PDF is
+	immediately followed by its fetched invoice PDF, kept together per order and in the
+	selected order — SO#1, Invoice#1, SO#2, Invoice#2, ...
+
+	The Sales Order is always rendered (default print format). The invoice pages are the
+	fetched PDF in custom_invoice_pdf (populated by invoice sync); an order whose invoice
+	isn't fetched yet still contributes its Sales Order pages, and is reported back.
+	"""
+	import json
+	from io import BytesIO
+	from pypdf import PdfReader, PdfWriter
+	from frappe.utils.file_manager import get_file
+
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		frappe.throw(_("Please select at least one Sales Order."))
+
+	meta = frappe.get_meta("Sales Order")
+	format_name = (meta.default_print_format or "").strip() or "Standard"
+	no_letterhead = cint(no_letterhead)
+
+	writer = PdfWriter()
+	orders_added, missing_invoice, failed = 0, [], []
+
+	def _append(pdf_bytes):
+		for page in PdfReader(BytesIO(pdf_bytes)).pages:
+			writer.add_page(page)
+
+	for name in names:
+		# get_print / get_file both enforce read permission on the order.
+		if not frappe.has_permission("Sales Order", "read", doc=name):
+			failed.append(name)
+			continue
+		# 1) Sales Order pages (always).
+		try:
+			_append(frappe.get_print("Sales Order", name, format_name, as_pdf=True, no_letterhead=no_letterhead))
+			orders_added += 1
+		except Exception:
+			frappe.log_error(title="Order+Invoice: SO PDF failed for {0}".format(name))
+			failed.append(name)
+			continue
+		# 2) Its invoice pages, right after (skip cleanly when not fetched yet).
+		file_url = (frappe.db.get_value("Sales Order", name, "custom_invoice_pdf") or "").strip()
+		if not file_url:
+			missing_invoice.append(name)
+			continue
+		try:
+			content = get_file(file_url)[1]
+			if isinstance(content, str):
+				content = content.encode("utf-8")
+			_append(content)
+			frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
+		except Exception:
+			frappe.log_error(title="Order+Invoice: invoice PDF failed for {0} ({1})".format(name, file_url))
+			missing_invoice.append(name)
+
+	if not orders_added:
+		frappe.throw(_("Could not generate any Sales Order PDFs for the selection."))
+	frappe.db.commit()
+
+	out = BytesIO()
+	writer.write(out)
+	frappe.local.response.filename = "orders-with-invoices-{0}.pdf".format(orders_added)
+	frappe.local.response.filecontent = out.getvalue()
+	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
 def sales_invoices_availability(names):
 	"""How many of the selected Sales Orders have a fetched invoice PDF. Lets the list
 	page warn the user (a clean message) BEFORE opening the bulk-invoice download in a
