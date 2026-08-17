@@ -113,17 +113,12 @@ def _ensure_customer_for_obm(doc):
 			cust.parent_customer = parent_customer
 		cust.flags.ignore_mandatory = True
 		cust.save(ignore_permissions=True)
-		# Keep the ID on the derived value when it drifted (renames update every
-		# linked document). Skipped when another buyer already owns that ID.
-		if tax_id and cust.name != unique_id and not frappe.db.exists("Customer", unique_id):
-			try:
-				frappe.rename_doc("Customer", cust.name, unique_id, force=True)
-				doc.customer = unique_id
-				# Customer.after_rename resets customer_name to the docname when
-				# naming is "By Customer Name" — put the plain name back.
-				frappe.db.set_value("Customer", unique_id, "customer_name", biz_name, update_modified=False)
-			except Exception:
-				frappe.log_error(frappe.get_traceback(), f"customer id rename failed: {cust.name}")
+		# The Customer ID (docname) is deliberately LEFT UNTOUCHED for an already
+		# linked customer. Buyer Master edits keep syncing the Customer's fields
+		# (name, tax id, order type, parent) and its Address/Contact, but the
+		# Customer is never auto-renamed — so changing the Buyer Master ID (or the
+		# derived id drifting) no longer moves the Customer ID. The ID stays
+		# whatever it was created as.
 		return
 
 	cust = frappe.new_doc("Customer")
