@@ -224,6 +224,10 @@ def run(csv_path=None, apply=0, limit=None, prefix="U"):
 			continue
 		try:
 			_create_one(gp, ci, parent_cols, child_maps, prefix)
+			# Commit each order on its own so one bad row cannot roll back the
+			# good orders already created in this run (the except-path rollback
+			# then only discards the current, uncommitted order).
+			frappe.db.commit()
 			created += 1
 		except Exception as e:
 			failed.append((prefix + gp["id"], str(e)[:150]))
