@@ -198,7 +198,7 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 
 	# Days Calculation:
 	#   Month Working Days   = calendar days - Public Holidays - Weekends
-	#   Present Working Days = Month - Paid Leave - Unpaid Leave - Absent - Working-Hours-Shortage
+	#   Present Working Days = Month - Paid Leave - Unpaid Leave - Absent - (Shortage days x 0.5)
 	#   Final Payable Days   = Present + Paid Leave            (no penalty)
 	#   Final Paid Days      = Payable - late penalty          (shortage already in Present)
 	total_days = date_diff(to_date, from_date) + 1
@@ -206,7 +206,7 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.present_working_days = flt(
 		flt(row.month_working_days)
 		- flt(stats["paid_leave"]) - flt(stats["unpaid_leave"])
-		- flt(stats["absent_days"]) - flt(stats["working_hours_shortage"]),
+		- flt(stats["absent_days"]) - flt(stats["working_hours_shortage"]) * 0.5,
 		2,
 	)
 	row.final_payable_days = flt(flt(row.present_working_days) + flt(stats["paid_leave"]), 2)
