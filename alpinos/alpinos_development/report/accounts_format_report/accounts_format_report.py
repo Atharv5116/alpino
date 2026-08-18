@@ -539,7 +539,7 @@ def _get_data(filters):
 			"order_date": formatdate(so.transaction_date, "dd-MM-yyyy") if so.transaction_date else "",
 			# GST-exclusive buyer flag (whole SO) — shown per Final Format.
 			"gst_excl_flag": "Yes" if _gst_excl else "",
-			# Less Qty / Less Qty Amount: columns reserved per Final Format, source TBD.
+			# Less Qty / Less Qty Amount: computed per line in emit() (ordered - dispatched qty, valued at GST-inclusive selling price).
 			"less_qty": None,
 			"less_qty_amount": None,
 		}
@@ -557,7 +557,7 @@ def _get_data(filters):
 		# after cash discount — just distributed per row so it shows in the table.
 		cash_pct = flt(so.get("custom_cash_discount"))
 
-		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items"):
+		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items", ordered_qty=None):
 			it = item_info(item_code)
 			if _round_pu and selling_price:
 				selling_price = round(flt(selling_price))
@@ -636,6 +636,15 @@ def _get_data(filters):
 				if not ean_fsn:
 					ean_fsn_flag = "Missing"
 
+			# Less Qty (Final Format): ordered qty - dispatched (picked) qty, valued at the
+			# GST-inclusive selling price. Selling price is GST-exclusive only for a
+			# GST-exclusive buyer, so gross it up with GST% there. No shortfall -> blank.
+			less_qty = flt(flt(ordered_qty) - flt(unit), 3) if ordered_qty is not None else 0
+			if less_qty and selling_price:
+				sp_incl = flt(selling_price) * (1 + gst_pct / 100.0) if _gst_excl else flt(selling_price)
+				less_qty_amount = flt(less_qty * sp_incl, 2)
+			else:
+				less_qty_amount = None
 			row = dict(header)
 			row.update({
 				"alpino_sku": it.get("custom_tally_sku") or item_code,
@@ -658,6 +667,8 @@ def _get_data(filters):
 				"igst": igst if is_priced else 0,
 				"final_total": final_total,
 				"is_billable": "Yes" if it.get("custom_is_billable") else "No",
+				"less_qty": less_qty or None,
+				"less_qty_amount": less_qty_amount,
 			})
 			data.append(row)
 
@@ -784,6 +795,7 @@ def _get_data(filters):
 						mrp_v, sp_v, flat_v,
 						r.get("custom_offer"), r.get("custom_additional_discount"),
 						is_priced=True, from_picklist=False,
+						ordered_qty=ordered * (flt(per) or 1),
 					)
 				continue
 
@@ -804,6 +816,7 @@ def _get_data(filters):
 				r.get("custom_flat_discount"), r.get("custom_offer"),
 				r.get("custom_additional_discount"), is_priced=True,
 				from_picklist=False,
+				ordered_qty=ordered,
 			)
 
 		# Marketing freebies / scheme items / additional-unit (damage) items — selling
@@ -811,12 +824,12 @@ def _get_data(filters):
 		# doesn't carry these free lines — they would otherwise report qty 0).
 		for r in (so.get("custom_marketing_freebies") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Marketing Freebies")
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Marketing Freebies", ordered_qty=r.get("qty"))
 		for r in (so.get("custom_scheme_item_table") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Scheme Table")
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Scheme Table", ordered_qty=r.get("qty"))
 		for r in (so.get("custom_additional_units_damage_items") or []):
 			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Additional Units")
+				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Additional Units", ordered_qty=r.get("qty"))
 
 	return data
