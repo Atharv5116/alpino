@@ -196,16 +196,11 @@ def _create_one_order(cust_label, po_number, grp):
 	if not items:
 		frappe.throw(_("No valid SKU lines."))
 
-	# Guard: a provided Site Name must exist in the customer's Buyer Master family
-	# (import validation) — otherwise the site-wise GST/address can't be resolved.
+	# Guard: the Site Name is REQUIRED, must map to a Buyer Master site of this family, and
+	# that site record must carry its own required site-level data (no parent-buyer fallback).
 	site_name = str(_get(first, "Site Name") or "").strip()
-	if site_name:
-		from alpinos.sales_order_offline_buyer import site_exists_in_buyer_family
-		if not site_exists_in_buyer_family(customer, site_name):
-			frappe.throw(_(
-				"Site Name '{0}' is not in the Buyer Master for {1}. "
-				"Add the site to the Buyer Master before importing."
-			).format(site_name, customer))
+	from alpinos.sales_order_offline_buyer import assert_import_site_requirements
+	assert_import_site_requirements(customer, site_name)
 
 	out = create_ecom_sales_order(
 		customer=customer,
