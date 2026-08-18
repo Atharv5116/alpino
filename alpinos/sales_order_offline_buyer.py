@@ -247,6 +247,49 @@ def site_exists_in_buyer_family(customer, site_name):
 	return bool(frappe.db.exists("Buyer Address", {"parent": ["in", masters], "site_name": site_name}))
 
 
+def assert_import_site_requirements(customer, site_name):
+	"""Import guard for a Sales Order's Site (the 5-point site-validation spec):
+	the Site must be present, mapped to a Buyer Master site, and that SITE record must
+	carry its OWN required data - never taken from the family parent (only the customer /
+	parent-buyer name may come from the parent). Raises on the first problem, so the
+	importer reports it per order.
+
+	REQUIRED_SITE_FIELDS below is the enforced set - add rows to require more site data.
+	"""
+	site_name = (site_name or "").strip()
+	# (1)(2) Site Name present and mapped to a Buyer Master site of this family.
+	if not site_name:
+		frappe.throw(_("Site Name is required to import a Sales Order."), title=_("Missing Site"))
+	if not site_exists_in_buyer_family(customer, site_name):
+		frappe.throw(
+			_("Site Name '{0}' is not mapped in the Buyer Master for {1}. Add the site to the Buyer Master before importing.").format(site_name, customer),
+			title=_("Site Not Mapped"),
+		)
+	# (5) Resolve the SITE's OWN Buyer Master(s) - never the family parent.
+	masters = [m.name for m in (buyer_family_masters(customer) or [])]
+	owners = _masters_owning_site(masters, site_name)
+	if not owners:
+		frappe.throw(
+			_("Site '{0}' has no owning Buyer Master record for {1}.").format(site_name, customer),
+			title=_("Site Not Mapped"),
+		)
+	# (3)(4) Required site-level data must exist on the site record itself, resolved with
+	# the same no-parent-fallback resolvers the Sales Order uses (empty fallback = must be set).
+	missing = []
+	registered = False
+	for o in owners:
+		if frappe.db.get_value("Buyer Master", o, "gst_type") == "Registered Business":
+			registered = True
+	# A registered site must carry its OWN GSTIN (site-wise resolve, blank fallback).
+	if registered and not (_gst_for_site(site_name, "") or "").strip():
+		missing.append("GST No")
+	if missing:
+		frappe.throw(
+			_("Site '{0}' (Buyer Master {1}) is missing required site-level data: {2}. Set it on the site record - the parent buyer's data is not used as a fallback.").format(site_name, ", ".join(sorted(owners)), ", ".join(missing)),
+			title=_("Incomplete Site Data"),
+		)
+
+
 def _gst_for_site(site_name, fallback=""):
 	"""Site-wise GST No: the gst_no of the Buyer Master that owns an address (Buyer Address
 	child row) whose site_name matches — so the SO carries the SELECTED SITE's GSTIN, not
