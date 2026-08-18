@@ -32,177 +32,58 @@ def execute(filters=None):
 
 
 def get_columns(from_date, to_date):
-	"""Generate columns with employee info + dynamic date columns for the month"""
+	"""Employee info + Final Format day-figures + per-day cells + Verify, in Excel order."""
+	def col(label, fieldname, fieldtype="Float", width=110, **extra):
+		c = {"label": _(label), "fieldname": fieldname, "fieldtype": fieldtype, "width": width}
+		c.update(extra)
+		return c
+
 	columns = [
-		{
-			"label": _("Employee Name"),
-			"fieldname": "employee_name",
-			"fieldtype": "Data",
-			"width": 200,
-			"frozen": 1
-		},
-		{
-			"label": _("Employee ID"),
-			"fieldname": "employee",
-			"fieldtype": "Link",
-			"options": "Employee",
-			"width": 120,
-			"frozen": 1
-		},
-		{
-			"label": _("Employee Status"),
-			"fieldname": "status",
-			"fieldtype": "Data",
-			"width": 120
-		},
-		{
-			"label": _("Joining Date"),
-			"fieldname": "date_of_joining",
-			"fieldtype": "Date",
-			"width": 110
-		},
-		{
-			"label": _("Aging"),
-			"fieldname": "aging",
-			"fieldtype": "Int",
-			"width": 80
-		},
-		{
-			"label": _("Department"),
-			"fieldname": "department",
-			"fieldtype": "Link",
-			"options": "Department",
-			"width": 150
-		},
-		{
-			"label": _("Company"),
-			"fieldname": "company",
-			"fieldtype": "Link",
-			"options": "Company",
-			"width": 150
-		},
-		{
-			"label": _("Paid Days"),
-			"fieldname": "paid_days",
-			"fieldtype": "Float",
-			"width": 90
-		},
-		{
-			"label": _("Late Entries"),
-			"fieldname": "late_entries",
-			"fieldtype": "Data",
-			"width": 130
-		},
-		{
-			"label": _("Late Deduction (Days)"),
-			"fieldname": "late_deduction",
-			"fieldtype": "Float",
-			"width": 120
-		},
-		{
-			"label": _("Working Days"),
-			"fieldname": "working_days",
-			"fieldtype": "Float",
-			"width": 110
-		},
-		{
-			"label": _("Clock-In Days"),
-			"fieldname": "clock_in_days",
-			"fieldtype": "Int",
-			"width": 110
-		},
-		{
-			"label": _("Absent Days"),
-			"fieldname": "absent_days",
-			"fieldtype": "Int",
-			"width": 100
-		},
-		{
-			"label": _("Shift Not Started"),
-			"fieldname": "shift_not_started",
-			"fieldtype": "Int",
-			"width": 130
-		},
-		{
-			"label": _("Holiday"),
-			"fieldname": "holiday",
-			"fieldtype": "Int",
-			"width": 80
-		},
-		{
-			"label": _("Weekend"),
-			"fieldname": "weekend",
-			"fieldtype": "Int",
-			"width": 90
-		},
-		{
-			"label": _("Paid Leave"),
-			"fieldname": "paid_leave",
-			"fieldtype": "Float",
-			"width": 100
-		},
-		{
-			"label": _("Unpaid Leave"),
-			"fieldname": "unpaid_leave",
-			"fieldtype": "Float",
-			"width": 110
-		},
-		{
-			"label": _("Paid Hourly Leave"),
-			"fieldname": "paid_hourly_leave",
-			"fieldtype": "Float",
-			"width": 140
-		},
-		{
-			"label": _("Unpaid Hourly Leave"),
-			"fieldname": "unpaid_hourly_leave",
-			"fieldtype": "Float",
-			"width": 150
-		},
-		{
-			"label": _("OD/WFH Count"),
-			"fieldname": "od_wfh_count",
-			"fieldtype": "Int",
-			"width": 120
-		},
-		{
-			"label": _("Missing Attendance"),
-			"fieldname": "missing_attendance",
-			"fieldtype": "Int",
-			"width": 140
-		},
-		{
-			"label": _("Penalty Count"),
-			"fieldname": "penalty_count",
-			"fieldtype": "Int",
-			"width": 110
-		},
-		{
-			"label": _("Average Working Hours"),
-			"fieldname": "avg_working_hours",
-			"fieldtype": "Float",
-			"width": 150
-		},
+		col("Employee Name", "employee_name", "Data", 200, frozen=1),
+		col("Employee ID", "employee", "Link", 120, options="Employee", frozen=1),
+		col("Employee Status", "status", "Data", 110),
+		col("Joining Date", "date_of_joining", "Date", 110),
+		col("Aging", "aging", "Int", 70),
+		col("Department", "department", "Link", 150, options="Department"),
+		col("Company", "company", "Link", 150, options="Company"),
+		# Days Calculation
+		col("Month Working Days", "month_working_days", "Float", 130),
+		col("Final Paid Days", "final_paid_days", "Float", 120),
+		col("Final Payable Days", "final_payable_days", "Float", 130),
+		col("Present Working Days", "present_working_days", "Float", 140),
+		col("Clock-In Days", "clock_in_days", "Float", 110),
+		# Deduction Section
+		col("Absent Days", "absent_days", "Float", 100),
+		col("Month Late Entries", "late_entries", "Data", 140),
+		col("Half Days (Late 10:16)", "late_half_days", "Float", 140),
+		col("Full Days (Late 10:31)", "late_full_days", "Float", 140),
+		col("Working Hours Shortage", "working_hours_shortage", "Float", 150),
+		# Leave Section
+		col("Paid Leave", "paid_leave", "Float", 100),
+		col("Unpaid Leave", "unpaid_leave", "Float", 110),
+		col("WFH", "wfh", "Float", 80),
+		col("OD", "od", "Float", 80),
+		# Other
+		col("Public Holiday", "public_holiday", "Int", 110),
+		col("Weekend", "weekend", "Int", 90),
+		col("Missing Attendance", "missing_attendance", "Int", 140),
+		col("Average Working Hours", "avg_working_hours", "Float", 150),
 	]
-	
-	# Add dynamic date columns
+
 	current_date = getdate(from_date)
 	end_date = getdate(to_date)
-	
 	while current_date <= end_date:
 		day_num = current_date.day
-		day_name = calendar.day_name[current_date.weekday()][:3]  # Mon, Tue, etc
-		date_str = current_date.strftime("%Y-%m-%d")
-		
+		day_name = calendar.day_name[current_date.weekday()][:3]
 		columns.append({
 			"label": f"{day_num} {day_name}",
 			"fieldname": f"day_{day_num}",
 			"fieldtype": "Data",
-			"width": 300
+			"width": 300,
 		})
-		
 		current_date = add_days(current_date, 1)
-	
+
+	columns.append(col("Verify", "verify", "Data", 100))
 	return columns
 
 
@@ -296,29 +177,41 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	# Initialize statistics
 	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, to_date, emp.employee)
 	
-	# Populate summary fields
-	row.paid_days = stats["paid_days"]
-	row.working_days = stats["working_days"]
+	# Summary fields (Final Format layout).
 	row.clock_in_days = stats["clock_in_days"]
 	row.absent_days = stats["absent_days"]
-	row.shift_not_started = stats["shift_not_started"]
-	row.holiday = stats["holiday"]
+	row.public_holiday = stats["public_holiday"]
 	row.weekend = stats["weekend"]
 	row.paid_leave = stats["paid_leave"]
 	row.unpaid_leave = stats["unpaid_leave"]
-	row.paid_hourly_leave = stats["paid_hourly_leave"]
-	row.unpaid_hourly_leave = stats["unpaid_hourly_leave"]
-	row.od_wfh_count = stats["od_wfh_count"]
+	row.wfh = stats["wfh"]
+	row.od = stats["od"]
+	row.working_hours_shortage = stats["working_hours_shortage"]
 	row.missing_attendance = stats["missing_attendance"]
-	row.penalty_count = stats["penalty_count"]
 	row.avg_working_hours = stats["avg_working_hours"]
 
-	# Late-entry flags + deduction (reduces paid days) — see compute_late_deduction.
+	# Late-entry summary + per-tier penalty (half-day vs full-day).
 	late_info = compute_late_deduction(attendance_map)
 	row.late_entries = late_info["summary"]
-	row.late_deduction = late_info["deduction"]
-	if row.late_deduction:
-		row.paid_days = flt(row.paid_days) - flt(row.late_deduction)
+	row.late_half_days = late_info["half_deduction"]
+	row.late_full_days = late_info["full_deduction"]
+
+	# Days Calculation:
+	#   Month Working Days   = calendar days - Public Holidays - Weekends
+	#   Present Working Days = Month - Paid Leave - Unpaid Leave - Absent - Working-Hours-Shortage
+	#   Final Payable Days   = Present + Paid Leave            (no penalty)
+	#   Final Paid Days      = Payable - late penalty          (shortage already in Present)
+	total_days = date_diff(to_date, from_date) + 1
+	row.month_working_days = flt(total_days - flt(stats["public_holiday"]) - flt(stats["weekend"]), 2)
+	row.present_working_days = flt(
+		flt(row.month_working_days)
+		- flt(stats["paid_leave"]) - flt(stats["unpaid_leave"])
+		- flt(stats["absent_days"]) - flt(stats["working_hours_shortage"]),
+		2,
+	)
+	row.final_payable_days = flt(flt(row.present_working_days) + flt(stats["paid_leave"]), 2)
+	row.final_paid_days = flt(flt(row.final_payable_days) - flt(late_info["deduction"]), 2)
+	row.verify = ""
 
 	# Loop through each day of the month
 	current_date = getdate(from_date)
@@ -329,9 +222,10 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 		date_str = current_date.strftime("%Y-%m-%d")
 		field_name = f"day_{day_num}"
 		
-		# Check if it's a holiday
+		# Holiday List entry: weekly-off days show as WEEKEND, the rest as the holiday name.
 		if date_str in holiday_map:
-			row[field_name] = f"HOLIDAY - {holiday_map[date_str]}"
+			hinfo = holiday_map[date_str]
+			row[field_name] = "WEEKEND" if hinfo.get("weekly_off") else f"HOLIDAY - {hinfo.get('description')}"
 		# Check if there's a leave application
 		elif date_str in leave_map:
 			leave_info = leave_map[date_str]
@@ -446,17 +340,25 @@ def compute_late_deduction(attendance_map):
 	)
 
 	if not counts:
-		return {"counts": {}, "summary": "", "deduction": 0.0}
+		return {"counts": {}, "summary": "", "deduction": 0.0, "half_deduction": 0.0, "full_deduction": 0.0}
 
 	min_ded = min(ded_by_tier.values())
-	total = 0.0
+	min_tier = min(ded_by_tier, key=lambda k: ded_by_tier[k])
+	per_tier = {}
 	leftover = 0
 	for late_by, cnt in counts.items():
-		total += (cnt // 4) * ded_by_tier[late_by]   # full groups of 4 in this tier
-		leftover += cnt % 4                            # remainder carried to the combo
-	total += (leftover // 4) * min_ded                 # combined leftovers in groups of 4
+		per_tier[late_by] = (cnt // 4) * ded_by_tier[late_by]   # full groups of 4 in this tier
+		leftover += cnt % 4                                     # remainder carried to the combo
+	per_tier[min_tier] = per_tier.get(min_tier, 0.0) + (leftover // 4) * min_ded
 
-	return {"counts": counts, "summary": summary, "deduction": flt(total, 2)}
+	total = sum(per_tier.values())
+	# Split by tier for the two columns: a half-day tier (deduction < 1) feeds "Half Days
+	# (Late 10:16)", a full-day tier (>= 1) feeds "Full Days (Late 10:31)".
+	half_ded = sum(d for lb, d in per_tier.items() if ded_by_tier[lb] < 1.0)
+	full_ded = sum(d for lb, d in per_tier.items() if ded_by_tier[lb] >= 1.0)
+
+	return {"counts": counts, "summary": summary, "deduction": flt(total, 2),
+		"half_deduction": flt(half_ded, 2), "full_deduction": flt(full_ded, 2)}
 
 
 def get_holiday_map(employee, from_date, to_date):
@@ -473,13 +375,16 @@ def get_holiday_map(employee, from_date, to_date):
 				"parent": holiday_list,
 				"holiday_date": ["between", [from_date, to_date]]
 			},
-			fields=["holiday_date", "description"]
+			fields=["holiday_date", "description", "weekly_off"]
 		)
 		
 		holiday_map = {}
 		for holiday in holidays:
 			date_str = holiday.holiday_date.strftime("%Y-%m-%d")
-			holiday_map[date_str] = holiday.description or "Holiday"
+			holiday_map[date_str] = {
+				"description": holiday.description or "Holiday",
+				"weekly_off": cint(holiday.weekly_off),
+			}
 		
 		return holiday_map
 	except:
