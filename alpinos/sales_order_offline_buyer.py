@@ -247,19 +247,36 @@ def site_exists_in_buyer_family(customer, site_name):
 	return bool(frappe.db.exists("Buyer Address", {"parent": ["in", masters], "site_name": site_name}))
 
 
-def assert_import_site_requirements(customer, site_name):
-	"""Import guard for a Sales Order's Site (the 5-point site-validation spec):
-	the Site must be present, mapped to a Buyer Master site, and that SITE record must
-	carry its OWN required data - never taken from the family parent (only the customer /
-	parent-buyer name may come from the parent). Raises on the first problem, so the
-	importer reports it per order.
+# Customer types (channels) for which a Site Name is MANDATORY on import — each has
+# many sites (dark stores / FCs), so the order must name one. Other types may omit it.
+SITE_MANDATORY_CUSTOMER_TYPES = {
+	"Other E-commerce", "Zepto", "Swiggy", "Bigbasket", "Reliance",
+	"Flipkart", "Amazon", "Modern Trade", "Blinkit",
+}
 
-	REQUIRED_SITE_FIELDS below is the enforced set - add rows to require more site data.
+
+def assert_import_site_requirements(customer, site_name, customer_type=None):
+	"""Import guard for a Sales Order's Site (the site-validation spec).
+
+	Site Name is mandatory only for the e-commerce / modern-trade customer types in
+	SITE_MANDATORY_CUSTOMER_TYPES. When a Site IS given (mandatory or not) it must map to a
+	Buyer Master site of the family, and that SITE record must carry its OWN required data
+	- never taken from the family parent (only the customer / parent-buyer name may come
+	from the parent). Raises on the first problem, so the importer reports it per order.
 	"""
 	site_name = (site_name or "").strip()
-	# (1)(2) Site Name present and mapped to a Buyer Master site of this family.
+	if customer_type is None:
+		customer_type = frappe.db.get_value("Buyer Master", {"customer": customer}, "customer_type") or ""
+	site_mandatory = (customer_type or "").strip() in SITE_MANDATORY_CUSTOMER_TYPES
+
+	# (1)(2) Site Name: mandatory for the listed channels; optional otherwise.
 	if not site_name:
-		frappe.throw(_("Site Name is required to import a Sales Order."), title=_("Missing Site"))
+		if site_mandatory:
+			frappe.throw(
+				_("Site Name is required for customer type '{0}'.").format(customer_type),
+				title=_("Missing Site"),
+			)
+		return
 	if not site_exists_in_buyer_family(customer, site_name):
 		frappe.throw(
 			_("Site Name '{0}' is not mapped in the Buyer Master for {1}. Add the site to the Buyer Master before importing.").format(site_name, customer),
@@ -273,14 +290,12 @@ def assert_import_site_requirements(customer, site_name):
 			_("Site '{0}' has no owning Buyer Master record for {1}.").format(site_name, customer),
 			title=_("Site Not Mapped"),
 		)
-	# (3)(4) Required site-level data must exist on the site record itself, resolved with
-	# the same no-parent-fallback resolvers the Sales Order uses (empty fallback = must be set).
+	# (3)(4) Required site-level data must exist on the site record itself (no parent fallback).
 	missing = []
 	registered = False
 	for o in owners:
 		if frappe.db.get_value("Buyer Master", o, "gst_type") == "Registered Business":
 			registered = True
-	# A registered site must carry its OWN GSTIN (site-wise resolve, blank fallback).
 	if registered and not (_gst_for_site(site_name, "") or "").strip():
 		missing.append("GST No")
 	if missing:
@@ -288,7 +303,6 @@ def assert_import_site_requirements(customer, site_name):
 			_("Site '{0}' (Buyer Master {1}) is missing required site-level data: {2}. Set it on the site record - the parent buyer's data is not used as a fallback.").format(site_name, ", ".join(sorted(owners)), ", ".join(missing)),
 			title=_("Incomplete Site Data"),
 		)
-
 
 def _gst_for_site(site_name, fallback=""):
 	"""Site-wise GST No: the gst_no of the Buyer Master that owns an address (Buyer Address
