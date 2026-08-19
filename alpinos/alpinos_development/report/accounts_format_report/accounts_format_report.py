@@ -98,13 +98,35 @@ def _picklist_map(so_name):
 			SUM(IFNULL(pli.custom_box, 0)) AS box
 		FROM `tabPick List Item` pli
 		INNER JOIN `tabPick List` pl ON pl.name = pli.parent AND pl.docstatus = 1
-		WHERE pl.custom_sales_order_id = %(so)s OR pli.sales_order = %(so)s
+		WHERE (pl.custom_sales_order_id = %(so)s OR pli.sales_order = %(so)s)
+			AND IFNULL(pli.custom_bundle_parent, '') = ''
 		GROUP BY pli.item_code, src
 		""",
 		{"so": so_name},
 		as_dict=True,
 	)
 	return {(r.item_code, r.src): r for r in rows}
+
+
+def _combo_picklist_map(so_name):
+	"""Per-(component item, combo SKU) picked qty + box for COMBO-component Pick List rows
+	(tagged with custom_bundle_parent). Kept apart from the standalone 'Items' picks so a combo
+	line reports its OWN picked qty and short-pick, not a total pooled with a standalone line."""
+	rows = frappe.db.sql(
+		"""
+		SELECT pli.item_code, pli.custom_bundle_parent AS combo,
+			SUM(IFNULL(NULLIF(pli.picked_qty, 0), pli.qty)) AS qty,
+			SUM(IFNULL(pli.custom_box, 0)) AS box
+		FROM `tabPick List Item` pli
+		INNER JOIN `tabPick List` pl ON pl.name = pli.parent AND pl.docstatus = 1
+		WHERE (pl.custom_sales_order_id = %(so)s OR pli.sales_order = %(so)s)
+			AND IFNULL(pli.custom_bundle_parent, '') <> ''
+		GROUP BY pli.item_code, pli.custom_bundle_parent
+		""",
+		{"so": so_name},
+		as_dict=True,
+	)
+	return {(r.item_code, r.combo): r for r in rows}
 
 
 def _pl_header(so_name):
@@ -550,7 +572,8 @@ def _get_data(filters):
 			header[f"ship_addr_{i+1}"] = ship_lines[i]
 
 		pl_map = _picklist_map(so.name)
-		has_pl = bool(pl_map)
+		combo_pl_map = _combo_picklist_map(so.name)
+		has_pl = bool(pl_map) or bool(combo_pl_map)
 		# Cash discount %: the Sales Order applies it once, as a % of the grand total
 		# (apply_discount_on = "Grand Total"). Being a flat %, applying the SAME % to each
 		# line's GST-inclusive amount makes the report's lines sum to the SO grand total
@@ -761,14 +784,15 @@ def _get_data(filters):
 			if not has_pl:
 				picked = ordered
 			elif comps:
-				# Whole combos the remaining picked components can still cover.
+				# This combo's OWN picked qty, from Pick List rows tagged with this combo
+				# (custom_bundle_parent) - the short-pick stays on the combo line, not the loose line.
 				picked = ordered
 				for (citem, per) in comps:
 					per = flt(per) or 1
-					picked = min(picked, math.floor(flt(avail.get(citem, 0.0)) / per))
+					cp = combo_pl_map.get((citem, r.item_code))
+					comp_picked = flt(cp.get("qty")) if cp else 0.0
+					picked = min(picked, math.floor(comp_picked / per))
 				picked = max(flt(picked), 0.0)
-				for (citem, per) in comps:
-					_take(citem, picked * (flt(per) or 1))
 			else:
 				picked = _take(r.item_code, ordered)
 
@@ -785,7 +809,8 @@ def _get_data(filters):
 					if not cqty:
 						continue
 					if has_pl:
-						cbox = _box_share(citem, cqty)
+						cp = combo_pl_map.get((citem, r.item_code))
+						cbox = flt(cp.get("box")) if cp else 0.0
 					else:
 						cf = flt(get_box_conversion_factor(citem))
 						cbox = math.ceil(cqty / cf) if cf else 0
