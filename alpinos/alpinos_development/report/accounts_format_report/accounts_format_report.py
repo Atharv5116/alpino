@@ -830,7 +830,7 @@ def _get_data(filters):
 			if not has_pl:
 				box = flt(r.get("custom_box"))
 			elif comps:
-				box = sum(_box_share(citem, picked * (flt(per) or 1)) for (citem, per) in comps)
+				box = sum(flt((combo_pl_map.get((citem, r.item_code)) or {}).get("box") or 0) for (citem, per) in comps)
 			else:
 				box = _box_share(r.item_code, picked)
 
