@@ -1048,7 +1048,11 @@ def create_delivery_note_from_pick_list(pick_list_name):
 		# Map custom fields from Pick List to Delivery Note
 		dn.custom_sales_order_id = pick_list.custom_sales_order_id
 		dn.custom_dn_so_customer_name = pick_list.custom_customer_name
-		dn.custom_dispatch_date = pick_list.custom_order_date or frappe.utils.now_datetime()
+		# Dispatch Date must be the Pick List's DISPATCH date (mirrors the SO's dispatch date),
+		# not its order date — otherwise the DN shows the order date and drifts from the PL.
+		dn.custom_dispatch_date = (
+			pick_list.custom_dispatch_date or pick_list.custom_order_date or frappe.utils.now_datetime()
+		)
 		dn.custom_delivery_date = pick_list.custom_order_date or frappe.utils.now_datetime()
 
 		# Transporter — copy verbatim from Pick List (custom_transporter_name is
