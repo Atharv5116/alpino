@@ -48,8 +48,8 @@ def get_columns(from_date, to_date):
 		col("Company", "company", "Link", 150, options="Company"),
 		# Days Calculation
 		col("Month Working Days", "month_working_days", "Float", 130),
-		col("Final Paid Days", "final_paid_days", "Float", 120),
-		col("Final Payable Days", "final_payable_days", "Float", 130),
+		col("Final Paids days(With Late Penalty deduction days )", "final_paid_days", "Float", 240),
+		col("Final Payable days(With out Penalty deduction days)", "final_payable_days", "Float", 240),
 		col("Present Working Days", "present_working_days", "Float", 140),
 		col("Clock-In Days", "clock_in_days", "Float", 110),
 		# Deduction Section
