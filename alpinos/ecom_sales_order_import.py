@@ -160,6 +160,58 @@ def _orders_from_rows(rows):
 	return results
 
 
+def _assert_sheet_matches_master(first, buyer, site_name):
+	"""Point (3): values the sheet supplies for site/buyer-derived fields must MATCH what the
+	system would auto-fetch - the Buyer Master SITE for GST / GST-Exclusive, the buyer master for
+	Customer Type and the order flags. A blank sheet cell just auto-fetches (no error); a
+	mismatch rejects the order. Address columns are exempt - taken as-is."""
+	from alpinos.sales_order_offline_buyer import _gst_for_site, _flag_for_site
+
+	def _norm(v):
+		return str(v if v is not None else "").strip()
+
+	problems = []
+
+	# Customer Type vs the buyer master.
+	sheet_ct = _norm(_get(first, "Customer Type"))
+	master_ct = _norm(buyer.get("customer_type"))
+	if sheet_ct and master_ct and sheet_ct.lower() != master_ct.lower():
+		problems.append(_("Customer Type '{0}' does not match the buyer's '{1}'").format(sheet_ct, master_ct))
+
+	# Billing / Shipping GSTIN vs the SITE's GST (the buyer's own GST when no site).
+	site_gst = _norm(_gst_for_site(site_name, "") if site_name else buyer.get("gst_no")).upper()
+	for col in ("Billing GSTIN", "Shipping GSTIN"):
+		sheet_gst = _norm(_get(first, col)).upper()
+		if sheet_gst and site_gst and sheet_gst != site_gst:
+			problems.append(_("{0} '{1}' does not match the site's GST No '{2}'").format(col, sheet_gst, site_gst))
+
+	# GST-Exclusive Buyer vs the SITE's flag (buyer's when no site).
+	raw_ex = _get(first, "GST-Exclusive Buyer")
+	if _norm(raw_ex):
+		if site_name:
+			site_ex = int(_flag_for_site(site_name, "gst_exclusive_buyer", buyer.get("gst_exclusive_buyer")) or 0)
+		else:
+			site_ex = int(buyer.get("gst_exclusive_buyer") or 0)
+		if _yn(raw_ex, 0) != site_ex:
+			problems.append(_("GST-Exclusive Buyer '{0}' does not match the site setting ({1})").format(_norm(raw_ex), "Yes" if site_ex else "No"))
+
+	# Order-behaviour flags vs the buyer master.
+	for col, field in (("Appointment Required", "appointment_required"),
+					   ("GRN Available", "grn_available"),
+					   ("Partial Order Allowed", "partial_order_allowed")):
+		raw = _get(first, col)
+		if _norm(raw):
+			master_v = int(buyer.get(field) or 0)
+			if _yn(raw, 0) != master_v:
+				problems.append(_("{0} '{1}' does not match the buyer master ({2})").format(col, _norm(raw), "Yes" if master_v else "No"))
+
+	if problems:
+		frappe.throw(
+			_("Import values do not match the Buyer Master - fix the sheet or the master:") + "<br>- " + "<br>- ".join(problems),
+			title=_("Sheet / Master Mismatch"),
+		)
+
+
 def _create_one_order(cust_label, po_number, grp):
 	first = grp[0]
 	customer = _resolve_customer(cust_label)
@@ -202,6 +254,8 @@ def _create_one_order(cust_label, po_number, grp):
 	customer_type = str(_get(first, "Customer Type") or "").strip()
 	from alpinos.sales_order_offline_buyer import assert_import_site_requirements
 	assert_import_site_requirements(customer, site_name, customer_type or None)
+	# Point (3): sheet values must match the Buyer Master (address exempt - taken as-is).
+	_assert_sheet_matches_master(first, buyer, site_name)
 
 	out = create_ecom_sales_order(
 		customer=customer,
