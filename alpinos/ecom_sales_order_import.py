@@ -199,8 +199,9 @@ def _create_one_order(cust_label, po_number, grp):
 	# Guard: the Site Name is REQUIRED, must map to a Buyer Master site of this family, and
 	# that site record must carry its own required site-level data (no parent-buyer fallback).
 	site_name = str(_get(first, "Site Name") or "").strip()
+	customer_type = str(_get(first, "Customer Type") or "").strip()
 	from alpinos.sales_order_offline_buyer import assert_import_site_requirements
-	assert_import_site_requirements(customer, site_name)
+	assert_import_site_requirements(customer, site_name, customer_type or None)
 
 	out = create_ecom_sales_order(
 		customer=customer,
