@@ -89,6 +89,23 @@ frappe.query_reports["Attendance Summary"] = {
 	},
 
 	onload: function(report) {
+		// Final-Format Excel: rebuilds the two-sheet (Summary + Details) workbook exactly
+		// as the client spec — rich multi-line day cells, colours, banners — which the
+		// built-in export can't produce. Streams from a whitelisted server method.
+		report.page.add_inner_button(__("Download Final Format"), function() {
+			var f = frappe.query_report.get_filter_values();
+			if (!f || !f.month) {
+				frappe.msgprint(__("Set the Month filter first."));
+				return;
+			}
+			var p = { month: f.month };
+			if (f.employee) p.employee = f.employee;
+			if (f.company) p.company = f.company;
+			var url = "/api/method/alpinos.alpinos_development.report.attendance_summary.attendance_summary_export.download_final_format?"
+				+ $.param(p);
+			window.open(url, "_blank");
+		}).addClass("btn-primary");
+
 		report.page.add_inner_button(__("This Month"), function() {
 			frappe.query_report.set_filter_value("month", frappe.datetime.now_date().slice(0, 7));
 		});
