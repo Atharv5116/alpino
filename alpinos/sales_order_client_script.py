@@ -139,6 +139,14 @@ frappe.ui.form.on('Sales Order', {
         calculate_cash_discount(frm);
     },
 
+    // Keep the cash discount live with the order total when lines are added / removed.
+    items_add: function(frm) {
+        calculate_cash_discount(frm);
+    },
+    items_remove: function(frm) {
+        calculate_cash_discount(frm);
+    },
+
     // Leaving the field fetches the PO PDF from the folder configured in
     // Alpino General Settings (file name = this value + .pdf).
     custom_po_no_for_pdf: function(frm) {
@@ -305,10 +313,6 @@ frappe.ui.form.on('Sales Order Item', {
 
     custom_additional_discount: function(frm, cdt, cdn) {
         calculate_item_values(frm, cdt, cdn);
-    },
-
-    items_remove: function(frm) {
-        calculate_cash_discount(frm);
     }
 });
 
@@ -373,6 +377,10 @@ function calculate_item_values(frm, cdt, cdn, selling_price_edited) {
         frappe.model.set_value(cdt, cdn, 'rate', flt(effective_rate, 2));
         frappe.model.set_value(cdt, cdn, 'amount', flt(net_amount, 2));
     }
+
+    // A line total changed -> re-sync the cash discount (deferred so the doc grand
+    // total has recomputed first).
+    setTimeout(function () { calculate_cash_discount(frm); }, 0);
 }
 
 function _set_default_dispatch_date(frm) {
