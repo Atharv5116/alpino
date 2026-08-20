@@ -33,24 +33,27 @@ def get_location_details(location):
 
 
 def _get_shift_hours(shift_name, cache):
-	"""Expected worked hours for a shift = end_time - start_time (handles overnight).
-
-	This is the benchmark for the Working-Hours-Shortage count: a worked day whose
-	`working_hours` fall below the shift's span is a shortage day (e.g. a 9-5 shift
-	expects 8h; anything less is short)."""
+	"""Expected worked hours for a shift = (end_time - start_time) MINUS the shift's Late
+	Entry Grace Period (handles overnight). Benchmark for the Working-Hours-Shortage count:
+	a worked day whose `working_hours` fall below this is a shortage day. The grace period
+	is deducted so someone who arrives within grace and works the rest of the shift is not
+	flagged short (e.g. an 8.5h shift with 15m grace expects 8.25h)."""
 	if shift_name in cache:
 		return cache[shift_name]
 	hours = None
 	if shift_name:
-		vals = frappe.db.get_value("Shift Type", shift_name, ["start_time", "end_time"])
+		vals = frappe.db.get_value(
+			"Shift Type", shift_name, ["start_time", "end_time", "late_entry_grace_period"]
+		)
 		if vals and vals[0] is not None and vals[1] is not None:
-			start_t, end_t = vals
+			start_t, end_t, grace = vals
 			s = start_t.total_seconds() if hasattr(start_t, "total_seconds") else 0
 			e = end_t.total_seconds() if hasattr(end_t, "total_seconds") else 0
 			dur = (e - s) / 3600.0
 			if dur < 0:
 				dur += 24.0
-			hours = round(dur, 2)
+			dur -= (int(grace or 0)) / 60.0  # deduct the Late Entry Grace Period (minutes)
+			hours = round(max(dur, 0.0), 2)
 	cache[shift_name] = hours
 	return hours
 
