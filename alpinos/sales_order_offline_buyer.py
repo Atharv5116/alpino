@@ -439,6 +439,18 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 			doc.custom_appointment_required = int(row.get("appointment_required") or 0)
 			doc.custom_grn_available = int(row.get("grn_available") or 0)
 			doc.custom_partial_order_allowed = int(row.get("partial_order_allowed") or 0)
+		# Site validation for every entry path — Frappe's native Data Import and the
+		# entry pages, not just the Excel bulk importer. For the e-commerce / modern-
+		# trade customer types a Site is mandatory; when a Site is given (any type) it
+		# must map to a Buyer Master site of this family and that site must carry its
+		# own site-level data (no parent-buyer fallback). New orders only, so edits /
+		# submits of legacy orders are never retroactively blocked.
+		if doc.is_new():
+			assert_import_site_requirements(
+				doc.customer,
+				(doc.get("custom_site_name") or "").strip(),
+				row.get("customer_type"),
+			)
 	else:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None
