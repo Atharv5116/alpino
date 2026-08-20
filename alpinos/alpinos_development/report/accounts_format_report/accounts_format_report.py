@@ -135,7 +135,8 @@ def _pl_header(so_name):
 	PL / Delivery Note modified datetime — one value set per order."""
 	pls = frappe.db.sql(
 		"""
-		SELECT custom_transporter, custom_po_no, custom_gate, custom_total_box, modified
+		SELECT custom_transporter, custom_po_no, custom_gate, custom_total_box,
+		       custom_gross_weight, modified
 		FROM `tabPick List`
 		WHERE custom_sales_order_id = %(so)s AND docstatus = 1
 		ORDER BY modified DESC
@@ -148,6 +149,9 @@ def _pl_header(so_name):
 	# Pick List stores it on custom_total_box (item boxes + combined sample boxes),
 	# computed by the SAME combine_sample_boxes() the sticker generator uses.
 	total_box = sum(flt(p.custom_total_box) for p in pls)
+	# Total Weight = summed Pick List gross weight (box count x per-box weight), the same
+	# figure the Delivery Note rolls up as custom_dn_order_gross_weight.
+	total_weight = sum(flt(p.custom_gross_weight) for p in pls)
 	# Latest Delivery Note modified for this SO (drafts + submitted), so "PL / DN
 	# Updated On" reflects a post-dispatch DN edit too, not just the Pick List.
 	dn_mod = frappe.db.sql(
@@ -164,12 +168,25 @@ def _pl_header(so_name):
 		updated_on = dn_mod[0][0]
 	# Gate No is shown labeled in the cell, e.g. "Gate No. : G-3" (raw "G-3" from the PL).
 	_gate = (pls[0].custom_gate or "").strip()
+	_po = pls[0].custom_po_no or ""
+	_transporter = pls[0].custom_transporter or ""
+	# Box count is whole (physical boxes) — show it without a trailing ".0"; weight 2dp.
+	_box_str = str(int(total_box)) if float(total_box).is_integer() else ("%g" % total_box)
+	# Combined "Terms of Delivery" cell (client Final Format), e.g.
+	# "PL PO No: A / Total Box: 20 / Total Weight: 458.80 / Transporter: Delhivery".
+	terms_of_delivery = (
+		"PL PO No: {po} / Total Box: {box} / Total Weight: {wt} / Transporter: {tr}".format(
+			po=_po, box=_box_str, wt="%.2f" % flt(total_weight), tr=_transporter
+		)
+	)
 	return {
-		"transporter": pls[0].custom_transporter or "",
-		"pl_po_no": pls[0].custom_po_no or "",
+		"transporter": _transporter,
+		"pl_po_no": _po,
 		"gate_no": ("Gate No. : " + _gate) if _gate else "",
 		"total_box": total_box,
+		"total_weight": total_weight,
 		"pl_dn_updated_on": updated_on,
+		"terms_of_delivery": terms_of_delivery,
 	}
 
 
@@ -331,6 +348,7 @@ def get_columns():
 		col("PL PO NO", "pl_po_no", 120),
 		col("Gate No", "gate_no", 80),
 		col("PL / DN Updated On", "pl_dn_updated_on", 140, "Datetime"),
+		col("Terms of Delivery", "terms_of_delivery", 340),
 	]
 	return cols
 
