@@ -476,7 +476,10 @@ def format_leave_info(leave_info):
 
 
 def format_attendance_info(att_info):
-	"""Format attendance information with all details"""
+	"""Rich per-day cell matching the Final Format 'Details' layout: a WFH/OD tag line +
+	Present In/Out + Total Worked Hrs + Shift Name + Shift Time + Early Out (actual, when the
+	person left early) + Late Time (actual, when late). Multi-line (newline-separated); the
+	report JS renders it and red-marks the WFH/OD tag and the late/early times."""
 	status = att_info.get("status", "")
 	in_time = att_info.get("in_time")
 	out_time = att_info.get("out_time")
@@ -484,50 +487,52 @@ def format_attendance_info(att_info):
 	shift = att_info.get("shift", "")
 	late_entry = att_info.get("late_entry", 0)
 	early_exit = att_info.get("early_exit", 0)
-	
-	# For absent status, clear in_time, out_time, and working_hours
+
 	if status == "Absent":
 		in_time = None
 		out_time = None
 		working_hours = 0
-	
-	# Format times
-	in_time_str = format_time(in_time) if in_time else "-"
-	out_time_str = format_time(out_time) if out_time else "-"
-	
-	# Format working hours
+
+	in_str = format_time(in_time) if in_time else "-"
+	out_str = format_time(out_time) if out_time else "-"
+
 	if working_hours:
-		hours = int(working_hours)
-		minutes = int((working_hours - hours) * 60)
-		working_hours_str = f"{hours:02d} H : {minutes:02d} M"
+		hh = int(working_hours)
+		mm = int((working_hours - hh) * 60)
+		twh = f"{hh:02d} H : {mm:02d} M"
 	else:
-		working_hours_str = "00 H : 00 M"
-	
-	# Get shift details
+		twh = "00 H : 00 M"
+
 	shift_name = "-"
-	shift_time = "-"
+	shift_start_str = ""
+	shift_end_str = ""
 	if shift:
 		try:
-			shift_doc = frappe.get_cached_doc("Shift Type", shift)
-			shift_name = shift_doc.name
-			if shift_doc.start_time and shift_doc.end_time:
-				shift_time = f"{format_time(shift_doc.start_time)} To {format_time(shift_doc.end_time)}"
-		except:
+			sd = frappe.get_cached_doc("Shift Type", shift)
+			shift_name = sd.name
+			if sd.start_time is not None:
+				shift_start_str = format_time(sd.start_time)
+			if sd.end_time is not None:
+				shift_end_str = format_time(sd.end_time)
+		except Exception:
 			pass
-	
-	# Late/Early indicators
-	late_time = "Yes" if late_entry else "-"
-	early_out = "Yes" if early_exit else "-"
-	
-	# Get penalty if exists
-	penalty = "-"  # You can query penalty doctype here if needed
-	
-	# Build the display string
-	if status == "Half Day":
-		display = f"HALF DAY | In: {in_time_str} | Out: {out_time_str}"
-	else:
-		display = f"{status.upper()} | In: {in_time_str} | Out: {out_time_str}"
-	
-	display += f" | T.W.HRs: {working_hours_str} | Shift Name: {shift_name} | Shift Time: {shift_time} | Early Out: {early_out} | Late Time: {late_time} | Penalty: {penalty}"
-	
-	return display
+	shift_time = f"{shift_start_str} To {shift_end_str}" if (shift_start_str or shift_end_str) else "-"
+
+	# Actual late / early ranges - shown only when the day was flagged late / early.
+	late_str = f"{in_str} To {shift_end_str}" if late_entry else ""
+	early_str = f"{shift_start_str} To {out_str}" if early_exit else ""
+
+	# WFH / OD tag on the first line.
+	tag = "WFH" if status == "Work From Home" else ("OD" if status == "On Duty" else "")
+	head = "HALF DAY" if status == "Half Day" else ("ABSENT" if status == "Absent" else "Present")
+
+	lines = []
+	if tag:
+		lines.append(tag)
+	lines.append(f"{head} :  In: {in_str} | Out: {out_str}")
+	lines.append(f"T.W.HRs : {twh}")
+	lines.append(f"Shift Name : {shift_name}")
+	lines.append(f"Shift Time : {shift_time}")
+	lines.append(f"Early Out : {early_str}")
+	lines.append(f"Late Time : {late_str}")
+	return "\n".join(lines)

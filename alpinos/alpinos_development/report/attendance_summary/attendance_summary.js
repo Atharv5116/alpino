@@ -48,29 +48,41 @@ frappe.query_reports["Attendance Summary"] = {
 	],
 
 	formatter: function(value, row, column, data, default_formatter) {
-		value = default_formatter(value, row, column, data);
-
-		// Per-day status colours.
+		// Per-day cells: rich multi-line "Details" rendering with red marking.
 		if (column.fieldname.startsWith("day_")) {
-			if (value && value.includes("ABSENT")) {
-				value = `<span style='color:red!important; font-weight:bold'>${value}</span>`;
-			} else if (value && value.includes("HOLIDAY")) {
-				value = `<span style='color:blue!important'>${value}</span>`;
-			} else if (value && value.includes("HALF DAY")) {
-				value = `<span style='color:orange!important'>${value}</span>`;
-			} else if (value && value.includes("PRESENT")) {
-				value = `<span style='color:green!important'>${value}</span>`;
-			} else if (value && value.includes("LEAVE")) {
-				value = `<span style='color:purple!important'>${value}</span>`;
-			} else if (value && value.includes("WORK FROM HOME")) {
-				value = `<span style='color:teal!important'>${value}</span>`;
+			var raw = (value == null) ? "" : String(value);
+			if (raw === "" || raw === "-") return raw;
+			var esc = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+			// Attendance detail cell (has an In: time).
+			if (esc.indexOf("In:") !== -1) {
+				var isAbsent = /(^|\n)ABSENT\b/.test(raw);
+				var html = esc
+					.replace(/^(WFH|OD)(?=\n)/, '<span style="color:#C00000;font-weight:bold">$1</span>')
+					.replace(/(Late Time :\s*)([^\n]+)/, function (m, p1, p2) {
+						return p2.trim() ? p1 + '<span style="color:#C00000;font-weight:bold">' + p2 + '</span>' : m;
+					})
+					.replace(/(Early Out :\s*)([^\n]+)/, function (m, p1, p2) {
+						return p2.trim() ? p1 + '<span style="color:#C00000;font-weight:bold">' + p2 + '</span>' : m;
+					})
+					.replace(/\n/g, "<br>");
+				return isAbsent ? '<span style="color:#C00000;font-weight:bold">' + html + '</span>' : html;
 			}
+			if (raw.indexOf("WEEKEND") !== -1) {
+				return '<span style="color:#607d8b;font-weight:bold">' + esc + '</span>';
+			}
+			if (raw.indexOf("HOLIDAY") !== -1) {
+				return '<span style="color:#1976d2">' + esc.replace(/\n/g, "<br>") + '</span>';
+			}
+			// Leave day (leave type / "HALF DAY - ...") -> shaded cell.
+			return '<div style="background:#fff3cd;margin:-4px -8px;padding:4px 8px;">' + esc.replace(/\n/g, "<br>") + '</div>';
 		}
+
+		value = default_formatter(value, row, column, data);
 
 		// Section colour band down each summary column (fills the whole cell).
 		var _bg = ATT_CELL_BG[ATT_SECTION[column.fieldname]];
 		if (_bg) {
-			value = `<div style="background:${_bg}; margin:-4px -8px; padding:4px 8px;">${value == null ? "" : value}</div>`;
+			value = '<div style="background:' + _bg + '; margin:-4px -8px; padding:4px 8px;">' + (value == null ? "" : value) + '</div>';
 		}
 
 		return value;
