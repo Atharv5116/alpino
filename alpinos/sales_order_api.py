@@ -1839,10 +1839,19 @@ def get_sales_order_entry_view_payload(sales_order):
 	if "custom_additional_units_damage" in permitted_parent:
 		damage = int(doc.get("custom_additional_units_damage") or 0)
 
-	# Partial orders: per-SKU remaining qty for the Remaining column (BRD).
+	# Partial orders: the Remaining column shows only once partial picking has actually
+	# BEGUN (not merely allowed), and reports combo remaining at the COMBO level (not
+	# exploded to component SKUs) so it's clear which line the remaining belongs to.
 	from alpinos import partial_dispatch as pd
-	show_remaining = doc.docstatus == 1 and pd.is_partial_order(sales_order)
-	remaining_qty = pd.remaining_qty_by_sku(sales_order) if show_remaining else {}
+	remaining_qty = pd.remaining_qty_by_so_line(sales_order)
+	show_remaining = (
+		doc.docstatus == 1
+		and pd.is_partial_order(sales_order)
+		and pd.picking_started(sales_order)
+		and any(flt(v) > 0.001 for v in remaining_qty.values())
+	)
+	if not show_remaining:
+		remaining_qty = {}
 
 	return {
 		"parent": parent,

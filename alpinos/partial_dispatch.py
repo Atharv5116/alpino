@@ -113,6 +113,69 @@ def has_remaining_qty(sales_order) -> bool:
 	return any(v > _EPS for v in remaining_qty_by_sku(sales_order).values())
 
 
+def _committed_by_line(sales_order, exclude_pl=None):
+	"""Committed Pick List Item qty split by bundle tag: (standalone_by_item, combo_by_(item, bundle)).
+	Lets a combo line count ITS OWN picks (custom_bundle_parent) instead of pooling with a
+	standalone line of the same component SKU."""
+	params = {"so": sales_order}
+	excl = ""
+	if exclude_pl:
+		excl = "AND pl.name != %(excl)s"
+		params["excl"] = exclude_pl
+	rows = frappe.db.sql(
+		f"""
+		SELECT pli.item_code, IFNULL(pli.custom_bundle_parent, '') AS bundle, SUM(pli.qty) q
+		FROM `tabPick List Item` pli
+		INNER JOIN `tabPick List` pl ON pl.name = pli.parent
+		WHERE pl.custom_sales_order_id = %(so)s AND pl.docstatus < 2 {excl}
+		GROUP BY pli.item_code, bundle
+		""",
+		params, as_dict=True,
+	)
+	std, combo = {}, {}
+	for r in rows:
+		if not r.item_code:
+			continue
+		if r.bundle:
+			combo[(r.item_code, r.bundle)] = flt(combo.get((r.item_code, r.bundle), 0.0)) + flt(r.q)
+		else:
+			std[r.item_code] = flt(std.get(r.item_code, 0.0)) + flt(r.q)
+	return std, combo
+
+
+def remaining_qty_by_so_line(sales_order, exclude_pl=None) -> dict:
+	"""Remaining (ordered - committed) per SALES ORDER LINE item_code, WITHOUT exploding combos:
+	a combo line reports remaining in COMBO units (its own picks, tagged custom_bundle_parent),
+	standalone lines in their own units. Basis for the SO View 'Remaining' column so combo
+	remaining stays on the combo line instead of being pushed onto the component SKUs."""
+	from alpinos.sales_order_api import _bundle_components
+
+	std, combo = _committed_by_line(sales_order, exclude_pl=exclude_pl)
+	out = {}
+	for r in frappe.get_all("Sales Order Item", filters={"parent": sales_order}, fields=["item_code", "qty"]):
+		item = r.item_code
+		if not item:
+			continue
+		ordered = flt(r.qty)
+		comps = _bundle_components(item)
+		if comps:
+			picked = ordered
+			for c in comps:
+				per = flt(c.base_qty) or 1
+				picked = min(picked, int(flt(combo.get((c.item, item), 0.0)) / per))
+			picked = max(flt(picked), 0.0)
+		else:
+			picked = flt(std.get(item, 0.0))
+		out[item] = flt(out.get(item, 0.0)) + max(ordered - picked, 0.0)
+	return out
+
+
+def picking_started(sales_order) -> bool:
+	"""True once at least one non-cancelled Pick List has committed some qty for the SO -
+	i.e. partial picking has actually begun, not merely been allowed."""
+	return any(v > _EPS for v in committed_pl_qty_by_sku(sales_order).values())
+
+
 # ---------------------------------------------------------------------------
 # Coverage / completion
 # ---------------------------------------------------------------------------
