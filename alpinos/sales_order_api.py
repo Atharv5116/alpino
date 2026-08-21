@@ -744,9 +744,9 @@ def download_sales_orders_zip(names, no_letterhead=0):
 def download_sales_invoices_zip(names):
 	"""Bulk export the fetched Sales Invoice PDFs for the selected Sales Orders, bundled
 	into one ZIP. The invoice PDF lives in custom_invoice_pdf (populated by invoice sync
-	from the Google Sheet / Drive); each file is named by its invoice no, falling back to
-	the SO name. Orders without a fetched invoice PDF are skipped; if none have one it
-	raises rather than returning an empty zip.
+	from the Google Sheet / Drive); each file is named "<SO name> - <invoice no>.pdf"
+	(just the SO name when the invoice no isn't set). Orders without a fetched invoice PDF
+	are skipped; if none have one it raises rather than returning an empty zip.
 	"""
 	import json
 	import zipfile
@@ -780,7 +780,9 @@ def download_sales_invoices_zip(names):
 			except Exception:
 				frappe.log_error(title="Bulk invoice export: cannot read {0} ({1})".format(file_url, name))
 				continue
-			base = str((row.get("custom_invoice_no") or name) or name).strip().replace("/", "-")
+			inv = str(row.get("custom_invoice_no") or "").strip().replace("/", "-")
+			so = str(name).strip().replace("/", "-")
+			base = "{0} - {1}".format(so, inv) if inv else so
 			fname = base + ".pdf"
 			# two orders can share an invoice no — keep both files rather than overwrite.
 			if fname in used:
@@ -929,11 +931,12 @@ def download_single_invoice(name):
 	content = get_file(file_url)[1]
 	if isinstance(content, str):
 		content = content.encode("utf-8")
-	base = str((row.get("custom_invoice_no") or name) or name).strip().replace("/", "-")
+	inv = str(row.get("custom_invoice_no") or "").strip().replace("/", "-")
+	so = str(name).strip().replace("/", "-")
+	base = "{0} - {1}".format(so, inv) if inv else so
 	from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
 		log as log_invoice_download,
 	)
-
 	if not frappe.db.get_value("Sales Order", name, "custom_invoice_downloaded"):
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
 	log_invoice_download(name)
