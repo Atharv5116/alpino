@@ -188,22 +188,23 @@ def _attendance_rich(text):
 	value_font = InlineFont(color=RED if absent else BLACK)
 	red_font = InlineFont(b=True, color=RED)
 
+	# The line break MUST be carried inside a TextBlock's text — a bare "\n" element in a
+	# CellRichText is written without xml:space="preserve", so Excel strips it and the lines
+	# run together. Prefixing each line's first run with "\n" keeps the break (the run text
+	# then differs from its stripped form, so openpyxl preserves the whitespace).
 	parts = []
 	for i, line in enumerate(lines):
-		if i:
-			parts.append("\n")
-		if not line:
-			continue
+		nl = "\n" if i else ""
 		# Whole-line red: WFH / OD tag, or an ABSENT header line.
 		if line in ("WFH", "OD") or line.startswith("ABSENT"):
-			parts.append(TextBlock(red_font, line))
+			parts.append(TextBlock(red_font, nl + line))
 			continue
 		idx = line.find(":")
 		if idx == -1:
-			parts.append(TextBlock(value_font, line))
+			parts.append(TextBlock(value_font, nl + line))
 			continue
 		label, value = line[: idx + 1], line[idx + 1:]
-		parts.append(TextBlock(label_font, label))
+		parts.append(TextBlock(label_font, nl + label))
 		lbl = label.strip().lower()
 		if value.strip() and (lbl.startswith("late time") or lbl.startswith("early out")) and not absent:
 			parts.append(TextBlock(red_font, value))
