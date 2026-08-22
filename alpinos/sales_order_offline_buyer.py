@@ -239,7 +239,7 @@ def site_exists_in_buyer_family(customer, site_name):
 	site_name = (site_name or "").strip()
 	if not customer or not site_name:
 		return False
-	masters = [m.name for m in (buyer_family_masters(customer) or [])]
+	masters = masters_for_customer_business(customer)
 	if not masters:
 		return False
 	if frappe.db.exists("Buyer Master", {"name": ["in", masters], "site_name": site_name}):
@@ -283,7 +283,7 @@ def assert_import_site_requirements(customer, site_name, customer_type=None):
 			title=_("Site Not Mapped"),
 		)
 	# (5) Resolve the SITE's OWN Buyer Master(s) - never the family parent.
-	masters = [m.name for m in (buyer_family_masters(customer) or [])]
+	masters = masters_for_customer_business(customer)
 	owners = _masters_owning_site(masters, site_name)
 	if not owners:
 		frappe.throw(
@@ -1155,6 +1155,26 @@ def buyer_family_masters(customer):
 		fields=["name", "customer", "site_name"],
 		order_by="creation asc",
 	)
+
+
+def masters_for_customer_business(customer):
+	"""Every Buyer Master that makes up this BUYER, for site validation.
+
+	A single buyer (e.g. an e-commerce entity such as SCOOTSY / Swiggy) typically has ONE
+	Buyer Master per GST / region, each linked to its OWN Customer id ("<Business> - <GST>")
+	and NOT joined by parent_buyer. Grouping only by the linked-customer family therefore
+	sees just one region's sites and rejects every other region's site as "not mapped".
+	So group by customer_business_name (the buyer itself), unioned with the parent_buyer
+	family to also cover masters named differently. Falls back to the customer's own name."""
+	names = set(m.name for m in (buyer_family_masters(customer) or []))
+	biz = frappe.db.get_value("Buyer Master", {"customer": customer}, "customer_business_name")
+	if not biz:
+		biz = frappe.db.get_value("Customer", customer, "customer_name")
+	if biz:
+		names.update(
+			frappe.get_all("Buyer Master", filters={"customer_business_name": biz}, pluck="name")
+		)
+	return list(names)
 
 
 def _masters_owning_site(master_names, site):
