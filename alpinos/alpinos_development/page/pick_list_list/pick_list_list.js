@@ -17,14 +17,41 @@ var PickListListPage = class {
 		this._prefs_route = 'pick_list_list';
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
-		// Opened from a Sales Order's "PL" button -> show every Pick List of that SO.
-		this.so_filter = (frappe.route_options && frappe.route_options.sales_order) || '';
-		if (frappe.route_options) delete frappe.route_options.sales_order;
+		this.so_filter = '';
+		this._suspend_auto = false;
 		this.setup_toolbar();
 		this.setup_filters();
-		this._restore_view_prefs();
+		// Arrived via a Sales Order's "PL" button -> scope to that SO as a CLEAN view (drop
+		// any stale manual filters). Otherwise restore the user's saved filters. Never both:
+		// an SO deep-link must not inherit whatever status/search was left on the list before.
+		if (!this._consume_so_route()) this._restore_view_prefs();
 		this.bind_events();
 		this.load_list();
+	}
+
+	_consume_so_route() {
+		// Read (and clear) an SO deep-link from route_options. When present, scope the list to
+		// that Sales Order and reset every other filter so ONLY that SO's Pick Lists show.
+		// Returns true when an SO link was consumed. Safe to call on every page show.
+		const so = (frappe.route_options && frappe.route_options.sales_order) || '';
+		if (frappe.route_options) delete frappe.route_options.sales_order;
+		if (!so) return false;
+		this.so_filter = so;
+		this._suspend_auto = true;   // programmatic sets must not trigger auto-apply loads
+		const set_sync = (c, v) => {
+			if (!c) return;
+			if (typeof c.set_input === 'function') c.set_input(v);
+			else c.set_value(v);
+		};
+		set_sync(this._filter_fields.search, '');
+		set_sync(this._filter_fields.status, '');
+		set_sync(this._filter_fields.company, '');
+		set_sync(this._filter_fields.delivery_note, '');
+		set_sync(this._filter_fields.sales_order, so);
+		this._suspend_auto = false;
+		this.start = 0;
+		this._render_so_banner();
+		return true;
 	}
 
 	_render_so_banner() {
@@ -37,7 +64,16 @@ var PickListListPage = class {
 		$b.html('<span>Showing Pick Lists for Sales Order <strong>' + frappe.utils.escape_html(this.so_filter) + '</strong></span>');
 		$('<button type="button" class="btn btn-xs btn-default">Show all</button>')
 			.appendTo($b)
-			.on('click', () => { this.so_filter = ''; this.start = 0; this._render_so_banner(); this.load_list(); });
+			.on('click', () => {
+				this.so_filter = '';
+				this._suspend_auto = true;
+				const c = this._filter_fields.sales_order;
+				if (c) (typeof c.set_input === 'function' ? c.set_input('') : c.set_value(''));
+				this._suspend_auto = false;
+				this.start = 0;
+				this._render_so_banner();
+				this.load_list();
+			});
 	}
 
 	setup_toolbar() {
@@ -139,13 +175,8 @@ var PickListListPage = class {
 			parent: w.find('.fld-delivery_note'),
 			render_input: true,
 		});
-		// Opened from a Sales Order's "PL" button -> prefill the SO filter so the list
-		// shows exactly why it is scoped (replaces the old standalone banner).
-		if (this.so_filter && this._filter_fields.sales_order) {
-			const c = this._filter_fields.sales_order;
-			if (typeof c.set_input === 'function') c.set_input(this.so_filter);
-			else c.set_value(this.so_filter);
-		}
+		// SO scoping is applied by _consume_so_route() (prefills the Sales Order control and
+		// clears the rest) so it also works on re-entry via on_page_show, not just first load.
 	}
 
 	bind_events() {
@@ -155,11 +186,33 @@ var PickListListPage = class {
 			this.load_list();
 		});
 		this.wrapper.find('.btn-pl-list-clear').on('click', () => {
+			this._suspend_auto = true;
 			Object.values(this._filter_fields).forEach((f) => f && f.set_value(''));
+			this._suspend_auto = false;
+			this.so_filter = '';
+			this._render_so_banner();
 			this.start = 0;
 			this._save_view_prefs();
 			this.load_list();
 		});
+
+		// Auto-apply: any filter change reloads immediately — no "Apply" click needed.
+		// Guarded by _suspend_auto so programmatic sets (SO scope, restore, clear) don't loop.
+		const auto = () => {
+			if (this._suspend_auto) return;
+			this.start = 0;
+			this._save_view_prefs();
+			this.load_list();
+		};
+		['status', 'company', 'sales_order', 'delivery_note'].forEach((k) => {
+			const c = this._filter_fields[k];
+			if (c && c.$input) c.$input.on('change awesomplete-selectcomplete', auto);
+		});
+		const s = this._filter_fields.search;
+		if (s && s.$input) {
+			s.$input.on('keydown', (e) => { if (e.which === 13) auto(); });
+			s.$input.on('input', frappe.utils.debounce(auto, 400));
+		}
 		this.wrapper.find('.pl-list-page-size').on('change', (e) => {
 			const v = cint($(e.currentTarget).val());
 			this.page_length = [20, 50, 100].includes(v) ? v : 20;
@@ -490,8 +543,12 @@ var PickListListPage = class {
 }
 
 frappe.pages['pick_list_list'].on_page_show = function (wrapper) {
-	if (wrapper.page_instance) {
-		wrapper.page_instance.start = 0;
-		wrapper.page_instance.load_list();
-	}
+	const p = wrapper.page_instance;
+	if (!p) return;
+	// Re-entering the page (instance is cached across navigations): if we arrived from a
+	// Sales Order's "PL" button, apply that SO scope and drop stale filters. A plain re-show
+	// just reloads with the current filters.
+	p._consume_so_route();
+	p.start = 0;
+	p.load_list();
 };
