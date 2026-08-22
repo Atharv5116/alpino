@@ -3,12 +3,25 @@
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_day, cint, flt, formatdate, format_time, get_datetime
+from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_day, cint, flt, formatdate, format_time, get_datetime, nowdate
 from datetime import datetime, timedelta
 import calendar
 from alpinos.alpinos_development.report.attendance_summary.attendance_summary_helpers import (
 	calculate_attendance_stats
 )
+
+
+def _display_end_date(from_date, to_date):
+	"""Last day to show as a day column / cell.
+
+	For an IN-PROGRESS month the grid stops at today, so it doesn't show empty future
+	dates (e.g. the remaining Sundays) mid-month. A finished (past) month shows the whole
+	month; a fully-future month also shows the whole month (nothing to cap). The monthly
+	SUMMARY totals are unaffected — they always cover the full month."""
+	today = getdate(nowdate())
+	if today >= getdate(to_date) or today < getdate(from_date):
+		return getdate(to_date)
+	return today
 
 
 def execute(filters=None):
@@ -71,7 +84,7 @@ def get_columns(from_date, to_date):
 	]
 
 	current_date = getdate(from_date)
-	end_date = getdate(to_date)
+	end_date = _display_end_date(from_date, to_date)
 	while current_date <= end_date:
 		day_num = current_date.day
 		day_name = calendar.day_name[current_date.weekday()][:3]
@@ -217,7 +230,7 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 
 	# Loop through each day of the month
 	current_date = getdate(from_date)
-	end_date = getdate(to_date)
+	end_date = _display_end_date(from_date, to_date)
 	
 	while current_date <= end_date:
 		day_num = current_date.day
