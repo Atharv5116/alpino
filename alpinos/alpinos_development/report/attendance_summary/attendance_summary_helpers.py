@@ -89,11 +89,17 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 	working_days_count = 0
 	shift_hours_cache = {}
 
-	def _short(att):
-		"""1 when a worked day's hours fell below its shift's expected span, else 0."""
+	def _short(att, date_str):
+		"""Day-value deduction for a WORKED day whose hours fell below its shift's expected
+		span: 0.5 (half a day) per short day, else 0. Days declared in the Holiday List —
+		Public Holidays and weekly-offs — are excluded: a holiday is never a shortage even
+		if the employee clocked in. The 0.5 IS the value the column shows and the value
+		subtracted from Present/Payable days (no separate x0.5 downstream)."""
+		if date_str in holiday_map:
+			return 0.0
 		wh = flt(att.get("working_hours"))
 		sh = _get_shift_hours(att.get("shift"), shift_hours_cache)
-		return 1 if (sh and wh and wh < sh) else 0
+		return 0.5 if (sh and wh and wh < sh) else 0.0
 
 	def _leave_amount(leave_type, amt):
 		try:
@@ -112,7 +118,7 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			if att.get("working_hours"):
 				total_working_hours += flt(att.get("working_hours"))
 				working_days_count += 1
-			stats.working_hours_shortage += _short(att)
+			stats.working_hours_shortage += _short(att, date_str)
 		elif status == "Absent":
 			stats.absent_days += 1
 		elif status == "Half Day":
@@ -132,14 +138,14 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			if att.get("working_hours"):
 				total_working_hours += flt(att.get("working_hours"))
 				working_days_count += 1
-			stats.working_hours_shortage += _short(att)
+			stats.working_hours_shortage += _short(att, date_str)
 		elif status == "On Duty":
 			stats.od += 1
 			stats.clock_in_days += 1
 			if att.get("working_hours"):
 				total_working_hours += flt(att.get("working_hours"))
 				working_days_count += 1
-			stats.working_hours_shortage += _short(att)
+			stats.working_hours_shortage += _short(att, date_str)
 
 	# Leaves not already covered by an attendance row.
 	for date_str, leave_info in leave_map.items():
