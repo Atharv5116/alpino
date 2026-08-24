@@ -147,6 +147,7 @@ def get_employees(filters, from_date, to_date):
 			employee_name,
 			status,
 			date_of_joining,
+			relieving_date,
 			department,
 			company
 		FROM `tabEmployee`
@@ -168,27 +169,36 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.date_of_joining = emp.date_of_joining
 	row.department = emp.department
 	row.company = emp.company
+
+	# An employee relieved mid-month is only countable up to their exit date. Cap the whole
+	# calculation (maps, stats, working / paid days) at the relieving date so days after they
+	# left are never counted; active employees keep the full month.
+	period_end = getdate(to_date)
+	if emp.get("relieving_date"):
+		rel = getdate(emp.relieving_date)
+		if getdate(from_date) <= rel < period_end:
+			period_end = rel
 	
 	# Calculate aging
 	if emp.date_of_joining:
-		row.aging = date_diff(to_date, emp.date_of_joining)
+		row.aging = date_diff(period_end, emp.date_of_joining)
 	else:
 		row.aging = 0
 	
 	# Get all attendance records for the month
-	attendance_map = get_attendance_map(emp.employee, from_date, to_date)
+	attendance_map = get_attendance_map(emp.employee, from_date, period_end)
 	
 	# Get holidays for the employee
-	holiday_map = get_holiday_map(emp.employee, from_date, to_date)
+	holiday_map = get_holiday_map(emp.employee, from_date, period_end)
 	
 	# Get leave applications
-	leave_map = get_leave_map(emp.employee, from_date, to_date)
+	leave_map = get_leave_map(emp.employee, from_date, period_end)
 	
 	# Get Work From Home Requests
-	wfh_map = get_wfh_map(emp.employee, from_date, to_date)
+	wfh_map = get_wfh_map(emp.employee, from_date, period_end)
 	
 	# Initialize statistics
-	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, to_date, emp.employee)
+	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, period_end, emp.employee)
 	
 	# Summary fields (Final Format layout).
 	row.clock_in_days = stats["clock_in_days"]
@@ -216,7 +226,7 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	#   Final Paid Days      = Payable - late penalty          (shortage already in Present)
 	# working_hours_shortage is ALREADY the day-value deduction (0.5 per short day), so it is
 	# subtracted directly here — the same figure shown in the Working Hours Shortage column.
-	total_days = date_diff(to_date, from_date) + 1
+	total_days = date_diff(period_end, from_date) + 1
 	row.month_working_days = flt(total_days - flt(stats["public_holiday"]) - flt(stats["weekend"]), 2)
 	row.present_working_days = flt(
 		flt(row.month_working_days)
