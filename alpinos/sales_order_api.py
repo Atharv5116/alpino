@@ -1502,11 +1502,13 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
                        from_quotation=None, po_no_for_pdf=None,
-                       submit_now=1, ecom_fields=None):
+                       submit_now=1, ecom_fields=None, billing_gstin=None):
 	"""Create a Sales Order from the custom entry page.
 
 	ecom_fields (JSON): optional e-com extra fields for offline Modern-Trade orders
 	(flags, PO Number/Date, GSTINs, freebie PO) — applied with channel='Offline'.
+	billing_gstin (#24): Billing GST No. for any Registered-Business buyer; the validate
+	hook still refines it site-wise (and keeps a manual value when it can't be resolved).
 	"""
 	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
 		items, freebies, scheme_items, additional_units_items
@@ -1522,6 +1524,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
+		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	if ecom_fields:
 		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
 		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
@@ -1552,10 +1556,11 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
                        additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
-                       from_quotation=None, po_no_for_pdf=None, ecom_fields=None):
+                       from_quotation=None, po_no_for_pdf=None, ecom_fields=None, billing_gstin=None):
 	"""Rewrite a draft Sales Order from the entry page (edit mode). Child tables
 	are rebuilt from the payload; owner, docstatus and the workflow status are
-	left untouched. ecom_fields (JSON): optional offline Modern-Trade extra fields."""
+	left untouched. ecom_fields (JSON): optional offline Modern-Trade extra fields.
+	billing_gstin (#24): Billing GST No. for any Registered-Business buyer."""
 	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
 		items, freebies, scheme_items, additional_units_items
 	)
@@ -1575,6 +1580,8 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
+		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	if ecom_fields:
 		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
 		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
