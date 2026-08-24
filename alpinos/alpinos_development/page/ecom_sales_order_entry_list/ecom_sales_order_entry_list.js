@@ -205,8 +205,13 @@ var EcomSalesOrderListPage = class {
 	setup_filters() {
 		const w = this.wrapper;
 		this._filters.search = frappe.ui.form.make_control({
-			df: { fieldtype: 'Data', fieldname: 'search', label: __('Search (ID, customer, PO)') },
+			df: { fieldtype: 'Data', fieldname: 'search', label: __('Search (ID, customer)') },
 			parent: w.find('.fld-search'), render_input: true,
+		});
+		// #27 Dedicated PO No. search — separate from the ID/customer box.
+		this._filters.po_no = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: 'po_no', label: __('PO No.') },
+			parent: w.find('.fld-po-no'), render_input: true,
 		});
 		this._filters.status = frappe.ui.form.make_control({
 			df: { fieldtype: 'Select', fieldname: 'status', label: __('Status'), options: ESO_STATUS_OPTIONS },
@@ -327,6 +332,7 @@ var EcomSalesOrderListPage = class {
 		alpinos.list_prefs.save(ESO_LIST_ROUTE, {
 			filters: {
 				search: val(f.search),
+				po_no: val(f.po_no),
 				status: val(f.status),
 				company: val(f.company),
 				workflow_status: val(f.workflow_status),
@@ -376,6 +382,7 @@ var EcomSalesOrderListPage = class {
 			page_length: this.page_length,
 			channel: 'E-com',
 			search: f.search.get_value() || '',
+			po_no: f.po_no.get_value() || '',
 			status: f.status.get_value() || '',
 			company: f.company.get_value() || '',
 			workflow_status: f.workflow_status.get_value() || '',

@@ -1882,6 +1882,7 @@ def get_sales_order_entry_list(
 	start=0,
 	page_length=20,
 	search=None,
+	po_no=None,
 	status=None,
 	workflow_status=None,
 	company=None,
@@ -1977,15 +1978,28 @@ def get_sales_order_entry_list(
 	if search:
 		safe = search.replace("%", "").replace("_", "")
 		like = f"%{safe}%"
+		# #27 The general search box is ID + customer ONLY — PO No. has its own field now,
+		# so an Order Id and a PO number can't collide in one box.
 		or_filters = [
 			["name", "like", like],
 			["customer", "like", like],
 			["customer_name", "like", like],
-			# PO number — e-com stores it on custom_po_number, offline on po_no. The
-			# search box advertises "ID, customer, PO", so both must be searchable.
-			["custom_po_number", "like", like],
-			["po_no", "like", like],
 		]
+
+	# #27 Dedicated PO No. search — matches the offline po_no OR the e-com custom_po_number.
+	# Applied as a name IN (...) filter so it ANDs cleanly with the general search OR group
+	# and every other filter (get_list allows only one or_filters group).
+	po_no = (po_no or "").strip()
+	if po_no:
+		safe_po = po_no.replace("%", "").replace("_", "")
+		po_like = f"%{safe_po}%"
+		po_names = frappe.get_all(
+			"Sales Order",
+			or_filters=[["po_no", "like", po_like], ["custom_po_number", "like", po_like]],
+			pluck="name",
+			limit=5000,
+		)
+		filters["name"] = ["in", po_names or ["__no_po_match__"]]
 
 	fields = [
 		"name",

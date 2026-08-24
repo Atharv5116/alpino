@@ -335,6 +335,17 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-search'),
 			render_input: true,
 		});
+		// #27 Dedicated PO No. search — separate from the ID/customer box so an Order Id
+		// and a Customer PO number can't be confused in one field.
+		this._filter_fields.po_no = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				fieldname: 'po_no',
+				label: __('PO No.'),
+			},
+			parent: w.find('.fld-po-no'),
+			render_input: true,
+		});
 		this._filter_fields.status = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Select',
@@ -533,6 +544,7 @@ var SalesOrderEntryListPage = class {
 		alpinos.list_prefs.save(SO_LIST_ROUTE, {
 			filters: {
 				search: val('search'),
+				po_no: val('po_no'),
 				status: val('status'),
 				workflow_status: val('workflow_status'),
 				company: val('company'),
@@ -602,6 +614,7 @@ var SalesOrderEntryListPage = class {
 			page_length: this.page_length,
 			channel: 'Offline',
 			search: f.search.get_value() || '',
+			po_no: f.po_no.get_value() || '',
 			status: f.status.get_value() || '',
 			workflow_status: f.workflow_status.get_value() || '',
 			company: f.company.get_value() || '',
