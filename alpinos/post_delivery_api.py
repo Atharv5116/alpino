@@ -94,7 +94,10 @@ def start_post_delivery(delivery_note):
 
 	so = frappe.db.get_value(
 		"Sales Order", sales_order,
-		["custom_channel", "custom_appointment_required", "custom_grn_available"],
+		[
+			"custom_channel", "custom_appointment_required", "custom_grn_available",
+			"po_no", "custom_po_number", "custom_invoice_no",
+		],
 		as_dict=True,
 	) or {}
 
@@ -103,6 +106,12 @@ def start_post_delivery(delivery_note):
 	pd.delivery_note = delivery_note
 	pd.customer = dn.customer
 	pd.channel = so.get("custom_channel") or ""
+	# #29 Post Dispatch fields: Customer's PO No. (offline po_no / e-com custom_po_number),
+	# Invoice No. (from the SO once synced), and Total Invoice Value = this DN's grand total
+	# (the dispatched/picked products WITH GST).
+	pd.customer_po_no = (so.get("po_no") or so.get("custom_po_number") or "")
+	pd.invoice_no = (so.get("custom_invoice_no") or "")
+	pd.total_invoice_value = flt(dn.get("grand_total") or dn.get("base_grand_total"))
 	pd.appointment_required = cint(so.get("custom_appointment_required"))
 	pd.grn_available = cint(so.get("custom_grn_available"))
 	# Transport (from DN)
