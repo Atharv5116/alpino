@@ -106,7 +106,7 @@ def get_ecom_item_defaults(customer, item_code):
 		"margin_percent": margin,
 		"selling_price": selling,
 		"gst_percent": flt(item.get("custom_gst_percent")),
-		"box_factor": flt(get_box_conversion_factor(item_code)),
+		"box_factor": flt(get_box_conversion_factor(item_code, strict=1)),
 	}
 
 

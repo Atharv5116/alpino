@@ -1070,12 +1070,17 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 
 
 @frappe.whitelist()
-def get_box_conversion_factor(item_code):
+def get_box_conversion_factor(item_code, strict=0):
 	"""Fetch Box UOM conversion factor from the Item's UOM table.
 
 	Variants inherit their template's UOM rows ("will also apply for variants"),
 	but those rows stay physically on the template — the variant has none of its
-	own. So when the variant has no Box row, fall back to its template."""
+	own. So when the variant has no Box row, fall back to its template.
+
+	strict=1 -> return None when neither the item nor its template has a 'Box' UOM,
+	so the Sales Order entry pages leave Box BLANK instead of mirroring qty
+	(#23 "UOM Not Available": don't apply Qty = Box). Default (strict=0) keeps the
+	legacy 1.0 fallback for every other caller (pick list, quotation, weight totals)."""
 	if not item_code:
 		return None
 
@@ -1095,9 +1100,10 @@ def get_box_conversion_factor(item_code):
 		cf = _box_cf(template)
 		if cf:
 			return cf
-	# No explicit "Box" UOM on the item or its template: default the factor to 1
-	# so box still mirrors qty ("at least something comes in box"), matching the
-	# behaviour we had before. A real Box UOM factor always takes precedence.
+	# No explicit "Box" UOM on the item or its template. strict callers (SO entry) get
+	# None so Box stays blank; everyone else keeps the legacy 1.0 (box mirrors qty).
+	if cint(strict):
+		return None
 	return 1.0
 
 

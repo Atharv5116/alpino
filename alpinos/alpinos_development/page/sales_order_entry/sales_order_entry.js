@@ -240,7 +240,7 @@ var SalesOrderEntry = class {
 		codes.forEach((item_code) => {
 			frappe.call({
 				method: 'alpinos.sales_order_api.get_box_conversion_factor',
-				args: { item_code: item_code },
+				args: { item_code: item_code, strict: 1 },
 				callback(rr) {
 					if (rr.message) me._box_cache[item_code] = rr.message;
 					left--;
@@ -1285,7 +1285,7 @@ var SalesOrderEntry = class {
 		// Fetch Box conversion factor
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_box_conversion_factor',
-			args: { item_code: item_code },
+			args: { item_code: item_code, strict: 1 },
 			callback: function(r) {
 				if (r.message) {
 					me._box_cache[item_code] = r.message;
@@ -1363,7 +1363,7 @@ var SalesOrderEntry = class {
 		if (cf) { apply(cf); return; }
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_box_conversion_factor',
-			args: { item_code: row.item_code },
+			args: { item_code: row.item_code, strict: 1 },
 			callback: function(r) { if (r.message) { me._box_cache[row.item_code] = r.message; apply(r.message); } }
 		});
 	}
