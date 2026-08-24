@@ -373,6 +373,7 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 			"name", "customer_type", "site_name", "channel",
 			"appointment_required", "grn_available",
 			"partial_order_allowed", "gst_exclusive_buyer", "gst_no",
+			"parent_buyer", "gst_type",
 		],
 		as_dict=True,
 	)
@@ -402,10 +403,31 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 		_site = (doc.get("custom_site_name") or "").strip() if has_site_field else ""
 		_site_gst = (_gst_for_site(_site, "") or "").strip().upper()
 		doc.tax_id = _site_gst
+		# #24 Billing GST No.: the site's GST when a Site resolves; else the buyer's OWN GST
+		# but ONLY when it has no Parent Buyer; else leave blank for manual entry. NEVER the
+		# Parent Buyer's GST. A value already entered is preserved when nothing auto-resolves.
 		if meta.has_field("custom_billing_gstin"):
-			doc.custom_billing_gstin = _site_gst
+			billing_gst = _site_gst
+			if not billing_gst and not row.get("parent_buyer"):
+				billing_gst = (row.get("gst_no") or "").strip().upper()
+			if billing_gst:
+				doc.custom_billing_gstin = billing_gst
+			# else: keep whatever is on the doc (manual entry) — don't clobber to blank
 		if meta.has_field("custom_shipping_gstin"):
 			doc.custom_shipping_gstin = _site_gst
+		# #24 Billing GST No. is mandatory for a Registered Business buyer. Enforced on new
+		# orders (the auto-fetch fills most; the entry pages allow manual entry for the rest)
+		# so editing a legacy order is never retroactively blocked.
+		if (
+			doc.is_new()
+			and meta.has_field("custom_billing_gstin")
+			and (row.get("gst_type") == "Registered Business")
+			and not (doc.get("custom_billing_gstin") or "").strip()
+		):
+			frappe.throw(
+				_("Billing GST No. is required for a Registered Business buyer — pick a Site whose GST resolves, or enter the Billing GST No. manually."),
+				title=_("Billing GST No. Required"),
+			)
 		# GST-Exclusive Buyer is a SITE-WISE property, exactly like GST No: always reflect
 		# the Buyer Master that owns the chosen site — on every save and for every entry path
 		# (offline / e-com / import), NOT the family parent picked up in `row`. Falls back to

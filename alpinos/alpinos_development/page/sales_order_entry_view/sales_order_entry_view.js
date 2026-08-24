@@ -647,7 +647,9 @@ var SalesOrderEntryView = class {
 					frappe.msgprint(__('Could not load Sales Order data.'));
 					return;
 				}
-				this.page.set_title(__('Alpino Sales Order View — {0}', [name]));
+				// #26 Show the Order Id FIRST so it stays visible beside the status badge
+				// (the long "Alpino Sales Order View — <id>" title truncated the id away).
+				this.page.set_title(name);
 				// Channel drives where Edit/Duplicate route (offline vs e-com entry).
 				this._channel = r.message.channel || '';
 				this.render(r.message);
@@ -747,7 +749,12 @@ var SalesOrderEntryView = class {
 		w.find('.v-shipping').text(shipping_txt);
 		w.find('.v-date').text(this._fmt_date(p, 'transaction_date'));
 		w.find('.v-po-no').text(this._has(p, 'po_no') ? this._plain_text(p.po_no) : '—');
-		w.find('.v-tax-id').text(this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—');
+		// #24 Billing GST No. — the site-wise billing GSTIN (custom_billing_gstin), falling
+		// back to tax_id; shows the manually-entered value too when nothing auto-resolved.
+		w.find('.v-tax-id').text(
+			(this._has(p, 'billing_gstin') && p.billing_gstin) ? this._plain_text(p.billing_gstin)
+			: (this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—')
+		);
 		w.find('.v-dispatch-date').text(this._fmt_date(p, 'custom_dispatch_date'));
 		w.find('.v-delivery-date').text(this._fmt_date(p, 'delivery_date'));
 		w.find('.v-created-by').text(this._plain_text(p.owner_full_name || p.owner || '—'));
