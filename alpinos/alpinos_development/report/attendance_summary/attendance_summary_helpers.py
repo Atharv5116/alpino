@@ -2,7 +2,7 @@
 # License: MIT
 
 import frappe
-from frappe.utils import date_diff, flt
+from frappe.utils import date_diff, flt, getdate
 
 
 def get_location_details(location):
@@ -97,6 +97,15 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		subtracted from Present/Payable days (no separate x0.5 downstream)."""
 		if date_str in holiday_map:
 			return 0.0
+		# Saturday is a HALF working day at Alpino, so ~half a shift is normal, not a
+		# shortage — measuring it against the full weekday shift wrongly flagged every
+		# worked Saturday. Saturday under-work is handled separately by the Saturday
+		# half-day / absent thresholds, so exclude Saturdays from Working-Hours-Shortage.
+		try:
+			if getdate(date_str).weekday() == 5:  # 5 = Saturday
+				return 0.0
+		except Exception:
+			pass
 		wh = flt(att.get("working_hours"))
 		sh = _get_shift_hours(att.get("shift"), shift_hours_cache)
 		return 0.5 if (sh and wh and wh < sh) else 0.0
