@@ -199,7 +199,22 @@ def save_pick_list_data(name, header, items, short_pick_action=None,
 	frappe.db.set_value('Pick List', name, {
 		k: v for k, v in header.items()
 	}, update_modified=False)
-	
+
+	# The Pick List's Dispatch Date MIRRORS the Sales Order (validate's _sync_order_information
+	# resets it to the SO's on every save). So when the user changes it on submit (e.g. the
+	# "Update to Today" popup), push it to the Sales Order — the source — otherwise the submit
+	# below would overwrite it straight back. This keeps SO -> Pick List -> Delivery Note in sync.
+	new_dispatch = header.get("custom_dispatch_date")
+	if new_dispatch:
+		so_id = doc.get("custom_sales_order_id") or next(
+			(r.sales_order for r in (doc.locations or []) if r.sales_order), None
+		)
+		if so_id:
+			cur = frappe.db.get_value("Sales Order", so_id, "custom_dispatch_date")
+			if str(cur or "").split(" ")[0] != str(new_dispatch).split(" ")[0]:
+				frappe.db.set_value("Sales Order", so_id, "custom_dispatch_date", new_dispatch, update_modified=False)
+
+
 	# Step 2: Write all item row values directly to DB (bypass ORM/hooks re-calculation)
 	for item_data in items:
 		item_doc = [d for d in doc.locations if d.name == item_data.get('name')]
@@ -518,6 +533,15 @@ def create_and_submit_pick_list(so_name, header, items, removed_rows=None,
 		frappe.throw(frappe._("You are not permitted to create Pick Lists."), frappe.PermissionError)
 	if not frappe.has_permission("Pick List", "submit"):
 		frappe.throw(frappe._("You are not permitted to submit Pick Lists."), frappe.PermissionError)
+	# Dispatch Date mirrors the Sales Order, so a user-set date (e.g. "Update to Today" on
+	# submit) must go to the SO first — otherwise the new Pick List inherits/validates back to
+	# the SO's old date. Mirrors save_pick_list_data.
+	_hdr = json.loads(header) if isinstance(header, str) else (header or {})
+	_new_dispatch = _hdr.get("custom_dispatch_date")
+	if _new_dispatch and so_name:
+		_cur = frappe.db.get_value("Sales Order", so_name, "custom_dispatch_date")
+		if str(_cur or "").split(" ")[0] != str(_new_dispatch).split(" ")[0]:
+			frappe.db.set_value("Sales Order", so_name, "custom_dispatch_date", _new_dispatch, update_modified=False)
 	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows, remaining_only)
 	_fill_short_pick_remarks(pick_list, short_pick_reason)
 	pick_list.submit()
