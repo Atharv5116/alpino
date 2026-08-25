@@ -124,6 +124,13 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		user = frappe.db.get_value("Employee", self.employee, "user_id") if self.employee else None
 		return bool(user) and "HR Manager" in frappe.get_roles(user)
 
+	def _session_is_hr_manager(self):
+		"""True when the person RAISING / editing this request is an HR Manager. They correct
+		historical attendance on an employee's behalf, so the date-window / edit-count limits
+		must not block them (the employee-role check above only covers an HR Manager's own
+		request)."""
+		return "HR Manager" in frappe.get_roles(frappe.session.user)
+
 	# ----- Rules 3 & 7: single-day unless the reason is On Duty -----
 	def _apply_single_day_or_range(self):
 		if self.reason == "On Duty":
@@ -144,7 +151,8 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# On Duty is a duty assignment, not a missing-punch edit — no date window at all.
 		if self.reason == "On Duty":
 			return
-		if self._is_hr_manager():
+		# HR Manager exempt — whether it's their own request OR they're raising it for an employee.
+		if self._is_hr_manager() or self._session_is_hr_manager():
 			return
 		today = getdate(now_datetime())
 		earliest = add_days(today, -7)
