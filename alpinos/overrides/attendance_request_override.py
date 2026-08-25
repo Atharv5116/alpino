@@ -189,7 +189,9 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# On Duty never consumes the monthly edit balance.
 		if self.reason == "On Duty":
 			return
-		if self._is_hr_manager():
+		# HR Manager is exempt from the monthly cap — whether it's their own request
+		# (employee-side) or they're raising/correcting one for someone else (session-side).
+		if self._is_hr_manager() or self._session_is_hr_manager():
 			return
 		# The count is reserved only when the request is sent for approval (or approved); while
 		# it is still a Draft (being prepared) or has been Rejected it consumes nothing. So only
