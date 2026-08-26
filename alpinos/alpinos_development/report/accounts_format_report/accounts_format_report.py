@@ -490,23 +490,24 @@ def _get_data(filters):
 		# show the wrong state. Offline orders (no free text) keep the Address record's scp.
 		bill_free = (so.get("custom_billing_address_text") or "").strip()
 		ship_free = (so.get("custom_shipping_address_text") or "").strip()
+		# The SITE's Buyer Master Address (keyed by THIS order's site) is structured and
+		# authoritative, so it ranks ABOVE the heuristic free-text parse — which can mis-read a
+		# messy address (e.g. pick "Delhi" out of "Old delhi road" and "NH-2" as the city). Only
+		# a Family Address matched back from the exact free text (bill_scp/ship_scp) outranks it.
+		site_scp = _scp_for_site(so.get("custom_site_name")) or {}
 		if bill_free:
 			bill_scp = _resolve_scp_from_text(so.customer, bill_free, addr_cache) or {}
 			free_scp = _scp_from_free_text(bill_free)  # same text as the printed lines
-			bill["state"] = bill_scp.get("state") or free_scp.get("state") or ""
-			bill["city"] = bill_scp.get("city") or free_scp.get("city") or ""
-			bill["pincode"] = bill_scp.get("pincode") or free_scp.get("pincode") or ""
+			bill["state"] = bill_scp.get("state") or site_scp.get("state") or free_scp.get("state") or ""
+			bill["city"] = bill_scp.get("city") or site_scp.get("city") or free_scp.get("city") or ""
+			bill["pincode"] = bill_scp.get("pincode") or site_scp.get("pincode") or free_scp.get("pincode") or ""
 		if ship_free:
 			ship_scp = _resolve_scp_from_text(so.customer, ship_free, addr_cache) or {}
 			free_scp = _scp_from_free_text(ship_free)
-			ship["state"] = ship_scp.get("state") or free_scp.get("state") or ""
-			ship["city"] = ship_scp.get("city") or free_scp.get("city") or ""
-			ship["pincode"] = ship_scp.get("pincode") or free_scp.get("pincode") or ""
-		# Structured fallback: when city/state/pincode couldn't be resolved from the address
-		# text (e.g. a misspelled state like "Maharastra"), fill them from the SITE's Buyer
-		# Master Address child row (structured, correct). Only fills blanks — never overrides
-		# a value already resolved from the printed address lines.
-		site_scp = _scp_for_site(so.get("custom_site_name"))
+			ship["state"] = ship_scp.get("state") or site_scp.get("state") or free_scp.get("state") or ""
+			ship["city"] = ship_scp.get("city") or site_scp.get("city") or free_scp.get("city") or ""
+			ship["pincode"] = ship_scp.get("pincode") or site_scp.get("pincode") or free_scp.get("pincode") or ""
+		# Final structured fallback for offline orders (no free text) or anything still blank.
 		if site_scp:
 			for _d in (bill, ship):
 				_d["state"] = _d.get("state") or site_scp.get("state") or ""
