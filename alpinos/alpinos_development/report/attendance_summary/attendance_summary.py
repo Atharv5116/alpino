@@ -406,8 +406,13 @@ def get_holiday_map(employee, from_date, to_date):
 		holiday_map = {}
 		for holiday in holidays:
 			date_str = holiday.holiday_date.strftime("%Y-%m-%d")
+			# Holiday description is a rich-text (ql-editor) field, so it carries HTML markup.
+			# Strip the tags and collapse whitespace so the cell reads "HOLIDAY - Diwali", not
+			# "HOLIDAY - <div class="ql-editor read-mode">…".
+			desc = frappe.utils.strip_html_tags(holiday.description or "")
+			desc = " ".join(desc.split()).strip() or "Holiday"
 			holiday_map[date_str] = {
-				"description": holiday.description or "Holiday",
+				"description": desc,
 				"weekly_off": cint(holiday.weekly_off),
 			}
 		
