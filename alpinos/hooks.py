@@ -140,6 +140,7 @@ patches = [
 
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
+	"alpinos.default_present.setup_default_present_field",
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
 	"alpinos.employee_field_visibility.execute",
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
@@ -496,6 +497,11 @@ scheduler_events = {
 		],
 		"30 11 * * *": [
 			"alpinos.attendance_alerts.notify_missing_checkins"
+		],
+		# Pre-mark Default-Present employees early (before the IST workday) so the punch-based
+		# auto-attendance finds an Attendance already there and skips it.
+		"15 1 * * *": [
+			"alpinos.default_present.run_daily"
 		]
 	}
 }
