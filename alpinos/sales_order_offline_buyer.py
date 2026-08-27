@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Alpinos and contributors
 # License: MIT
 
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import cint, flt
@@ -373,6 +375,7 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 			"name", "customer_type", "site_name", "channel",
 			"appointment_required", "grn_available",
 			"partial_order_allowed", "gst_exclusive_buyer", "gst_no",
+			"parent_buyer", "gst_type",
 		],
 		as_dict=True,
 	)
@@ -402,10 +405,31 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 		_site = (doc.get("custom_site_name") or "").strip() if has_site_field else ""
 		_site_gst = (_gst_for_site(_site, "") or "").strip().upper()
 		doc.tax_id = _site_gst
+		# #24 Billing GST No.: the site's GST when a Site resolves; else the buyer's OWN GST
+		# but ONLY when it has no Parent Buyer; else leave blank for manual entry. NEVER the
+		# Parent Buyer's GST. A value already entered is preserved when nothing auto-resolves.
 		if meta.has_field("custom_billing_gstin"):
-			doc.custom_billing_gstin = _site_gst
+			billing_gst = _site_gst
+			if not billing_gst and not row.get("parent_buyer"):
+				billing_gst = (row.get("gst_no") or "").strip().upper()
+			if billing_gst:
+				doc.custom_billing_gstin = billing_gst
+			# else: keep whatever is on the doc (manual entry) — don't clobber to blank
 		if meta.has_field("custom_shipping_gstin"):
 			doc.custom_shipping_gstin = _site_gst
+		# #24 Billing GST No. is mandatory for a Registered Business buyer. Enforced on new
+		# orders (the auto-fetch fills most; the entry pages allow manual entry for the rest)
+		# so editing a legacy order is never retroactively blocked.
+		if (
+			doc.is_new()
+			and meta.has_field("custom_billing_gstin")
+			and (row.get("gst_type") == "Registered Business")
+			and not (doc.get("custom_billing_gstin") or "").strip()
+		):
+			frappe.throw(
+				_("Billing GST No. is required for a Registered Business buyer — pick a Site whose GST resolves, or enter the Billing GST No. manually."),
+				title=_("Billing GST No. Required"),
+			)
 		# GST-Exclusive Buyer is a SITE-WISE property, exactly like GST No: always reflect
 		# the Buyer Master that owns the chosen site — on every save and for every entry path
 		# (offline / e-com / import), NOT the family parent picked up in `row`. Falls back to
@@ -487,6 +511,52 @@ def _find_customer_address(customer, line1: str, city: str, pincode: str):
 	return found[0][0] if found else None
 
 
+def _insert_address_resilient(addr):
+	"""Insert an Address, healing naming-series drift.
+
+	Address.autoname pulls the next number from a shared naming series (e.g. the prefix
+	``Primary-Billing-``). After a DB restore/clone the ``tabSeries`` counter for that prefix
+	can lag the real max Address name, so autoname hands out an already-used name and the
+	INSERT dies with a DuplicateEntryError. Catch it, push the series past the real max, and
+	retry once; fall back to a hash suffix if it still collides. Idempotent and safe on a
+	healthy DB (the try succeeds first time and returns immediately).
+	"""
+	try:
+		addr.insert(ignore_permissions=True)
+		return addr.name
+
+	except frappe.DuplicateEntryError:
+		clashed = addr.name or ""
+		m = re.match(r"^(?P<prefix>.*?)(?P<num>\d+)$", clashed)
+		if m:
+			prefix = m.group("prefix")
+			mx = frappe.db.sql(
+				"""SELECT MAX(CAST(SUBSTRING(name, %s) AS UNSIGNED))
+				   FROM `tabAddress` WHERE name LIKE %s""",
+				(len(prefix) + 1, prefix + "%"),
+			)[0][0] or int(m.group("num"))
+			# Bump the series past the real max so the next autoname is free.
+			frappe.db.sql(
+				"""INSERT INTO `tabSeries` (name, current) VALUES (%s, %s)
+				   ON DUPLICATE KEY UPDATE current = GREATEST(current, VALUES(current))""",
+				(prefix, mx),
+			)
+		# Let autoname compute a fresh name off the corrected series.
+		addr.name = None
+		addr.flags.name_set = False
+		try:
+			addr.insert(ignore_permissions=True)
+		except frappe.DuplicateEntryError:
+			# Last resort: force a guaranteed-unique name.
+			addr.name = "{0}-{1}".format(
+				frappe.scrub(addr.address_title or "address")[:80],
+				frappe.generate_hash(length=6),
+			)
+			addr.flags.name_set = True
+			addr.insert(ignore_permissions=True)
+		return addr.name
+
+
 def _ensure_address_doc(
 	customer,
 	*,
@@ -539,7 +609,7 @@ def _ensure_address_doc(
 	addr.country = country_name
 	addr.pincode = _nz(pincode)
 	addr.append("links", {"link_doctype": "Customer", "link_name": customer})
-	addr.insert(ignore_permissions=True)
+	_insert_address_resilient(addr)
 
 	return addr.name
 
@@ -561,7 +631,10 @@ def _offline_buyer_addresses_for_addresses_table(obm_doc):
 			addr_type = "Shipping"
 		else:
 			addr_type = "Billing"  # all OBM addresses are usable as billing
-		addr_title_parts = []
+		# Lead with the customer so the Address naming series is scoped per-buyer
+		# (e.g. "Protein 1St — Primary-Billing") instead of every buyer's primary/shipping
+		# address colliding in one global "Primary-Billing-" series.
+		addr_title_parts = [_nz(customer)]
 		if _nz(obrow.get("site_name")):
 			addr_title_parts.append(_nz(obrow.get("site_name")))
 		if _nz(obrow.get("address_label")):
@@ -570,7 +643,7 @@ def _offline_buyer_addresses_for_addresses_table(obm_doc):
 			addr_title_parts.append(_("Primary"))
 		elif is_shipping:
 			addr_title_parts.append(_("Shipping"))
-		address_title = " — ".join(addr_title_parts) if addr_title_parts else _nz(customer)[:40]
+		address_title = " — ".join(p for p in addr_title_parts if p) or _nz(customer)[:40]
 
 		return _ensure_address_doc(
 			customer,
@@ -698,10 +771,11 @@ def _ensure_shipping_address_from_obm(obm_doc, billing_default_name: str | None)
 		return billing_default_name or None
 
 	sh_site = _nz(primary.get("site_name"))
-	addr_title_parts = [_("Shipping")]
+	# Customer-scoped title (see row_to_addr) so the shipping series doesn't collide globally.
+	addr_title_parts = [_nz(customer), _("Shipping")]
 	if sh_site:
 		addr_title_parts.append(sh_site)
-	address_title = " — ".join(addr_title_parts)[:140]
+	address_title = " — ".join(p for p in addr_title_parts if p)[:140]
 
 	city_txt = _nz(sh_city_link) if sh_city_link else _nz(primary.get("city"))
 	state_txt = _nz(sh_state_link) if sh_state_link else _nz(primary.get("state"))

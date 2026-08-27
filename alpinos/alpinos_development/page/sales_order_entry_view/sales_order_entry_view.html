@@ -110,18 +110,20 @@
 		<h5 class="so-view-section-title alp-section-title">Customer Details</h5>
 		<table class="table table-bordered so-view-kv">
 			<tbody>
+				<!-- #26 field order: Customer Name, Purchase Order #, Site Name, GST No.,
+				     Billing Address, Shipping Address, Dispatch Date, Customer Type, Created On, then the rest. -->
 				<tr data-row="customer_name"><td class="text-muted">Customer Name</td><td class="v-customer-name">—</td></tr>
-				<tr data-row="order_type"><td class="text-muted">Customer Type</td><td class="v-order-type">—</td></tr>
+				<tr data-row="po_no"><td class="text-muted">Purchase Order #</td><td class="v-po-no">—</td></tr>
 				<tr data-row="custom_site_name"><td class="text-muted">Site Name</td><td class="v-site-name">—</td></tr>
+				<tr data-row="tax_id"><td class="text-muted">Billing GST No.</td><td class="v-tax-id">—</td></tr>
 				<tr data-row="address_display"><td class="text-muted">Billing Address</td><td class="v-billing so-view-address">—</td></tr>
 				<tr data-row="shipping_address"><td class="text-muted">Shipping Address</td><td class="v-shipping so-view-address">—</td></tr>
-				<tr data-row="transaction_date"><td class="text-muted">Date</td><td class="v-date">—</td></tr>
-				<tr data-row="po_no"><td class="text-muted">Purchase Order #</td><td class="v-po-no">—</td></tr>
-				<tr data-row="tax_id"><td class="text-muted">GSTIN</td><td class="v-tax-id">—</td></tr>
 				<tr data-row="custom_dispatch_date"><td class="text-muted">Dispatch Date</td><td class="v-dispatch-date">—</td></tr>
+				<tr data-row="order_type"><td class="text-muted">Customer Type</td><td class="v-order-type">—</td></tr>
+				<tr data-row="creation"><td class="text-muted">Created On</td><td class="v-created-on">—</td></tr>
+				<tr data-row="transaction_date"><td class="text-muted">Date</td><td class="v-date">—</td></tr>
 				<tr data-row="delivery_date"><td class="text-muted">Delivery Date</td><td class="v-delivery-date">—</td></tr>
 				<tr data-row="owner"><td class="text-muted">Created By</td><td class="v-created-by">—</td></tr>
-				<tr data-row="creation"><td class="text-muted">Created On</td><td class="v-created-on">—</td></tr>
 				<tr class="v-ecom-flags-row" style="display: none;"><td class="text-muted">Order Flags</td><td class="v-ecom-flags">—</td></tr>
 			</tbody>
 		</table>

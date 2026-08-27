@@ -9,6 +9,9 @@
   "sales_order",
   "delivery_note",
   "customer",
+  "customer_po_no",
+  "invoice_no",
+  "total_invoice_value",
   "channel",
   "column_break_head",
   "post_delivery_status",
@@ -84,6 +87,27 @@
    "in_list_view": 1,
    "label": "Customer",
    "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "customer_po_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Customer's PO No.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "label": "Invoice No.",
+   "read_only": 1
+  },
+  {
+   "description": "Total of the dispatched (picked) products including GST.",
+   "fieldname": "total_invoice_value",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Total Invoice Value",
    "read_only": 1
   },
   {
@@ -335,7 +359,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-28 13:00:00.000000",
+ "modified": "2026-08-22 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Post Dispatch",

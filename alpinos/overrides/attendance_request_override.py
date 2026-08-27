@@ -400,8 +400,55 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# Default to Present if no match (Office, Other, or empty)
 		return "Present"
 	
+	def _should_defer_same_day_marking(self, date):
+		"""Same-day, day-still-open: when the request is for TODAY and the employee has
+		checked in but NOT out yet — so the auto-attendance scheduler hasn't marked the day —
+		creating an Attendance now would record a FALSE Absent (a check-in with no check-out
+		is 0 hours -> Absent), even though the person is in the office.
+
+		Defer instead: the requested check-in edit is already applied to the Employee Checkin
+		(see _apply_requested_checkins), so we skip marking and let the auto-attendance
+		scheduler mark the day correctly once it completes (check-out arrives / shift ends).
+
+		Only for a punch-derived status: On Duty / Work From Home / Half Day carry a definite
+		status that does NOT depend on a check-out, so they still mark immediately. Past (and
+		future) dates mark immediately too — this is strictly a current-day, open-day guard.
+		"""
+		if getdate(date) != getdate(now_datetime()):
+			return False
+		if self.reason in ("Work From Home", "On Duty"):
+			return False
+		if self.half_day and self.half_day_date and getdate(self.half_day_date) == getdate(date):
+			return False
+		day = getdate(date)
+		has_out = frappe.db.exists(
+			"Employee Checkin",
+			{
+				"employee": self.employee,
+				"log_type": "OUT",
+				"time": ["between", [get_datetime(f"{day} 00:00:00"), get_datetime(f"{day} 23:59:59")]],
+			},
+		)
+		return not has_out
+
 	def create_or_update_attendance(self, date: str):
 		doc = self.get_attendance_doc(date)
+
+		# DEFER a same-day, still-open day: the employee has checked in but not out, and nothing
+		# is marked yet. Marking now would create a false Absent. The requested check-in edit is
+		# already applied to the Employee Checkin, so skip marking and let the auto-attendance
+		# scheduler mark the day once it completes.
+		if not doc and self._should_defer_same_day_marking(date):
+			frappe.msgprint(
+				_(
+					"Check-in updated for {0}. Attendance will be marked automatically once the "
+					"day completes — it is not marked now because check-out is still pending."
+				).format(frappe.bold(frappe.utils.formatdate(date))),
+				title=_("Check-in Updated"),
+				indicator="blue",
+			)
+			return
+
 		status = self.get_attendance_status(date)
 		
 		from frappe.utils import get_datetime

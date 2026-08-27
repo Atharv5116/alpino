@@ -1082,12 +1082,17 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 
 
 @frappe.whitelist()
-def get_box_conversion_factor(item_code):
+def get_box_conversion_factor(item_code, strict=0):
 	"""Fetch Box UOM conversion factor from the Item's UOM table.
 
 	Variants inherit their template's UOM rows ("will also apply for variants"),
 	but those rows stay physically on the template — the variant has none of its
-	own. So when the variant has no Box row, fall back to its template."""
+	own. So when the variant has no Box row, fall back to its template.
+
+	strict=1 -> return None when neither the item nor its template has a 'Box' UOM,
+	so the Sales Order entry pages leave Box BLANK instead of mirroring qty
+	(#23 "UOM Not Available": don't apply Qty = Box). Default (strict=0) keeps the
+	legacy 1.0 fallback for every other caller (pick list, quotation, weight totals)."""
 	if not item_code:
 		return None
 
@@ -1107,9 +1112,10 @@ def get_box_conversion_factor(item_code):
 		cf = _box_cf(template)
 		if cf:
 			return cf
-	# No explicit "Box" UOM on the item or its template: default the factor to 1
-	# so box still mirrors qty ("at least something comes in box"), matching the
-	# behaviour we had before. A real Box UOM factor always takes precedence.
+	# No explicit "Box" UOM on the item or its template. strict callers (SO entry) get
+	# None so Box stays blank; everyone else keeps the legacy 1.0 (box mirrors qty).
+	if cint(strict):
+		return None
 	return 1.0
 
 
@@ -1508,11 +1514,13 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
                        from_quotation=None, po_no_for_pdf=None,
-                       submit_now=1, ecom_fields=None):
+                       submit_now=1, ecom_fields=None, billing_gstin=None):
 	"""Create a Sales Order from the custom entry page.
 
 	ecom_fields (JSON): optional e-com extra fields for offline Modern-Trade orders
 	(flags, PO Number/Date, GSTINs, freebie PO) — applied with channel='Offline'.
+	billing_gstin (#24): Billing GST No. for any Registered-Business buyer; the validate
+	hook still refines it site-wise (and keeps a manual value when it can't be resolved).
 	"""
 	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
 		items, freebies, scheme_items, additional_units_items
@@ -1528,6 +1536,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
+		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	if ecom_fields:
 		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
 		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
@@ -1558,10 +1568,11 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
                        additional_units_items=None,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
-                       from_quotation=None, po_no_for_pdf=None, ecom_fields=None):
+                       from_quotation=None, po_no_for_pdf=None, ecom_fields=None, billing_gstin=None):
 	"""Rewrite a draft Sales Order from the entry page (edit mode). Child tables
 	are rebuilt from the payload; owner, docstatus and the workflow status are
-	left untouched. ecom_fields (JSON): optional offline Modern-Trade extra fields."""
+	left untouched. ecom_fields (JSON): optional offline Modern-Trade extra fields.
+	billing_gstin (#24): Billing GST No. for any Registered-Business buyer."""
 	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
 		items, freebies, scheme_items, additional_units_items
 	)
@@ -1581,6 +1592,8 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
+		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	if ecom_fields:
 		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
 		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
@@ -1888,6 +1901,7 @@ def get_sales_order_entry_list(
 	start=0,
 	page_length=20,
 	search=None,
+	po_no=None,
 	status=None,
 	workflow_status=None,
 	company=None,
@@ -1983,15 +1997,28 @@ def get_sales_order_entry_list(
 	if search:
 		safe = search.replace("%", "").replace("_", "")
 		like = f"%{safe}%"
+		# #27 The general search box is ID + customer ONLY — PO No. has its own field now,
+		# so an Order Id and a PO number can't collide in one box.
 		or_filters = [
 			["name", "like", like],
 			["customer", "like", like],
 			["customer_name", "like", like],
-			# PO number — e-com stores it on custom_po_number, offline on po_no. The
-			# search box advertises "ID, customer, PO", so both must be searchable.
-			["custom_po_number", "like", like],
-			["po_no", "like", like],
 		]
+
+	# #27 Dedicated PO No. search — matches the offline po_no OR the e-com custom_po_number.
+	# Applied as a name IN (...) filter so it ANDs cleanly with the general search OR group
+	# and every other filter (get_list allows only one or_filters group).
+	po_no = (po_no or "").strip()
+	if po_no:
+		safe_po = po_no.replace("%", "").replace("_", "")
+		po_like = f"%{safe_po}%"
+		po_names = frappe.get_all(
+			"Sales Order",
+			or_filters=[["po_no", "like", po_like], ["custom_po_number", "like", po_like]],
+			pluck="name",
+			limit=5000,
+		)
+		filters["name"] = ["in", po_names or ["__no_po_match__"]]
 
 	fields = [
 		"name",

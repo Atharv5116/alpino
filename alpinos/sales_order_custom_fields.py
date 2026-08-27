@@ -139,6 +139,16 @@ def setup_sales_order_custom_fields():
 				read_only=0,
 				description="Defaults from the customer's Buyer Master (site_name) when blank; editable per order. Shown on the entry page instead of Company.",
 			),
+			# #24 Billing GST No. — fetched site-wise from the Buyer Master (never the Parent
+			# Buyer's); editable so it can be entered when it can't be auto-resolved.
+			dict(
+				fieldname="custom_billing_gstin",
+				label="Billing GST No.",
+				fieldtype="Data",
+				insert_after="custom_site_name",
+				read_only=0,
+				description="Billing GST No. Auto-fetched site-wise from the Buyer Master when a Site is selected; otherwise the buyer's own GST — never the Parent Buyer's. Enter it manually when it can't be auto-fetched. Mandatory for Registered Business buyers.",
+			),
 			# Invoice (external) — populated by the Invoice PDF sync; shown only once Dispatched.
 			dict(
 				fieldname="custom_invoice_section",

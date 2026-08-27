@@ -240,7 +240,7 @@ var SalesOrderEntry = class {
 		codes.forEach((item_code) => {
 			frappe.call({
 				method: 'alpinos.sales_order_api.get_box_conversion_factor',
-				args: { item_code: item_code },
+				args: { item_code: item_code, strict: 1 },
 				callback(rr) {
 					if (rr.message) me._box_cache[item_code] = rr.message;
 					left--;
@@ -588,6 +588,15 @@ var SalesOrderEntry = class {
 		});
 		this.tax_template_field.$input && this.tax_template_field.$input.prop('readonly', true);
 
+		// #24 Billing GST No. — general field for EVERY Registered-Business buyer (not just
+		// Modern Trade). Editable so it can be entered when it can't be auto-resolved; the
+		// server fetches it site-wise on save (and never uses the parent buyer's GST).
+		this.billing_gstin_field = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', label: 'Billing GST No.', fieldname: 'billing_gstin', length: 15 },
+			parent: header.find('.field-billing-gstin'),
+			render_input: true,
+		});
+
 		// Created By: read-only; the session user for new orders (Frappe stores
 		// it as the doc owner on insert), the original owner when editing.
 		this.created_by_field = frappe.ui.form.make_control({
@@ -716,7 +725,6 @@ var SalesOrderEntry = class {
 				<div class="row">
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-po-number"></div></div>
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-po-date"></div></div>
-					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-billing-gstin"></div></div>
 					<div class="col-md-3 col-sm-6" style="margin-bottom:8px;"><div class="mt-fld-shipping-gstin"></div></div>
 				</div>
 				<div class="row">
@@ -746,7 +754,7 @@ var SalesOrderEntry = class {
 			gst_excl: mk('.mt-fld-gst-excl', { fieldtype: 'Check', fieldname: 'gst_exclusive_buyer', label: 'GST-Exclusive Buyer' }),
 			po_number: mk('.mt-fld-po-number', { fieldtype: 'Data', fieldname: 'po_number', label: 'PO Number' }),
 			po_date: mk('.mt-fld-po-date', { fieldtype: 'Date', fieldname: 'po_date', label: 'PO Date' }),
-			billing_gstin: mk('.mt-fld-billing-gstin', { fieldtype: 'Data', fieldname: 'billing_gstin', label: 'Billing GSTIN' }),
+			// #24 Billing GST No. moved to the general Address & Tax section (this.billing_gstin_field).
 			shipping_gstin: mk('.mt-fld-shipping-gstin', { fieldtype: 'Data', fieldname: 'shipping_gstin', label: 'Shipping GSTIN' }),
 			delivery_by: mk('.mt-fld-delivery-by', { fieldtype: 'Date', fieldname: 'delivery_by_date', label: 'Delivery By Date' }),
 			freebie_po: mk('.mt-fld-freebie-po', { fieldtype: 'Check', fieldname: 'is_freebie_po', label: 'Freebies (Entire PO Free)' }),
@@ -826,7 +834,7 @@ var SalesOrderEntry = class {
 			this.mt.po_number.set_value(s.po_number || '');
 			this.mt.po_date.set_value(s.po_date || '');
 			this.mt.delivery_by.set_value(s.delivery_by_date || '');
-			this.mt.billing_gstin.set_value(s.billing_gstin || '');
+			this.billing_gstin_field.set_value(s.billing_gstin || '');
 			this.mt.shipping_gstin.set_value(s.shipping_gstin || '');
 			this.mt.freebie_po.set_value(cint(s.is_freebie_po));
 			this.mt_stickers = (s.sticker_attachments || []).map((st) => ({
@@ -843,7 +851,7 @@ var SalesOrderEntry = class {
 		this.mt.gst_excl.set_value(cint(buyer.gst_exclusive_buyer));
 		this._toggle_gst_excl_note && this._toggle_gst_excl_note();
 		if (buyer.gst_no) {
-			if (!this.mt.billing_gstin.get_value()) this.mt.billing_gstin.set_value(buyer.gst_no);
+			if (!this.billing_gstin_field.get_value()) this.billing_gstin_field.set_value(buyer.gst_no);
 			if (!this.mt.shipping_gstin.get_value()) this.mt.shipping_gstin.set_value(buyer.gst_no);
 		}
 	}
@@ -860,7 +868,7 @@ var SalesOrderEntry = class {
 			po_number: this.mt.po_number.get_value() || '',
 			po_date: this.mt.po_date.get_value() || '',
 			delivery_by_date: this.mt.delivery_by.get_value() || '',
-			billing_gstin: this.mt.billing_gstin.get_value() || '',
+			billing_gstin: this.billing_gstin_field.get_value() || '',
 			shipping_gstin: this.mt.shipping_gstin.get_value() || '',
 			is_freebie_po: cint(this.mt.freebie_po.get_value()),
 			sticker_attachments: (this.mt_stickers || []).filter((s) => s.attachment).map((s) => ({
@@ -1285,7 +1293,7 @@ var SalesOrderEntry = class {
 		// Fetch Box conversion factor
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_box_conversion_factor',
-			args: { item_code: item_code },
+			args: { item_code: item_code, strict: 1 },
 			callback: function(r) {
 				if (r.message) {
 					me._box_cache[item_code] = r.message;
@@ -1363,7 +1371,7 @@ var SalesOrderEntry = class {
 		if (cf) { apply(cf); return; }
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_box_conversion_factor',
-			args: { item_code: row.item_code },
+			args: { item_code: row.item_code, strict: 1 },
 			callback: function(r) { if (r.message) { me._box_cache[row.item_code] = r.message; apply(r.message); } }
 		});
 	}
@@ -1990,6 +1998,8 @@ var SalesOrderEntry = class {
 			billing_address: billing_address,
 			shipping_address: shipping_address,
 			taxes_and_charges: me.tax_template_field ? me.tax_template_field.get_value() : '',
+			// #24 Billing GST No. for every buyer (server refines it site-wise on save).
+			billing_gstin: me.billing_gstin_field ? (me.billing_gstin_field.get_value() || '') : '',
 			items: items,
 			cash_discount: flt(me.cash_discount_field.get_value()),
 			freebies: freebies,

@@ -64,29 +64,37 @@ def _apply_saturday_override(attendance_date, shift, status, working_hours, half
 	return tmp.status, tmp.get("half_day_status")
 
 
-def recompute_attendance(att_name, apply=False):
+def recompute_attendance(att_name, apply=False, fallback_shift=None):
 	"""Recompute one auto-marked Attendance from its day's same-shift punches.
 
 	Returns a change dict (old/new status, hours, out-time) or None when the record
 	is out of scope. Writes via db_set only when apply=True. Idempotent: re-running
-	on an already-correct record reports changed=False and writes nothing."""
+	on an already-correct record reports changed=False and writes nothing.
+
+	`fallback_shift` supplies a shift for the calc when the Attendance itself carries
+	none — the half-day-LEAVE case: HRMS marks the leave day (often shift-less) and the
+	worked-other-half punches must still fold in. The leave still defines the day, so a
+	leave-backed Half Day keeps its 'Half Day' status; the punches only add in/out/hours."""
 	att = frappe.db.get_value(
 		"Attendance",
 		att_name,
 		[
 			"name", "employee", "attendance_date", "shift", "status", "half_day_status",
 			"working_hours", "in_time", "out_time", "docstatus", "attendance_request",
+			"leave_application", "leave_type",
 		],
 		as_dict=True,
 	)
 	if not att:
 		return None
-	# Scope: only submitted, auto-marked (no Attendance Request), auto-status records
-	# that have a shift. Manual / regularized / leave records are left alone.
-	if att.docstatus != 1 or att.attendance_request or att.status not in HEALABLE_STATUSES or not att.shift:
+	# Scope: only submitted, auto-marked (no Attendance Request), auto-status records.
+	# Manual / regularized records are left alone. A leave-backed Half Day IS in scope so
+	# the worked other half folds in — but its leave status is preserved below.
+	effective_shift = att.shift or fallback_shift
+	if att.docstatus != 1 or att.attendance_request or att.status not in HEALABLE_STATUSES or not effective_shift:
 		return None
 
-	logs = _day_shift_logs(att.employee, att.attendance_date, att.shift)
+	logs = _day_shift_logs(att.employee, att.attendance_date, effective_shift)
 	if len(logs) < 2:
 		return None  # a single punch cannot yield an out-time
 
@@ -95,12 +103,23 @@ def recompute_attendance(att_name, apply=False):
 	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
 
 	_apply_checkout_reason_patch()
-	shift = frappe.get_cached_doc("Shift Type", att.shift)
+	shift = frappe.get_cached_doc("Shift Type", effective_shift)
 	log_objs = [frappe._dict(row) for row in logs]
 	status, working_hours, late_entry, early_exit, in_time, out_time = shift.get_attendance(log_objs)
 	status, half_day_status = _apply_saturday_override(
-		att.attendance_date, att.shift, status, working_hours, att.half_day_status
+		att.attendance_date, effective_shift, status, working_hours, att.half_day_status
 	)
+
+	# A half-day LEAVE defines the day: keep 'Half Day' (never let the worked-half punches
+	# flip it to Present/Absent and orphan the leave). The punches only decide whether the
+	# OTHER (worked) half reads Present or Absent, via the shift's half-day threshold.
+	if att.status == "Half Day" and (att.leave_application or att.leave_type):
+		from alpinos.attendance_request_automation import half_day_status_from_threshold
+
+		status = "Half Day"
+		hs = half_day_status_from_threshold(effective_shift, "Half Day", working_hours, True)
+		if hs:
+			half_day_status = hs
 
 	def _dt(value):
 		return get_datetime(value) if value else None
@@ -158,16 +177,17 @@ def heal_on_checkin(doc, method=None):
 	if (
 		doc.flags.get("skip_attendance_heal")
 		or doc.get("from_attendance_request")
-		or not doc.get("shift")
 		or not doc.get("time")
 	):
 		return
+	# Shift-agnostic lookup: a half-day-LEAVE Attendance is often shift-less, so filtering
+	# by the punch's shift would miss it. recompute_attendance uses the punch's shift as a
+	# fallback for the hours calc and preserves the leave.
 	att_name = frappe.db.get_value(
 		"Attendance",
 		{
 			"employee": doc.employee,
 			"attendance_date": getdate(doc.time),
-			"shift": doc.shift,
 			"docstatus": 1,
 		},
 		"name",
@@ -175,7 +195,7 @@ def heal_on_checkin(doc, method=None):
 	if not att_name:
 		return
 	try:
-		recompute_attendance(att_name, apply=True)
+		recompute_attendance(att_name, apply=True, fallback_shift=doc.get("shift"))
 	except Exception:
 		frappe.log_error(
 			title="Alpinos: attendance heal-on-checkin failed",
