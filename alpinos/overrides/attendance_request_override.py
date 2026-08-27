@@ -32,6 +32,8 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self._sync_tables()                  # build the Details + Existing Logs tables
 		self._clear_unticked_punches()       # blank punches stay blank (no Time auto-now)
 		self._validate_detail_times()        # reject mistyped Check-in/Check-out times
+		self._enforce_mandatory_punches()    # both punches required unless reason is On Duty
+		self._validate_punches_vs_shift()    # Out >= shift start, In <= shift end
 		self._set_punch_edit_flag()          # edit (overwrites a recorded punch) vs missing
 
 	def validate_request_overlap(self):
@@ -313,6 +315,66 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 						),
 						title=_("Invalid Time"),
 					)
+
+	# ----- Rule: Check-in/out mandatory unless On Duty; punches sane vs the assigned shift -----
+	def _enforce_mandatory_punches(self):
+		"""When the reason is anything other than On Duty, BOTH Check-in and Check-out are
+		required on every date of the request. On Duty uses the assigned shift start/end, so it
+		carries no manual times and is exempt. (Runs after _clear_unticked_punches, so an
+		unticked side is already blank and correctly reads as missing here.)"""
+		if self.reason == "On Duty":
+			return
+		for row in (self.custom_attendance_details or []):
+			if not row.attendance_date:
+				continue
+			missing = []
+			if not row.get("check_in"):
+				missing.append(_("Check-in"))
+			if not row.get("check_out"):
+				missing.append(_("Check-out"))
+			if missing:
+				frappe.throw(
+					_("{0} required for {1} — Check-in and Check-out are mandatory when the reason is not On Duty (tick Edit and enter the time).").format(
+						" & ".join(missing), formatdate(row.attendance_date)
+					),
+					title=_("Check-in / Check-out Required"),
+				)
+
+	def _validate_punches_vs_shift(self):
+		"""Sanity-check the punches against the assigned shift for each date:
+		  * Check-out cannot be BEFORE the shift start time, and
+		  * Check-in cannot be AFTER the shift end time.
+		On Duty is exempt (no manual punches). Overnight shifts (end before start) are skipped —
+		the before/after rule doesn't apply cleanly across midnight, and no shift resolving is
+		skipped too."""
+		if self.reason == "On Duty":
+			return
+		from alpinos.attendance_request_automation import get_assigned_shift_times
+
+		for row in (self.custom_attendance_details or []):
+			if not row.attendance_date:
+				continue
+			in_dt = self._time_on_date(row.attendance_date, row.check_in) if row.get("check_in") else None
+			out_dt = self._time_on_date(row.attendance_date, row.check_out) if row.get("check_out") else None
+			if not in_dt and not out_dt:
+				continue
+			shift_start, shift_end = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
+			if not shift_start or not shift_end or shift_end < shift_start:
+				continue  # no shift resolved, or overnight -> skip the shift check
+			if out_dt and out_dt < shift_start:
+				frappe.throw(
+					_("Check-out {0} on {1} cannot be before the shift start ({2}).").format(
+						get_time(row.check_out), formatdate(row.attendance_date), shift_start.strftime("%H:%M")
+					),
+					title=_("Invalid Check-out"),
+				)
+			if in_dt and in_dt > shift_end:
+				frappe.throw(
+					_("Check-in {0} on {1} cannot be after the shift end ({2}).").format(
+						get_time(row.check_in), formatdate(row.attendance_date), shift_end.strftime("%H:%M")
+					),
+					title=_("Invalid Check-in"),
+				)
 
 	# ----- Rule 4: apply the requested punches on approval (submit) -----
 	def _apply_requested_checkins(self):
