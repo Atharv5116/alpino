@@ -136,24 +136,20 @@ def setup_custom_fields():
 	
 	custom_fields = {
 		"Job Requisition": [
-			# Section Break for Requisition Details (only shown in Edit view)
 			dict(
 				fieldname="requisition_details_section",
 				label="Requisition Details",
 				fieldtype="Section Break",
 				insert_after="naming_series",
 				collapsible=1,
-				# Always visible (new + saved docs)
 			),
 			
-			# Column Break for Status and Approval
 			dict(
 				fieldname="column_break_requisition",
 				fieldtype="Column Break",
 				insert_after="requisition_details_section",
 			),
 			
-			# Approved On - Datetime (auto-set, but editable if needed)
 			dict(
 				fieldname="approved_on",
 				label="Approved On",
@@ -162,7 +158,6 @@ def setup_custom_fields():
 				insert_after="column_break_requisition",
 			),
 			
-			# Approved By - Link to User (auto-set, but editable if needed)
 			dict(
 				fieldname="approved_by",
 				label="Approved By",
@@ -172,7 +167,6 @@ def setup_custom_fields():
 				insert_after="approved_on",
 			),
 			
-			# Profile Details Section
 			dict(
 				fieldname="profile_details_section",
 				label="Profile Details",
@@ -182,7 +176,6 @@ def setup_custom_fields():
 			),
 			
 			
-			# Location - Link to Branch (after additional_description)
 			dict(
 				fieldname="location",
 				label="Location",
@@ -192,7 +185,6 @@ def setup_custom_fields():
 				reqd=1,
 			),
 			
-			# Hiring Deadline - Date
 			dict(
 				fieldname="hiring_deadline",
 				label="Hiring Deadline",
@@ -201,7 +193,6 @@ def setup_custom_fields():
 				reqd=1,
 			),
 			
-			# Min. Experience - Int (Years)
 			dict(
 				fieldname="min_experience",
 				label="Min. Experience (Years)",
@@ -210,7 +201,6 @@ def setup_custom_fields():
 				reqd=1,
 			),
 			
-			# Priority - Select
 			dict(
 				fieldname="priority",
 				label="Priority",
@@ -220,7 +210,6 @@ def setup_custom_fields():
 				reqd=1,
 			),
 			
-			# Vacancy Type - Select
 			dict(
 				fieldname="vacancy_type",
 				label="Vacancy Type",
@@ -230,7 +219,6 @@ def setup_custom_fields():
 				reqd=1,
 			),
 			
-			# Employee Details Section (for replacement positions)
 			dict(
 				fieldname="employee_details_section",
 				label="Employee Details",
@@ -240,7 +228,6 @@ def setup_custom_fields():
 				depends_on='eval:doc.vacancy_type=="Replace"',
 			),
 			
-			# Linked Employee - Link to Employee (for replacement)
 			dict(
 				fieldname="linked_employee",
 				label="Linked Employee",
@@ -251,14 +238,12 @@ def setup_custom_fields():
 				ignore_user_permissions=1,
 			),
 			
-			# Column Break
 			dict(
 				fieldname="column_break_employee",
 				fieldtype="Column Break",
 				insert_after="linked_employee",
 			),
 			
-			# Reporting Manager - Link to Employee (fetched from linked employee)
 			dict(
 				fieldname="reporting_manager",
 				label="Reporting Manager",
@@ -271,7 +256,6 @@ def setup_custom_fields():
 				ignore_user_permissions=1,
 			),
 			
-			# Reporting Manager User - Link to User (hidden, for workflow)
 			dict(
 				fieldname="reporting_manager_user",
 				label="Reporting Manager User",
@@ -283,7 +267,6 @@ def setup_custom_fields():
 				description="User ID of reporting manager (for workflow)",
 			),
 			
-			# Company Details Section
 			dict(
 				fieldname="company_details_section",
 				label="Company Details",
@@ -292,7 +275,6 @@ def setup_custom_fields():
 				collapsible=0,
 			),
 			
-			# Salary Details Section
 			dict(
 				fieldname="salary_details_section",
 				label="Salary Details",
@@ -301,7 +283,6 @@ def setup_custom_fields():
 				collapsible=0,
 			),
 			
-			# CTC Upper Range - Currency (after salary section)
 			dict(
 				fieldname="ctc_upper_range",
 				label="CTC Upper Range / Monthly",
@@ -311,7 +292,6 @@ def setup_custom_fields():
 				reqd=1,
 			),
 			
-			# Requested By (in Timelines, after posting_date/Requested On)
 			dict(
 				fieldname="custom_requested_by",
 				label="Requested By",
@@ -320,17 +300,14 @@ def setup_custom_fields():
 				insert_after="posting_date",
 				read_only=1,
 				reqd=1,
-				# No default - will be set by automation function set_requested_by
 			),
 			
-			# Column Break for Employee Info
 			dict(
 				fieldname="column_break_requestor",
 				fieldtype="Column Break",
 				insert_after="custom_requested_by",
 			),
 			
-			# Requested By Employee - Link to Employee (fetched from user)
 			dict(
 				fieldname="requested_by_employee",
 				label="Requested By Employee",
@@ -342,7 +319,6 @@ def setup_custom_fields():
 				ignore_user_permissions=1,
 			),
 			
-			# Requestor's Reporting Manager - Link to Employee
 			dict(
 				fieldname="requestor_reporting_manager",
 				label="Requestor's Manager",
@@ -354,7 +330,6 @@ def setup_custom_fields():
 				ignore_user_permissions=1,
 			),
 			
-			# Requestor's Manager User - Link to User (hidden, for workflow)
 			dict(
 				fieldname="requestor_manager_user",
 				label="Requestor Manager User",
@@ -366,7 +341,6 @@ def setup_custom_fields():
 				description="User ID of requestor's manager (for workflow)",
 			),
 			
-			# Required Skills Section Break (in job_description_tab)
 			dict(
 				fieldname="required_skills_section",
 				label="Skills",
@@ -375,7 +349,6 @@ def setup_custom_fields():
 				collapsible=1,
 			),
 			
-			# Skills - Table (Designation Skill)
 			dict(
 				fieldname="skills",
 				label="Skills",
@@ -384,7 +357,6 @@ def setup_custom_fields():
 				insert_after="required_skills_section",
 			),
 			
-			# Required Languages Section Break
 			dict(
 				fieldname="required_languages_section",
 				label="Language Proficiency",
@@ -393,7 +365,6 @@ def setup_custom_fields():
 				collapsible=1,
 			),
 			
-			# Languages - Table (Language Child)
 			dict(
 				fieldname="languages",
 				label="Languages",
@@ -429,7 +400,6 @@ def setup_custom_fields():
 			),
 		],
 	"Job Applicant": [
-		# Qualification Section Break (after notice_period or last employment field)
 		dict(
 			fieldname="qualification_section",
 			label="Qualification",
@@ -438,7 +408,6 @@ def setup_custom_fields():
 			collapsible=1,
 		),
 		
-		# Screening Section Break
 		dict(
 			fieldname="screening_section",
 			label="Screening",
@@ -447,8 +416,6 @@ def setup_custom_fields():
 			collapsible=1,
 		),
 		
-		# Candidate Category - Select (White/Hold/Black)
-		# allow_on_submit=1 so screening page can update category on submitted applicants
 		dict(
 			fieldname="candidate_category",
 			label="Candidate Category",
@@ -458,7 +425,6 @@ def setup_custom_fields():
 			allow_on_submit=1,
 		),
 		
-		# Screening Status - Select (Read-only, auto-updated)
 		dict(
 			fieldname="screening_status",
 			label="Screening Status",
@@ -502,7 +468,6 @@ def setup_custom_fields():
 			description="Internship duration in months (e.g. 1 = 1 month, 4 = 4 months). Internship end = Date of Joining + this many months.",
 		),
 
-		# Welcome Formalities Section Break (below Company Details section)
 		dict(
 			fieldname="todo_checklist_section",
 			label="Welcome Formalities",
@@ -511,7 +476,6 @@ def setup_custom_fields():
 			collapsible=1,
 		),
 		
-		# Todo Checklist Checkbox Fields
 		dict(
 			fieldname="collect_documents",
 			label="Collect Documents",
@@ -682,51 +646,37 @@ def setup_custom_fields():
 				description="Site / trade name for this location (synced from Buyer Master address).",
 			),
 		],
-	# Delete qualification table field if it exists (references non-existent Qualification DocType)
-	# This is handled separately to avoid validation errors
 	}
 
 	if not frappe.db.exists("DocType", "Buyer Master"):
 		custom_fields.pop("Sales Order", None)
 
-	# Force field type changes in DB to bypass Data -> Link validation
 	_force_offline_buyer_fieldtype_sync()
 
 	create_custom_fields(custom_fields, update=True)
 	print("Custom fields created for Job Requisition, Job Opening, and Job Applicant")
 	
-	# Remove any property setters that set default="user" for custom_requested_by
 	remove_custom_requested_by_default()
 	
-	# Delete qualification table field if it exists (it references non-existent Qualification DocType)
 	delete_qualification_field()
 	
-	# Update degree field to be in qualification section
 	update_degree_field_position()
 	
-	# Hide status field
 	hide_status_field()
 
-	# Make Interview Feedback skill assessment optional
 	update_property_setter("Interview Feedback", "skill_assessment", "reqd", "0", "Check")
 	print("✅ Made Interview Feedback skill assessment optional")
 	
-	# Delete exit_letter custom field from Employee if it exists
 	delete_exit_letter_field()
 	
-	# Delete individual work experience fields (keep only experience child table)
 	delete_employee_work_experience_individual_fields()
 	
-	# Ensure work experience section and experience child table exist (restore if deleted)
 	ensure_work_experience_fields()
 	
-	# Delete qualification fields from Employee (keep only qualification_child table)
 	delete_employee_qualification_fields()
 	
-	# Delete address fields from Employee
 	delete_employee_address_fields()
 	
-	# Update bank_account_type and increment_cycle to Data fields
 	update_employee_fields_to_data()
 
 	try:

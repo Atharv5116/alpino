@@ -1,13 +1,6 @@
 # Copyright (c) 2026, Alpinos and contributors
 # License: MIT
-"""Final-Format Excel export for the Attendance Summary report.
-
-Frappe's built-in report export writes raw cell VALUES only — it drops the
-on-screen rich rendering (multi-line day cells, red WFH/OD + late/early marks,
-section colour bands, the 'Date' banner). This module rebuilds the exact client
-Final Format as a two-sheet workbook (Summary + Details) with openpyxl and
-streams it for download from a report button.
-"""
+"""Final-Format Excel export (Summary + Details sheets) for the Attendance Summary report."""
 
 import io
 
@@ -22,12 +15,12 @@ from openpyxl.cell.text import InlineFont
 
 from alpinos.alpinos_development.report.attendance_summary import attendance_summary as rpt
 
-# --- colours (mirror attendance_summary.js) -------------------------------
+# colours (mirror attendance_summary.js)
 RED = "FFC00000"
 BLACK = "FF000000"
 WHITE = "FFFFFFFF"
 
-# Summary section bands: fieldname -> section key.
+# Summary section bands by fieldname
 SECTION = {
 	"employee_name": "basic", "employee": "basic", "status": "basic", "date_of_joining": "basic",
 	"aging": "basic", "department": "basic", "company": "basic",
@@ -80,7 +73,6 @@ def download_final_format(month, employee=None, company=None):
 	frappe.response["type"] = "binary"
 
 
-# --- Summary sheet --------------------------------------------------------
 def _build_summary(ws, columns, data):
 	ws.title = "Summary"
 	cols = [c for c in columns if not c["fieldname"].startswith("day_")]
@@ -108,7 +100,6 @@ def _build_summary(ws, columns, data):
 	ws.freeze_panes = "C2"   # keep Employee Name + ID and the header visible
 
 
-# --- Details sheet --------------------------------------------------------
 def _build_details(ws, columns, data):
 	day_cols = [c for c in columns if c["fieldname"].startswith("day_")]
 	n_days = len(day_cols)
@@ -180,22 +171,18 @@ def _write_day_cell(cell, text):
 
 
 def _attendance_rich(text):
-	"""Multi-line attendance cell as rich text: bold black labels, red WFH/OD tag and
-	red Late Time / Early Out values, whole cell red when ABSENT (mirrors the report JS)."""
+	"""Multi-line attendance cell as rich text; whole cell red when ABSENT."""
 	lines = text.split("\n")
 	absent = any(ln.startswith("ABSENT") for ln in lines)
 	label_font = InlineFont(b=True, color=RED if absent else BLACK)
 	value_font = InlineFont(color=RED if absent else BLACK)
 	red_font = InlineFont(b=True, color=RED)
 
-	# The line break MUST be carried inside a TextBlock's text — a bare "\n" element in a
-	# CellRichText is written without xml:space="preserve", so Excel strips it and the lines
-	# run together. Prefixing each line's first run with "\n" keeps the break (the run text
-	# then differs from its stripped form, so openpyxl preserves the whitespace).
+	# Carry the line break inside a TextBlock's text: a bare "\n" element in a CellRichText
+	# is written without xml:space="preserve", so Excel strips it and the lines run together.
 	parts = []
 	for i, line in enumerate(lines):
 		nl = "\n" if i else ""
-		# Whole-line red: WFH / OD tag, or an ABSENT header line.
 		if line in ("WFH", "OD") or line.startswith("ABSENT"):
 			parts.append(TextBlock(red_font, nl + line))
 			continue

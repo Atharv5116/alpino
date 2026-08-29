@@ -1,19 +1,10 @@
 """Scheduled alert: employees with no check-in by 11:30 AM and no approved leave.
 
-Runs daily at 11:30 (see scheduler_events in hooks.py). For every active employee
-that has not checked in by 11:30 today and is not exempt, an alert is sent:
-  - one digest email to all HR Managers (listing every flagged employee), and
-  - one email to each direct manager (listing only their flagged direct reports).
+Runs daily at 11:30 (see scheduler_events in hooks.py). Sends a digest to HR Managers
+and a per-team email to each direct manager. Exempt: holiday/weekly-off, a full-day
+approved leave, or a first-half half-day leave (no morning check-in expected).
 
-Exemptions (NO alert):
-  - today is a holiday / weekly-off in the employee's holiday list,
-  - a full-day approved leave covering today,
-  - an approved HALF-DAY leave for today whose half is the FIRST half (morning off,
-    so no morning check-in is expected). A SECOND-half (or unspecified) half-day leave
-    still requires a morning check-in, so it does NOT exempt.
-
-Manual run (testing):
-  bench --site <site> execute alpinos.attendance_alerts.notify_missing_checkins
+Manual run: bench --site <site> execute alpinos.attendance_alerts.notify_missing_checkins
 """
 
 import frappe
@@ -23,10 +14,8 @@ CHECKIN_CUTOFF = "11:30:00"
 
 
 def get_flagged_employees(today=None):
-	"""Return (today, [Employee dicts]) for active employees with no check-in by the
-	11:30 cutoff today and no exemption (holiday, full-day leave, first-half half-day).
-	Shared by the scheduled email and the workspace dashboard.
-	"""
+	"""(today, [Employee dicts]) for active employees with no check-in by the cutoff and no
+	exemption. Shared by the scheduled email and the workspace dashboard."""
 	if today is None:
 		today = getdate(now_datetime())
 	day_start = get_datetime(f"{today} 00:00:00")
@@ -78,8 +67,7 @@ def get_missing_checkins_today():
 	if not allowed:
 		return {"allowed": False, "date": "", "employees": []}
 
-	# The list only makes sense once the 11:30 AM cutoff has passed; before then an
-	# employee may still check in, so show nothing (flag it so the widget can say so).
+	# only meaningful after the 11:30 cutoff; before then an employee may still check in
 	now = now_datetime()
 	cutoff_today = getdate(now)
 	if now < get_datetime(f"{cutoff_today} {CHECKIN_CUTOFF}"):
@@ -107,9 +95,7 @@ def get_missing_checkins_today():
 	return {"allowed": True, "date": date_str, "employees": rows}
 
 
-# ---------------------------------------------------------------------------
 # Exemption checks
-# ---------------------------------------------------------------------------
 
 def _has_checkin_by_cutoff(employee, day_start, cutoff):
 	return bool(
@@ -139,9 +125,8 @@ def _is_holiday(emp, today):
 
 
 def _is_exempt_by_leave(employee, today):
-	"""Approved leave covering today exempts the employee, EXCEPT a second-half (or
-	unspecified) half-day leave for today, which still requires a morning check-in.
-	"""
+	"""Approved leave covering today exempts the employee, except a second-half (or
+	unspecified) half-day leave, which still requires a morning check-in."""
 	has_period = frappe.get_meta("Leave Application").has_field("custom_half_day_period")
 	fields = ["name", "half_day", "half_day_date"]
 	if has_period:
@@ -171,9 +156,7 @@ def _is_exempt_by_leave(employee, today):
 	return False
 
 
-# ---------------------------------------------------------------------------
 # Email building / sending
-# ---------------------------------------------------------------------------
 
 def _valid_user_emails(users):
 	emails, seen = [], set()

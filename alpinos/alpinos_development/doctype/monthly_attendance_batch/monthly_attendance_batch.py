@@ -1,20 +1,7 @@
 # Copyright (c) 2026, Alpinos and contributors
 # License: MIT
 
-"""Monthly Attendance Batch — the shared shell for all three attendance modules.
-
-One batch = one rule engine x one payroll month x one company. The employee rows
-and their calculated numbers live in the child table; the per-day detail behind
-each row is stored in the row's day_data JSON and rendered by the batch entry page.
-
-Data enters per engine (populate_rows dispatches):
-  - HO/Admin      : generated from Attendance / check-in records already in ERPNext
-  - WH ESSL       : fetched punches (eSSL sync) aggregated into OT/EL
-  - Offline Sales : parsed from the Excel HR uploads onto the batch
-
-Status lifecycle (workflow on `workflow_state`): Draft -> Pending Approval ->
-Approved (submit) -> Locked. After Approved no fetch/upload/edit is allowed.
-"""
+"""Monthly Attendance Batch: one rule engine x payroll month x company, with rows and per-day JSON in the child table."""
 
 import calendar
 
@@ -67,11 +54,7 @@ class MonthlyAttendanceBatch(Document):
 			)
 
 	def _block_edits_after_approval(self):
-		"""No changes once the workflow has moved past Pending (task: read-only after approval).
-
-		Submitted docs are already immutable via docstatus; this guards the Draft-side
-		states so nothing edits a batch under approval except HR Manager moving it.
-		"""
+		"""Draft-side guard: no edits once the workflow reaches Approved/Locked."""
 		if self.is_new() or self.docstatus != 0:
 			return
 		old_state = frappe.db.get_value(self.doctype, self.name, "workflow_state")
@@ -82,15 +65,12 @@ class MonthlyAttendanceBatch(Document):
 		self.db_set("approved_by", frappe.session.user, update_modified=False)
 		self.db_set("approved_on", now_datetime(), update_modified=False)
 
-	# ------------------------------------------------------------------ data in
-
 	@frappe.whitelist()
 	def populate_rows(self):
 		"""(Re)build the employee rows for this batch's engine and month.
 
-		Dispatches to the engine adapter. Fails fast if any active employee in the
-		company is not categorized (Salary Category with a rule engine) — nobody may
-		silently fall out of payroll.
+		Throws if any active employee in the company has no Salary Category with a
+		rule engine, so nobody silently drops out of payroll.
 		"""
 		if self.docstatus != 0 or (self.workflow_state or "Draft") not in ("Draft",):
 			frappe.throw(_("Rows can only be generated while the batch is in Draft."))
@@ -130,11 +110,8 @@ class MonthlyAttendanceBatch(Document):
 		return {"rows": len(self.rows)}
 
 
-# ---------------------------------------------------------------- categorization
-
 def validate_all_employees_categorized(company):
-	"""Throw (listing offenders) if any active employee lacks a Salary Category
-	with an Attendance Rule Engine. Runs before every batch generation."""
+	"""Throw, listing offenders, if any active employee lacks a Salary Category with a rule engine."""
 	uncategorized = frappe.db.sql(
 		"""
 		SELECT e.name, e.employee_name
@@ -164,8 +141,8 @@ def validate_all_employees_categorized(company):
 def get_employees_for_engine(rule_engine, company, payroll_month):
 	"""Active-in-month employees whose Salary Category maps to this rule engine.
 
-	Same lifecycle window as the Attendance Summary report: joined on/before month
-	end, not relieved before month start (leaver stays visible in the exit month).
+	Same window as the Attendance Summary report: joined by month end, not relieved
+	before month start (a leaver stays visible in the exit month).
 	"""
 	from frappe.utils import get_last_day
 
@@ -189,22 +166,21 @@ def get_employees_for_engine(rule_engine, company, payroll_month):
 	)
 
 
-# ---------------------------------------------------------------- engine adapters
-# Each adapter fills the batch's rows with its engine's numbers. Implemented in
-# their own modules as those tasks land; keys must match the rule_engine options.
+# Engine adapters fill the batch rows with their engine's numbers.
+# Keys must match the rule_engine options; implemented as those tasks land.
 
 def _ho_admin_adapter(batch):
-	"""HO/Admin — 97%/50% percentage rules. Engine parked on branch attendance-phase2."""
+	"""HO/Admin: 97%/50% percentage rules. Parked on branch attendance-phase2."""
 	pass
 
 
 def _wh_essl_adapter(batch):
-	"""WH ESSL — OT/EL minute rules. Built with the ESSL module tasks."""
+	"""WH ESSL: OT/EL minute rules. Built with the ESSL module tasks."""
 	pass
 
 
 def _offline_sales_adapter(batch):
-	"""Offline Sales — Excel upload. Built with the Offline Sales module tasks."""
+	"""Offline Sales: Excel upload. Built with the Offline Sales module tasks."""
 	pass
 
 

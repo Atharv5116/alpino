@@ -1,9 +1,4 @@
-"""Re-apply the "Upcoming HR Activities" workspace block (v2).
-
-Idempotent re-run of create_hr_lifecycle_widget to handle cases where the
-workspace was modified or reset after the original patch ran.
-Also updates the Custom HTML Block content to match the latest version.
-"""
+"""Re-apply the "Upcoming HR Activities" workspace block (v2)."""
 
 from alpinos.patches.create_hr_lifecycle_widget import HTML, SCRIPT, LABEL, PEOPLE_LABEL, WORKSPACE
 import json
@@ -11,7 +6,6 @@ import frappe
 
 
 def execute():
-	# 1. Upsert the Custom HTML Block.
 	if frappe.db.exists("Custom HTML Block", LABEL):
 		block = frappe.get_doc("Custom HTML Block", LABEL)
 		block.html = HTML
@@ -31,7 +25,6 @@ def execute():
 		frappe.db.commit()
 		return
 
-	# 2. Ensure the Workspace Custom Block child row exists.
 	if not frappe.db.exists(
 		"Workspace Custom Block",
 		{"parent": WORKSPACE, "custom_block_name": LABEL},
@@ -47,12 +40,11 @@ def execute():
 			}
 		).insert(ignore_permissions=True)
 
-	# 3. Place the block in the workspace layout, just after the
-	#    Birthdays/Anniversaries block (or at the end if it isn't present).
+	# Place it just after the Birthdays/Anniversaries block, or at the end
 	workspace_doc = frappe.get_doc("Workspace", WORKSPACE)
 	blocks = json.loads(workspace_doc.content or "[]")
 
-	# Drop any existing instance so this patch stays idempotent.
+	# Drop any existing instance to stay idempotent
 	blocks = [
 		b
 		for b in blocks

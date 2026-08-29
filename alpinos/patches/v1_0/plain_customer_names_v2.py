@@ -1,25 +1,14 @@
-"""Customer naming split, second pass.
-
-v1 (plain_customer_names) only cleaned customers linked to a Buyer Master.
-UAT still shows "Business - GST" display names — customers created before the
-buyer link existed (or with a broken link) were missed. This pass:
-
-1. Buyer-linked customers: customer_name -> plain business name, docname ->
-   "business - GST/PAN" (same as v1; idempotent).
-2. Any other customer whose customer_name ends with " - <its own tax_id>":
-   strip the suffix from customer_name and move it into the docname instead.
-3. Refresh the denormalized display copies on SO / PL / DN.
-
-Safe to run on sites where v1 already ran (everything no-ops)."""
+"""Customer naming cleanup, second pass: strip the tax-id suffix from customer_name and move it into the docname."""
 
 import frappe
 
 
 def _clean(customer_id, plain_name, tax_id):
-	"""name-tax docname + plain display name for one customer. Rename runs FIRST:
-	ERPNext's Customer.after_rename resets customer_name to the new docname when
-	naming is "By Customer Name", so the plain name must be written after it.
-	Returns (fixed, renamed)."""
+	"""Set the tax-id docname + plain display name for one customer. Returns (fixed, renamed).
+
+	Rename runs first: Customer.after_rename resets customer_name to the docname
+	when naming is "By Customer Name", so the plain name is written afterwards.
+	"""
 	fixed = renamed = 0
 	target = f"{plain_name} - {tax_id}" if tax_id else plain_name
 	if customer_id != target and not frappe.db.exists("Customer", target):
@@ -35,7 +24,7 @@ def _clean(customer_id, plain_name, tax_id):
 def execute():
 	fixed = renamed = 0
 
-	# Pass 1 — buyer-linked customers (canonical source: the Buyer Master).
+	# Pass 1: buyer-linked customers, using the Buyer Master as the source.
 	for b in frappe.get_all(
 		"Buyer Master",
 		filters={"customer": ["is", "set"]},
@@ -52,7 +41,7 @@ def execute():
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"customer name cleanup failed: {b.customer}")
 
-	# Pass 2 — every remaining customer carrying its own tax id in the name.
+	# Pass 2: remaining customers carrying their own tax id in the name.
 	for c in frappe.get_all(
 		"Customer",
 		filters={"tax_id": ["is", "set"]},
@@ -72,7 +61,7 @@ def execute():
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"customer name cleanup failed: {c.name}")
 
-	# Pass 3 — refresh display copies used by the entry pages and stickers.
+	# Pass 3: refresh the display copies used by the entry pages and stickers.
 	frappe.db.sql(
 		"""UPDATE `tabSales Order` so JOIN `tabCustomer` c ON c.name = so.customer
 		   SET so.customer_name = c.customer_name"""

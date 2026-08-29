@@ -1,8 +1,4 @@
-"""
-Map Opportunity → Quotation with Alpinos line fields and correct opportunity link.
-
-Replaces ERPNext `make_quotation` via hooks.override_whitelisted_methods.
-"""
+"""Map Opportunity → Quotation (Alpinos line fields); overrides ERPNext make_quotation via hooks."""
 
 import frappe
 from frappe.model.mapper import get_mapped_doc

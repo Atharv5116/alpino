@@ -1,10 +1,4 @@
-"""
-Override for Leave Application to allow submit when status is Open.
-
-Standard HRMS only allows submit when status is Approved or Rejected.
-We allow submit when status is Open so employees can submit for approval.
-Ledger and attendance are only created when status is Approved (base class no-ops otherwise).
-"""
+"""Override Leave Application to allow submit while status is Open (for approval)."""
 
 import frappe
 from frappe import _
@@ -20,12 +14,7 @@ class CustomLeaveApplication(HRMSLeaveApplication):
 		self.validate_supporting_document()
 
 	def validate_supporting_document(self):
-		"""Require a supporting document when the leave is longer than 3 days.
-
-		total_leave_days is set by the base validate() above, so it is reliable here.
-		The same rule is mirrored on the field via mandatory_depends_on so the form
-		shows the field as required; this guard blocks any path that bypasses the UI.
-		"""
+		"""Require a supporting document when the leave is longer than 3 days."""
 		if flt(self.total_leave_days) > 3 and not self.get("custom_supporting_document"):
 			frappe.throw(
 				_(
@@ -69,11 +58,7 @@ class CustomLeaveApplication(HRMSLeaveApplication):
 		self.reload()
 
 	def on_update_after_submit(self):
-		"""
-		Ensure leave ledger exists when a submitted Leave Application is later approved
-		via workflow (Open -> Approved).
-		"""
-		# Only consume leaves for approved applications.
+		"""Create the leave ledger when a submitted application is later approved via workflow (Open -> Approved)."""
 		if self.status != "Approved":
 			return
 

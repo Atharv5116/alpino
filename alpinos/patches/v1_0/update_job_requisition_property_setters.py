@@ -1,14 +1,9 @@
-"""
-Patch to update property setters for Job Requisition standard fields
-"""
+"""Update property setters for Job Requisition standard fields."""
 
 import frappe
 
 
 def execute():
-	"""Execute patch to update Job Requisition property setters"""
-	
-	# Make standard fields mandatory
 	make_field_mandatory("Job Requisition", "department")
 	make_field_mandatory("Job Requisition", "designation")
 	make_field_mandatory("Job Requisition", "description")
@@ -16,13 +11,11 @@ def execute():
 	make_field_mandatory("Job Requisition", "company")
 	make_field_mandatory("Job Requisition", "expected_compensation")
 	
-	# Update field labels
 	update_field_label("Job Requisition", "description", "Job Description")
 	update_field_label("Job Requisition", "expected_compensation", "CTC Lower Range")
 	update_field_label("Job Requisition", "posting_date", "Requested On")
 	update_field_label("Job Requisition", "no_of_positions", "Number of Positions")
 	
-	# Make posting_date read-only
 	update_field_property("Job Requisition", "posting_date", "read_only", 1)
 	
 	frappe.clear_cache()
@@ -30,7 +23,6 @@ def execute():
 
 
 def make_field_mandatory(doctype, fieldname):
-	"""Make a field mandatory via property setter"""
 	try:
 		update_property_setter(doctype, fieldname, "reqd", 1, "Check")
 		print(f"Made {fieldname} mandatory in {doctype}")
@@ -39,7 +31,6 @@ def make_field_mandatory(doctype, fieldname):
 
 
 def update_field_label(doctype, fieldname, new_label):
-	"""Update field label via property setter"""
 	try:
 		update_property_setter(doctype, fieldname, "label", new_label, "Data")
 		print(f"Updated {fieldname} label to '{new_label}' in {doctype}")
@@ -48,7 +39,6 @@ def update_field_label(doctype, fieldname, new_label):
 
 
 def update_field_property(doctype, fieldname, property_name, value):
-	"""Update field property via property setter"""
 	try:
 		property_type = "Check" if isinstance(value, (bool, int)) and property_name in ["read_only", "reqd", "hidden"] else "Data"
 		update_property_setter(doctype, fieldname, property_name, value, property_type)
@@ -58,7 +48,6 @@ def update_field_property(doctype, fieldname, property_name, value):
 
 
 def update_property_setter(doctype, fieldname, property_name, value, property_type="Data"):
-	"""Create or update a property setter"""
 	existing = frappe.db.exists(
 		"Property Setter",
 		{

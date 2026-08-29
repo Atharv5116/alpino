@@ -12,12 +12,7 @@ from alpinos.alpinos_development.report.attendance_summary.attendance_summary_he
 
 
 def _display_end_date(from_date, to_date):
-	"""Last day to show as a day column / cell.
-
-	For an IN-PROGRESS month the grid stops at today, so it doesn't show empty future
-	dates (e.g. the remaining Sundays) mid-month. A finished (past) month shows the whole
-	month; a fully-future month also shows the whole month (nothing to cap). The monthly
-	SUMMARY totals are unaffected — they always cover the full month."""
+	"""Last day to show as a day column; an in-progress month stops at today."""
 	today = getdate(nowdate())
 	if today >= getdate(to_date) or today < getdate(from_date):
 		return getdate(to_date)
@@ -45,7 +40,7 @@ def execute(filters=None):
 
 
 def get_columns(from_date, to_date):
-	"""Employee info + Final Format day-figures + per-day cells + Verify, in Excel order."""
+	"""Report columns in Excel order."""
 	def col(label, fieldname, fieldtype="Float", width=110, **extra):
 		c = {"label": _(label), "fieldname": fieldname, "fieldtype": fieldtype, "width": width}
 		c.update(extra)
@@ -101,7 +96,6 @@ def get_columns(from_date, to_date):
 
 
 def get_data(filters, from_date, to_date):
-	"""Get employee attendance data with daily details"""
 	from_date = getdate(from_date)
 	to_date = getdate(to_date)
 	
@@ -121,12 +115,7 @@ def get_data(filters, from_date, to_date):
 
 
 def get_employees(filters, from_date, to_date):
-	"""Get employees who were active within the report date range.
-
-	An employee is considered active for the period if they had joined on or before the
-	period end and were not relieved before the period start. This excludes employees who
-	joined after the month or who left before it.
-	"""
+	"""Employees active within the report date range (joined on/before end, not relieved before start)."""
 	conditions = []
 
 	if filters.get("employee"):
@@ -135,7 +124,6 @@ def get_employees(filters, from_date, to_date):
 	if filters.get("company"):
 		conditions.append(f"company = '{filters.company}'")
 
-	# Active within the date range: joined on/before period end, not relieved before its start.
 	conditions.append(f"date_of_joining IS NOT NULL AND date_of_joining <= '{getdate(to_date)}'")
 	conditions.append(f"(relieving_date IS NULL OR relieving_date >= '{getdate(from_date)}')")
 
@@ -159,10 +147,8 @@ def get_employees(filters, from_date, to_date):
 
 
 def get_employee_monthly_attendance(emp, from_date, to_date):
-	"""Get employee attendance data for each day of the month"""
 	row = frappe._dict()
-	
-	# Employee basic details
+
 	row.employee = emp.employee
 	row.employee_name = emp.employee_name
 	row.status = emp.status
@@ -170,34 +156,23 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.department = emp.department
 	row.company = emp.company
 
-	# An employee relieved mid-month is only countable up to their exit date. Cap the whole
-	# calculation (maps, stats, working / paid days) at the relieving date so days after they
-	# left are never counted; active employees keep the full month.
+	# Cap the calculation at the relieving date for anyone relieved mid-month.
 	period_end = getdate(to_date)
 	if emp.get("relieving_date"):
 		rel = getdate(emp.relieving_date)
 		if getdate(from_date) <= rel < period_end:
 			period_end = rel
 	
-	# Calculate aging
 	if emp.date_of_joining:
 		row.aging = date_diff(period_end, emp.date_of_joining)
 	else:
 		row.aging = 0
-	
-	# Get all attendance records for the month
+
 	attendance_map = get_attendance_map(emp.employee, from_date, period_end)
-	
-	# Get holidays for the employee
 	holiday_map = get_holiday_map(emp.employee, from_date, period_end)
-	
-	# Get leave applications
 	leave_map = get_leave_map(emp.employee, from_date, period_end)
-	
-	# Get Work From Home Requests
 	wfh_map = get_wfh_map(emp.employee, from_date, period_end)
-	
-	# Initialize statistics
+
 	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, period_end, emp.employee)
 	
 	# Summary fields (Final Format layout).
@@ -219,13 +194,11 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.late_half_days = late_info["half_deduction"]
 	row.late_full_days = late_info["full_deduction"]
 
-	# Days Calculation:
+	# Days calculation:
 	#   Month Working Days   = calendar days - Public Holidays - Weekends
 	#   Present Working Days = Month - Paid Leave - Unpaid Leave - Absent - Working Hours Shortage
-	#   Final Payable Days   = Present + Paid Leave            (no penalty)
-	#   Final Paid Days      = Payable - late penalty          (shortage already in Present)
-	# working_hours_shortage is ALREADY the day-value deduction (0.5 per short day), so it is
-	# subtracted directly here — the same figure shown in the Working Hours Shortage column.
+	#   Final Payable Days   = Present + Paid Leave
+	#   Final Paid Days      = Payable - late penalty
 	total_days = date_diff(period_end, from_date) + 1
 	row.month_working_days = flt(total_days - flt(stats["public_holiday"]) - flt(stats["weekend"]), 2)
 	row.present_working_days = flt(
@@ -238,29 +211,25 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.final_paid_days = flt(flt(row.final_payable_days) - flt(late_info["deduction"]), 2)
 	row.verify = ""
 
-	# Loop through each day of the month
 	current_date = getdate(from_date)
 	end_date = _display_end_date(from_date, to_date)
-	
+
 	while current_date <= end_date:
 		day_num = current_date.day
 		date_str = current_date.strftime("%Y-%m-%d")
 		field_name = f"day_{day_num}"
 		
-		# Holiday List entry: weekly-off days show as WEEKEND, the rest as the holiday name.
+		# Weekly-off days show as WEEKEND, other Holiday List entries as the holiday name.
 		if date_str in holiday_map:
 			hinfo = holiday_map[date_str]
 			row[field_name] = "WEEKEND" if hinfo.get("weekly_off") else f"HOLIDAY - {hinfo.get('description')}"
-		# Check if there's a leave application
 		elif date_str in leave_map:
 			leave_info = leave_map[date_str]
 			row[field_name] = format_leave_info(leave_info)
-		# Check if there's attendance
 		elif date_str in attendance_map:
 			att_info = attendance_map[date_str]
 			row[field_name] = format_attendance_info(att_info)
 		else:
-			# No attendance marked
 			row[field_name] = "-"
 		
 		current_date = add_days(current_date, 1)
@@ -269,7 +238,6 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 
 
 def get_attendance_map(employee, from_date, to_date):
-	"""Get all attendance records for the employee in the date range"""
 	attendance_records = frappe.get_all(
 		"Attendance",
 		filters={
@@ -293,8 +261,7 @@ def get_attendance_map(employee, from_date, to_date):
 
 
 def _get_shift_late_config(shift_name, cache):
-	"""Return {start_time, tiers:[(late_by, deduction), ...] sorted desc} for a Shift Type,
-	or None when there is no shift / no configured Late Entry Thresholds."""
+	"""Shift Type late-entry config, or None when there is no shift / no thresholds."""
 	if shift_name in cache:
 		return cache[shift_name]
 	cfg = None
@@ -322,19 +289,15 @@ def _get_shift_late_config(shift_name, cache):
 
 
 def compute_late_deduction(attendance_map):
-	"""Late-entry flag counts and the days to deduct, per the Shift Type late-entry tiers.
+	"""Late-entry flag counts and days to deduct, per the Shift Type late-entry tiers.
 
-	Each late check-in is classified into the highest tier whose 'Late By' minutes it meets
-	(minutes late from the shift's start_time). Then, per tier, every full group of 4 lates
-	deducts that tier's days; any leftover lates across tiers that combine to 4 deduct the
-	smallest tier's days (0.5). Nothing deducts below a group of 4. Computed for the report's
-	period (month), so it resets each period.
-
-	Returns {"counts": {late_by: n}, "summary": "15m × 4, 30m × 2", "deduction": days}.
+	Each late check-in falls in the highest tier its lateness meets. Per tier, every full
+	group of 4 lates deducts that tier's days; leftovers across tiers combining to 4 deduct
+	the smallest tier's days. Nothing deducts below a group of 4.
 	"""
 	cache = {}
-	counts = {}        # late_by -> number of late entries
-	ded_by_tier = {}   # late_by -> deduction days for that tier
+	counts = {}        # late_by: number of late entries
+	ded_by_tier = {}   # late_by: deduction days for that tier
 
 	for att in attendance_map.values():
 		in_time = att.get("in_time")
@@ -352,14 +315,14 @@ def compute_late_deduction(attendance_map):
 			continue
 		if minutes_late <= 0:
 			continue
-		# Highest tier whose threshold the lateness meets (tiers are sorted desc by late_by).
+		# Highest tier the lateness meets (tiers sorted desc by late_by).
 		tier = next(((lb, dd) for lb, dd in cfg["tiers"] if minutes_late >= lb), None)
 		if not tier:
 			continue
 		counts[tier[0]] = counts.get(tier[0], 0) + 1
 		ded_by_tier[tier[0]] = tier[1]
 
-	# Flag-count summary, e.g. "15m × 4, 30m × 2" (sorted by late_by ascending).
+	# Flag-count summary, e.g. "15m × 4, 30m × 2".
 	summary = ", ".join(
 		f"{lb}m × {counts[lb]}" for lb in sorted(counts)
 	)
@@ -373,12 +336,11 @@ def compute_late_deduction(attendance_map):
 	leftover = 0
 	for late_by, cnt in counts.items():
 		per_tier[late_by] = (cnt // 4) * ded_by_tier[late_by]   # full groups of 4 in this tier
-		leftover += cnt % 4                                     # remainder carried to the combo
+		leftover += cnt % 4                                     # remainder carried to the combo tier
 	per_tier[min_tier] = per_tier.get(min_tier, 0.0) + (leftover // 4) * min_ded
 
 	total = sum(per_tier.values())
-	# Split by tier for the two columns: a half-day tier (deduction < 1) feeds "Half Days
-	# (Late 10:16)", a full-day tier (>= 1) feeds "Full Days (Late 10:31)".
+	# Split by tier for the two columns: deduction < 1 is a half-day tier, >= 1 a full-day tier.
 	half_ded = sum(d for lb, d in per_tier.items() if ded_by_tier[lb] < 1.0)
 	full_ded = sum(d for lb, d in per_tier.items() if ded_by_tier[lb] >= 1.0)
 
@@ -387,7 +349,6 @@ def compute_late_deduction(attendance_map):
 
 
 def get_holiday_map(employee, from_date, to_date):
-	"""Get all holidays for the employee in the date range"""
 	try:
 		holiday_list = frappe.db.get_value("Employee", employee, "holiday_list")
 		
@@ -406,9 +367,7 @@ def get_holiday_map(employee, from_date, to_date):
 		holiday_map = {}
 		for holiday in holidays:
 			date_str = holiday.holiday_date.strftime("%Y-%m-%d")
-			# Holiday description is a rich-text (ql-editor) field, so it carries HTML markup.
-			# Strip the tags and collapse whitespace so the cell reads "HOLIDAY - Diwali", not
-			# "HOLIDAY - <div class="ql-editor read-mode">…".
+			# Holiday description is a rich-text field; strip HTML and collapse whitespace.
 			desc = frappe.utils.strip_html_tags(holiday.description or "")
 			desc = " ".join(desc.split()).strip() or "Holiday"
 			holiday_map[date_str] = {
@@ -422,7 +381,6 @@ def get_holiday_map(employee, from_date, to_date):
 
 
 def get_leave_map(employee, from_date, to_date):
-	"""Get all leave applications for the employee in the date range"""
 	try:
 		leave_applications = frappe.get_all(
 			"Leave Application",
@@ -454,10 +412,7 @@ def get_leave_map(employee, from_date, to_date):
 
 
 def get_wfh_map(employee, from_date, to_date):
-	"""Get all Work From Home Requests for the employee in the date range"""
 	try:
-		# Query WFH requests that overlap with the report date range
-		# Field names: date (from_date), to_date, half_day
 		wfh_requests = frappe.db.sql("""
 			SELECT date as from_date, to_date, half_day
 			FROM `tabWork From Home Request`
@@ -470,14 +425,12 @@ def get_wfh_map(employee, from_date, to_date):
 		
 		wfh_map = {}
 		for wfh in wfh_requests:
-			# Expand the date range into individual dates
 			current = getdate(wfh.from_date)
 			end = getdate(wfh.to_date)
 			is_half_day = wfh.get('half_day', 0)
 			first_day = True
-			
+
 			while current <= end:
-				# Only include dates within the report's date range
 				if current >= getdate(from_date) and current <= getdate(to_date):
 					date_str = current.strftime("%Y-%m-%d")
 					# Half day only applies to the first day of the WFH request
@@ -495,7 +448,6 @@ def get_wfh_map(employee, from_date, to_date):
 
 
 def format_leave_info(leave_info):
-	"""Format leave information for display"""
 	leave_type = leave_info.get("leave_type", "LEAVE")
 	is_half_day = leave_info.get("half_day", False)
 	
@@ -506,10 +458,7 @@ def format_leave_info(leave_info):
 
 
 def format_attendance_info(att_info):
-	"""Rich per-day cell matching the Final Format 'Details' layout: a WFH/OD tag line +
-	Present In/Out + Total Worked Hrs + Shift Name + Shift Time + Early Out (actual, when the
-	person left early) + Late Time (actual, when late). Multi-line (newline-separated); the
-	report JS renders it and red-marks the WFH/OD tag and the late/early times."""
+	"""Newline-separated per-day cell for the Final Format 'Details' layout."""
 	status = att_info.get("status", "")
 	in_time = att_info.get("in_time")
 	out_time = att_info.get("out_time")
@@ -548,11 +497,10 @@ def format_attendance_info(att_info):
 			pass
 	shift_time = f"{shift_start_str} To {shift_end_str}" if (shift_start_str or shift_end_str) else "-"
 
-	# Actual late / early ranges - shown only when the day was flagged late / early.
+	# Actual late / early ranges, only when the day was flagged.
 	late_str = f"{in_str} To {shift_end_str}" if late_entry else ""
 	early_str = f"{shift_start_str} To {out_str}" if early_exit else ""
 
-	# WFH / OD tag on the first line.
 	tag = "WFH" if status == "Work From Home" else ("OD" if status == "On Duty" else "")
 	head = "HALF DAY" if status == "Half Day" else ("ABSENT" if status == "Absent" else "Present")
 

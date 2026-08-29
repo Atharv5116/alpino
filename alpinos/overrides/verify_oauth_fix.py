@@ -8,14 +8,11 @@ def verify():
 	patch_oauth_server()
 	
 	import frappe.integrations.oauth2
-	
-	# Check if the function is patched
+
 	is_patched = frappe.integrations.oauth2.get_oauth_server is get_oauth_server_with_extended_token_expiry
-	
-	# Create the server and check expires_in
+
 	server = frappe.integrations.oauth2.get_oauth_server()
-	
-	# Check the token endpoint's bearer token generator
+
 	from oauthlib.oauth2.rfc6749.tokens import BearerToken
 	for attr_name in dir(server):
 		attr = getattr(server, attr_name, None)

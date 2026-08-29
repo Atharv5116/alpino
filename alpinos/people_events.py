@@ -81,7 +81,6 @@ def get_upcoming_birthdays_and_anniversaries(days=30):
 
 
 def _get_employee_for_user(user):
-	"""Return Employee name for the given user, or None."""
 	return frappe.db.get_value("Employee", {"user_id": user}, "name")
 
 
@@ -161,7 +160,6 @@ def get_on_leave_and_wfh_today():
 
 
 def _format_ddmmyyyy(d):
-	"""Format a date as DD/MM/YYYY (empty string for falsy input)."""
 	if not d:
 		return ""
 	return getdate(d).strftime("%d/%m/%Y")
@@ -169,15 +167,8 @@ def _format_ddmmyyyy(d):
 
 @frappe.whitelist()
 def get_upcoming_employee_lifecycle(days=30):
-	"""Upcoming probation completions, internship completions and salary increments
-	for active employees within the next `days` days. Visible to HR Manager only.
-
-	- Probation : Employee.probation_end_date falling within the window.
-	- Internship: date_of_joining + custom_internship_duration (months) within the window.
-	- Increment : next date_of_joining anniversary (yearly) within the window.
-
-	Dates are returned pre-formatted as DD/MM/YYYY in the `date` field.
-	"""
+	"""Upcoming probation/internship completions and salary increments for active employees
+	within the next `days` days (HR Manager only). Dates are DD/MM/YYYY in the `date` field."""
 	try:
 		days = int(days)
 	except (TypeError, ValueError):
@@ -211,7 +202,7 @@ def get_upcoming_employee_lifecycle(days=30):
 		company = emp.get("company")
 		emp_name = emp.get("employee_name")
 
-		# Probation completion — explicit probation_end_date within the window.
+		# probation completion: explicit probation_end_date within the window
 		pend = emp.get("probation_end_date")
 		if pend:
 			pend = getdate(pend)
@@ -225,7 +216,7 @@ def get_upcoming_employee_lifecycle(days=30):
 
 		doj = emp.get("date_of_joining")
 
-		# Internship completion — date_of_joining + duration (months) within the window.
+		# internship completion: date_of_joining + duration (months) within the window
 		months = emp.get("custom_internship_duration")
 		if doj and months:
 			try:
@@ -242,7 +233,7 @@ def get_upcoming_employee_lifecycle(days=30):
 						"_sort": iend.strftime("%Y-%m-%d"),
 					})
 
-		# Salary increment — next date_of_joining anniversary (yearly) within the window.
+		# salary increment: next date_of_joining anniversary within the window
 		if doj:
 			doj = getdate(doj)
 			if doj <= today:

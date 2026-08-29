@@ -1,22 +1,16 @@
 import frappe
 
 def get_context(context):
-	"""
-	Get context for webform
-	Extract employee_onboarding_name from URL parameter and set it in context
-	"""
-	# Get the onboarding parameter from URL.
-	# Note: do not use `name` because Frappe reserves it for doc edit/view.
+	"""Populate the web-form context from the `onboarding` URL parameter."""
+	# Frappe reserves `name` for doc edit/view, so the param is `onboarding`.
 	employee_onboarding_name = frappe.form_dict.get('onboarding')
 	
 	if employee_onboarding_name:
 		context.employee_onboarding_name = employee_onboarding_name
 		
-		# Validate that Employee Onboarding exists
 		if frappe.db.exists("Employee Onboarding", employee_onboarding_name):
 			onboarding_doc = frappe.get_doc("Employee Onboarding", employee_onboarding_name)
 			
-			# Check if already submitted
 			if onboarding_doc.get('webform_submitted'):
 				context.already_submitted = True
 				context.submitted_on = onboarding_doc.get('webform_submitted_on')

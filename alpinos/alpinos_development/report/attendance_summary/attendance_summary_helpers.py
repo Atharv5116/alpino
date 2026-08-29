@@ -6,7 +6,6 @@ from frappe.utils import date_diff, flt, getdate
 
 
 def get_location_details(location):
-	"""Get location details from Location doctype"""
 	if not location:
 		return {}
 
@@ -33,14 +32,7 @@ def get_location_details(location):
 
 
 def _required_hours(shift_name, is_saturday, cache):
-	"""Assigned/required working hours for the day — the denominator for the Working-Hours-
-	Shortage %-tiers.
-
-	  * Weekday : the shift span, end_time - start_time (overnight-safe). The 97% tier is the
-	    tolerance (~a grace period), so the raw span is used, not a grace-adjusted one.
-	  * Saturday: Alpino's short Saturday — the Shift Type's 'Saturday Working Hours Threshold
-	    for Present' (saturday_working_hours_threshold), i.e. the assigned Saturday hours;
-	    falls back to the weekday span when that field is not configured."""
+	"""Required working hours for the day: the shift span, or the Saturday threshold on Saturdays."""
 	key = (shift_name, bool(is_saturday))
 	if key in cache:
 		return cache[key]
@@ -66,11 +58,11 @@ def _required_hours(shift_name, is_saturday, cache):
 
 
 def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, to_date, employee):
-	"""Attendance statistics for the month, aligned to the Final Format layout.
+	"""Monthly attendance statistics for the Final Format layout.
 
-	`holiday_map` values are {"description", "weekly_off"} so Public Holiday (weekly_off=0)
-	and Weekend (weekly_off=1) come straight from the employee's Holiday List — no hard-coded
-	Sat/Sun (Alpino works Saturdays; only the Holiday List's weekly-offs are weekend days)."""
+	Public Holiday vs Weekend come from the Holiday List's weekly_off flag, not a hard-coded
+	Sat/Sun (Alpino works Saturdays).
+	"""
 	stats = frappe._dict({
 		"clock_in_days": 0,
 		"absent_days": 0,
@@ -97,17 +89,13 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 	shift_hours_cache = {}
 
 	def _whs(att, date_str):
-		"""Working-Hours-Shortage day-value from the %-of-required tiers. ONLY for a day that
-		has BOTH a clock-in and a clock-out (a complete, measurable duration) — a clock-in with
-		no clock-out is Absent, not a shortage. Holidays / weekly-offs never count.
+		"""Working-Hours-Shortage day-value from the %-of-required tiers.
 
-		  >= 97% of required hours -> 0.0  (full day, no deduction)
+		Only for a day with both a clock-in and a clock-out; holidays / weekly-offs never count.
+		  >= 97% of required hours -> 0.0
 		  50% - 97%                -> 0.5
 		  < 50%                    -> 1.0
-
-		Required hours come from _required_hours (weekday span, or the assigned Saturday hours
-		on a Saturday), so a worked Saturday is now measured against its own shorter benchmark
-		instead of being excluded."""
+		"""
 		if date_str in holiday_map:
 			return 0.0
 		if not (att.get("in_time") and att.get("out_time")):
@@ -146,14 +134,13 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		on_holiday = date_str in holiday_map
 
 		if status == "On Leave":
-			# Full-day leave — paid or unpaid, no working-hours involvement.
+			# Full-day leave, paid or unpaid.
 			if leave_type:
 				_leave_amount(leave_type, 1)
 			continue
 
 		if status == "On Duty":
-			# Present by default / On Duty -> full-day Present. No WHS and no Late Penalty even
-			# with no punches (duty is served at the assigned shift, off the biometric).
+			# Full-day Present; no shortage and no late penalty even with no punches.
 			stats.od += 1
 			stats.clock_in_days += 1
 			if wh:
@@ -168,15 +155,15 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 				total_working_hours += wh
 				working_days_count += 1
 			if leave_type:
-				# Half-day + Leave -> the 0.5 sits under the applicable Paid / Unpaid Leave.
+				# Other half is leave.
 				_leave_amount(leave_type, 0.5)
 			elif not on_holiday:
-				# Half-day + No Leave -> the other half is a 0.5 Working-Hours-Shortage.
+				# Other half is a 0.5 working-hours shortage.
 				stats.working_hours_shortage += 0.5
 			continue
 
 		if status == "Work From Home":
-			# WFH follows the normal attendance rules: Working-Hours-Shortage AND Late Penalty apply.
+			# WFH follows normal attendance rules: shortage and late penalty both apply.
 			stats.wfh += 1
 			stats.clock_in_days += 1
 			if wh:
@@ -185,11 +172,9 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			stats.working_hours_shortage += _whs(att, date_str)
 			continue
 
-		# Present / Absent (and any other worked status): classify by punches + hours, NOT by the
-		# stored status. A day with BOTH a clock-in and a clock-out is a completed working day —
-		# Present plus a Working-Hours-Shortage tier — and is NEVER Absent, even when HRMS stamped
-		# 'Absent' for low hours (valid in/out under-work belongs under WHS). Only a missing
-		# clock-out (or no punches at all) is Absent.
+		# Classify by punches and hours, not the stored status: a day with both a clock-in and
+		# a clock-out is Present (plus a shortage tier), never Absent. Only a missing clock-out
+		# or no punches at all is Absent.
 		if has_in and has_out and wh > 0:
 			stats.clock_in_days += 1
 			total_working_hours += wh

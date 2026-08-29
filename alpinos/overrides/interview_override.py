@@ -1,8 +1,4 @@
-"""
-Override for Interview doctype to fix update_job_applicant_status function
-This fixes the TypeError when calling the function with keyword arguments
-All changes are kept in the alpinos app only - no modifications to HRMS app
-"""
+"""Interview override that fixes update_job_applicant_status for keyword arguments."""
 
 import frappe
 from frappe import _
@@ -10,11 +6,7 @@ from hrms.hr.doctype.interview.interview import Interview as HRMSInterview
 
 @frappe.whitelist()
 def update_job_applicant_status(status: str = None, job_applicant: str = None, **kwargs):
-	"""
-	Override of hrms.hr.doctype.interview.interview.update_job_applicant_status
-	Handles both keyword and positional arguments to fix TypeError
-	"""
-	# Handle both keyword and positional arguments
+	"""Handle both keyword and positional args to fix a TypeError in the HRMS version."""
 	if not status:
 		status = kwargs.get('status')
 	if not job_applicant:
@@ -45,9 +37,7 @@ def update_job_applicant_status(status: str = None, job_applicant: str = None, *
 
 
 class CustomInterview(HRMSInterview):
-	"""
-	Override Interview to allow submission for any status.
-	"""
+	"""Allow Interview submission for any status."""
 
 	def before_submit(self):
 		if getattr(self, "status", None) not in ["Cleared", "Rejected"]:
@@ -62,10 +52,7 @@ class CustomInterview(HRMSInterview):
 
 
 def allow_submit_any_status_before_submit(doc, method=None):
-	"""
-	Temporarily set status to Rejected so HRMS validation passes.
-	Original status is restored in on_submit hook.
-	"""
+	"""Temporarily set status to Rejected so HRMS validation passes; restored in on_submit."""
 	if getattr(doc, "status", None) not in ["Cleared", "Rejected"]:
 		frappe.logger().info(
 			f"[alpinos] Interview before_submit override: {doc.name} status "
@@ -76,9 +63,7 @@ def allow_submit_any_status_before_submit(doc, method=None):
 
 
 def restore_status_after_submit(doc, method=None):
-	"""
-	Restore original status after successful submit.
-	"""
+	"""Restore original status after submit."""
 	original_status = getattr(doc, "_alpinos_original_status", None)
 	if original_status:
 		frappe.logger().info(
@@ -176,17 +161,10 @@ def debug_find_server_scripts_with_message() -> list[dict]:
 	)
 
 def setup_interview_override(bootinfo=None):
-	"""
-	Monkey patch the update_job_applicant_status function from HRMS
-	This ensures all changes are in the alpinos app only
-	This is called during after_migrate hook and boot_session hook
-	bootinfo parameter is optional - provided by boot_session hook but not used
-	"""
+	"""Monkey-patch update_job_applicant_status; called from after_migrate and boot_session."""
 	try:
-		# Import the HRMS module
 		from hrms.hr.doctype.interview import interview as interview_module
-		
-		# Replace the function with our override
+
 		interview_module.update_job_applicant_status = update_job_applicant_status
 		if hasattr(interview_module, "Interview"):
 			interview_module.Interview.on_submit = CustomInterview.on_submit
@@ -200,9 +178,7 @@ def setup_interview_override(bootinfo=None):
 			print(f"⚠️  Could not patch update_job_applicant_status: {str(e)}")
 
 
-# Patch immediately when module is imported (for immediate availability)
 def _patch_on_import():
-	"""Patch the function when this module is imported"""
 	try:
 		from hrms.hr.doctype.interview import interview as interview_module
 		interview_module.update_job_applicant_status = update_job_applicant_status
@@ -210,13 +186,12 @@ def _patch_on_import():
 			interview_module.Interview.on_submit = CustomInterview.on_submit
 		frappe.logger().info("✅ Patched update_job_applicant_status on import")
 	except (ImportError, AttributeError) as e:
-		# HRMS might not be installed or module not loaded yet
-		# This is fine - setup_interview_override will handle it during migration
+		# HRMS not loaded yet; setup_interview_override handles it during migration.
 		pass
 	except Exception as e:
 		frappe.log_error(f"Error patching on import: {str(e)}", "Interview Override Import Error")
 
-# Attempt to patch on import (for immediate availability after server restart)
+# Patch on import for immediate availability after server restart.
 try:
 	_patch_on_import()
 except:

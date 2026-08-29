@@ -5,20 +5,15 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate
 
-# Import core ERPNext Stock Balance Report
 from erpnext.stock.report.stock_balance.stock_balance import StockBalanceReport
 
 
 def execute(filters=None):
-	"""Execute the stock balance report using core ERPNext logic with custom columns"""
 	if not filters:
 		filters = {}
 	
-	# The report is an "as on To Date" snapshot. Opening Qty must be the PREVIOUS day's closing
-	# (i.e. the balance at the start of the To Date), and Available/Closing the balance as on the
-	# To Date. Running the core report with from_date = to_date = the To Date gives exactly that:
-	# its opening_qty = balance before the To Date (yesterday's closing) and bal_qty = balance as
-	# on the To Date (today's closing).
+	# "As on date" snapshot: run the core report with from_date = to_date = the report date,
+	# so opening_qty is the previous day's closing and bal_qty the balance as on that date.
 	report_date = getdate(filters.get("date") or getdate())
 	core_filters = frappe._dict({
 		"company": filters.get("company"),
@@ -30,11 +25,9 @@ def execute(filters=None):
 		"include_zero_stock_items": 0,
 	})
 
-	# Run core stock balance report
 	core_report = StockBalanceReport(core_filters)
 	core_columns, core_data = core_report.run()
 
-	# Transform to our custom format
 	columns = get_columns()
 	data = transform_data(core_data, report_date)
 
@@ -42,7 +35,6 @@ def execute(filters=None):
 
 
 def get_columns():
-	"""Define report columns based on requirements"""
 	return [
 		{
 			"label": _("Date"),
@@ -123,11 +115,9 @@ def get_columns():
 
 
 def transform_data(core_data, report_date):
-	"""Transform core stock balance data to our custom format"""
 	result = []
 	
 	for row in core_data:
-		# Skip if no balance
 		if not row.get("bal_qty"):
 			continue
 		

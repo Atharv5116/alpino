@@ -1,15 +1,9 @@
-# One-off correction: change Flipkart Sales Order line Flat Discount 38% -> 37%.
+# One-off: reset the 13 Flipkart SO lines (SOR-2627-00097..00109) from a 38% flat discount to
+# 37% (the correct Flipkart Minutes margin, supplier_app_amount = MRP x 0.63). The flat discount
+# drives the line rate, so this scales each 38% line to 37% and recomputes the SO totals + GST.
+# Safe only because these orders are 0% delivered / 0% billed. Dry run by default.
 #
-# The 13 Flipkart Sales Orders (SOR-2627-00097 .. 00109, dated 2026-08-03) were
-# imported with a 38% flat discount; the correct Flipkart Minutes margin is 37%
-# (supplier_app_amount = MRP x 0.63). Flat discount drives the line rate
-# (rate = MRP x (1 - flat/100)), so this resets each 38% line to 37%, recomputes
-# selling price + rate = MRP x 0.63, and recomputes the Sales Order totals + GST.
-#
-# Safe because these orders are 0% delivered / 0% billed (no Delivery Note or
-# Sales Invoice yet). Dry run by default — nothing is written until apply=1.
-#
-#   bench --site <site> execute alpinos.flipkart_flat_discount_fix.run            # dry run
+#   bench --site <site> execute alpinos.flipkart_flat_discount_fix.run                       # dry run
 #   bench --site <site> execute alpinos.flipkart_flat_discount_fix.run --kwargs "{'apply': 1}"
 
 import frappe

@@ -4,8 +4,7 @@ from frappe.utils import add_days, flt
 
 
 def _fill_short_pick_remarks(pick_list, reason):
-	"""Populate the short-pick reason onto any short row lacking a remark, so the
-	qty_flow per-row remark rule is satisfied from the modal choice."""
+	"""Put the short-pick reason onto any short row that has no remark yet."""
 	if not reason:
 		return
 	for loc in pick_list.locations or []:
@@ -14,8 +13,7 @@ def _fill_short_pick_remarks(pick_list, reason):
 
 
 def _apply_short_pick_action(pick_list_name, action, reason, future_dispatch_date):
-	"""After the closing Pick List is submitted, enact the short-pick modal choice:
-	Partial (record future dispatch date) or Forced Close (lock the order)."""
+	"""Enact the short-pick modal choice: Partial (future dispatch date) or Forced Close (lock the order)."""
 	action = (action or "").strip()
 	if not action:
 		return
@@ -63,19 +61,17 @@ def get_pick_list_data(name):
 		row["shelf_life_in_days"] = item_info.get("shelf_life_in_days") or 0
 		row["has_batch_no"] = item_info.get("has_batch_no") or 0
 
-	# Created By display for the entry page header.
 	doc_dict["owner_full_name"] = frappe.utils.get_fullname(doc.owner)
 
-	# Surface any existing (non-cancelled) DN against this pick list so the UI
-	# can hide the Create Delivery Note button.
+	# Existing (non-cancelled) DN, so the UI can hide the Create Delivery Note button.
 	doc_dict["existing_delivery_note"] = frappe.db.get_value(
 		"Delivery Note Item",
 		{"against_pick_list": name, "docstatus": ["<", 2]},
 		"parent",
 	)
 
-	# COMBO table — recomputed from the SO bundle lines (source of truth) so it
-	# survives reload of a saved pick list, where rows are already exploded.
+	# COMBO table recomputed from the SO bundle lines so it survives reload of a
+	# saved pick list, where the rows are already exploded.
 	doc_dict["combos"] = []
 	if doc.get("custom_sales_order_id"):
 		from alpinos.sales_order_api import get_bundle_combos
@@ -84,8 +80,7 @@ def get_pick_list_data(name):
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Pick List combo recompute failed")
 
-	# Sticker attachments from the linked Sales Order (E-com & MT orders) — shown
-	# read-only on the Pick List so the picker can print/reference the artwork.
+	# Sticker attachments from the linked Sales Order, read-only, for the picker to print.
 	doc_dict["custom_sticker_attachments"] = []
 	if doc.get("custom_sales_order_id"):
 		doc_dict["custom_sticker_attachments"] = frappe.get_all(
@@ -95,9 +90,8 @@ def get_pick_list_data(name):
 			order_by="idx",
 		)
 
-	# Party Code = the linked Sales Order's PO number; falls back to the Customer
-	# name. Derived on load so existing pick lists (stored value may be the old
-	# customer) display correctly too.
+	# Party Code = the SO's PO number, else the customer name. Derived on load so
+	# older pick lists (which may have stored the customer) display correctly.
 	_so = doc.get("custom_sales_order_id")
 	_po = frappe.db.get_value("Sales Order", _so, "po_no") if _so else None
 	doc_dict["custom_party_code"] = _po or doc.get("custom_customer_name") or doc_dict.get("custom_party_code") or ""
@@ -144,9 +138,7 @@ def get_batch_details(batch_no, item_code):
 
 @frappe.whitelist()
 def save_pick_list_keep_draft(name, header, items):
-	"""Persist header + per-row edits on an existing draft Pick List WITHOUT
-	submitting it. Mirrors save_pick_list_data but skips doc.submit().
-	"""
+	"""Save header + row edits on a draft Pick List without submitting it."""
 	header = json.loads(header) if isinstance(header, str) else header
 	items = json.loads(items) if isinstance(items, str) else items
 
@@ -195,15 +187,14 @@ def save_pick_list_data(name, header, items, short_pick_action=None,
 	doc = frappe.get_doc('Pick List', name)
 	doc.check_permission('write')
 	
-	# Step 1: Write header directly to the Pick List document in DB
+	# Write header directly to the Pick List document in DB
 	frappe.db.set_value('Pick List', name, {
 		k: v for k, v in header.items()
 	}, update_modified=False)
 
-	# The Pick List's Dispatch Date MIRRORS the Sales Order (validate's _sync_order_information
-	# resets it to the SO's on every save). So when the user changes it on submit (e.g. the
-	# "Update to Today" popup), push it to the Sales Order — the source — otherwise the submit
-	# below would overwrite it straight back. This keeps SO -> Pick List -> Delivery Note in sync.
+	# Dispatch Date mirrors the Sales Order (validate resets it to the SO's on every
+	# save), so a user change on submit must be pushed to the SO or the submit below
+	# overwrites it straight back.
 	new_dispatch = header.get("custom_dispatch_date")
 	if new_dispatch:
 		so_id = doc.get("custom_sales_order_id") or next(
@@ -215,7 +206,7 @@ def save_pick_list_data(name, header, items, short_pick_action=None,
 				frappe.db.set_value("Sales Order", so_id, "custom_dispatch_date", new_dispatch, update_modified=False)
 
 
-	# Step 2: Write all item row values directly to DB (bypass ORM/hooks re-calculation)
+	# Write all item row values directly to DB (bypass ORM/hooks re-calculation)
 	for item_data in items:
 		item_doc = [d for d in doc.locations if d.name == item_data.get('name')]
 		if item_doc:
@@ -246,14 +237,14 @@ def save_pick_list_data(name, header, items, short_pick_action=None,
 
 	frappe.db.commit()
 	
-	# Step 3: Reload the doc so it has the freshly written DB values
+	# Reload the doc so it has the freshly written DB values
 	doc.reload()
 	
-	# Step 4: Submit (this will re-run validate hooks — but now doc has correct values from DB)
+	# Submit; re-runs validate hooks, but the doc now holds the correct DB values.
 	doc.flags.ignore_mandatory = True
 	doc.submit()
 
-	# Step 5: Enact the short-pick modal choice (Partial / Forced Close).
+	# Enact the short-pick modal choice (Partial / Forced Close).
 	_apply_short_pick_action(name, short_pick_action, short_pick_reason, future_dispatch_date)
 
 	return True
@@ -277,17 +268,15 @@ def get_pick_list_entry_list(
 
 	filters = {}
 	if status:
-		# The Status filter reflects the custom workflow status (Picking Pending,
-		# Ready To Dispatch, Dispatched...), not ERPNext's docstatus-based status.
+		# Filters on the custom workflow status, not ERPNext's docstatus-based status.
 		filters["custom_workflow_status"] = status
 	if company:
 		filters["company"] = company
 	if sales_order:
 		filters["custom_sales_order_id"] = sales_order
 	if delivery_note:
-		# Filter Pick Lists down to the one(s) that produced this Delivery Note —
-		# resolved via Delivery Note Item.against_pick_list. "__no_match__" forces an
-		# empty result when the DN maps to no Pick List (rather than ignoring the filter).
+		# Pick Lists that produced this DN, via Delivery Note Item.against_pick_list.
+		# "__no_match__" keeps the result empty when the DN maps to no Pick List.
 		pls = list({
 			r for r in frappe.get_all(
 				"Delivery Note Item", filters={"parent": delivery_note}, pluck="against_pick_list"
@@ -295,8 +284,7 @@ def get_pick_list_entry_list(
 		})
 		filters["name"] = ["in", pls or ["__no_match__"]]
 
-	# A dedicated PL User only sees Pick Lists assigned to them. Warehouse
-	# admins/managers (and System Manager) keep full visibility.
+	# A dedicated PL User only sees Pick Lists assigned to them; admins/managers see all.
 	_roles = set(frappe.get_roles())
 	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "DN Manager"}
 	if "PL User" in _roles and not (_roles & _override):
@@ -328,8 +316,8 @@ def get_pick_list_entry_list(
 	if has_more:
 		data = data[:page_length]
 
-	# Invoice No lives on the Sales Order and is set AFTER the Pick List is made,
-	# so the PL's own fetched copy is usually stale/empty — show the SO's live value.
+	# Invoice No lives on the Sales Order (set after the PL is made); the PL's own
+	# copy is usually stale, so show the SO's live value.
 	so_ids = list({r.custom_sales_order_id for r in data if r.get("custom_sales_order_id")})
 	inv_by_so = {}
 	if so_ids:
@@ -348,20 +336,12 @@ def get_pick_list_entry_list(
 	}
 
 def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, remaining_only=0):
-	"""Shared core: insert a Pick List in draft state from SO mapping data + UI edits.
+	"""Insert a draft Pick List from the SO mapping plus the UI edits, and return it (docstatus=0).
 
-	Items may include client-side split rows (marked is_client_extra=1) that
-	don't exist in the SO mapping — those get appended as fresh locations
-	cloned from their `source_row` mapping. removed_rows is a list of audit
-	entries written to custom_removed_items.
-
-	remaining_only=1 (partial "Create PL for Remaining Qty"): the mapping is
-	refetched with the SAME remaining-qty reduction the UI rendered, so each
-	row's custom_ordered_qty snapshots the remaining qty (not the full SO qty).
-	Without this, a full-remaining pick reads as short vs the full ordered qty
-	and qty_flow wrongly demands a short-pick remark.
-
-	Returns the inserted doc (still docstatus=0). Caller decides whether to submit.
+	Items may include client-side split rows (is_client_extra=1) cloned from their
+	source_row mapping. With remaining_only=1 the mapping is refetched with the same
+	remaining-qty reduction the UI rendered, so custom_ordered_qty snapshots the
+	remaining qty and a full-remaining pick isn't treated as short.
 	"""
 	header = json.loads(header) if isinstance(header, str) else header
 	items = json.loads(items) if isinstance(items, str) else items
@@ -384,8 +364,7 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, rem
 	for k, v in header.items():
 		pick_list.set(k, v)
 
-	# Index UI items by original mapping name so we know which mapping rows
-	# survived (not removed) and which need their qty/box edits applied.
+	# Index UI items by mapping name to tell which rows survived and carry edits.
 	ui_by_name = {i.get("name"): i for i in items if not i.get("is_client_extra")}
 
 	for mapped_row in mapping_data.locations:
@@ -418,8 +397,8 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, rem
 			"custom_remark": ui_item.get('custom_remark') or None,
 		})
 
-	# Client-side split rows: clone from the source mapping row when known so
-	# they inherit warehouse / source_table / ordered_qty correctly.
+	# Client-side split rows: clone from the source mapping row so they inherit
+	# warehouse / source_table / ordered_qty.
 	for extra in (i for i in items if i.get("is_client_extra")):
 		source = mapping_by_name.get(extra.get("source_row")) or {}
 		qty = float(extra.get('qty') or 0)
@@ -465,8 +444,7 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, rem
 	pick_list.flags.ignore_mandatory = True
 	pick_list.insert(ignore_permissions=True)
 
-	# Force-set qty/box/dates on every location row so direct DB matches the UI
-	# (mapping items go through ORM; client extras likewise need precision).
+	# Force-set qty/box/dates on every location row so the DB matches the UI exactly.
 	for item in pick_list.locations:
 		ui_item = (
 			ui_by_name.get(item.sales_order_item)
@@ -509,15 +487,8 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, rem
 
 @frappe.whitelist()
 def create_pick_list_as_draft(so_name, header, items, removed_rows=None, remaining_only=0):
-	"""Persist a Pick List as draft (docstatus=0) and return its name.
-
-	Used by the entry page when the user wants to split/remove rows on a
-	new PL — those actions need a persisted doc to operate on. After draft
-	creation, the page navigates to the new doc and the row-action buttons
-	become available.
-	"""
-	# The entry page is open to all desk users, and _build_pick_list_from_mapping inserts
-	# with ignore_permissions — so gate here, else a view-only role could create Pick Lists.
+	"""Save a Pick List as draft and return its name (split/remove row actions need a persisted doc)."""
+	# _build_pick_list_from_mapping inserts with ignore_permissions, so gate here.
 	if not frappe.has_permission("Pick List", "create"):
 		frappe.throw(frappe._("You are not permitted to create Pick Lists."), frappe.PermissionError)
 	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows, remaining_only)
@@ -533,9 +504,8 @@ def create_and_submit_pick_list(so_name, header, items, removed_rows=None,
 		frappe.throw(frappe._("You are not permitted to create Pick Lists."), frappe.PermissionError)
 	if not frappe.has_permission("Pick List", "submit"):
 		frappe.throw(frappe._("You are not permitted to submit Pick Lists."), frappe.PermissionError)
-	# Dispatch Date mirrors the Sales Order, so a user-set date (e.g. "Update to Today" on
-	# submit) must go to the SO first — otherwise the new Pick List inherits/validates back to
-	# the SO's old date. Mirrors save_pick_list_data.
+	# Dispatch Date mirrors the SO, so a user-set date must go to the SO first, else
+	# the new Pick List validates back to the SO's old date (as in save_pick_list_data).
 	_hdr = json.loads(header) if isinstance(header, str) else (header or {})
 	_new_dispatch = _hdr.get("custom_dispatch_date")
 	if _new_dispatch and so_name:

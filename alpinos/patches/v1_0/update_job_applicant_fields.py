@@ -1,23 +1,9 @@
-"""
-Patch to update existing Job Applicant fields:
-1. Update field labels (phone_number -> Mobile Number, resume_attachment -> Resume/CV)
-2. Update status field options to match SRS requirements
-3. Hide unwanted fields (Resume Link, Salary Expectation, Country, etc.)
-4. Hide child table fields (if they exist)
-5. Configure field visibility for web form and regular form
-"""
+"""Update existing Job Applicant fields: labels, status options and field visibility per SRS."""
 
 import frappe
 
 
 def execute():
-	"""Execute patch to update Job Applicant fields"""
-	
-	# ============================================
-	# FIELD LABEL UPDATES
-	# ============================================
-	
-	# 1. Update phone_number label to "Mobile Number"
 	update_property_setter(
 		"Job Applicant",
 		"phone_number",
@@ -26,7 +12,6 @@ def execute():
 		"Data"
 	)
 	
-	# 2. Update resume_attachment label to "Resume/CV"
 	update_property_setter(
 		"Job Applicant",
 		"resume_attachment",
@@ -35,14 +20,8 @@ def execute():
 		"Data"
 	)
 	
-	# 3. Make resume_attachment mandatory
 	update_field_property("Job Applicant", "resume_attachment", "reqd", 1)
 	
-	# ============================================
-	# STATUS FIELD CONFIGURATION
-	# ============================================
-	
-	# 4. Update status field options to match SRS requirements
 	status_options = (
 		"Draft\n"
 		"Submitted\n"
@@ -58,7 +37,6 @@ def execute():
 		"Text"
 	)
 	
-	# 5. Set default status to "Draft"
 	update_property_setter(
 		"Job Applicant",
 		"status",
@@ -67,7 +45,7 @@ def execute():
 		"Data"
 	)
 	
-	# 6. Hide status from web form (HR-only field)
+	# HR-only field, hidden from the web form
 	update_property_setter(
 		"Job Applicant",
 		"status",
@@ -76,51 +54,36 @@ def execute():
 		"Check"
 	)
 	
-	# ============================================
-	# HIDE UNWANTED FIELDS (Completely Remove from View)
-	# ============================================
-	
-	# 7. Hide Country field (not in SRS)
+	# Hide fields not in the SRS
 	hide_field_completely("Job Applicant", "country")
 	
-	# 8. Hide Resume Link (only use Resume Attachment)
 	hide_field_completely("Job Applicant", "resume_link")
 	
-	# 9. Hide Salary Expectation section fields (not in SRS)
 	hide_field_completely("Job Applicant", "currency")
 	hide_field_completely("Job Applicant", "lower_range")
 	hide_field_completely("Job Applicant", "upper_range")
 	
-	# 10. Hide additional unwanted fields
 	hide_field_completely("Job Applicant", "notes")
 	hide_field_completely("Job Applicant", "source_name")
 	hide_field_completely("Job Applicant", "employee_referral")
 	
-	# 10a. Hide flat reference fields (we use Reference table instead)
+	# Flat reference fields - we use the Reference child table instead
 	hide_field_completely("Job Applicant", "reference_name")
 	hide_field_completely("Job Applicant", "reference_mobile_number")
 	
-	# 11. Hide any child table fields if they exist (except reference - keep it visible)
+	# Hide child table fields (keep reference visible)
 	hide_field_completely("Job Applicant", "employment_history")
 	
-	# Delete qualification field if it references non-existent Qualification DocType
+	# qualification / qualification_section link a Qualification DocType that does not exist here
 	delete_field_if_exists("Job Applicant", "qualification")
 	
-	# Reference table should be visible - don't hide it
 	
-	# 12. Delete Qualification section break (references non-existent DocType)
+	# Delete the Qualification section break (references a non-existent DocType)
 	delete_field_if_exists("Job Applicant", "qualification_section")
-	
-	# 13. Hide degree field (non-mandatory, hidden)
+
 	hide_field_completely("Job Applicant", "degree")
 	
-	# ============================================
-	# AUTO-POPULATED FIELDS (Read-only, Hidden from Web Form)
-	# ============================================
-	
-	# 12. Make main Designation field read-only and hidden from web form
-	# Note: This is auto-populated from Job Opening/Requisition
-	# The employment_designation field in Employment History section is separate
+	# Auto-populated from Job Opening/Requisition; the Employment History designation is a separate field
 	update_property_setter(
 		"Job Applicant",
 		"designation",
@@ -136,8 +99,7 @@ def execute():
 		"Check"
 	)
 	
-	# 13. Make Job Opening (job_title) read-only and hidden from web form
-	# Note: This is auto-populated from Job Requisition
+	# Auto-populated from Job Requisition
 	update_property_setter(
 		"Job Applicant",
 		"job_title",
@@ -153,11 +115,6 @@ def execute():
 		"Check"
 	)
 	
-	# ============================================
-	# CANDIDATE ID CONFIGURATION
-	# ============================================
-	
-	# 14. Hide Candidate ID from web form (HR-only field)
 	update_property_setter(
 		"Job Applicant",
 		"candidate_id",
@@ -166,7 +123,6 @@ def execute():
 		"Check"
 	)
 	
-	# 15. Show Candidate ID in list view (for HR)
 	update_property_setter(
 		"Job Applicant",
 		"candidate_id",
@@ -175,11 +131,7 @@ def execute():
 		"Check"
 	)
 	
-	# ============================================
-	# FIELD POSITIONING (Move fields to Work Details section)
-	# ============================================
-	
-	# 16. Move Source field to Work Details section (after total_experience)
+	# Move Source, Portfolio, Expected Joining Date and Reference into the Work Details section
 	update_property_setter(
 		"Job Applicant",
 		"source",
@@ -188,7 +140,6 @@ def execute():
 		"Data"
 	)
 	
-	# 17. Move Portfolio after Source
 	update_property_setter(
 		"Job Applicant",
 		"portfolio",
@@ -197,7 +148,6 @@ def execute():
 		"Data"
 	)
 	
-	# 18. Move Expected Date of Joining after Portfolio
 	update_property_setter(
 		"Job Applicant",
 		"expected_date_of_joining",
@@ -206,7 +156,6 @@ def execute():
 		"Data"
 	)
 	
-	# 19. Move Reference table after Expected Date of Joining (in Work Details, no separate section)
 	update_property_setter(
 		"Job Applicant",
 		"reference",
@@ -215,14 +164,8 @@ def execute():
 		"Data"
 	)
 	
-	# 20. Hide reference_section (no separate section needed - keep in Work Details)
 	hide_field_completely("Job Applicant", "reference_section")
 	
-	# ============================================
-	# JOB REQUISITION FIELD VISIBILITY
-	# ============================================
-	
-	# 21. Make Job Requisition visible in doctype (Work Details section)
 	update_property_setter(
 		"Job Applicant",
 		"job_requisition",
@@ -231,7 +174,6 @@ def execute():
 		"Check"
 	)
 	
-	# 22. Show Job Requisition in web form
 	update_property_setter(
 		"Job Applicant",
 		"job_requisition",
@@ -240,7 +182,6 @@ def execute():
 		"Check"
 	)
 	
-	# 23. Make Job Requisition required
 	update_property_setter(
 		"Job Applicant",
 		"job_requisition",
@@ -249,11 +190,7 @@ def execute():
 		"Check"
 	)
 	
-	# ============================================
-	# APPLIED POSITION FIELD - MAKE NOT REQUIRED
-	# ============================================
-	
-	# 24. Make applied_position NOT required (use job_requisition instead)
+	# Use job_requisition instead of applied_position
 	update_property_setter(
 		"Job Applicant",
 		"applied_position",
@@ -262,7 +199,6 @@ def execute():
 		"Check"
 	)
 	
-	# 25. Hide applied_position from web form (use job_requisition instead)
 	update_property_setter(
 		"Job Applicant",
 		"applied_position",
@@ -271,11 +207,7 @@ def execute():
 		"Check"
 	)
 	
-	# ============================================
-	# UPDATE WEB FORM FIELD LABEL AND OPTIONS
-	# ============================================
-	
-	# 26. Update web form job_requisition field label and options to "Job Opening"
+	# Relabel job_requisition to "Job Opening" on the public web form
 	update_web_form_field("job-application", "job_requisition", {
 		"label": "Job Opening",
 		"options": "Job Opening"
@@ -311,7 +243,6 @@ def execute():
 
 
 def update_field_property(doctype, fieldname, property_name, value):
-	"""Update a field property directly"""
 	try:
 		field = frappe.get_doc("DocField", {"parent": doctype, "fieldname": fieldname})
 		if field:
@@ -323,9 +254,7 @@ def update_field_property(doctype, fieldname, property_name, value):
 
 
 def delete_field_if_exists(doctype, fieldname):
-	"""Delete a custom field if it exists (for fields referencing non-existent DocTypes)"""
 	try:
-		# Check if custom field exists
 		custom_field = frappe.db.exists("Custom Field", {"dt": doctype, "fieldname": fieldname})
 		if custom_field:
 			frappe.delete_doc("Custom Field", custom_field, force=1, ignore_permissions=True)
@@ -336,8 +265,6 @@ def delete_field_if_exists(doctype, fieldname):
 
 
 def hide_field_completely(doctype, fieldname):
-	"""Hide a field completely from both web form and regular form"""
-	# Hide from web form
 	update_property_setter(
 		doctype,
 		fieldname,
@@ -346,7 +273,6 @@ def hide_field_completely(doctype, fieldname):
 		"Check"
 	)
 	
-	# Hide from regular form
 	update_property_setter(
 		doctype,
 		fieldname,
@@ -357,8 +283,6 @@ def hide_field_completely(doctype, fieldname):
 
 
 def update_property_setter(doctype, fieldname, property_name, value, property_type="Data"):
-	"""Create or update a property setter"""
-	# Check if property setter already exists
 	existing = frappe.db.exists(
 		"Property Setter",
 		{
@@ -369,12 +293,10 @@ def update_property_setter(doctype, fieldname, property_name, value, property_ty
 	)
 	
 	if existing:
-		# Update existing property setter
 		ps = frappe.get_doc("Property Setter", existing)
 		ps.value = value
 		ps.save(ignore_permissions=True)
 	else:
-		# Create new property setter
 		ps = frappe.get_doc({
 			"doctype": "Property Setter",
 			"doctype_or_field": "DocField",
@@ -390,7 +312,6 @@ def update_property_setter(doctype, fieldname, property_name, value, property_ty
 
 
 def update_web_form_field(web_form_name, fieldname, updates):
-	"""Update a web form field's properties"""
 	try:
 		if not frappe.db.exists("Web Form", web_form_name):
 			print(f"   ⚠️  Web Form {web_form_name} does not exist, skipping web form field update")

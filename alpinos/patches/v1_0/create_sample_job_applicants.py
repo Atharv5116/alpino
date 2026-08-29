@@ -1,18 +1,12 @@
-"""
-Patch to create sample Job Applicant entries for testing
-"""
+"""Create sample Job Applicant entries for testing."""
 
 import frappe
 from frappe.utils import today, add_days
 
 
 def execute():
-	"""Create sample Job Applicant entries"""
-	
-	# Get default currency
 	default_currency = frappe.db.get_value("Company", {"name": ("!=", "")}, "default_currency") or "INR"
-	
-	# Sample data
+
 	sample_applicants = [
 		{
 			"applicant_name": "John Doe",
@@ -70,7 +64,6 @@ def execute():
 	existing_count = 0
 	
 	for applicant_data in sample_applicants:
-		# Check if applicant already exists by email
 		existing = frappe.db.exists("Job Applicant", {"email_id": applicant_data["email_id"]})
 		
 		if existing:
@@ -79,7 +72,6 @@ def execute():
 			continue
 		
 		try:
-			# Create Job Applicant
 			applicant = frappe.get_doc({
 				"doctype": "Job Applicant",
 				"applicant_name": applicant_data["applicant_name"],
@@ -97,8 +89,7 @@ def execute():
 			applicant.flags.ignore_mandatory = True
 			applicant.insert(ignore_permissions=True)
 			
-			# Set candidate_id = name (after insert, name is set)
-			# Both will be in AHFPL0000 format (e.g., AHFPL0001, AHFPL0002)
+			# candidate_id = name (set after insert)
 			applicant.candidate_id = applicant.name
 			applicant.save(ignore_permissions=True)
 			

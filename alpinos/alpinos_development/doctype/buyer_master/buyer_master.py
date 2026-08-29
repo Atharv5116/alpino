@@ -38,17 +38,11 @@ def _customer_is_free(customer_id, doc):
 
 
 def _customer_id_for_obm(doc):
-	"""The Customer ID this buyer should own.
+	"""The Customer ID this buyer should own: GST-based, then site-scoped, then the buyer's own ID.
 
-	"<Business> - <GST/PAN>" names the GST entity. One entity often trades from
-	many sites, though, and every site is its own Buyer Master — so only the
-	first of them can carry the GST-based ID. The rest fall back to
-	"<Business> - <Site Name>", which is the shape the existing data already
-	uses, and to the buyer's own ID if even that is taken.
-
-	Deriving the same ID every time is what lets a Buyer Master export be
-	re-imported: the Customer column becomes reproducible instead of a value
-	the sheet has to carry.
+	One GST entity trades from many sites and each site is its own Buyer Master,
+	so only the first can carry the GST-based ID. Deriving it the same way every
+	time keeps a Buyer Master export re-importable.
 	"""
 	biz_name = (doc.customer_business_name or "").strip()
 	tax_id = (doc.gst_no or doc.pan_no or "").strip()
@@ -69,10 +63,8 @@ def _customer_id_for_obm(doc):
 def _ensure_customer_for_obm(doc):
 	"""Create or refresh ERPNext Customer from business name (no manual Customer pick list)."""
 	biz_name = (doc.customer_business_name or "").strip()
-	# GST No (Registered) / PAN No (Unregistered) distinguishes GST entities that
-	# share a trade name — but ONLY in the Customer ID (docname). customer_name
-	# stays the plain business name: that is what Sales Orders, Pick Lists and
-	# stickers display.
+	# tax id disambiguates the Customer ID (docname) only; customer_name stays the
+	# plain business name shown on Sales Orders, Pick Lists and stickers.
 	tax_id = (doc.gst_no or doc.pan_no or "").strip()
 
 	if not biz_name:
@@ -80,8 +72,7 @@ def _ensure_customer_for_obm(doc):
 
 	unique_id = _customer_id_for_obm(doc)
 
-	# A customer for this GST entity may already exist (e.g. re-linking) — adopt
-	# it, unless another Buyer Master got there first.
+	# Adopt an existing customer for this GST entity, unless another buyer owns it.
 	if not doc.customer and frappe.db.exists("Customer", unique_id) and _customer_is_free(unique_id, doc):
 		doc.customer = unique_id
 
@@ -113,12 +104,8 @@ def _ensure_customer_for_obm(doc):
 			cust.parent_customer = parent_customer
 		cust.flags.ignore_mandatory = True
 		cust.save(ignore_permissions=True)
-		# The Customer ID (docname) is deliberately LEFT UNTOUCHED for an already
-		# linked customer. Buyer Master edits keep syncing the Customer's fields
-		# (name, tax id, order type, parent) and its Address/Contact, but the
-		# Customer is never auto-renamed — so changing the Buyer Master ID (or the
-		# derived id drifting) no longer moves the Customer ID. The ID stays
-		# whatever it was created as.
+		# Already-linked customer: keep syncing its fields, but never auto-rename
+		# the Customer ID — it stays whatever it was created as.
 		return
 
 	cust = frappe.new_doc("Customer")
@@ -136,10 +123,8 @@ def _ensure_customer_for_obm(doc):
 		cust.parent_customer = parent_customer
 	if company:
 		cust.append("companies", {"company": company})
-	# Docname = "business - GST/PAN" (unique per GST entity), or the site-scoped
-	# fallback when a sibling site already holds it; display name stays plain.
-	# Without a tax id AND without a collision there is nothing to disambiguate,
-	# so leave the naming to the site's Customer naming setting.
+	# Docname = "business - GST/PAN" (or the site-scoped fallback); display name
+	# stays plain. With no tax id and no collision, leave naming to the site setting.
 	force_name = unique_id if (tax_id or unique_id != biz_name) else None
 	cust.insert(ignore_permissions=True, set_name=force_name)
 	doc.customer = cust.name
@@ -159,7 +144,6 @@ class BuyerMaster(Document):
 		if self.parent_buyer == self.name:
 			frappe.throw(_("A record cannot be its own Parent."), title=_("Relationship Error"))
 
-		# If this record has children, it cannot be a child itself
 		if self.parent_buyer and frappe.db.exists("Buyer Master", {"parent_buyer": self.name}):
 			frappe.throw(
 				_("This record is already a Parent to other records and cannot be assigned a Parent."),
@@ -169,9 +153,7 @@ class BuyerMaster(Document):
 		_ensure_customer_for_obm(self)
 
 	def _validate_gstin_and_pincodes(self):
-		"""BRD field rules: 15-char GSTIN on gst_no, 6-digit PIN on address rows.
-		Enforced only for NEW or CHANGED values — legacy rows with bad data must
-		not block unrelated saves (margin sync, address write-back, etc.)."""
+		"""GSTIN + PIN format checks, only on new/changed values so legacy bad data doesn't block saves."""
 		import re
 
 		gstin_re = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
@@ -210,12 +192,9 @@ class BuyerMaster(Document):
 		else:
 			self.payment_term_days = None
 
-		# GST No must be UNIQUE across Buyer Masters — the same GSTIN on two
-		# unrelated buyers is what creates the duplicate customer that later
-		# breaks Sales Order selection. Parent/child buyers in the SAME family
-		# (one legal entity, multiple sites) may share a GST, so those are exempt.
-		# Only enforced when the GST is set or CHANGED, so existing records
-		# (incl. legacy shared-GST data) stay editable as long as the GST is kept.
+		# GST No must be unique across Buyer Masters (a shared GSTIN spawns the
+		# duplicate customer that breaks SO selection). Parent/child sites in one
+		# family may share it. Only checked when the GST is set or changed.
 		gst = (self.gst_no or "").strip().upper()
 		old_gst = ""
 		if not self.is_new():
@@ -229,7 +208,7 @@ class BuyerMaster(Document):
 			):
 				other_root = other.parent_buyer or (other.name if other.is_parent else None)
 				if my_root and other_root and my_root == other_root:
-					continue  # same family — a shared GSTIN is allowed
+					continue  # same family, shared GSTIN is fine
 				frappe.throw(
 					_(
 						"GST No {0} is already used by Buyer Master {1}. A GSTIN can belong "
@@ -238,9 +217,8 @@ class BuyerMaster(Document):
 					title=_("Duplicate GST"),
 				)
 
-		# Only meaningful once a Customer is linked. A blank one filters on
-		# "customer IS NULL", so a single unlinked row would block every new
-		# buyer with a duplicate warning naming nothing.
+		# Only meaningful once a Customer is linked; a blank one would match every
+		# unlinked buyer and raise a bogus duplicate warning.
 		filters = {"customer": self.customer}
 		if not self.is_new():
 			filters["name"] = ["!=", self.name]
@@ -257,8 +235,7 @@ class BuyerMaster(Document):
 			self.customer_id = self.name
 
 	def after_insert(self):
-		# read_only fields can be omitted from the INSERT query in some Frappe versions.
-		# Force the customer link into DB now that the row exists.
+		# read_only fields can drop out of the INSERT; force the customer link in now.
 		if self.customer:
 			frappe.db.set_value(
 				"Buyer Master", self.name, "customer", self.customer, update_modified=False
@@ -266,8 +243,7 @@ class BuyerMaster(Document):
 			frappe.db.commit()
 
 	def on_update(self):
-		# Create/refresh the ERPNext Address + Contact for the linked Customer so they
-		# exist immediately on save (idempotent — safe to run on every save).
+		# Create/refresh the Customer's Address + Contact on every save (idempotent).
 		from alpinos.sales_order_offline_buyer import sync_obm_to_customer_party
 
 		sync_obm_to_customer_party(self)

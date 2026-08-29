@@ -1,8 +1,8 @@
 """Move the 'No Biometric' preference from Company to Employee.
 
-Employees of the same company can have different biometric preferences, so the flag now
-lives on Employee. This one-time patch carries the old company-level setting onto each of
-that company's employees, then removes the now-unused Company custom field.
+Employees of the same company can differ, so the flag lives on Employee now; this
+one-time patch backfills it from the old company-level setting, then drops the
+now-unused Company custom field.
 """
 
 import frappe
@@ -10,8 +10,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_field
 
 
 def execute():
-	# 1. Ensure the per-employee field exists (after_migrate creates it too, but the backfill
-	#    below needs the column to exist now).
+	# after_migrate creates this field too, but the backfill below needs the column now.
 	if not frappe.db.exists("Custom Field", {"dt": "Employee", "fieldname": "custom_no_biometric"}):
 		create_custom_field(
 			"Employee",
@@ -24,7 +23,7 @@ def execute():
 			),
 		)
 
-	# 2. Carry the old company-level value onto employees (don't clobber any already set).
+	# Carry the old company-level value onto employees, without clobbering ones already set.
 	company_cols = [c.get("Field") for c in frappe.db.sql("SHOW COLUMNS FROM `tabCompany`", as_dict=True)]
 	if "custom_no_biometric" in company_cols:
 		companies = [
@@ -42,7 +41,7 @@ def execute():
 				{"c": companies},
 			)
 
-	# 3. Remove the now-unused Company-level custom field.
+	# Drop the now-unused Company-level custom field.
 	cf = frappe.db.get_value("Custom Field", {"dt": "Company", "fieldname": "custom_no_biometric"}, "name")
 	if cf:
 		frappe.delete_doc("Custom Field", cf, force=1, ignore_permissions=True)

@@ -14,7 +14,7 @@ _patch_applied = False
 
 
 def _apply_checkout_reason_patch():
-	# Apply once when this module is loaded so HRMS uses patched mark_attendance_and_link_log
+	# Apply once per process.
 	global _patch_applied
 	if _patch_applied:
 		return
@@ -132,7 +132,6 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 				source = "Unknown Source"
 				source_type = "Unknown"
 			
-			# Create user-friendly log message
 			log_details = f"SOURCE: {source}\n"
 			log_details += f"CHECKIN TIME: {self.time}\n"
 			log_details += f"TYPE: {self.log_type}\n"
@@ -207,17 +206,13 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			)
 
 	def validate_distance_from_shift_location(self):
-		# System backfill (create_checkins_from_attendance): a reconstructed historical punch
-		# that just mirrors the Attendance's in/out times — not a live geo check-in — so skip
-		# geo-fencing entirely, exactly as biometric / attendance-request punches already do.
+		# System backfill (create_checkins_from_attendance): reconstructed historical punch, skip geo-fencing.
 		if self.flags.get("skip_geo_validation"):
 			return
-		# Skip all location/geo validations when check-in/check-out is from Attendance Request or Biometric Device
+		# Skip geo validation for Attendance Request or Biometric Device punches
 		if self.get("from_attendance_request") or self.get("device_id"):
 			return
-		# Approved Work From Home day: working from outside the office is expected, so don't flag
-		# the check-in as outside-location and don't demand an outside checkout reason. The daily
-		# task update collected on checkout (attendance_widget) covers accountability instead.
+		# Approved WFH day: outside-office is expected, don't flag or demand a checkout reason.
 		from alpinos.attendance_widget import _approved_wfh_today
 
 		if _approved_wfh_today(self.employee):
@@ -253,17 +248,14 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		if not assignment_locations:
 			return
 
-		# Office coordinates come from the assigned Shift Location, but the geo-fence RADIUS is
-		# the single source of truth from eSSL Settings (web_checkin_radius_km). This keeps
-		# check-IN and check-OUT governed by the exact same configured radius (default 1 km),
-		# rather than a per-Shift-Location radius. Same coords, one radius.
+		# Office coords from the Shift Location; radius from eSSL Settings (web_checkin_radius_km, default 1 km).
 		latitude, longitude = frappe.db.get_value(
 			"Shift Location", assignment_locations[0], ["latitude", "longitude"]
 		)
 		radius_km = flt(frappe.db.get_single_value("eSSL Settings", "web_checkin_radius_km")) or 1.0
 		checkin_radius = radius_km * 1000.0
 		if not (flt(latitude) or flt(longitude)):
-			# No office coordinates to compare against — can't verify location.
+			# No office coordinates to compare against.
 			if self.log_type == "OUT":
 				self._require_checkout_reason_if_outside()
 			return
@@ -279,14 +271,11 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 		if distance <= checkin_radius:
 			return
 
-		# Outside radius — flag it so HR can review outside-location check-ins.
+		# Outside radius: flag for HR review.
 		self.custom_outside_location = 1
 
-		# Outside radius
 		if self.log_type == "IN":
-			# Check-in is allowed from any location. When outside the office geo-fence the
-			# employee selects a check-in reason/type in the widget (captured on the record);
-			# no Work From Home request is required. We only flag it (above) for HR review.
+			# Check-in is allowed from any location (reason captured in the widget); only flagged above.
 			return
 
 		# OUT: require reason when checking out from outside office
@@ -294,9 +283,9 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 
 
 def patch_mark_attendance_and_link_log(bootinfo=None):
-	"""Public hook for boot_session: ensure patch is applied. Frappe calls boot hooks with bootinfo."""
+	"""Boot hook: ensure the patch is applied."""
 	_apply_checkout_reason_patch()
 
 
-# Apply patch when this module is loaded so HRMS callers get the patched function
+# Apply on import so HRMS callers get the patched functions.
 _apply_checkout_reason_patch()

@@ -1,7 +1,4 @@
-"""
-Update existing Web Form to match SRS requirements
-Removes fields that should not be in web form
-"""
+"""Update the Job Application web form to match SRS requirements."""
 
 import frappe
 
@@ -15,8 +12,7 @@ def update_job_application_webform():
 	
 	web_form = frappe.get_doc("Web Form", "job-application")
 
-	# Standard web forms can only be edited in developer mode — skip instead of
-	# crashing the migrate when the flag is off (or races during migrate).
+	# standard web forms can only be edited in developer mode; skip otherwise
 	if web_form.get("is_standard") and not frappe.conf.developer_mode:
 		print("ℹ️  job-application web form is standard and developer mode is off — skipping update")
 		return
@@ -54,9 +50,7 @@ def update_job_application_webform():
 		"cover_letter",
 	]
 	
-	# Define field order matching doctype exactly (from property_setter field_order)
-	# Only include fields that should be visible in web form (excluding hidden fields)
-	# Order matches Job Applicant doctype: details_section -> work_details_section -> employment_history_section -> qualification_section
+	# field order matching the Job Applicant doctype (visible web-form fields only)
 	field_order = [
 		# Details Section (fields in same order as doctype)
 		"applicant_name",
@@ -88,10 +82,8 @@ def update_job_application_webform():
 	"degree",
 ]
 
-	# The web form may only reference fields that actually exist on Job
-	# Applicant. Production carries extra DocFields added directly on the
-	# doctype; a fresh/test site may lack some — skip those (with a warning)
-	# instead of failing the whole migrate on Web Form validation.
+	# skip web-form fields that don't exist on Job Applicant here (fresh/test sites)
+	# instead of failing the whole migrate on validation.
 	available = {df.fieldname for df in frappe.get_meta("Job Applicant").fields}
 	missing = [f for f in field_order if f not in available]
 	if missing:
@@ -99,116 +91,98 @@ def update_job_application_webform():
 	field_order = [f for f in field_order if f in available]
 
 	
-	# Create a dict of existing fields for quick lookup (extract data as dict)
-	# Exclude fields that should be hidden/removed
+	# existing fields keyed by fieldname (excluding hidden/removed ones)
 	existing_fields = {}
 	for f in web_form.web_form_fields:
 		if f.fieldname not in fields_to_hide:
 			field_dict = f.as_dict()
-			# Ensure marital_status has options
 			if f.fieldname == "marital_status" and f.fieldtype == "Select":
 				if not field_dict.get("options") or field_dict.get("options", "").strip() == "":
 					field_dict["options"] = "\nSingle\nMarried\nDivorced\nWidowed"
 			existing_fields[f.fieldname] = field_dict
-		# Explicitly remove applied_position if it exists (in case it's not in fields_to_hide check)
+		# Drop applied_position defensively even if it slipped past fields_to_hide
 		elif f.fieldname == "applied_position":
-			continue  # Skip this field completely
-	
-	# Rebuild web_form_fields in correct order
+			continue
+
 	new_web_form_fields = []
 	for fieldname in field_order:
 		if fieldname in existing_fields:
-			# Use existing field data
 			field_dict = existing_fields[fieldname]
 			new_web_form_fields.append(field_dict)
 		else:
-			# Create new field from config
 			field_config = get_field_config(fieldname)
 			if field_config:
 				new_web_form_fields.append(field_config)
 			else:
-				# Debug: warn if field config not found for important fields
 				if fieldname == "job_requisition":
 					print(f"   ⚠️  WARNING: job_requisition config not found in get_field_config!")
-	
-	# Replace web_form_fields completely to ensure correct order and remove unwanted fields
+
+	# Rebuild the child table from scratch so order is exact and hidden fields are gone
 	web_form.web_form_fields = []
 	for idx, field_dict in enumerate(new_web_form_fields):
-		# Skip applied_position if it somehow made it through
 		if field_dict.get("fieldname") == "applied_position":
 			continue
-		
-		# Update job_requisition label and options if it exists
+
 		if field_dict.get("fieldname") == "job_requisition":
 			field_dict["label"] = "Job Opening"
 			field_dict["options"] = "Job Opening"
-		
-		# Remove doctype from dict as it will be set automatically
+
+		# doctype is set on append, so strip it from the source dict
 		field_dict_clean = {k: v for k, v in field_dict.items() if k != "doctype"}
 		field_doc = web_form.append("web_form_fields", field_dict_clean)
-		field_doc.idx = idx + 1  # Set explicit index for ordering
-	
-	# Ensure job_requisition field exists - explicitly add if missing
+		field_doc.idx = idx + 1
+
 	job_req_exists = any(f.fieldname == "job_requisition" for f in web_form.web_form_fields)
 	if not job_req_exists and "job_requisition" not in available:
 		print("   ⚠️  job_requisition does not exist on Job Applicant here — skipped.")
 	elif not job_req_exists:
 		print("   ⚠️  job_requisition not found, adding it explicitly...")
-		# Add job_requisition field explicitly
 		job_req_config = get_field_config("job_requisition")
 		if job_req_config:
 			field_dict_clean = {k: v for k, v in job_req_config.items() if k != "doctype"}
-			# Find the correct position (after work_details_section)
+			# Slot it right after the work_details_section break
 			work_details_idx = None
 			for idx, field in enumerate(web_form.web_form_fields):
 				if field.fieldname == "work_details_section":
 					work_details_idx = idx
 					break
-			
+
 			if work_details_idx is not None:
-				# Append job_requisition at correct position (right after work_details_section)
 				field_doc = web_form.append("web_form_fields", field_dict_clean, position=work_details_idx + 1)
 				print(f"   ✅ Added job_requisition at position {work_details_idx + 1} (after work_details_section)")
 			else:
-				# If section break not found, find position from field_order
-				# job_requisition should be right after work_details_section in field_order
+				# No section break present: fall back to its slot in field_order
 				try:
 					work_details_pos = field_order.index("work_details_section")
 					insert_pos = work_details_pos + 1
 					field_doc = web_form.append("web_form_fields", field_dict_clean, position=insert_pos)
 					print(f"   ✅ Added job_requisition at position {insert_pos} (based on field_order)")
 				except (ValueError, IndexError):
-					# Last resort - append to end
 					field_doc = web_form.append("web_form_fields", field_dict_clean)
 					print("   ✅ Added job_requisition at end of form")
-			
-			# Update all indices
+
 			for idx, field in enumerate(web_form.web_form_fields):
 				field.idx = idx + 1
-			
-			# Save immediately before reload to ensure field is persisted
+
 			web_form.save(ignore_permissions=True)
 			frappe.db.commit()
 		else:
 			print("   ❌ ERROR: job_requisition config not found in get_field_config!")
-	
-	# Save and reload to ensure order is applied
+
 	web_form.save(ignore_permissions=True)
 	frappe.db.commit()
 	web_form.reload()
-	
-	# Update existing job_requisition field label and options if it exists
+
+	# reload() drops the in-memory label/options, so reapply them after
 	for field in web_form.web_form_fields:
 		if field.fieldname == "job_requisition":
 			field.label = "Job Opening"
 			field.options = "Job Opening"
 			break
-	
-	# Save again to persist label/options changes
+
 	web_form.save(ignore_permissions=True)
 	frappe.db.commit()
-	
-	# Verify job_requisition exists
+
 	job_req_found = any(f.fieldname == "job_requisition" for f in web_form.web_form_fields)
 	job_req_label = None
 	if job_req_found:
@@ -406,6 +380,5 @@ def get_field_config(fieldname):
 
 
 def execute():
-	"""Execute web form update"""
 	update_job_application_webform()
 

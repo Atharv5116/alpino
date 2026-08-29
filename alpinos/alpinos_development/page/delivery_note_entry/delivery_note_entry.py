@@ -10,7 +10,7 @@ def get_delivery_note_data(name):
 	dn = frappe.get_doc("Delivery Note", name)
 	dn.check_permission("read")
 
-	# Get Pick List name from the first item that has one
+	# Pick List name from the first item that carries one
 	pick_list_name = ""
 	for item in dn.items:
 		if item.get("against_pick_list"):
@@ -54,7 +54,7 @@ def get_delivery_note_data(name):
 		"owner_full_name": frappe.utils.get_fullname(dn.owner),
 		"posting_date": formatdate(str(dn.posting_date)) if dn.posting_date else "",
 		"custom_sales_order_id": dn.get("custom_sales_order_id") or "",
-		# Invoice Id is assigned on the Sales Order (invoice sync) — show the SO's live value.
+		# Invoice No is set on the Sales Order; show its live value.
 		"custom_invoice_no": (
 			frappe.db.get_value("Sales Order", dn.get("custom_sales_order_id"), "custom_invoice_no")
 			if dn.get("custom_sales_order_id") else ""
@@ -79,12 +79,10 @@ _EDITABLE_HEADER_FIELDS = {
 	"custom_lr_gr_no",
 	"custom_dispatch_from",
 	"custom_assigned_to",
-	# Transporter is seeded from the Pick List at DN creation but is editable while
-	# the DN is in Draft; a change here propagates back to the Pick List and is logged
-	# on both docs (delivery_note_on_update_draft).
+	# Transporter is seeded from the Pick List but editable in Draft; a change here
+	# propagates back to the Pick List (delivery_note_on_update_draft).
 	"custom_transporter_name",
-	# vehicle_no (Picklist PO No.) is still synced from Pick List and rendered
-	# read-only on the entry page — intentionally omitted so the page can't overwrite it.
+	# vehicle_no is synced from the Pick List and read-only, so it's left out here.
 }
 
 
@@ -92,8 +90,7 @@ _DN_QTY_EDIT_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager", 
 
 
 def _can_edit_dn_qty():
-	"""Only authorized roles may change Delivery Note item quantities; everyone
-	else re-posts the (read-only) qty unchanged."""
+	"""Only authorized roles may change DN item quantities; others re-post it unchanged."""
 	return bool(set(frappe.get_roles()) & _DN_QTY_EDIT_ROLES)
 
 
@@ -115,8 +112,7 @@ def _apply_items_changes(dn, items):
 		if entry.get("delete"):
 			to_remove.append(row)
 			continue
-		# Qty is read-only unless the user holds an authorized role. Unauthorized
-		# edits are silently ignored (the page re-posts the existing qty on submit).
+		# Qty edits from users without the role are ignored.
 		if can_edit_qty and "qty" in entry and entry.get("qty") not in (None, ""):
 			try:
 				row.qty = float(entry["qty"])
@@ -170,18 +166,10 @@ def save_delivery_note_data(name, header, items=None, dispatch_to=None):
 
 
 def _backfill_item_dates_from_pick_list(dn):
-	"""Fill MFG / Expiry / Box / Batch on DN items from the best available source.
+	"""Fill MFG/Expiry/Box/Batch on DN items from the DN row, else the Pick List Item, else the Batch master.
 
-	Priority for each field, first non-empty wins:
-	1. The DN item itself (already populated)
-	2. The linked Pick List Item (custom_mfg_date / custom_expiry_date / custom_box
-	   / custom_batch_code)
-	3. The Batch master pointed to by batch_no — Batch always has
-	   manufacturing_date + expiry_date
-
-	The DN custom_mfg_date / custom_expiry_date fields are reqd=1 read_only=1, so
-	without this no DN can submit if either the Pick List didn't enter dates or
-	the DN was created before pick_list_api started copying them.
+	Those DN date fields are reqd + read-only, so without this a DN can't submit
+	when the Pick List left dates blank or predates them being copied.
 	"""
 	pl_row_names = [it.get("pick_list_item") for it in dn.items if it.get("pick_list_item")]
 	pl_data = {}
@@ -206,10 +194,9 @@ def _backfill_item_dates_from_pick_list(dn):
 	for item in dn.items:
 		pl = pl_data.get(item.get("pick_list_item")) or {}
 
-		# Batch first — Pick List's custom_batch_code is the source of truth.
-		# The free-text code always lands in custom_batch_code; batch_no (a Link
-		# to Batch) is only set when a real Batch master exists or can be created
-		# (batch-tracked items) — a bare string there fails DN submit.
+		# Batch first: the free-text code lands in custom_batch_code; batch_no (a
+		# Link to Batch) is set only when a real Batch exists, since a bare string
+		# there fails DN submit.
 		_fill(item, "custom_batch_code", pl.get("custom_batch_code"))
 		if not item.get("batch_no") and item.get("custom_batch_code"):
 			bn = _ensure_batch_exists(
@@ -278,8 +265,7 @@ def get_delivery_note_list(
 	if sales_order:
 		filters["custom_sales_order_id"] = sales_order
 
-	# A dedicated DN User only sees Delivery Notes assigned to them. Warehouse
-	# admins/managers (and System Manager) keep full visibility.
+	# A dedicated DN User only sees DNs assigned to them; admins/managers see all.
 	_roles = set(frappe.get_roles())
 	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "PL Manager"}
 	if "DN User" in _roles and not (_roles & _override):
@@ -322,8 +308,8 @@ def get_delivery_note_list(
 	if has_more:
 		rows = rows[:page_length]
 
-	# Invoice No lives on the Sales Order (set after the DN is made), so show the
-	# SO's live value rather than the DN's fetched-at-save copy which is usually empty.
+	# Invoice No lives on the Sales Order (set after the DN is made); the DN's own
+	# copy is usually empty, so show the SO's live value.
 	so_ids = list({r.custom_sales_order_id for r in rows if r.get("custom_sales_order_id")})
 	inv_by_so = {}
 	if so_ids:
@@ -353,7 +339,7 @@ def get_delivery_note_list(
 	}
 
 
-# ── Bulk LR No. update (Warehouse Admin / Manager) ───────────────────────────
+# Bulk LR No. update (Warehouse Admin / Manager)
 _LR_BULK_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager"}
 
 
@@ -380,8 +366,7 @@ def download_lr_excel():
 	from frappe.utils.xlsxutils import make_xlsx
 
 	today = frappe.utils.today()
-	# custom_dispatch_date is a Datetime, so an exact "= today" (a date) only matches
-	# 00:00:00 and misses any DN dispatching today at a real time — use a full-day range.
+	# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
 	dns = frappe.get_all(
 		"Delivery Note",
 		filters={
@@ -404,9 +389,7 @@ def download_lr_excel():
 
 @frappe.whitelist()
 def upload_lr_excel(file_url):
-	"""Read a filled LR Excel, set LR No. on the matching DRAFT Delivery Note (by Sales
-	Order ID), validate it's filled, and SUBMIT the Delivery Note. Returns a summary plus
-	per-row failures (row number, Sales Order ID, reason)."""
+	"""Read a filled LR Excel, set LR No. on the matching draft DN by Sales Order ID, then submit it. Returns a summary and per-row failures."""
 	_require_lr_roles()
 	import io
 
@@ -426,7 +409,7 @@ def upload_lr_excel(file_url):
 		so_id = (str(r[0]).strip() if r and len(r) > 0 and r[0] not in (None, "") else "")
 		lr = (str(r[3]).strip() if r and len(r) > 3 and r[3] not in (None, "") else "")
 		if not so_id:
-			continue  # skip blank rows
+			continue
 		if not lr:
 			failed.append({"row": idx, "sales_order": so_id, "reason": "LR No. is blank"})
 			continue

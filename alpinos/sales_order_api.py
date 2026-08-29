@@ -1086,14 +1086,8 @@ def _bundle_components(item_code):
 
 
 def _ensure_so_packed_items(so):
-	"""Make sure a bundle SO has its native Packed Items.
-
-	A Sales Order created BEFORE the bundle's native Product Bundle existed (e.g. before
-	this feature was migrated) has no packed_items — but the native pick-list -> Delivery
-	Note bundle flow needs them (they carry the real `product_bundle_item` and let the DN
-	pack + deduct component stock). Regenerate and persist them for any bundle line that
-	is missing them. Returns the (reloaded) SO. No-op for non-bundle / already-packed SOs.
-	"""
+	"""Ensure a bundle SO has its native Packed Items, regenerating them for any bundle
+	line that's missing them. No-op for non-bundle / already-packed SOs."""
 	bundle_lines = [
 		i for i in (so.get("items") or [])
 		if i.item_code and frappe.db.get_value("Item", i.item_code, "custom_is_bundle")
@@ -1104,8 +1098,7 @@ def _ensure_so_packed_items(so):
 	if all(i.name in packed_for for i in bundle_lines):
 		return so
 
-	# Clear any stale/partial packed rows first so a rebuild can't duplicate them, then
-	# regenerate the whole table from the native Product Bundle definition.
+	# clear stale packed rows first, then regenerate from the Product Bundle definition
 	from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 	frappe.db.delete("Packed Item", {"parent": so.name, "parenttype": "Sales Order"})
 	so.set("packed_items", [])
@@ -1122,14 +1115,8 @@ def _ensure_so_packed_items(so):
 
 def _explode_bundle_line(so, item):
 	"""Components for a bundle SO line, as [(item_code, qty, product_bundle_item, base_qty)].
-
-	Prefers the SO's NATIVE Packed Items (produced by the synced Product Bundle) so pick-list
-	rows line up 1:1 with what the Delivery Note packs — `product_bundle_item` is the real
-	Packed Item row name, which is exactly what ERPNext's pick-list->DN mapper keys on
-	(skips the component as a normal DN line, adds the bundle line + packed_items, and updates
-	the packed item's picked_qty). Falls back to the Item's custom mapping (display-only, no DN
-	bundling) only if a bundle SO line somehow has no packed items.
-	"""
+	Prefers the SO's native Packed Items (so pick-list rows match the DN); falls back to the
+	Item's custom mapping when a bundle line has no packed items."""
 	if not frappe.db.get_value("Item", item.item_code, "custom_is_bundle"):
 		return None
 	ordered = flt(item.qty)
@@ -1146,11 +1133,7 @@ def _explode_bundle_line(so, item):
 
 
 def get_bundle_combos(sales_order):
-	"""One combo entry per bundle SO line, for the Pick List COMBO table.
-
-	[{combo_sku, combo_name, ordered_qty, components:[{item_code, item_name,
-	base_qty, total_qty}]}].
-	"""
+	"""One combo entry per bundle SO line, for the Pick List combo table."""
 	so = _ensure_so_packed_items(frappe.get_doc("Sales Order", sales_order))
 	combos = []
 	for item in so.get("items") or []:
@@ -1274,11 +1257,8 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 		custom_box = flt(item.get("custom_box"))
 		factor = get_box_conversion_factor(item_code)
 		if factor:
-			# qty stays exactly as entered — whole-box compliance (incl. freebie
-			# top-ups) is enforced by validate_so_freebies_and_box_multiples. The box
-			# count is derived for display and rounded the SAME way the entry page does
-			# (Box Conversion Exclusion -> decimal, else the customer type's Round Up /
-			# Round Down) — so a 0.33 box on an excluded buyer is NOT forced up to 1.
+			# qty stays as entered (box compliance is enforced in validate); the box
+			# count is derived for display, rounded per the entry page's mode.
 			mode = get_box_rounding_mode(customer, site_name, order_type)
 			decimal_box = mode in ("decimal", "exclude")
 			if not qty and custom_box:
@@ -1305,9 +1285,8 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 				upsert_buyer_catalog_selling_rate,
 			)
 			update_offline_buyer_margin_if_changed(customer, item_code, flat_discount)
-			# Keep the buyer catalogue in sync with the line's Selling Price —
-			# creating the catalogue when the buyer has none, else the entered
-			# price is lost and the next fetch falls back to MRP.
+			# keep the buyer catalogue in sync with the line's Selling Price
+			# (creating it when the buyer has none, else the price falls back to MRP)
 			upsert_buyer_catalog_selling_rate(
 				customer, item_code,
 				flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0, 2),
@@ -1407,12 +1386,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        from_quotation=None, po_no_for_pdf=None,
                        submit_now=1, ecom_fields=None, billing_gstin=None):
 	"""Create a Sales Order from the custom entry page.
-
-	ecom_fields (JSON): optional e-com extra fields for offline Modern-Trade orders
-	(flags, PO Number/Date, GSTINs, freebie PO) — applied with channel='Offline'.
-	billing_gstin (#24): Billing GST No. for any Registered-Business buyer; the validate
-	hook still refines it site-wise (and keeps a manual value when it can't be resolved).
-	"""
+	ecom_fields (JSON): optional offline Modern-Trade extra fields (channel='Offline').
+	billing_gstin (#24): Billing GST No. for a Registered-Business buyer."""
 	items, freebies, scheme_items, additional_units_items = _parse_so_entry_args(
 		items, freebies, scheme_items, additional_units_items
 	)
@@ -1500,8 +1475,7 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 
 @frappe.whitelist()
 def get_so_entry_payload(sales_order):
-	"""Prefill payload for the entry page from an existing Sales Order —
-	used by Edit (drafts) and Duplicate. Same shape as the quotation payload."""
+	"""Prefill payload for the entry page from an existing Sales Order (Edit / Duplicate)."""
 	doc = frappe.get_doc("Sales Order", sales_order)
 	doc.check_permission("read")
 
@@ -1537,8 +1511,7 @@ def get_so_entry_payload(sales_order):
 			"qty": flt(r.qty),
 			"box": flt(r.get("box")),
 			"remarks": r.get("remarks") or "",
-			# item_group so the entry page can exempt Marketing Material freebies
-			# from the "must be an ordered item" rule without an extra lookup.
+			# item_group lets the entry page exempt Marketing Material freebies
 			"item_group": frappe.db.get_value("Item", r.item_code, "item_group") or "",
 		}
 		for r in (doc.get("custom_marketing_freebies") or [])
@@ -1686,14 +1659,9 @@ def get_sales_order_entry_view_payload(sales_order):
 	parent["owner_full_name"] = frappe.utils.get_fullname(doc.owner)
 	parent["creation"] = str(doc.get("creation") or "")
 
-	# Table fields (items, child tables) are excluded from get_permitted_fieldnames but SO read
-	# implies line visibility; still filter each child row by Sales Order *Item* field perms.
-	# NOTE: the view page (and pick list) always show the raw order lines (combos stay as combos).
-	# Bundle explosion/combining per 'Combine Product Bundles' happens ONLY in the PDF print and
-	# the Tally (Accounts Format) report.
-	# Product images: prefer the CURRENT Item-master image so pictures uploaded to
-	# the Item AFTER this order was created still show up (custom_product_image is
-	# a fetch_from snapshot taken at creation). Fall back to the stored snapshot.
+	# child rows: SO read implies line visibility, but still filter each row by field perms.
+	# The view always shows raw order lines; bundle explosion happens only in the PDF/report.
+	# Product images: prefer the current Item image, falling back to the stored snapshot.
 	item_codes = list({row.item_code for row in doc.items if row.item_code})
 	live_images = {}
 	if item_codes:
@@ -1726,8 +1694,8 @@ def get_sales_order_entry_view_payload(sales_order):
 		)
 		scheme_rows.append(rd)
 
-	# Fallback: if child grid rows exist in DB but did not survive permission shaping,
-	# return a minimal safe projection so the view never hides Scheme Details.
+	# fallback: if rows exist in DB but didn't survive permission shaping, project a
+	# minimal safe subset so the view never hides Scheme Details.
 	if not scheme_rows and frappe.db.has_table("Sales Order Scheme Item"):
 		raw_scheme = frappe.db.sql(
 			"""
@@ -1759,9 +1727,8 @@ def get_sales_order_entry_view_payload(sales_order):
 	if "custom_additional_units_damage" in permitted_parent:
 		damage = int(doc.get("custom_additional_units_damage") or 0)
 
-	# Partial orders: the Remaining column shows only once partial picking has actually
-	# BEGUN (not merely allowed), and reports combo remaining at the COMBO level (not
-	# exploded to component SKUs) so it's clear which line the remaining belongs to.
+	# Partial orders: show the Remaining column only once partial picking has begun,
+	# reporting combo remaining at the combo level (not exploded to components).
 	from alpinos import partial_dispatch as pd
 	remaining_qty = pd.remaining_qty_by_so_line(sales_order)
 	show_remaining = (
@@ -1805,11 +1772,8 @@ def get_sales_order_entry_list(
 	sort_dir=None,
 	show_all=None,
 ):
-	"""Paginated Sales Order rows for Alpinos custom list page (respects DocPerm / user rules).
-
-	channel: "Offline" or "E-com" restricts to that channel; legacy (blank) rows are
-	treated as Offline so the offline list keeps showing pre-migration orders.
-	"""
+	"""Paginated Sales Order rows for the Alpinos custom list page (respects DocPerm).
+	channel: "Offline"/"E-com" restricts to that channel; legacy (blank) counts as Offline."""
 	if not frappe.has_permission("Sales Order", "read"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
@@ -1819,8 +1783,7 @@ def get_sales_order_entry_list(
 	filters = {}
 	show_all = cint(show_all)
 	channel = (channel or "").strip()
-	# "Show All" shows orders irrespective of channel (spec), so the channel filter is
-	# only applied when Show All is off.
+	# "Show All" ignores the channel filter (applied only when Show All is off)
 	if not show_all:
 		if channel == "E-com":
 			filters["custom_channel"] = "E-com"
@@ -1862,11 +1825,9 @@ def get_sales_order_entry_list(
 	elif td:
 		filters["transaction_date"] = ["<=", td]
 
-	# A dedicated Warehouse Manager / Warehouse Admin sees EVERY workflow stage except
-	# Draft. Dispatched + Cancelled + Rejected are terminal/negative and are hidden by
-	# default; the "Show All" checkbox reveals them (Draft stays hidden even then). Users
-	# who also hold a broad/sales/admin role keep full visibility. An explicit status
-	# filter chosen in the UI is respected.
+	# Warehouse Manager / Admin (without a sales/admin role) see every stage except Draft;
+	# Dispatched/Cancelled/Rejected are hidden unless "Show All". An explicit UI status
+	# filter is respected.
 	_roles = set(frappe.get_roles())
 	_warehouse_roles = {"Warehouse Manager", "Warehouse Admin"}
 	_override_roles = {
@@ -1888,17 +1849,15 @@ def get_sales_order_entry_list(
 	if search:
 		safe = search.replace("%", "").replace("_", "")
 		like = f"%{safe}%"
-		# #27 The general search box is ID + customer ONLY — PO No. has its own field now,
-		# so an Order Id and a PO number can't collide in one box.
+		# #27 general search is ID + customer only (PO No. has its own field)
 		or_filters = [
 			["name", "like", like],
 			["customer", "like", like],
 			["customer_name", "like", like],
 		]
 
-	# #27 Dedicated PO No. search — matches the offline po_no OR the e-com custom_po_number.
-	# Applied as a name IN (...) filter so it ANDs cleanly with the general search OR group
-	# and every other filter (get_list allows only one or_filters group).
+	# #27 dedicated PO No. search (offline po_no OR e-com custom_po_number), applied as a
+	# name IN (...) filter so it ANDs with the general search OR group.
 	po_no = (po_no or "").strip()
 	if po_no:
 		safe_po = po_no.replace("%", "").replace("_", "")
@@ -1938,7 +1897,7 @@ def get_sales_order_entry_list(
 		"owner",
 	]
 
-	# Sorting — whitelist the column to keep it injection-safe; default newest first.
+	# whitelist the sort column to keep it injection-safe; default newest first
 	_SORTABLE = {
 		"name", "customer_name", "transaction_date", "delivery_date",
 		"custom_dispatch_date", "custom_po_expiry_date", "custom_delivery_by_date",
@@ -2003,8 +1962,7 @@ def _attach_so_list_row_extras(rows):
 	):
 		inv_map[r.sales_order] = r.parent
 
-	# Invoice meta (from invoice sync) — drives the per-row "SI" button, which
-	# downloads this order's fetched invoice PDF on demand.
+	# invoice meta drives the per-row "SI" button
 	inv_meta = {}
 	for r in frappe.get_all(
 		"Sales Order",
@@ -2013,8 +1971,7 @@ def _attach_so_list_row_extras(rows):
 	):
 		inv_meta[r.name] = r
 
-	# ASN details live on Post Dispatch (one per dispatch) — collect them per SO so
-	# the list can show a summary with the full per-DN breakdown on hover.
+	# ASN details live on Post Dispatch (one per dispatch); collect per SO for the list
 	asn_map = {}
 	if frappe.db.exists("DocType", "Post Dispatch"):
 		for r in frappe.get_all(
@@ -2049,12 +2006,8 @@ def _attach_so_list_row_extras(rows):
 @frappe.whitelist()
 def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	"""Build the Pick List skeleton for a Sales Order.
-
-	remaining_only=1 (partial "Create PL for Remaining Qty"): each location's qty is
-	reduced by the qty already committed on existing non-cancelled Pick Lists for the
-	same SKU, and fully-covered rows are dropped — so the new PL pre-fills only the
-	outstanding qty.
-	"""
+	remaining_only=1 reduces each location's qty by what's already committed on existing
+	Pick Lists and drops fully-covered rows (the "Create PL for Remaining Qty" flow)."""
 	so = _ensure_so_packed_items(frappe.get_doc("Sales Order", sales_order))
 
 	pick_list = frappe._dict({
@@ -2066,10 +2019,9 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 		"custom_party_code": so.po_no or so.customer_name or so.customer,
 		"custom_order_date": so.transaction_date,
 		"custom_dispatch_date": str(so.custom_dispatch_date) if so.custom_dispatch_date else "",
-		# PO No. is intentionally NOT fetched from the Sales Order — the picker enters it
-		# manually on the Pick List before submit (it's required at submit, not at draft).
+		# PO No. is entered manually on the Pick List (not fetched from the SO)
 		"custom_po_no": "",
-		# Default Gate / Transporter for a new Pick List — pre-filled but freely editable.
+		# default Gate / Transporter for a new Pick List (freely editable)
 		"custom_gate": "G-3",
 		"custom_transporter": "Delhivery",
 		"pick_manually": 1,
@@ -2084,7 +2036,7 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 		box = flt(item_row.get("custom_box"), 2)
 		factor = get_box_conversion_factor(item_row.item_code) or 1
 		if source_table in ["Marketing Freebies", "Scheme Table", "Additional Units"]:
-			# Sample-table rows now carry their own editable box on the SO — use it.
+			# sample-table rows carry their own editable box on the SO
 			box = flt(item_row.get("box"), 2)
 		# Exploded bundle components: box is derived from the component qty, not entered.
 		if box_override is not None:
@@ -2111,9 +2063,8 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 			"custom_ordered_qty": item_row.qty,
 			"qty": item_row.qty,
 			"custom_box": box,
-			# SKU-level remark typed on the Sales Order line carries through to the
-			# Pick List so it shows on the picking report (SO field has an 's',
-			# the Pick List Item field does not).
+			# SKU-level remark from the SO line carries to the Pick List (SO field
+			# has an 's', the Pick List Item field does not)
 			"custom_remark": (item_row.get("custom_remarks") or "").strip(),
 			"custom_source_table": source_table,
 			"custom_conversion_factor": factor,
@@ -2128,11 +2079,9 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	for item in so.get("items") or []:
 		exploded = _explode_bundle_line(so, item)
 		if exploded:
-			# Bundle SKU: explode into its component items (from the SO's native packed
-			# items). The bundle SKU itself is NOT a pickable row — it only appears in the
-			# COMBO table; each component row carries custom_bundle_parent (UI), the real
-			# bundle SO line, and product_bundle_item (the Packed Item name) so the
-			# Delivery Note maps it natively as a bundle.
+			# bundle SKU explodes into component rows (from native packed items); the
+			# bundle SKU itself only appears in the combo table. Each component carries
+			# custom_bundle_parent + product_bundle_item so the DN maps it as a bundle.
 			ordered = flt(item.qty)
 			combo = {
 				"combo_sku": item.item_code,
@@ -2145,8 +2094,7 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 				comp_box = flt(total / comp_factor, 2) if comp_factor else 0.0
 				add_item_to_pick_list(
 					frappe._dict({
-						# Stable id from SO line + component (NOT the volatile packed-item
-						# name) so render and save always agree and rows aren't dropped.
+						# stable id from SO line + component so render and save agree
 						"name": "%s::bundle::%s" % (item.name, comp_item),
 						"item_code": comp_item,
 						"qty": total,
@@ -2176,10 +2124,7 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	for additional in so.get("custom_additional_units_damage_items") or []:
 		add_item_to_pick_list(additional, "Additional Units")
 
-	# Arrange the pickable rows in ascending SKU No (Item.custom_sku_no) order — so the
-	# Pick List form, its packing sheet and stickers all list items sorted the same way.
-	# The skeleton rows carry custom_sku_no (fetched from the Item above); the resulting
-	# order is what gets saved as the Pick List Item sequence.
+	# sort pickable rows by SKU No so the form, packing sheet and stickers all match
 	from alpinos.utils import sku_sort_key
 	pick_list["locations"].sort(key=lambda l: sku_sort_key(l.get("custom_sku_no")))
 
@@ -2190,9 +2135,8 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	if cint(remaining_only):
 		from alpinos import partial_dispatch as pd
 
-		# Running pool of already-committed qty per SKU; distribute it across the
-		# mapped rows so duplicate SKUs (bundle components, freebie top-ups) subtract
-		# correctly rather than each row over-subtracting the full committed amount.
+		# distribute the committed qty per SKU across mapped rows so duplicate SKUs
+		# subtract correctly instead of each row over-subtracting.
 		to_subtract = {k: flt(v) for k, v in pd.committed_pl_qty_by_sku(sales_order).items()}
 		remaining_locs = []
 		for loc in pick_list["locations"]:

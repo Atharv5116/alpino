@@ -1,7 +1,4 @@
-"""
-Override for Attendance Request doctype to handle all attendance status options
-based on the reason field and populate custom fields in Attendance
-"""
+"""Attendance Request override: status from reason, custom fields, and the punch-edit rules."""
 
 import frappe
 from frappe import _
@@ -17,15 +14,12 @@ from alpinos.attendance_request_automation import (
 
 
 class CustomAttendanceRequest(HRMSAttendanceRequest):
-	"""
-	Override Attendance Request to handle all attendance status options
-	"""
+	"""Attendance Request with the Alpinos punch-edit rules."""
 
 	def validate(self):
 		self._apply_single_day_or_range()   # Rules 3 & 7: single day, On Duty = range
 		if self.is_new():
-			# Rule 2: only last 7 days — enforced at request creation only, NOT on approval/submit
-			# (an approver acting a few days later must not be blocked by the window).
+			# Rule 2: only last 7 days, enforced at creation only (not on approval).
 			self._enforce_request_window()
 		self._enforce_monthly_limit()        # Rule 1: max 4 per month
 		super().validate()
@@ -37,16 +31,11 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self._set_punch_edit_flag()          # edit (overwrites a recorded punch) vs missing
 
 	def validate_request_overlap(self):
-		# Allow multiple requests for the same date — e.g. add the check-in in one request and the
-		# check-out in another (each is a separate edit). _upsert_checkin keeps a single IN/OUT per
-		# date and the monthly edit limit caps the volume, so the hard hrms overlap block is dropped.
+		# Allow multiple requests for the same date (e.g. check-in and check-out separately).
 		pass
 
 	def _clear_unticked_punches(self):
-		"""A Time field auto-fills a new row with the current time; clear any punch whose Edit
-		box is unticked so an unedited check-in/check-out is stored blank, not the auto-now value.
-		On Duty rows carry no manual times (the assigned shift is used on approval), so their
-		unticked punches are blanked here too."""
+		"""Blank any punch whose Edit box is unticked (a Time field auto-fills with the current time)."""
 		for row in (self.custom_attendance_details or []):
 			if not row.get("edit_check_in"):
 				row.check_in = None
@@ -54,18 +43,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				row.check_out = None
 
 	def _set_punch_edit_flag(self):
-		"""Decide EDIT vs MISSING for the approval workflow's Reporting-Manager branch.
-
-		An EDIT *overwrites a punch that is already on record*: a ticked Edit Check-in /
-		Edit Check-out whose side the Existing Logs snapshot already holds a value for. A
-		request that only fills a genuinely-missing side stays MISSING — even on a day that
-		already has the OTHER side punched (e.g. adding a missing check-out to a day whose
-		check-in came from the device). MISSING is approved by the Reporting Manager alone;
-		EDIT additionally needs HR Manager approval.
-
-		On Duty carries no ticked punch edits (its times come from the assigned shift on
-		approval), so it is never an edit here — it stays a Reporting-Manager-only approval.
-		"""
+		"""Set custom_is_punch_edit: an EDIT overwrites a punch already on record; a missing-side fill stays MISSING."""
 		existing = {
 			getdate(r.attendance_date): r
 			for r in (self.custom_existing_logs or [])
@@ -86,12 +64,10 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self.custom_is_punch_edit = 1 if is_edit else 0
 
 	def on_submit(self):
-		# Rule 4: check-in / attendance are changed ONLY on approval (= submit).
+		# Rule 4: check-ins/attendance change only on approval (submit).
 		self._apply_requested_checkins()
 		super().on_submit()
-		# Sync in/out/working-hours onto the Attendance from the (now applied) check-ins.
-		# This runs last and reads ALL check-ins (no skip_auto_attendance filter), so the
-		# requested punches always land as In Time / Out Time on the Attendance.
+		# Sync in/out/working-hours onto the Attendance from the applied check-ins.
 		self._refresh_attendance_times()
 
 	def _refresh_attendance_times(self):
@@ -112,35 +88,26 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			guard += 1
 
 	def validate_no_attendance_to_create(self):
-		# Rule 6: allow the request even when attendance already exists with the same
-		# status (e.g. already Present). We still re-apply the requested check-ins and
-		# update in/out/working hours on approval (see create_or_update_attendance), so
-		# we never block submission here the way standard HRMS does.
+		# Rule 6: allow the request even when attendance already exists (we re-apply on approval).
 		pass
 
 	def _is_hr_manager(self):
-		"""Rules 1 & 2 don't apply to HR Managers. Check the request's EMPLOYEE's roles
-		(via their user), NOT the session user — otherwise an admin or an impersonated
-		session (which carries the HR Manager role) would bypass the limits for everyone.
-		"""
+		"""True when the request's EMPLOYEE (not the session user) is an HR Manager; Rules 1 & 2 skip them."""
 		user = frappe.db.get_value("Employee", self.employee, "user_id") if self.employee else None
 		return bool(user) and "HR Manager" in frappe.get_roles(user)
 
 	def _session_is_hr_manager(self):
-		"""True when the person RAISING / editing this request is an HR Manager. They correct
-		historical attendance on an employee's behalf, so the date-window / edit-count limits
-		must not block them (the employee-role check above only covers an HR Manager's own
-		request)."""
+		"""True when the session user (the person raising the request) is an HR Manager."""
 		return "HR Manager" in frappe.get_roles(frappe.session.user)
 
 	# ----- Rules 3 & 7: single-day unless the reason is On Duty -----
 	def _apply_single_day_or_range(self):
 		if self.reason == "On Duty":
-			# Range mode — use the standard From/To as entered.
+			# Range mode: use the standard From/To.
 			if self.from_date and not self.to_date:
 				self.to_date = self.from_date
 			return
-		# Single-day mode — driven by the custom single Date field.
+		# Single-day mode from the custom Date field.
 		single = self.get("custom_request_date") or self.from_date
 		if not single:
 			frappe.throw(_("Please set the Date for this request."), title=_("Date Required"))
@@ -150,10 +117,10 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	# ----- Rule 2: only the last 7 days (On Duty and HR Manager exempt) -----
 	def _enforce_request_window(self):
-		# On Duty is a duty assignment, not a missing-punch edit — no date window at all.
+		# On Duty is a duty assignment, not a punch edit; no date window.
 		if self.reason == "On Duty":
 			return
-		# HR Manager exempt — whether it's their own request OR they're raising it for an employee.
+		# HR Manager exempt (own request or raising for an employee).
 		if self._is_hr_manager() or self._session_is_hr_manager():
 			return
 		today = getdate(now_datetime())
@@ -171,12 +138,9 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			)
 
 	# ----- Rule 1: at most 4 punch EDITS per calendar month (HR Manager exempt) -----
-	# Each check-in or check-out the employee fills counts as one edit, so a single request
-	# that sets both a check-in and a check-out uses 2 of the 4 monthly edits.
+	# Each check-in or check-out filled counts as one edit (both = 2 of the 4).
 	def _punch_edits_in_details(self):
-		"""Edits in THIS request: number of ticked Edit Check-in / Edit Check-out boxes.
-		On Duty specifies duty times (a whole range, blank = assigned shift), not missing-punch
-		edits, so it never counts toward the monthly limit."""
+		"""Number of ticked Edit Check-in / Edit Check-out boxes in this request (On Duty counts none)."""
 		if self.reason == "On Duty":
 			return 0
 		n = 0
@@ -191,13 +155,10 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# On Duty never consumes the monthly edit balance.
 		if self.reason == "On Duty":
 			return
-		# HR Manager is exempt from the monthly cap — whether it's their own request
-		# (employee-side) or they're raising/correcting one for someone else (session-side).
+		# HR Manager is exempt from the monthly cap.
 		if self._is_hr_manager() or self._session_is_hr_manager():
 			return
-		# The count is reserved only when the request is sent for approval (or approved); while
-		# it is still a Draft (being prepared) or has been Rejected it consumes nothing. So only
-		# enforce once it enters a reserved state. (No workflow_state -> legacy/no workflow -> enforce.)
+		# Only reserved states (sent for approval / approved) consume the balance; Draft/Rejected don't.
 		state = self.get("workflow_state")
 		if state and state not in RESERVED_EDIT_STATES:
 			return
@@ -233,7 +194,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			guard += 1
 		date_set = set(dates)
 
-		# Editable Check-in/Check-out Details — keep the times the user entered.
+		# Editable Details: keep the times the user entered.
 		kept = [
 			r
 			for r in (self.custom_attendance_details or [])
@@ -242,9 +203,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		self.custom_attendance_details = kept
 		by_date = {getdate(r.attendance_date): r for r in kept}
 
-		# Read-only Existing Check-in Logs — snapshot the OLD punches ONCE per date and then
-		# preserve them, so the old -> new transition stays on record (the request applies
-		# new check-ins on approval; the old values must NOT be overwritten here).
+		# Read-only Existing Logs: snapshot the OLD punches once per date; never overwrite them.
 		kept_logs = [
 			r
 			for r in (self.custom_existing_logs or [])
@@ -259,8 +218,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			row = by_date.get(dt_)
 			if not row:
 				row = self.append("custom_attendance_details", {"attendance_date": dt_})
-				# A new child row's Time fields auto-fill with the current time; blank them so an
-				# unedited punch starts empty (not a stray "now" value).
+				# A new child row's Time fields auto-fill with now; blank them.
 				row.check_in = None
 				row.check_out = None
 			row.attendance_status = info["status"]
@@ -278,11 +236,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	@staticmethod
 	def _time_on_date(date, t):
-		"""Combine a date with a time-of-day so the punch lands on that date.
-
-		`check_in`/`check_out` are Time fields, which come through as a timedelta (or time/
-		datetime); older records may hold typed text. Handle all. Blank/unparseable -> None.
-		"""
+		"""Combine a date with a time-of-day (Time field arrives as timedelta/time/datetime/text)."""
 		if t in (None, ""):
 			return None
 		import datetime as _dt
@@ -318,10 +272,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	# ----- Rule: Check-in/out mandatory unless On Duty; punches sane vs the assigned shift -----
 	def _enforce_mandatory_punches(self):
-		"""When the reason is anything other than On Duty, BOTH Check-in and Check-out are
-		required on every date of the request. On Duty uses the assigned shift start/end, so it
-		carries no manual times and is exempt. (Runs after _clear_unticked_punches, so an
-		unticked side is already blank and correctly reads as missing here.)"""
+		"""Both Check-in and Check-out are required on every date unless the reason is On Duty."""
 		if self.reason == "On Duty":
 			return
 		for row in (self.custom_attendance_details or []):
@@ -341,12 +292,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				)
 
 	def _validate_punches_vs_shift(self):
-		"""Sanity-check the punches against the assigned shift for each date:
-		  * Check-out cannot be BEFORE the shift start time, and
-		  * Check-in cannot be AFTER the shift end time.
-		On Duty is exempt (no manual punches). Overnight shifts (end before start) are skipped —
-		the before/after rule doesn't apply cleanly across midnight, and no shift resolving is
-		skipped too."""
+		"""Check-out not before shift start, Check-in not after shift end; On Duty and overnight shifts skip."""
 		if self.reason == "On Duty":
 			return
 		from alpinos.attendance_request_automation import get_assigned_shift_times
@@ -360,7 +306,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				continue
 			shift_start, shift_end = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
 			if not shift_start or not shift_end or shift_end < shift_start:
-				continue  # no shift resolved, or overnight -> skip the shift check
+				continue  # no shift resolved, or overnight
 			if out_dt and out_dt < shift_start:
 				frappe.throw(
 					_("Check-out {0} on {1} cannot be before the shift start ({2}).").format(
@@ -385,12 +331,10 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if not row.attendance_date:
 				continue
 			if on_duty:
-				# On Duty always uses the employee's assigned shift start/end for each date —
-				# there is no manual check-in/check-out entry.
+				# On Duty uses the assigned shift start/end; no manual entry.
 				in_dt, out_dt = get_assigned_shift_times(self.employee, row.attendance_date, self.shift)
 			else:
-				# Only a ticked 'Edit' box is a real punch. An unticked Time field may carry the
-				# auto-now default, so it must be ignored.
+				# Only a ticked Edit box is a real punch; an unticked Time field may be the auto-now default.
 				in_dt = self._time_on_date(row.attendance_date, row.check_in) if row.get("edit_check_in") else None
 				out_dt = self._time_on_date(row.attendance_date, row.check_out) if row.get("edit_check_out") else None
 			if in_dt:
@@ -433,28 +377,22 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			checkin.insert(ignore_permissions=True)
 
 	def get_attendance_status(self, attendance_date: str) -> str:
-		"""
-		Override get_attendance_status to handle all status options based on reason field.
-		Original method only handled Half Day and Work From Home.
-		"""
-		# Check for Half Day first (if half_day flag is set and date matches)
+		"""Map the reason field to an attendance status (core handled only Half Day / WFH)."""
+		# Half Day first
 		if self.half_day and date_diff(getdate(self.half_day_date), getdate(attendance_date)) == 0:
 			return "Half Day"
-		
-		# Check reason field for status options
+
 		if self.reason:
-			# Map reason to attendance status
 			reason_to_status = {
 				"Work From Home": "Work From Home",
 				"Office": "Present",
 				"On Duty": "Present",
 				"Other": "Present"
 			}
-			
-			# If reason matches a valid option, return the mapped status
+
 			if self.reason in reason_to_status:
 				return reason_to_status[self.reason]
-		
+
 		# Fallback to original logic for backward compatibility
 		if self.reason == "Work From Home":
 			return "Work From Home"
@@ -463,19 +401,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		return "Present"
 	
 	def _should_defer_same_day_marking(self, date):
-		"""Same-day, day-still-open: when the request is for TODAY and the employee has
-		checked in but NOT out yet — so the auto-attendance scheduler hasn't marked the day —
-		creating an Attendance now would record a FALSE Absent (a check-in with no check-out
-		is 0 hours -> Absent), even though the person is in the office.
-
-		Defer instead: the requested check-in edit is already applied to the Employee Checkin
-		(see _apply_requested_checkins), so we skip marking and let the auto-attendance
-		scheduler mark the day correctly once it completes (check-out arrives / shift ends).
-
-		Only for a punch-derived status: On Duty / Work From Home / Half Day carry a definite
-		status that does NOT depend on a check-out, so they still mark immediately. Past (and
-		future) dates mark immediately too — this is strictly a current-day, open-day guard.
-		"""
+		"""Defer marking a same-day, still-open day (checked in, not out) to avoid a false Absent."""
 		if getdate(date) != getdate(now_datetime()):
 			return False
 		if self.reason in ("Work From Home", "On Duty"):
@@ -496,10 +422,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 	def create_or_update_attendance(self, date: str):
 		doc = self.get_attendance_doc(date)
 
-		# DEFER a same-day, still-open day: the employee has checked in but not out, and nothing
-		# is marked yet. Marking now would create a false Absent. The requested check-in edit is
-		# already applied to the Employee Checkin, so skip marking and let the auto-attendance
-		# scheduler mark the day once it completes.
+		# Defer a same-day, still-open day (checked in, not out) to avoid a false Absent.
 		if not doc and self._should_defer_same_day_marking(date):
 			frappe.msgprint(
 				_(
@@ -545,10 +468,8 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				
 				# Auto-calculate based on HRMS config (Absent, Half Day, Present bounds)
 				calc_status, working_hours, late_entry, early_exit, in_time, out_time = shift_doc.get_attendance(logs)
-				
-				# Use the shift's hours-based status (Absent/Half Day/Present) unless the reason is
-				# forcing WFH or Half Day. Only a check-in (no check-out) => 0 hours => Absent; the
-				# status changes once a check-out is added and the hours are recomputed.
+
+				# Use the shift's hours-based status unless the reason forces WFH/Half Day.
 				if self.reason != "Work From Home" and not (self.half_day and frappe.utils.date_diff(frappe.utils.getdate(self.half_day_date), frappe.utils.getdate(date)) == 0):
 					status = calc_status
 		else:
@@ -573,9 +494,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if in_time and out_time and working_hours is None:
 				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
 
-		# For a truly-missing Absent day (no check-ins at all): set in_time/out_time from shift so
-		# they are visible. When there ARE check-ins (e.g. only a check-in was added), keep the
-		# real times — don't backfill the missing check-out from the shift.
+		# Truly-missing Absent day (no check-ins): set in/out from shift for visibility; keep real times otherwise.
 		attendance_is_absent = status == "Absent" or (doc and getattr(doc, "status", None) == "Absent")
 		shift_for_times = self.shift or (doc and getattr(doc, "shift", None))
 		if attendance_is_absent and not logs and (in_time is None or out_time is None) and shift_for_times:
@@ -587,9 +506,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if working_hours is None and in_time and out_time:
 				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
 		
-		# An incomplete punch (check-in but no check-out) has zero working hours -> Absent, even
-		# when there's no shift / threshold configured (the calc branch never ran). WFH and Half
-		# Day keep their own status. Adding the check-out later recomputes the real status.
+		# Incomplete punch (check-in, no check-out) = 0 hours = Absent, even with no shift configured.
 		is_half_day = bool(self.half_day) and self.half_day_date and date_diff(getdate(self.half_day_date), getdate(date)) == 0
 		if in_time and not out_time and self.reason != "Work From Home" and not is_half_day:
 			status = "Absent"
@@ -637,7 +554,6 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			
 			sync_attendance_request_reason(doc)
 		else:
-			# Create new attendance document
 			doc = frappe.new_doc("Attendance")
 			doc.employee = self.employee
 			doc.attendance_date = date
@@ -655,7 +571,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			doc.insert(ignore_permissions=True)
 			doc.submit()
 			
-			# Ensure Employee Checkins are linked securely to the newly created Attendance doc!
+			# Link the check-ins to the new Attendance.
 			if logs:
 				log_names = [l.name for l in logs]
 				frappe.db.sql("UPDATE `tabEmployee Checkin` SET attendance = %s WHERE name IN %s", (doc.name, tuple(log_names)))

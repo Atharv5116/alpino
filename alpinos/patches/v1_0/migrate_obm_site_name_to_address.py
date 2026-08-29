@@ -1,10 +1,4 @@
-"""Move the Buyer Master parent `site_name` onto its primary address row.
-
-`site_name` was removed from Buyer Master (sites now live per address row on
-the Buyer Address child table). Frappe leaves the now-orphaned column in the
-DB, so this post-model-sync patch reads it directly and copies the value onto the
-primary (or first) address row, without clobbering a row that already has a site.
-"""
+"""Copy the legacy Buyer Master site_name column onto its primary address row."""
 
 import frappe
 
