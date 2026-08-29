@@ -1,10 +1,4 @@
-"""One-time backfill to correct Sales Orders whose cash discount was over-charged.
-
-Correct cash discount = cash% x the GST-inclusive item value (selling_price x qty, less
-the line's additional discount). Always dry-run first:
-    bench --site <site> execute alpinos.cash_discount_backfill.backfill
-    bench --site <site> execute alpinos.cash_discount_backfill.backfill --kwargs "{'dry_run':0}"
-"""
+"""One-time backfill to fix over-charged cash discounts on Sales Orders (dry-run by default)."""
 
 import frappe
 from frappe.utils import flt
@@ -28,7 +22,7 @@ def _item_value(doc):
 
 
 def _apply_correction(doc, item_value, correct_disc):
-	"""Surgically fix an order's discount + grand-total fields only (draft or submitted)."""
+	"""Fix an order's discount and grand-total fields (draft or submitted)."""
 	new_grand = flt(item_value - correct_disc, 2)
 	vals = {
 		"discount_amount": correct_disc,

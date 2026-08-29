@@ -1,11 +1,4 @@
-"""Alpino Product Sale screenshots are public files.
-
-Payment screenshots must be viewable without a Frappe session (shared links,
-WhatsApp, accountant reviews), so every file attached to Alpino Product Sale
-is flipped to public right after upload. Flipping happens in after_insert —
-File writes its content to disk inside the controller's before_insert, so the
-supported way to relocate it is a save with is_private changed, which routes
-through File.handle_is_private_changed (moves the file, rewrites file_url)."""
+"""Alpino Product Sale payment screenshots are flipped to public after upload."""
 
 import frappe
 
@@ -14,8 +7,7 @@ DEFAULT_FIELD = "payment_screenshot"
 
 
 def _publish_file(file_doc):
-	"""Make one File public and keep the referencing attach field in sync.
-	Returns True when the file was flipped."""
+	"""Make one File public and keep the referencing attach field in sync."""
 	if not file_doc.is_private:
 		return False
 	old_url = file_doc.file_url
@@ -39,9 +31,7 @@ def _publish_file(file_doc):
 
 
 def make_product_sale_file_public(doc, method=None):
-	"""File after_insert hook: uploads attached to Alpino Product Sale become
-	public immediately, so the URL handed back to the uploader is already the
-	public one."""
+	"""File after_insert hook: publish uploads attached to Alpino Product Sale."""
 	if doc.get("attached_to_doctype") != TARGET_DOCTYPE or doc.get("is_folder"):
 		return
 	try:
@@ -52,8 +42,7 @@ def make_product_sale_file_public(doc, method=None):
 
 
 def publish_existing_files():
-	"""Idempotent backfill: flip every private file already attached to
-	Alpino Product Sale. Used by the migration patch; safe to re-run."""
+	"""Idempotent backfill: publish every private file attached to Alpino Product Sale."""
 	names = frappe.get_all(
 		"File",
 		filters={"attached_to_doctype": TARGET_DOCTYPE, "is_private": 1, "is_folder": 0},

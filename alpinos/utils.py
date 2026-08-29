@@ -14,7 +14,7 @@ def _doc_tax_rate(doc):
 
 
 def _inclusive_line_amount(row, doc_tax_rate=0.0):
-	"""GST-inclusive line total for a saved Sales Order Item (the figure the Grand Total is built from)."""
+	"""GST-inclusive line total for a saved Sales Order Item."""
 	net = flt(row.get("amount"))
 	tax = flt(row.get("custom_item_tax"))
 	if tax:
@@ -100,10 +100,9 @@ def get_combined_items(doc):
 				item_name = source_row.get("item_name")
 			if source_row.get("uom"):
 				uom = source_row.get("uom")
-			# GST-inclusive line total (see _inclusive_line_amount).
 			line_amt = _inclusive_line_amount(source_row, doc_tax_rate)
 		else:
-			# Exploded bundle component: no saved price -> derive from the buyer catalog.
+			# Exploded bundle component: no saved price, derive from the buyer catalog.
 			mrp = 0
 			flat = 0
 			sp = 0

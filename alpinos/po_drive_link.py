@@ -1,9 +1,4 @@
-"""Build a Google Drive link to a Sales Order's PO file.
-
-The PO documents live in Drive under <root>/<Channel>/<Customer>/<prefix + Customer>/, named
-after the PO No. If the file isn't there yet, link to the deepest folder that does exist.
-Config lives in Invoice Sync Settings (service_account_json, po_drive_root_folder_id, po_folder_prefix).
-"""
+"""Build a Google Drive link to a Sales Order's PO file (config in Invoice Sync Settings)."""
 
 import frappe
 from frappe import _
@@ -37,7 +32,7 @@ def _resolve_po_drive_url(channel, customer, po_no):
 	if prefix is None:
 		prefix = "PO "
 
-	# Walk root -> Channel -> Customer -> "<prefix>Customer", tracking the deepest folder reached.
+	# Walk root, Channel, Customer, then "<prefix>Customer", tracking the deepest folder reached.
 	deepest_id, deepest_label = root, "root"
 	steps = [
 		(channel, f"Channel '{channel}'"),

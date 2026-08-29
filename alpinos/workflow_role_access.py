@@ -1,17 +1,11 @@
-"""Operations & Sales workflow roles, DocPerm matrix and workflow status fields.
-
-Recreated idempotently on every migrate (hooks.after_migrate). Sets up the data only;
-the transition/validation/notification engine is a separate build.
-"""
+"""Operations & Sales workflow roles, DocPerm matrix and workflow status fields (data only, re-run on every migrate)."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.permissions import add_permission, update_permission_property
 
 
-# ---------------------------------------------------------------------------
-# 1. Roles
-# ---------------------------------------------------------------------------
+# Roles
 
 # role_name -> description; roles that already exist (e.g. Sales Manager/User) are skipped
 ROLES = {
@@ -44,9 +38,7 @@ def _setup_roles():
 			).insert(ignore_permissions=True)
 
 
-# ---------------------------------------------------------------------------
-# 2. Permission matrix
-# ---------------------------------------------------------------------------
+# Permission matrix
 
 # Base read-only bundle shared by every access level.
 _VIEW = {"read", "print", "email", "report", "export"}
@@ -294,9 +286,7 @@ def _setup_supporting_read_access():
 		frappe.clear_cache(doctype=doctype)
 
 
-# ---------------------------------------------------------------------------
-# 3. Workflow status fields
-# ---------------------------------------------------------------------------
+# Workflow status fields
 
 # Newline-separated Select options, in spec order.
 SALES_ORDER_STATUSES = "\n".join(
@@ -416,10 +406,7 @@ def _setup_status_fields():
 
 @frappe.whitelist()
 def get_workflow_team_users(doctype, include_users=None):
-	"""Enabled System Users holding a workflow role for the doctype, for the Assign To / QC dropdowns.
-
-	include_users are appended even without a matching role, so a legacy assignee still shows.
-	"""
+	"""Enabled System Users holding a workflow role for the doctype, for the Assign To / QC dropdowns (include_users are always appended)."""
 	# only roles that can act on the doc (write/create/submit) are assignable, not VIEW-only observers
 	role_levels = PERMISSION_MATRIX.get(doctype) or {}
 	roles = [r for r, lvl in role_levels.items() if "write" in _level_ptypes(lvl)]
@@ -449,18 +436,13 @@ def get_workflow_team_users(doctype, include_users=None):
 	return users
 
 
-# ---------------------------------------------------------------------------
-# Delivery Note "Assigned To" — restricted to DN User / DN Manager
-# ---------------------------------------------------------------------------
+# Delivery Note "Assigned To": restricted to DN User / DN Manager
 DN_ASSIGN_ROLES = ["DN User", "DN Manager"]
 
 
 @frappe.whitelist()
 def get_dn_assignable_users(include_users=None):
-	"""Enabled System Users holding DN User / DN Manager, for the Delivery Note 'Assigned To' dropdown.
-
-	include_users are appended even without a matching role, so a legacy assignee still shows.
-	"""
+	"""Enabled System Users holding DN User / DN Manager, for the Delivery Note 'Assigned To' dropdown (include_users are always appended)."""
 	role_holders = frappe.get_all(
 		"Has Role",
 		filters={"role": ["in", DN_ASSIGN_ROLES], "parenttype": "User"},
@@ -510,9 +492,7 @@ def dn_assigned_to_query(doctype, txt, searchfield, start, page_len, filters):
 	)
 
 
-# ---------------------------------------------------------------------------
 # Entry point (hooks.after_migrate)
-# ---------------------------------------------------------------------------
 
 def execute():
 	_setup_roles()

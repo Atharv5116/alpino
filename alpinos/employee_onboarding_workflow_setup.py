@@ -5,7 +5,6 @@ from frappe import _
 
 
 def create_workflow_states():
-	"""Create Workflow State master records for Employee Onboarding workflow"""
 	workflow_states = [
 		{"workflow_state_name": "Draft", "style": ""},
 		{"workflow_state_name": "Email Sent", "style": "Primary"},
@@ -27,7 +26,6 @@ def create_workflow_states():
 
 
 def create_workflow_actions():
-	"""Create Workflow Action Master records for Employee Onboarding workflow"""
 	actions = [
 		"Send Email to Candidate",
 		"Create Employee",
@@ -50,7 +48,6 @@ def create_workflow_actions():
 
 
 def setup_employee_onboarding_workflow():
-	"""Create the Employee Onboarding workflow"""
 
 	workflow_name = "Employee Onboarding Workflow"
 	doctype = "Employee Onboarding"

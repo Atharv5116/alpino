@@ -1,8 +1,4 @@
-"""Seed the default Salary Category records (run on migrate).
-
-Each category maps to one of three Attendance Rule Engines; payroll picks its rules from the
-engine, never the category name. HR may add more categories as long as each points at an engine.
-"""
+"""Seed the default Salary Category records (run on migrate)."""
 
 import frappe
 

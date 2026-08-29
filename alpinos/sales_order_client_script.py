@@ -402,7 +402,6 @@ function calculate_cash_discount(frm) {
 
 
 def create_sales_order_client_script():
-	"""Create or update client script for Sales Order"""
 	script_name = "Sales Order - Alpinos Customization"
 
 	existing = frappe.db.exists("Client Script", {"name": script_name})

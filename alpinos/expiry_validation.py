@@ -1,12 +1,4 @@
-"""Customer-type-driven batch expiry warnings for Pick List and Delivery Note.
-
-The Alpino Customer Type master carries a `min_expiry_days` threshold.
-When a Pick List or Delivery Note is saved (or a batch is selected in the
-client), rows whose batch expires within fewer than `min_expiry_days` of the
-dispatch date raise a soft `frappe.msgprint` warning. Submission is never
-blocked. Customer types with `min_expiry_days` blank/0 skip the check
-entirely.
-"""
+"""Soft batch-expiry warnings for Pick List and Delivery Note, driven by Customer Type min_expiry_days."""
 
 import frappe
 from frappe.utils import flt, getdate, today
@@ -23,11 +15,7 @@ def _resolve_threshold(customer_type):
 
 
 def _resolve_customer_type_from_sales_orders(sales_orders):
-	"""Pick the first non-empty customer_type across a list of SO names.
-
-	If multiple distinct customer types are referenced, return the first one and
-	a list of the distinct types so the caller can warn the user.
-	"""
+	"""First non-empty customer_type across the SO names, plus all distinct types seen."""
 	seen = []
 	for so in sales_orders:
 		if not so:
@@ -137,11 +125,7 @@ def validate_expiry_on_delivery_note(doc, method=None):
 def check_row_expiry_warning(
 	expiry_date, sales_order=None, dispatch_date=None, customer_type=None
 ):
-	"""Client-side single-row check used during batch selection.
-
-	Pass either an explicit `customer_type` or a `sales_order` to resolve from.
-	Returns {"ok": bool, "message": str, "threshold": int|None, "days_remaining": int|None}.
-	"""
+	"""Single-row expiry check used during batch selection in the client."""
 	if not customer_type and sales_order:
 		customer_type = frappe.db.get_value(
 			"Sales Order", sales_order, "custom_offline_buyer_customer_type"

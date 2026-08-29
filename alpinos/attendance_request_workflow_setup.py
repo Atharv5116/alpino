@@ -1,8 +1,6 @@
-"""Approval workflow for Attendance Request (created on migrate).
+"""Attendance Request approval workflow, (re)created on migrate.
 
 Missing punch: Reporting Manager approves. Punch edit: Reporting Manager then HR Manager.
-Missing vs edit comes from custom_is_punch_edit; only the employee's own reporting person
-(reporting_person) may act on the RM step, with HR Manager as a safety valve.
 """
 
 import frappe
@@ -27,7 +25,6 @@ RM_IS_OWN_MANAGER = "frappe.session.user == doc.reporting_person"
 
 
 def _and(*conds):
-	"""Join non-empty condition fragments with AND (each parenthesised)."""
 	return " and ".join(f"({c})" for c in conds if c)
 
 

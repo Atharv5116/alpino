@@ -4,7 +4,6 @@ import frappe
 
 
 def create_employee_onboarding_client_scripts():
-	"""Create client scripts for Job Applicant, Interview, and Employee Onboarding"""
 	
 	job_applicant_script = """
 frappe.ui.form.on('Job Applicant', {
@@ -528,7 +527,6 @@ function auto_populate_from_job_applicant(frm) {
 
 
 def create_or_update_client_script(name, doctype, script):
-	"""Create or update a client script"""
 	try:
 		if frappe.db.exists("Client Script", name):
 			client_script = frappe.get_doc("Client Script", name)

@@ -69,7 +69,6 @@ def recalculate_opportunity_totals(doc):
 		if flat_discount and not flt(row.custom_flat_discount):
 			row.custom_flat_discount = flat_discount
 
-		# Running totals
 		sub_total += gross_incl
 		over_discount_total += (gross_incl - after_flat)
 		additional_discount_total += (after_offer - final_incl)

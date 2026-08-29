@@ -111,7 +111,6 @@ function alpinos_persist_customer_access(frm, $host, tree, totalTypes) {
 
 
 def create_item_customer_access_client_script():
-	"""Create or update the Item customer-access widget client script."""
 	script_name = "Item - Allowed Customer Types"
 	if frappe.db.exists("Client Script", {"name": script_name}):
 		doc = frappe.get_doc("Client Script", script_name)

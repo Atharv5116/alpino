@@ -1,8 +1,4 @@
-"""
-Override Employee Checkin to require a reason when clocking OUT from outside the office geo-fence.
-Check-IN from outside remains blocked; check-OUT from outside is allowed only with checkout_reason.
-Also syncs checkout_reason from the last OUT checkin to Attendance when marking attendance.
-"""
+"""Employee Checkin overrides for geo-fenced checkout reasons and attendance sync."""
 
 import frappe
 from frappe import _
@@ -46,12 +42,9 @@ def _apply_checkout_reason_patch():
 	ec_module.mark_attendance_and_link_log = _mark_attendance_and_link_log
 
 	def custom_calculate_working_hours(logs, check_in_out_type, working_hours_calc_type):
-		# Alpinos rule: attendance always spans the FIRST log to the LAST log of the shift,
-		# regardless of each log's type (IN/OUT) or the Shift Type's check_in_out_type. Two
-		# systems feed check-ins (the web dashboard + the eSSL biometric device), so strict
-		# IN/OUT pairing is unreliable (stray/duplicate device punches). We therefore take the
-		# earliest log as the in-time and the latest log as the out-time. `logs` arrives sorted
-		# by time ascending from HRMS.
+		# Attendance spans the first log to the last log of the shift, regardless of IN/OUT
+		# type: two feeds (web + eSSL device) make strict IN/OUT pairing unreliable. logs is
+		# sorted ascending.
 		if not logs:
 			return 0, None, None
 
@@ -64,12 +57,8 @@ def _apply_checkout_reason_patch():
 
 	ec_module.calculate_working_hours = custom_calculate_working_hours
 
-	# CRITICAL: shift_type.py does `from ...employee_checkin import (calculate_working_hours,
-	# mark_attendance_and_link_log)`, binding the ORIGINAL functions into its own namespace at
-	# import time. Auto-attendance runs through ShiftType.process_auto_attendance / get_attendance,
-	# so patching only `ec_module` above is a no-op for attendance — the original strict IN/OUT
-	# pairing still runs (this is why "IN, OUT, IN" was measured as IN→OUT only). We must rebind
-	# the names in the shift_type module too.
+	# shift_type.py imports these names at import time, binding the originals into its own
+	# namespace, so patching ec_module alone is a no-op for auto-attendance. Rebind here too.
 	import hrms.hr.doctype.shift_type.shift_type as st_module
 	st_module.calculate_working_hours = custom_calculate_working_hours
 	st_module.mark_attendance_and_link_log = _mark_attendance_and_link_log
@@ -79,29 +68,18 @@ def _apply_checkout_reason_patch():
 
 class CustomEmployeeCheckin(EmployeeCheckin):
 	def validate_time_change(self):
-		# Entirely bypass the core ERPNext warning about modifying time on linked checkins!
-		# Our custom Attendance module handles syncing values gracefully.
+		# Bypass the core warning about modifying time on linked checkins; our Attendance sync handles it.
 		pass
 
 	def before_insert(self):
-		"""
-		Restrict manual creation of check-ins.
-		Only allow if:
-		1. User is Administrator
-		2. It comes from the Attendance Request dashboard (from_attendance_request)
-		3. It comes from Biometric Device (device_id)
-		4. It comes from the Home Dashboard widget (usually has geolocation or specific API path)
-		"""
-		# SECURITY: Validate that the checkin time is not in the future
-		# This prevents backdoor creation of future-dated checkins
+		"""Restrict manual check-ins to Administrator, Attendance Request, Biometric Device, or the dashboard widget."""
+		# Reject future-dated check-ins
 		from frappe.utils import now_datetime
 		checkin_time = get_datetime(self.time)
 		current_time = now_datetime()
 
 		if checkin_time > current_time:
-			# Allow Administrator to create future checkins (for testing/debugging).
-			# Biometric device punches (device_id set) are trusted real punches and must
-			# never be dropped due to device/server clock skew or timezone offset.
+			# Admin and biometric device punches are exempt (trusted punches, clock skew).
 			if frappe.session.user != "Administrator" and not self.get("device_id"):
 				frappe.throw(
 					_("Cannot create check-in records for future dates. Check-in time: {0}, Current time: {1}").format(
@@ -116,13 +94,11 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 			request_path = getattr(frappe.request, "path", "")
 			request_ip = getattr(frappe.request, "remote_addr", "")
 
-		# Check for flags and attributes
 		from_automation = self.get("from_attendance_request") or self.get("device_id")
-		
-		# Check for geolocation (Widget/Mobile usually provides this)
+
+		# Widget/Mobile usually provides geolocation
 		has_geo = flt(self.latitude) != 0 or flt(self.longitude) != 0
 
-		# Check if request is coming from the standard HRMS dashboard method
 		is_widget_call = False
 		if "add_log_based_on_employee_field" in request_path:
 			is_widget_call = True
@@ -140,7 +116,6 @@ class CustomEmployeeCheckin(EmployeeCheckin):
 
 		# Action Logging - User-friendly format
 		try:
-			# Determine source in clear language
 			if self.get('device_id'):
 				source = f"Biometric Device ({self.get('device_id')})"
 				source_type = "Biometric Sync"

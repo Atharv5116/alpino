@@ -5,7 +5,6 @@ from frappe import _
 
 
 def create_required_roles():
-	"""Create required roles for workflow if they don't exist"""
 	required_roles = [
 		{
 			"role_name": "Reporting Manager",
@@ -39,7 +38,6 @@ def create_required_roles():
 
 
 def create_workflow_actions():
-	"""Create Workflow Action Master records for all workflow actions"""
 	workflow_actions = [
 		"Submit for Approval",
 		"Approve",
@@ -79,7 +77,6 @@ def create_workflow_actions():
 
 
 def create_workflow_states():
-	"""Create Workflow State master records for all workflow states"""
 	workflow_states = [
 		"Draft",
 		"Pending Reporting Manager Approval",
@@ -128,7 +125,6 @@ def create_workflow_states():
 
 
 def update_status_field_options():
-	"""Update status field options to match workflow states"""
 	status_options = (
 		"Draft\n"
 		"Pending Reporting Manager Approval\n"
@@ -160,7 +156,6 @@ def update_status_field_options():
 
 
 def setup_job_requisition_workflow():
-	"""Create workflow for Job Requisition approval process"""
 	
 	workflow_name = "Job Requisition Approval Workflow"
 	doctype = "Job Requisition"
@@ -454,7 +449,6 @@ def setup_job_requisition_workflow():
 
 
 def verify_workflow_states_exist():
-	"""Verify all required workflow states exist before creating workflow"""
 	required_states = [
 		"Draft",
 		"Pending Reporting Manager Approval",

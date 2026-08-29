@@ -7,10 +7,7 @@ from frappe.utils import cint, flt, now_datetime
 
 
 def _link_family_addresses_to_customer(dn):
-	"""Add the DN's customer to a family-shared Address so validate_party_address passes.
-
-	A genuinely foreign address is left untouched so a real data error still surfaces.
-	"""
+	"""Add the DN's customer to a family-shared Address so validate_party_address passes."""
 	from alpinos.sales_order_offline_buyer import buyer_family_customers
 
 	customer = dn.get("customer")
@@ -144,10 +141,7 @@ DEFAULT_DN_DISPATCH_FROM = (
 
 
 def combine_sample_boxes(sample_infos):
-	"""Combine sample-box fractions continuously across sample sections into whole boxes.
-
-	Returns an ordered list of box units, each {'parts': [info, ...], 'is_mixed': bool}.
-	"""
+	"""Combine sample-box fractions across sample sections into whole boxes."""
 	EPS = 1e-9
 	units = []
 	carry = 0.0        # fraction of the box currently being filled
@@ -213,7 +207,7 @@ _sample_frac = sample_box_fraction
 
 
 def _collect_pick_list_stickers(doc):
-	"""Flat list of sticker dicts for one Pick List — one per box per row, in section order."""
+	"""Flat list of sticker dicts for one Pick List, one per box per row, in section order."""
 	party_name = doc.get("custom_customer_name") or ""
 	po_no = doc.get("custom_po_no") or ""
 	# Gate lives on the PL header, one value for the whole pick.
@@ -309,11 +303,7 @@ def _collect_pick_list_stickers(doc):
 
 
 def _render_stickers_pdf(stickers, label, paper="label"):
-	"""Render sticker dicts into a PDF, one 100x75mm sticker per page.
-
-	`paper`: "label" (100x75mm page) or "a4" (same sticker centered on A4).
-	Calls pdfkit directly, not get_pdf, which would force page-size=A4.
-	"""
+	"""Render sticker dicts into a PDF, one 100x75mm sticker per page (label or a4)."""
 	import pdfkit
 
 	html = frappe.render_template(
@@ -344,10 +334,7 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 
 
 def _normalize_stickers_to_exact_size(label_pdf):
-	"""Rescale every sticker page to a true 100x75mm using its calibration anchor.
-
-	Falls back to the unmodified PDF if pypdf is missing or no anchor is found.
-	"""
+	"""Rescale every sticker page to a true 100x75mm using its calibration anchor."""
 	try:
 		import io
 		from pypdf import PdfReader, PdfWriter, Transformation
@@ -437,10 +424,7 @@ def _compose_stickers_on_a4(label_pdf):
 
 @frappe.whitelist()
 def generate_pick_list_stickers(pick_list, paper="label"):
-	"""Return a PDF stream of pick-list stickers, one per box per row.
-
-	`paper`: "label" (100x75mm) or "a4".
-	"""
+	"""Return a PDF stream of pick-list stickers, one per box per row (label or a4)."""
 	doc = frappe.get_doc("Pick List", pick_list)
 	doc.check_permission("read")
 

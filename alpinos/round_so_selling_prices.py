@@ -1,12 +1,5 @@
-"""One-time bulk fix: re-derive existing Sales Order amounts from selling_price x qty.
+"""Re-derive Sales Order amounts from selling_price x qty. DRY-RUN unless commit=True.
 
-ERPNext stores the net rate at 2dp and computes amount = rate x qty, leaving stray paise in
-the stored amount/rate. This resets each line's net amount to round(selling_price x qty /
-(1 + gst%/100), 2), recomputes rate/tax and the order totals, and writes direct to the DB
-(db_update, no doc.save()) so submitted orders update in place. Only orders whose stored
-amount actually differs from the clean recompute are touched.
-
-DRY-RUN by default:
   bench --site SITE execute alpinos.round_so_selling_prices.run
   bench --site SITE execute alpinos.round_so_selling_prices.run --kwargs '{"commit": true}'
 """
@@ -93,7 +86,7 @@ def run(commit=False, limit=None, names=None, full=False):
 		lines_changed += len(changed)
 		for r in changed:
 			if len(line_samples) < cap:
-				# old -> new net amount, plus the GST-inclusive amount (selling_price x qty)
+				# old and new net amount, plus the GST-inclusive amount (selling_price x qty)
 				incl = flt(flt(r.custom_selling_price) * flt(r.qty), 2)
 				line_samples.append(
 					(name, r.item_code, before_amt.get(r.name, 0), flt(r.amount), incl)

@@ -1,9 +1,4 @@
-"""Shared engine for the four quantity-flow comparison reports (Opportunity to Quotation,
-Quotation to Sales Order, Sales Order to Pick List, Pick List to Delivery Note).
-
-One row per SKU with upstream qty, downstream qty and difference; the reduced-qty remark
-rule lives in alpinos.qty_flow.
-"""
+"""Shared engine for the four quantity-flow comparison reports (Opp/Quo/SO/PL/DN stages)."""
 
 import frappe
 from frappe.utils import flt

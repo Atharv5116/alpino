@@ -65,70 +65,53 @@ def fetch_reporting_manager(doc, method=None):
 
 
 def fetch_designation_details(doc, method=None):
-	"""
-	Fetch description and skills from Designation when designation is selected.
-	- Fetches description from Designation (if empty or if designation changed)
-	- Fetches skills from Designation and populates the skills child table
-	"""
+	"""Fetch description and skills from the selected Designation."""
 	if doc.doctype != "Job Requisition":
 		return
-	
+
 	if not doc.designation:
 		return
-	
+
 	try:
-		# Get the Designation document - reload to ensure child tables are loaded
 		designation = frappe.get_doc("Designation", doc.designation)
-		
-		# Check if designation changed (for existing documents)
+
 		designation_changed = doc.has_value_changed("designation") if not doc.is_new() else True
-		
-		# Fetch description if empty or if designation changed
+
 		if not doc.description or designation_changed:
 			if designation.description:
 				doc.description = designation.description
-		
-		# Fetch skills from Designation
-		# Check if skills field exists on Job Requisition
+
 		if not hasattr(doc, "skills"):
-			# Skills field doesn't exist yet, skip (field may not be created yet)
+			# skills field may not be created yet
 			return
-		
-		# Initialize skills as empty list if None
+
 		if doc.skills is None:
 			doc.skills = []
-		
-		# Get current skills count
+
 		current_skills_count = len(doc.skills) if doc.skills else 0
-		
-		# Only populate if skills table is empty or if designation changed
+
 		if current_skills_count == 0 or designation_changed:
-			# Clear existing skills if designation changed
 			if designation_changed and current_skills_count > 0:
 				doc.skills = []
-			
-			# Add skills from Designation
-			# Check if designation has skills attribute and it's not empty
+
 			if hasattr(designation, "skills"):
 				designation_skills = designation.get("skills", [])
 				if designation_skills:
 					skills_added = 0
 					for skill_row in designation_skills:
 						skill_value = skill_row.get("skill") if isinstance(skill_row, dict) else getattr(skill_row, "skill", None)
-						if skill_value:  # Only add if skill is not empty
+						if skill_value:
 							doc.append("skills", {
 								"skill": skill_value
 							})
 							skills_added += 1
-					
-					# Log for debugging
+
 					if skills_added > 0:
 						frappe.logger().info(
 							f"Added {skills_added} skills from Designation {doc.designation} to Job Requisition {doc.name if not doc.is_new() else 'NEW'}"
 						)
-		
+
 	except frappe.DoesNotExistError:
-		# Designation doesn't exist, skip
 		frappe.log_error(
 			f"Designation {doc.designation} not found for Job Requisition {doc.name}",
 			"Job Requisition Automation - Designation Not Found"
@@ -141,9 +124,7 @@ def fetch_designation_details(doc, method=None):
 
 
 def validate_salary_range(doc, method=None):
-	"""
-	Validate that CTC Lower Range (expected_compensation) is less than CTC Upper Range (ctc_upper_range).
-	"""
+	"""Validate CTC Lower Range is less than CTC Upper Range."""
 	if doc.doctype != "Job Requisition":
 		return
 	lower = doc.get("expected_compensation")
@@ -156,17 +137,10 @@ def validate_salary_range(doc, method=None):
 
 
 def validate_job_requisition(doc, method=None):
-	"""
-	Validations 2-5 for Job Requisition:
-	- Number of positions > 0
-	- Hiring deadline >= today
-	- Min experience >= 0 (and <= 50)
-	- If Vacancy Type is Replace, Linked Employee is required
-	"""
+	"""Field validations for Job Requisition (positions, deadline, experience, replacement)."""
 	if doc.doctype != "Job Requisition":
 		return
 
-	# 2. Number of positions must be greater than 0
 	no_of_positions = doc.get("no_of_positions")
 	if no_of_positions is not None and (no_of_positions or 0) <= 0:
 		frappe.throw(
@@ -174,7 +148,6 @@ def validate_job_requisition(doc, method=None):
 			title=_("Invalid Number of Positions"),
 		)
 
-	# 3. Hiring deadline must be today or in the future
 	hiring_deadline = doc.get("hiring_deadline")
 	if hiring_deadline:
 		if getdate(hiring_deadline) < getdate():
@@ -183,7 +156,6 @@ def validate_job_requisition(doc, method=None):
 				title=_("Invalid Hiring Deadline"),
 			)
 
-	# 4. Min experience must be >= 0 and <= 50 (reasonable cap)
 	min_exp = doc.get("min_experience")
 	if min_exp is not None:
 		try:
@@ -199,9 +171,8 @@ def validate_job_requisition(doc, method=None):
 					title=_("Invalid Min. Experience"),
 				)
 		except (TypeError, ValueError):
-			pass  # allow doctype/UI to handle non-numeric
+			pass  # let the doctype/UI handle non-numeric input
 
-	# 5. If Vacancy Type is Replace, Linked Employee is required
 	if doc.get("vacancy_type") == "Replace" and not doc.get("linked_employee"):
 		frappe.throw(
 			_("Linked Employee is required when Vacancy Type is Replace."),
@@ -210,58 +181,43 @@ def validate_job_requisition(doc, method=None):
 
 
 def update_approval_fields(doc, method=None):
-	"""
-	Auto-populate approved_on and approved_by when status changes to Approved
-	"""
-	# Check if status changed to Approved
+	"""Populate approved_on / approved_by when status becomes Approved."""
 	if doc.status == "Approved":
-		# Only update if not already set
 		if not doc.approved_on:
 			doc.approved_on = now()
-		
+
 		if not doc.approved_by:
-			# Get current user
 			doc.approved_by = frappe.session.user
 
 
 def create_published_job_opening_on_live(doc, method=None):
-	"""
-	Auto-create PUBLISHED Job Opening when Job Requisition status becomes Live
-	"""
-	# Check if status changed to Live
+	"""Create a published Job Opening when Job Requisition status becomes Live."""
 	if doc.status == "Live":
-		# Check if Job Opening already exists for this requisition
 		existing_opening = frappe.db.exists("Job Opening", {"job_requisition": doc.name})
-		
+
 		if not existing_opening:
 			try:
-				# Import the make_job_opening function from HRMS
 				from hrms.hr.doctype.job_requisition.job_requisition import make_job_opening
-				
-				# Create Job Opening
+
 				job_opening = make_job_opening(doc.name)
-				
-				# Map additional fields
+
 				if hasattr(doc, "location") and doc.location:
 					job_opening.location = doc.location
-				
+
 				if hasattr(doc, "min_experience") and doc.min_experience:
-					# Store min_experience in description or custom field
-					# Note: Job Opening doesn't have min_experience field by default
-					# We can add it to description or create a custom field
+					# Job Opening has no min_experience field; nothing to map
 					pass
-				
+
 				if hasattr(doc, "ctc_upper_range") and doc.ctc_upper_range:
 					job_opening.upper_range = doc.ctc_upper_range
-				
+
 				if hasattr(doc, "hiring_deadline") and doc.hiring_deadline:
 					job_opening.closes_on = doc.hiring_deadline
-				
-				# Set to published
+
 				job_opening.publish = 1
 				job_opening.status = "Open"
-				
-				# Save Job Opening (job_application_route will be set by before_save hook)
+
+				# job_application_route is set by the before_save hook
 				job_opening.insert(ignore_permissions=True)
 				frappe.db.commit()
 				
@@ -280,16 +236,11 @@ def create_published_job_opening_on_live(doc, method=None):
 
 
 def update_job_requisition_on_publish(doc, method=None):
-	"""
-	Update Job Requisition to Live when Job Opening is published
-	This is called from Job Opening doc_events
-	"""
+	"""Set Job Requisition to Live when its Job Opening is published (Job Opening doc_event)."""
 	if doc.publish == 1 and doc.job_requisition:
 		try:
-			# Get the Job Requisition
 			job_req = frappe.get_doc("Job Requisition", doc.job_requisition)
-			
-			# Only update if it's currently Approved (not already Live)
+
 			if job_req.status == "Approved":
 				job_req.status = "Live"
 				job_req.save(ignore_permissions=True)
@@ -310,14 +261,10 @@ def update_job_requisition_on_publish(doc, method=None):
 
 
 def sync_status_with_job_opening(doc, method=None):
-	"""
-	Sync status between Job Requisition and Job Opening
-	"""
-	# Find associated Job Opening
+	"""Sync status between Job Requisition and Job Opening."""
 	job_opening = frappe.db.get_value("Job Opening", {"job_requisition": doc.name}, "name")
-	
+
 	if job_opening:
-		# Map status values
 		status_mapping = {
 			"Approved": "Open",
 			"Live": "Open",
@@ -339,8 +286,8 @@ def sync_status_with_job_opening(doc, method=None):
 
 
 def create_job_requisition_client_script():
-	"""Create client script to fetch skills from Designation when designation changes and set custom_requested_by"""
-	
+	"""Create the Job Requisition client script (fetch skills, set custom_requested_by)."""
+
 	script = """
 frappe.ui.form.on('Job Requisition', {
 	onload: function(frm) {

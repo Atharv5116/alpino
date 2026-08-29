@@ -1,10 +1,4 @@
-"""Partial dispatch: cumulative qty ledger + over-dispatch guards.
-
-Only partial orders get the cumulative behaviour; the single-PL lock applies to
-non-partial orders. Per SKU: committed dispatched qty across all rounds must never
-exceed the ordered qty. Only ordered-line SKUs are guarded (freebies / bundle
-components are left to the per-row / box-multiple checks).
-"""
+"""Partial dispatch: cumulative qty ledger + over-dispatch guards."""
 
 import frappe
 from frappe import _
@@ -164,7 +158,7 @@ def so_fully_dispatched(sales_order) -> bool:
 
 
 def is_partial_round(sales_order) -> bool:
-	"""Partial order that isn't yet fully covered by its Pick Lists -> partial statuses."""
+	"""Partial order not yet fully covered by its Pick Lists."""
 	return is_partial_order(sales_order) and not committed_covers_ordered(sales_order)
 
 
@@ -244,11 +238,7 @@ def validate_pick_list_partial(doc, method=None):
 
 
 def validate_delivery_note_partial(doc, method=None):
-	"""Enforce cumulative dispatched <= ordered per SKU across all DNs. Partial orders only.
-
-	Non-partial orders may carry same-SKU freebie top-ups exceeding the line qty, so the
-	cumulative guard must not run there.
-	"""
+	"""Enforce cumulative dispatched <= ordered per SKU across all DNs. Partial orders only."""
 	if doc.docstatus == 2 or doc.get("is_return"):
 		return
 	so = doc.get("custom_sales_order_id")

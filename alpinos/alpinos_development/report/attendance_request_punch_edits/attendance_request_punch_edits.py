@@ -1,14 +1,7 @@
 # Copyright (c) 2026, Alpinos and contributors
 # License: MIT
 
-"""Attendance Request Punch Edits report.
-
-Lists the punch *edits* made through approved Attendance Requests: for each date where an
-existing check-in was present and got changed, it shows the old vs new check-in/check-out.
-
-Only genuine edits are listed — dates that had no prior check-in (On Duty / missing-punch
-requests) are excluded, because there is no "old" punch to compare against.
-"""
+"""Old vs new punches for edits made through approved Attendance Requests."""
 
 import datetime
 

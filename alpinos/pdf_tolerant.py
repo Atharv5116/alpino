@@ -13,12 +13,11 @@ _patched = False
 
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _SRC_ATTR_RE = re.compile(r'\bsrc\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
-# Match up to a query/fragment, not the first space — filenames can contain spaces.
+# match up to a query/fragment, not the first space (filenames can have spaces)
 _FILE_PATH_RE = re.compile(r"(/(?:private/)?files/[^?#]+)")
 
 
 def _url_variants(file_url):
-	"""Name variants for a frappe file URL: raw, HTML-unescaped and URL-decoded."""
 	variants = []
 	for v in (file_url, html_unescape(file_url)):
 		for w in (v, unquote(v)):
@@ -28,7 +27,6 @@ def _url_variants(file_url):
 
 
 def _disk_path(file_url):
-	"""Local filesystem path for a /files or /private/files URL, else None."""
 	if file_url.startswith("/private/files/"):
 		return frappe.get_site_path("private", "files", file_url.split("/private/files/", 1)[1])
 	if file_url.startswith("/files/"):
@@ -37,7 +35,6 @@ def _disk_path(file_url):
 
 
 def _file_url_exists(file_url):
-	"""True if the URL resolves to a real File doc or an on-disk file (any name variant)."""
 	for fu in _url_variants(file_url):
 		try:
 			if frappe.db.exists("File", {"file_url": fu}):
@@ -54,7 +51,6 @@ def _file_url_exists(file_url):
 
 
 def first_existing_file_url(candidates):
-	"""Return the first URL in `candidates` that resolves to a real file, else None."""
 	for url in candidates:
 		if url and _file_url_exists(url):
 			return url
@@ -62,7 +58,6 @@ def first_existing_file_url(candidates):
 
 
 def _read_file_bytes(file_url):
-	"""Raw bytes for a frappe file URL, or None. Tries the File doc, then a disk read."""
 	variants = _url_variants(file_url)
 	# via the File doc
 	for fu in variants:
@@ -87,7 +82,6 @@ def _read_file_bytes(file_url):
 
 
 def _data_uri_for(file_url, cache):
-	"""Base64 data: URI for a frappe file URL (cached), or None."""
 	if file_url in cache:
 		return cache[file_url]
 	result = None
@@ -102,8 +96,7 @@ def _data_uri_for(file_url, cache):
 
 
 def _process_images(html):
-	"""Inline local frappe images as data URIs and drop unreadable ones so a bad
-	image can't fail the PDF."""
+	"""Inline local frappe images as data URIs, dropping unreadable ones."""
 	if not html or "<img" not in html:
 		return html
 	cache = {}
@@ -146,7 +139,7 @@ def _patch_pdf_once():
 	def prepare_options(html, options):
 		html, options = _orig_prepare(html, options)
 		html = _process_images(html)
-		# ignore = keep going if an image / media resource still can't be fetched.
+		# keep going if an image/media resource can't be fetched
 		options.setdefault("load-error-handling", "ignore")
 		options.setdefault("load-media-error-handling", "ignore")
 		return html, options

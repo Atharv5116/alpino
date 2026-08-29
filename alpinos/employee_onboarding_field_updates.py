@@ -64,7 +64,7 @@ def update_employee_onboarding_fields():
 		"Data"
 	)
 	
-	# Clear any Job Applicant field filters so all applicants show.
+	# Clear the Job Applicant field filter.
 	try:
 		field = frappe.get_doc("DocField", {"parent": "Employee Onboarding", "fieldname": "job_applicant"})
 		if field:
@@ -79,7 +79,6 @@ def update_employee_onboarding_fields():
 
 
 def update_property_setter(doctype, fieldname, property_name, value, property_type="Data"):
-	"""Create or update a property setter."""
 	try:
 		existing = frappe.db.exists(
 			"Property Setter",
