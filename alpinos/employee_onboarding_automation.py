@@ -19,26 +19,21 @@ def populate_from_job_applicant(doc, method=None):
 	except:
 		return
 	
-	# candidate_id mirrors job_applicant
 	if hasattr(doc, 'candidate_id'):
 		doc.candidate_id = doc.job_applicant
 	
-	# Company - fetch from Job Opening -> Company
 	if job_applicant.job_requisition:
 		try:
 			job_opening = frappe.get_doc("Job Opening", job_applicant.job_requisition)
 			if job_opening.company:
 				doc.company = job_opening.company
 			
-			# Location - from Job Opening (if available)
 			if hasattr(job_opening, 'location') and job_opening.location:
 				doc.location = job_opening.location
 			
-			# Department - from Job Opening (standard field)
 			if job_opening.department:
 				doc.department = job_opening.department
 				
-				# HOD and Reporting Manager - from Department
 				try:
 					department_doc = frappe.get_doc("Department", job_opening.department)
 					if hasattr(department_doc, 'hod') and department_doc.hod:
@@ -50,7 +45,6 @@ def populate_from_job_applicant(doc, method=None):
 		except Exception as e:
 			frappe.log_error(f"Error fetching Job Opening data: {str(e)}", "Employee Onboarding Auto-fill Error")
 	
-	# Full Name - split applicant_name into first, middle, last
 	if job_applicant.applicant_name:
 		name_parts = job_applicant.applicant_name.strip().split()
 		if len(name_parts) >= 1:
@@ -62,22 +56,17 @@ def populate_from_job_applicant(doc, method=None):
 		else:
 			doc.last_name = name_parts[-1] if len(name_parts) > 1 else ""
 		
-		# Full Name Display
 		doc.full_name_display = job_applicant.applicant_name
 	
-	# Personal Mobile Number
 	if job_applicant.phone_number:
 		doc.personal_mobile_number = job_applicant.phone_number
 	
-	# Personal Email
 	if job_applicant.email_id:
 		doc.personal_email = job_applicant.email_id
 	
-	# Marital Status
 	if job_applicant.marital_status:
 		doc.marital_status_onboarding = job_applicant.marital_status
 	
-	# City and State - split from city_state
 	if job_applicant.city_state:
 		city_state_parts = job_applicant.city_state.split("/")
 		if len(city_state_parts) >= 1:
@@ -85,14 +74,11 @@ def populate_from_job_applicant(doc, method=None):
 		if len(city_state_parts) >= 2:
 			doc.state = city_state_parts[1].strip()
 		
-		# Also set the combined city/state field
 		doc.city_state_combined = job_applicant.city_state
 	
-	# Degree
 	if job_applicant.degree:
 		doc.degree = job_applicant.degree
 	
-	# Work Experience fields - Auto-populate from Job Applicant employment fields
 	if hasattr(doc, 'work_experience_company_name'):
 		# Only populate if fields are empty (don't overwrite user-entered data)
 		if not doc.work_experience_company_name and hasattr(job_applicant, 'employment_company_name') and job_applicant.employment_company_name:
@@ -107,12 +93,10 @@ def populate_from_job_applicant(doc, method=None):
 		if not doc.work_experience_end_date and hasattr(job_applicant, 'employment_end_date') and job_applicant.employment_end_date:
 			doc.work_experience_end_date = job_applicant.employment_end_date
 		
-		# City - try to get from employment_city or city_state
 		if not doc.work_experience_city:
 			if hasattr(job_applicant, 'employment_city') and job_applicant.employment_city:
 				doc.work_experience_city = job_applicant.employment_city
 			elif job_applicant.city_state:
-				# Extract city from city_state (format: "City/State")
 				city_state_parts = job_applicant.city_state.split("/")
 				if len(city_state_parts) >= 1:
 					doc.work_experience_city = city_state_parts[0].strip()
@@ -121,7 +105,7 @@ def populate_from_job_applicant(doc, method=None):
 	if job_applicant.designation and not doc.onboarding_designation:
 		doc.onboarding_designation = job_applicant.designation
 
-	# mirror designation_company_profile <-> onboarding_designation (back-fill legacy records)
+	# mirror designation_company_profile and onboarding_designation (back-fill legacy records)
 	if doc.get("onboarding_designation"):
 		doc.designation_company_profile = doc.onboarding_designation
 	elif doc.get("designation_company_profile"):
@@ -157,8 +141,6 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 	if getattr(doc, "boarding_status", None) in ["Document Pending", "Documents Pending"]:
 		doc.boarding_status = "Email Sent"
 
-	# Date of Joining - use existing date_of_joining field or expected_date_of_joining
-	# Move to the very top so it always executes regardless of early returns!
 	if not doc.date_of_joining_onboarding:
 		if doc.date_of_joining:
 			doc.date_of_joining_onboarding = doc.date_of_joining
@@ -170,28 +152,23 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 			except:
 				pass
 
-	# 1) While form is in Draft state: bypass ALL mandatory checks for all users.
-	# This lets HR create an onboarding shell with minimal data and complete details later.
 	if hasattr(doc, "is_new") and doc.is_new():
 		doc.flags.ignore_mandatory = True
 		return
 
-	# Draft and Email Sent workflow states: bypass mandatory for all users.
 	# Only the final "Employee Created" state should enforce mandatory checks.
 	current_state = getattr(doc, "boarding_status", None) or getattr(doc, "workflow_state", None)
 	if current_state in ("Draft", "Email Sent"):
 		doc.flags.ignore_mandatory = True
 		return
 	
-	# Ensure hidden designation field is always non-mandatory (for all users, not just HR Manager)
+	# hidden designation field is never mandatory
 	meta = get_meta("Employee Onboarding")
 	designation_field = meta.get_field("designation")
 	if designation_field and designation_field.reqd:
-		# Temporarily make it non-mandatory
 		if not hasattr(designation_field, '_original_reqd'):
 			designation_field._original_reqd = designation_field.reqd
 		designation_field.reqd = 0
-		# Also update in doc meta if it exists
 		if hasattr(doc, 'meta') and hasattr(doc.meta, 'fields'):
 			for doc_field in doc.meta.fields:
 				if doc_field.fieldname == "designation" and doc_field.reqd:
@@ -200,14 +177,11 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 					doc_field.reqd = 0
 					break
 	
-	# Check if current user has HR Manager role
 	user_roles = frappe.get_roles()
 	
-	# Check if user has HR Manager role
 	if "HR Manager" not in user_roles:
 		return
 	
-	# Fields that should be allowed to be empty for HR Managers
 	fields_to_make_optional = [
 		# Company Profile Details
 		"company_mobile_number",
@@ -252,26 +226,20 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 		"bond_letter",
 	]
 	
-	# Set a flag to indicate HR Manager can skip these validations
-	# This will be checked in a custom validation
 	if not hasattr(frappe.local, 'hr_manager_optional_fields'):
 		frappe.local.hr_manager_optional_fields = set()
 	
 	frappe.local.hr_manager_optional_fields.update(fields_to_make_optional)
 	
-	# Temporarily modify meta to make fields non-mandatory
 	meta = get_meta("Employee Onboarding")
 	
 	for fieldname in fields_to_make_optional:
-		# Check if field exists in meta
 		field = meta.get_field(fieldname)
 		if field and field.reqd:
-			# Store original value and set to non-mandatory
 			if not hasattr(field, '_original_reqd'):
 				field._original_reqd = field.reqd
 			field.reqd = 0
 			
-			# Also update the doc's meta cache if it exists
 			if hasattr(doc, 'meta') and hasattr(doc.meta, 'fields'):
 				for doc_field in doc.meta.fields:
 					if doc_field.fieldname == fieldname and doc_field.reqd:
@@ -300,7 +268,6 @@ def validate_date_of_birth(doc, method=None):
 	dob = getdate(doc.date_of_birth)
 	today = getdate(nowdate())
 	
-	# Calculate age
 	age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 	
 	if age < 18:
@@ -316,14 +283,10 @@ def create_employee_onboarding_from_job_applicant(job_applicant_name):
 	if not job_applicant_name:
 		frappe.throw(_("Job Applicant is required"))
 	
-	# Check if Employee Onboarding already exists for this Job Applicant
 	existing = frappe.db.exists("Employee Onboarding", {"job_applicant": job_applicant_name})
 	if existing:
-		# Return the existing document name - JavaScript callback will handle routing
 		return existing
 	
-	# Just return the job_applicant_name - JavaScript will handle opening the form
-	# The JavaScript will auto-populate fields when job_applicant is set
 	return {
 		"job_applicant": job_applicant_name,
 		"action": "open_new_form"
@@ -336,13 +299,11 @@ def create_employee_onboarding_from_interview(interview_name):
 	if not interview_name:
 		frappe.throw(_("Interview is required"))
 	
-	# Get Interview
 	interview = frappe.get_doc("Interview", interview_name)
 	
 	if not interview.job_applicant:
 		frappe.throw(_("Job Applicant is not linked to this Interview"))
 	
-	# Use the same function as Job Applicant
 	return create_employee_onboarding_from_job_applicant(interview.job_applicant)
 
 
@@ -443,15 +404,12 @@ def check_all_required_fields_filled(doc):
 	for fieldname, label in required_fields.items():
 		value = doc.get(fieldname)
 		
-		# Check if field is empty
 		if not value:
-			# Special handling for optional fields
 			if fieldname in ["resign_date", "last_working_date"]:
 				continue  # These are optional
 			
 			missing_fields.append(label)
 	
-	# If any required fields are missing, return False
 	if missing_fields:
 		return False, missing_fields
 	
@@ -462,11 +420,9 @@ def ensure_pre_onboarding_interview_round_exists():
 	"""Return the "pre-onboarding" Interview Round, creating it if missing."""
 	round_name = "pre-onboarding"
 	
-	# Check if it already exists
 	if frappe.db.exists("Interview Round", round_name):
 		return round_name
 	
-	# Create the Interview Round
 	try:
 		# Get or create interview type
 		interview_type = frappe.db.get_value("Interview Type", "Pre-Onboarding", "name")
@@ -495,7 +451,6 @@ def ensure_pre_onboarding_interview_round_exists():
 		existing_skill = frappe.db.get_value("Skill", {"name": ("!=", "")}, "name")
 		
 		if not existing_skill:
-			# Create a default skill if none exists
 			try:
 				skill_doc = frappe.get_doc({
 					"doctype": "Skill",
@@ -507,13 +462,11 @@ def ensure_pre_onboarding_interview_round_exists():
 			except Exception:
 				pass
 		
-		# Add skill to expected_skill_set if we have one
 		if existing_skill:
 			interview_round.append("expected_skill_set", {
 				"skill": existing_skill
 			})
 		
-		# Insert with ignore_permissions
 		interview_round.flags.ignore_validate = True
 		interview_round.flags.ignore_mandatory = True
 		interview_round.insert(ignore_permissions=True)
@@ -534,10 +487,8 @@ def create_pre_onboarding_interview(doc):
 	if not doc.job_applicant:
 		frappe.throw(_("Job Applicant is required to create Interview"))
 	
-	# Ensure interview round exists
 	interview_round_name = ensure_pre_onboarding_interview_round_exists()
 	
-	# Check if interview already exists for this job applicant with this round
 	existing_interview = frappe.db.get_value("Interview", {
 		"job_applicant": doc.job_applicant,
 		"interview_round": interview_round_name
@@ -546,10 +497,8 @@ def create_pre_onboarding_interview(doc):
 	if existing_interview:
 		return existing_interview
 	
-	# Get job applicant
 	job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
 	
-	# Create Interview
 	try:
 		interview = frappe.get_doc({
 			"doctype": "Interview",
@@ -561,7 +510,6 @@ def create_pre_onboarding_interview(doc):
 			"status": "Pending"
 		})
 		
-		# Get interviewers from interview round
 		interview_round = frappe.get_doc("Interview Round", interview_round_name)
 		if hasattr(interview_round, 'interviewers') and interview_round.interviewers:
 			for interviewer_row in interview_round.interviewers:
@@ -587,13 +535,10 @@ def schedule_pre_onboarding_email(doc):
 	if not doc.job_applicant:
 		return
 	
-	# Calculate email date (1 week before date of joining)
 	date_of_joining = getdate(doc.date_of_joining_onboarding)
 	email_date = add_days(date_of_joining, -7)
 	
-	# If email date is today or in the past, send immediately
 	if email_date <= getdate(nowdate()):
-		# If date has passed or is today, send immediately
 		try:
 			job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
 			applicant_email = job_applicant.email_id if hasattr(job_applicant, 'email_id') else None
@@ -608,7 +553,6 @@ def schedule_pre_onboarding_email(doc):
 
 def send_pre_onboarding_email(doc, applicant_email):
 	"""Send the pre-onboarding email to the applicant and mark boarding_status Email Sent."""
-	# DEBUG: Log that this function was called and from where
 	frappe.log_error(
 		title="Onboarding Email Trace",
 		message=f"[EMAIL DEBUG] send_pre_onboarding_email called for {doc.name} | recipient: {applicant_email}\nTraceback:\n{frappe.get_traceback()}"
@@ -623,12 +567,10 @@ def send_pre_onboarding_email(doc, applicant_email):
 			)
 			return
 
-		# Generate webform link with Employee Onboarding name
 		from alpinos.employee_onboarding_webform import get_webform_url
 		webform_link = get_webform_url(doc.name)
 		desk_onboarding_link = get_url(f"/app/employee-onboarding/{doc.name}")
 
-		# Get company name
 		company = getattr(doc, "company", "") or ""
 		company_name = company
 		if company:
@@ -676,7 +618,6 @@ def send_pre_onboarding_email(doc, applicant_email):
 		except Exception:
 			pass
 
-		# Get candidate/applicant name from Job Applicant if available
 		candidate_name = getattr(doc, "full_name_display", "") or getattr(doc, "employee_name", "") or "Candidate"
 		job_title = getattr(doc, "designation", "") or ""
 		if getattr(doc, "job_applicant", None):
@@ -690,7 +631,6 @@ def send_pre_onboarding_email(doc, applicant_email):
 			except Exception:
 				pass
 
-		# Format joining date
 		joining_date = ""
 		if getattr(doc, "date_of_joining_onboarding", None):
 			try:
@@ -724,7 +664,6 @@ def send_pre_onboarding_email(doc, applicant_email):
 		tmpl = frappe.get_doc("Email Template", template_name)
 		formatted = tmpl.get_formatted_email({"doc": email_doc})
 
-		# DEBUG: Log exactly which template and subject is being sent
 		frappe.log_error(
 			title="Onboarding Email Trace",
 			message=f"[EMAIL DEBUG] ABOUT TO SEND via send_pre_onboarding_email\n"
@@ -734,7 +673,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 			f"  Recipient: {applicant_email}"
 		)
 
-		# CC HR on the reminder so they can see who is still pending (de-duped vs the joinee).
+		# CC HR on the reminder (de-duped vs the joinee)
 		cc = [hr_email] if hr_email and hr_email != applicant_email else None
 
 		frappe.sendmail(
@@ -762,10 +701,6 @@ def send_scheduled_pre_onboarding_emails():
 	today = getdate(nowdate())
 	email_date = add_days(today, 7)  # 1 week from today
 	
-	# Find Employee Onboarding documents where:
-	# - date_of_joining_onboarding is 7 days from today
-	# - boarding_status is "Pre-Onboarding Initiated"
-	# - email not yet sent (we'll check if status is still "Pre-Onboarding Initiated")
 	
 	onboarding_docs = frappe.get_all(
 		"Employee Onboarding",
@@ -788,7 +723,6 @@ def send_scheduled_pre_onboarding_emails():
 			if not doc.job_applicant:
 				continue
 
-			# Get job applicant email
 			job_applicant = frappe.get_doc("Job Applicant", doc.job_applicant)
 			applicant_email = job_applicant.email_id if hasattr(job_applicant, 'email_id') else None
 			
@@ -939,11 +873,9 @@ def DEPRECATED_send_onboarding_created_email(doc, method=None):
 
 def handle_pre_onboarding_workflow(doc, method=None):
 	"""When all required fields are filled: set status, create the interview, schedule the email."""
-	# Only process if document is being saved (not on validate)
 	if doc.is_new():
 		return
 	
-	# Check if all required fields are filled
 	all_filled, missing_fields = check_all_required_fields_filled(doc)
 	
 	if not all_filled:
@@ -951,12 +883,10 @@ def handle_pre_onboarding_workflow(doc, method=None):
 	
 	# Check if status is already set (to avoid duplicate processing)
 	if doc.boarding_status == "Pre-Onboarding Initiated":
-		# Check if interview already exists
 		if not frappe.db.exists("Interview", {
 			"job_applicant": doc.job_applicant,
 			"interview_round": "pre-onboarding"
 		}):
-			# Create interview if it doesn't exist
 			try:
 				interview_name = create_pre_onboarding_interview(doc)
 				# Store interview name in doc for client-side redirect
@@ -964,16 +894,13 @@ def handle_pre_onboarding_workflow(doc, method=None):
 			except Exception as e:
 				frappe.log_error(f"Error creating pre-onboarding interview: {str(e)}", "Pre-Onboarding Workflow")
 		
-		# Schedule email if date of joining is set
 		if doc.date_of_joining_onboarding:
 			schedule_pre_onboarding_email(doc)
 		
 		return
 	
-	# Set status to "Pre-Onboarding Initiated"
 	doc.boarding_status = "Pre-Onboarding Initiated"
 	
-	# Create pre-onboarding Interview
 	try:
 		interview_name = create_pre_onboarding_interview(doc)
 		# Store interview name in doc for client-side redirect
@@ -981,7 +908,6 @@ def handle_pre_onboarding_workflow(doc, method=None):
 	except Exception as e:
 		frappe.log_error(f"Error creating pre-onboarding interview: {str(e)}", "Pre-Onboarding Workflow")
 	
-	# Schedule email 1 week before date of joining
 	if doc.date_of_joining_onboarding:
 		schedule_pre_onboarding_email(doc)
 
@@ -990,7 +916,6 @@ def send_welcome_formalities_reminders():
 	"""Daily job: notify HR Manager of welcome formalities due tomorrow or overdue."""
 	from frappe.desk.doctype.notification_log.notification_log import make_notification_logs
 	
-	# Field name to label mapping for welcome formalities
 	field_label_map = {
 		"collect_documents": "Collect Documents",
 		"prepare_the_system": "Prepare the System",
@@ -1005,16 +930,13 @@ def send_welcome_formalities_reminders():
 		"meeting_with_department_head": "Meeting with Department Head"
 	}
 	
-	# Get all welcome formalities configs
 	configs = frappe.get_all(
 		"Welcome Formalities Config",
 		fields=["field_name", "tat_days"]
 	)
 	
-	# Create a dictionary for quick lookup
 	tat_config = {config.field_name: config.tat_days for config in configs}
 	
-	# Get all active employees with date_of_joining
 	employees = frappe.get_all(
 		"Employee",
 		filters={
@@ -1027,7 +949,6 @@ def send_welcome_formalities_reminders():
 	today = getdate(nowdate())
 	tomorrow = add_days(today, 1)
 	
-	# Get all HR Manager users
 	hr_managers = frappe.get_all(
 		"Has Role",
 		filters={"role": "HR Manager", "parenttype": "User"},
@@ -1047,25 +968,19 @@ def send_welcome_formalities_reminders():
 			employee = frappe.get_doc("Employee", employee_data.name)
 			date_of_joining = getdate(employee_data.date_of_joining)
 			
-			# Check each welcome formality checkbox
 			for field_name, label in field_label_map.items():
-				# Skip if checkbox is already checked
 				if employee.get(field_name):
 					continue
 				
-				# Get TAT for this field
 				tat_days = tat_config.get(field_name)
 				if not tat_days:
 					continue
 				
-				# Calculate due date (date_of_joining + TAT days)
 				due_date = add_days(date_of_joining, tat_days)
 				employee_name = employee_data.employee_name or employee_data.name
 				
-				# Check if due date is tomorrow (1 day before reminder)
 				if due_date == tomorrow:
-					# Check if "due tomorrow" notification has already been sent for this employee and formality
-					# Only send one notification per employee+formality combination
+					# one "due tomorrow" alert per employee+formality
 					subject = f"Welcome Formality Due Tomorrow: {label}"
 					existing_tomorrow_notification = frappe.get_all(
 						"Notification Log",
@@ -1079,9 +994,7 @@ def send_welcome_formalities_reminders():
 						limit=1
 					)
 					
-					# Only send if notification doesn't already exist
 					if len(existing_tomorrow_notification) == 0:
-						# Send notification to all HR Managers
 						message = f"<p>The welcome formality <strong>{label}</strong> is due tomorrow for employee <strong>{employee_name}</strong> (Employee ID: {employee_data.name}).</p><p>Please ensure this task is completed on time.</p>"
 						
 						notification_doc = {
@@ -1102,13 +1015,10 @@ def send_welcome_formalities_reminders():
 							"Welcome Formalities Reminder"
 						)
 				
-				# Check if due date has passed (overdue reminder)
 				elif due_date < today:
-					# Calculate days overdue
 					days_overdue = (today - due_date).days
 					
-					# Check if overdue notification has already been sent for this employee and formality
-					# Only send one overdue notification per employee+formality combination
+					# one overdue alert per employee+formality
 					subject = f"Welcome Formality Overdue: {label}"
 					existing_overdue_notification = frappe.get_all(
 						"Notification Log",
@@ -1122,9 +1032,7 @@ def send_welcome_formalities_reminders():
 						limit=1
 					)
 					
-					# Only send if notification doesn't already exist
 					if len(existing_overdue_notification) == 0:
-						# Send overdue notification to all HR Managers
 						message = f"<p>The welcome formality <strong>{label}</strong> is <strong>overdue by {days_overdue} day(s)</strong> for employee <strong>{employee_name}</strong> (Employee ID: {employee_data.name}).</p><p>The TAT deadline was {due_date.strftime('%d-%m-%Y')}. Please complete this task immediately.</p>"
 						
 						notification_doc = {
@@ -1153,7 +1061,6 @@ def send_welcome_formalities_reminders():
 	
 	total_notifications = notifications_sent + overdue_notifications_sent
 	if total_notifications > 0:
-		# Commit all notifications
 		frappe.db.commit()
 		frappe.log_error(
 			f"Reminders sent: {notifications_sent} upcoming, {overdue_notifications_sent} overdue (Total: {total_notifications})",
@@ -1163,7 +1070,6 @@ def send_welcome_formalities_reminders():
 
 def handle_workflow_transition(doc, method=None):
 	"""On the 'Email Sent' workflow transition, send the pre-onboarding email."""
-	# Determine the current workflow state
 	current_state = getattr(doc, "boarding_status", None) or getattr(doc, "workflow_state", None)
 
 	if not current_state:
@@ -1179,14 +1085,13 @@ def handle_workflow_transition(doc, method=None):
 	if doc_before_save:
 		previous_state = getattr(doc_before_save, "boarding_status", None) or getattr(doc_before_save, "workflow_state", None)
 
-	# --- Transition to "Email Sent": send the pre-onboarding email ---
+	# on transition to Email Sent, send the pre-onboarding email
 	if current_state == "Email Sent" and current_state != previous_state:
 		_send_email_on_workflow_transition(doc)
 
 
 def _send_email_on_workflow_transition(doc):
 	"""Send the pre-onboarding email on the 'Email Sent' workflow transition."""
-	# DEBUG: Log that this function was called
 	frappe.log_error(
 		title="Onboarding Email Trace",
 		message=f"[EMAIL DEBUG] _send_email_on_workflow_transition called for {doc.name} | boarding_status={doc.boarding_status}\nTraceback:\n{frappe.get_traceback()}"
@@ -1206,7 +1111,6 @@ def _send_email_on_workflow_transition(doc):
 		if not applicant_email:
 			frappe.throw(_("No email address found for the candidate. Please set personal email or update Job Applicant."))
 
-		# Reuse the existing send_pre_onboarding_email function
 		send_pre_onboarding_email(doc, applicant_email)
 
 		frappe.msgprint(

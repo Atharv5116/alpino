@@ -1,22 +1,9 @@
-"""
-End-to-end script test for the E-Com Sales Order feature set on a TEST site.
+"""End-to-end script test for the E-Com Sales Order feature set (run on a TEST site).
 
 Run:  bench --site alpinos.test execute alpinos.e2e_ecom_test.run
 
-Covers:
-  1. E-Com SO create API (channel, flags, PO fields) + validations
-     (duplicate PO / future PO date / bad GSTIN / margin range / MRP>0)
-  2. MT-offline ecom_fields passthrough (channel stays Offline)
-  3. Partial dispatch: 2 rounds, cumulative over-dispatch guard, remaining map,
-     partial statuses, auto-Complete on full dispatch
-  4. Forced close: at-PL-submission path + lock (no new PL) + Forced Completed;
-     single-PL lock for non-partial orders
-  5. Post Dispatch: queue, start (transport/GRN seeding), GRN validations,
-     status roll-up + reflect onto DN/SO, fill rate
-  6. Notifications: Notification Log rows created for a test recipient
-
-All records are prefixed ECOMTEST. Data persists on the test site (inspectable);
-re-runs create a fresh set via a hash suffix.
+Records are prefixed ECOMTEST and persist on the test site; re-runs create a fresh set
+via a hash suffix.
 """
 
 import frappe
@@ -55,8 +42,7 @@ def so_status(so):
 
 
 def _mk_gstin(seed):
-	"""A UNIQUE, format-valid GSTIN per seed (Buyer Master now enforces GST
-	uniqueness, so each test buyer needs its own)."""
+	"""A unique, format-valid GSTIN per seed."""
 	import hashlib
 
 	h = hashlib.md5(str(seed).encode()).hexdigest().upper()
@@ -65,7 +51,6 @@ def _mk_gstin(seed):
 	return f"24{letters}{digits}A1Z5"
 
 
-# ---------------------------------------------------------------------------
 def _fixtures(tag):
 	"""Create isolated test masters; return a dict of names."""
 	f = {}
@@ -208,11 +193,8 @@ def _mk_ecom_so(f, cust, po, items_spec):
 
 def _mk_pl(so, f, qtys, short_action=None, reason=None, future_date=None, qc_user=None,
           remaining_only=0):
-	"""Create+submit a PL via the real page API exactly as the UI does. qtys:
-	{item_code: qty}. remaining_only=1 reproduces the 'Create PL for Remaining
-	Qty' round: mapping is fetched + rebuilt with the remaining reduction, and
-	NO short-pick remark is supplied (the row must not read as short vs the
-	remaining ordered qty)."""
+	"""Create + submit a PL via the real page API. qtys: {item_code: qty}. remaining_only=1
+	reproduces the 'Create PL for Remaining Qty' round with no short-pick remark."""
 	from alpinos.sales_order_api import get_pick_list_mapping_data
 	from alpinos.alpinos_development.page.pick_list_entry.pick_list_entry import (
 		create_and_submit_pick_list,
@@ -263,7 +245,6 @@ def _mk_dn(pl):
 	return dn_name
 
 
-# ---------------------------------------------------------------------------
 def run():
 	frappe.flags.in_test = False
 	tag = frappe.generate_hash(length=5).upper()
@@ -273,7 +254,7 @@ def run():
 
 	notif_before = frappe.db.count("Notification Log", {"for_user": f["notify_user"]})
 
-	# ------------------------------------------------------------ Feature 1
+	# Feature 1
 	so1 = _mk_ecom_so(f, f["cust_partial"], f"PO-{tag}-1", [(it1, 30, 100, 10), (it2, 20, 50, 20)])
 	check("E-Com SO created + submitted", lambda: None)
 	check("channel = E-com", lambda: (lambda v: (v == "E-com") or (_ for _ in ()).throw(AssertionError(v)))(frappe.db.get_value("Sales Order", so1, "custom_channel")))
@@ -317,7 +298,7 @@ def run():
 		 or (_ for _ in ()).throw(AssertionError(str(d))))
 		(get_ecom_buyer_for_customer(f["cust_partial"]))))
 
-	# ------------------------------------------------------------ Feature 2
+	# Feature 2
 	from alpinos.sales_order_api import create_sales_order
 	so_mt = create_sales_order(
 		customer=f["cust_partial"], order_type=f["ctype"], company=f["company"],
@@ -334,7 +315,7 @@ def run():
 		(frappe.db.get_value("Sales Order", so_mt,
 			["custom_channel", "custom_gst_exclusive_buyer", "custom_po_number"], as_dict=True))))
 
-	# ------------------------------------------------------------ Feature 3
+	# Feature 3
 	from alpinos import partial_dispatch as pd
 
 	pl1 = _mk_pl(so1, f, {it1: 20, it2: 20}, short_action="Partial", reason="Stock Shortage",
@@ -379,7 +360,7 @@ def run():
 	check("auto-Complete when cumulative dispatched == ordered",
 		lambda: (so_status(so1) == "Completed") or (_ for _ in ()).throw(AssertionError(so_status(so1))))
 
-	# ------------------------------------------------------------ Feature 4
+	# Feature 4
 	so3 = _mk_ecom_so(f, f["cust_partial"], f"PO-{tag}-3", [(it1, 30, 100, 10)])
 	pl3 = _mk_pl(so3, f, {it1: 20}, short_action="Forced Close", reason="Stock Shortage")
 	check("forced close at PL submission: flag + reason set", lambda: (
@@ -401,7 +382,7 @@ def run():
 	expect_throw("second PL blocked when partial not allowed",
 		lambda: _mk_pl(so4, f, {it1: 1}), "only one Pick List")
 
-	# ------------------------------------------------------------ Feature 5
+	# Feature 5
 	from alpinos.post_delivery_api import get_post_delivery_queue, start_post_delivery
 	q = get_post_delivery_queue(search=so3)
 	check("post delivery queue lists the forced DN", lambda: (
@@ -492,12 +473,12 @@ def run():
 		(str(frappe.db.get_value("Sales Order", so4, "custom_po_expiry_date")) == add_days(today(), 30))
 		or (_ for _ in ()).throw(AssertionError("expiry not saved"))))
 
-	# ------------------------------------------------------------ Feature 6
+	# Feature 6
 	notif_after = frappe.db.count("Notification Log", {"for_user": f["notify_user"]})
 	check(f"notifications delivered to test user ({notif_after - notif_before} logs)",
 		lambda: (notif_after > notif_before) or (_ for _ in ()).throw(AssertionError("no Notification Log rows created")))
 
-	# ------------------------------------------------------------ Feature 7
+	# Feature 7
 	# Role matrix: single-role users — allowed actions succeed, forbidden throw.
 	def _mk_role_user(label, roles):
 		email = f"ecomtest-{label}-{tag.lower()}@example.com"
@@ -599,7 +580,7 @@ def run():
 	finally:
 		frappe.set_user("Administrator")
 
-	# ------------------------------------------------------------ Feature 8
+	# Feature 8
 	# (a) Catalogue write-back: so1's selling price (90 = MRP 100, margin 10)
 	# must have auto-created the buyer's catalogue and persist on re-fetch
 	# (previously the rate fell back to MRP when no catalogue existed).
@@ -697,7 +678,7 @@ def run():
 
 	frappe.db.commit()
 
-	# ------------------------------------------------------------ Report
+	# Report
 	print(f"\n{'='*72}")
 	passed = sum(1 for s, _, _ in R if s == "PASS")
 	print(f"RESULT: {passed}/{len(R)} passed\n")

@@ -1,25 +1,18 @@
-"""
-Override for Job Opening to add skills and languages from Job Requisition to website context
-"""
+"""Override Job Opening to add Job Requisition skills and languages to the website context."""
 
 import frappe
 from hrms.hr.doctype.job_opening.job_opening import JobOpening
 
 
 class CustomJobOpening(JobOpening):
-	"""Custom Job Opening class that adds skills and languages from Job Requisition"""
+	"""Job Opening that surfaces Job Requisition skills, languages and salary range on the website."""
 
 	def validate(self):
 		super().validate()
 		self._sync_salary_range()
 
 	def _sync_salary_range(self):
-		"""Display the salary range (min–max) on the website.
-
-		The salary value range comes from the linked Job Requisition (expected_compensation =
-		lower, ctc_upper_range = upper). Inherit those when the opening doesn't already have them,
-		then enable Publish Salary Range so the website template renders the min–max.
-		"""
+		"""Inherit the salary range from the linked Job Requisition and publish it on the website."""
 		if self.job_requisition:
 			jr = frappe.db.get_value(
 				"Job Requisition",
@@ -37,22 +30,18 @@ class CustomJobOpening(JobOpening):
 			self.publish_salary_range = 1
 
 	def get_context(self, context):
-		"""Override get_context to add skills and languages from Job Requisition"""
-		# Call parent method first
+		"""Add skills and languages from the linked Job Requisition to the website context."""
 		super().get_context(context)
-		
-		# Fetch skills and languages from Job Requisition if linked
+
 		if self.job_requisition:
 			try:
 				job_requisition = frappe.get_doc("Job Requisition", self.job_requisition)
 				
-				# Fetch skills from Job Requisition
 				skills = []
 				if hasattr(job_requisition, "skills") and job_requisition.skills:
 					for skill_row in job_requisition.skills:
 						if skill_row.skill:
-							# Skill name is stored in skill_name field, but since autoname is field:skill_name,
-							# the name itself is the skill name. Try to get skill_name field, otherwise use name
+							# Skill autoname is field:skill_name, so the id usually is the label; look it up, fall back to the id.
 							try:
 								skill_name = frappe.db.get_value("Skill", skill_row.skill, "skill_name")
 								if not skill_name:
@@ -63,7 +52,6 @@ class CustomJobOpening(JobOpening):
 				
 				context.skills = skills
 				
-				# Fetch languages from Job Requisition
 				languages = []
 				if hasattr(job_requisition, "languages") and job_requisition.languages:
 					for lang_row in job_requisition.languages:
@@ -79,7 +67,6 @@ class CustomJobOpening(JobOpening):
 				context.languages = languages
 				
 			except frappe.DoesNotExistError:
-				# Job Requisition doesn't exist, set empty lists
 				context.skills = []
 				context.languages = []
 			except Exception as e:
@@ -90,7 +77,6 @@ class CustomJobOpening(JobOpening):
 				context.skills = []
 				context.languages = []
 		else:
-			# No Job Requisition linked
 			context.skills = []
 			context.languages = []
 		

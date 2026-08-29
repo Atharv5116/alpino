@@ -1,8 +1,4 @@
-"""Add a "Pending Approvals" block to a dedicated Approvals workspace.
-
-Shows the requests awaiting the current user's approval (HR sees all; a reporting manager
-sees their direct reports'). Data: alpinos.approval_dashboard.get_pending_approvals.
-"""
+"""Add a "Pending Approvals" block to a dedicated Approvals workspace."""
 
 import json
 
@@ -109,7 +105,6 @@ load();
 
 
 def execute():
-	# 1. Upsert the Custom HTML Block.
 	if frappe.db.exists("Custom HTML Block", LABEL):
 		block = frappe.get_doc("Custom HTML Block", LABEL)
 		block.html = HTML
@@ -120,7 +115,6 @@ def execute():
 			{"doctype": "Custom HTML Block", "name": LABEL, "html": HTML, "script": SCRIPT}
 		).insert(ignore_permissions=True)
 
-	# 2. Create the Approvals workspace if it doesn't exist.
 	if not frappe.db.exists("Workspace", WORKSPACE):
 		content = [
 			{"id": frappe.generate_hash(length=10), "type": "header",
@@ -144,7 +138,7 @@ def execute():
 		frappe.db.commit()
 		return
 
-	# 3. Workspace exists — ensure the block + layout entry are present (idempotent).
+	# Workspace exists; make sure the block and layout entry are present
 	if not frappe.db.exists("Workspace Custom Block", {"parent": WORKSPACE, "custom_block_name": LABEL}):
 		frappe.get_doc(
 			{

@@ -632,7 +632,6 @@ function formatDuration(ms){
         )
         custom_block.insert(ignore_permissions=True)
 
-    # Check if custom block already exists on workspace
     exists = frappe.db.exists(
         "Workspace Custom Block",
         {
@@ -655,9 +654,7 @@ function formatDuration(ms){
 
         workspace_block.insert(ignore_permissions=True)
 
-    # -----------------------------
     # My Attendance Calendar widget
-    # -----------------------------
     cal_label = "My Attendance Calendar"
     _wdir = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(_wdir, "attendance_calendar.html"), encoding="utf-8") as _f:
@@ -722,10 +719,7 @@ function formatDuration(ms){
         }
         blocks.insert(1, custom_block_item)
 
-    # Keep exactly one calendar: ours (cal_label). Remove any OTHER block that renders the
-    # calendar grid (a leftover site-side manual calendar with a different name), then make sure
-    # ours is present. This self-heals the "two calendars" case on every migrate — no manual
-    # cleanup needed.
+    # Keep only our calendar; drop any other block that renders the calendar grid.
     def _is_other_calendar(block):
         if block.get("type") != "custom_block":
             return False
@@ -761,9 +755,7 @@ function formatDuration(ms){
             },
         )
 
-    # -----------------------------
     # Upcoming Birthdays & Anniversaries (separate block below calendar)
-    # -----------------------------
     people_label = "Upcoming Birthdays & Anniversaries"
     people_html = """
 <div id="alp-people-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#ffffff;width:100%;max-width:100%;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
@@ -873,7 +865,7 @@ frappe.call({
             "label": people_label,
         }).insert(ignore_permissions=True)
 
-    # Remove people block from wherever it is so we can place it at index 3
+    # Remove the people block wherever it is, then re-insert it at index 3
     people_block_item = {
         "id": frappe.generate_hash(length=10),
         "type": "custom_block",
@@ -883,7 +875,7 @@ frappe.call({
         b.get("type") == "custom_block"
         and (b.get("data") or {}).get("custom_block_name") == people_label
     )]
-    # Insert right after calendar (index 3) so it appears below calendar, above shortcuts
+    # Right after the calendar, above the shortcuts
     insert_idx = min(3, len(blocks))
     blocks.insert(insert_idx, people_block_item)
 

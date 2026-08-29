@@ -1,11 +1,4 @@
-"""Accounts Format Report — Tally-style billing export.
-
-One row per Sales Order line (main items + marketing freebies + scheme items +
-additional-unit/damage items, the latter at selling rate 0). Pulls from Sales Order,
-Buyer Master, Item Master and the selected billing/shipping Addresses.
-
-Exports to Excel via the standard report view (Menu → Export).
-"""
+"""Tally-style billing export, one row per Sales Order line."""
 
 import re
 
@@ -13,7 +6,7 @@ import frappe
 from frappe.utils import cint, flt, formatdate, getdate
 
 
-# Indian States + UTs — longest-first so "Uttar Pradesh" wins over a bare "Pradesh" match.
+# Indian States + UTs, longest-first so "Uttar Pradesh" wins over a bare "Pradesh".
 _INDIAN_STATES = sorted(
 	[
 		"Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
@@ -29,11 +22,7 @@ _INDIAN_STATES = sorted(
 
 
 def _scp_from_free_text(text):
-	"""Best-effort {state, city, pincode} pulled straight from a free-text address — the SAME
-	source as the printed address lines — so the combined city/state/pincode cell stays
-	consistent with them even when the text can't be matched to a structured family Address.
-	State is matched against the India state/UT list; pincode is the 6-digit token; city is the
-	comma part just before the state."""
+	"""Best-effort {state, city, pincode} parsed from a free-text address."""
 	t = (text or "").strip()
 	if not t:
 		return {"state": "", "city": "", "pincode": ""}
@@ -55,7 +44,6 @@ def _scp_from_free_text(text):
 	return {"state": state, "city": city, "pincode": pincode}
 
 
-# ── helpers ────────────────────────────────────────────────────────────────
 def _split_address(text, max_len=60, max_lines=6):
 	"""Greedy word-wrap into <=max_len chunks (break on space), padded to max_lines."""
 	lines, cur = [], ""
@@ -83,11 +71,11 @@ def _voucher_type(registration_type, state):
 
 
 def _picklist_map(so_name):
-	"""Per-(item, source table) picked qty + box from the SUBMITTED Pick List(s) of
-	this Sales Order. Keyed by (item_code, source_table) so the same SKU appearing in
-	both the Items section and a sample section (Marketing Freebies / Scheme /
-	Additional Units) reports each section's qty on its own row — not their sum on
-	both. Picked qty uses picked_qty, falling back to qty when picked_qty is 0."""
+	"""Picked qty + box per (item, source table) from the submitted Pick List(s).
+
+	Keying by source table keeps a SKU that appears in both the Items section and a
+	sample section reporting each section's qty on its own row.
+	"""
 	rows = frappe.db.sql(
 		"""
 		SELECT pli.item_code,
@@ -109,9 +97,10 @@ def _picklist_map(so_name):
 
 
 def _combo_picklist_map(so_name):
-	"""Per-(component item, combo SKU) picked qty + box for COMBO-component Pick List rows
-	(tagged with custom_bundle_parent). Kept apart from the standalone 'Items' picks so a combo
-	line reports its OWN picked qty and short-pick, not a total pooled with a standalone line."""
+	"""Picked qty + box per (component item, combo SKU) for combo-component Pick List rows.
+
+	Kept apart from the standalone 'Items' picks so a combo line reports its own picked qty.
+	"""
 	rows = frappe.db.sql(
 		"""
 		SELECT pli.item_code, pli.custom_bundle_parent AS combo,
@@ -130,9 +119,7 @@ def _combo_picklist_map(so_name):
 
 
 def _pl_header(so_name):
-	"""Dispatch header info from the SUBMITTED Pick List(s) of this Sales Order:
-	Transporter, PL PO No, Gate No, Total Box (sticker grand total) and the latest
-	PL / Delivery Note modified datetime — one value set per order."""
+	"""Dispatch header (transporter, PO no, gate, total box/weight, updated-on) from the submitted Pick List(s)."""
 	pls = frappe.db.sql(
 		"""
 		SELECT custom_transporter, custom_po_no, custom_gate, custom_total_box,
@@ -145,15 +132,10 @@ def _pl_header(so_name):
 	)
 	if not pls:
 		return {}
-	# Total Box = the sticker grand total across the SO's submitted Pick List(s). The
-	# Pick List stores it on custom_total_box (item boxes + combined sample boxes),
-	# computed by the SAME combine_sample_boxes() the sticker generator uses.
+	# Sticker grand total (custom_total_box) across the SO's submitted Pick List(s).
 	total_box = sum(flt(p.custom_total_box) for p in pls)
-	# Total Weight = summed Pick List gross weight (box count x per-box weight), the same
-	# figure the Delivery Note rolls up as custom_dn_order_gross_weight.
 	total_weight = sum(flt(p.custom_gross_weight) for p in pls)
-	# Latest Delivery Note modified for this SO (drafts + submitted), so "PL / DN
-	# Updated On" reflects a post-dispatch DN edit too, not just the Pick List.
+	# Latest Delivery Note modified for this SO, so a post-dispatch DN edit updates the cell too.
 	dn_mod = frappe.db.sql(
 		"""
 		SELECT MAX(dn.modified) AS m
@@ -166,14 +148,11 @@ def _pl_header(so_name):
 	updated_on = pls[0].modified
 	if dn_mod and dn_mod[0][0] and dn_mod[0][0] > updated_on:
 		updated_on = dn_mod[0][0]
-	# Gate No is shown labeled in the cell, e.g. "Gate No. : G-3" (raw "G-3" from the PL).
 	_gate = (pls[0].custom_gate or "").strip()
 	_po = pls[0].custom_po_no or ""
 	_transporter = pls[0].custom_transporter or ""
-	# Box count is whole (physical boxes) — show it without a trailing ".0"; weight 2dp.
+	# Box count is whole; show it without a trailing ".0".
 	_box_str = str(int(total_box)) if float(total_box).is_integer() else ("%g" % total_box)
-	# Combined "Terms of Delivery" cell (client Final Format), e.g.
-	# "PL PO No: A / Total Box: 20 / Total Weight: 458.80 / Transporter: Delhivery".
 	terms_of_delivery = (
 		"PL PO No: {po} / Total Box: {box} / Total Weight: {wt} / Transporter: {tr}".format(
 			po=_po, box=_box_str, wt="%.2f" % flt(total_weight), tr=_transporter
@@ -191,8 +170,7 @@ def _pl_header(so_name):
 
 
 def _combined_addr(city, state, pincode, mobile, pin_label):
-	"""Labeled single-cell address per the Final Format:
-	'City - <city> , State - <state> , <pin_label> - <pincode> , (M) - <mobile>'."""
+	"""Labeled single-cell address per the Final Format."""
 	parts = []
 	if city:
 		parts.append(f"City - {city}")
@@ -206,10 +184,7 @@ def _combined_addr(city, state, pincode, mobile, pin_label):
 
 
 def _scp_for_site(site_name):
-	"""{city, state, pincode} from the Buyer Master Address child row for a site — the
-	STRUCTURED source, correct even when the free-text address is misspelled (e.g. a
-	'Maharastra' typo that the state-name matcher can't resolve). Used only as a fallback
-	when the address-line parsing leaves city/state/pincode blank."""
+	"""{city, state, pincode} from the Buyer Master Address child row for a site (structured fallback)."""
 	if not site_name:
 		return {}
 	rows = frappe.db.sql(
@@ -243,19 +218,15 @@ def _has_scp(d):
 
 
 def _norm_addr(text):
-	"""Normalize an address string for matching: lowercase, collapse whitespace,
-	drop a trailing '(Billing)'/'(Shipping)' type suffix and stray punctuation."""
+	"""Normalize an address string for matching: lowercase, collapse whitespace, drop a trailing '(type)' suffix."""
 	s = " ".join((text or "").replace("\n", " ").replace("\r", " ").split()).lower()
-	if "(" in s:  # the family-dropdown label carries a "(type)" suffix; strip defensively
+	if "(" in s:  # the family-dropdown label carries a "(type)" suffix
 		s = s.split("(", 1)[0]
 	return s.strip().strip(",").strip()
 
 
 def _resolve_scp_from_text(customer, text, cache):
-	"""Recover {state, city, pincode} for a FREE-TEXT address (e-com orders store
-	the address as text, not an Address link) by matching it back to one of the
-	buyer family's Address records — composed the same way the entry page builds
-	the option value: 'line1, line2, city, state, pincode'."""
+	"""Recover {state, city, pincode} for a free-text address by matching it to a family Address record."""
 	target = _norm_addr(text)
 	if not customer or not target:
 		return {}
@@ -283,17 +254,14 @@ def _resolve_scp_from_text(customer, text, cache):
 	return {}
 
 
-# ── column definitions ─────────────────────────────────────────────────────
 def get_columns():
 	def col(label, fn, w=120, ft="Data"):
 		return {"label": label, "fieldname": fn, "fieldtype": ft, "width": w}
 
-	# Column order follows the client's Final Format (Accounts_Format ... Final_Formate).
+	# Column order follows the client's Final Format.
 	cols = [
 		col("Invoice No", "invoice_no", 100),
-		# Dispatch / Order dates are emitted as dd-MM-yyyy TEXT (not Date) so the Excel
-		# export shows the same format as the on-screen report (a Date value exports as a
-		# datetime like "2026-08-12 00:00:00").
+		# Dispatch / Order dates are emitted as dd-MM-yyyy text so the export matches the screen.
 		col("Dispatch Date", "dispatch_date", 95),
 		col("Sales Order Id", "sales_order_id", 130),
 		col("Customer PO Number", "customer_po_number", 130),
@@ -359,9 +327,7 @@ def execute(filters=None):
 
 
 def _buyer_master_scope_customers(filters):
-	"""Customers whose Buyer Master matches the parent and/or site-name filters — or
-	None when neither is set. Selecting a parent pulls the WHOLE family: the parent
-	master plus every child site whose parent_buyer is it."""
+	"""Customers whose Buyer Master matches the parent and/or site-name filters, or None when neither is set."""
 	parent = (filters.get("buyer_master_parent") or "").strip()
 	site = (filters.get("site_name") or "").strip()
 	if not parent and not site:
@@ -391,8 +357,7 @@ def _get_data(filters):
 	if filters.get("sales_order"):
 		so_filters["name"] = ["like", "%" + filters.get("sales_order") + "%"]
 
-	# Buyer Master parent / site scoping: restrict the SO scan to the Customers whose
-	# Buyer Master is (or sits under) the selected parent and/or carries the selected site.
+	# Buyer Master parent / site scoping restricts the SO scan to matching customers.
 	allowed_customers = _buyer_master_scope_customers(filters)
 	if allowed_customers is not None:
 		if not allowed_customers:
@@ -405,9 +370,7 @@ def _get_data(filters):
 
 	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="custom_dispatch_date asc, name asc")
 
-	# Only report orders whose Pick List has been SUBMITTED — billing data should
-	# appear only once picking is done, not on unpicked/draft orders. docstatus=1
-	# also means CANCELLED Pick Lists (docstatus=2) never qualify an order here.
+	# Only report orders whose Pick List is submitted (docstatus=1).
 	if so_names:
 		picked = set(
 			frappe.get_all(
@@ -418,9 +381,7 @@ def _get_data(filters):
 		)
 		so_names = [s for s in so_names if s in picked]
 
-	# By default hide orders whose invoice PDF has already been fetched (invoice
-	# done). "Show All" reveals them again. Orders with an Invoice No assigned but
-	# no PDF yet still show — with the number visible in the Invoice No column.
+	# Hide orders whose invoice PDF is already fetched, unless "Show All" is set.
 	if so_names and not cint(filters.get("show_all")):
 		pdf_rows = frappe.get_all(
 			"Sales Order", filters={"name": ["in", so_names]},
@@ -458,15 +419,14 @@ def _get_data(filters):
 		return ct_channel_cache[customer_type]
 
 	data = []
-	addr_cache = {}  # customer -> family Address rows (for free-text state/city/pincode recovery)
+	addr_cache = {}  # customer: family Address rows, for free-text scp recovery
 	for so_name in so_names:
 		so = frappe.get_doc("Sales Order", so_name)
-		# Buyer-wise "Round Off Per Unit Amount": report the rounded per-unit selling price.
+		# Buyer-wise "Round Off Per Unit Amount".
 		_round_pu = bool(frappe.db.get_value("Buyer Master", {"customer": so.customer}, "round_off_per_unit"))
-		# GST-EXCLUSIVE buyer: SO value is the taxable; the report adds GST separately.
+		# GST-exclusive buyer: SO value is the taxable; the report adds GST separately.
 		_gst_excl = int(so.get("custom_gst_exclusive_buyer") or 0)
 		obm = obm_info(so.customer)
-		# Customer type sits on the SO (Alpino Customer Type); fall back to the OBM master.
 		cust_type = so.get("custom_offline_buyer_customer_type") or obm.get("customer_type") or ""
 		channel = channel_of(cust_type) if cust_type else ""
 
@@ -483,21 +443,16 @@ def _get_data(filters):
 
 		bill = _address(so.get("customer_address"))
 		ship = _address(so.get("shipping_address_name"))
-		# City / State / Pincode MUST come from the same source as the printed address lines.
-		# When the SO carries a free-text address (e-com), the lines are that text — so resolve
-		# state/city/pincode from the text (matched back to a family Address) and let it WIN
-		# over the structured customer_address, which can point at a different/generic site and
-		# show the wrong state. Offline orders (no free text) keep the Address record's scp.
+		# City/State/Pincode come from the same source as the printed lines. For a free-text
+		# (e-com) address, resolve them from the text (matched back to a family Address) and let
+		# that win over the structured customer_address. Priority: family-matched, then the
+		# site's structured Buyer Master Address, then the heuristic free-text parse.
 		bill_free = (so.get("custom_billing_address_text") or "").strip()
 		ship_free = (so.get("custom_shipping_address_text") or "").strip()
-		# The SITE's Buyer Master Address (keyed by THIS order's site) is structured and
-		# authoritative, so it ranks ABOVE the heuristic free-text parse — which can mis-read a
-		# messy address (e.g. pick "Delhi" out of "Old delhi road" and "NH-2" as the city). Only
-		# a Family Address matched back from the exact free text (bill_scp/ship_scp) outranks it.
 		site_scp = _scp_for_site(so.get("custom_site_name")) or {}
 		if bill_free:
 			bill_scp = _resolve_scp_from_text(so.customer, bill_free, addr_cache) or {}
-			free_scp = _scp_from_free_text(bill_free)  # same text as the printed lines
+			free_scp = _scp_from_free_text(bill_free)
 			bill["state"] = bill_scp.get("state") or site_scp.get("state") or free_scp.get("state") or ""
 			bill["city"] = bill_scp.get("city") or site_scp.get("city") or free_scp.get("city") or ""
 			bill["pincode"] = bill_scp.get("pincode") or site_scp.get("pincode") or free_scp.get("pincode") or ""
@@ -507,14 +462,13 @@ def _get_data(filters):
 			ship["state"] = ship_scp.get("state") or site_scp.get("state") or free_scp.get("state") or ""
 			ship["city"] = ship_scp.get("city") or site_scp.get("city") or free_scp.get("city") or ""
 			ship["pincode"] = ship_scp.get("pincode") or site_scp.get("pincode") or free_scp.get("pincode") or ""
-		# Final structured fallback for offline orders (no free text) or anything still blank.
+		# Structured fallback for offline orders or anything still blank.
 		if site_scp:
 			for _d in (bill, ship):
 				_d["state"] = _d.get("state") or site_scp.get("state") or ""
 				_d["city"] = _d.get("city") or site_scp.get("city") or ""
 				_d["pincode"] = _d.get("pincode") or site_scp.get("pincode") or ""
-		# No distinct shipping address at all (common for offline orders) — the
-		# order ships to the billing address, so mirror its state/city/pincode.
+		# No distinct shipping address: mirror the billing state/city/pincode.
 		if not _has_scp(ship):
 			ship["state"] = bill.get("state") or ""
 			ship["city"] = bill.get("city") or ""
@@ -522,11 +476,7 @@ def _get_data(filters):
 		if not pl_voucher:
 			pl_voucher = _voucher_type(registration_type, bill.get("state"))
 
-		# Address lines: e-com orders store the billing/shipping address as free
-		# text on the SO (custom_*_address_text) — that's what the user entered, so
-		# prefer it. Offline orders leave it blank and use the structured Address
-		# record (customer_address / shipping_address_name). State/city/pincode were
-		# resolved from the same source above, so they stay consistent with these lines.
+		# Address lines: prefer the SO's free-text address (e-com), else the structured Address record.
 		bill_text = (so.get("custom_billing_address_text") or "").strip() \
 			or " ".join(filter(None, [bill.get("address_line1"), bill.get("address_line2")]))
 		ship_text = (so.get("custom_shipping_address_text") or "").strip() \
@@ -536,9 +486,7 @@ def _get_data(filters):
 
 		customer_name = obm.get("tally_buyer_name") or so.get("customer_name") or so.customer
 
-		# Bill/Ship GST No are read directly from the Sales Order's own GST fields, which
-		# the SO save hook keeps site-wise (from custom_offline_buyer_master's gst_no).
-		# Fall back to this SO's buyer master gst_no for older orders not yet re-saved.
+		# Bill/Ship GST No come from the SO's own GST fields; fall back to the buyer master for older orders.
 		bill_gst = so.get("custom_billing_gstin") or so.get("tax_id") or gst_no or ""
 		ship_gst = so.get("custom_shipping_gstin") or so.get("custom_billing_gstin") or so.get("tax_id") or gst_no or ""
 
@@ -551,40 +499,33 @@ def _get_data(filters):
 		ship_pincode = ship.get("pincode") or ""
 
 		header = {
-			# Invoice No assigned by the Excel invoice-sync import (blank until then).
+			# Invoice No assigned by the invoice-sync import; blank until then.
 			"invoice_no": so.get("custom_invoice_no") or "",
-			# dd-MM-yyyy text so the export matches the on-screen format.
 			"dispatch_date": formatdate(so.get("custom_dispatch_date"), "dd-MM-yyyy") if so.get("custom_dispatch_date") else "",
 			"sales_order_id": so.name,
 			"customer_po_number": so.get("po_no") or "",
 			"customer": customer_name,
 			"pl_voucher": pl_voucher,
 			"registration_type": registration_type,
-			# Bill/Ship GST No come from the Buyer Master that owns each chosen address
-			# (Address records have no gstin field); blank when that master is Unregistered.
 			"bill_gst_no": bill_gst,
 			"ship_gst_no": ship_gst,
 			"bill_state": bill_state,
 			"bill_pincode": bill_pincode,
-			# Combined single-cell address (labeled: City / State / Pincode / Mobile) per Final Format.
 			"bill_combined": _combined_addr(bill_city, bill_state, bill_pincode, mobile, "Bill To Pincode"),
 			"ship_state": ship_state,
 			"ship_pincode": ship_pincode,
 			"ship_combined": _combined_addr(ship_city, ship_state, ship_pincode, mobile, "Ship To Pincode"),
-			# Warehouse column comes from the buyer's Buyer Master (Tally Warehouse);
-			# fall back to the SO's set_warehouse for buyers that have not set it yet.
+			# Warehouse from the Buyer Master's Tally Warehouse, else the SO's set_warehouse.
 			"warehouse": obm.get("custom_tally_warehouse") or so.get("set_warehouse") or "",
 			"tally_warehouse_id": obm.get("custom_tally_warehouse_id") or "T24",
 			"channel": channel,
 			"site_name": so.get("custom_site_name") or "",
 			"order_date": formatdate(so.transaction_date, "dd-MM-yyyy") if so.transaction_date else "",
-			# GST-exclusive buyer flag (whole SO) — shown per Final Format.
 			"gst_excl_flag": "Yes" if _gst_excl else "",
-			# Less Qty / Less Qty Amount: computed per line in emit() (ordered - dispatched qty, valued at GST-inclusive selling price).
+			# Less Qty / Less Qty Amount are computed per line in emit().
 			"less_qty": None,
 			"less_qty_amount": None,
 		}
-		# Dispatch header (Transporter / PL PO / Gate / Total Box / PL·DN Updated On).
 		header.update(_pl_header(so.name))
 		for i in range(3):
 			header[f"bill_addr_{i+1}"] = bill_lines[i]
@@ -593,32 +534,23 @@ def _get_data(filters):
 		pl_map = _picklist_map(so.name)
 		combo_pl_map = _combo_picklist_map(so.name)
 		has_pl = bool(pl_map) or bool(combo_pl_map)
-		# Cash discount %: the Sales Order applies it once, as a % of the grand total
-		# (apply_discount_on = "Grand Total"). Being a flat %, applying the SAME % to each
-		# line's GST-inclusive amount makes the report's lines sum to the SO grand total
-		# after cash discount — just distributed per row so it shows in the table.
+		# Cash discount % is a flat % of the grand total; applying it per line keeps the
+		# rows summing to the SO grand total after cash discount.
 		cash_pct = flt(so.get("custom_cash_discount"))
 
 		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items", ordered_qty=None):
 			it = item_info(item_code)
 			if _round_pu and selling_price:
 				selling_price = round(flt(selling_price))
-			# Every line — billable AND marketing freebies / scheme / damage — is taken from
-			# the submitted Pick List (all of them are added to it at creation), with UNIT /
-			# Box = picked qty. So the report simply mirrors the submitted pick list: a line
-			# not in it (not picked / removed) is dropped; with no submitted pick list at all,
-			# fall back to the ordered qty/box. Keyed per source table so a SKU present in
-			# both the Items and a sample section reports each section's qty separately.
+			# UNIT/Box mirror the submitted Pick List: a line not in it is dropped; with no
+			# submitted pick list at all, fall back to the ordered qty/box.
 			if not from_picklist:
 				unit, box = flt(fallback_qty), flt(fallback_box)
 			else:
 				plr = pl_map.get((item_code, source_table))
 				if not plr and source_table == "Items":
-					# Exploded bundle components can land under a source table other
-					# than "Items" depending on how the Pick List was built, so the
-					# exact (item, "Items") key can miss and the component would be
-					# dropped. Fall back to this item's TOTAL picked qty/box across all
-					# sections (a genuinely-unpicked item sums to 0 and still drops).
+					# Exploded components can land under a source table other than "Items",
+					# so fall back to this item's total picked qty/box across all sections.
 					tq = sum(flt(v.get("qty")) for (ic, _s), v in pl_map.items() if ic == item_code)
 					tb = sum(flt(v.get("box")) for (ic, _s), v in pl_map.items() if ic == item_code)
 					if tq:
@@ -626,8 +558,7 @@ def _get_data(filters):
 				if plr:
 					unit, box = flt(plr.get("qty")), flt(plr.get("box"))
 				elif has_pl:
-					# On the Sales Order but NOT in the submitted Pick List — not
-					# picked/dispatched, so it is dropped from the report.
+					# On the SO but not in the submitted Pick List: not dispatched, drop it.
 					return
 				else:
 					unit, box = flt(fallback_qty), flt(fallback_box)
@@ -648,14 +579,12 @@ def _get_data(filters):
 					* (1 - flt(additional) / 100.0),
 					2,
 				)
-			# Deduct the cash discount % per line (freebies are 0, so unaffected).
+			# Deduct the cash discount % per line (freebies are 0, unaffected).
 			if cash_pct:
 				base_line = flt(base_line * (1 - cash_pct / 100.0), 2)
 
 			if _gst_excl:
-				# GST-EXCLUSIVE buyer: the SO line value IS the taxable; add GST on top.
-				# Final Total = Taxable + Applicable GST% (no inclusive back-calculation,
-				# no extra rounding of the taxable).
+				# GST-exclusive buyer: the SO line value is the taxable; add GST on top.
 				final_taxable = base_line
 				igst = flt(final_taxable * gst_pct / 100.0, 2)
 				cgst = flt(igst / 2.0, 2)
@@ -666,8 +595,7 @@ def _get_data(filters):
 				igst = flt(final_total - final_taxable, 2)
 				cgst = flt(igst / 2.0, 2)
 
-			# EAN/FSN by the order's customer type: Amazon needs EAN, Flipkart needs FSN.
-			# Flag "Missing" only for those two when the required code is absent; else blank.
+			# EAN for Amazon, FSN for Flipkart; flag "Missing" when the required code is absent.
 			ean_fsn, ean_fsn_flag = "", ""
 			if cust_type == "Amazon":
 				ean_fsn = it.get("custom_ean_no") or ""
@@ -678,9 +606,7 @@ def _get_data(filters):
 				if not ean_fsn:
 					ean_fsn_flag = "Missing"
 
-			# Less Qty (Final Format): ordered qty - dispatched (picked) qty, valued at the
-			# GST-inclusive selling price. Selling price is GST-exclusive only for a
-			# GST-exclusive buyer, so gross it up with GST% there. No shortfall -> blank.
+			# Less Qty = ordered - dispatched qty, valued at the GST-inclusive selling price.
 			less_qty = flt(flt(ordered_qty) - flt(unit), 3) if ordered_qty is not None else 0
 			if less_qty and selling_price:
 				sp_incl = flt(selling_price) * (1 + gst_pct / 100.0) if _gst_excl else flt(selling_price)
@@ -698,7 +624,6 @@ def _get_data(filters):
 				"alpino_mrp": mrp,
 				"selling_price": flt(selling_price) or None,
 				"flat_discount": flt(flat),
-				# Offer and Additional are now distinct columns in the Final Format.
 				"offer_discount": flt(offer),
 				"additional_discount": flt(additional),
 				"item_type": it.get("item_group") or "",
@@ -714,34 +639,23 @@ def _get_data(filters):
 			})
 			data.append(row)
 
-		# Check if product bundles should be combined/exploded
 		combine_product_bundles = True
 		val = obm.get("combine_product_bundles")
 		if val is not None:
 			combine_product_bundles = bool(val)
 
-		# ── Main item lines (priced) ────────────────────────────────────────
-		# ONE ROW PER SALES ORDER LINE's own contribution — a combo's components are
-		# never merged into a standalone line of the same SKU. For 2 x ITEMC (a combo of
-		# 2 x ITEMA + 3 x ITEMB) ordered alongside 1 x ITEMA:
-		#   Combine Product Bundles ON  -> ITEMA 4, ITEMB 6 (the combo, exploded), ITEMA 1
-		#   Combine Product Bundles OFF -> ITEMC 2, ITEMA 1  (as entered, like the PDF —
-		#       utils.get_combined_items returns doc.items untouched when the flag is off)
-		#
-		# Qty still follows the submitted Pick List, but it has to be allocated back onto
-		# the SO lines first: the Pick List only ever holds EXPLODED components, so a combo
-		# SKU is never in it by name, and a component that is ALSO ordered standalone sits
-		# in ONE merged picked row shared by both lines. Walking the lines in order and
-		# consuming picked stock as we go (a combo unit eats base_qty of each component)
-		# keeps the lines from double-counting that shared row, and still shrinks or drops
-		# a line that was short-picked / removed.
+		# Main item lines (priced). One row per SO line's own contribution; a combo's
+		# components are never merged into a standalone line of the same SKU. Qty follows
+		# the submitted Pick List, but has to be allocated back onto the SO lines first: the
+		# Pick List holds only exploded components, and a component also ordered standalone
+		# sits in one merged picked row. Walking the lines in order and consuming picked
+		# stock as we go keeps them from double-counting that shared row.
 		import math
 		from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
 		from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
 
 		def _combo_components(r):
-			"""[(component_item, qty_per_combo_unit)] for a bundle SO line, else None —
-			native packed items, the alpinos custom mapping, or a Product Bundle."""
+			"""[(component_item, qty_per_combo_unit)] for a bundle SO line, else None."""
 			packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
 			oq = flt(r.qty) or 1
 			if packed:
@@ -756,8 +670,7 @@ def _get_data(filters):
 			return None
 
 		def _component_price(item_code):
-			"""(mrp, flat%, selling price) for an exploded component from the buyer
-			catalog — it has no saved Sales Order line of its own to price it from."""
+			"""(mrp, flat%, selling price) for an exploded component from the buyer catalog."""
 			res = get_offline_buyer_item_rate(so.customer, item_code)
 			if res and flt(res.get("mrp")) > 0:
 				return flt(res.get("mrp")), flt(res.get("margin_percent")), flt(res.get("rate"))
@@ -772,9 +685,7 @@ def _get_data(filters):
 				avail[ic] = flt(avail.get(ic, 0.0)) + flt(v.get("qty"))
 				box_pool[ic] = flt(box_pool.get(ic, 0.0)) + flt(v.get("box"))
 		for (ic, _src), v in pl_map.items():
-			# Exploded components can land under a source table other than "Items"
-			# depending on how the Pick List was built; fall back to the item's total
-			# picked qty when it has no "Items" row at all (same fallback as emit()).
+			# Fall back to the item's total picked qty when it has no "Items" row (same as emit()).
 			if ic not in avail:
 				avail[ic] = sum(flt(x.get("qty")) for (c, _s), x in pl_map.items() if c == ic)
 				box_pool[ic] = sum(flt(x.get("box")) for (c, _s), x in pl_map.items() if c == ic)
@@ -788,10 +699,7 @@ def _get_data(filters):
 			return got
 
 		def _box_share(item_code, units):
-			"""This line's slice of the item's PICKED boxes, pro rata on units. The Pick
-			List merges a component shared by a combo line and a standalone line into one
-			row, so its box count has to be split the same way its qty is — a line that
-			takes the whole picked qty keeps the whole box count."""
+			"""This line's slice of the item's picked boxes, pro rata on units."""
 			tot = flt(picked_total.get(item_code, 0.0))
 			if not tot or not flt(units):
 				return 0.0
@@ -803,8 +711,7 @@ def _get_data(filters):
 			if not has_pl:
 				picked = ordered
 			elif comps:
-				# This combo's OWN picked qty, from Pick List rows tagged with this combo
-				# (custom_bundle_parent) - the short-pick stays on the combo line, not the loose line.
+				# This combo's own picked qty, from Pick List rows tagged with this combo.
 				picked = ordered
 				for (citem, per) in comps:
 					per = flt(per) or 1
@@ -816,13 +723,11 @@ def _get_data(filters):
 				picked = _take(r.item_code, ordered)
 
 			if has_pl and not picked:
-				# Nothing of this line survived in the Pick List — not dispatched.
+				# Nothing of this line survived in the Pick List: not dispatched.
 				continue
 
 			if comps and combine_product_bundles:
-				# Combined: this combo line explodes into its own component rows, priced
-				# from the buyer catalog. Kept separate from any standalone line of the
-				# same SKU, which reports its own qty at its own confirmed price.
+				# Combined: explode this combo line into component rows priced from the buyer catalog.
 				for (citem, per) in comps:
 					cqty = picked * (flt(per) or 1)
 					if not cqty:
@@ -843,9 +748,8 @@ def _get_data(filters):
 					)
 				continue
 
-			# The line itself: a plain item (either mode), or the combo SKU as entered
-			# when Combine Product Bundles is off — with its own stored pricing. A combo
-			# SKU has no picked row of its own, so its Box is its components' picked boxes.
+			# The line itself: a plain item, or the combo SKU as entered when Combine Product
+			# Bundles is off. A combo SKU has no picked row, so its Box is its components' picked boxes.
 			if not has_pl:
 				box = flt(r.get("custom_box"))
 			elif comps:
@@ -863,9 +767,8 @@ def _get_data(filters):
 				ordered_qty=ordered,
 			)
 
-		# Marketing freebies / scheme items / additional-unit (damage) items — selling
-		# rate 0, qty taken straight from the Sales Order (not the pick list, which
-		# doesn't carry these free lines — they would otherwise report qty 0).
+		# Marketing freebies / scheme / additional-unit (damage) items: selling rate 0,
+		# qty taken straight from the Sales Order.
 		for r in (so.get("custom_marketing_freebies") or []):
 			if r.get("item_code"):
 				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Marketing Freebies", ordered_qty=r.get("qty"))

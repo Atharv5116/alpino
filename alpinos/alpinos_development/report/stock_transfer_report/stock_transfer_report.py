@@ -13,7 +13,6 @@ def execute(filters=None):
 
 
 def get_columns():
-	"""Define report columns based on requirements"""
 	return [
 		{
 			"label": _("Date"),
@@ -77,7 +76,6 @@ def get_columns():
 
 
 def get_data(filters):
-	"""Fetch stock transfer data based on filters"""
 	if not filters:
 		filters = {}
 	
@@ -88,7 +86,6 @@ def get_data(filters):
 	to_warehouse = filters.get("to_warehouse")
 	item_code = filters.get("item_code")
 	
-	# Build conditions
 	conditions = [
 		"se.docstatus = 1",
 		"se.purpose = 'Material Transfer'",
@@ -118,7 +115,6 @@ def get_data(filters):
 	
 	where_clause = " AND ".join(conditions)
 	
-	# Query stock entries for material transfers
 	query = f"""
 		SELECT
 			se.posting_date,
@@ -141,7 +137,6 @@ def get_data(filters):
 	
 	transfer_data = frappe.db.sql(query, values, as_dict=1)
 	
-	# Process data - ensure no decimal places in Qty as per requirement
 	result = []
 	for row in transfer_data:
 		result.append({

@@ -1,11 +1,4 @@
-"""
-Automation scripts for Job Applicant
-- Auto-generate Candidate ID
-- File upload validation (PDF and Word only)
-- Status management automation
-- Email notifications
-- Job Requisition/Job Opening validation
-"""
+"""Automation for Job Applicant: candidate ID, file validation, status, emails."""
 
 import frappe
 from frappe import _
@@ -13,29 +6,14 @@ from frappe.utils import now, getdate, today
 import os
 
 def generate_candidate_id(doc, method=None):
-	"""
-	Set Candidate ID = Job Applicant ID (name)
-	Both will be in AHFPL0000 format
-	This runs before_save to set candidate_id to the document name
-	The document name is set by autoname in before_insert, so we can use it in before_save
-	"""
-	# Set candidate_id to the Job Applicant's name (ID) if not already set
-	# Both will be in AHFPL0000 format (e.g., AHFPL0001, AHFPL0002)
+	"""Set Candidate ID = Job Applicant ID (name), both in AHFPL0000 format."""
 	if not doc.candidate_id and doc.name:
 		doc.candidate_id = doc.name
 
 
 def update_screening_status_automatically(doc, method=None):
-	"""
-	Automatically update screening_status based on category changes and other triggers
-	Rules:
-	- Default (new applicant): "Pending Screening"
-	- Category White -> "Shortlisted"
-	- Category Black -> "Not Eligible"
-	- Category Hold -> "On Hold"
-	- Interview created -> "Screening Call Scheduled" (handled in Interview hook)
-	"""
-	# Only update if category is being changed
+	"""Update screening_status from candidate_category: White->Shortlisted,
+	Black->Not Eligible, Hold->On Hold; default 'Pending Screening' for new applicants."""
 	if doc.has_value_changed("candidate_category"):
 		if doc.candidate_category == "White":
 			doc.screening_status = "Shortlisted"
@@ -54,19 +32,15 @@ def update_screening_status_automatically(doc, method=None):
 
 
 def validate_resume_file_type(doc, method=None):
-	"""
-	Validate that Resume/CV file is PDF or Word format only
-	"""
+	"""Validate that the Resume/CV file is a PDF or Word document."""
 	if doc.resume_attachment:
 		try:
-			# Get file document
 			file_doc = frappe.get_doc("File", {"file_url": doc.resume_attachment})
 			file_name = file_doc.file_name or file_doc.name or ""
 			file_ext = os.path.splitext(file_name)[1].lower()
 			
-			# Allowed extensions
 			allowed_extensions = [".pdf", ".doc", ".docx"]
-			
+
 			if file_ext not in allowed_extensions:
 				frappe.throw(
 					_("Resume/CV must be a PDF or Word document (.pdf, .doc, .docx). "
@@ -91,20 +65,13 @@ def validate_resume_file_type(doc, method=None):
 
 
 def set_default_status(doc, method=None):
-	"""
-	Set default status to "Draft" if not set and document is new
-	"""
 	if doc.is_new() and not doc.status:
 		doc.status = "Draft"
 
 
 def validate_job_requisition_open(doc, method=None):
-	"""
-	Validate that Job Opening is still open/published
-	Note: job_requisition field now links to Job Opening (not Job Requisition)
-	"""
+	"""Validate that the linked Job Opening is still open and published."""
 	if doc.job_requisition:
-		# job_requisition field now directly links to Job Opening
 		job_opening_status = frappe.db.get_value("Job Opening", doc.job_requisition, "status")
 		
 		if job_opening_status == "Closed":
@@ -127,9 +94,7 @@ def validate_job_requisition_open(doc, method=None):
 
 
 def validate_job_opening_open(doc, method=None):
-	"""
-	Validate that Job Opening is still open/published
-	"""
+	"""Validate that the Job Opening is still open."""
 	if doc.job_title:
 		job_opening_status = frappe.db.get_value("Job Opening", doc.job_title, "status")
 		
@@ -141,51 +106,31 @@ def validate_job_opening_open(doc, method=None):
 
 
 def update_status_on_submit(doc, method=None):
-	"""
-	Update status when document is submitted via web form:
-	- Draft → Submitted (on save from web form)
-	"""
-	# Detect if this is a web form submission
-	# Web forms set status to Draft initially, then we change to Submitted on submit
+	"""Web form save: Draft -> Submitted."""
 	if doc.status == "Draft" and hasattr(doc, 'web_form_name') and doc.web_form_name:
 		doc.status = "Submitted"
 
 
 def update_status_after_submit(doc, method=None):
-	"""
-	After submit (document submission), change status to "New Application" and send emails
-	For web forms, this is called via after_insert hook
-	"""
-	# After web form submission, change Submitted → New Application
+	"""After submit, change Submitted -> New Application and send emails (after_insert for web forms)."""
 	if doc.status == "Submitted":
 		doc.status = "New Application"
 		doc.db_set("status", "New Application", update_modified=False)
-		
-		# Trigger email notifications after status is set to New Application
-		# This ensures emails are sent with the correct status
+
 		send_application_emails(doc)
 
 
 def handle_web_form_submission(doc, method=None):
-	"""
-	Handle web form submission: Draft → Submitted
-	This is called in before_save/before_insert to detect web form submissions
-	"""
-	# Check if document is from web form
+	"""Detect a web form submission in before_save/before_insert: Draft -> Submitted."""
 	is_web_form = hasattr(doc, 'web_form_name') and doc.web_form_name
-	
-	# If from web form and status is Draft, change to Submitted
-	# The after_insert hook will then change it to New Application
+
 	if is_web_form and doc.status == "Draft":
 		doc.status = "Submitted"
 
 
 def process_web_form_submission(doc, method=None):
-	"""
-	Process web form submission after insert: Automatically trigger workflow action "Submit Application"
-	This is called in after_insert to handle web form submissions
-	"""
-	# Check if document is from web form - detect multiple ways
+	"""after_insert: detect a web form submission and apply the workflow's Draft transition."""
+	# detect a web form submission several ways
 	is_web_form = False
 	
 	# Method 1: Check if owner is Guest (web forms typically created by Guest)
@@ -208,10 +153,8 @@ def process_web_form_submission(doc, method=None):
 	frappe.db.commit()
 	
 	try:
-		# Get fresh document from database after commit
 		doc.reload()
-		
-		# Only proceed if status is Draft
+
 		if doc.status != "Draft":
 			return
 		
@@ -244,20 +187,13 @@ def process_web_form_submission(doc, method=None):
 			)
 			return
 		
-		# Automatically apply the workflow action (e.g., "Submit Application")
-		# This will transition from Draft → New Application via the workflow
-		# and will automatically submit the document (docstatus = 1)
+		# apply the workflow action (Draft -> New Application, submits the doc)
 		from frappe.model.workflow import apply_workflow
 		apply_workflow(doc, action_name)
-		
-		# Commit the workflow changes
+
 		frappe.db.commit()
-		
-		# Reload document after workflow to get updated status
 		doc.reload()
-		
-		# Trigger email notifications after workflow updates status
-		# This ensures emails are sent with the correct status set by workflow
+
 		send_application_emails(doc)
 		
 	except Exception as e:
@@ -269,12 +205,9 @@ def process_web_form_submission(doc, method=None):
 
 
 def send_application_emails(doc):
-	"""
-	Send email notifications to candidate and HR after application is submitted
-	This is called after status changes to New Application
-	"""
+	"""Email the candidate and HR after the application is submitted."""
 	try:
-		# Global default templates created via create_hrms_email_templates patch
+		# templates created via the create_hrms_email_templates patch
 		candidate_template = "Job Application - Candidate Acknowledgement"
 		hr_template = "Job Application - HR Notification"
 		
@@ -636,17 +569,12 @@ def send_interview_scheduled_emails(doc, method=None):
 
 
 def set_application_date(doc, method=None):
-	"""
-	Set application date to today if not set
-	"""
 	if not doc.application_date:
 		doc.application_date = today()
 
 
 def validate_mandatory_fields(doc, method=None):
-	"""
-	Validate all mandatory fields are filled
-	"""
+	"""Validate that all mandatory fields are filled."""
 	mandatory_fields = [
 		("applicant_name", "Full Name"),
 		("email_id", "Email"),
@@ -679,12 +607,8 @@ def validate_mandatory_fields(doc, method=None):
 
 
 def auto_populate_from_job_requisition(doc, method=None):
-	"""
-	Auto-populate fields from Job Opening when selected
-	Note: job_requisition field now links to Job Opening (not Job Requisition)
-	"""
+	"""Auto-populate job_title + designation from the linked Job Opening."""
 	if doc.job_requisition:
-		# job_requisition field now directly links to Job Opening
 		job_opening = frappe.get_doc("Job Opening", doc.job_requisition)
 		
 		if job_opening:
@@ -697,12 +621,7 @@ def auto_populate_from_job_requisition(doc, method=None):
 
 
 def auto_populate_from_job_opening(doc, method=None):
-	"""
-	Auto-populate fields from Job Opening when selected via job_title or job_requisition
-	Note: job_requisition field now links directly to Job Opening (not Job Requisition)
-	This ensures job_requisition is always set when job_title is provided (from web form URL),
-	and keeps applied_position in sync with Job Opening designation.
-	"""
+	"""Sync job_title <-> job_requisition and fill designation / applied_position from the Job Opening."""
 	# Map job_title to job_requisition if job_title is set but job_requisition is not
 	if doc.job_title and not doc.job_requisition:
 		# job_requisition field now directly links to Job Opening
@@ -731,22 +650,13 @@ def auto_populate_from_job_opening(doc, method=None):
 
 
 def send_acknowledgement_emails(doc, method=None):
-	"""
-	Send acknowledgement emails to candidate and HR
-	This will be triggered by Notification records, but we can also call it here
-	"""
-	# Emails are sent via Notification records configured in Frappe
-	# This method can be used for custom email logic if needed
+	"""Placeholder: acknowledgement emails are sent via configured Notification records."""
 	pass
 
 
 @frappe.whitelist()
 def ensure_call_round_interview_exists():
-	"""
-	Ensure "Call Round Interview" Interview Round exists
-	Creates it if it doesn't exist
-	Returns the Interview Round name
-	"""
+	"""Ensure the "Call Round Interview" Interview Round exists, creating it if needed."""
 	round_name = "Call Round Interview"
 	
 	# Check if it already exists
@@ -803,9 +713,7 @@ def ensure_call_round_interview_exists():
 
 
 def update_screening_status_on_interview_created(doc, method=None):
-	"""
-	Update Job Applicant screening_status to "Interview Scheduled" when Interview is created
-	"""
+	"""Set screening_status to 'Interview Scheduled' when an Interview is created."""
 	if doc.job_applicant:
 		try:
 			frappe.db.set_value("Job Applicant", doc.job_applicant, "screening_status", "Interview Scheduled")
@@ -815,14 +723,8 @@ def update_screening_status_on_interview_created(doc, method=None):
 
 
 def update_screening_status_on_interview_status_change(doc, method=None):
-	"""
-	Update Job Applicant screening_status based on Interview status changes
-	Mapping:
-	- "Accepted" → "Accepted"
-	- "Rejected" → "Rejected"
-	- "Hold" → "On Hold"
-	- "Interview Scheduled" → "Interview Scheduled"
-	"""
+	"""Mirror the Interview status onto the Job Applicant's screening_status
+	(Accepted, Rejected, Hold->On Hold, Interview Scheduled)."""
 	if doc.job_applicant and doc.has_value_changed("status"):
 		try:
 			status_mapping = {

@@ -1,11 +1,4 @@
-"""Add a "Missing Check-ins Today" block to the Home workspace.
-
-Shows active employees with no check-in by 11:30 AM today and no approved leave
-(same data as the scheduled email). Visible to HR Managers (all employees) and to
-reporting managers (their direct reports only); hidden for everyone else.
-
-Data + gate: alpinos.attendance_alerts.get_missing_checkins_today.
-"""
+"""Add a "Missing Check-ins Today" block to the Home workspace."""
 
 import json
 
@@ -96,7 +89,6 @@ frappe.call({
 
 
 def execute():
-	# 1. Upsert the Custom HTML Block.
 	if frappe.db.exists("Custom HTML Block", LABEL):
 		block = frappe.get_doc("Custom HTML Block", LABEL)
 		block.html = HTML
@@ -111,7 +103,6 @@ def execute():
 		frappe.db.commit()
 		return
 
-	# 2. Ensure the Workspace Custom Block child row exists.
 	if not frappe.db.exists(
 		"Workspace Custom Block", {"parent": WORKSPACE, "custom_block_name": LABEL}
 	):
@@ -126,7 +117,7 @@ def execute():
 			}
 		).insert(ignore_permissions=True)
 
-	# 3. Place it just after the "Upcoming HR Activities" block (or at the end).
+	# Place it just after the "Upcoming HR Activities" block, or at the end
 	workspace_doc = frappe.get_doc("Workspace", WORKSPACE)
 	blocks = json.loads(workspace_doc.content or "[]")
 	blocks = [

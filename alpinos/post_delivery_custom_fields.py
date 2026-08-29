@@ -1,10 +1,4 @@
-"""
-Post Dispatch — reflect fields on Delivery Note + Sales Order.
-
-The Post Dispatch doc (one per DN) mirrors its status onto the linked Delivery Note
-and Sales Order via these read-only fields (written with db.set_value since both are
-submitted). Run on after_migrate, after the e-com and DN custom-field setups.
-"""
+"""Post Dispatch reflect fields on Delivery Note + Sales Order (run on after_migrate)."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -166,9 +160,8 @@ def setup_post_delivery_fields():
 
 
 def _grant_post_delivery_role_perms():
-	"""Grant the E-Commerce roles access to Post Dispatch in code (the roles are
-	seeded in after_migrate, so they can't be referenced in the doctype JSON perms
-	which sync earlier). Idempotent."""
+	"""Grant the E-Commerce roles access to Post Dispatch in code (roles are seeded in
+	after_migrate, after the doctype JSON perms sync). Idempotent."""
 	from frappe.permissions import add_permission, update_permission_property
 
 	if not frappe.db.exists("DocType", "Post Dispatch"):

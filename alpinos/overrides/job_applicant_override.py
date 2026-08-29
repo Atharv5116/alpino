@@ -1,6 +1,4 @@
-"""
-Override for Job Applicant to change autoname from email to AHFPL#### format
-"""
+"""Override Job Applicant autoname to HR-JOBAP-##### format instead of email."""
 
 import frappe
 from frappe.model.naming import make_autoname
@@ -8,15 +6,14 @@ from hrms.hr.doctype.job_applicant.job_applicant import JobApplicant
 
 
 class CustomJobApplicant(JobApplicant):
-	"""Custom Job Applicant class with AHFPL#### naming"""
+	"""Job Applicant named as HR-JOBAP-##### instead of by email."""
 	
 	def validate(self):
 		super().validate()
 		self._validate_employment_dates()
 
 	def autoname(self):
-		"""Generate name in HR-JOBAP-##### format instead of email"""
-		# Use HR-JOBAP-.##### format (HR-JOBAP-00001, HR-JOBAP-00002, etc.)
+		"""Generate name in HR-JOBAP-##### format instead of email."""
 		self.name = make_autoname("HR-JOBAP-.#####", "Job Applicant")
 
 	def _validate_employment_dates(self):

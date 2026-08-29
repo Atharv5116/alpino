@@ -36,7 +36,7 @@ def _update_email_template(name, data):
 
 def _get_templates():
 	return {
-		# Job Application (already used)
+		# Job Application
 		"Job Application - Candidate Acknowledgement": {
 			"subject": "Application received – {{ (doc or {}).get('job_title') or (doc or {}).get('job_requisition') or 'position' }}",
 			"response_html": _job_application_candidate_body(),
@@ -45,7 +45,7 @@ def _get_templates():
 			"subject": "New application – {{ (doc or {}).get('applicant_name') or 'Candidate' }}",
 			"response_html": _job_application_hr_body(),
 		},
-		# Interview scheduling (already used)
+		# Interview scheduling
 		"Interview Schedule Mail": {
 			"subject": "Interview – {{ (doc or {}).get('job_title') or (doc or {}).get('job_requisition') or 'position' }}",
 			"response_html": _interview_schedule_body(),
@@ -54,7 +54,7 @@ def _get_templates():
 			"subject": "Interview – {{ (doc or {}).get('applicant_name') or 'Candidate' }}",
 			"response_html": _interview_schedule_hr_body(),
 		},
-		# Onboarding (new) – subjects kept ≤140 chars for Email Template field limit
+		# Onboarding (keep subjects short for the field limit)
 		"Onboarding - Job Confirmation": {
 			"subject": "Job confirmation – {{ (doc or {}).get('full_name_display') or (doc or {}).get('applicant_name') or 'Candidate' }}",
 			"response_html": _onboarding_job_confirmation_body(),
@@ -63,7 +63,7 @@ def _get_templates():
 			"subject": "Pre-Onboarding: document upload reminder",
 			"response_html": _onboarding_document_reminder_body(),
 		},
-		# Job Confirmation (from spec doc)
+		# Job Confirmation
 		"Job Confirmation Mail": {
 			"subject": "Job confirmation – {{ (doc or {}).get('candidate_name') or (doc or {}).get('applicant_name') or 'Candidate' }}",
 			"response_html": _confirmation_mail_body(),
@@ -293,7 +293,6 @@ def _onboarding_document_reminder_body():
 
 
 def _with_alpino_layout(content_html):
-	# Default Alpino logo URL
 	alpino_logo_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR0cfjJi3U8tgoX4Jk3zp07AXjRNveFA-jxLA&s"
 	
 	return f"""<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.6;">

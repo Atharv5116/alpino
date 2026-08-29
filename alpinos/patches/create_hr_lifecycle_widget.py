@@ -1,14 +1,4 @@
-"""Add an HR-Manager-only "Upcoming HR Activities" block to the Home workspace.
-
-Shows, for the next 30 days (dates as DD/MM/YYYY):
-  - Probation completions (Employee.probation_end_date)
-  - Internship completions (date_of_joining + custom_internship_duration months)
-  - Salary increments (next date_of_joining anniversary, yearly)
-
-Data + the HR Manager gate live in alpinos.people_events.get_upcoming_employee_lifecycle.
-The block is added to the workspace for everyone, but the script hides it for any user
-who is not an HR Manager (backend returns allowed:false).
-"""
+"""Add an HR-Manager-only "Upcoming HR Activities" block to the Home workspace."""
 
 import json
 
@@ -117,7 +107,6 @@ frappe.call({
 
 
 def execute():
-	# 1. Upsert the Custom HTML Block.
 	if frappe.db.exists("Custom HTML Block", LABEL):
 		block = frappe.get_doc("Custom HTML Block", LABEL)
 		block.html = HTML
@@ -137,7 +126,6 @@ def execute():
 		frappe.db.commit()
 		return
 
-	# 2. Ensure the Workspace Custom Block child row exists.
 	if not frappe.db.exists(
 		"Workspace Custom Block",
 		{"parent": WORKSPACE, "custom_block_name": LABEL},
@@ -153,12 +141,11 @@ def execute():
 			}
 		).insert(ignore_permissions=True)
 
-	# 3. Place the block in the workspace layout, just after the
-	#    Birthdays/Anniversaries block (or at the end if it isn't present).
+	# Place it just after the Birthdays/Anniversaries block, or at the end
 	workspace_doc = frappe.get_doc("Workspace", WORKSPACE)
 	blocks = json.loads(workspace_doc.content or "[]")
 
-	# Drop any existing instance so this patch stays idempotent.
+	# Drop any existing instance to stay idempotent
 	blocks = [
 		b
 		for b in blocks

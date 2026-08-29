@@ -16,8 +16,7 @@ class PostDispatch(Document):
 		self._compute_aggregates()
 
 	def _validate_appointment_lock(self):
-		"""Appointment ID is editable only until the Sales Order reaches a
-		terminal status (BRD: editable at Dispatched / Forced Dispatched)."""
+		"""Appointment ID is editable only until the Sales Order reaches a terminal status."""
 		before = self.get_doc_before_save()
 		old = (before.get("appointment_id") if before else "") or ""
 		if (self.appointment_id or "") == old:
@@ -35,7 +34,7 @@ class PostDispatch(Document):
 		self._notify_rejections()
 
 	def _notify_rejections(self):
-		"""N19 (ASN rejected) / N20 (GRN rejected) — fire once on transition."""
+		"""N19 (ASN rejected) / N20 (GRN rejected): fire once on transition."""
 		from alpinos import so_notifications as son
 
 		before = self.get_doc_before_save()
@@ -52,7 +51,6 @@ class PostDispatch(Document):
 		if now_rejected and not was_rejected:
 			son.safe(lambda: son.n20_grn_rejected(self, rejected_qty))
 
-	# ------------------------------------------------------------------
 	def _stamp_asn_upload(self):
 		"""Auto-record who/when the ASN was uploaded (once it leaves Pending)."""
 		if (self.asn_status or "Pending") != "Pending" and not self.asn_uploaded_by:
@@ -60,7 +58,7 @@ class PostDispatch(Document):
 			self.asn_uploaded_on = now()
 
 	def _validate_grn(self):
-		"""GRN date/qty rules — only when the buyer shares GRN."""
+		"""GRN date/qty rules, only when the buyer shares GRN."""
 		if not cint(self.grn_available):
 			return
 		if self.grn_date and self.dispatch_date and getdate(self.grn_date) < getdate(self.dispatch_date):
@@ -97,9 +95,7 @@ class PostDispatch(Document):
 			self.post_delivery_status = "Not Started"
 
 	def _compute_aggregates(self):
-		"""SO-level aggregate summary across all terms (BRD Module 3):
-		fill rate, total terms (submitted DNs), total dispatched qty, and the
-		GRN totals / Overall GRN Fill Rate across every Post Dispatch of the SO."""
+		"""SO-level aggregates: fill rate, total terms, dispatched qty, and GRN totals across the SO's Post Dispatches."""
 		if not self.sales_order:
 			return
 		total_po = flt(frappe.db.get_value("Sales Order", self.sales_order, "total_qty")) or _so_ordered_qty(self.sales_order)
@@ -111,8 +107,7 @@ class PostDispatch(Document):
 			{"custom_sales_order_id": self.sales_order, "docstatus": 1, "is_return": 0},
 		)
 
-		# GRN totals: stored rows of the SO's OTHER Post Deliveries + this doc's
-		# (possibly unsaved) rows, so the numbers are correct on the current save.
+		# GRN totals from the SO's other Post Deliveries plus this doc's (possibly unsaved) rows.
 		other = frappe.db.sql(
 			"""
 			SELECT IFNULL(SUM(gi.grn_qty), 0), IFNULL(SUM(gi.grn_rejected_qty), 0)
@@ -128,10 +123,8 @@ class PostDispatch(Document):
 		self.total_grn_rejected_qty = flt(grn_rejected, 2)
 		self.overall_grn_fill_rate = flt((grn_qty / dispatched * 100.0), 2) if dispatched else 0.0
 
-	# ------------------------------------------------------------------
 	def reflect_to_dn_and_so(self):
-		"""Mirror the post-delivery status onto the Delivery Note and Sales Order
-		(read-only display fields; both are submitted, so write via db.set_value)."""
+		"""Mirror the post-delivery status onto the Delivery Note and Sales Order display fields."""
 		if self.delivery_note:
 			frappe.db.set_value("Delivery Note", self.delivery_note, {
 				"custom_post_delivery": self.name,
@@ -161,9 +154,7 @@ def _so_ordered_qty(sales_order):
 
 
 def _so_dispatched_qty(sales_order):
-	"""Sum of Delivery Note item qty across all submitted, non-return DNs linked to
-	the SO. Excludes sales returns so they don't inflate dispatched qty / fill rate
-	(matches partial_dispatch.dispatched_qty_by_sku)."""
+	"""Sum of Delivery Note item qty across the SO's submitted, non-return DNs."""
 	return flt(frappe.db.sql(
 		"""
 		SELECT SUM(dni.qty)

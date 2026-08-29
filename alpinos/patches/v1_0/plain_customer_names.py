@@ -1,18 +1,4 @@
-"""Customer naming split: ID carries "business - GST/PAN", display name is the
-plain business name.
-
-Buyer Master used to write "business - GST" into Customer.customer_name, so
-Sales Orders / Pick Lists / stickers displayed the GST suffix. Now the suffix
-lives only in the Customer ID (docname, unique per GST entity) and
-customer_name is the plain trade name. This backfills existing records:
-
-1. customer_name -> plain business name (db_set: avoids the auto-rename that
-   saving a Customer named by customer_name would trigger)
-2. docname -> "business - GST/PAN" via rename_doc (updates every linked doc);
-   skipped when the target name is taken
-3. refresh the denormalized display copies on Sales Order / Pick List /
-   Delivery Note so existing documents show the plain name too
-"""
+"""Customer naming: ID carries "business - GST/PAN", display name is the plain business name."""
 
 import frappe
 
@@ -30,8 +16,7 @@ def execute():
 		if not biz or not frappe.db.exists("Customer", b.customer):
 			continue
 		try:
-			# Rename first — Customer.after_rename resets customer_name to the
-			# docname when naming is "By Customer Name".
+			# Rename first: after_rename resets customer_name to the docname
 			cust_id = b.customer
 			target = f"{biz} - {tax}" if tax else biz
 			if cust_id != target and not frappe.db.exists("Customer", target):

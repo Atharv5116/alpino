@@ -13,7 +13,6 @@ from frappe.utils import getdate, get_first_day, get_last_day, get_datetime, get
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
 
-	# Default the date range to the current month when not supplied.
 	if not filters.get("from_date"):
 		filters.from_date = get_first_day(getdate())
 	if not filters.get("to_date"):
@@ -40,11 +39,7 @@ def get_columns():
 
 
 def _combine(date, val):
-	"""Combine a date with a time-of-day into a datetime, so old and new punches are comparable.
-
-	The new punch is a Time field, which the DB returns as a timedelta (or time/datetime); older
-	records may hold typed text. Handle all of these. Blank/unparseable -> None.
-	"""
+	"""Combine a date and a time-of-day into a datetime; blank/unparseable returns None."""
 	if val in (None, ""):
 		return None
 	d = getdate(date)
@@ -61,9 +56,8 @@ def _combine(date, val):
 
 
 def get_data(filters):
-	# An "edit" = there was a prior punch on that date. Require either old check-in OR old
-	# check-out (the snapshot can miss check-in when the original log wasn't IN-typed), so
-	# genuine edits aren't dropped. On Duty / missing-punch rows have both NULL and stay excluded.
+	# An edit means a prior punch existed on that date: require either old check-in or
+	# old check-out. On Duty / missing-punch rows have both NULL and stay excluded.
 	conditions = [
 		"ar.docstatus = 1",
 		"log.parenttype = 'Attendance Request'",

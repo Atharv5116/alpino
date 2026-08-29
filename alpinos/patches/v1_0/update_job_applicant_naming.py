@@ -1,16 +1,11 @@
-"""
-Patch to update Job Applicant autoname to CAND-#### format
-"""
+"""Update Job Applicant autoname to CAND-#### format."""
 
 import frappe
 from frappe.model.naming import make_autoname
 
 
 def execute():
-	"""Update Job Applicant naming rule to CAND-.#####"""
-	
 	try:
-		# Update the DocType's naming rule via Property Setter
 		update_property_setter(
 			"Job Applicant",
 			"naming_rule",
@@ -18,7 +13,6 @@ def execute():
 			"Data"
 		)
 		
-		# Also update autoname field in DocType
 		doc_type = frappe.get_doc("DocType", "Job Applicant")
 		if doc_type.autoname != "CAND-.#####":
 			doc_type.autoname = "CAND-.#####"
@@ -36,7 +30,6 @@ def execute():
 
 
 def update_property_setter(doctype, property_name, value, property_type="Data"):
-	"""Create or update a property setter"""
 	existing = frappe.db.exists(
 		"Property Setter",
 		{

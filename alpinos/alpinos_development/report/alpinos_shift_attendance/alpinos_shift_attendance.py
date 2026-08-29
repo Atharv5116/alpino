@@ -10,7 +10,7 @@ from frappe.utils import cint, flt, format_datetime, format_duration
 
 
 def execute(filters=None):
-	# Normalize to frappe._dict (Script Report + unit tests may pass plain dict).
+	# Script Report and unit tests may pass a plain dict.
 	filters = frappe._dict(filters or {})
 
 	columns = get_columns()
@@ -218,8 +218,8 @@ def get_query(filters):
 	checkin = frappe.qb.DocType("Employee Checkin")
 	shift_type = frappe.qb.DocType("Shift Type")
 
-	# LEFT JOINs so attendance records without linked checkins (e.g. from Attendance Request)
-	# still appear in the report; shift_start/shift_end will simply be NULL for those rows.
+	# LEFT JOINs keep attendance rows without a linked checkin (e.g. Attendance Request);
+	# shift_start/shift_end are NULL for those rows.
 	query = (
 		frappe.qb.from_(attendance)
 		.left_join(checkin)

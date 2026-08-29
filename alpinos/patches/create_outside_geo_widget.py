@@ -1,7 +1,4 @@
-"""Add an "Outside Geo-Location Check-ins" block to the Alpinos workspace (HR review).
-
-Data: alpinos.outside_geo_checkins.get_outside_geo_checkins. Visible to HR roles only.
-"""
+"""Add an "Outside Geo-Location Check-ins" block for HR review."""
 
 import json
 
@@ -9,9 +6,9 @@ import frappe
 
 LABEL = "Outside Geo-Location Check-ins"
 WORKSPACE = "Home"
-# Placed just below the "Missing Check-ins Today" HR block on the Home workspace.
+# Sits just below the "Missing Check-ins Today" block on Home.
 ANCHOR_LABEL = "Missing Check-ins Today"
-OLD_WORKSPACE = "Alpinos"  # the earlier (wrong) placement — cleaned up on migrate
+OLD_WORKSPACE = "Alpinos"  # earlier wrong placement, cleaned up on migrate
 
 HTML = """
 <div id="alp-outgeo-widget" style="padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#ffffff;width:100%;max-width:100%;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
@@ -136,8 +133,7 @@ load();
 
 
 def _remove_from_workspace(ws_name):
-	"""Drop the Outside Geo block (layout + child row) from a workspace — used to clean up
-	the earlier placement on the standalone 'Alpinos' workspace."""
+	"""Drop the Outside Geo block from a workspace."""
 	if frappe.db.exists("Workspace", ws_name):
 		ws = frappe.get_doc("Workspace", ws_name)
 		blocks = json.loads(ws.content or "[]")
@@ -156,7 +152,6 @@ def _remove_from_workspace(ws_name):
 
 
 def execute():
-	# 1. Upsert the Custom HTML Block.
 	if frappe.db.exists("Custom HTML Block", LABEL):
 		block = frappe.get_doc("Custom HTML Block", LABEL)
 		block.html = HTML
@@ -167,14 +162,13 @@ def execute():
 			{"doctype": "Custom HTML Block", "name": LABEL, "html": HTML, "script": SCRIPT}
 		).insert(ignore_permissions=True)
 
-	# Clean up the earlier (wrong) placement on the standalone "Alpinos" workspace.
+	# Clean up the earlier placement on the standalone "Alpinos" workspace
 	_remove_from_workspace(OLD_WORKSPACE)
 
 	if not frappe.db.exists("Workspace", WORKSPACE):
 		frappe.db.commit()
 		return
 
-	# 2. Ensure the Workspace Custom Block child row exists on Home.
 	if not frappe.db.exists("Workspace Custom Block", {"parent": WORKSPACE, "custom_block_name": LABEL}):
 		frappe.get_doc(
 			{
@@ -187,7 +181,7 @@ def execute():
 			}
 		).insert(ignore_permissions=True)
 
-	# 3. Place it just after the "Missing Check-ins Today" block (or at the end).
+	# Place it just after the "Missing Check-ins Today" block, or at the end
 	ws = frappe.get_doc("Workspace", WORKSPACE)
 	blocks = json.loads(ws.content or "[]")
 	blocks = [

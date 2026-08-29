@@ -14,19 +14,15 @@ def _get_employee_for_user(user):
 
 
 def _employee_no_biometric(employee):
-    """True when the Employee has 'No Biometric' ticked → self check-in via the workspace
-    dialog (live photo + location) instead of a biometric device. Preference is per-employee
-    (employees of the same company can differ)."""
+    """True when the Employee has 'No Biometric' ticked (self check-in via the workspace dialog)."""
     if not employee:
         return False
     return bool(frappe.db.get_value("Employee", employee, "custom_no_biometric"))
 
 
 def _approved_wfh_today(employee):
-    """True when the employee has an APPROVED Work From Home Request for today.
-    On such days, working from outside the office is expected: the check-in geo-fence
-    (outside-location flag + Client/Vendor/Shoot/Meeting type, and the outside checkout
-    reason) is skipped, and a daily task update is collected on checkout instead."""
+    """True when the employee has an approved Work From Home Request for today
+    (the check-in geo-fence is skipped and a daily task update is collected on checkout)."""
     if not employee or not frappe.db.exists("DocType", "Work From Home Request"):
         return False
     return bool(
@@ -75,8 +71,7 @@ def _shift_location_coords(employee, when):
 
 
 def _validate_letters_only(value, field_label="Reason"):
-    """Reason must be words of letters — spaces between words are fine, but no
-    digits, special characters or whitespace-only values."""
+    """Reason must be words of letters and spaces only (no digits or special characters)."""
     import re
 
     if not re.fullmatch(r"[A-Za-z]+(?:\s+[A-Za-z]+)*", (value or "").strip()):
@@ -149,12 +144,9 @@ def _get_today_last_checkout(employee):
 
 
 def _get_today_last_dashboard_log(employee):
-    """Latest check-in/out today that originated from the DASHBOARD (no device_id).
-
-    eSSL/biometric punches set `device_id`; dashboard logs do not. The web timer must reflect
-    dashboard actions only, so stray device punches never stop or restart it — only a dashboard
-    checkout does. Filtered in Python so both NULL and empty-string device_id count as dashboard.
-    """
+    """Latest check-in/out today that came from the dashboard (no device_id).
+    eSSL/biometric punches set device_id; dashboard logs don't. Filtered in Python so both
+    NULL and empty-string device_id count as dashboard."""
     start, end = _get_today_range()
     logs = frappe.get_all(
         "Employee Checkin",
@@ -203,10 +195,8 @@ def get_status():
 
         return {"status": "NONE", "last_time": None, "elapsed_seconds": 0, **base}
     else:
-        # Biometric employee: the web timer reflects DASHBOARD actions only. eSSL/device
-        # punches (including stray/mistaken ones) never stop or restart it. Only a dashboard
-        # checkout stops the timer and flips the widget to "Checked Out". Once that happens it
-        # stays OUT for the rest of the day (a later eSSL punch does not revive the web timer).
+        # biometric employee: the web timer reflects dashboard actions only; only a dashboard
+        # checkout stops it, and it stays OUT for the rest of the day.
         last_dash = _get_today_last_dashboard_log(employee)
         if last_dash and last_dash[0]["log_type"] == "OUT":
             elapsed_seconds = int((last_dash[0]["time"] - in_time).total_seconds())
@@ -221,26 +211,8 @@ def get_status():
 
 @frappe.whitelist()
 def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = None):
-	"""Return monthly attendance summary for the logged-in employee.
-
-	Response format:
-	{
-	    "start_date": "YYYY-MM-DD",
-	    "end_date": "YYYY-MM-DD",
-	    "days": {
-	        "YYYY-MM-DD": {
-	            "status": "Present|Absent|On Leave|Half Day|Work From Home|Holiday|None",
-	            "check_in": "HH:MM:SS" | null,
-	            "check_out": "HH:MM:SS" | null,
-	            "holiday": 1 | 0,
-	            "worked_minutes": int | null,
-	            "late_coming": 0 | 1,
-	            "early_leaving": 0 | 1
-	        },
-	        ...
-	    }
-	}
-	"""
+	"""Monthly attendance summary for the logged-in employee: per-day status, check-in/out
+	times, holiday/WFH flags, worked minutes, and late/early flags vs shift."""
 	employee = _get_employee_for_user(frappe.session.user)
 	if not employee:
 		return {"days": {}}
@@ -261,9 +233,8 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 	if month > 12:
 		year += (month - 1) // 12
 		month = ((month - 1) % 12) + 1
-	year = max(2000, min(2100, year))  # Re-clamp year after month rollover
+	year = max(2000, min(2100, year))
 
-	# Compute first and last day of the month
 	start_date = getdate(f"{year}-{month:02d}-01")
 	if month == 12:
 		next_month = getdate(f"{year + 1}-01-01")
@@ -325,7 +296,6 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 					if shift and shift.get("start_datetime") and shift.get("end_datetime"):
 						s_start = shift["start_datetime"]
 						s_end = shift["end_datetime"]
-						# compare only time part on same date
 						shift_start = datetime.combine(current, s_start.time())
 						shift_end = datetime.combine(current, s_end.time())
 						if dt_in > shift_start:
@@ -480,15 +450,14 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
 
     values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "IN"}
 
-    # Pass optional geolocation data if provided (coerce to float to avoid str/float TypeError in distance calc)
+    # optional geolocation (coerce to float for the distance calc)
     if latitude is not None:
         values["latitude"] = flt(latitude)
     if longitude is not None:
         values["longitude"] = flt(longitude)
 
-    # Biometric companies with web check-in rules enabled: restrict to Shift Location radius
-    # and require a type (+ reason for 'Other'). On an approved-WFH day this whole gate is
-    # skipped — the employee is expected to work from outside the office.
+    # biometric + web check-in rules: restrict to the Shift Location radius and require a
+    # type (+ reason for 'Other'); skipped on an approved-WFH day.
     if _web_checkin_rules_active(employee) and not _approved_wfh_today(employee):
         enabled, radius_km = _web_checkin_config()
         coords = _shift_location_coords(employee, now_datetime())
@@ -587,10 +556,8 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
     employee = _get_employee_for_user(frappe.session.user)
     if not employee:
         frappe.throw("No Employee linked to this user.")
-    # Allow a dashboard checkout as long as there is ANY check-in today. We deliberately do
-    # NOT require the *last* log to be an IN: an eSSL device OUT (e.g. a mistaken punch near
-    # the biometric machine) may be the latest log, yet the employee still needs to check out
-    # from the dashboard. The last log's type is irrelevant here.
+    # allow a dashboard checkout as long as there's any check-in today (the last log's
+    # type is irrelevant; an eSSL OUT may be latest but the employee still checks out here).
     if not _get_today_first_checkin(employee):
         frappe.throw("You must Check In today before Check Out.")
 
@@ -604,15 +571,14 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
 
     values = {"doctype": "Employee Checkin", "employee": employee, "log_type": "OUT"}
 
-    # Pass optional geolocation data if provided (coerce to float to avoid str/float TypeError in distance calc)
+    # optional geolocation (coerce to float for the distance calc)
     if latitude is not None:
         values["latitude"] = flt(latitude)
     if longitude is not None:
         values["longitude"] = flt(longitude)
 
-    # Biometric companies with web check-in rules enabled: within the Shift Location radius the
-    # employee must check OUT on the biometric device too (mirrors the check-in rule), so the
-    # dashboard is only for genuine outside-office checkouts. Skipped on approved-WFH days.
+    # biometric + web check-in rules: within the radius the employee must check out on the
+    # device too, so the dashboard is only for outside-office checkouts. Skipped on WFH days.
     if _web_checkin_rules_active(employee) and not _approved_wfh_today(employee):
         enabled, radius_km = _web_checkin_config()
         coords = _shift_location_coords(employee, now_datetime())
