@@ -1,8 +1,4 @@
-"""
-Automation scripts for Work From Home Request
-- Auto-populate employee from current user
-- Auto-populate leave approver for the employee
-"""
+"""Work From Home Request automation: auto-populate employee and leave approver."""
 
 import frappe
 from frappe import _
@@ -10,10 +6,7 @@ from frappe import _
 
 @frappe.whitelist()
 def get_current_employee_and_approver():
-	"""
-	Get current user's employee and leave approver
-	Used by client script for auto-population
-	"""
+	"""Current user's employee and leave approver, for client-side auto-fill."""
 	current_user = frappe.session.user
 	
 	if not current_user or current_user == "Guest":
@@ -47,13 +40,7 @@ def get_current_employee_and_approver():
 
 
 def enforce_single_day(doc, method=None):
-	"""Work From Home is single-day only.
-
-	- Keep `to_date` equal to `date` so the request always covers exactly one day (the To Date
-	  field is hidden in the UI; this guards every save path).
-	- Require the Half Day Period when Half Day is ticked (mirrors the form's mandatory rule and
-	  the Leave Application validation; blocks any path that bypasses the UI).
-	"""
+	"""Work From Home is single-day only: force to_date == date and require the half-day period."""
 	if doc.doctype != "Work From Home Request":
 		return
 
@@ -68,9 +55,7 @@ def enforce_single_day(doc, method=None):
 
 
 def auto_populate_employee_and_approver(doc, method=None):
-	"""
-	Auto-populate employee and leave approver when creating a new Work From Home Request
-	"""
+	"""Auto-populate employee and leave approver on a new Work From Home Request."""
 	if doc.doctype != "Work From Home Request":
 		return
 	
@@ -117,10 +102,7 @@ def auto_populate_employee_and_approver(doc, method=None):
 
 
 def get_leave_approver_for_employee(employee):
-	"""
-	Get leave approver for an employee
-	First checks employee.leave_approver, then falls back to department approver
-	"""
+	"""Leave approver for an employee; falls back to the department approver."""
 	leave_approver, department = frappe.db.get_value(
 		"Employee",
 		employee,
@@ -256,25 +238,15 @@ def get_leave_approver_for_employee_api(employee):
 
 @frappe.whitelist()
 def save_wfh_tasks(wfh_request_name, tasks):
-	"""
-	Save tasks to Work From Home Request
-	Args:
-		wfh_request_name: Name of the Work From Home Request document
-		tasks: List of task dictionaries with task_name and status
-	"""
+	"""Save tasks to a Work From Home Request."""
 	if not wfh_request_name:
 		frappe.throw(_("Work From Home Request name is required"))
 	
 	if not tasks or len(tasks) == 0:
 		frappe.throw(_("At least one task is required"))
 	
-	# Get the WFH Request document
 	wfh_request = frappe.get_doc("Work From Home Request", wfh_request_name)
-	
-	# Clear existing tasks (optional - you can remove this if you want to append)
-	# wfh_request.tasks = []
-	
-	# Add new tasks
+
 	for task in tasks:
 		if task.get("task_name") and task.get("status"):
 			wfh_request.append("tasks", {
@@ -282,7 +254,6 @@ def save_wfh_tasks(wfh_request_name, tasks):
 				"status": task.get("status")
 			})
 	
-	# Save the document
 	wfh_request.save(ignore_permissions=True)
 	frappe.db.commit()
 	

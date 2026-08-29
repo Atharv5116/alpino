@@ -3,10 +3,7 @@ from frappe.utils import add_days, get_datetime, getdate, now_datetime
 from datetime import datetime, time
 
 def process_auto_attendance_periodic():
-    """
-    Mark attendance periodically for all Shift Types that have auto-attendance enabled.
-    Sets the process window to include recent data and triggers HRMS auto-attendance.
-    """
+    """Mark attendance for all Shift Types with auto-attendance enabled, then run HRMS auto-attendance."""
     today_date = getdate()
     # Process from yesterday to capture late night shifts and current day
     yesterday_date = add_days(today_date, -1)
@@ -39,10 +36,8 @@ def process_auto_attendance_periodic():
     
     # Trigger HRMS standard auto-attendance processing
     try:
-        # Ensure the Alpinos attendance patch (first-log -> in-time, last-log -> out-time,
-        # regardless of log type) is active in THIS process. Auto-attendance runs in a
-        # background worker that may not have imported the override module, so applying it
-        # explicitly here guarantees shift_type.calculate_working_hours is our custom version.
+        # Re-apply the Alpinos check-in patch in this worker; the background worker
+        # may not have imported the override module.
         from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
         _apply_checkout_reason_patch()
 

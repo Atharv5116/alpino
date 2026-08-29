@@ -1,9 +1,4 @@
-"""Role-based visibility for Pick List and Delivery Note.
-
-Alpinos Full Access sees everything; Alpinos Assigned Only sees only docs where
-custom_assigned_to or owner is the user. Others fall through to standard perms;
-Administrator always bypasses.
-"""
+"""Role-based visibility for Pick List and Delivery Note."""
 
 import frappe
 

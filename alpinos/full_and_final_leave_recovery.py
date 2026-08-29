@@ -164,7 +164,7 @@ def _leaves_taken(employee, leave_type, period_from, relieving):
 
 
 def _month_span(start, end):
-	"""Inclusive count of calendar months touched between start and end (>=0). A partial month counts as whole."""
+	"""Inclusive count of calendar months between start and end; a partial month counts as whole."""
 	start, end = getdate(start), getdate(end)
 	if end < start:
 		return 0

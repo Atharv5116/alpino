@@ -1,9 +1,4 @@
-"""Attendance healer: recompute an already-marked day from ALL its punches.
-
-HRMS freezes a day after marking it, so a late-synced punch never updates the in/out.
-recompute_attendance re-derives one Attendance from its day's same-shift punches using the
-shift's own get_attendance and the Saturday override. Shared by backfill() and heal_on_checkin().
-"""
+"""Attendance healer: recompute an already-marked day from all its punches."""
 
 import frappe
 from frappe.utils import flt, get_datetime, getdate
@@ -49,12 +44,7 @@ def _apply_saturday_override(attendance_date, shift, status, working_hours, half
 
 
 def recompute_attendance(att_name, apply=False, fallback_shift=None):
-	"""Recompute one auto-marked Attendance from its day's same-shift punches.
-
-	Returns a change dict (or None when out of scope); writes only when apply=True. Idempotent.
-	fallback_shift supplies a shift for the calc when the Attendance carries none (half-day-LEAVE
-	case); a leave-backed Half Day keeps its status while the punches add in/out/hours.
-	"""
+	"""Recompute one auto-marked Attendance from its day's same-shift punches; writes only when apply=True."""
 	att = frappe.db.get_value(
 		"Attendance",
 		att_name,
@@ -144,7 +134,7 @@ def recompute_attendance(att_name, apply=False, fallback_shift=None):
 
 
 # ---------------------------------------------------------------------------
-# Prevention — heal on a late punch (Employee Checkin after_insert)
+# Prevention: heal on a late punch (Employee Checkin after_insert)
 # ---------------------------------------------------------------------------
 def heal_on_checkin(doc, method=None):
 	"""Recompute an already-marked day when a late punch lands, so the punch folds in."""
@@ -176,7 +166,7 @@ def heal_on_checkin(doc, method=None):
 
 
 # ---------------------------------------------------------------------------
-# Backfill — one-time fix for the historical records
+# Backfill: one-time fix for the historical records
 # ---------------------------------------------------------------------------
 def _affected_attendance_names(from_date=None, to_date=None, limit=None):
 	"""Auto-marked Attendances whose out-time is earlier than the day's last same-shift punch."""

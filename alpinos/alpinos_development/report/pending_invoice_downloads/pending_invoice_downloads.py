@@ -1,12 +1,6 @@
 # Copyright (c) 2026, Alpinos and contributors
 # For license information, please see license.txt
-"""Pending Invoice Downloads.
-
-Sales Orders whose invoice has been assigned an Invoice No (via invoice sync) but
-has NOT yet been downloaded (custom_invoice_downloaded = 0). From the report the
-accounts team ticks rows and hits "Download Selected" to pull the invoice PDFs;
-downloading marks them, so they drop off this list.
-"""
+"""Sales Orders with an invoice number assigned but not yet downloaded."""
 
 import frappe
 from frappe import _
@@ -16,8 +10,6 @@ def execute(filters=None):
 	filters = filters or {}
 
 	columns = [
-		# Per-row download link (rendered by the report JS formatter) + whether the
-		# PDF is actually fetched. Kept at the front so they are always visible.
 		{"label": _("Download"), "fieldname": "download", "fieldtype": "Data", "width": 110},
 		{"label": _("PDF Ready"), "fieldname": "pdf_ready", "fieldtype": "Data", "width": 90},
 		{"label": _("Sales Order"), "fieldname": "sales_order", "fieldtype": "Link", "options": "Sales Order", "width": 160},

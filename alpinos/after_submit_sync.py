@@ -1,8 +1,4 @@
-"""Let Transporter / LR No / Dispatch Date change after submission on Pick List and
-Delivery Note, keep the two in sync, and log every change.
-
-Propagation uses db.set_value (no doc events) so PL<->DN updates never loop.
-"""
+"""After-submit sync of Transporter / LR No / Dispatch Date between Pick List and Delivery Note, with change logging."""
 
 import frappe
 
@@ -173,8 +169,7 @@ def ensure_after_submit_fields():
 			if frappe.get_meta(dt).has_field(f):
 				make_property_setter(dt, f, "allow_on_submit", 1, "Check", validate_fields_for_doctype=False)
 
-	# Delivery Note Transporter must be editable in Draft (a read-only field's edits
-	# are dropped by doc.save()), so clear the read-only property.
+	# DN Transporter must be editable in Draft, else doc.save() drops the edit.
 	if frappe.get_meta("Delivery Note").has_field("custom_transporter_name"):
 		make_property_setter(
 			"Delivery Note", "custom_transporter_name", "read_only", 0, "Check",

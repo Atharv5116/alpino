@@ -1,6 +1,4 @@
-"""
-Client Script for Quotation custom calculations.
-"""
+"""Client Script for Quotation custom calculations."""
 
 import frappe
 

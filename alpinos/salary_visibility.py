@@ -1,8 +1,4 @@
-"""Keep employee salary confidential from the reporting hierarchy.
-
-Salary Slip is limited to the owning employee (HR roles see everything), and Employee
-salary fields are moved to permission level 1 granted only to the HR roles.
-"""
+"""Keep employee salary confidential from the reporting hierarchy."""
 
 import frappe
 
@@ -57,11 +53,7 @@ def salary_slip_has_permission(doc, user=None, permission_type=None):
 
 
 def _employee_salary_fields(meta):
-	"""Every field under the Employee "Salary" tab, plus the core compensation fields.
-
-	Discovered by walking the field order: once inside a Tab Break labelled "Salary",
-	every data field belongs to the section until the next Tab Break.
-	"""
+	"""Every field under the Employee "Salary" tab, plus the core compensation fields."""
 	names = set(EMPLOYEE_SALARY_FIELDS)
 	in_salary = False
 	skip = {"Column Break", "Section Break", "Tab Break", "HTML", "Heading"}

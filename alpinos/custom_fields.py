@@ -1,7 +1,4 @@
-"""
-Custom Fields for Job Requisition and Job Applicant DocTypes
-Adds required fields as per SRS requirements
-"""
+"""Custom fields for Job Requisition and Job Applicant DocTypes."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields

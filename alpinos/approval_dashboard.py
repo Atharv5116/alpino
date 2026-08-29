@@ -1,8 +1,4 @@
-"""Pending-approvals queue for the Approvals workspace.
-
-Returns only the requests currently awaiting THIS user's action, defaulting to the current
-month. A doctype that is missing or errors is skipped, never blocking the others.
-"""
+"""Pending-approvals queue for the Approvals workspace (only requests awaiting this user)."""
 
 import frappe
 from frappe.utils import get_first_day, get_last_day, getdate

@@ -1,12 +1,4 @@
-"""
-Custom Fields for Sales Order and Customer DocTypes
-Adds fields as per Sales Order requirements:
-- Order Type (auto from Customer), Cash Discount
-- Item table: Box, MRP, Flat Discount, Offer, Additional Discount, Tax
-- Relabel Item Code → SKU
-- Customer: Item MRP table, Order Type
-- Other Details: Marketing Freebies, Scheme Items, Additional Units - Damage
-"""
+"""Custom fields and property setters for Sales Order and Customer."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -38,9 +30,7 @@ def setup_sales_order_custom_fields():
 	_ensure_company_default()
 
 	custom_fields = {
-		# ============================================================
-		# ITEM: GST % (stored on item master)
-		# ============================================================
+		# Item: GST % (stored on item master)
 		"Item": [
 			dict(
 				fieldname="custom_gst_percent",
@@ -52,9 +42,7 @@ def setup_sales_order_custom_fields():
 			),
 		],
 
-		# ============================================================
-		# CUSTOMER: Add Order Type + Item MRP table
-		# ============================================================
+		# Customer: Order Type + Item MRP table
 		"Customer": [
 			dict(
 				fieldname="custom_order_type",
@@ -81,11 +69,9 @@ def setup_sales_order_custom_fields():
 			),
 		],
 
-		# ============================================================
-		# SALES ORDER: Main form fields
-		# ============================================================
+		# Sales Order: main form fields
 		"Sales Order": [
-			# Dispatch Date — mandatory, defaults set via client script (before/after 2 PM logic)
+			# Dispatch Date, default set via client script (before/after 2 PM)
 			dict(
 				fieldname="custom_dispatch_date",
 				label="Dispatch Date",
@@ -100,8 +86,7 @@ def setup_sales_order_custom_fields():
 				label="PO Expiry Date",
 				fieldtype="Date",
 				insert_after="po_date",
-				# BRD: editable until the order reaches a terminal status — the
-				# lock is enforced by validate_po_expiry_terminal_lock.
+				# editable until terminal status, enforced by validate_po_expiry_terminal_lock
 				allow_on_submit=1,
 			),
 			dict(
@@ -139,8 +124,7 @@ def setup_sales_order_custom_fields():
 				read_only=0,
 				description="Defaults from the customer's Buyer Master (site_name) when blank; editable per order. Shown on the entry page instead of Company.",
 			),
-			# #24 Billing GST No. — fetched site-wise from the Buyer Master (never the Parent
-			# Buyer's); editable so it can be entered when it can't be auto-resolved.
+			# Billing GST No. fetched site-wise from the Buyer Master; editable
 			dict(
 				fieldname="custom_billing_gstin",
 				label="Billing GST No.",
@@ -149,7 +133,7 @@ def setup_sales_order_custom_fields():
 				read_only=0,
 				description="Billing GST No. Auto-fetched site-wise from the Buyer Master when a Site is selected; otherwise the buyer's own GST — never the Parent Buyer's. Enter it manually when it can't be auto-fetched. Mandatory for Registered Business buyers.",
 			),
-			# Invoice (external) — populated by the Invoice PDF sync; shown only once Dispatched.
+			# Invoice fields, populated by the Invoice PDF sync; shown once Dispatched
 			dict(
 				fieldname="custom_invoice_section",
 				label="Invoice",
@@ -252,9 +236,7 @@ def setup_sales_order_custom_fields():
 			),
 		],
 
-		# ============================================================
-		# SALES ORDER ITEM: Additional fields
-		# ============================================================
+		# Sales Order Item: additional fields
 		"Sales Order Item": [
 			dict(
 				fieldname="custom_remarks",
@@ -271,7 +253,6 @@ def setup_sales_order_custom_fields():
 				fetch_from="item_code.image",
 				read_only=1,
 			),
-			# Box field (after qty)
 			dict(
 				fieldname="custom_box",
 				label="Box",
@@ -279,7 +260,6 @@ def setup_sales_order_custom_fields():
 				insert_after="qty",
 				description="Number of boxes. Auto-calculated from Qty using Item UOM conversion.",
 			),
-			# Customer MRP (after price_list_rate)
 			dict(
 				fieldname="custom_customer_mrp",
 				label="MRP",
@@ -288,7 +268,6 @@ def setup_sales_order_custom_fields():
 				read_only=1,
 				description="MRP (Incl. GST). Read-only.",
 			),
-			# GST % (from Item)
 			dict(
 				fieldname="custom_gst_percent",
 				label="GST %",
@@ -298,7 +277,6 @@ def setup_sales_order_custom_fields():
 				read_only=1,
 				description="GST percentage pulled from Item master.",
 			),
-			# Selling Price (editable)
 			dict(
 				fieldname="custom_selling_price",
 				label="Selling Price",
@@ -306,7 +284,6 @@ def setup_sales_order_custom_fields():
 				insert_after="custom_customer_mrp",
 				read_only=0,
 			),
-			# Flat Discount % (after discount_amount)
 			dict(
 				fieldname="custom_flat_discount",
 				label="Flat Discount %",
@@ -314,14 +291,12 @@ def setup_sales_order_custom_fields():
 				insert_after="discount_amount",
 				description="Flat discount percentage. If set, rate is calculated as MRP - (MRP * Flat Discount % / 100).",
 			),
-			# Offer
 			dict(
 				fieldname="custom_offer",
 				label="Offer %",
 				fieldtype="Data",
 				insert_after="custom_flat_discount",
 			),
-			# Additional Discount
 			dict(
 				fieldname="custom_additional_discount",
 				label="Additional Discount %",
@@ -329,7 +304,6 @@ def setup_sales_order_custom_fields():
 				insert_after="custom_offer",
 				description="Additional discount percentage applied after flat discount.",
 			),
-			# Tax
 			dict(
 				fieldname="custom_item_tax",
 				label="Tax",
@@ -338,10 +312,7 @@ def setup_sales_order_custom_fields():
 				description="Auto-calculated or editable tax amount per item.",
 			),
 		],
-		# Selling Price removed from the Marketing Freebie / Scheme Item /
-		# Additional Units Item child tables (deleted in
-		# _delete_obsolete_sales_order_custom_fields). The main Order Items table
-		# keeps its Selling Price.
+		# Selling Price stays on Order Items; removed from the child tables in _delete_obsolete_sales_order_custom_fields.
 	}
 
 	create_custom_fields(custom_fields, update=True)
@@ -357,7 +328,7 @@ def _setup_property_setters():
 	"""Set property setters for label overrides and field options"""
 
 	property_setters = [
-		# Relabel Item Code → SKU in Sales Order Item
+		# Relabel Item Code to SKU in Sales Order Item
 		{
 			"doctype_or_field": "DocField",
 			"doc_type": "Sales Order Item",
@@ -383,7 +354,7 @@ def _setup_property_setters():
 			"value": "SOR-2627-.#####",
 			"property_type": "Text",
 		},
-		# Relabel item_name → SKU No.
+		# Relabel item_name to SKU Name
 		{
 			"doctype_or_field": "DocField",
 			"doc_type": "Sales Order Item",

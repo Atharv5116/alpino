@@ -90,7 +90,7 @@ def setup_item_custom_fields():
 				insert_after="weight_uom",
 				description="Used by Pick List as Std Weight / Box and for gross weight totals.",
 			),
-			# Product Bundle. Kept in the Details tab because a bundle is non-stock and the Inventory tab is hidden.
+			# Product Bundle (kept in the Details tab; bundles are non-stock).
 			dict(
 				fieldname="custom_product_bundle_section",
 				label="Product Bundle",
@@ -114,7 +114,7 @@ def setup_item_custom_fields():
 				insert_after="custom_is_bundle",
 				depends_on="eval:doc.custom_is_bundle",
 			),
-			# Allowed Customer Types tab. Empty selection means available to all types.
+			# Allowed Customer Types tab; empty selection = all types.
 			dict(
 				fieldname="custom_customer_access_tab",
 				label="Allowed Customer Types",
@@ -161,7 +161,7 @@ def _setup_item_property_setters():
 			value="SKU",
 			property_type="Data",
 		),
-		# Show Valuation Rate for bundles too (they are non-stock) so they get a fallback price.
+		# Show Valuation Rate for bundles too (non-stock, needs a fallback price).
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Item",

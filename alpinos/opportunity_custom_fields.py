@@ -1,10 +1,4 @@
-"""
-Opportunity customization for Alpinos.
-
-Rules followed:
-- Existing Opportunity/Opportunity Item fields are updated via Property Setters.
-- New fields are created via Custom Field.
-"""
+"""Opportunity customization for Alpinos: Property Setters for existing fields, Custom Fields for new ones."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -266,7 +260,6 @@ def _setup_opportunity_property_setters():
 			value="eval:doc.opportunity_from === 'Buyer Master'",
 			property_type="Data",
 		),
-		# Remove the more_info Property Setter override - let it stay in its default position
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Opportunity",

@@ -1,15 +1,4 @@
-"""
-Sales Order lifecycle notifications (BRD Notification Matrix N01–N23).
-
-Channel = In-App: a Frappe **Notification Log** (bell) per recipient, plus a Raven DM
-when the Raven bot is available (continuity with the app's existing DMs). Every send is
-best-effort and wrapped so a notification failure never breaks the workflow transition.
-
-Event-driven notifications (N01, N03–N13, N15–N20) are fired from the workflow engine /
-action helpers. Sub-status ones (N06/N07/N08) fire from pick_list_on_update. ASN/GRN
-rejections (N19/N20) fire from the Post Dispatch controller. Time-based reminders
-(N02, N14, N21, N22, N23) run from run_daily_so_notifications (scheduler_events.daily).
-"""
+"""Sales Order lifecycle notifications (BRD Notification Matrix N01-N23)."""
 
 import frappe
 from frappe import _
@@ -22,7 +11,7 @@ ECOM_COORD = ["E-Commerce Coordinator"]
 ECOM_MGR = ["E-Commerce Manager"]
 DN_USERS = ["DN User", "Warehouse User"]
 
-# Reminder thresholds (days/hours). Central so they're easy to tune later.
+# Reminder thresholds (days/hours).
 SLA_APPROVAL_HOURS = 4
 FUTURE_DISPATCH_LEAD_DAYS = 1
 GRN_PENDING_DAYS = 3
@@ -171,8 +160,7 @@ def n13_partial_initiated(so, future_date=None):
 
 
 def _dispatch_detail(doc):
-	"""' Dispatched via <transporter>, LR/AWB <no>.' — appended so the DN that
-	completes a partial/forced order still carries the shipment tracking info."""
+	"""Shipment tracking suffix for the DN that completes a partial/forced order."""
 	if not doc:
 		return ""
 	lr = doc.get("custom_lr_gr_no") or ""

@@ -5,7 +5,6 @@ from frappe.custom.doctype.property_setter.property_setter import make_property_
 
 
 def setup_employee_manual_naming():
-	"""Change Employee naming from auto-series to manual entry (prompt)"""
 	try:
 		make_property_setter(
 			doctype="Employee",
@@ -26,7 +25,6 @@ def setup_employee_manual_naming():
 
 
 def revert_employee_naming_to_series():
-	"""Revert Employee naming back to auto-series (if needed)"""
 	try:
 		property_setter = frappe.db.get_value(
 			"Property Setter",

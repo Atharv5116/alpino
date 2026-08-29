@@ -1,21 +1,10 @@
-"""Operations workflow — repeatable test suite (roles, lifecycle, validations,
-cancellation guards).
+"""Operations workflow test suite (roles, lifecycle, validations, cancellation guards).
 
-Run it against a site:
+Idempotent and self-cleaning. Run from a bench console:
+    import alpinos.workflow_test_suite as t; t.run()
 
-    bench --site <site> console
-    >>> import alpinos.workflow_test_suite as t; t.run()
-
-It is idempotent and self-cleaning: it provisions test users / an offline-buyer
-master / geo fixtures, drives a full Sales Order -> Pick List -> Delivery Note
-lifecycle through the real frontend server methods AS the role that owns each
-step, asserts the workflow status at every stage, then verifies the permission
-matrix, the validation rules and the cancellation guards. Created documents are
-deleted at the end.
-
-Requires master data that already exists on the Alpinos sites: a customer
-(default "Test Combo Buyer"), company "Alpinos Health Foods", and a simple
-stocked item (default "CA"). Override via the constants below if needed.
+Requires master data on the site: a customer (default "Test Combo Buyer"), company
+"Alpinos Health Foods", and a stocked item (default "CA"). Override via the constants below.
 """
 import json
 

@@ -507,11 +507,7 @@ RESERVED_EDIT_STATES = ("Pending RM Approval", "Pending HR Approval", "Approved"
 
 
 def get_reserved_request_names(employee, month_start, next_month, exclude=None):
-	"""Names of the month's requests whose edits are reserved against the monthly limit.
-
-	Counts once sent for approval or approved. Pre-workflow requests (no workflow_state)
-	fall back to docstatus.
-	"""
+	"""Names of the month's requests whose edits are reserved against the monthly limit."""
 	candidates = frappe.get_all(
 		"Attendance Request",
 		filters=[
@@ -942,11 +938,7 @@ frappe.ui.form.on('Employee Checkin', {
 
 
 def validate_saturday_attendance_threshold(doc, method):
-	"""Override Saturday attendance status from the Shift Type's Saturday hour thresholds.
-
-	Absent-threshold 0 keeps the legacy two-way behaviour; half-day falls back to the
-	legacy saturday_working_hours_threshold when not set.
-	"""
+	"""Override Saturday attendance status from the Shift Type's Saturday hour thresholds."""
 	if doc.docstatus == 2:
 		return
 
@@ -1001,9 +993,7 @@ def validate_saturday_attendance_threshold(doc, method):
 
 
 def half_day_status_from_threshold(shift, status, working_hours, has_leave):
-	"""Working ("other") half status for a half-day leave: Absent below the shift's
-	half-day threshold, else Present. None when the rule doesn't apply or no hours yet.
-	"""
+	"""Working half status for a half-day leave: Absent below the shift half-day threshold, else Present."""
 	from frappe.utils import flt
 
 	if status != "Half Day" or not has_leave or not shift:
@@ -1036,11 +1026,7 @@ def mark_half_day_absent_below_threshold(doc, method):
 # Attendance Request per-day detail helpers (old vs new in/out times)
 
 def get_assigned_shift_times(employee, date, ar_shift=None):
-	"""Return (in_datetime, out_datetime) for the employee's shift on `date`.
-
-	Tries shift candidates in priority order (request shift, attendance shift, default
-	shift, Shift Assignment) and uses the first Shift Type with times, else (None, None).
-	"""
+	"""Return (in_datetime, out_datetime) for the employee's shift on `date`."""
 	if not employee or not date:
 		return None, None
 	date = getdate(date)
@@ -1148,11 +1134,7 @@ def gather_day_info(employee, date):
 
 @frappe.whitelist()
 def build_attendance_request_details(employee, from_date, to_date, reason=None):
-	"""Read-only rows for the two Attendance Request tables (editable details + existing logs).
-
-	Never mutates check-ins or attendance. Non-HR-Manager callers are restricted to their
-	own Employee record.
-	"""
+	"""Read-only rows for the two Attendance Request tables (editable details + existing logs)."""
 	if "HR Manager" not in frappe.get_roles():
 		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
 	if not (employee and from_date and to_date):

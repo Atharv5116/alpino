@@ -1,9 +1,4 @@
-"""Keep a native Product Bundle in sync with each Item's custom bundle mapping.
-
-A bundle Item (custom_is_bundle + custom_product_mapping) is forced non-stock and mirrored
-into a native Product Bundle, so the SO/DN/SI explode it into component packed_items and
-component stock moves at the Delivery Note. Clearing the flag/mapping removes the bundle.
-"""
+"""Keep a native Product Bundle in sync with each Item's custom bundle mapping."""
 
 import frappe
 from frappe.utils import flt

@@ -1,10 +1,4 @@
-"""Operations workflow engine: keeps custom_workflow_status accurate across the
-Sales Order -> Pick List -> Delivery Note lifecycle.
-
-Drives the status fields via doc_events, enforces cross-document cancellation rules,
-and exposes the user actions that have no document event to hang off. Stock movement
-stays native (deducted on Delivery Note submit); "Reserved" is only a workflow status.
-"""
+"""Workflow engine: keeps custom_workflow_status accurate across the Sales Order -> Pick List -> Delivery Note lifecycle."""
 
 import frappe
 from frappe.utils import flt, getdate, today
@@ -207,10 +201,7 @@ def _apply_pick_list_status(doc):
 
 
 def refresh_todays_dispatch():
-	"""Daily job: flip Future Dispatch orders to Today's Dispatch when their date arrives.
-
-	Warehouse Approval Pending is a manual gate and is never auto-approved here.
-	"""
+	"""Daily job: flip Future Dispatch orders to Today's Dispatch when their date arrives."""
 	rows = frappe.get_all(
 		"Sales Order",
 		filters={

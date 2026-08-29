@@ -7,8 +7,7 @@ from frappe.utils import flt
 
 
 def strip_non_batch_item_batches(doc, method=None):
-	"""before_validate: keep batch_no only on batch-tracked items with a real Batch master,
-	preserving the typed code in custom_batch_code so it survives the whole cycle."""
+	"""before_validate: keep batch_no only on batch-tracked items with a real Batch master (typed code stays in custom_batch_code)."""
 	if doc.get("is_return"):
 		return
 	meta_dn_item = frappe.get_meta("Delivery Note Item")

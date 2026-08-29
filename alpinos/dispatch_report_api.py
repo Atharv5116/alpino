@@ -60,12 +60,7 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 # ---------------------------------------------------------------------------
 
 def _get_customer_types():
-	"""
-	Returns a list of {name, abbr} dicts, ordered by `sequence` (ascending,
-	with un-sequenced rows pushed to the end), then by name. The dispatch /
-	pending data dicts still key off the full name; `abbr` is purely for
-	display in the report columns.
-	"""
+	"""Customer types as {name, abbr}, ordered by sequence then name."""
 	rows = frappe.db.sql(
 		"""
 		SELECT name, abbreviation, sequence
@@ -99,10 +94,7 @@ def _get_sequenced_items():
 
 
 def _get_dispatch_data(date):
-	"""
-	Today's dispatch: Pick List items where the Pick List has custom_dispatch_date = date.
-	Customer type is pulled from the linked Sales Order's order_type.
-	"""
+	"""Today's dispatch from Pick List items dispatched on the given date."""
 	rows = frappe.db.sql(
 		"""
 		SELECT
@@ -124,11 +116,7 @@ def _get_dispatch_data(date):
 
 
 def _get_material_issue_data(date):
-	"""
-	Material Issue dispatch: Stock Entry rows where purpose = 'Material Issue',
-	posting_date = report date, and docstatus = 1. Customer type is read from
-	the custom_customer_type field on the Stock Entry header.
-	"""
+	"""Material Issue dispatch from submitted Stock Entries on the given date."""
 	rows = frappe.db.sql(
 		"""
 		SELECT
@@ -159,12 +147,7 @@ def _merge_dispatch_data(target, extra):
 
 
 def _get_pending_data(date):
-	"""
-	Pending dispatch: Sales Order items for orders parked as "Future Dispatch"
-	(custom_workflow_status = 'Future Dispatch') whose dispatch date is beyond the selected
-	report date — i.e. future-scheduled orders still waiting to be dispatched. Orders that
-	are due/overdue are shown in the dispatch flow, not here.
-	"""
+	"""Pending dispatch: Future Dispatch orders scheduled beyond the report date."""
 	rows = frappe.db.sql(
 		"""
 		SELECT
@@ -186,13 +169,7 @@ def _get_pending_data(date):
 
 
 def _get_stock_data(warehouse, date):
-	"""Stock balance as of the report date (end of that day) from the Stock Ledger.
-
-	Each Stock Ledger Entry carries the qty delta (actual_qty) of a transaction, so the
-	running balance on a date = SUM(actual_qty) of all non-cancelled entries up to and
-	including that date. For today this equals the current stock (Bin); for a past date it
-	is the historical balance, and for a future date it is the current balance (no later
-	entries yet)."""
+	"""Stock balance as of the report date from the Stock Ledger."""
 	params = {"date": date}
 	wh_cond = ""
 	if warehouse:
@@ -270,8 +247,7 @@ def _build_summary(date, customer_types, dispatch_data, pending_data):
 	total_box = sum(box_by_ct.values())
 	total_gw = sum(gw_by_ct.values())
 
-	# Box totals per CT from Sales Order Items (pending) — same set as _get_pending_data:
-	# Future Dispatch orders scheduled beyond the selected date.
+	# Box totals per CT from Sales Order Items (pending)
 	so_box = frappe.db.sql(
 		"""
 		SELECT

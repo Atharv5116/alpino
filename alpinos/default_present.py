@@ -33,7 +33,6 @@ def setup_default_present_field():
 
 
 def _is_holiday(holiday_list, date):
-	"""True when date is a holiday or weekly-off on the employee's Holiday List."""
 	if not holiday_list:
 		return False
 	return bool(frappe.db.exists("Holiday", {"parent": holiday_list, "holiday_date": date}))

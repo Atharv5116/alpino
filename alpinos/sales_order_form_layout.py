@@ -1,8 +1,4 @@
-"""Sales Order simplified Desk view: Property Setters only, strict field whitelist.
-
-Rollback via rollback_sales_order_desk_customizations() (or the revert patch); remove the
-after_migrate setup_sales_order_form_layout hook first or it will re-apply.
-"""
+"""Sales Order simplified Desk view via Property Setters (rollback: rollback_sales_order_desk_customizations)."""
 
 import frappe
 

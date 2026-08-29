@@ -30,7 +30,6 @@ def setup_attendance_request_custom_fields():
 
 
 def add_attendance_request_custom_fields():
-	"""Add custom fields to Attendance Request doctype"""
 	custom_fields = {
 		"Attendance Request": [
 			dict(
@@ -114,7 +113,6 @@ def add_attendance_request_custom_fields():
 
 
 def update_attendance_request_reason_options():
-	"""Update reason field options in Attendance Request"""
 	try:
 		# First option becomes the default.
 		make_property_setter(
@@ -257,7 +255,6 @@ def clear_attendance_request_details_depends_on():
 
 
 def add_attendance_custom_fields():
-	"""Add custom fields to Attendance doctype"""
 	try:
 		checkbox_field = frappe.db.get_value(
 			"Custom Field",
@@ -295,7 +292,6 @@ def add_attendance_custom_fields():
 		frappe.log_error(f"Error adding Attendance custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Attendance Custom Fields")
 
 def add_employee_checkin_custom_fields():
-	"""Add custom fields to Employee Checkin doctype"""
 	custom_fields = {
 		"Employee Checkin": [
 			dict(
@@ -362,7 +358,6 @@ def add_employee_checkin_custom_fields():
 		frappe.log_error(f"Error adding Employee Checkin custom fields: {str(e)}\nTraceback: {frappe.get_traceback()}", "Add Employee Checkin Custom Fields")
 
 def add_shift_type_custom_fields():
-	"""Add custom fields to Shift Type doctype"""
 	custom_fields = {
 		"Shift Type": [
 			dict(

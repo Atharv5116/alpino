@@ -1,12 +1,7 @@
 """Bulk importer for Buyer Master sheets exported from the Data Import tool.
 
-Preflight first, then run:
-
-    bench --site <site> execute alpinos.buyer_master_import.preflight --kwargs "{'path': '/path/to/sheet.csv'}"
-    bench --site <site> execute alpinos.buyer_master_import.run --kwargs "{'path': '/path/to/sheet.csv'}"
-
-run() refuses to start while blocking issues remain and prints the flag that clears each one.
-See the run() signature for the available keyword arguments.
+Run preflight() first, then run(). run() aborts while blocking issues remain and prints the flag
+that clears each one.
 """
 
 import csv
@@ -201,10 +196,7 @@ def _child_payload(row, idx, table):
 
 
 def parse(path):
-	"""Sheet to a list of record dicts, in file order.
-
-	An ID row starts a record; following blank-ID rows add child-table rows to it.
-	"""
+	"""Sheet to a list of record dicts, in file order. An ID row starts a record; blank-ID rows add child rows to it."""
 	header, rows = _read_rows(path)
 	idx = {h: i for i, h in enumerate(header)}
 	unknown = [h for h in header if h and h not in COLUMN_MAP]
@@ -646,10 +638,7 @@ def _ensure_city(cache, city, state, country, notes):
 
 
 def _ensure_masters(records, cache):
-	"""Create every State/City the sheet needs, as a committed pre-pass.
-
-	Done outside the import loop: a failed record's rollback would drop rows the cache still reports present.
-	"""
+	"""Create every State/City the sheet needs, as a committed pre-pass (outside the import loop, so a record's rollback can't drop cached masters)."""
 	made = []
 	for rec in records:  # states first, a City row needs a valid State
 		d = rec["doc"]
@@ -680,11 +669,7 @@ def _ensure_masters(records, cache):
 
 
 def _ensure_customers(records, cache):
-	"""Create every Customer the sheet names, under that exact ID.
-
-	A whole-file pre-pass: the controller renames an adopted Customer once its ID is free,
-	so a sibling site processed early would otherwise steal the ID of the buyer holding that GSTIN.
-	"""
+	"""Create every Customer the sheet names, under that exact ID, as a whole-file pre-pass."""
 	from alpinos.alpinos_development.doctype.buyer_master.buyer_master import (
 		_default_company,
 		_selling_defaults,

@@ -1,8 +1,4 @@
-"""Stock reservation across the Pick List -> Delivery Note flow, on top of ERPNext's native SRE.
-
-Reserve the full Sales Order qty when a Pick List is created; the Delivery Note consumes the
-matching reservation and the undelivered balance is released. Cancelling the Pick List releases too.
-"""
+"""Stock reservation for the Pick List to Delivery Note flow, on top of ERPNext's native SRE."""
 
 import frappe
 from frappe.utils import flt

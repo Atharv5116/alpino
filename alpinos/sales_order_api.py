@@ -1,7 +1,4 @@
-"""
-Whitelisted API methods for Sales Order customizations.
-These bypass child table permission issues when called from client scripts.
-"""
+"""Whitelisted API methods for Sales Order customizations."""
 
 import frappe
 from frappe import _
@@ -11,9 +8,8 @@ from math import ceil, floor
 
 DEFAULT_SO_COMPANY = "Alpino Health Foods Pvt. Ltd."
 
-# Freebies in this Item Group (promo inserts, discount cards, etc.) are standalone
-# marketing giveaways, so they are exempt from the "freebie must be an ordered
-# item" rule on Sales Orders / E-Com Sales Orders.
+# Freebies in this Item Group (promo inserts, discount cards) are exempt from the
+# "freebie must be an ordered item" rule.
 MARKETING_MATERIAL_GROUP = "Marketing Material"
 
 
@@ -98,10 +94,7 @@ def _pick_tax_category(inter_state):
 
 
 def _apply_tax_mode_from_billing(doc):
-	"""
-	Use IGST when billing state is outside Gujarat, else CGST/SGST.
-	Implemented by setting tax_category so ERPNext tax rules/templates can resolve correctly.
-	"""
+	"""Use IGST when billing state is outside Gujarat, else CGST/SGST (via tax_category)."""
 	if doc.doctype != "Sales Order":
 		return
 	if not doc.get("customer"):
@@ -195,18 +188,14 @@ def _ensure_gst_setup_for_company(company):
 
 
 def _resolve_address_name(address_string, customer):
-	"""
-	If the frontend passes the display label instead of the actual ERPNext Address Name,
-	this function resolves it back to the Address Name. Accepts any address in the
-	customer's buyer-master family (parent + siblings) — the entry page offers the
-	whole family's addresses.
-	"""
+	"""Resolve a display label back to the ERPNext Address Name (any address in the
+	customer's buyer family)."""
 	if not address_string or not customer:
 		return address_string
 
 	from alpinos.sales_order_offline_buyer import buyer_family_customers
 
-	# Check if it's already a valid Address name linked to a family customer
+	# already a valid Address name linked to a family customer?
 	family = buyer_family_customers(customer)
 	exists = frappe.db.get_value(
 		"Dynamic Link",
@@ -217,7 +206,7 @@ def _resolve_address_name(address_string, customer):
 	if exists:
 		return address_string
 
-	# If not found, it might be the display string. Resolve via display label.
+	# otherwise it's the display string; resolve via the display label
 	try:
 		address_string = address_string.strip()
 		from alpinos.sales_order_offline_buyer import get_customer_addresses_for_display
@@ -371,23 +360,17 @@ def _calculate_sales_order_line_values(item, gst_exclusive=False):
 	additional_discount_pct = flt(item.get("custom_additional_discount"))
 	gst_pct = flt(item.get("custom_gst_percent") or item.get("gst_percent") or 0)
 
-	# Round the selling price to 2 decimals up front: Currency fields DISPLAY 2 dp but
-	# can store more, so a computed price like 49.0033 shows as "49.00" yet makes
-	# "49.00 x qty" look wrong in the amount. Pricing is a 2-dp figure — keep it that way.
-	# custom_selling_price is the source of truth. When it's explicitly provided (even 0,
-	# e.g. Flat Discount 100% = free) use it as-is — do NOT let a 0 fall through to a
-	# non-zero selling_price / MRP. Only when it's absent do we fall back to a sent
-	# selling_price, then derive from MRP x (1-flat%) x (1-offer%).
+	# Round selling price to 2 dp up front (currency fields can store more, which makes
+	# "rate x qty" look off). custom_selling_price is the source of truth: use it as-is
+	# even when 0 (Flat 100% = free); only fall back to selling_price then MRP when absent.
 	csp = item.get("custom_selling_price")
 	csp_given = csp is not None and str(csp).strip() != ""
 	selling_price = flt(csp, 2) if csp_given else flt(item.get("selling_price") or 0, 2)
 	if not csp_given and not selling_price and mrp:
 		selling_price = flt(mrp * (1 - flat_discount / 100.0) * (1 - offer_pct / 100.0), 2)
 
-	# A selling price of 0 is VALID when there's a price basis (e.g. Flat Discount 100%
-	# -> free): compute a 0 amount rather than falling back to the MRP-based figure, which
-	# would leave the line at 0 while the grand total stayed MRP x qty. Only fall back when
-	# there's genuinely nothing to price from (no qty, or no selling price AND no MRP).
+	# A 0 selling price is valid (Flat 100% = free); only fall back when there's nothing
+	# to price from (no qty, or no selling price and no MRP).
 	if not qty or (not selling_price and not mrp):
 		return {
 			"rate": flt(item.get("rate")),
@@ -403,8 +386,7 @@ def _calculate_sales_order_line_values(item, gst_exclusive=False):
 	final_incl = gross_incl - (gross_incl * additional_discount_pct / 100.0)
 	final_incl = max(final_incl, 0)
 
-	# GST-EXCLUSIVE buyers: the selling price IS the taxable value — no GST is folded in,
-	# so net == the (post-discount) amount and the SO line carries no GST.
+	# GST-exclusive buyers: selling price is the taxable value, no GST folded in.
 	div = 1.0 if gst_exclusive else (1 + (gst_pct / 100.0))
 	net_amount = (final_incl / div) if div else final_incl
 	gst_amount = 0.0 if gst_exclusive else max(final_incl - net_amount, 0)
@@ -444,24 +426,15 @@ def _apply_cash_discount(doc):
 
 
 def _apply_clean_gst_amounts(doc):
-	"""Re-derive each line's amount from `selling_price x qty` rounded ONCE, instead of
-	ERPNext's `rate x qty` where the 2-dp net rate x qty leaves stray paise (46.67 x 120 =
-	5600.40 vs the clean 49 x 120 / 1.05 = 5600.00). Rewrites net amount / rate /
-	custom_item_tax on every row and recomputes the doc totals (net_total, the On-Net-Total
-	GST rows, grand_total, rounded_total). Called AFTER calculate_taxes_and_totals so these
-	clean values are what actually gets saved. Idempotent."""
+	"""Re-derive each line amount from selling_price x qty rounded once (avoids stray paise
+	from ERPNext's rate x qty) and recompute the doc totals. Runs after calculate_taxes_and_totals."""
 	gst_exclusive = int(doc.get("custom_gst_exclusive_buyer") or 0)
 	net_total = 0.0
 	for row in doc.get("items") or []:
-		# Use the SAME engine the entry page uses — it applies flat/offer/additional
-		# discount + GST and rounds the net ONCE (round(gross/1.05,2) = 5600.00), unlike
-		# ERPNext's rate x qty (46.67 x 120 = 5600.40). Do NOT reinvent the gross here or a
-		# discount gets missed.
+		# reuse the entry-page engine so flat/offer/additional discount + GST round once
 		calc = _calculate_sales_order_line_values(row, gst_exclusive)
 		if not calc.get("computed"):
-			# _calculate couldn't derive a value (no qty / no price basis) -> keep whatever
-			# ERPNext computed. A legitimately-computed 0 (e.g. Flat 100% = free) is NOT this
-			# case and must fall through so the 0 amount is applied, not the MRP fallback.
+			# no qty / no price basis -> keep ERPNext's value (a computed 0 is not this case)
 			net_total = flt(net_total + flt(row.net_amount), 2)
 			continue
 		net = flt(calc["amount"])
@@ -475,8 +448,7 @@ def _apply_clean_gst_amounts(doc):
 
 	doc.total = doc.base_total = doc.net_total = doc.base_net_total = net_total
 
-	# Recompute the On-Net-Total GST rows (IGST 5%, or CGST 2.5% + SGST 2.5%) on the clean
-	# net_total; any other charge type keeps its amount.
+	# recompute On-Net-Total GST rows on the clean net_total; other charge types unchanged
 	running = net_total
 	total_tax = 0.0
 	for tax in doc.get("taxes") or []:
@@ -506,8 +478,7 @@ def _apply_clean_gst_amounts(doc):
 
 
 def _buyer_rounds_per_unit(customer):
-	"""True when the customer's Buyer Master has 'Round Off Per Unit Amount' enabled —
-	the per-unit selling price is then rounded to the nearest whole rupee. Buyer-wise."""
+	"""True when the customer's Buyer Master has 'Round Off Per Unit Amount' enabled."""
 	if not customer:
 		return False
 	return bool(frappe.db.get_value("Buyer Master", {"customer": customer}, "round_off_per_unit"))
@@ -530,9 +501,8 @@ def validate_sales_order_pricing(doc, method=None):
 	_apply_tax_template_from_party(doc)
 	_apply_cash_discount(doc)
 
-	# GST-EXCLUSIVE buyer (e.g. Amazon FBF): Selling Price / Amount / Grand Total stay
-	# exclusive of GST — the SO carries NO GST rows (grand = net). The Accounts Format
-	# Report adds the applicable GST separately for accounting.
+	# GST-exclusive buyer (e.g. Amazon FBF): SO carries no GST rows (grand = net);
+	# the Accounts Format Report adds GST separately.
 	gst_exclusive = int(doc.get("custom_gst_exclusive_buyer") or 0)
 	if gst_exclusive:
 		doc.taxes_and_charges = ""
@@ -540,8 +510,7 @@ def validate_sales_order_pricing(doc, method=None):
 
 	round_per_unit = _buyer_rounds_per_unit(doc.get("customer"))
 	for row in doc.get("items") or []:
-		# Buyer-wise "Round Off Per Unit Amount": round the per-unit selling price to the
-		# nearest rupee FIRST, so amount / net / tax / totals all follow the rounded value.
+		# round the per-unit selling price to the nearest rupee first, so all totals follow it
 		if round_per_unit and flt(row.get("custom_selling_price")):
 			row.custom_selling_price = round(flt(row.get("custom_selling_price")))
 		calc = _calculate_sales_order_line_values(row, gst_exclusive)
@@ -555,8 +524,7 @@ def validate_sales_order_pricing(doc, method=None):
 
 	if hasattr(doc, "calculate_taxes_and_totals"):
 		doc.calculate_taxes_and_totals()
-	# Override ERPNext's rate x qty amounts with selling_price x qty rounded once, so the
-	# stored net/tax/totals carry no net-rate rounding. Runs on every save -> stays clean.
+	# override ERPNext's rate x qty with selling_price x qty rounded once
 	_apply_clean_gst_amounts(doc)
 	doc.custom_cash_discount_amount = flt(doc.get("discount_amount"))
 	_so_tax_logger().info(
@@ -570,9 +538,7 @@ def validate_sales_order_pricing(doc, method=None):
 
 
 def _buyer_excludes_box_conversion(customer, site_name):
-	"""True when Box Conversion Exclusion is set on the Buyer Master owning the SO's site
-	(or, as a fallback, the customer's Buyer Master) — partial boxes are allowed, so the
-	whole-box multiple rule is skipped."""
+	"""True when Box Conversion Exclusion is set for the SO's site (or the customer's Buyer Master)."""
 	site_name = (site_name or "").strip()
 	if site_name and frappe.db.sql(
 		"""
@@ -594,15 +560,8 @@ def _buyer_excludes_box_conversion(customer, site_name):
 
 
 def validate_so_freebies_and_box_multiples(doc, method=None):
-	"""Two Sales Order save rules (drafts only):
-
-	1. Marketing Freebies may only contain items that are also in the Items
-	   table (the entry page warns and clears immediately; this is the backstop).
-	2. Ordered qty must fill whole boxes: per item, (order qty + freebie qty)
-	   must be a multiple of the Box conversion factor when freebies exist for
-	   that item, otherwise the order qty alone must be. Items without a Box
-	   UOM are skipped. Replaces the old client-side auto-rounding of qty.
-	"""
+	"""Two Sales Order save rules (drafts only): marketing freebies must be items also in
+	the Items table; ordered qty (+ freebies) must fill whole boxes per item (Box UOM items only)."""
 	if doc.docstatus != 0:
 		return
 
@@ -615,9 +574,7 @@ def validate_so_freebies_and_box_multiples(doc, method=None):
 	for row in doc.get("custom_marketing_freebies") or []:
 		if not row.item_code:
 			continue
-		# Marketing-material freebies (promo inserts, "100 Off" cards, etc.) are not
-		# tied to an ordered SKU, so they need NOT be in the Items table and don't
-		# count toward any item's box-multiple.
+		# marketing-material freebies aren't tied to an ordered SKU; skip the Items-table rule
 		if frappe.db.get_value("Item", row.item_code, "item_group") == MARKETING_MATERIAL_GROUP:
 			continue
 		if row.item_code not in order_qty:
@@ -627,8 +584,7 @@ def validate_so_freebies_and_box_multiples(doc, method=None):
 			)
 		freebie_qty[row.item_code] = freebie_qty.get(row.item_code, 0) + flt(row.qty)
 
-	# Box Conversion Exclusion (per site / buyer): partial boxes are allowed for this
-	# buyer's sites, so the whole-box multiple rule does not apply.
+	# Box Conversion Exclusion: partial boxes allowed, skip the whole-box multiple rule
 	if _buyer_excludes_box_conversion(doc.get("customer"), doc.get("custom_site_name")):
 		return
 
@@ -653,12 +609,8 @@ def validate_so_freebies_and_box_multiples(doc, method=None):
 
 @frappe.whitelist()
 def backfill_so_product_images(only_missing=1, commit=True):
-	"""Refresh custom_product_image on Sales Order Items from the CURRENT Item
-	master image — so pictures uploaded to Items AFTER the orders were created
-	appear on those orders (the field is a fetch_from snapshot taken at creation).
-
-	only_missing=1 (default): only fill rows whose image is currently blank.
-	only_missing=0: overwrite every row from the current Item image.
+	"""Refresh custom_product_image on Sales Order Items from the current Item image.
+	only_missing=1 fills only blank rows; only_missing=0 overwrites all.
 
 	Run: bench --site <site> execute alpinos.sales_order_api.backfill_so_product_images
 	"""
@@ -696,12 +648,7 @@ def backfill_so_product_images(only_missing=1, commit=True):
 @frappe.whitelist()
 def download_sales_orders_zip(names, no_letterhead=0):
 	"""Bulk export: one PDF per Sales Order, bundled into a single ZIP download.
-
-	`names` is a JSON list (or list) of Sales Order names sent from the list
-	page's bulk action. Each order is rendered with the Sales Order default
-	print format and added to the zip as <name>.pdf, so the user gets separate
-	PDFs (not one merged document).
-	"""
+	`names` is a JSON list of Sales Order names from the list page's bulk action."""
 	import json
 	import zipfile
 	from io import BytesIO
@@ -742,12 +689,8 @@ def download_sales_orders_zip(names, no_letterhead=0):
 
 @frappe.whitelist()
 def download_sales_invoices_zip(names):
-	"""Bulk export the fetched Sales Invoice PDFs for the selected Sales Orders, bundled
-	into one ZIP. The invoice PDF lives in custom_invoice_pdf (populated by invoice sync
-	from the Google Sheet / Drive); each file is named "<SO name> - <invoice no>.pdf"
-	(just the SO name when the invoice no isn't set). Orders without a fetched invoice PDF
-	are skipped; if none have one it raises rather than returning an empty zip.
-	"""
+	"""Bulk export the fetched Sales Invoice PDFs (custom_invoice_pdf) for the selected
+	Sales Orders into one ZIP; orders without a fetched invoice are skipped."""
 	import json
 	import zipfile
 	from io import BytesIO
@@ -784,7 +727,7 @@ def download_sales_invoices_zip(names):
 			so = str(name).strip().replace("/", "-")
 			base = "{0} - {1}".format(so, inv) if inv else so
 			fname = base + ".pdf"
-			# two orders can share an invoice no — keep both files rather than overwrite.
+			# two orders can share an invoice no; keep both files rather than overwrite
 			if fname in used:
 				used[fname] += 1
 				fname = "{0} ({1}).pdf".format(base, used[fname])
@@ -797,9 +740,7 @@ def download_sales_invoices_zip(names):
 	if not added:
 		frappe.throw(_("None of the selected Sales Orders have a fetched invoice PDF yet."))
 
-	# Mark the exported orders as downloaded so they drop off the "Pending Invoice
-	# Downloads" report. No skip/validation here — a bulk export always downloads
-	# everything selected that has a PDF, even if downloaded before.
+	# mark exported orders downloaded so they drop off the Pending Invoice Downloads report
 	for name in exported:
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
 	frappe.db.commit()
@@ -811,14 +752,9 @@ def download_sales_invoices_zip(names):
 
 @frappe.whitelist()
 def download_orders_with_invoices_pdf(names, no_letterhead=0):
-	"""Bulk 'Order + Invoice' download: ONE merged PDF where each Sales Order's PDF is
-	immediately followed by its fetched invoice PDF, kept together per order and in the
-	selected order — SO#1, Invoice#1, SO#2, Invoice#2, ...
-
-	The Sales Order is always rendered (default print format). The invoice pages are the
-	fetched PDF in custom_invoice_pdf (populated by invoice sync); an order whose invoice
-	isn't fetched yet still contributes its Sales Order pages, and is reported back.
-	"""
+	"""Bulk 'Order + Invoice' download: one merged PDF, each SO's PDF followed by its
+	fetched invoice PDF (custom_invoice_pdf). Orders with no fetched invoice contribute
+	only their SO pages."""
 	import json
 	from io import BytesIO
 	from pypdf import PdfReader, PdfWriter
@@ -881,9 +817,8 @@ def download_orders_with_invoices_pdf(names, no_letterhead=0):
 
 @frappe.whitelist()
 def sales_invoices_availability(names):
-	"""How many of the selected Sales Orders have a fetched invoice PDF. Lets the list
-	page warn the user (a clean message) BEFORE opening the bulk-invoice download in a
-	new tab — otherwise 'none available' surfaces as a raw server-error page."""
+	"""How many of the selected Sales Orders have a fetched invoice PDF (lets the list page
+	warn before opening the bulk download)."""
 	import json
 
 	if isinstance(names, str):
@@ -903,11 +838,8 @@ def sales_invoices_availability(names):
 
 @frappe.whitelist()
 def download_single_invoice(name):
-	"""Download one Sales Order's fetched invoice PDF (the per-row SI button).
-
-	Streams the PDF directly (not a zip) and marks the order as downloaded so it
-	drops off the Pending Invoice Downloads report — but the button itself never
-	blocks, so it can be used any number of times."""
+	"""Download one Sales Order's fetched invoice PDF (the per-row SI button), and mark
+	the order downloaded. Never blocks, so it can be reused."""
 	from frappe.utils.file_manager import get_file
 
 	if not name or not frappe.db.exists("Sales Order", name):
@@ -964,7 +896,6 @@ def get_opportunity_obm_party_data(offline_buyer_master):
 	if not row:
 		return {}
 
-	# Use the Customer Type directly as it's now a Link field.
 	cust_type = row.get("customer_type")
 	if row.get("customer"):
 		cust_type = frappe.db.get_value("Customer", row["customer"], "custom_order_type") or cust_type
@@ -975,16 +906,8 @@ def get_opportunity_obm_party_data(offline_buyer_master):
 
 @frappe.whitelist()
 def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
-	"""MRP + margin for an Opportunity line.
-
-	Priority when **Opportunity From** is Buyer Master:
-	1) Saved row on any **Buyer Items** catalog for that buyer (customer)
-	2) **Buyer Margin** row on the selected master (`party_name`)
-
-	Then ERPNext Customer Item MRP, else Item.valuation_rate.
-
-	``matched_buyer_sheet`` is True when pricing came from (1) or (2).
-	"""
+	"""MRP + margin for an Opportunity line. For Buyer Master: prefer a Buyer Items catalog
+	row, then a Buyer Margin row, then Customer Item MRP, else Item.valuation_rate."""
 	out = {
 		"customer": None,
 		"mrp": 0,
@@ -1071,16 +994,9 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 
 @frappe.whitelist()
 def get_box_conversion_factor(item_code, strict=0):
-	"""Fetch Box UOM conversion factor from the Item's UOM table.
-
-	Variants inherit their template's UOM rows ("will also apply for variants"),
-	but those rows stay physically on the template — the variant has none of its
-	own. So when the variant has no Box row, fall back to its template.
-
-	strict=1 -> return None when neither the item nor its template has a 'Box' UOM,
-	so the Sales Order entry pages leave Box BLANK instead of mirroring qty
-	(#23 "UOM Not Available": don't apply Qty = Box). Default (strict=0) keeps the
-	legacy 1.0 fallback for every other caller (pick list, quotation, weight totals)."""
+	"""Box UOM conversion factor from the Item's UOM table (falls back to the variant's
+	template). strict=1 returns None when there's no Box UOM (SO entry leaves Box blank);
+	strict=0 keeps the legacy 1.0 fallback."""
 	if not item_code:
 		return None
 
@@ -1100,8 +1016,7 @@ def get_box_conversion_factor(item_code, strict=0):
 		cf = _box_cf(template)
 		if cf:
 			return cf
-	# No explicit "Box" UOM on the item or its template. strict callers (SO entry) get
-	# None so Box stays blank; everyone else keeps the legacy 1.0 (box mirrors qty).
+	# no Box UOM: strict callers get None (Box stays blank), others get 1.0
 	if cint(strict):
 		return None
 	return 1.0
@@ -1109,20 +1024,13 @@ def get_box_conversion_factor(item_code, strict=0):
 
 @frappe.whitelist()
 def get_box_rounding_mode(customer=None, site_name=None, customer_type=None):
-	"""How box auto-fill should round qty / conversion factor for an order:
+	"""How box auto-fill rounds qty / conversion factor for an order:
+	  'decimal' -> kept in decimals; 'up' -> ceil; 'down' -> floor;
+	  'exclude' -> like decimal and skips the whole-box qty-multiple rule.
 
-	  'decimal' -> qty / factor kept in decimals (current behaviour)
-	  'up'      -> ceil(qty / factor)
-	  'down'    -> floor(qty / factor)
-	  'exclude' -> like decimal, AND the whole-box qty-multiple rule is skipped
-
-	Precedence:
-	  1. Box Conversion Exclusion (site or the customer's Buyer Master) -> 'exclude'.
-	  2. Else the Alpino Customer Type's Round Up / Round Down (Round Up wins if both).
-	  3. Else 'decimal' (default)."""
-	# Box Conversion Exclusion (site, or the customer's Buyer Master) -> partial boxes
-	# allowed. Distinct 'exclude' marker: rounding-wise it behaves like decimal, and it
-	# also tells the entry page to SKIP the whole-box qty-multiple rule.
+	Precedence: Box Conversion Exclusion -> 'exclude'; else the Alpino Customer Type's
+	Round Up / Round Down (Round Up wins); else 'decimal'."""
+	# 'exclude' behaves like decimal but also skips the whole-box qty-multiple rule
 	if _buyer_excludes_box_conversion(customer, site_name):
 		return "exclude"
 
@@ -1165,12 +1073,7 @@ def _item_name_for_item_code(item_code):
 
 
 def _bundle_components(item_code):
-	"""Return the Product Bundle Mapping rows for a bundle SKU, else None.
-
-	None means "not a bundle (or no mapping)" — callers treat the SKU as a normal
-	item. A bundle with an empty mapping therefore falls back to itself, never
-	silently vanishing from the pick list.
-	"""
+	"""Product Bundle Mapping rows for a bundle SKU, else None (None = not a bundle / no mapping)."""
 	if not item_code or not frappe.db.get_value("Item", item_code, "custom_is_bundle"):
 		return None
 	rows = frappe.get_all(
