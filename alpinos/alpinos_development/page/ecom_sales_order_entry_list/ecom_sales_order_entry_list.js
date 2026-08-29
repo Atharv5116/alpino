@@ -8,7 +8,7 @@ frappe.pages['ecom-sales-order-entry-list'].on_page_load = function (wrapper) {
 	new EcomSalesOrderListPage(page);
 };
 
-// Route key for alpinos.list_prefs — must match the frappe.pages key above.
+// must match the frappe.pages key above
 var ESO_LIST_ROUTE = 'ecom-sales-order-entry-list';
 
 var ESO_PAGE_LENGTHS = [20, 50, 100];
@@ -45,7 +45,7 @@ var ESO_WF_COLORS = {
 	Cancelled: 'red',
 };
 
-// E-Com column layout (specced separately from the offline Sales/Warehouse layouts).
+// specced separately from the offline Sales/Warehouse layouts
 var ESO_COLUMNS = [
 	{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
 	{ label: 'PO No', sort: 'custom_po_number', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
@@ -76,9 +76,7 @@ var EcomSalesOrderListPage = class {
 		this.render_header();
 		this.setup_toolbar();
 		this.setup_filters();
-		// Restore the user's saved view (filters/sort/page size) before binding
-		// events and loading, so the first request already uses it and no
-		// change handlers fire while values are being applied.
+		// restore saved view before binding events, so the first load already uses it
 		this._restore_view_prefs();
 		this.bind_events();
 		this.load_list();
@@ -104,20 +102,15 @@ var EcomSalesOrderListPage = class {
 			this.export_selected_invoices()
 		);
 		if (this.btn_export_invoices) this.btn_export_invoices.hide();
-		// Bulk order-file (PDF) download for the selected orders — same as the
-		// offline Sales Order list.
 		this.btn_download_pdf = this.page.add_inner_button(__('Download PDFs'), () =>
 			this.download_selected_pdfs()
 		);
 		if (this.btn_download_pdf) this.btn_download_pdf.hide();
-		// Order + Invoice: one merged PDF, each order's Sales Order PDF followed by its
-		// fetched invoice PDF — SO1, Invoice1, SO2, Invoice2, ...
+		// merged PDF: SO1, Invoice1, SO2, Invoice2, ...
 		this.btn_order_invoice = this.page.add_inner_button(__('Order + Invoice'), () =>
 			this.download_orders_with_invoices()
 		);
 		if (this.btn_order_invoice) this.btn_order_invoice.hide();
-		// Bulk Resync Invoice (role-gated) — keeps the selection so Export Invoices /
-		// Download PDFs can run immediately after.
 		this._can_resync = ['Accounts User', 'Accounts Manager', 'System Manager']
 			.some((r) => (frappe.user_roles || []).includes(r));
 		if (this._can_resync) {
@@ -149,7 +142,7 @@ var EcomSalesOrderListPage = class {
 					},
 					7
 				);
-				// Do NOT clear the selection — the same orders stay ticked for Export Invoices.
+				// keep the selection ticked, for Export Invoices
 			},
 		});
 	}
@@ -208,7 +201,6 @@ var EcomSalesOrderListPage = class {
 			df: { fieldtype: 'Data', fieldname: 'search', label: __('Search (ID, customer)') },
 			parent: w.find('.fld-search'), render_input: true,
 		});
-		// #27 Dedicated PO No. search — separate from the ID/customer box.
 		this._filters.po_no = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', fieldname: 'po_no', label: __('PO No.') },
 			parent: w.find('.fld-po-no'), render_input: true,
@@ -265,8 +257,7 @@ var EcomSalesOrderListPage = class {
 		this.wrapper.on('click', '.eso-list-row', (e) => {
 			if ($(e.target).closest('a,button,input[type="checkbox"]').length) return;
 			const name = $(e.currentTarget).data('name');
-			// Open the shared Sales Order view — same workflow action bar as offline
-			// (Approve, Create Pick List, Mark Delivered, ...). Edit from there.
+			// shared Sales Order view — same workflow action bar as offline
 			if (name) frappe.set_route('sales-order-entry-view', name);
 		});
 		this.wrapper.on('click', '.eso-list-link-btn', (e) => {
@@ -277,8 +268,7 @@ var EcomSalesOrderListPage = class {
 			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
-		// SI: download this single order's already-fetched invoice PDF (no resync).
-		// Usable any number of times; also marks it downloaded so bulk export skips it.
+		// downloads the already-fetched invoice PDF (no resync); marks it downloaded so bulk export skips it
 		this.wrapper.on('click', '.eso-list-si-btn', (e) => {
 			e.stopPropagation();
 			const so = String($(e.currentTarget).data('so') || '');
@@ -289,8 +279,7 @@ var EcomSalesOrderListPage = class {
 			);
 			if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoice.'));
 		});
-		// Touch fallback for the ASN hover tooltip: tap/click the summary to see
-		// the full per-DN breakdown (title= tooltips are unreachable on touch).
+		// touch fallback: title= tooltips are unreachable on touch
 		this.wrapper.on('click', '.eso-asn', (e) => {
 			e.stopPropagation();
 			const tip = $(e.currentTarget).attr('title') || '';
@@ -301,7 +290,6 @@ var EcomSalesOrderListPage = class {
 				message: tip.split('\n').map(esc).join('<br>'),
 			});
 		});
-		// Click a sortable header to sort; click again to flip direction.
 		this.wrapper.on('click', '.eso-sort-th', (e) => {
 			const field = $(e.currentTarget).data('sort');
 			if (this._sort.field === field) {
@@ -314,17 +302,14 @@ var EcomSalesOrderListPage = class {
 			this.render_header();
 			this.load_list();
 		});
-		// Dynamic filters: apply as the user types/picks (debounced) — the Apply
-		// button stays for an explicit trigger.
+		// filters apply as the user types/picks (debounced); Apply button stays for an explicit trigger
 		const apply = frappe.utils.debounce(() => { this.start = 0; this.load_list(); }, 350);
 		Object.values(this._filters).forEach((f) => {
 			if (f && f.$input) f.$input.on('input change awesomplete-selectcomplete', apply);
 		});
 	}
 
-	// Persist the current view (filters + sort + page size, never the start
-	// offset) per user via the shared alpinos.list_prefs helper. Called from
-	// load_list so every code path that reloads also saves.
+	// persists filters/sort/page size (not the start offset) via the shared list_prefs helper
 	_save_view_prefs() {
 		if (!window.alpinos || !alpinos.list_prefs) return;
 		const f = this._filters;
@@ -346,10 +331,7 @@ var EcomSalesOrderListPage = class {
 		});
 	}
 
-	// Apply a previously saved view. Every value is validated before use so
-	// unknown/renamed keys (or hand-edited localStorage) can never break the
-	// page. The pagination offset is intentionally not restored — always
-	// start at page 1.
+	// values are validated before use so unknown/renamed keys can't break the page; offset not restored, always page 1
 	_restore_view_prefs() {
 		if (!window.alpinos || !alpinos.list_prefs) return;
 		const saved = alpinos.list_prefs.load(ESO_LIST_ROUTE) || {};
@@ -358,15 +340,14 @@ var EcomSalesOrderListPage = class {
 		Object.keys(this._filters).forEach((k) => {
 			const c = this._filters[k];
 			const v = filters[k];
-			// set_input (not set_value) — synchronous, updates both the stored
-			// value and the visible input, and fires no change events.
+			// set_input, not set_value — synchronous, fires no change events
 			if (c && c.set_input && typeof v === 'string' && v !== '') c.set_input(v);
 		});
 		const sortable = this._columns.filter((c) => c.sort).map((c) => c.sort);
 		if (typeof saved.sort_field === 'string' && sortable.includes(saved.sort_field)) {
 			this._sort.field = saved.sort_field;
 			this._sort.dir = saved.sort_dir === 'asc' ? 'asc' : 'desc';
-			this.render_header(); // reflect the restored sort indicator
+			this.render_header();
 		}
 		const pl = cint(saved.page_length);
 		if (ESO_PAGE_LENGTHS.includes(pl)) {
@@ -396,8 +377,7 @@ var EcomSalesOrderListPage = class {
 
 	load_list() {
 		const me = this;
-		// Every reload path (filter change, sort, page size, clear, refresh)
-		// funnels through here, so this is the single save point for prefs.
+		// every reload path funnels through here — single save point for prefs
 		this._save_view_prefs();
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_sales_order_entry_list',
@@ -453,22 +433,19 @@ var EcomSalesOrderListPage = class {
 				const btns = [];
 				const mk = (label, route, title) =>
 					`<button type="button" class="btn btn-xs btn-default eso-list-link-btn" data-route='${esc(JSON.stringify(route))}' title="${esc(title)}">${label}</button>`;
-				// PL / DN open the LIST filtered to this Sales Order (all linked docs).
+				// PL / DN open the list filtered to this Sales Order
 				const mkList = (label, listRoute, title) =>
 					`<button type="button" class="btn btn-xs btn-default eso-list-link-btn" data-route='${esc(JSON.stringify([listRoute]))}' data-so="${esc(d.name)}" title="${esc(title)}">${label}</button>`;
 				if (d.pick_list && frappe.model.can_read('Pick List')) btns.push(mkList('PL', 'pick_list_list', __('Pick Lists for {0}', [d.name])));
 				if (d.delivery_note && frappe.model.can_read('Delivery Note')) btns.push(mkList('DN', 'delivery_note_entry_list', __('Delivery Notes for {0}', [d.name])));
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
-				// SI: download this order's invoice PDF (only when one is fetched).
 				if (d.has_invoice_pdf) {
 					btns.push(`<button type="button" class="btn btn-xs btn-default eso-list-si-btn" data-so="${esc(d.name)}" title="${esc(__('Download invoice PDF {0}', [d.invoice_no || '']))}">SI</button>`);
 				}
 				return btns.join(' ') || '—';
 			},
 			asn: (d) => {
-				// ASN details come from the SO's Post Dispatch records (one per dispatch).
-				// Show a compact summary in the cell and the full per-DN breakdown on
-				// hover (title=) or tap/click (delegated .eso-asn handler in bind_events).
+				// from the SO's Post Dispatch records; full breakdown on hover/tap
 				const list = Array.isArray(d.asn_details) ? d.asn_details : [];
 				if (!list.length) return '—';
 				const line = (a) => {
@@ -537,7 +514,6 @@ var EcomSalesOrderListPage = class {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
-		// One PDF per order, bundled into a single ZIP download.
 		const url =
 			'/api/method/alpinos.sales_order_api.download_sales_orders_zip?names=' +
 			encodeURIComponent(JSON.stringify(names));
@@ -552,15 +528,13 @@ var EcomSalesOrderListPage = class {
 			return;
 		}
 		const open_merged = () => {
-			// One merged PDF: each Sales Order PDF immediately followed by its invoice PDF.
 			const url =
 				'/api/method/alpinos.sales_order_api.download_orders_with_invoices_pdf?names=' +
 				encodeURIComponent(JSON.stringify(names));
 			const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 			if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF.'));
 		};
-		// Warn when some selected orders have no fetched invoice yet — those still download
-		// with just their Sales Order (no invoice after it).
+		// warn when some selected orders have no fetched invoice yet
 		frappe.call({
 			method: 'alpinos.sales_order_api.sales_invoices_availability',
 			args: { names: JSON.stringify(names) },
@@ -585,7 +559,7 @@ var EcomSalesOrderListPage = class {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
-		// Pre-check so "none have an invoice" shows a clean message, not a server error.
+		// pre-check so "none have an invoice" shows a clean message, not a server error
 		frappe.call({
 			method: 'alpinos.sales_order_api.sales_invoices_availability',
 			args: { names: JSON.stringify(names) },

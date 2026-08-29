@@ -6,23 +6,18 @@ const nextBtn = root.querySelector("#cal-next-month");
 
 let current = new Date();
 
-// ── CONFIG ──────────────────────────────────────────────────
-// Grace period in minutes after shift start before showing "Late"
+// grace period in minutes after shift start before showing "Late"
 var GRACE_PERIOD_MINUTES = 15;
 
-// Shift start time (HH:MM) — used to detect late after grace period
 var SHIFT_START = "10:00";
-
-// Shift end time (HH:MM) — used to detect early leaving
 var SHIFT_END = "18:30";
 
-// Required working hours per day in minutes
+// required working hours per day, in minutes
 var MIN_HOURS_WEEKDAY  = 480;  // 8h  — Mon–Fri
 var REQUIRED_DURATION  = 495;  // 8h15m — minimum gap between check-in and check-out
 var MIN_HOURS_SATURDAY  = 240; // 4h  — Saturday minimum for Present
 var HALF_DAY_THRESHOLD  = 360; // 6h  — below this is Half Day
 var ABSENT_THRESHOLD    = 240; // 4h  — below this is Absent
-// ────────────────────────────────────────────────────────────
 
 function changeMonth(delta) {
   const year = current.getFullYear();
@@ -54,8 +49,6 @@ function loadMonth(year, month) {
   });
 }
 
-// ── Helpers ─────────────────────────────────────────────────
-
 function timeToHHMM(t) {
   if (t == null || t === undefined || t === "") return "—";
   var s = String(t).trim();
@@ -82,7 +75,6 @@ function formatDateKey(year, month, day) {
   return `${year}-${m}-${d}`;
 }
 
-// Convert "HH:MM" or full datetime string → total minutes from midnight
 function timeStringToMinutes(t) {
   var hhmm = timeToHHMM(t);
   if (!hhmm || hhmm === "—") return null;
@@ -91,13 +83,12 @@ function timeStringToMinutes(t) {
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 }
 
-// Saturday = 4h, all other days = 8h
+// Saturday = 4h, other days = 8h
 function getMinRequired(dateKey) {
   var d = new Date(dateKey);
   return d.getDay() === 6 ? MIN_HOURS_SATURDAY : MIN_HOURS_WEEKDAY;
 }
 
-// ── Late check: check_in > SHIFT_START + GRACE_PERIOD_MINUTES ──
 function isLate(item) {
   var checkInMins = timeStringToMinutes(item.check_in);
   if (checkInMins === null) return !!item.late_coming;
@@ -107,7 +98,6 @@ function isLate(item) {
   return checkInMins > graceCutoff;
 }
 
-// ── Early check: (check_out - check_in) < required duration ──
 function isEarlyLeaving(item, dateKey) {
   var checkInMins  = timeStringToMinutes(item.check_in);
   var checkOutMins = timeStringToMinutes(item.check_out);
@@ -118,7 +108,6 @@ function isEarlyLeaving(item, dateKey) {
   return duration < required;
 }
 
-// ── Is everything proper for this day? ──────────────────────
 function isAllGood(status, item, dateKey) {
   if (status !== "Present" && status !== "Work From Home") return false;
   var noCheckout  = !item.check_out || item.check_out === "";
@@ -129,7 +118,6 @@ function isAllGood(status, item, dateKey) {
   return !noCheckout && !shortHours && !late && !early && !geo;
 }
 
-// ── Cell background & border ─────────────────────────────────
 function getDayStyle(status, isToday, item, dateKey) {
   var bg = "#f9fafb";
   var borderColor = "#e5e7eb";
@@ -177,7 +165,6 @@ function getDayStyle(status, isToday, item, dateKey) {
   );
 }
 
-// ── Status icon ──────────────────────────────────────────────
 function getStatusIcon(status, item, dateKey) {
   if (status === "Present") {
     var noCheckout = !item.check_out || item.check_out === "";
@@ -233,7 +220,6 @@ function getStatusIcon(status, item, dateKey) {
   return "&#8212;";
 }
 
-// ── Render Calendar ──────────────────────────────────────────
 function renderCalendar(days, year, month) {
   var first        = new Date(year, month - 1, 1);
   var last         = new Date(year, month, 0);
@@ -270,7 +256,6 @@ function renderCalendar(days, year, month) {
       this.style.boxShadow = isToday ? "0 0 0 1px rgba(59,130,246,0.25)" : "none";
     });
 
-    // Top row: day number + (WFH marker) + status icon
     var head = document.createElement("div");
     head.setAttribute("style", "display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0;width:100%;");
 
@@ -281,7 +266,7 @@ function renderCalendar(days, year, month) {
     var rightWrap = document.createElement("span");
     rightWrap.setAttribute("style", "display:inline-flex;align-items:center;gap:3px;flex-shrink:0;");
 
-    // WFH marker: a Work From Home Request was applied for this day (even if Present)
+    // a WFH request was applied for this day, even if Present
     if (item.wfh) {
       var wfhMark = document.createElement("span");
       wfhMark.setAttribute("style", "font-size:12px;line-height:1;");
@@ -299,7 +284,7 @@ function renderCalendar(days, year, month) {
     head.appendChild(rightWrap);
     cell.appendChild(head);
 
-    // ── Badge row — only show when something is wrong ──
+    // badge row — only show when something is wrong
     if (!isAllGood(status, item, key)) {
 
       var badgeRow = document.createElement("div");
@@ -332,7 +317,6 @@ function renderCalendar(days, year, month) {
       }
     }
 
-    // Check-in / Check-out time row
     if (item.check_in || item.check_out) {
       var timeRow = document.createElement("div");
       timeRow.setAttribute("style", "font-size:9px;color:#9ca3af;margin-top:auto;");
@@ -340,7 +324,6 @@ function renderCalendar(days, year, month) {
       cell.appendChild(timeRow);
     }
 
-    // Tooltip
     var worked    = formatWorked(item.worked_minutes);
     var tipExtras = "";
     if (item.wfh)                             tipExtras += " Work From Home";
@@ -362,10 +345,8 @@ function renderCalendar(days, year, month) {
   }
 }
 
-// ── Initial load ─────────────────────────────────────────────
 loadMonth(current.getFullYear(), current.getMonth() + 1);
 
-// ── Birthdays & Anniversaries ────────────────────────────────
 (function () {
   var birthdaysList     = root.querySelector("#alp-birthdays-list");
   var anniversariesList = root.querySelector("#alp-anniversaries-list");
@@ -432,7 +413,6 @@ loadMonth(current.getFullYear(), current.getMonth() + 1);
   });
 })();
 
-// ── On Leave Today & On WFH Today ────────────────────────────
 (function () {
   var onLeaveList = root.querySelector("#alp-on-leave-list");
   var onWfhList   = root.querySelector("#alp-on-wfh-list");

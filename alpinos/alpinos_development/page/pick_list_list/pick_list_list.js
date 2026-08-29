@@ -21,18 +21,15 @@ var PickListListPage = class {
 		this._suspend_auto = false;
 		this.setup_toolbar();
 		this.setup_filters();
-		// Arrived via a Sales Order's "PL" button -> scope to that SO as a CLEAN view (drop
-		// any stale manual filters). Otherwise restore the user's saved filters. Never both:
-		// an SO deep-link must not inherit whatever status/search was left on the list before.
+		// an SO deep-link scopes to a CLEAN view (drops stale filters); otherwise restore saved filters — never both
 		if (!this._consume_so_route()) this._restore_view_prefs();
 		this.bind_events();
 		this.load_list();
 	}
 
 	_consume_so_route() {
-		// Read (and clear) an SO deep-link from route_options. When present, scope the list to
-		// that Sales Order and reset every other filter so ONLY that SO's Pick Lists show.
-		// Returns true when an SO link was consumed. Safe to call on every page show.
+		// reads (and clears) an SO deep-link from route_options, scoping the list to just that SO.
+		// Returns true when a link was consumed. Safe to call on every page show.
 		const so = (frappe.route_options && frappe.route_options.sales_order) || '';
 		if (frappe.route_options) delete frappe.route_options.sales_order;
 		if (!so) return false;
@@ -175,8 +172,7 @@ var PickListListPage = class {
 			parent: w.find('.fld-delivery_note'),
 			render_input: true,
 		});
-		// SO scoping is applied by _consume_so_route() (prefills the Sales Order control and
-		// clears the rest) so it also works on re-entry via on_page_show, not just first load.
+		// SO scoping is applied by _consume_so_route() so it also works on re-entry via on_page_show
 	}
 
 	bind_events() {
@@ -196,8 +192,7 @@ var PickListListPage = class {
 			this.load_list();
 		});
 
-		// Auto-apply: any filter change reloads immediately — no "Apply" click needed.
-		// Guarded by _suspend_auto so programmatic sets (SO scope, restore, clear) don't loop.
+		// any filter change reloads immediately; guarded by _suspend_auto so programmatic sets don't loop
 		const auto = () => {
 			if (this._suspend_auto) return;
 			this.start = 0;
@@ -237,8 +232,7 @@ var PickListListPage = class {
 			if (!name) return;
 			frappe.set_route('pick_list_entry', name);
 		});
-		// Clicking the Sales Order in a row opens the SO detail view directly (not the
-		// Pick List, and not a filtered list) — one SO per Pick List, so no list needed.
+		// one SO per Pick List, so open the SO detail view directly rather than a filtered list
 		this.wrapper.on('click', '.pl-so-link', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
@@ -266,11 +260,9 @@ var PickListListPage = class {
 		});
 	}
 
+	// runs before the first load_list(); every value is validated so a stale/renamed key can't
+	// break the page; pagination offset is never restored — the list always opens on page 1
 	_restore_view_prefs() {
-		// Runs before the first load_list(): apply the saved per-user view to
-		// the instance AND the visible controls. Every value is validated so a
-		// stale/renamed key can never break the page. Pagination offset is
-		// intentionally never restored — the list always opens on page 1.
 		if (!(window.alpinos && alpinos.list_prefs)) return;
 		let saved = {};
 		try {
@@ -279,9 +271,7 @@ var PickListListPage = class {
 			saved = {};
 		}
 		const f = this._filter_fields;
-		// set_input applies synchronously, so the first load_list() sees the
-		// restored values via get_value(); set_value is promise-based and can
-		// land after the first request.
+		// set_input applies synchronously so the first load_list() sees it; set_value is promise-based
 		const set_sync = (c, v) => {
 			if (!c) return;
 			if (typeof c.set_input === 'function') c.set_input(v);
@@ -303,7 +293,7 @@ var PickListListPage = class {
 				this.page_length = pl;
 			}
 		} catch (e) {
-			// A malformed saved state must never block the page.
+			// a malformed saved state must never block the page
 		}
 		this.wrapper.find('.pl-list-page-size').val(String(this.page_length));
 	}
@@ -545,9 +535,8 @@ var PickListListPage = class {
 frappe.pages['pick_list_list'].on_page_show = function (wrapper) {
 	const p = wrapper.page_instance;
 	if (!p) return;
-	// Re-entering the page (instance is cached across navigations): if we arrived from a
-	// Sales Order's "PL" button, apply that SO scope and drop stale filters. A plain re-show
-	// just reloads with the current filters.
+	// instance is cached across navigations: apply SO scope if we arrived via a "PL" button,
+	// otherwise a plain re-show just reloads with the current filters
 	p._consume_so_route();
 	p.start = 0;
 	p.load_list();

@@ -10,7 +10,6 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 
 	page.main.html(frappe.render_template('delivery_note_entry'));
 
-	// Static buttons
 	page.main.find('#btn-dn-back').on('click', function() {
 		window.history.back();
 	});
@@ -25,9 +24,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	page.main.find('#btn-dn-save').on('click', function() {
 		page.save_dn(false);
 	});
-	// Cancel: created hidden; apply_mode shows it for submitted DNs when the
-	// user's role has cancel rights. Cancelling reverts the linked Pick List /
-	// Sales Order statuses via the workflow engine.
+	// created hidden; apply_mode shows it for submitted DNs with cancel rights.
+	// Cancelling reverts the linked Pick List / Sales Order via the workflow engine.
 	page.btn_cancel_dn = page.add_inner_button(__('Cancel Delivery Note'), function() {
 		frappe.confirm(__('Cancel Delivery Note {0}?', [page.dn_name]), function() {
 			frappe.call({
@@ -45,8 +43,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	});
 	if (page.btn_cancel_dn) page.btn_cancel_dn.hide();
 
-	// Edit Transporter / LR No / Dispatch Date AFTER submission — Transporter & Dispatch
-	// Date propagate back to the Pick List (even if submitted) and all changes are audited.
+	// Edit after submission — Transporter & Dispatch Date propagate back to the
+	// Pick List even when submitted, and changes are audited.
 	page.btn_edit_after_submit = page.add_inner_button(__('Edit Transporter / LR / Dispatch'), function() {
 		frappe.db.get_value('Delivery Note', page.dn_name,
 			['custom_transporter_name', 'custom_lr_gr_no', 'custom_dispatch_date']).then((r) => {
@@ -106,7 +104,6 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		page.docstatus = data.docstatus;
 		page.original_item_names = (data.items || []).map(function(i) { return i.name; });
 
-		// Header fields
 		var $main = page.main;
 		$main.find('[data-fieldname="posting_date"]').val(data.posting_date || '');
 		$main.find('[data-fieldname="custom_sales_order_id"]').val(data.custom_sales_order_id || '');
@@ -121,12 +118,10 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('[data-fieldname="created_by"]').val(data.owner_full_name || data.owner || '');
 		page.populate_assigned_to_select(data.custom_assigned_to || '');
 
-		// Totals
 		$main.find('.total-value[data-fieldname="custom_total_boxes"]').text(data.custom_total_boxes || 0);
 		$main.find('.total-value[data-fieldname="custom_dn_order_gross_weight"]').text(data.custom_dn_order_gross_weight || 0);
 		$main.find('.total-value[data-fieldname="custom_total_units_dn"]').text(data.custom_total_units_dn || 0);
 
-		// Items table
 		var draft = data.docstatus === 0;
 		var $tbody = $main.find('#dn-items-body').empty();
 		(data.items || []).forEach(function(item, idx) {
@@ -140,12 +135,9 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			var action_cell = draft
 				? `<td class="dn-col-action"><button type="button" class="btn btn-xs btn-danger dn-item-remove" data-row-name="${frappe.utils.escape_html(item.name || '')}" title="Remove">&times;</button></td>`
 				: '<td class="dn-col-action" style="display:none;"></td>';
-			// BATCH CODE column: prefer the Link-to-Batch value when present
-			// (real Batch master), else fall back to the picker's free-text
-			// custom_batch_code so manually-entered codes still show up.
+			// Prefer the real Batch master link; fall back to the picker's free-text code.
 			var batch_display = item.batch_no || item.custom_batch_code || '';
-			// Remark — server makes it mandatory when qty is reduced below the
-			// Pick List qty on submit.
+			// Server makes remark mandatory when qty is reduced below the Pick List qty on submit.
 			var remark_cell = draft
 				? `<input type="text" class="form-control input-xs dn-item-remark" data-row-name="${frappe.utils.escape_html(item.name || '')}" value="${frappe.utils.escape_html(item.custom_remark || '')}" style="padding:2px 4px; height:28px; min-width:110px;">`
 				: frappe.utils.escape_html(item.custom_remark || '');
@@ -168,10 +160,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			$tbody.append('<tr><td colspan="10" class="text-muted text-center">No items</td></tr>');
 		}
 
-		// Show/hide the action column header for draft
 		$main.find('th.dn-col-action').toggle(draft);
 
-		// Wire up remove buttons
 		$main.find('.dn-item-remove').off('click').on('click', function() {
 			var $btn = $(this);
 			frappe.confirm(__('Remove this item from the Delivery Note?'), function() {
@@ -179,7 +169,6 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			});
 		});
 
-		// Dispatch To rows
 		page.render_dispatch_to(data.custom_dispatch_to || []);
 
 		page.apply_mode();
@@ -198,7 +187,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	page.add_dispatch_to_row = function(text) {
 		var draft = page.docstatus === 0;
 		var $wrap = page.main.find('#dn-dispatch-to-rows');
-		// Drop the empty-state hint if it's there.
+		// drop the empty-state hint if present
 		$wrap.find('.text-muted').remove();
 		var $row = $(`
 			<div class="dn-dispatch-to-row" style="display:flex; gap:6px; margin-bottom:6px; align-items:flex-start;">
@@ -222,10 +211,9 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		var submitted = page.docstatus === 1;
 		var cancelled = page.docstatus === 2;
 
-		// Editable header fields — only when draft.
-		// Transporter is seeded from the Pick List on DN create but is editable in
-		// Draft; a change propagates back to the Pick List and is logged on both docs.
-		// vehicle_no (Picklist PO No.) is still read-only (synced from the Pick List).
+		// Transporter is seeded from the Pick List on DN create but stays editable in
+		// Draft; a change propagates back and is logged on both docs. vehicle_no
+		// (Picklist PO No.) stays read-only, synced from the Pick List.
 		var editable_fields = [
 			'custom_lr_gr_no',
 			'custom_dispatch_from',
@@ -243,12 +231,10 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// Buttons
 		$main.find('#btn-dn-save').toggle(draft);
 		$main.find('#btn-dn-submit').toggle(draft);
 		$main.find('#btn-dn-print').toggle(submitted);
-		// Cancel: submitted docs only, and only when the role has cancel rights
-		// (server enforces the permission again in cancel_document).
+		// Cancel: submitted docs only, with cancel rights (server re-checks the permission).
 		if (page.btn_cancel_dn) {
 			var can_cancel_dn = frappe.model.can_cancel && frappe.model.can_cancel('Delivery Note');
 			if (submitted && can_cancel_dn) page.btn_cancel_dn.show();
@@ -262,7 +248,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('.dn-dispatch-to-input').prop('readonly', !draft);
 		$main.find('.dn-dispatch-to-remove').toggle(draft);
 
-		// Quantity is read-only by default — only authorized roles may modify it.
+		// Quantity is editable only for authorized roles.
 		var _roles = frappe.user_roles || [];
 		var _AUTHORIZED_QTY_ROLES = ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'PL Manager'];
 		var _canEditQty = _roles.some(function (r) {
@@ -272,8 +258,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			$main.find('.dn-item-qty').prop('readonly', true);
 		}
 
-		// DN Users can only enter the LR/AWB and submit — they cannot edit the
-		// Dispatch From / To or the assignment (qty is already gated above).
+		// DN Users can only enter the LR/AWB and submit — no Dispatch From/To or assignment edits.
 		var _isDNUser = _roles.indexOf('DN User') !== -1 && !_canEditQty;
 		if (_isDNUser) {
 			$main.find('.dn-item-remove').hide();
@@ -284,8 +269,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			$main.find('[data-fieldname="custom_assigned_to"]').prop('disabled', true);
 		}
 
-		// Status banner — colors come from the page <style> classes (theme-aware
-		// via Frappe vars), not inline hexes, so dark mode works.
+		// Colors come from the page <style> classes (theme-aware via Frappe vars), not
+		// inline hexes, so dark mode works.
 		var $banner = $main.find('#dn-status-banner');
 		$banner.removeClass('dn-banner-submitted dn-banner-cancelled');
 		if (submitted) {
@@ -298,8 +283,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	};
 
 	page.collect_header = function() {
-		// vehicle_no (Picklist PO No.) is synced from the linked Pick List and read-only.
-		// Transporter IS editable in Draft, so it's collected here and saved back.
+		// vehicle_no is synced from the Pick List and read-only; Transporter IS
+		// editable in Draft, so it's collected here and saved back.
 		var $main = page.main;
 		return {
 			custom_lr_gr_no: ($main.find('[data-fieldname="custom_lr_gr_no"]').val() || '').trim() || null,
@@ -309,9 +294,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		};
 	};
 
-	// Assigned To select — populated from active users; auto-saves on change so
-	// the value sticks even when the DN is submitted (custom field is
-	// allow_on_submit=1).
+	// Auto-saves on change so the value sticks even when the DN is submitted
+	// (custom field is allow_on_submit=1).
 	page.populate_assigned_to_select = function(current_value) {
 		var $select = page.main.find('[data-fieldname="custom_assigned_to"]');
 		if ($select.data('alpinos-populated')) {
@@ -319,8 +303,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			return;
 		}
 		frappe.call({
-			// Only DN User / DN Manager holders; the current assignee is kept
-			// even without a matching role so legacy values still display.
+			// DN User / DN Manager holders only; current assignee is kept even
+			// without a matching role so legacy values still display.
 			method: 'alpinos.workflow_role_access.get_dn_assignable_users',
 			args: {
 				include_users: [current_value].filter(Boolean)
@@ -362,7 +346,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 				custom_remark: $remark.length ? $remark.val() : undefined,
 			});
 		});
-		// Also collect removed rows (compare against original)
+		// removed rows: diff against original
 		var visible = new Set(rows.map(function(r) { return r.name; }));
 		(page.original_item_names || []).forEach(function(n) {
 			if (!visible.has(n)) rows.push({ name: n, delete: true });
@@ -380,14 +364,12 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 	};
 
 	page.validate_before_submit = function(header, dispatch_to) {
-		// vehicle_no (Picklist PO No.) and custom_transporter_name are server-
-		// synced from Pick List and not collected client-side anymore — the
-		// server validate still enforces them.
+		// vehicle_no and custom_transporter_name are server-synced from Pick List and
+		// not collected client-side; server validate still enforces them.
 		var missing = [];
 		if (!header.custom_dispatch_from) missing.push('Dispatch From');
 		if (!header.custom_lr_gr_no) missing.push('LR No.');
 		if (!dispatch_to || !dispatch_to.length) missing.push('At least one Dispatch To row');
-		// Per-row qty
 		page.main.find('.dn-item-qty').each(function() {
 			var v = parseFloat($(this).val());
 			if (!v || v <= 0) {

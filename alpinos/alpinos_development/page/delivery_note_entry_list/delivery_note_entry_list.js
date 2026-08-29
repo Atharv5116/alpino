@@ -17,7 +17,7 @@ var DeliveryNoteListPage = class {
 		this._prefs_route = 'delivery_note_entry_list';
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
-		// Opened from a Sales Order's "DN" button -> show every Delivery Note of that SO.
+		// Opened from a Sales Order's "DN" button -> shows every DN of that SO.
 		this.so_filter = (frappe.route_options && frappe.route_options.sales_order) || '';
 		if (frappe.route_options) delete frappe.route_options.sales_order;
 		this.setup_toolbar();
@@ -43,7 +43,7 @@ var DeliveryNoteListPage = class {
 
 	setup_toolbar() {
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
-		// Bulk LR No. update — Warehouse Admin / Manager only.
+		// Warehouse Admin / Manager only.
 		const isWarehouse = ['Warehouse Admin', 'Warehouse Manager', 'System Manager']
 			.some((r) => frappe.user.has_role(r));
 		if (isWarehouse) {
@@ -166,8 +166,7 @@ var DeliveryNoteListPage = class {
 		});
 	}
 
-	// Persist the current view (filters + page size) for this user. Never
-	// persists the pagination offset — a fresh visit always starts at page 1.
+	// Persists filters + page size, never the pagination offset — a fresh visit starts at page 1.
 	_save_view_prefs() {
 		if (!(window.alpinos && alpinos.list_prefs)) return;
 		const f = this._filter_fields;
@@ -179,8 +178,7 @@ var DeliveryNoteListPage = class {
 		});
 	}
 
-	// Apply the saved view (if any) to instance state AND the UI controls,
-	// before the first data load. Unknown/invalid keys are ignored.
+	// Applies the saved view to instance state + UI controls before the first data load.
 	_restore_view_prefs() {
 		if (!(window.alpinos && alpinos.list_prefs)) return;
 		const saved = alpinos.list_prefs.load(this._prefs_route);
@@ -189,8 +187,7 @@ var DeliveryNoteListPage = class {
 		['search', 'status', 'company'].forEach((k) => {
 			const v = saved[k];
 			if (typeof v !== 'string' || !v || !f[k]) return;
-			// set_input applies synchronously so the first load_list()
-			// reads the restored values via get_value().
+			// set_input applies synchronously so the first load_list() reads the restored values.
 			if (typeof f[k].set_input === 'function') {
 				f[k].set_input(v);
 			} else {
@@ -247,7 +244,7 @@ var DeliveryNoteListPage = class {
 		const dash = (v) => (v == null || v === '' ? '—' : esc(v));
 		const only_date = (v) => (v ? String(v).substring(0, 10) : '—');
 		rows.forEach((d) => {
-			// Show the workflow-aligned status: Draft -> Dispatched -> Cancelled.
+			// Workflow-aligned status: Draft -> Dispatched -> Cancelled.
 			let wf = 'Draft';
 			let status_color = 'red';
 			if (d.docstatus === 2) {

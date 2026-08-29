@@ -97,7 +97,6 @@ var AttendanceBatchEntryPage = class {
 	}
 
 	pick_batch() {
-		// Direct navigation without a batch in route_options — offer a picker.
 		const me = this;
 		const d = new frappe.ui.Dialog({
 			title: __('Open Attendance Batch'),
@@ -132,13 +131,10 @@ var AttendanceBatchEntryPage = class {
 		});
 	}
 
-	// ------------------------------------------------------------------ render
-
 	render() {
 		const { doc, transitions, is_editable } = this.data;
 		this.page.set_title(doc.month_title || doc.name);
 
-		// Header
 		const color = ABE_STATUS_COLORS[doc.workflow_state] || 'gray';
 		this.wrapper.find('.abe-month').text(doc.month_title || '');
 		this.wrapper.find('.abe-engine').text(doc.rule_engine);

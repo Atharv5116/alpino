@@ -10,9 +10,7 @@ frappe.pages['sales-order-entry'].on_page_load = function(wrapper) {
 	wrapper.soe_instance = new SalesOrderEntry(page);
 };
 
-// Fires on every visit (including right after on_page_load): the form always
-// starts blank unless route_options ask for a prefill (quotation / edit /
-// duplicate), so navigating away and coming back never shows stale data.
+// fires on every visit; form always starts blank unless route_options ask for a prefill
 frappe.pages['sales-order-entry'].on_page_show = function(wrapper) {
 	if (wrapper.soe_instance) wrapper.soe_instance.handle_route_entry();
 };
@@ -40,14 +38,13 @@ var SalesOrderEntry = class {
 		this.bind_events();
 		this.setup_awesomplete_portal();
 		this.load_recent_orders();
-		// Prefills (quotation / edit / duplicate) are handled per-visit by
-		// handle_route_entry(), triggered from on_page_show.
+		// prefills are handled per-visit by handle_route_entry(), triggered from on_page_show
 	}
 
 	_get_default_company() {
 		const preferred = 'Alpino Health Foods Pvt. Ltd.';
 		if (preferred) return preferred;
-		// Frappe default key is usually "Company" (capital C); keep fallbacks for older setups.
+		// Frappe default key is usually "Company" (capital C); fallbacks for older setups
 		return (
 			frappe.defaults.get_user_default('Company') ||
 			frappe.defaults.get_user_default('company') ||
@@ -74,14 +71,13 @@ var SalesOrderEntry = class {
 			this.clear_form();
 			this.load_so_prefill(name, 'duplicate');
 		} else {
-			// Plain visit (or refresh): always start with a blank form.
+			// plain visit or refresh: always start blank
 			this.clear_form();
 		}
 	}
 
-	// Load an existing Sales Order into the form. mode 'edit' rewrites the same
-	// draft on save; mode 'duplicate' prefills only — creating gives a fresh doc
-	// with its own workflow state, status and Created By.
+	// mode 'edit' rewrites the same draft on save; 'duplicate' prefills only — creating
+	// gives a fresh doc with its own workflow state, status and Created By
 	load_so_prefill(name, mode) {
 		let me = this;
 		frappe.call({
@@ -109,14 +105,12 @@ var SalesOrderEntry = class {
 				if (me.po_expiry_field) me.po_expiry_field.set_value(d.po_expiry_date || '');
 				if (me.po_pdf_no_field) me.po_pdf_no_field.set_value(d.po_no_for_pdf || '');
 				if (me.site_name_field && d.site_name) {
-					// Keep the stored (possibly hand-edited) site name — the
-					// customer/address auto-fill must not overwrite it.
+					// keep the stored (possibly hand-edited) site name — auto-fill must not overwrite it
 					me.site_name_field.set_value(d.site_name);
 					me._site_name_manual = true;
 				}
 				if (me.dispatch_date_field && d.dispatch_date) me.dispatch_date_field.set_value(d.dispatch_date);
-				// Stash saved MT/e-com values so the async buyer autofill applies these
-				// (not the buyer defaults) when the customer is set during prefill.
+				// so the async buyer autofill applies these, not the buyer defaults, when customer is set
 				if (d.ecom) me._mt_saved = d.ecom;
 				me._apply_quotation_prefill(d);
 			}
@@ -139,8 +133,7 @@ var SalesOrderEntry = class {
 
 	_apply_quotation_prefill(d) {
 		let me = this;
-		// Source quotation (from-quotation flow or an edited SO that was created
-		// from one) — sent on save so SO items keep their prevdoc link.
+		// sent on save so SO items keep their prevdoc link
 		me._from_quotation = d.quotation || d.from_quotation || null;
 
 		me.customer_field.set_value(d.customer);
@@ -175,14 +168,10 @@ var SalesOrderEntry = class {
 			else {
 				rows.forEach((it) => me.add_item_row(it));
 				rows.forEach((it, idx) => {
-					// The stored line `amount`/`rate` are NET of item-GST (ERPNext
-					// convention); the item-GST lives in custom_item_tax. The UI model
-					// carries the incl-GST amount and a separate taxable_amount, so derive
-					// all three here. This works for both the SO-edit payload and the
-					// quotation payload (neither of which is guaranteed to send
-					// custom_selling_price / gst_percent), and — unlike leaving
-					// taxable_amount unset — makes the totals correct on load instead of
-					// reading 0 until a price/discount is touched.
+					// stored `amount`/`rate` are NET of item-GST (ERPNext convention); GST lives in
+					// custom_item_tax. The UI model carries incl-GST amount plus a separate taxable_amount,
+					// so derive all three here rather than leaving taxable_amount unset (which would
+					// read 0 until a price/discount is touched).
 					const it_tax = flt(it.custom_item_tax);
 					me.items[idx].rate = flt(it.rate);
 					me.items[idx].taxable_amount = flt(it.amount);
@@ -261,8 +250,7 @@ var SalesOrderEntry = class {
 				label: 'Customer',
 				fieldname: 'customer',
 				reqd: 1,
-				// only_select hides "Create a new Customer" / "Advanced Search" —
-				// customers are created through Buyer Master, not from here.
+				// hides "Create a new Customer" / "Advanced Search" — customers are created via Buyer Master
 				only_select: 1,
 				get_query: () => ({
 					query: 'alpinos.sales_order_offline_buyer.sales_order_customer_query',
@@ -271,8 +259,7 @@ var SalesOrderEntry = class {
 			parent: header.find('.field-customer'),
 			render_input: true
 		});
-		// "Add Buyer Master" button in the customer cell — the only supported way to
-		// add a customer (the link's create-new option is removed above).
+		// the only supported way to add a customer, since the link's create-new option is removed above
 		$('<button type="button" class="btn btn-xs btn-default so-add-buyer-master" '
 			+ 'style="margin-top:6px;">+ Add Buyer Master</button>')
 			.appendTo(header.find('.field-customer'))
@@ -293,10 +280,8 @@ var SalesOrderEntry = class {
 		if (this.company_field.$input) {
 			this.company_field.$input.on('change awesomplete-selectcomplete', () => me._refresh_tax_template());
 		}
-		// Company stays on the doc (single-company site) but is hidden — the
-		// slot shows the buyer's Site Name instead. Editable: the shipping
-		// address's site (or the buyer master's) is only the default; once the
-		// user types a value it is never overwritten by auto-fill.
+		// company stays on the doc (single-company site) but is hidden — the slot shows the buyer's
+		// Site Name instead; once the user types a value it is never overwritten by auto-fill
 		this.company_field.$wrapper && this.company_field.$wrapper.hide();
 		this._site_name_manual = false;
 		this._obm_site_name = '';
@@ -308,18 +293,17 @@ var SalesOrderEntry = class {
 		});
 		this.site_name_field.$input && this.site_name_field.$input.on('input', function() {
 			me._site_name_manual = true;
-			// Cleared the site -> address dropdowns go back to the whole family.
+			// cleared site -> address dropdowns go back to the whole family
 			if (!$(this).val()) { me._reload_addresses_for_site(); me._refresh_box_round_mode(); }
 		});
-		// Picking a site from the dropdown narrows the address dropdowns to that
-		// site's buyer master. awesomplete-selectcomplete only fires on a real user
-		// choice, never on the programmatic default fill, so there is no loop.
+		// awesomplete-selectcomplete only fires on a real user choice, never the programmatic default fill,
+		// so narrowing the address dropdowns here doesn't loop
 		this.site_name_field.$input && this.site_name_field.$input.on('awesomplete-selectcomplete', function() {
 			me._site_name_manual = true;
 			me._reload_addresses_for_site();
 			me._refresh_box_round_mode();
 		});
-		// Dropdown options = every Site Name in the buyer family (parent + children).
+		// every Site Name in the buyer family (parent + children)
 		me._load_family_sites = function(customer) {
 			if (!customer || !me.site_name_field || !me.site_name_field.set_data) return;
 			frappe.call({
@@ -343,25 +327,23 @@ var SalesOrderEntry = class {
 				me._set_site_name_default((r && r.custom_site_name) || me._obm_site_name);
 			});
 		};
-		// Set address field value AND show its human-readable label in the input.
-		// Guard: only set_value if the address name is actually in opts (linked to Customer).
-		// Calling set_value with an unlinked address name triggers Frappe's "not found" error.
+		// sets the address value AND its human-readable label; only set_value if the address is
+		// actually in opts — an unlinked address name triggers Frappe's "not found" error
 		me._set_address_display = function(field, addr_name, opts) {
 			if (!field) return;
 			if (!opts || !opts.length) return;
 			const opt = opts.find(o => o.value === addr_name);
 			let use = opt;
 			if (!use) {
-				// If no specific default (or it's not in the list), look for an address of type "Billing"
 				use = opts.find(o => (o.label || '').includes('(Billing)'));
 			}
-			if (!use) use = opts[0]; // fallback to first available
+			if (!use) use = opts[0];
 			if (!use) return;
 			field.set_value(use.value);
 			if (field.$input) field.$input.val(use.label);
 		};
 
-		// Map an Autocomplete's display label back to its internal Address document name
+		// maps an Autocomplete's display label back to its internal Address document name
 		me._get_actual_address = function(field) {
 			if (!field) return '';
 			let val = (field.get_value() || '').trim();
@@ -373,16 +355,12 @@ var SalesOrderEntry = class {
 			return val;
 		};
 
-		// Split the address list into Billing- and Shipping-field option pools by the
-		// address_type each Buyer Master row carries: Primary rows -> Billing, Shipping
-		// rows -> Shipping. If a field's own type has no addresses, fall back to the
-		// full pool so it is never empty when addresses exist.
+		// splits addresses into Billing/Shipping option pools by address_type: Primary (or untagged)
+		// rows -> Billing, Shipping rows -> Shipping (a row ticked both appears in both); falls back
+		// to the full pool if a field's own bucket is empty so it's never blank when addresses exist
 		me._split_addr_opts = function(list) {
 			const toOpt = (a) => ({ value: a.name, label: a.display });
 			const all = (list || []).map(toOpt);
-			// Primary (or untagged) rows -> Billing; Shipping rows -> Shipping. A row
-			// ticked BOTH appears in both. Fall back to the full pool if a field's
-			// own bucket is empty so it is never blank when addresses exist.
 			let billing = (list || []).filter((a) => a.is_primary || (!a.is_primary && !a.is_shipping)).map(toOpt);
 			let shipping = (list || []).filter((a) => a.is_shipping).map(toOpt);
 			if (!billing.length) billing = all;
@@ -390,9 +368,7 @@ var SalesOrderEntry = class {
 			return { billing, shipping };
 		};
 
-		// Load address Autocomplete options for a customer and optionally pre-select
-		// defaults. site_name (optional) narrows the pool to that site's buyer master;
-		// blank shows every address in the parent's family.
+		// site_name (optional) narrows the pool to that site's buyer master; blank shows the whole family
 		me._load_address_options = function(customer, defaults, site_name) {
 			if (!customer) {
 				me.billing_address_field && me.billing_address_field.set_data([]);
@@ -420,9 +396,7 @@ var SalesOrderEntry = class {
 			});
 		};
 
-		// When a site is picked, reload the address dropdowns narrowed to that site's
-		// buyer master. If the currently-chosen address is not in the narrowed list,
-		// drop to that site's default so the fields stay consistent with the site.
+		// if the currently-chosen address isn't in the narrowed list, drop to that site's default
 		me._reload_addresses_for_site = function() {
 			const customer = me.customer_field.get_value();
 			if (!customer) return;
@@ -451,7 +425,6 @@ var SalesOrderEntry = class {
 			});
 		};
 
-		// Bind customer change to auto-fetch order type + addresses
 		let on_customer_change = function() {
 			setTimeout(() => {
 				let customer = me.customer_field.get_value();
@@ -465,7 +438,7 @@ var SalesOrderEntry = class {
 							}
 							me._obm_site_name = (r.message && r.message.site_name) || '';
 							me._update_site_from_shipping();
-							// Modern Trade: reveal + default the e-com extra fields.
+							// reveal + default the e-com extra fields for Modern Trade
 							me.apply_mt_buyer_flags(r.message);
 							me.toggle_mt_ecom();
 							me._refresh_box_round_mode();
@@ -504,8 +477,7 @@ var SalesOrderEntry = class {
 			render_input: true
 		});
 
-		// E-Com extra fields surface on the offline order too, but only for
-		// Modern Trade customers (channel stays Offline). Built once, toggled by type.
+		// E-Com extra fields surface on the offline order too, only for Modern Trade (channel stays Offline)
 		this.make_mt_ecom_fields();
 
 		this.delivery_date_field = frappe.ui.form.make_control({
@@ -519,7 +491,7 @@ var SalesOrderEntry = class {
 			parent: header.find('.field-dispatch-date'),
 			render_input: true
 		});
-		// Set default using 2pm cutoff logic for new SOs
+		// 2pm cutoff logic for new SOs
 		frappe.call({
 			method: 'alpinos.dispatch_date_utils.get_default_dispatch_date',
 			callback: function(r) {
@@ -528,7 +500,6 @@ var SalesOrderEntry = class {
 				}
 			}
 		});
-		// Validate on change
 		this.dispatch_date_field.$input && this.dispatch_date_field.$input.on('change', function() {
 			let val = me.dispatch_date_field.get_value();
 			if (!val) return;
@@ -556,8 +527,7 @@ var SalesOrderEntry = class {
 			render_input: true
 		});
 
-		// PO No for PDF: file name in the Alpino General Settings PO folder;
-		// the PDF is fetched and attached automatically right after save.
+		// file name in the Alpino General Settings PO folder; the PDF is fetched and attached after save
 		this.po_pdf_no_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', label: 'PO No for PDF', fieldname: 'custom_po_no_for_pdf' },
 			parent: header.find('.field-po-pdf-no'),
@@ -588,17 +558,16 @@ var SalesOrderEntry = class {
 		});
 		this.tax_template_field.$input && this.tax_template_field.$input.prop('readonly', true);
 
-		// #24 Billing GST No. — general field for EVERY Registered-Business buyer (not just
-		// Modern Trade). Editable so it can be entered when it can't be auto-resolved; the
-		// server fetches it site-wise on save (and never uses the parent buyer's GST).
+		// for every Registered-Business buyer, not just Modern Trade; editable for when it can't be
+		// auto-resolved — server fetches it site-wise on save, never using the parent buyer's GST
 		this.billing_gstin_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', label: 'Billing GST No.', fieldname: 'billing_gstin', length: 15 },
 			parent: header.find('.field-billing-gstin'),
 			render_input: true,
 		});
 
-		// Created By: read-only; the session user for new orders (Frappe stores
-		// it as the doc owner on insert), the original owner when editing.
+		// read-only; session user for new orders (Frappe stores it as the doc owner on insert),
+		// the original owner when editing
 		this.created_by_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', label: 'Created By', fieldname: 'created_by', read_only: 1 },
 			parent: header.find('.field-created-by'),
@@ -645,11 +614,9 @@ var SalesOrderEntry = class {
 		this.add_item_row();
 	}
 
-	// The item/freebie/scheme/damage tables sit inside .alp-scroll wrappers
-	// (overflow-x: auto) so phones scroll the table instead of the whole page.
-	// That overflow would clip the awesomplete dropdowns, so while a list is
-	// open inside a scroll wrapper we pin it to the viewport (position: fixed
-	// escapes ancestor overflow clipping) and restore it on close.
+	// item/freebie/scheme/damage tables sit inside .alp-scroll wrappers (overflow-x: auto) so phones
+	// scroll the table, not the page — but that overflow would clip awesomplete dropdowns, so while
+	// a list is open we pin it to the viewport (position: fixed escapes ancestor clipping) and restore on close
 	setup_awesomplete_portal() {
 		const me = this;
 		me._portal_ul = null;
@@ -690,8 +657,7 @@ var SalesOrderEntry = class {
 				me._portal_input = null;
 			}
 		});
-		// Keep an open pinned list glued to its input while anything scrolls
-		// (capture phase also catches the .alp-scroll wrappers themselves).
+		// capture phase also catches the .alp-scroll wrappers themselves
 		document.addEventListener('scroll', function() {
 			if (me._portal_ul && me._portal_input) {
 				place(me._portal_input, me._portal_ul);
@@ -699,7 +665,7 @@ var SalesOrderEntry = class {
 		}, true);
 	}
 
-	// ---- Modern Trade e-com extras (offline channel) -----------------------
+	// Modern Trade e-com extras (offline channel)
 	_is_modern_trade() {
 		return (this.order_type_field.get_value() || '').trim().toLowerCase() === 'modern trade';
 	}
@@ -754,7 +720,7 @@ var SalesOrderEntry = class {
 			gst_excl: mk('.mt-fld-gst-excl', { fieldtype: 'Check', fieldname: 'gst_exclusive_buyer', label: 'GST-Exclusive Buyer' }),
 			po_number: mk('.mt-fld-po-number', { fieldtype: 'Data', fieldname: 'po_number', label: 'PO Number' }),
 			po_date: mk('.mt-fld-po-date', { fieldtype: 'Date', fieldname: 'po_date', label: 'PO Date' }),
-			// #24 Billing GST No. moved to the general Address & Tax section (this.billing_gstin_field).
+			// Billing GST No. moved to the general Address & Tax section (this.billing_gstin_field)
 			shipping_gstin: mk('.mt-fld-shipping-gstin', { fieldtype: 'Data', fieldname: 'shipping_gstin', label: 'Shipping GSTIN' }),
 			delivery_by: mk('.mt-fld-delivery-by', { fieldtype: 'Date', fieldname: 'delivery_by_date', label: 'Delivery By Date' }),
 			freebie_po: mk('.mt-fld-freebie-po', { fieldtype: 'Check', fieldname: 'is_freebie_po', label: 'Freebies (Entire PO Free)' }),
@@ -762,7 +728,6 @@ var SalesOrderEntry = class {
 		this.mt_stickers = []; // [{attachment, file_name, remarks}]
 		$card.find('.btn-mt-add-sticker').on('click', () => this.upload_mt_sticker());
 		this.$mt_card = $card;
-		// Show the GST-Exclusive note ("MRP inclusive; Selling/Amount/Grand exclusive").
 		this._toggle_gst_excl_note = () => {
 			this.$mt_card && this.$mt_card.find('.mt-gst-excl-note').toggle(!!cint(this.mt.gst_excl.get_value()));
 		};
@@ -819,9 +784,8 @@ var SalesOrderEntry = class {
 		this.$mt_card.toggle(this._is_modern_trade());
 	}
 
-	// Fills the MT flags when a Modern Trade customer is picked. On edit-prefill,
-	// saved SO values (me._mt_saved) win over buyer defaults; on a fresh pick, the
-	// buyer master flags are used.
+	// on edit-prefill, saved SO values (me._mt_saved) win over buyer defaults; on a fresh
+	// pick, the buyer master flags are used
 	apply_mt_buyer_flags(buyer) {
 		if (!this.mt) return;
 		if (this._mt_saved) {
@@ -889,11 +853,9 @@ var SalesOrderEntry = class {
 			only_input: true
 		});
 		const me = this;
-		// Main order lines: saleable variants, gated by the selected Customer Type so only
-		// items that allow it appear. Other tables: any item.
+		// main order lines: saleable variants, gated by Customer Type; other tables accept any item
 		if (filterType === 'variants') {
-			// Variants OR bundles (bundle SKUs have an empty variant_of, so a plain
-			// variant_of filter would drop them); templates stay hidden.
+			// variants OR bundles (bundle SKUs have an empty variant_of, so a plain filter would drop them)
 			field.get_query = () => {
 				const ct = me.order_type_field && me.order_type_field.get_value();
 				return {
@@ -913,14 +875,10 @@ var SalesOrderEntry = class {
 		if (field.$input) {
 			field.$input.css('min-width', '90px');
 		}
-		// Dropdown styling handled via CSS in template
 		return field;
 	}
 
-	/**
-	 * Link fields often commit the value on `awesomplete-selectcomplete` without a separate
-	 * `change` event; order lines listen for both — do the same for secondary item grids.
-	 */
+	// link fields often commit on `awesomplete-selectcomplete` without a separate `change` event
 	_bind_item_link_change(item_field, handler) {
 		if (!item_field || !item_field.$input) {
 			return;
@@ -982,7 +940,6 @@ var SalesOrderEntry = class {
 
 		let me = this;
 
-		// SKU field with improved search
 		let sku_field = this._make_item_link_field($row.find('.item-sku'), `item_code_${idx}`, 'variants');
 		sku_field.$input.on('change', function() {
 			setTimeout(() => {
@@ -1007,7 +964,6 @@ var SalesOrderEntry = class {
 		}
 		row_data._sku_field = sku_field;
 
-		// Qty
 		let qty_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Float', fieldname: `qty_${idx}` },
 			parent: $row.find('.item-qty'),
@@ -1018,13 +974,11 @@ var SalesOrderEntry = class {
 		qty_field.$input.on('change', function() {
 			me.items[idx].qty = flt(qty_field.get_value());
 			me.calc_box_from_qty(idx, $row);
-			// Preserve the unit Selling Price (a qty change must not rederive it
-			// from MRP minus discounts and wipe a manual override).
+			// preserve the unit Selling Price — a qty change must not rederive it from MRP and wipe a manual override
 			me.calc_row_amount(idx, $row, true);
 		});
 		row_data._qty_field = qty_field;
 
-		// Box
 		let box_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Float', fieldname: `box_${idx}` },
 			parent: $row.find('.item-box'),
@@ -1033,13 +987,11 @@ var SalesOrderEntry = class {
 		});
 		box_field.$input && box_field.$input.css('width', '44px');
 		box_field.$input.on('change', function() {
-			// Box is freely editable (decimals allowed) after the one-time qty conversion;
-			// it does NOT drive qty, so nothing else is recomputed here.
+			// freely editable after the one-time qty conversion; does NOT drive qty back
 			me.items[idx].box = flt(box_field.get_value());
 		});
 		row_data._box_field = box_field;
 
-		// MRP (read-only)
 		let mrp_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Currency', fieldname: `mrp_${idx}`, read_only: 1 },
 			parent: $row.find('.item-mrp'),
@@ -1050,7 +1002,6 @@ var SalesOrderEntry = class {
 		mrp_field.$input && mrp_field.$input.prop('readonly', true);
 		row_data._mrp_field = mrp_field;
 
-		// Selling Price (editable)
 		let selling_price_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Currency', fieldname: `selling_price_${idx}` },
 			parent: $row.find('.item-selling-price'),
@@ -1064,7 +1015,6 @@ var SalesOrderEntry = class {
 		});
 		row_data._selling_price_field = selling_price_field;
 
-		// GST % (read-only, from Item)
 		let gst_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Float', fieldname: `gst_${idx}`, read_only: 1 },
 			parent: $row.find('.item-gst'),
@@ -1076,7 +1026,6 @@ var SalesOrderEntry = class {
 		if (row_data.gst_percent) gst_field.set_value(row_data.gst_percent);
 		row_data._gst_field = gst_field;
 
-		// Flat Discount %
 		let flat_disc_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Float', fieldname: `flat_discount_${idx}`, description: '%' },
 			parent: $row.find('.item-flat-discount'),
@@ -1090,7 +1039,6 @@ var SalesOrderEntry = class {
 		});
 		row_data._flat_disc_field = flat_disc_field;
 
-		// Offer
 		let offer_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Float', fieldname: `offer_${idx}`, description: '%' },
 			parent: $row.find('.item-offer'),
@@ -1104,7 +1052,6 @@ var SalesOrderEntry = class {
 		});
 		row_data._offer_field = offer_field;
 
-		// Additional Discount
 		let add_disc_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Float', fieldname: `additional_discount_${idx}`, description: '%' },
 			parent: $row.find('.item-additional-discount'),
@@ -1114,14 +1061,12 @@ var SalesOrderEntry = class {
 		add_disc_field.$input && add_disc_field.$input.css('width', '46px');
 		add_disc_field.$input.on('change', function() {
 			me.items[idx].additional_discount = flt(add_disc_field.get_value());
-			// Additional discount applies on top of the current Selling Price; it
-			// must not rederive (and reset) that price from MRP minus flat/offer.
+			// applies on top of the current Selling Price; must not rederive (and reset) it from MRP
 			me.calc_row_amount(idx, $row, true);
 		});
 		row_data._add_disc_field = add_disc_field;
 
-		// Remarks — mandatory (server-enforced) when this item's qty is reduced
-		// vs the source Quotation.
+		// mandatory (server-enforced) when this item's qty is reduced vs the source Quotation
 		let remarks_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Data', fieldname: `remarks_${idx}` },
 			parent: $row.find('.item-remarks'),
@@ -1134,7 +1079,6 @@ var SalesOrderEntry = class {
 		});
 		row_data._remarks_field = remarks_field;
 
-		// Set values if data was passed
 		if (data && data.item_code) {
 			sku_field.set_value(data.item_code);
 			if (data.qty !== undefined && data.qty !== null) qty_field.set_value(data.qty);
@@ -1142,8 +1086,8 @@ var SalesOrderEntry = class {
 			if (data.mrp !== undefined && data.mrp !== null && data.mrp !== '') {
 				mrp_field.set_value(data.mrp);
 			}
-			// custom_selling_price is the source of truth — a stored 0 (e.g. Flat 100%
-			// = free) is valid and must NOT fall back to the MRP-based selling_price.
+			// custom_selling_price is the source of truth — a stored 0 (e.g. Flat 100% = free) is
+			// valid and must NOT fall back to the MRP-based selling_price
 			if (data.custom_selling_price !== undefined && data.custom_selling_price !== null) {
 				selling_price_field.set_value(flt(data.custom_selling_price));
 			} else if (data.selling_price !== undefined && data.selling_price !== null) {
@@ -1171,9 +1115,8 @@ var SalesOrderEntry = class {
 			if (data.item_image) {
 				this._set_row_image($row, data.item_image);
 			}
-			// Recompute the line amount from the loaded price fields (using the stored
-			// selling price) so a stale stored amount — e.g. an old MRP-based value on a
-			// Flat 100% line — is corrected on load instead of painted over the computed one.
+			// recompute from the loaded price fields so a stale stored amount (e.g. an old MRP-based
+			// value on a Flat 100% line) is corrected on load instead of painted over
 			this.calc_row_amount(idx, $row, true);
 		}
 	}
@@ -1181,7 +1124,7 @@ var SalesOrderEntry = class {
 	on_item_select(idx, item_code, $row) {
 		let me = this;
 
-		// The same SKU must not appear on more than one line — flag it and clear the row.
+		// the same SKU must not appear on more than one line
 		const dup = me.items.some((it, i) => i !== idx && it && it.item_code === item_code);
 		if (dup) {
 			frappe.msgprint({
@@ -1199,7 +1142,6 @@ var SalesOrderEntry = class {
 
 		let customer = this.customer_field.get_value();
 
-		// Fetch item name + image + GST %
 		frappe.db.get_value('Item', item_code, ['item_name', 'image', 'custom_gst_percent'], function(r) {
 			if (r) {
 				if (r.item_name) {
@@ -1214,8 +1156,7 @@ var SalesOrderEntry = class {
 			}
 		});
 
-		// Pricing: if this SKU is on Buyer Master for the customer → MRP + margin from master.
-		// Otherwise → Customer Item MRP, else Item standard rate (user can edit row discounts).
+		// pricing waterfall: Buyer Master (MRP + margin) -> Customer Item MRP -> Item standard rate
 		const apply_obm_pricing = (msg) => {
 			me.items[idx].mrp = flt(msg.mrp);
 			me.items[idx]._mrp_field.set_value(msg.mrp);
@@ -1290,14 +1231,12 @@ var SalesOrderEntry = class {
 			});
 		}
 
-		// Fetch Box conversion factor
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_box_conversion_factor',
 			args: { item_code: item_code, strict: 1 },
 			callback: function(r) {
 				if (r.message) {
 					me._box_cache[item_code] = r.message;
-					// If qty already set, recalculate box
 					if (me.items[idx].qty) {
 						me.calc_box_from_qty(idx, $row);
 					}
@@ -1306,9 +1245,7 @@ var SalesOrderEntry = class {
 		});
 	}
 
-	// Apply the order's box rounding mode to qty ÷ factor: 'up' -> ceil,
-	// 'down' -> floor, else decimals (2dp). Mode comes from the Alpino Customer
-	// Type (Round Up / Round Down), unless the site's Buyer Master excludes it.
+	// mode comes from the Alpino Customer Type (Round Up / Round Down), unless the Buyer Master excludes it
 	_round_box(qty, factor) {
 		let cf = flt(factor);
 		if (!cf) return 0;
@@ -1319,7 +1256,6 @@ var SalesOrderEntry = class {
 		return flt(raw, 2);
 	}
 
-	// Fetch the box rounding mode for the current customer / site / customer type.
 	_refresh_box_round_mode() {
 		let me = this;
 		let customer = this.customer_field ? this.customer_field.get_value() : '';
@@ -1334,8 +1270,7 @@ var SalesOrderEntry = class {
 	}
 
 	calc_box_from_qty(idx, $row) {
-		// One-time convenience: fill the box count from qty ÷ conversion factor, rounded
-		// per the order's mode. Once filled the box is freely editable and does NOT drive qty back.
+		// one-time fill; once set the box is freely editable and does NOT drive qty back
 		let item = this.items[idx];
 		let cf = this._box_cache[item.item_code];
 		if (cf) {
@@ -1355,9 +1290,8 @@ var SalesOrderEntry = class {
 		}
 	}
 
-	// Sample tables (freebies / scheme / additional units): one-time auto-fill of the box
-	// count from qty ÷ conversion factor (decimals kept), fetching the factor on demand.
-	// After the auto-fill the box is freely editable and does NOT drive qty back.
+	// freebies / scheme / additional units: one-time box auto-fill, fetching the conversion factor
+	// on demand; after that the box is freely editable and does NOT drive qty back
 	_sample_autofill_box(rows, idx) {
 		let row = rows[idx];
 		if (!row || !row.item_code) return;
@@ -1384,7 +1318,7 @@ var SalesOrderEntry = class {
 		let selling_price = flt(item.custom_selling_price);
 
 		if (!selling_price_edited) {
-			// Recalculate Selling Price (unit price after flat and offer discounts)
+			// unit price after flat and offer discounts
 			const unit_mrp = flt(item.mrp);
 			const flat_disc = flt(item.flat_discount);
 			const offer = flt(item.offer);
@@ -1395,7 +1329,6 @@ var SalesOrderEntry = class {
 			}
 		}
 
-		// Apply additional discount directly on selling price
 		const gross_incl = selling_price * qty;
 		const additional_disc_amt = gross_incl * flt(item.additional_discount) / 100;
 		const final_incl = Math.max(gross_incl - additional_disc_amt, 0);
@@ -1487,7 +1420,6 @@ var SalesOrderEntry = class {
 	bind_events() {
 		let me = this;
 
-		// Add Row button
 		this.wrapper.find('.btn-add-row').on('click', function() {
 			me.add_item_row();
 		});
@@ -1498,43 +1430,36 @@ var SalesOrderEntry = class {
 			frappe.set_route('sales-order-entry-view', name);
 		});
 
-		// Remove Row
 		this.wrapper.on('click', '.remove-row', function() {
 			let idx = $(this).closest('tr').data('idx');
 			me.items.splice(idx, 1);
 			me.redraw_items_table();
 		});
 
-		// Add Freebie Row
 		this.wrapper.find('.btn-add-freebie').on('click', function() {
 			me.add_freebie_row();
 		});
 
-		// Remove Freebie
 		this.wrapper.on('click', '.remove-freebie', function() {
 			let idx = $(this).closest('tr').data('idx');
 			me.freebies.splice(idx, 1);
 			me.redraw_freebies_table();
 		});
 
-		// Add Scheme Row
 		this.wrapper.find('.btn-add-scheme').on('click', function() {
 			me.add_scheme_row();
 		});
 
-		// Remove Scheme
 		this.wrapper.on('click', '.remove-scheme', function() {
 			let idx = $(this).closest('tr').data('idx');
 			me.scheme_items.splice(idx, 1);
 			me.redraw_scheme_table();
 		});
 
-		// Add Additional Units Row
 		this.wrapper.find('.btn-add-additional-units').on('click', function() {
 			me.add_additional_units_row();
 		});
 
-		// Remove Additional Units
 		this.wrapper.on('click', '.remove-additional-unit', function() {
 			let idx = $(this).closest('tr').data('idx');
 			me.additional_units_items.splice(idx, 1);
@@ -1571,9 +1496,8 @@ var SalesOrderEntry = class {
 				$row.find('.freebie-name span').text('-').addClass('text-muted');
 				return;
 			}
-			// Fetch group + name together. Freebies can only be given for items
-			// already in the order Items table — EXCEPT Marketing Material items
-			// (promo inserts, discount cards), which are standalone giveaways.
+			// freebies can only be given for items already in the order Items table — EXCEPT
+			// Marketing Material items, which are standalone giveaways
 			frappe.db.get_value('Item', val, ['item_name', 'item_group'], function (r) {
 				const info = r || {};
 				const isMarketing = info.item_group === 'Marketing Material';
@@ -1908,8 +1832,7 @@ var SalesOrderEntry = class {
 		let valid_items = this.items.filter(i => i.item_code && flt(i.qty) > 0);
 		if (!valid_items.length) return frappe.throw('Please add at least one item');
 
-		// Ensure latest link/input values are captured even if the user clicks create
-		// immediately after selecting from awesomplete.
+		// captures latest values even if the user clicks create immediately after an awesomplete select
 		this._sync_other_detail_rows_from_ui();
 
 		let items = valid_items.map(item => ({
@@ -1921,9 +1844,9 @@ var SalesOrderEntry = class {
 			warehouse: item.warehouse || '',
 			custom_box: item.box,
 			custom_customer_mrp: item.mrp,
-			// Send the entered Selling Price so a direct edit persists — without it the
-			// server recomputes the price from MRP minus discounts and drops the typed
-			// value. Read the live input in case the change event hasn't fired yet.
+			// send the entered Selling Price so a direct edit persists — without it the server
+			// recomputes it from MRP minus discounts and drops the typed value; read the live
+			// input in case the change event hasn't fired yet
 			custom_selling_price: flt((item._selling_price_field && item._selling_price_field.get_value()) || item.custom_selling_price || 0),
 			custom_gst_percent: flt(item.gst_percent),
 			custom_flat_discount: item.flat_discount,
@@ -1931,8 +1854,7 @@ var SalesOrderEntry = class {
 			custom_offer: item.offer,
 			custom_additional_discount: item.additional_discount,
 			custom_item_tax: flt(item.custom_item_tax),
-			// Read the live input too — the change event may not have fired if the
-			// user clicks save straight after typing (and prefill sets the model).
+			// live input, since the change event may not have fired if the user saves straight after typing
 			custom_remarks: (item._remarks_field && item._remarks_field.get_value()) || item.remarks || ''
 		}));
 
@@ -1945,11 +1867,8 @@ var SalesOrderEntry = class {
 			item_group: f.item_group || ''
 		}));
 
-		// Freebies must reference ordered items (a row can go stale if its item
-		// was later removed from the Items table), and every ordered item must
-		// fill whole boxes — qty + freebies when freebies exist, qty alone
-		// otherwise. Mirrors the server-side validate hook — EXCEPT Marketing
-		// Material items, which are standalone giveaways exempt from the rule.
+		// freebies must reference ordered items (a row can go stale if its item was later removed);
+		// mirrors the server-side validate hook — EXCEPT Marketing Material items, exempt from the rule
 		let ordered_codes = new Set(valid_items.map(i => i.item_code));
 		let stale_freebie = freebies.find(f => !ordered_codes.has(f.item_code) && f.item_group !== 'Marketing Material');
 		if (stale_freebie) {
@@ -1959,11 +1878,9 @@ var SalesOrderEntry = class {
 		valid_items.forEach(i => {
 			order_qty_by_code[i.item_code] = (order_qty_by_code[i.item_code] || 0) + flt(i.qty);
 		});
-		// The whole-box qty-multiple rule is enforced SERVER-SIDE only
-		// (validate_so_freebies_and_box_multiples), which resolves Box Conversion
-		// Exclusion synchronously at save time (excluded buyers may order partial boxes).
-		// The old client check relied on a cached box mode that is stale when EDITING an
-		// existing order, which produced false "must be a multiple" errors.
+		// the whole-box qty-multiple rule is enforced SERVER-SIDE only (validate_so_freebies_and_box_multiples,
+		// which resolves Box Conversion Exclusion at save time) — the old client check relied on a cached box
+		// mode that went stale when EDITING an existing order, producing false "must be a multiple" errors
 		void order_qty_by_code;
 
 		let scheme_items = this.scheme_items.filter(s => s.item_code).map(s => ({
@@ -1998,7 +1915,7 @@ var SalesOrderEntry = class {
 			billing_address: billing_address,
 			shipping_address: shipping_address,
 			taxes_and_charges: me.tax_template_field ? me.tax_template_field.get_value() : '',
-			// #24 Billing GST No. for every buyer (server refines it site-wise on save).
+			// for every buyer; server refines it site-wise on save
 			billing_gstin: me.billing_gstin_field ? (me.billing_gstin_field.get_value() || '') : '',
 			items: items,
 			cash_discount: flt(me.cash_discount_field.get_value()),
@@ -2012,7 +1929,7 @@ var SalesOrderEntry = class {
 		} else {
 			args.submit_now = 0;
 		}
-		// Modern Trade offline orders carry the e-com extra fields (channel stays Offline).
+		// Modern Trade offline orders carry the e-com extra fields (channel stays Offline)
 		const mt_payload = me.mt_ecom_payload();
 		if (mt_payload) args.ecom_fields = JSON.stringify(mt_payload);
 
@@ -2112,7 +2029,7 @@ var SalesOrderEntry = class {
 
 	clear_form() {
 		let me = this;
-		// Leave edit mode: back to a fresh "create" form.
+		// leave edit mode: back to a fresh "create" form
 		this.editing_so = null;
 		this.page.set_title(__('Alpino Sales Order Entry'));
 		this.page.set_primary_action(__('Create Sales Order'), () => me.create_sales_order(), 'fa fa-check');
@@ -2134,7 +2051,6 @@ var SalesOrderEntry = class {
 		this.created_by_field && this.created_by_field.set_value(frappe.session.user_fullname || frappe.session.user);
 		this.additional_units_damage_field && this.additional_units_damage_field.set_value(0);
 		this.wrapper.find('.additional-units-section').toggle(false);
-		// Reset the Modern Trade / e-com card.
 		this._mt_saved = null;
 		if (this.mt) {
 			Object.values(this.mt).forEach((f) => f && f.set_value(''));
@@ -2150,7 +2066,7 @@ var SalesOrderEntry = class {
 		this.wrapper.find('.additional-units-table tbody').empty();
 		this.add_item_row();
 		this.calc_totals();
-		// Re-apply the 2pm-cutoff default dispatch date for a fresh order.
+		// re-apply the 2pm-cutoff default dispatch date for a fresh order
 		frappe.call({
 			method: 'alpinos.dispatch_date_utils.get_default_dispatch_date',
 			callback: function(r) {

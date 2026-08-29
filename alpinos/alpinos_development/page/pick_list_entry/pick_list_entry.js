@@ -12,10 +12,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.save_pick_list();
 	});
 
-	// Cancel: only for submitted Pick Lists AND users whose role grants cancel
-	// (shown/hidden in render_data; the server enforces the permission too).
-	// The cancellation guard blocks with the linked Delivery Note's ID when
-	// one is still active.
+	// only for submitted Pick Lists AND users whose role grants cancel (server enforces it too)
 	page.btn_cancel_pl = page.add_inner_button(__('Cancel Pick List'), function() {
 		frappe.confirm(__('Cancel Pick List {0}?', [page.pick_list_name]), function() {
 			frappe.call({
@@ -33,8 +30,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	});
 	if (page.btn_cancel_pl) page.btn_cancel_pl.hide();
 
-	// Edit Transporter / Dispatch Date AFTER submission — propagates to the linked
-	// Delivery Note(s) and is audited (Field Change Log). Shown only on submitted PLs.
+	// edits after submission propagate to the linked Delivery Note(s) and are audited
 	page.btn_edit_after_submit = page.add_inner_button(__('Edit Transporter / Dispatch'), function() {
 		const d = new frappe.ui.Dialog({
 			title: __('Edit After Submission'),
@@ -69,8 +65,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.html("<h3>Error: Template 'pick_list_entry' could not be rendered.</h3>");
 		} else {
 			page.main.html(html);
-			
-			// Setup static listeners
+
 			page.main.find('#btn-go-to-list').on('click', function() {
 				frappe.set_route('pick_list_list');
 			});
@@ -80,7 +75,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					frappe.msgprint(__('Save the Pick List first, then download the PDF.'));
 					return;
 				}
-				// Download the packing sheet PDF (same wkhtmltopdf endpoint the Sales Order uses).
+				// same wkhtmltopdf endpoint the Sales Order uses
 				const url =
 					'/api/method/frappe.utils.print_format.download_pdf?' +
 					'doctype=' + encodeURIComponent('Pick List') +
@@ -143,7 +138,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						+ '&paper=' + encodeURIComponent(paper);
 					window.open(url, '_blank');
 				};
-				// Same 100x75 mm sticker either way — only the paper differs.
 				const d = new frappe.ui.Dialog({
 					title: __('Generate Stickers'),
 					fields: [{
@@ -161,7 +155,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 
 			page.main.find('#btn-create-delivery-note').on('click', function() {
-				// If a DN already exists for this pick list, just open it.
 				if (page.existing_delivery_note) {
 					frappe.set_route('delivery_note_entry', page.existing_delivery_note);
 					return;
@@ -188,12 +181,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 
 	page.load_data = function() {
 		if (page.pick_list_name === 'New Pick List') {
-			// route_options is wiped on reload — fall back to a sessionStorage cache
-			// keyed by the page route so a refresh keeps the SO context.
+			// route_options is wiped on reload — fall back to a sessionStorage cache keyed by the page route
 			let so_name = (frappe.route_options && frappe.route_options.so_name) || null;
 			const cache_key = 'alpinos_pick_list_entry_so_name';
 			const rem_key = 'alpinos_pick_list_entry_remaining_only';
-			// Partial "Create PL for Remaining Qty" flag — pre-fills outstanding qty only.
+			// "Create PL for Remaining Qty" flag — pre-fills outstanding qty only
 			let remaining_only = (frappe.route_options && frappe.route_options.remaining_only) ? 1 : 0;
 			if (so_name) {
 				try { sessionStorage.setItem(cache_key, so_name); sessionStorage.setItem(rem_key, String(remaining_only)); } catch (e) {}
@@ -208,8 +200,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				return;
 			}
 			page.so_name = so_name;
-			// Remember the round type so create/draft rebuild the mapping the same
-			// way (custom_ordered_qty must snapshot the remaining qty, not full).
+			// so create/draft rebuild the mapping the same way (custom_ordered_qty snapshots the remaining qty, not full)
 			page.remaining_only = remaining_only ? 1 : 0;
 			frappe.call({
 				method: 'alpinos.sales_order_api.get_pick_list_mapping_data',
@@ -242,9 +233,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		const $startPicking = page.main.find('#btn-start-picking');
 		const $stopPicking = page.main.find('#btn-stop-picking');
 		const wfs = data.custom_workflow_status || '';
-		// Picking is "active" once started, until the picker stops (Submission Pending).
+		// picking is "active" once started, until the picker stops (Submission Pending)
 		const pickingActive = wfs === 'Picking In Progress' || wfs === 'Sticker Pending';
-		// Show the Pick List workflow status as a coloured badge by the title.
 		const PL_WF_COLORS = {
 			'Draft': 'red',
 			'Picking Pending': 'orange',
@@ -260,13 +250,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		} else if (page.clear_indicator) {
 			page.clear_indicator();
 		}
-		// Sticker generation needs a persisted PL — show on saved drafts + submitted, hide on new.
+		// needs a persisted PL — show on saved drafts + submitted, hide on new
 		if (page.pick_list_name && page.pick_list_name !== 'New Pick List') {
 			$stickerBtn.show();
 		} else {
 			$stickerBtn.hide();
 		}
-		// Start Picking: only on a saved draft that has not started picking yet.
 		const isSavedDraft =
 			data.docstatus === 0 && page.pick_list_name && page.pick_list_name !== 'New Pick List';
 		if (isSavedDraft && !cint(data.custom_picking_started)) {
@@ -274,13 +263,12 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		} else {
 			$startPicking.hide();
 		}
-		// Stop Picking: appears once picking reaches the sticker-generation point.
+		// appears once picking reaches the sticker-generation point
 		if (isSavedDraft && wfs === 'Sticker Pending') {
 			$stopPicking.show();
 		} else {
 			$stopPicking.hide();
 		}
-		// Cancel: submitted docs only, and only when the role has cancel rights.
 		if (page.btn_cancel_pl) {
 			const can_cancel = frappe.model.can_cancel && frappe.model.can_cancel('Pick List');
 			if (data.docstatus === 1 && can_cancel) page.btn_cancel_pl.show();
@@ -301,19 +289,14 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		} else {
 			$dnBtn.hide();
-			// During picking (after Start Picking, before Stop Picking) the Submit
-			// option is hidden — the picker must Stop Picking first (-> Submission
-			// Pending), then Submit re-appears.
+			// during picking (Start Picking done, Stop Picking not yet) Submit is hidden until Submission Pending
 			if (pickingActive) {
 				page.clear_primary_action();
 			} else {
-				// Re-set Submit primary action — it gets cleared when navigating
-				// to a submitted PL (above), and on_page_load only fires once per
-				// page instance, so without this the Submit button stays missing.
+				// re-set Submit — it's cleared when navigating to a submitted PL, and on_page_load only fires once per page instance
 				page.set_primary_action('Submit', () => { page.save_pick_list(); });
 			}
-			// New PL → "Save as Draft" (creates the doc).
-			// Saved draft → "Save" (updates without submitting).
+			// new PL -> "Save as Draft" (creates the doc); saved draft -> "Save" (updates without submitting)
 			if (page.pick_list_name === 'New Pick List') {
 				$draftBtn.show();
 				$saveDraftUpdate.hide();
@@ -322,8 +305,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				$saveDraftUpdate.show();
 			}
 		}
-		
-		// Set header fields
+
 		page.main.find('[data-fieldname="custom_actual_box"]').val(data.custom_actual_box);
 		page.main.find('[data-fieldname="custom_sample_box"]').val(data.custom_sample_box);
 		page.main.find('[data-fieldname="custom_sample_weight"]').val(data.custom_sample_weight);
@@ -353,22 +335,19 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 		}
 
-		// --- Edit-permission gating ---
+		// edit-permission gating
 		const _roles = frappe.user_roles || [];
 		const _isPLUser = _roles.includes('PL User') &&
 			!_roles.some((r) => ['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'DN Manager'].includes(r));
 		const pickingStarted = cint(data.custom_picking_started);
 		const isSubmitted = data.docstatus === 1;
-		// Item fields are editable only when not submitted AND (not a PL User, or
-		// the PL User has clicked Start Picking).
+		// editable only when not submitted AND (not a PL User, or the PL User has clicked Start Picking)
 		const itemsLocked = isSubmitted || (_isPLUser && !pickingStarted);
 
-		// PO No / Transporter / Gate: read-only for PL Users, and after submit.
 		const lockHeader = isSubmitted || _isPLUser;
 		['custom_po_no', 'custom_transporter', 'custom_gate'].forEach((fn) => {
 			page.main.find(`[data-fieldname="${fn}"]`).prop('readonly', lockHeader);
 		});
-		// After submit, nothing on the page is editable.
 		if (isSubmitted) {
 			['custom_actual_box', 'custom_sample_box', 'custom_dispatch_date'].forEach((fn) => {
 				page.main.find(`[data-fieldname="${fn}"]`).prop('readonly', true);
@@ -423,14 +402,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			
 			let batch_readonly = itemsLocked ? 'readonly' : '';
 			let input_disabled = itemsLocked ? 'disabled' : '';
-			// Batch Code / MFG / Expiry are always enterable — non-batch-tracked
-			// items carry the code as free text (custom_batch_code) through the
-			// whole cycle instead of a Batch master link.
+			// non-batch-tracked items carry the code as free text (custom_batch_code) instead of a Batch master link
 			let batch_lock = itemsLocked ? 'readonly tabindex="-1"' : '';
-			
-			// Exploded bundle component: tinted and tagged with its combo SKU. Qty and
-			// Box are editable like any other row (a component can be partially picked),
-			// only locked when items are locked (submitted, or PL User before picking).
+
+			// exploded bundle component: tinted and tagged with its combo SKU; a component can be partially picked
 			let is_bundle_comp = !!row.custom_bundle_parent;
 
 			let box_val = "";
@@ -439,9 +414,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			} else {
 				box_val = (row.custom_box !== undefined && row.custom_box !== null && flt(row.custom_box) !== 0) ? flt(row.custom_box, 2) : "";
 			}
-			// Box is editable (in decimals) across every table — Items, exploded
-			// combo/bundle components, and all the sample tables — and only locked
-			// when items are locked (submitted, or PL User before Start Picking).
+			// box is editable in decimals across every table, locked only when items are locked
 			let box_readonly = !itemsLocked ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
@@ -481,10 +454,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		create_table("Scheme Table", groups["Scheme Table"]);
 		create_table("Additional Units", groups["Additional Units"]);
 
-		// COMBO mapping table — one row per component, each combo shaded distinctly so
-		// multiple combos in one order are easy to tell apart. Read-only reference: it
-		// tells the picker how the exploded component qtys above pack back into combos.
-			// Translucent shades so the tint reads on both light and dark themes.
+		// one row per component, each combo shaded distinctly; read-only reference showing how
+		// the exploded component qtys above pack back into combos (shades work in both themes)
 		const COMBO_SHADES = [
 			'rgba(59,130,246,0.10)',
 			'rgba(249,115,22,0.10)',
@@ -536,7 +507,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		};
 		create_combo_table(data.combos);
 
-		// Sticker attachments from the linked Sales Order (E-com & MT) — read-only.
+		// from the linked Sales Order (E-com & MT) — read-only
 		const render_sticker_attachments = (stickers) => {
 			const $box = page.main.find('#pl-sticker-attachments');
 			const $body = $box.find('.pl-sticker-body').empty();
@@ -555,8 +526,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		};
 		render_sticker_attachments(data.custom_sticker_attachments);
 
-		// Removed Items audit table — server-persisted rows for saved PLs,
-		// plus any pending client-side removals on a new (unsaved) PL.
+		// server-persisted rows for saved PLs, plus pending client-side removals on a new (unsaved) PL
 		page.render_removed_items = function() {
 			let removed = (data.custom_removed_items || []).slice();
 			(page._pending_removals || []).forEach(r => removed.push({
@@ -619,7 +589,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		};
 		page.render_removed_items();
 
-		// Define recalculate_totals function
 		page.recalculate_totals = function() {
 			let actual_box = 0;
 			let sample_box = 0;
@@ -636,9 +605,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				let weight_per_box = flt(tr.attr('data-weight-per-box')) || 0;
 				let box = flt(tr.find('.box-input').val());
 
-				// Actual Box = the main Items table; Sample Box = the three sample
-				// tables (Marketing Freebies / Scheme / Additional Units) only.
-				// Total Box = actual + sample. Decimals kept throughout.
+				// Actual Box = Items table; Sample Box = the three sample tables; Total = actual + sample
 				if (table_name === "Items") {
 					actual_box += box;
 					gross_weight += box * weight_per_box;
@@ -651,8 +618,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			});
 
 			page.main.find('[data-fieldname="custom_actual_box"]').val(flt(actual_box, 2));
-			// Sample Box = sum of the three sample tables' boxes, UNLESS the user has
-			// manually overridden the total — then keep their entered value.
+			// unless the user manually overrode the total — then keep their entered value
 			if (page._sample_box_manual) {
 				sample_box = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
 			} else {
@@ -664,13 +630,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.find('[data-fieldname="custom_total_unit"]').val(flt(total_unit, 2));
 		};
 
-		// All per-row event handlers below use jQuery DELEGATION (container.on
-		// with a selector) so they also fire on rows added dynamically by the
-		// client-side Split action — direct .find().on() only catches rows
-		// that exist at render time.
+		// delegated (container.on with a selector) so handlers also fire on rows added by Split —
+		// direct .find().on() only catches rows that exist at render time
 		container.off('.alpinosRowEvents');
 
-		// Picked Qty validation + box auto-calc.
 		container.on('input.alpinosRowEvents change.alpinosRowEvents', '.qty-input', function() {
 			let tr = $(this).closest('tr');
 			let ordered = flt(tr.find('.ordered-qty-cell').text());
@@ -696,9 +659,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.recalculate_totals();
 		});
 
-		// Box manual input updates totals. Decimals are allowed — do not round.
 		container.on('input.alpinosRowEvents change.alpinosRowEvents', '.box-input', function() {
-			// A change to a sample-table row re-derives the Sample Box total (drops any override).
+			// a sample-table row change re-derives the Sample Box total, dropping any override
 			let tbl = $(this).closest('table').attr('data-table-name');
 			if (tbl && tbl !== 'Items') page._sample_box_manual = false;
 			page.recalculate_totals();
@@ -716,12 +678,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// A native <input type="date"> reports a valid value even for a half-typed
-		// year ("20" -> 0020), which fired the EXP/MFG checks before the user had
-		// finished the date. Only react once the year is a full 4 digits.
+		// a native <input type="date"> reports a valid value even for a half-typed year ("20" -> 0020);
+		// only react once the year is a full 4 digits
 		const yearComplete = (d) => parseInt(String(d || '').split('-')[0], 10) >= 1000;
 
-		// EXP must be >= MFG; clear exp if user enters an earlier date than mfg.
 		container.on('change.alpinosRowEvents', '.exp-input', function() {
 			let tr = $(this).closest('tr');
 			let mfg = tr.find('.mfg-input').val();
@@ -733,8 +693,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// MFG change: validate EXP relationship, then auto-fill EXP from
-		// Item.shelf_life_in_days when EXP is blank.
+		// validates EXP relationship, then auto-fills EXP from Item.shelf_life_in_days when EXP is blank
 		container.on('change.alpinosRowEvents', '.mfg-input', function() {
 			let tr = $(this).closest('tr');
 			let mfg = $(this).val();
@@ -756,18 +715,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// SAMPLE BOX is the grand total of all tables' box counts, so TOTAL BOX mirrors it.
-		// Decimals are allowed (no round-to-int).
 		page.main.find('[data-fieldname="custom_actual_box"], [data-fieldname="custom_sample_box"]').off('input change').on('input change', function() {
-			// Editing the Sample Box total directly marks it a manual override so the
-			// row-sum recompute won't wipe it.
+			// editing Sample Box directly marks it a manual override so the row-sum recompute won't wipe it
 			if ($(this).attr('data-fieldname') === 'custom_sample_box') page._sample_box_manual = true;
 			let actual = flt(page.main.find('[data-fieldname="custom_actual_box"]').val() || 0);
 			let sample = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
 			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual + sample, 2));
 		});
-		
-		// Setup Batch auto-fetch logic (delegated so split rows fire it too).
+
+		// delegated so split rows fire it too
 		container.on('change.alpinosRowEvents', '.batch-input', function() {
 			let val = $(this).val();
 			let tr = $(this).closest('tr');
@@ -778,17 +734,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_batch_details',
 					args: { batch_no: val, item_code: item_code },
 					callback: function(res) {
-						// Free-text codes with no Batch master return {} — leave any
-						// manually entered MFG/Expiry untouched in that case.
+						// free-text codes with no Batch master return {} — leave any manually entered MFG/Expiry untouched
 						if (res.message && (res.message.manufacturing_date || res.message.expiry_date)) {
-							// Ensure format is YYYY-MM-DD for date inputs
 							let mfg = res.message.manufacturing_date ? frappe.datetime.str_to_obj(res.message.manufacturing_date) : null;
 							let exp = res.message.expiry_date ? frappe.datetime.str_to_obj(res.message.expiry_date) : null;
 
 							if (mfg) tr.find('.mfg-input').val(frappe.datetime.obj_to_str(mfg));
 							if (exp) tr.find('.exp-input').val(frappe.datetime.obj_to_str(exp));
 
-							// Customer-type expiry warning (Task 7) — soft alert only.
+							// customer-type expiry warning — soft alert only
 							let sales_order = page.main.find('[data-fieldname="custom_sales_order_id"]').val()
 								|| (data && data.custom_sales_order_id);
 							let dispatch_date = page.main.find('[data-fieldname="custom_dispatch_date"]').val()
@@ -815,7 +769,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// Fetch available batches for datalist
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_batches',
 			callback: function(res) {
@@ -829,9 +782,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		// Fetch users for QC + Assigned To dropdowns — only the warehouse/sales
-		// workflow team (roles from the Pick List permission matrix), plus any
-		// already-saved assignee so legacy values still display.
+		// only the warehouse/sales workflow team (Pick List permission matrix), plus any already-saved assignee
 		frappe.call({
 			method: 'alpinos.workflow_role_access.get_workflow_team_users',
 			args: {
@@ -861,8 +812,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						assigned_select.val(data.custom_assigned_to);
 					}
 
-					// Assigned To is read-only for PL Users — only the warehouse
-					// can (re)assign a picker.
+					// read-only for PL Users — only the warehouse can (re)assign a picker
 					const _roles = frappe.user_roles || [];
 					const _canAssign = _roles.some((r) =>
 						['Warehouse Admin', 'Warehouse Manager', 'System Manager', 'DN Manager'].includes(r)
@@ -871,10 +821,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						assigned_select.prop('disabled', true);
 					}
 
-					// When Assigned To changes:
-					//   - sync QC Attended By if QC is blank (Task 5 auto-fetch).
-					//   - persist immediately via update_pick_list_assignment so the
-					//     change sticks at any docstatus (custom field is allow_on_submit=1).
+					// on change: sync QC Attended By if blank, and persist immediately (custom field is allow_on_submit=1)
 					assigned_select.off('change.alpinosAssign').on('change.alpinosAssign', function() {
 						let assigned = $(this).val();
 						let qc_current = qc_select.val();
@@ -894,12 +841,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				}
 			}
 		});
-		
-		// Per-row Remove (Task 9) and Split (Task 10) action buttons.
-		// On an unsaved "New Pick List" we mutate the in-memory grid directly
-		// — both extra rows and removed rows ride along to the server on the
-		// final Submit / Save as Draft. On an existing draft we hit the dedicated
-		// server endpoints and reload the page.
+
+		// on an unsaved "New Pick List" we mutate the in-memory grid directly — extra/removed rows ride
+		// along to the server on final Submit / Save as Draft. On an existing draft we hit the server
+		// endpoints directly and reload the page.
 		const is_unsaved_new_pl = () => !data.name || data.name === 'New Pick List' || page.pick_list_name === 'New Pick List';
 
 		container.off('click.alpinosRowActions').on('click.alpinosRowActions', '.row-remove-btn', function() {
@@ -911,7 +856,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				[{ fieldname: 'reason', fieldtype: 'Small Text', label: 'Reason for Removal', reqd: 1 }],
 				(values) => {
 					if (is_unsaved_new_pl()) {
-						// Client-side: record audit + drop row from DOM.
+						// client-side: record audit + drop row from DOM
 						page._pending_removals = page._pending_removals || [];
 						page._pending_removals.push({
 							row_name: row_name,
@@ -963,15 +908,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						return;
 					}
 					if (is_unsaved_new_pl()) {
-						// Client-side split: clone the source row, decrement original,
-						// new row gets a client-generated name so save flow knows it's extra.
+						// client-side split: clone the source row, decrement original; new row gets a
+						// client-generated name so the save flow knows it's extra
 						let factor = flt(tr.attr('data-conversion-factor')) || 1;
 						let new_qty = flt(split_box * factor, 2);
 						let remaining_box = current_box - split_box;
 						let remaining_qty = flt(remaining_box * factor, 2);
 						let weight_per_box = tr.attr('data-weight-per-box') || 0;
 						let shelf_life = tr.attr('data-shelf-life') || 0;
-						let source_idx = tr.index() + 2; // SR. column is 1-based; new clone gets +1
+						let source_idx = tr.index() + 2; // SR. is 1-based; clone gets +1
 						let clone_name = 'client-split-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
 						let item_name_text = tr.find('td').eq(2).text();
 						let sku_no_text = tr.find('td').eq(2).text();
@@ -996,7 +941,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							</tr>
 						`;
 						tr.after(new_row_html);
-						// Decrement source row.
 						tr.find('.box-input').val(remaining_box);
 						tr.find('.qty-input').val(remaining_qty);
 						page.recalculate_totals();
@@ -1020,8 +964,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			);
 		});
 
-		// Run initial recalculation. Preserve a manual Sample Box override that was
-		// saved on the doc (its stored value differs from the row-derived sum).
+		// preserve a manual Sample Box override saved on the doc (its value differs from the row-derived sum)
 		let _stored_sample = flt(page.main.find('[data-fieldname="custom_sample_box"]').val() || 0);
 		page._sample_box_manual = false;
 		page.recalculate_totals();
@@ -1036,7 +979,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	};
 	
 	page.save_pick_list = function() {
-		// Gather header data
 		let header_data = {
 			custom_actual_box: page.main.find('[data-fieldname="custom_actual_box"]').val(),
 			custom_sample_box: page.main.find('[data-fieldname="custom_sample_box"]').val(),
@@ -1051,16 +993,14 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			custom_assigned_to: page.main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 			custom_dispatch_date: page.main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
 		};
-		
-		// Gather item data and validate
+
 		let items = [];
 		let validation_error = false;
 		let is_short_pick = false;
 		page.main.find('.sku-table tbody tr').each(function() {
 			let tr = $(this);
 			let table_name = tr.closest('table').attr('data-table-name');
-			// The Combos table is a read-only reference (shares .sku-table styling) —
-			// never collect its rows as pick-list items, and never let them break the loop.
+			// Combos is a read-only reference table (shares .sku-table styling) — never collect its rows
 			if (table_name === 'Combos') return;
 			let qty_val = flt(tr.find('.qty-input').val());
 			let ordered_qty = flt(tr.find('.ordered-qty-cell').text());
@@ -1071,7 +1011,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				validation_error = true;
 				return false; // Break loop
 			}
-			// Short pick on a real order line -> the shortfall needs a decision.
+			// a real order line short pick means the shortfall needs a decision
 			if (ordered_qty > 0 && qty_val < ordered_qty) is_short_pick = true;
 
 			items.push({
@@ -1081,7 +1021,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_sample_quantity: 0,
 				custom_box: tr.find('.box-input').val(),
 				custom_batch_code: tr.find('.batch-input').val(),
-				batch_no: "", // Leave standard batch_no empty since we are not creating real batches
+				batch_no: "", // standard batch_no stays empty — we're not creating real batches
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
 				custom_source_table: table_name,
@@ -1096,7 +1036,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		}
 
 		let removed_rows = page._pending_removals || [];
-		// A removed SKU also leaves the order short for this round.
+		// a removed SKU also leaves the order short for this round
 		if (removed_rows && removed_rows.length) is_short_pick = true;
 
 		const doSubmit = (extra) => {
@@ -1153,14 +1093,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				doSubmit({});
 			}
 		};
-		// Validate the Dispatch Date on submit (update-to-today / keep-same), then
-		// confirm submission, before the (optional) short-pick flow.
 		page._dispatch_date_gate(header_data, is_short_pick, proceed);
 	};
 
-	// On submit: if the Dispatch Date isn't today, offer to update it to today; then
-	// confirm the submission. A short pick has its own "Submit Pick List" modal, so
-	// the generic submit confirmation is skipped in that case.
+	// if the Dispatch Date isn't today, offer to update it, then confirm submission — a short pick
+	// has its own "Submit Pick List" modal, so the generic confirm is skipped in that case
 	page._dispatch_date_gate = function(header_data, is_short_pick, proceed) {
 		const today = frappe.datetime.get_today();
 		const current = String(header_data.custom_dispatch_date || '').split(' ')[0];
@@ -1198,7 +1135,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		}
 	};
 
-	// Resolve whether the order permits partial dispatch (drives the modal options).
+	// drives the short-pick modal's option set
 	page.resolve_partial_allowed = function(cb) {
 		const done = (so) => {
 			if (!so) return cb(0);
@@ -1218,7 +1155,6 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		}
 	};
 
-	// Short-pick decision: Partial (with a future dispatch date) or Forced Close.
 	page.show_short_pick_modal = function(partialAllowed, onConfirm) {
 		const actions = ['Forced Close'];
 		if (cint(partialAllowed)) actions.unshift('Partial');
@@ -1281,9 +1217,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		d.show();
 	};
 
-	// Save edits on an existing draft without submitting it. Reuses the same
-	// header/items collection as Submit, but calls a server method that
-	// updates fields in place and skips doc.submit().
+	// same header/items collection as Submit, but calls a server method that updates fields in place and skips doc.submit()
 	page.save_pick_list_keep_draft = function() {
 		if (!page.pick_list_name || page.pick_list_name === 'New Pick List') {
 			frappe.msgprint(__('No draft to save yet — use "Save as Draft" instead.'));
@@ -1332,9 +1266,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		});
 	};
 
-	// Persist a new Pick List as draft (docstatus=0) so the user can split/remove
-	// rows before final submit. After save we navigate to the new draft URL so
-	// per-row action buttons become available.
+	// docstatus=0 so the user can split/remove rows before final submit; after save we
+	// navigate to the new draft URL so per-row action buttons become available
 	page.save_pick_list_as_draft = function() {
 		if (page.pick_list_name !== 'New Pick List') {
 			frappe.show_alert({ message: __('Already saved.'), indicator: 'orange' });

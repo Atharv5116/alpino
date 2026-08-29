@@ -1,7 +1,7 @@
 // Copyright (c) 2026, Alpinos and contributors
 // License: MIT
 
-// Section colour grouping (mirrors the Final Format Excel bands).
+// section colour grouping mirrors the Final Format Excel bands
 var ATT_SECTION = {
 	// Basic Information
 	employee_name: "basic", employee: "basic", status: "basic", date_of_joining: "basic",
@@ -16,7 +16,6 @@ var ATT_SECTION = {
 	paid_leave: "leave", unpaid_leave: "leave", wfh: "leave", od: "leave",
 	// Other
 	public_holiday: "other", weekend: "other", missing_attendance: "other", avg_working_hours: "other",
-	// Verify
 	verify: "verify",
 };
 var ATT_CELL_BG = { basic: "#eef2ff", days: "#e8f6ee", ded: "#fdecea", leave: "#fff8e1", other: "#f4e9fd", verify: "#eceff1" };
@@ -48,12 +47,10 @@ frappe.query_reports["Attendance Summary"] = {
 	],
 
 	formatter: function(value, row, column, data, default_formatter) {
-		// Per-day cells: rich multi-line "Details" rendering with red marking.
 		if (column.fieldname.startsWith("day_")) {
 			var raw = (value == null) ? "" : String(value);
 			if (raw === "" || raw === "-") return raw;
 			var esc = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-			// Attendance detail cell (has an In: time).
 			if (esc.indexOf("In:") !== -1) {
 				var isAbsent = /(^|\n)ABSENT\b/.test(raw);
 				var html = esc
@@ -73,13 +70,12 @@ frappe.query_reports["Attendance Summary"] = {
 			if (raw.indexOf("HOLIDAY") !== -1) {
 				return '<span style="color:#1976d2">' + esc.replace(/\n/g, "<br>") + '</span>';
 			}
-			// Leave day (leave type / "HALF DAY - ...") -> shaded cell.
+			// leave day (leave type / "HALF DAY - ...") -> shaded cell
 			return '<div style="background:#fff3cd;margin:-4px -8px;padding:4px 8px;">' + esc.replace(/\n/g, "<br>") + '</div>';
 		}
 
 		value = default_formatter(value, row, column, data);
 
-		// Section colour band down each summary column (fills the whole cell).
 		var _bg = ATT_CELL_BG[ATT_SECTION[column.fieldname]];
 		if (_bg) {
 			value = '<div style="background:' + _bg + '; margin:-4px -8px; padding:4px 8px;">' + (value == null ? "" : value) + '</div>';
@@ -89,9 +85,8 @@ frappe.query_reports["Attendance Summary"] = {
 	},
 
 	onload: function(report) {
-		// Final-Format Excel: rebuilds the two-sheet (Summary + Details) workbook exactly
-		// as the client spec — rich multi-line day cells, colours, banners — which the
-		// built-in export can't produce. Streams from a whitelisted server method.
+		// rebuilds the two-sheet Summary+Details workbook to the client spec — rich day cells,
+		// colours, banners — which the built-in export can't produce
 		report.page.add_inner_button(__("Download Final Format"), function() {
 			var f = frappe.query_report.get_filter_values();
 			if (!f || !f.month) {
@@ -115,9 +110,7 @@ frappe.query_reports["Attendance Summary"] = {
 			frappe.query_report.set_filter_value("month", last_month.slice(0, 7));
 		});
 
-		// Best-effort: paint the header cells with the darker section band, matching the
-		// column colours. Frappe reports don't band headers natively, so this is wrapped
-		// safely and re-applied whenever the datatable re-renders.
+		// frappe reports don't band headers natively; re-applied whenever the datatable re-renders
 		function paint_headers() {
 			try {
 				var dt = report.datatable;
@@ -129,7 +122,7 @@ frappe.query_reports["Attendance Summary"] = {
 						.find('.dt-header .dt-cell[data-col-index="' + c.colIndex + '"]')
 						.css("background-color", ATT_HEAD_BG[sec]);
 				});
-			} catch (e) { /* header banding is cosmetic — never block the report */ }
+			} catch (e) { /* cosmetic — never block the report */ }
 		}
 		setTimeout(paint_headers, 600);
 		try {

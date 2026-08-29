@@ -5,13 +5,10 @@ frappe.query_reports["Pending Invoice Downloads"] = {
 		{ fieldname: "dispatch_date", label: __("Dispatch Date"), fieldtype: "Date" },
 		{ fieldname: "customer", label: __("Customer"), fieldtype: "Link", options: "Customer" },
 	],
-	// Turn on the datatable checkbox column so specific invoices can be ticked and
-	// downloaded together (Download Selected). Without this, query reports have no
-	// row selection.
+	// query reports have no row selection without this
 	get_datatable_options(options) {
 		return Object.assign({}, options, { checkboxColumn: true });
 	},
-	// Per-row Download link (only when the invoice PDF is actually fetched).
 	formatter: function (value, row, column, data, default_formatter) {
 		if (column.fieldname === "download") {
 			if (data && data.sales_order && data.pdf_ready === "Yes") {
@@ -38,11 +35,10 @@ frappe.query_reports["Pending Invoice Downloads"] = {
 				frappe.msgprint(__("Please allow pop-ups to download the invoices."));
 				return;
 			}
-			// Downloading marks those orders, so refresh to drop them off the list.
+			// downloading marks those orders, so refresh to drop them off the list
 			setTimeout(() => report.refresh(), 2500);
 		};
 
-		// Tick rows -> download just those.
 		report.page.add_inner_button(__("Download Selected"), function () {
 			const checked = (report.get_checked_items && report.get_checked_items()) || [];
 			const names = checked.map((r) => r.sales_order).filter(Boolean);
@@ -53,7 +49,6 @@ frappe.query_reports["Pending Invoice Downloads"] = {
 			download(names);
 		});
 
-		// Download every row currently shown (filter first to narrow).
 		report.page.add_inner_button(__("Download All"), function () {
 			download((report.data || []).map((r) => r.sales_order).filter(Boolean));
 		});

@@ -1,7 +1,6 @@
 frappe.pages['screening'].on_page_load = function(wrapper) {
 	var me = this;
 	
-	// Create page container
 	var $wrapper = $(wrapper);
 	$wrapper.html('<div class="screening-page">\
 		<div class="page-header">\
@@ -32,7 +31,6 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 		</div>\
 	</div>');
 	
-	// Load data
 	load_screening_data();
 	
 	function load_screening_data() {
@@ -78,14 +76,11 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 		applicants.forEach(function(applicant) {
 			var row = $('<tr data-name="' + applicant.name + '"></tr>');
 			
-			// Candidate ID
 			var candidateId = applicant.candidate_id || '-';
 			row.append('<td>' + candidateId + '</td>');
 			
-			// Applicant Name
 			row.append('<td>' + (applicant.applicant_name || '-') + '</td>');
 			
-			// Resume Link
 			var resumeLink = '';
 			if (applicant.resume_link) {
 				resumeLink = '<a href="' + applicant.resume_link + '" target="_blank" class="btn btn-sm btn-link">View Resume</a>';
@@ -94,21 +89,17 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			}
 			row.append('<td>' + resumeLink + '</td>');
 			
-			// Degree
 			row.append('<td>' + (applicant.degree || '-') + '</td>');
 			
-			// Expected CTC
 			var expectedCTC = '-';
 			if (applicant.employment_expected_ctc) {
 				var ctcValue = parseFloat(applicant.employment_expected_ctc) || 0;
 				if (ctcValue > 0) {
-					// Format as currency (INR by default)
 					expectedCTC = 'INR ' + format_currency(ctcValue);
 				}
 			}
 			row.append('<td>' + expectedCTC + '</td>');
 			
-			// Category dropdown
 			var categoryDropdown = '<select class="form-control candidate-category" data-name="' + applicant.name + '" data-field="candidate_category">\
 				<option value="">-- Select --</option>\
 				<option value="White"' + (applicant.candidate_category === 'White' ? ' selected' : '') + '>White</option>\
@@ -117,7 +108,6 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			</select>';
 			row.append('<td>' + categoryDropdown + '</td>');
 			
-			// Screening Status dropdown
 			var statusOptions = [
 				'Pending Screening',
 				'Screening Call Scheduled',
@@ -137,7 +127,6 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			statusDropdown += '</select>';
 			row.append('<td>' + statusDropdown + '</td>');
 			
-			// Actions
 			row.append('<td>\
 				<button class="btn btn-sm btn-primary save-btn" data-name="' + applicant.name + '">Save</button>\
 			</td>');
@@ -145,12 +134,10 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			tbody.append(row);
 		});
 		
-		// Attach event handlers
 		attach_event_handlers();
 	}
 	
 	function attach_event_handlers() {
-		// Save button handler
 		$wrapper.find('.save-btn').off('click').on('click', function() {
 			var applicant_name = $(this).data('name');
 			var row = $(this).closest('tr');
@@ -178,7 +165,6 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 						message: __('Updated successfully'),
 						indicator: 'green'
 					}, 3);
-					// Reload the page data
 					setTimeout(function() {
 						load_screening_data();
 					}, 500);
@@ -205,7 +191,6 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 		return parseFloat(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
 	}
 	
-	// Add some basic styling
 	if (!$('style#screening-page-styles').length) {
 		$('<style id="screening-page-styles">').prop('type', 'text/css').html(`
 			.screening-page {

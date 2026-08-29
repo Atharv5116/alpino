@@ -134,15 +134,13 @@ var PostDeliveryQueue = class {
 		const saved = alpinos.list_prefs.load(PDQ_ROUTE);
 		if (!saved || typeof saved !== 'object') return;
 		const f = this._filters;
-		// set_input applies synchronously, so the first load_list() sees the
-		// restored values via get_value(); set_value is promise-based and can
-		// land after the first request.
+		// set_input applies synchronously so the first load_list() sees it; set_value is promise-based
 		const set_sync = (c, v) => {
 			if (!c) return;
 			if (typeof c.set_input === 'function') c.set_input(v);
 			else c.set_value(v);
 		};
-		// Guard every value: unknown/renamed keys are ignored, bad values dropped.
+		// unknown/renamed keys are ignored, bad values dropped
 		if (typeof saved.search === 'string') set_sync(f.search, saved.search);
 		if (typeof saved.status === 'string' && PDQ_STATUS_OPTIONS.split('\n').includes(saved.status)) {
 			set_sync(f.status, saved.status);
@@ -153,7 +151,7 @@ var PostDeliveryQueue = class {
 			this.page_length = pl;
 			this.wrapper.find('.pdq-page-size').val(String(pl));
 		}
-		// Never restore pagination offset — always begin at page 1.
+		// never restore pagination offset — always begin at page 1
 		this.start = 0;
 	}
 
