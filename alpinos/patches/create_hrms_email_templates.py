@@ -1,10 +1,4 @@
-"""
-Patch: Create HRMS Email Templates as per spec and SRS.
-From HRMS spec doc: Interview Schedule Mail, Confirmation Mail, Pre Onboarding Mail, Salary Slip.
-From code: Job Application - Candidate Acknowledgement, Job Application - HR Notification.
-From SRS (not in spec doc): Job Applicant - Rejection, Employee Onboarding - Complete Profile,
-Probation - Near Completion, Probation - Complete.
-"""
+"""Create the HRMS email templates used across hiring and onboarding."""
 
 import frappe
 

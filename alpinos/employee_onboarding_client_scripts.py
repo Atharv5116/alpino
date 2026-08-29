@@ -1,7 +1,4 @@
-"""
-Create Client Scripts for Job Applicant and Interview
-to add buttons for creating Employee Onboarding
-"""
+"""Create Client Scripts for Job Applicant, Interview, and Employee Onboarding."""
 
 import frappe
 
@@ -9,7 +6,6 @@ import frappe
 def create_employee_onboarding_client_scripts():
 	"""Create client scripts for Job Applicant, Interview, and Employee Onboarding"""
 	
-	# Client Script for Job Applicant
 	job_applicant_script = """
 frappe.ui.form.on('Job Applicant', {
 	refresh: function(frm) {
@@ -85,7 +81,6 @@ frappe.ui.form.on('Job Applicant', {
 });
 """
 	
-	# Client Script for Interview
 	interview_script = """
 frappe.ui.form.on('Interview', {
 	refresh: function(frm) {
@@ -137,21 +132,18 @@ frappe.ui.form.on('Interview', {
 });
 """
 	
-	# Create or update Job Applicant client script
 	create_or_update_client_script(
 		"Job Applicant - Create Employee Onboarding",
 		"Job Applicant",
 		job_applicant_script
 	)
 	
-	# Create or update Interview client script
 	create_or_update_client_script(
 		"Interview - Create Employee Onboarding",
 		"Interview",
 		interview_script
 	)
 	
-	# Client Script for Employee Onboarding
 	employee_onboarding_script = """
 // Allow saving Employee Onboarding in Draft state without client-side mandatory checks
 if (!frappe.ui.form._employee_onboarding_check_mandatory_patched) {
@@ -526,7 +518,6 @@ function auto_populate_from_job_applicant(frm) {
 }
 """
 	
-	# Create or update Employee Onboarding client script
 	create_or_update_client_script(
 		"Employee Onboarding - Auto-populate and Link Unique ID",
 		"Employee Onboarding",
@@ -539,7 +530,6 @@ function auto_populate_from_job_applicant(frm) {
 def create_or_update_client_script(name, doctype, script):
 	"""Create or update a client script"""
 	try:
-		# Check if client script already exists
 		if frappe.db.exists("Client Script", name):
 			client_script = frappe.get_doc("Client Script", name)
 			client_script.script = script
@@ -547,7 +537,6 @@ def create_or_update_client_script(name, doctype, script):
 			client_script.save(ignore_permissions=True)
 			frappe.db.commit()
 		else:
-			# Create new client script
 			client_script = frappe.get_doc({
 				"doctype": "Client Script",
 				"name": name,

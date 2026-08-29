@@ -1,7 +1,4 @@
-"""
-User Impersonation Feature
-Allows users with "Impersonate" role to temporarily login as another user
-"""
+"""User impersonation: let an Impersonate-role user log in as another user."""
 
 import frappe
 from frappe import _
@@ -45,22 +42,16 @@ def start_impersonation(target_user):
 	if target_user == frappe.session.user:
 		frappe.throw(_("Cannot impersonate yourself"))
 	
-	# Check if user is enabled
 	if not frappe.db.get_value("User", target_user, "enabled"):
 		frappe.throw(_("Cannot impersonate disabled user"))
 	
-	# Store original user in session
 	original_user = frappe.session.user
-	
-	# Log the impersonation
 	log_impersonation(original_user, target_user, "start")
-	
-	# Store impersonation data in session
+
 	frappe.session.data.impersonating = True
 	frappe.session.data.original_user = original_user
 	frappe.session.data.impersonated_user = target_user
 	
-	# Switch to target user
 	frappe.set_user(target_user)
 	
 	return {
@@ -83,15 +74,12 @@ def stop_impersonation():
 	if not original_user:
 		frappe.throw(_("Original user not found in session"))
 	
-	# Log the end of impersonation
 	log_impersonation(original_user, impersonated_user, "stop")
-	
-	# Clear impersonation data
+
 	frappe.session.data.impersonating = False
 	frappe.session.data.original_user = None
 	frappe.session.data.impersonated_user = None
 	
-	# Switch back to original user
 	frappe.set_user(original_user)
 	
 	return {
@@ -113,7 +101,6 @@ def get_impersonation_status():
 
 
 def log_impersonation(original_user, target_user, action):
-	"""Log impersonation activity"""
 	try:
 		frappe.get_doc({
 			"doctype": "Activity Log",

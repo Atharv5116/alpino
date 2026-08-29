@@ -1,7 +1,4 @@
-"""
-Custom Fields for Employee Onboarding DocType
-Adds all required sections and fields as per requirements
-"""
+"""Custom fields for Employee Onboarding."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -42,13 +39,11 @@ def delete_policy_fields():
 
 
 def delete_location_field_if_not_link():
-	"""Recreate `location` as Link -> Branch when it is still the old Select.
+	"""Recreate `location` as a Link to Branch when it is still the old Select.
 
-	`location` was historically a Select. Frappe forbids changing a Custom Field's fieldtype
-	between Select and Link (ALLOWED_FIELDTYPE_CHANGE), so create_custom_fields(update=True)
-	cannot convert it — it stays a Select. Delete the stale field (and any Property Setter on
-	it) so it is recreated as Link -> Branch. The DB column is kept on delete, so existing
-	values (Branch names like 'Head Office') are preserved.
+	Frappe won't convert a Custom Field between Select and Link, so we delete the stale
+	field (and its Property Setters) and let it be recreated. The DB column stays, so
+	existing values are preserved.
 	"""
 	cf = frappe.db.get_value(
 		"Custom Field",
@@ -73,12 +68,10 @@ def delete_location_field_if_not_link():
 
 
 def delete_salary_category_field_if_doctype_missing():
-	"""Remove the dangling `salary_category` field when its master doctype isn't present.
+	"""Remove the dangling `salary_category` Link field when its master doctype isn't present.
 
-	`salary_category` is a Link -> Salary Category, but the 'Salary Category' doctype is part of
-	an in-progress feature that is not in this repo. A Link field pointing at a non-existent
-	doctype makes the Employee Onboarding form raise "Missing DocType". Drop the field until the
-	master ships; this is a no-op once 'Salary Category' exists.
+	The Salary Category doctype ships with an unreleased feature; a Link to a missing doctype
+	makes the form raise "Missing DocType". No-op once Salary Category exists.
 	"""
 	if frappe.db.exists("DocType", "Salary Category"):
 		return
@@ -144,7 +137,7 @@ def delete_column_break_reset_qualification():
 
 
 def delete_work_experience_fields():
-	"""Delete work_experience_start_date, work_experience_end_date, and column_break_work_experience fields from Employee Onboarding"""
+	"""Delete the work-experience date fields from Employee Onboarding."""
 	fields_to_delete = [
 		"work_experience_start_date",
 		"work_experience_end_date",
@@ -205,7 +198,7 @@ def delete_work_experience_fields():
 
 
 def delete_qualification_fields():
-	"""Delete grade, degree_certificate_upload, and column_break_qualification fields from Employee Onboarding"""
+	"""Delete the leftover qualification fields from Employee Onboarding."""
 	fields_to_delete = [
 		"grade",
 		"degree_certificate_upload",
@@ -325,25 +318,17 @@ def delete_exit_letter_field():
 def setup_employee_onboarding_custom_fields():
 	"""Create custom fields for Employee Onboarding"""
 	
-	# Delete existing policy fields first to allow changing from Select to Link
+	# The policy and location fields must change from Select to Link, which Frappe
+	# only allows by deleting and recreating them.
 	delete_policy_fields()
-
-	# Same Select -> Link problem for the office `location` field (must become Link -> Branch)
 	delete_location_field_if_not_link()
 
-	# Drop the salary_category field while its 'Salary Category' master is not in the repo
+	# Drop salary_category while its master doctype isn't in the repo yet.
 	delete_salary_category_field_if_doctype_missing()
 
-	# Delete column_break_reset_qualification field
 	delete_column_break_reset_qualification()
-	
-	# Delete work experience fields
 	delete_work_experience_fields()
-	
-	# Delete qualification fields
 	delete_qualification_fields()
-	
-	# Delete exit_letter field
 	delete_exit_letter_field()
 	
 	custom_fields = {
@@ -357,9 +342,9 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Section Break",
 				insert_after="details_section",
 				collapsible=1,
-				hidden=0,  # Show Company Details section with 2 columns
+				hidden=0,
 			),
-			# Note: company field (standard field) is positioned after company_details_section via property setter
+			# company (standard field) is positioned after this section via property setter
 			dict(
 				fieldname="candidate_id",
 				label="Unique id",
@@ -371,11 +356,8 @@ def setup_employee_onboarding_custom_fields():
 				hidden=0,
 				in_list_view=0,
 				in_standard_filter=0,
-				# Will be auto-populated from job_applicant when form is created
 			),
-			# Note: boarding_status is moved here via property setters
-			# Removed column_break_company_details to have only 2 columns
-			
+
 			# ============================================
 			# SECTION: Personal Details
 			# ============================================
@@ -414,7 +396,6 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="last_name",
 				reqd=1,
 				read_only=1,
-				# Will be auto-populated from first_name, middle_name, last_name
 			),
 			dict(
 				fieldname="personal_mobile_number",
@@ -567,7 +548,7 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="permanent_address",
 				reqd=0,
 			),
-			# Keep city_state_combined hidden for automation purposes
+			# hidden, kept only for automation
 			dict(
 				fieldname="city_state_combined",
 				label="City / State",
@@ -647,9 +628,7 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="experience",
 				reqd=0,
 				hidden=1,
-				read_only=0,  # User must be able to enter manually
-				# User must enter manually - NOT auto-filled, NO fetch_from
-			),
+				read_only=0,			),
 			dict(
 				fieldname="work_experience_designation",
 				label="Designation",
@@ -657,9 +636,7 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="work_experience_company_name",
 				reqd=0,
 				hidden=1,
-				read_only=0,  # User must be able to enter manually
-				# User must enter manually - NOT auto-filled, NO fetch_from
-			),
+				read_only=0,			),
 			dict(
 				fieldname="work_experience_city",
 				label="City",
@@ -667,9 +644,7 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="work_experience_designation",
 				reqd=0,
 				hidden=1,
-				read_only=0,  # User must be able to enter manually
-				# Editable by Employee
-			),
+				read_only=0,			),
 			dict(
 				fieldname="work_experience_start_date",
 				label="Start Date",
@@ -677,9 +652,7 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="work_experience_city",
 				reqd=0,
 				hidden=1,
-				read_only=0,  # User must be able to enter manually
-				# User must enter manually - NOT auto-filled, NO fetch_from
-			),
+				read_only=0,			),
 			dict(
 				fieldname="work_experience_end_date",
 				label="End Date",
@@ -687,9 +660,7 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="work_experience_start_date",
 				reqd=0,
 				hidden=1,
-				read_only=0,  # User must be able to enter manually
-				# User must enter manually - NOT auto-filled, NO fetch_from
-			),
+				read_only=0,			),
 			
 			# ============================================
 			# SECTION: Bank Details
@@ -860,7 +831,6 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Date",
 				insert_after="company_email",
 				reqd=1,
-				# Will use existing date_of_joining field, but this is for HR to set
 			),
 			dict(
 				fieldname="designation_company_profile",
@@ -869,22 +839,19 @@ def setup_employee_onboarding_custom_fields():
 				insert_after="date_of_joining_onboarding",
 				reqd=0,
 				hidden=1,
-				# Legacy "Designation" field — superseded by `onboarding_designation`. Kept hidden and
-				# auto-synced from it (see populate_from_job_applicant) so existing logic that reads
-				# this field still works.
+				# Legacy field, kept hidden and synced from onboarding_designation for old logic.
 			),
-			# Note: department field (standard) is positioned after designation_company_profile via property setter
+			# department (standard) is positioned after designation_company_profile via property setter
 			dict(
 				fieldname="location",
 				label="Location",
 				fieldtype="Link",
 				options="Branch",
-				insert_after="designation_company_profile",  # Will be after department via field_order
+				insert_after="designation_company_profile",
 				reqd=1,
 				read_only=0,
-				# Auto-populated from Job Applicant's job_requisition -> Job Opening -> Location
-				# (Job Opening.location is itself a Link -> Branch). Also used as the Branch key
-				# to auto-fill the Policy section from Designation.branch_policy_access.
+				# Auto-populated from the Job Applicant's Job Opening, and used as the Branch
+				# key to auto-fill the Policy section from Designation.branch_policy_access.
 			),
 			dict(
 				fieldname="reporting_manager",
@@ -892,8 +859,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Select",
 				insert_after="location",
 				reqd=1,
-				read_only=0,  # Editable select field
-				# Will be auto-populated from Department -> Reporting Manager
+				read_only=0,
 			),
 			dict(
 				fieldname="column_break_company_profile",
@@ -906,8 +872,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Select",
 				insert_after="column_break_company_profile",
 				reqd=1,
-				read_only=0,  # Editable select field
-				# Will be auto-populated from Department -> HOD
+				read_only=0,
 			),
 			dict(
 				fieldname="category",
@@ -925,8 +890,7 @@ def setup_employee_onboarding_custom_fields():
 				reqd=1,
 				read_only=0,
 				fetch_from="job_applicant.designation",
-				# Single "Designation" field for onboarding. Auto-fills from the Job Applicant but is
-				# editable so HR can set/override it (incl. manual onboardings with no Job Applicant).
+				# Auto-fills from the Job Applicant but stays editable for manual onboardings.
 			),
 			dict(
 				fieldname="resign_date",
@@ -1016,7 +980,6 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Data",
 				insert_after="column_break_salary",
 				reqd=1,
-				# Mandatory Data field in Salary Details section
 			),
 			dict(
 				fieldname="probation_period",
@@ -1258,7 +1221,7 @@ def setup_employee_onboarding_custom_fields():
 				fieldtype="Section Break",
 				insert_after="bond_letter",
 				collapsible=1,
-				hidden=1,  # Hidden from users, for internal tracking
+				hidden=1,
 			),
 			dict(
 				fieldname="webform_submitted",

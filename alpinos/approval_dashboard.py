@@ -1,19 +1,7 @@
 """Pending-approvals queue for the Approvals workspace.
 
-get_pending_approvals returns ONLY the requests currently awaiting THIS user's action — i.e.
-where the user is the approver the request is pending on right now (not requests pending
-someone else, and not requests already past this user). Filtered to a date range that
-defaults to the current month.
-
-Per doctype, "pending this user" means (named approver / RM sees their own; any HR sees all):
-  - Leave Application: status Pending Reporting Manager Approval -> reporting manager;
-                       status Pending HR Approval -> HR
-  - Expense Claim: approval_status Pending RM Approval -> reporting manager
-  - Attendance Request: Pending RM Approval -> reporting_person == user; Pending HR Approval -> HR
-  - Work From Home Request: Pending Reporting Manager Approval -> leave_approver == user;
-                            Pending HOD Approval -> user has HOD; Pending HR Approval -> user is HR
-
-Defensive: a doctype that is missing or errors is skipped, never blocking the others.
+Returns only the requests currently awaiting THIS user's action, defaulting to the current
+month. A doctype that is missing or errors is skipped, never blocking the others.
 """
 
 import frappe
@@ -48,9 +36,7 @@ def get_pending_approvals(from_date=None, to_date=None):
 	from_date = getdate(from_date) if from_date else get_first_day(today)
 	to_date = getdate(to_date) if to_date else get_last_day(today)
 
-	# Pending items are filtered by WHEN THEY WERE APPLIED (creation), not by the leave /
-	# expense / attendance event date — so a still-pending request isn't hidden just because
-	# its event date falls outside the selected month.
+	# Filter by creation date, not the event date, so a still-pending request isn't hidden.
 	created_range = [["creation", ">=", str(from_date)], ["creation", "<=", str(to_date) + " 23:59:59"]]
 
 	allowed = is_hr or is_hod or is_rm
@@ -87,9 +73,7 @@ def get_pending_approvals(from_date=None, to_date=None):
 	def _leave():
 		if not frappe.db.exists("DocType", "Leave Application"):
 			return
-		# The "Leave Application 1.0" workflow keeps its state in its own state field
-		# (the `status` field stays Open until Approved/Rejected), so read whatever field
-		# that workflow uses rather than assuming `status`.
+		# The workflow keeps its state in its own field; read that rather than assuming status.
 		sf = _wf_state_field("Leave Application") or "status"
 		for r in frappe.get_all(
 			"Leave Application",
@@ -101,9 +85,8 @@ def get_pending_approvals(from_date=None, to_date=None):
 			order_by="modified desc", limit=200,
 		):
 			state = r.get(sf)
-			# RM stage -> the employee's OWN reporting manager (reports_to) holding the
-			# "Reporting Manager" role (how the workflow gates it) — NOT the leave_approver
-			# field. Any HR Manager sees all (HR stage + HR-sees-all).
+			# RM stage: the employee's own reporting manager (reports_to) with the Reporting
+			# Manager role, not the leave_approver field. Any HR Manager sees all.
 			pending_me = (
 				(state == "Pending Reporting Manager Approval"
 					and _user_is_rm_of(r.employee, user)
@@ -123,8 +106,7 @@ def get_pending_approvals(from_date=None, to_date=None):
 			fields=["name", "employee", "posting_date", "expense_approver"],
 			order_by="modified desc", limit=200,
 		):
-			# RM stage -> the employee's OWN reporting manager (reports_to) with the
-			# "Reporting Manager" role, not the expense_approver field. Any HR Manager sees all.
+			# RM stage: the employee's own reporting manager with the Reporting Manager role.
 			if (_user_is_rm_of(r.employee, user) and "Reporting Manager" in roles) or is_hr:
 				add("Expense Claim", "Expense", r.name, r.employee, r.posting_date, "expense-claim")
 

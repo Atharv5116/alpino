@@ -1,6 +1,4 @@
-"""
-Automation for Attendance Request to manage check-in/check-out times
-"""
+"""Attendance Request automation: manage check-in/check-out times."""
 import frappe
 from frappe import _
 from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, getdate
@@ -23,33 +21,19 @@ def set_reporting_person(doc, method=None):
 
 @frappe.whitelist()
 def get_checkin_data_for_dates(employee, from_date, to_date):
-	"""
-	Fetch Employee Checkin records (IN/OUT) for all dates in range, grouped by date.
-	
-	Returns:
-		{
-			"2026-01-15": {
-				"check_in": {"name": "EMP-CKIN-...", "time": "2026-01-15 09:00:00"},
-				"check_out": {"name": "EMP-CKIN-...", "time": "2026-01-15 18:00:00"},
-				"attendance": {"name": "HR-ATT-...", "status": "Present", "docstatus": 1}
-			},
-			...
-		}
-	"""
+	"""Employee Checkin IN/OUT + attendance for every date in the range, keyed by date."""
 	if not employee or not from_date or not to_date:
 		return {}
-	
+
 	from_date_obj = getdate(from_date)
 	to_date_obj = getdate(to_date)
-	
-	# Calculate all dates in range
+
 	request_days = date_diff(to_date_obj, from_date_obj) + 1
 	dates_in_range = []
 	for day in range(request_days):
 		attendance_date = add_days(from_date_obj, day)
 		dates_in_range.append(attendance_date)
-	
-	# Initialize result structure
+
 	result = {}
 	for date in dates_in_range:
 		result[str(date)] = {
@@ -57,12 +41,10 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 			"check_out": None,
 			"attendance": None
 		}
-	
-	# Fetch all Employee Checkin records for the date range
-	# Get start and end datetime for the range
+
 	start_datetime = get_datetime(f"{from_date} 00:00:00")
 	end_datetime = get_datetime(f"{to_date} 23:59:59")
-	
+
 	checkins = frappe.get_all(
 		"Employee Checkin",
 		filters={
@@ -72,8 +54,7 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 		fields=["name", "log_type", "time", "attendance"],
 		order_by="time asc"
 	)
-	
-	# Group checkins by date
+
 	for checkin in checkins:
 		checkin_date = getdate(checkin.time)
 		date_str = str(checkin_date)
@@ -90,7 +71,6 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 					"time": str(checkin.time)
 				}
 	
-	# Fetch Attendance records for all dates
 	attendance_records = frappe.get_all(
 		"Attendance",
 		filters={
@@ -100,8 +80,7 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 		},
 		fields=["name", "attendance_date", "status", "docstatus", "in_time", "out_time"]
 	)
-	
-	# Map attendance records to dates
+
 	for att in attendance_records:
 		date_str = str(att.attendance_date)
 		if date_str in result:
@@ -118,22 +97,12 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 
 @frappe.whitelist()
 def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, attendance_request=None):
-	"""
-	Create new Employee Checkin or update existing one.
-	
-	Args:
-		employee: Employee ID
-		date: Date string (YYYY-MM-DD)
-		log_type: "IN" or "OUT"
-		time: Datetime string (YYYY-MM-DD HH:MM:SS)
-		checkin_name: Optional existing checkin name to update
-		attendance_request: Optional Attendance Request reference
-	"""
-	
-	# SECURITY: Validate that the checkin date is not in the future
+	"""Create a new Employee Checkin or update an existing one."""
+
+	# Reject future-dated check-ins.
 	checkin_datetime = get_datetime(time)
 	current_datetime = get_datetime()
-	
+
 	if checkin_datetime > current_datetime:
 		frappe.throw(
 			_("Cannot create check-in records for future dates. Check-in time: {0}, Current time: {1}").format(
@@ -142,8 +111,7 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 			title=_("Future Date Not Allowed")
 		)
 	
-	# SECURITY: Validate that the checkin date is not more than 30 days in the past
-	# (unless user is Administrator)
+	# Non-admins can't backdate check-ins more than 30 days.
 	if frappe.session.user != "Administrator":
 		days_diff = date_diff(current_datetime, checkin_datetime)
 		if days_diff > 30:
@@ -156,7 +124,7 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 		request_ip = getattr(frappe.request, "remote_addr", "") if getattr(frappe, "request", None) else ""
 		request_path = getattr(frappe.request, "path", "") if getattr(frappe, "request", None) else ""
 		
-		# Use the attendance_request parameter, or try to find it from the attendance record
+		# Use the passed attendance_request, else look it up from the attendance record.
 		attendance_request_ref = attendance_request
 		if not attendance_request_ref and attendance_name:
 			attendance_request_ref = frappe.db.get_value('Attendance', attendance_name, 'attendance_request')
@@ -188,12 +156,10 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 	except Exception:
 		pass
 		
-	# Get Attendance record for this date to link the checkin
 	attendance = get_attendance_for_date(employee, date)
 	attendance_name = attendance.get("name") if attendance else None
 
 	if checkin_name:
-		# Update existing checkin
 		new_time = get_datetime(time)
 		
 		if attendance_name:
@@ -216,13 +182,11 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 			)
 			
 		frappe.db.commit()
-		
-		# Update Attendance in_time and out_time after checkin update
+
 		update_attendance_times(employee, date)
-		
+
 		return {"name": checkin_name, "time": str(new_time)}
 	else:
-		# Create new checkin
 		checkin_doc = frappe.new_doc("Employee Checkin")
 		checkin_doc.employee = employee
 		checkin_doc.log_type = log_type
@@ -231,37 +195,28 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 		if attendance_name:
 			checkin_doc.attendance = attendance_name
 		checkin_doc.insert(ignore_permissions=True)
-		
-		# Update Attendance in_time and out_time after checkin creation
+
 		update_attendance_times(employee, date)
-		
+
 		return {"name": checkin_doc.name, "time": str(checkin_doc.time)}
 
 
 @frappe.whitelist()
 def update_attendance_times(employee, date):
-	"""
-	Update in_time and out_time in Attendance record based on Employee Checkin records.
-	
-	Args:
-		employee: Employee ID
-		date: Date string (YYYY-MM-DD)
-	"""
+	"""Set Attendance in_time/out_time from the day's Employee Checkin records."""
 	if not employee or not date:
 		return
-	
-	# Get Attendance record for this date
+
 	attendance = get_attendance_for_date(employee, date)
 	if not attendance:
 		return
-	
+
 	attendance_doc = frappe.get_doc("Attendance", attendance["name"])
-	
-	# Get date range for the day
+
 	date_start = get_datetime(f"{date} 00:00:00")
 	date_end = get_datetime(f"{date} 23:59:59")
-	
-	# Get first IN checkin
+
+	# First IN checkin
 	in_checkins = frappe.get_all(
 		"Employee Checkin",
 		filters={
@@ -274,7 +229,7 @@ def update_attendance_times(employee, date):
 		limit=1
 	)
 	
-	# Get last OUT checkin
+	# Last OUT checkin
 	out_checkins = frappe.get_all(
 		"Employee Checkin",
 		filters={
@@ -287,15 +242,12 @@ def update_attendance_times(employee, date):
 		limit=1
 	)
 	
-	# Update in_time and out_time
 	in_time = in_checkins[0].time if in_checkins else None
 	out_time = out_checkins[0].time if out_checkins else None
-	
-	# Only update if values have changed
+
 	needs_update = attendance_doc.in_time != in_time or attendance_doc.out_time != out_time
 
 	if needs_update:
-		# Calculate working hours if both times are present
 		working_hours = attendance_doc.working_hours
 		if in_time and out_time:
 			time_diff = out_time - in_time
@@ -303,22 +255,21 @@ def update_attendance_times(employee, date):
 			if attendance_doc.working_hours != working_hours:
 				needs_update = True
 
-		# If it's a drafted document, we can just save it
+		# Draft can just be saved.
 		if attendance_doc.docstatus == 0:
 			attendance_doc.in_time = in_time
 			attendance_doc.out_time = out_time
 			attendance_doc.working_hours = working_hours
 			sync_attendance_request_reason(attendance_doc)
 			attendance_doc.save(ignore_permissions=True)
-		# If submitted, forcefully update the database to avoid destructive canceling and unlinking
+		# Submitted: write to the DB directly to avoid a destructive cancel/unlink.
 		elif attendance_doc.docstatus == 1:
 			update_values = {
 				"in_time": in_time,
 				"out_time": out_time,
 				"working_hours": working_hours,
 			}
-			# For a half-day leave, reconcile the working ("other") half against the shift's
-			# half-day threshold here too, since this fast-path bypasses the validate hook.
+			# This fast-path bypasses validate, so reconcile the half-day status here too.
 			half_day_status = half_day_status_from_threshold(
 				attendance_doc.shift,
 				attendance_doc.status,
@@ -334,10 +285,7 @@ def update_attendance_times(employee, date):
 
 @frappe.whitelist()
 def update_reason_field(attendance_request, reason):
-	"""
-	Update the reason field in Attendance Request.
-	This is called first to set the reason field from the dropdown action.
-	"""
+	"""Set the Attendance Request reason field from the dropdown action."""
 	if not attendance_request or not reason:
 		frappe.throw(_("Attendance Request and reason are required"))
 	
@@ -362,21 +310,10 @@ def update_reason_field(attendance_request, reason):
 
 @frappe.whitelist()
 def update_attendance_status(employee, date, reason, attendance_request=None):
-	"""
-	Update or create Attendance record with the specified status.
-	Update the Attendance Request's reason field based on the action (reason parameter).
-	The attendance status is derived from the action value, NOT from reading the reason field.
-	
-	Args:
-		employee: Employee ID
-		date: Date string (YYYY-MM-DD)
-		reason: Action value from dropdown (Work From Home, On Duty) - this becomes the reason field value
-		attendance_request: Optional Attendance Request name to link
-	"""
+	"""Update/create the Attendance for the date; status derived from the action value."""
 	if not employee or not date or not reason:
 		frappe.throw(_("Employee, date, and reason are required"))
-	
-	# Map action (reason) to attendance status
+
 	reason_to_status_map = {
 		"Work From Home": "Work From Home",
 		"Office": "Present",
@@ -389,8 +326,7 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 	
 	attendance_status = reason_to_status_map[reason]
 	
-	# ALWAYS update the reason field FIRST based on the action value
-	# The action value (reason parameter) is the source of truth
+	# The action value is the source of truth for the reason field; write it first.
 	if attendance_request:
 		try:
 			current_reason = frappe.db.get_value("Attendance Request", attendance_request, "reason")
@@ -398,13 +334,11 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 				f"UPDATE ATTENDANCE STATUS: Requested reason='{reason}', Current reason='{current_reason}', Attendance Request='{attendance_request}'",
 				"Update Attendance Status Debug"
 			)
-			
-			# ALWAYS update the reason field to match the action value, even if it's the same
-			# This ensures the reason field reflects the action
+
 			frappe.db.set_value("Attendance Request", attendance_request, "reason", reason, update_modified=False)
 			frappe.db.commit()
-			
-			# Verify it was updated - read it back immediately
+
+			# Read it back to confirm.
 			updated_reason = frappe.db.get_value("Attendance Request", attendance_request, "reason")
 			frappe.log_error(
 				f"UPDATE ATTENDANCE STATUS: After update, reason='{updated_reason}' (expected '{reason}')",
@@ -420,58 +354,50 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 			)
 			raise
 	
-	# Get existing attendance
 	attendance = get_attendance_for_date(employee, date)
-	
+
 	if attendance:
-		# Update existing attendance
 		attendance_doc = frappe.get_doc("Attendance", attendance["name"])
-		
-		# Allow updating even if submitted (as per user requirement)
+
+		# Submitted attendance is still editable per requirement.
 		if attendance_doc.docstatus == 1:
 			updates = {}
 			if attendance_request:
 				updates["attendance_request"] = attendance_request
-			
+
 			if updates:
-				# Use db_set to bypass cancel and save restrictions
+				# db_set bypasses cancel/save restrictions.
 				frappe.db.set_value("Attendance", attendance_doc.name, updates)
 				frappe.db.commit()
-			
-			# Sync attendance_request_reason directly
+
 			sync_attendance_request_reason(attendance_doc)
-			
+
 			frappe.msgprint(
 				_("Attendance Request updated successfully"),
 				indicator="green"
 			)
 		else:
-			# Draft attendance - just update link if needed
 			if attendance_request:
 				attendance_doc.attendance_request = attendance_request
-			# Sync attendance_request_reason using core function
 			sync_attendance_request_reason(attendance_doc)
 			attendance_doc.save(ignore_permissions=True)
-		
-		# Ensure in_time / out_time are in sync with check-ins after status/link changes
+
 		try:
 			update_attendance_times(employee, date)
 		except Exception:
-			# Avoid breaking the user flow if time sync fails; errors are logged separately
+			# Don't break the flow if time sync fails.
 			frappe.log_error(frappe.get_traceback(), "Update Attendance Times (existing)")
-		
+
 		return {
 			"name": attendance_doc.name,
 			"status": attendance_doc.status,
 			"docstatus": attendance_doc.docstatus
 		}
 	else:
-		# Create new attendance
-		# Get company from employee
 		company = frappe.db.get_value("Employee", employee, "company")
 		if not company:
 			frappe.throw(_("Employee must have a company assigned"))
-		
+
 		attendance_doc = frappe.new_doc("Attendance")
 		attendance_doc.employee = employee
 		attendance_doc.attendance_date = date
@@ -479,18 +405,13 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 		attendance_doc.status = attendance_status
 		if attendance_request:
 			attendance_doc.attendance_request = attendance_request
-		
-		# Set half_day_status if Half Day (not applicable for reason-based statuses, but keeping for safety)
+
 		if attendance_status == "Half Day":
 			attendance_doc.half_day_status = "Absent"
-		
+
 		attendance_doc.insert(ignore_permissions=True)
-		# after_insert hook will call sync_attendance_request_reason
-		
 		attendance_doc.submit()
-		# after_submit hook will call sync_attendance_request_reason
-		
-		# Sync in_time / out_time from check-ins (if any) for newly created attendance
+
 		try:
 			update_attendance_times(employee, date)
 		except Exception:
@@ -505,15 +426,10 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 
 @frappe.whitelist()
 def get_attendance_for_date(employee, date):
-	"""
-	Get existing Attendance record for a specific date.
-	
-	Returns:
-		{"name": "...", "status": "...", "docstatus": 1} or None
-	"""
+	"""Existing (non-cancelled) Attendance for the date, as a dict, or None."""
 	if not employee or not date:
 		return None
-	
+
 	attendance = frappe.db.exists(
 		"Attendance",
 		{
@@ -537,44 +453,28 @@ def get_attendance_for_date(employee, date):
 
 
 def sync_attendance_request_reason(attendance_doc):
-	"""
-	Core function to sync attendance_request_reason from Attendance Request explanation.
-	
-	This is the single source of truth for populating the attendance_request_reason field.
-	It reads the explanation from the linked Attendance Request and updates the Attendance
-	field only if the value is different (idempotent).
-	
-	Args:
-		attendance_doc: Attendance document (can be submitted or draft)
-	
-	Returns:
-		None (modifies attendance_doc in place and saves to database)
-	"""
+	"""Sync attendance_request_reason from the linked Attendance Request explanation (idempotent)."""
 	if not attendance_doc:
 		return
-	
-	# Validate prerequisites
+
 	if not hasattr(attendance_doc, 'attendance_request') or not attendance_doc.attendance_request:
 		return
-	
+
 	if not attendance_doc.meta.has_field("attendance_request_reason"):
 		return
-	
+
 	try:
-		# Always read from the linked Attendance Request (not from document name)
 		explanation = frappe.db.get_value(
 			"Attendance Request",
 			attendance_doc.attendance_request,
 			"explanation"
 		)
-		
-		# Normalize None to empty string for comparison
+
 		explanation = explanation or ""
 		current_value = attendance_doc.get("attendance_request_reason") or ""
-		
-		# Only update if different (idempotent)
+
 		if current_value != explanation:
-			# Use db_set to ensure it works for submitted documents
+			# db_set so it works for submitted documents.
 			frappe.db.set_value(
 				"Attendance",
 				attendance_doc.name,
@@ -583,8 +483,7 @@ def sync_attendance_request_reason(attendance_doc):
 				update_modified=False
 			)
 			frappe.db.commit()
-			
-			# Update the document object as well
+
 			attendance_doc.attendance_request_reason = explanation
 	except Exception as e:
 		frappe.log_error(
@@ -595,33 +494,23 @@ def sync_attendance_request_reason(attendance_doc):
 		)
 
 def populate_attendance_reason_after_insert(doc, method=None):
-	"""
-	Hook: Called after Attendance is inserted.
-	Calls the core sync function to populate attendance_request_reason.
-	"""
 	sync_attendance_request_reason(doc)
 
 
 def populate_attendance_reason_after_submit(doc, method=None):
-	"""
-	Hook: Called after Attendance is submitted.
-	Calls the core sync function to populate attendance_request_reason.
-	Works for submitted documents as well.
-	"""
 	sync_attendance_request_reason(doc)
 
 
-# Workflow states in which an Attendance Request has "reserved" its monthly edit count:
-# it has been sent for approval (or already approved). A Draft (still being prepared) or a
-# Rejected request reserves nothing — rejecting releases the count.
+# States in which a request has "reserved" its monthly edit count (sent for approval or
+# approved). Draft and Rejected reserve nothing.
 RESERVED_EDIT_STATES = ("Pending RM Approval", "Pending HR Approval", "Approved")
 
 
 def get_reserved_request_names(employee, month_start, next_month, exclude=None):
-	"""Names of the employee's requests in the month whose edits are reserved against the
-	monthly limit. A request counts once it is sent for approval or approved; Draft and
-	Rejected/Cancelled do not. Pre-workflow requests (no workflow_state) fall back to
-	docstatus — a submitted one counts, a draft does not.
+	"""Names of the month's requests whose edits are reserved against the monthly limit.
+
+	Counts once sent for approval or approved. Pre-workflow requests (no workflow_state)
+	fall back to docstatus.
 	"""
 	candidates = frappe.get_all(
 		"Attendance Request",
@@ -646,15 +535,10 @@ def get_reserved_request_names(employee, month_start, next_month, exclude=None):
 
 
 def count_attendance_request_edits(parents):
-	"""Total punch edits across the given Attendance Requests.
-
-	An "edit" is a ticked 'Edit Check-in' or 'Edit Check-out' checkbox in the request's details,
-	so a request that edits both a check-in and a check-out counts as 2. A left-blank punch (box
-	unticked) is not an edit.
-	"""
+	"""Total punch edits (ticked Edit Check-in / Check-out boxes) across the requests."""
 	if not parents:
 		return 0
-	# On Duty specifies duty times, not missing-punch edits — exclude those requests.
+	# On Duty specifies duty times, not missing-punch edits, so exclude those.
 	parents = [
 		p for p in parents
 		if frappe.db.get_value("Attendance Request", p, "reason") != "On Duty"
@@ -676,12 +560,7 @@ def count_attendance_request_edits(parents):
 
 @frappe.whitelist()
 def get_monthly_request_status(employee, on_date=None, current=None):
-	"""Monthly check-in/check-out edit allowance for the form banner.
-
-	Mirrors CustomAttendanceRequest._enforce_monthly_limit: counts the punch EDITS (each filled
-	check-in or check-out) across the employee's non-cancelled requests in the month of `on_date`,
-	excluding the request currently being edited. HR Managers are exempt (no limit).
-	"""
+	"""Monthly check-in/check-out edit allowance for the form banner. HR Managers are exempt."""
 	if not employee:
 		return {}
 	on_date = getdate(on_date) if on_date else getdate()
@@ -691,8 +570,6 @@ def get_monthly_request_status(employee, on_date=None, current=None):
 	user = frappe.db.get_value("Employee", employee, "user_id")
 	exempt = bool(user) and "HR Manager" in frappe.get_roles(user)
 
-	# Only requests already sent for approval (or approved) reserve the count; Drafts and
-	# Rejected requests don't.
 	others = get_reserved_request_names(employee, month_start, next_month, current)
 	used = count_attendance_request_edits(others)
 	limit = 4
@@ -706,14 +583,7 @@ def get_monthly_request_status(employee, on_date=None, current=None):
 
 
 def create_attendance_request_client_script():
-	"""Client script for Attendance Request.
-
-	- Shows From/To only for the 'On Duty' reason; otherwise a single Date field drives
-	  From/To (rules 3 & 7).
-	- Loads the per-day "Old vs New" in/out grid (old read-only, new editable).
-	- Does NOT mutate Employee Checkin / Attendance. Those are applied only when the
-	  request is approved (submitted), server-side (rule 4).
-	"""
+	"""Install the Attendance Request form client script (date toggles + old/new punch grid)."""
 
 	script = """
 frappe.ui.form.on('Attendance Request', {
@@ -922,7 +792,6 @@ frappe.ui.form.on('Attendance Request', {
 });
 """
 
-	# Create or update client script
 	try:
 		if frappe.db.exists("Client Script", "Attendance Request - Check-in/Check-out Management"):
 			client_script = frappe.get_doc("Client Script", "Attendance Request - Check-in/Check-out Management")
@@ -1047,10 +916,9 @@ frappe.ui.form.on('Employee Checkin', {
     }
 });
 """
-    # Use a descriptive name for the script
     script_name = "Employee Checkin - Restrictions and Sync"
-    
-    # Check if old name exists and rename it or just use it
+
+    # Rename the old script if it's still around, else create/update by name.
     old_script_name = "Employee Checkin Sync Button"
     if frappe.db.exists("Client Script", old_script_name):
         frappe.db.set_value("Client Script", old_script_name, {
@@ -1074,32 +942,27 @@ frappe.ui.form.on('Employee Checkin', {
 
 
 def validate_saturday_attendance_threshold(doc, method):
-	"""
-	On a Saturday, override the attendance status using the Saturday-specific working-hour
-	thresholds on the Shift Type:
-	  - below `saturday_working_hours_threshold_for_absent`   -> Absent
-	  - below `saturday_working_hours_threshold_for_half_day` -> Half Day
-	  - otherwise                                             -> Present
-	When the absent threshold is left 0 it stays the legacy two-way behaviour
-	(below the Present threshold -> Absent, else Present). The half-day threshold falls
-	back to the legacy `saturday_working_hours_threshold` (Present) when not set.
+	"""Override Saturday attendance status from the Shift Type's Saturday hour thresholds.
+
+	Absent-threshold 0 keeps the legacy two-way behaviour; half-day falls back to the
+	legacy saturday_working_hours_threshold when not set.
 	"""
 	if doc.docstatus == 2:
 		return
 
-	# Do not override leaves (including half-day leave) or holidays
+	# Don't override leaves or holidays.
 	if doc.status in ["On Leave", "Holiday"] or doc.get("leave_application") or doc.get("leave_type"):
 		return
-		
-	# 0 is Monday, 5 is Saturday
+
+	# weekday 5 == Saturday.
 	from frappe.utils import getdate, flt
 	if getdate(doc.attendance_date).weekday() != 5:
 		return
-		
+
 	if not doc.shift:
 		return
-		
-	# Saturday-specific thresholds; half-day falls back to the legacy Present threshold.
+
+	# Half-day falls back to the legacy Present threshold.
 	half_day_threshold = flt(
 		frappe.db.get_value("Shift Type", doc.shift, "saturday_working_hours_threshold_for_half_day")
 	)
@@ -1114,8 +977,8 @@ def validate_saturday_attendance_threshold(doc, method):
 	if not (half_day_threshold or absent_threshold):
 		return
 
-	# Only override once check-ins have produced working hours; otherwise let HRMS
-	# auto-attendance handle the no-checkin case (Absent).
+	# Only override once check-ins have produced working hours; else leave the no-checkin
+	# case to HRMS auto-attendance (Absent).
 	working_hours = flt(doc.working_hours)
 	if working_hours <= 0:
 		return
@@ -1138,17 +1001,8 @@ def validate_saturday_attendance_threshold(doc, method):
 
 
 def half_day_status_from_threshold(shift, status, working_hours, has_leave):
-	"""Return the working ("other") half's status for a half-day *leave* attendance.
-
-	When an employee takes a half-day leave (first or second half), the remaining half
-	is a working half. If the hours actually worked fall short of the shift's
-	`working_hours_threshold_for_half_day`, the other half is "Absent"; otherwise
-	"Present". Returns None when the rule does not apply (not a half-day leave, no
-	shift, no threshold configured, or no working hours yet).
-
-	We only decide once check-ins have produced working hours (> 0), so the other half
-	is never marked Absent before the workday has actually happened. The genuine "never
-	checked in" case is still handled by HRMS's mark_absent_for_half_day_dates at sync.
+	"""Working ("other") half status for a half-day leave: Absent below the shift's
+	half-day threshold, else Present. None when the rule doesn't apply or no hours yet.
 	"""
 	from frappe.utils import flt
 
@@ -1165,13 +1019,7 @@ def half_day_status_from_threshold(shift, status, working_hours, has_leave):
 
 
 def mark_half_day_absent_below_threshold(doc, method):
-	"""Attendance `validate` hook: set half_day_status for half-day leave attendances.
-
-	Mirrors `validate_saturday_attendance_threshold`. Covers every path that saves the
-	Attendance document (draft saves, manual edits, HRMS reprocessing). The submitted
-	`frappe.db.set_value` fast-path in `update_attendance_times` bypasses validate, so it
-	applies the same helper directly.
-	"""
+	"""Attendance validate hook: set half_day_status for half-day leave attendances."""
 	if doc.docstatus == 2:
 		return
 
@@ -1185,17 +1033,13 @@ def mark_half_day_absent_below_threshold(doc, method):
 		doc.modify_half_day_status = 0
 
 
-# ---------------------------------------------------------------------------
 # Attendance Request per-day detail helpers (old vs new in/out times)
-# ---------------------------------------------------------------------------
 
 def get_assigned_shift_times(employee, date, ar_shift=None):
 	"""Return (in_datetime, out_datetime) for the employee's shift on `date`.
 
-	Tries shift candidates in priority order and uses the first that resolves to a real
-	Shift Type with times: the request's own shift -> the attendance record's shift for the
-	date (same source the attendance uses) -> Employee.default_shift -> the Shift Assignment
-	(get_employee_shift). Returns (None, None) when nothing resolves.
+	Tries shift candidates in priority order (request shift, attendance shift, default
+	shift, Shift Assignment) and uses the first Shift Type with times, else (None, None).
 	"""
 	if not employee or not date:
 		return None, None
@@ -1205,8 +1049,7 @@ def get_assigned_shift_times(employee, date, ar_shift=None):
 	if ar_shift:
 		candidates.append(ar_shift)
 
-	# The shift already on the attendance for this date (what create_or_update_attendance
-	# uses) — ensures the created check-ins line up with the attendance times.
+	# The shift already on the attendance keeps created check-ins aligned with it.
 	att_shift = frappe.db.get_value(
 		"Attendance",
 		{"employee": employee, "attendance_date": date, "docstatus": ["<", 2]},
@@ -1233,10 +1076,8 @@ def get_assigned_shift_times(employee, date, ar_shift=None):
 	except Exception:
 		pass
 
-	# Direct Shift Assignment lookup covering the date — catches assignments that the above
-	# miss: an open-ended one (no end_date, which HRMS's get_active_shifts skips) or one that
-	# has expired to status Inactive (which get_employee_shift skips). This lets a backdated
-	# On Duty still resolve the employee's shift.
+	# Direct Shift Assignment lookup covering the date, catching open-ended or expired
+	# assignments the helpers above skip (lets a backdated On Duty resolve its shift).
 	sa = frappe.get_all(
 		"Shift Assignment",
 		filters=[
@@ -1268,11 +1109,7 @@ def get_assigned_shift_times(employee, date, ar_shift=None):
 
 
 def gather_day_info(employee, date):
-	"""Collect existing (old) in/out check-ins + names, the current attendance status,
-	and default new in/out (existing punch, else assigned-shift time) for one day.
-
-	Shared by the form populate method and the server-side row sync so both agree.
-	"""
+	"""Existing in/out check-ins + names, current attendance status, and default new in/out for one day."""
 	date = getdate(date)
 	date_start = get_datetime(f"{date} 00:00:00")
 	date_end = get_datetime(f"{date} 23:59:59")
@@ -1302,9 +1139,8 @@ def gather_day_info(employee, date):
 		"old_in_checkin": ins[0].name if ins else None,
 		"old_out_checkin": outs[0].name if outs else None,
 		"status": status or "",
-		# New time starts from the existing punch only; a missing punch stays BLANK in
-		# the form (no shift pre-fill — still editable). The On Duty shift fallback is
-		# applied on submit, not pre-filled here.
+		# New time starts from the existing punch; a missing punch stays blank (the On Duty
+		# shift fallback is applied on submit, not pre-filled here).
 		"default_in_time": old_in,
 		"default_out_time": old_out,
 	}
@@ -1312,13 +1148,10 @@ def gather_day_info(employee, date):
 
 @frappe.whitelist()
 def build_attendance_request_details(employee, from_date, to_date, reason=None):
-	"""Rows for the two Attendance Request tables, one entry per date in the range:
-	  - details: the editable Check-in/Check-out table — date + current attendance status
-	    (Check-in/Check-out left blank for the user to fill).
-	  - logs: the read-only Existing Check-in Logs table — date + existing in/out.
+	"""Read-only rows for the two Attendance Request tables (editable details + existing logs).
 
-	Read-only helper for the client; it never mutates check-ins or attendance.
-	Visibility: non-HR-Manager callers are restricted to their own Employee record.
+	Never mutates check-ins or attendance. Non-HR-Manager callers are restricted to their
+	own Employee record.
 	"""
 	if "HR Manager" not in frappe.get_roles():
 		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")

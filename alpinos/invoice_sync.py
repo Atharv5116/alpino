@@ -1,18 +1,10 @@
-"""Invoice PDF integration (spec §5) — Excel-driven.
+"""Invoice PDF integration (spec §5), driven from the Invoice Sync page.
 
-Workflow (driven from the "Invoice Sync" page):
-  1. Download the Accounts Format report as Excel (Invoice No column blank).
-  2. Accounts fill the Invoice No against each Sales Order and re-upload the Excel.
-  3. process_invoice_excel() reads Sales Order Id <-> Invoice No, stores the invoice number on
-     each Sales Order, then (if Drive is configured) fetches the matching PDF
-     (filename == Invoice No) from the Drive folder structure  <root> -> <Month>  and attaches
-     it. The invoice is shown on the Sales Order only once its status is Dispatched.
-
-Drive note: the shared folder IS the F.Y. folder and contains month sub-folders directly
-(April / May / June ...). Configure Drive Root Folder ID = that folder and leave FY Label blank.
-Requires google libs in the bench env:  bench pip install google-api-python-client google-auth
-Google is lazy-imported so the app loads fine before libs/credentials exist; setting the invoice
-number from the Excel works even without Drive configured (only PDF fetch needs it).
+Download the Accounts Format report as Excel, fill in the Invoice No per Sales Order and
+re-upload; process_invoice_excel stores the number on each order and, when Drive is
+configured, fetches and attaches the matching PDF (filename == Invoice No) from the
+<root>/<Month> folder. Google libs are lazy-imported, so setting the invoice number
+works even without Drive configured.
 """
 
 import io
@@ -97,10 +89,8 @@ def download_report_excel(from_date, to_date, channel=None, customer=None, custo
 
 # ── upload + process ────────────────────────────────────────────────────────
 def _set_invoice_no_retry(so_id, invoice_no, attempts=3):
-	"""Write the SO's invoice no in its OWN short transaction and commit, so the row
-	lock is released immediately (never held across the slow Drive fetch). Retries
-	briefly on a row-lock timeout (1205) so one busy Sales Order doesn't fail the whole
-	upload. Returns True on success."""
+	"""Write the SO's invoice no in its own short transaction, retrying on a row-lock
+	timeout (1205) so one busy order doesn't fail the upload. Returns True on success."""
 	import time
 
 	for i in range(attempts):
@@ -147,8 +137,8 @@ def process_invoice_excel(file_url):
 			continue
 		so_id = str(r[so_idx]).strip() if r[so_idx] is not None else ""
 		invoice = str(r[inv_idx]).strip() if len(r) > inv_idx and r[inv_idx] is not None else ""
-		# Only the LAST 4 characters are the actual Invoice ID (e.g. "abcd4567" ->
-		# "4567") — that's what the SO stores and what the Drive PDF is named by.
+		# Only the last 4 characters are the actual Invoice ID (e.g. "abcd4567" -> "4567");
+		# that's what the SO stores and what the Drive PDF is named by.
 		if invoice:
 			invoice = invoice[-4:]
 		if so_id and invoice:
@@ -157,9 +147,8 @@ def process_invoice_excel(file_url):
 	if not mapping:
 		frappe.throw(_("No valid Sales Order / Invoice rows found in the sheet."))
 
-	# Process in the background — a large sheet with a per-SO Drive fetch each would
-	# otherwise exceed the web-request (gateway) timeout (504). Results land in the
-	# Invoice Sync Log.
+	# Process in the background; a large sheet with a per-SO Drive fetch would otherwise
+	# exceed the gateway timeout (504). Results land in the Invoice Sync Log.
 	frappe.enqueue(
 		"alpinos.invoice_sync._run_invoice_sync",
 		queue="long",
@@ -177,9 +166,8 @@ def process_invoice_excel(file_url):
 
 
 def _run_invoice_sync(mapping):
-	"""Background worker: per Sales Order store the invoice number (its own short
-	transaction) and, when Drive is configured, fetch + attach the invoice PDF. Every
-	outcome is written to the Invoice Sync Log."""
+	"""Background worker: store each invoice number and, when Drive is configured, fetch
+	and attach the PDF. Every outcome is written to the Invoice Sync Log."""
 	s = _settings()
 	drive = None
 	if _drive_enabled(s):
@@ -196,9 +184,8 @@ def _run_invoice_sync(mapping):
 			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order not found")
 			frappe.db.commit()
 			continue
-		# Each SO update is its own short transaction (commit inside the helper), so the
-		# row lock never stays held during the slow Drive fetch below — this is what was
-		# causing the 1205 "Lock wait timeout" on bulk uploads.
+		# Each SO update is its own short transaction, so the row lock isn't held during
+		# the slow Drive fetch below (this caused 1205 lock-wait timeouts on bulk uploads).
 		if not _set_invoice_no_retry(so_id, invoice_no):
 			skipped.append(f"{so_id} (locked)")
 			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order was locked — try again")
@@ -214,7 +201,7 @@ def _run_invoice_sync(mapping):
 			log_invoice_sync(so_id, invoice_no, "Success", "Invoice PDF already present")
 			frappe.db.commit()
 			continue
-		# Slow network fetch — no SO row lock is held at this point.
+		# Slow network fetch; no SO row lock is held here.
 		fetched_url, err = _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext)
 		if err:
 			missing.append(f"{invoice_no} ({err})")
@@ -236,10 +223,8 @@ def _run_invoice_sync(mapping):
 
 
 def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None):
-	"""Resolve the month folder, find the invoice PDF (filename == invoice_no) and attach it to
-	the Sales Order's custom_invoice_pdf. Returns (file_url, error): error is a short string when
-	the folder/PDF isn't found, else None with file_url set. Shared by the bulk Excel sync and
-	the single-order resync."""
+	"""Find the invoice PDF (filename == invoice_no) and attach it to the Sales Order's
+	custom_invoice_pdf. Returns (file_url, error) with error set when the folder/PDF isn't found."""
 	ext = ext or (s.get("pdf_extension") or ".pdf")
 	so_date = frappe.db.get_value("Sales Order", so_id, "transaction_date")
 	month = _month_label(so_date) if so_date else None
@@ -269,9 +254,7 @@ def can_resync_invoices():
 
 @frappe.whitelist()
 def resync_invoices_bulk(sales_orders):
-	"""Resync invoice PDFs for many Sales Orders at once (any order type / channel).
-	Each order is logged to the Invoice Sync Log; returns per-order results + counts so
-	the list page can report "Invoice Resynced Successfully (N)" and keep its selection."""
+	"""Resync invoice PDFs for many Sales Orders; logs each and returns per-order results + counts."""
 	import json
 
 	if isinstance(sales_orders, str):
@@ -306,8 +289,7 @@ def resync_invoices_bulk(sales_orders):
 
 @frappe.whitelist()
 def resync_invoice_pdf(sales_order):
-	"""Re-fetch a single Sales Order's invoice PDF from Drive: remove the currently attached PDF
-	and pull it fresh (filename == the order's Invoice No). Accounts-only feature."""
+	"""Re-fetch a single Sales Order's invoice PDF from Drive, replacing any attached copy."""
 	if not (_INVOICE_RESYNC_ROLES & set(frappe.get_roles())):
 		frappe.throw(_("You are not permitted to resync invoice PDFs."), frappe.PermissionError)
 	if not sales_order or not frappe.db.exists("Sales Order", sales_order):
@@ -356,11 +338,11 @@ def _file_content(file_url):
 
 # ── Drive helpers ───────────────────────────────────────────────────────────
 def _folder_id(value):
-	"""Return a bare Drive folder ID from either an ID or a pasted Drive URL, e.g.
-	'https://drive.google.com/drive/folders/<id>?usp=sharing',
-	'https://drive.google.com/drive/u/0/folders/<id>' or '.../open?id=<id>'.
-	People routinely paste the whole URL into Drive Root Folder ID; feeding that to the
-	API as a parent id gives a 404 'File not found', so normalise it here."""
+	"""Return a bare Drive folder ID from either an ID or a pasted Drive URL.
+
+	People routinely paste the whole URL into Drive Root Folder ID, which the API rejects
+	as a parent id, so normalise it here.
+	"""
 	v = (value or "").strip()
 	if not v:
 		return ""
@@ -384,13 +366,13 @@ def _child_folder(drive, parent_id, name):
 
 
 def _resolve_month_folder(drive, root_id, fy_label, month, cache):
-	"""root (the F.Y. folder) -> month. If fy_label is set, descend through it first."""
+	"""Resolve the month sub-folder under the root; descend through fy_label first if set."""
 	if not month:
 		return None
 	key = (fy_label, month)
 	if key in cache:
 		return cache[key]
-	# root_id may be a pasted Drive URL — reduce it to the bare folder ID.
+	# root_id may be a pasted Drive URL; reduce it to the bare folder ID.
 	parent = _folder_id(root_id)
 	if fy_label:
 		parent = _child_folder(drive, parent, fy_label)

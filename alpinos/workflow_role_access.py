@@ -1,21 +1,7 @@
-"""Operations & Sales workflow — roles, access permissions and status fields.
+"""Operations & Sales workflow roles, DocPerm matrix and workflow status fields.
 
-Code-driven so the whole thing is recreated idempotently on every
-`bench migrate` (registered in hooks.after_migrate). Three things are set up:
-
-1. **Roles** — the ten Operations / Offline-Sales roles from the access spec.
-2. **Permissions** — a Custom DocPerm matrix on Sales Order / Pick List /
-   Delivery Note that mirrors the Roles & Access table. Submit rights are
-   granted where the workflow narrative requires them (Sales Manager submits
-   Sales Orders; DN User / Warehouse User submit Delivery Notes).
-3. **Workflow status fields** — `custom_workflow_status` Select fields on Sales
-   Order and Pick List holding the spec's status list. These are tracking
-   fields the (later) transition engine will drive; they do NOT touch the
-   native `status` field.
-
-NOTE: this pass intentionally sets up the *data* (roles, perms, status
-options) only. The transition/validation/notification engine is a separate
-build.
+Recreated idempotently on every migrate (hooks.after_migrate). Sets up the data only;
+the transition/validation/notification engine is a separate build.
 """
 
 import frappe
@@ -27,8 +13,7 @@ from frappe.permissions import add_permission, update_permission_property
 # 1. Roles
 # ---------------------------------------------------------------------------
 
-# role_name -> description. All desk roles. Sales Manager / Sales User already
-# ship with ERPNext; we skip those that already exist (creation is idempotent).
+# role_name -> description; roles that already exist (e.g. Sales Manager/User) are skipped
 ROLES = {
 	"Warehouse Admin": "Operations: view Sales Orders; full access to Pick List and Delivery Note.",
 	"Warehouse Manager": "Operations: view Sales Orders; full access to Pick List and Delivery Note.",
@@ -66,8 +51,7 @@ def _setup_roles():
 # Base read-only bundle shared by every access level.
 _VIEW = {"read", "print", "email", "report", "export"}
 
-# Every ptype this module manages. On each migrate we set each one explicitly
-# (granted -> 1, otherwise -> 0) so the row always converges to the matrix.
+# every ptype this module manages; each is set explicitly so the row converges to the matrix
 _MANAGED_PTYPES = (
 	"read",
 	"write",
@@ -87,34 +71,29 @@ _MANAGED_PTYPES = (
 def _level_ptypes(level):
 	"""Map an access level from the spec to the set of granted ptypes."""
 	if level == "FULL":
-		# create / edit / submit / cancel / delete / amend everywhere applicable
 		return _VIEW | {"write", "create", "delete", "submit", "cancel", "amend", "share"}
 	if level == "VIEW":
 		return set(_VIEW)
 	if level == "EDIT":
-		# modify existing records only (no create / submit / cancel / delete)
+		# edit existing records only
 		return _VIEW | {"write"}
 	if level == "EDIT_SUBMIT":
-		# EDIT plus submit — DN User / Warehouse User submit Delivery Notes
 		return _VIEW | {"write", "submit"}
 	if level == "SO_SALES_MANAGER":
-		# VIEW / CREATE / EDIT plus submit + cancel per SO workflow + cancellation rules
 		return _VIEW | {"write", "create", "submit", "cancel"}
 	if level == "SO_CREATE_SUBMIT":
-		# VIEW / CREATE / EDIT / submit — no cancel (E-Commerce Coordinator)
+		# view/create/edit/submit, no cancel
 		return _VIEW | {"write", "create", "submit"}
 	if level == "CREATE_EDIT":
-		# masters (non-submittable): view + create + edit
+		# masters: view/create/edit
 		return _VIEW | {"write", "create"}
 	if level == "MASTER_FULL":
-		# masters (non-submittable): full control without submit/cancel/amend
+		# masters: full control, no submit/cancel/amend
 		return _VIEW | {"write", "create", "delete", "share"}
 	raise ValueError(f"Unknown access level: {level}")
 
 
-# doctype -> { role -> level }.  Roles omitted for a doctype get N/A (no row).
-# PL Manager / DN Manager rows are used exactly as written in the spec table
-# (PL Manager -> Delivery Note FULL, DN Manager -> Pick List FULL).
+# doctype -> {role -> level}; roles omitted for a doctype get no row
 PERMISSION_MATRIX = {
 	"Sales Order": {
 		"Warehouse Admin": "VIEW",
@@ -122,13 +101,11 @@ PERMISSION_MATRIX = {
 		"Sales Admin": "FULL",
 		"Sales Manager": "SO_SALES_MANAGER",
 		"Sales User": "VIEW",
-		# E-Com channel (BRD): Coordinator creates/submits, Manager may cancel,
-		# Admin has full control. Channel separation is by the entry pages/list
-		# filters — docperms are on the shared Sales Order doctype.
+		# E-Com: Coordinator creates/submits, Manager may cancel, Admin full; channel split is by the entry pages
 		"E-Commerce Coordinator": "SO_CREATE_SUBMIT",
 		"E-Commerce Manager": "SO_SALES_MANAGER",
 		"E-Commerce Admin": "FULL",
-		# Accounts: read-only visibility into SO / PL / DN (view lists + open records).
+		# Accounts: read-only
 		"Accounts User": "VIEW",
 	},
 	"Pick List": {
@@ -159,17 +136,14 @@ PERMISSION_MATRIX = {
 		"E-Commerce Admin": "VIEW",
 		"Accounts User": "VIEW",
 	},
-	# Item master: available to Warehouse Manager + Sales Manager (read-only) and
-	# Sales Admin (full control). The "admin" in the access spec is the Sales Admin role,
-	# NOT System Manager (that was a misread — corrected here). Existing standard Item
-	# roles are left untouched; the stale System Manager grant is revoked in _REVOKE below.
+	# Item master: read-only for Warehouse/Sales Manager, full for Sales Admin
+	# (the spec's "admin" is Sales Admin, not System Manager, which is revoked in _REVOKE)
 	"Item": {
 		"Warehouse Manager": "VIEW",
 		"Sales Manager": "VIEW",
 		"Sales Admin": "MASTER_FULL",
 	},
-	# BRD Module 1: the E-Commerce roles own the (E-Com) Buyer Master.
-	# Non-ECOM roles keep their read-only access from the supporting-masters list.
+	# E-Commerce roles own the Buyer Master; other roles keep read-only from the supporting list
 	"Buyer Master": {
 		"E-Commerce Coordinator": "CREATE_EDIT",
 		"E-Commerce Manager": "CREATE_EDIT",
@@ -179,10 +153,8 @@ PERMISSION_MATRIX = {
 
 
 def _grant(doctype, role, level):
-	"""Ensure a permlevel-0 Custom DocPerm row for (doctype, role) and set every
-	managed ptype to match `level`. Idempotent."""
+	"""Ensure a permlevel-0 Custom DocPerm row for (doctype, role) matching level. Idempotent."""
 	granted = _level_ptypes(level)
-	# Ensure the row exists (no-op + alert if it already does).
 	add_permission(doctype, role, 0)
 	for ptype in _MANAGED_PTYPES:
 		update_permission_property(
@@ -196,15 +168,13 @@ def _setup_permissions():
 	for doctype, role_levels in PERMISSION_MATRIX.items():
 		for role, level in role_levels.items():
 			_grant(doctype, role, level)
-		# Validate once per doctype after the whole matrix is applied so we
-		# never trip on a transient half-configured row.
+		# validate once the whole matrix is applied, not mid-way
 		validate_permissions_for_doctype(doctype)
 		frappe.clear_cache(doctype=doctype)
 
 
-# Custom DocPerm rows a previous pass created that the matrix above no longer wants —
-# removed so the matrix stays the single source of truth. (Item's "admin" moved from
-# System Manager to Sales Admin, so the old System Manager Item grant is dropped.)
+# Custom DocPerm rows an earlier pass created that the matrix no longer wants
+# (Item's admin moved from System Manager to Sales Admin)
 _REVOKE = {
 	"Item": ["System Manager"],
 }
@@ -220,16 +190,12 @@ def _revoke_stale_perms():
 		frappe.clear_cache(doctype=doctype)
 
 
-# Custom desk pages -> extra roles allowed to OPEN them (page-level access only). The
-# DocPerm matrix still governs what they can DO once inside — Warehouse roles are VIEW-only
-# on the Sales Order, so they open these pages read-only. The e-com list opens each order in
-# 'sales-order-entry-view', so granting that page covers the e-com "view" too. Applied via a
-# direct Has Role insert (never page.save(), which rewrites the JSON in developer_mode);
-# runs in after_migrate, AFTER the page JSON sync, so the extra roles survive every migrate.
+# Custom desk pages -> extra roles allowed to open them (page-level access only; the DocPerm
+# matrix still governs what they can do inside). Applied via a direct Has Role insert rather
+# than page.save() (which rewrites the JSON in developer_mode), after the page JSON sync.
 PAGE_ACCESS = {
 	"sales-order-entry-list": ["Warehouse Admin"],
-	# The e-com list opens each order in sales-order-entry-view, so the E-Commerce roles
-	# need access to that shared view page too (alongside Warehouse Admin).
+	# the e-com list opens each order in sales-order-entry-view, so those roles need it too
 	"sales-order-entry-view": [
 		"Warehouse Admin",
 		"E-Commerce Admin",
@@ -261,12 +227,9 @@ def _setup_page_access():
 	frappe.clear_cache()
 
 
-# Supporting master/transaction doctypes that SO/PL/DN creation and processing
-# read behind the scenes (addresses on render, items, stock, batches, taxes,
-# the offline-buyer master, etc.). The 10 spec roles are standalone — a user
-# holding only e.g. "Warehouse Admin" otherwise hits PermissionError reading an
-# Item or Address. We grant READ-ONLY so the frontend flows work without
-# widening write access. Read-only on masters is operationally harmless.
+# Supporting masters/transactions that SO/PL/DN creation reads behind the scenes. The spec
+# roles are standalone, so a user holding only e.g. Warehouse Admin would otherwise hit a
+# PermissionError reading an Item or Address; grant read-only so the frontend flows work.
 SUPPORTING_READ_DOCTYPES = [
 	"Item",
 	"Item Group",
@@ -291,8 +254,7 @@ SUPPORTING_READ_DOCTYPES = [
 	"Item Price",
 ]
 
-# Read access goes to every operational + sales role so all of them can see the
-# masters they touch while creating/processing documents.
+# read access for every operational + sales role
 SUPPORTING_READ_ROLES = [
 	"Warehouse Admin",
 	"Warehouse Manager",
@@ -320,7 +282,7 @@ def _setup_supporting_read_access():
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		for role in SUPPORTING_READ_ROLES:
-			# Don't touch a role that already has its own (possibly wider) perm row.
+			# leave a role that already has its own (possibly wider) perm row
 			if frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0}):
 				continue
 			add_permission(doctype, role, 0)
@@ -447,27 +409,18 @@ def _setup_status_fields():
 			),
 		],
 	}
-	# ignore_validate=True skips the doctype-wide field re-validation that
-	# create_custom_fields triggers on insert. Sales Order's `company` field is
-	# intentionally hidden by this app (offline-buyer flow auto-sets it) while
-	# remaining mandatory — a state Frappe's check_hidden_and_mandatory rejects.
-	# We only add a Select tracking field here, so skipping that unrelated
-	# whole-doctype check is safe and avoids breaking migrate.
+	# ignore_validate=True skips the doctype-wide field re-validation create_custom_fields
+	# triggers; Sales Order's hidden-but-mandatory `company` field would otherwise fail it.
 	create_custom_fields(custom_fields, ignore_validate=True, update=True)
 
 
 @frappe.whitelist()
 def get_workflow_team_users(doctype, include_users=None):
-	"""Enabled System Users holding any of the workflow roles defined for the
-	doctype in PERMISSION_MATRIX (the warehouse + sales teams). Used by the
-	Assign To / QC dropdowns on the Pick List and Delivery Note entry pages so
-	they only offer workflow team members instead of every user on the site.
+	"""Enabled System Users holding a workflow role for the doctype, for the Assign To / QC dropdowns.
 
-	Names passed in include_users are appended even without a matching role so
-	documents with an existing (legacy) assignee still display their value."""
-	# Only roles that can ACT on the doc (write / create / submit) are assignable — a
-	# VIEW-only role (e.g. Accounts User) is a read-only observer, not a picker/QC, so it
-	# must not appear in the Assign To / QC dropdowns.
+	include_users are appended even without a matching role, so a legacy assignee still shows.
+	"""
+	# only roles that can act on the doc (write/create/submit) are assignable, not VIEW-only observers
 	role_levels = PERMISSION_MATRIX.get(doctype) or {}
 	roles = [r for r, lvl in role_levels.items() if "write" in _level_ptypes(lvl)]
 	if not roles:
@@ -504,11 +457,10 @@ DN_ASSIGN_ROLES = ["DN User", "DN Manager"]
 
 @frappe.whitelist()
 def get_dn_assignable_users(include_users=None):
-	"""Enabled System Users holding the DN User or DN Manager role — the only
-	users offered in the Delivery Note 'Assigned To' dropdown on the entry page.
+	"""Enabled System Users holding DN User / DN Manager, for the Delivery Note 'Assigned To' dropdown.
 
-	Names in include_users are appended even without a matching role so a DN with
-	an existing (legacy) assignee still shows its value."""
+	include_users are appended even without a matching role, so a legacy assignee still shows.
+	"""
 	role_holders = frappe.get_all(
 		"Has Role",
 		filters={"role": ["in", DN_ASSIGN_ROLES], "parenttype": "User"},
@@ -534,8 +486,7 @@ def get_dn_assignable_users(include_users=None):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def dn_assigned_to_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Link-field query for Delivery Note.custom_assigned_to — restricts the
-	standard-form picker to DN User / DN Manager holders."""
+	"""Link-field query for Delivery Note.custom_assigned_to, limited to DN User / DN Manager holders."""
 	txt = txt or ""
 	return frappe.db.sql(
 		"""
@@ -570,12 +521,11 @@ def execute():
 	_revoke_stale_perms()
 	_setup_supporting_read_access()
 	_setup_page_access()
-	# Phase 2: bring existing Sales Orders / Pick Lists to a correct workflow
-	# status now that the fields exist. Idempotent.
+	# backfill existing Sales Orders / Pick Lists now the status fields exist
 	from alpinos.workflow_engine import backfill_workflow_statuses
 
 	backfill_workflow_statuses()
-	# Turn on native stock reservation so Pick List -> reserve, DN -> deduct.
+	# native stock reservation: Pick List reserves, DN deducts
 	from alpinos.stock_reservation import enable_stock_reservation
 
 	enable_stock_reservation()

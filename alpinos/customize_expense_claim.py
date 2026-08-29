@@ -1,8 +1,4 @@
-"""
-Customize Expense Claim DocType
-- Hide non-required fields in main Expense Claim doctype
-- Make hidden fields non-mandatory
-"""
+"""Customize the Expense Claim DocType."""
 
 import frappe
 from frappe.model.workflow import get_workflow_name
@@ -150,9 +146,7 @@ def add_reimbursement_child_table():
 		else:
 			print("   ⚠️  Warning: Some fields not found after creation")
 		
-		# Ensure section break and table are full width by setting column property
-		# Section breaks should naturally be full width, but ensure no column breaks affect it
-		# Check if there are any column breaks after reimbursement_section and hide them
+		# hide any column breaks after the section so it stays full width
 		try:
 			# Get the doctype to check field order
 			doc = frappe.get_doc("DocType", "Expense Claim")

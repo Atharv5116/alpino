@@ -1,19 +1,9 @@
-"""
-Update Employee Onboarding fields:
-- Change Job Applicant label to "Unique ID"
-- Hide Job Offer field and make it non-mandatory
-- Hide Employee Onboarding Template field
-- Make Status field editable by HR
-- Update Status field options
-"""
+"""Employee Onboarding field-property tweaks."""
 
 import frappe
 
 
 def update_employee_onboarding_fields():
-	"""Update Employee Onboarding field properties"""
-	
-	# 1. Change Job Applicant label to "Unique ID"
 	update_property_setter(
 		"Employee Onboarding",
 		"job_applicant",
@@ -21,8 +11,7 @@ def update_employee_onboarding_fields():
 		"Unique ID",
 		"Data"
 	)
-	
-	# 2. Remove reqd from Job Offer and hide it
+
 	update_property_setter(
 		"Employee Onboarding",
 		"job_offer",
@@ -38,7 +27,6 @@ def update_employee_onboarding_fields():
 		"Check"
 	)
 	
-	# 3. Hide Employee Onboarding Template field
 	update_property_setter(
 		"Employee Onboarding",
 		"employee_onboarding_template",
@@ -47,7 +35,6 @@ def update_employee_onboarding_fields():
 		"Check"
 	)
 	
-	# 4. Make Status field editable (remove read_only)
 	update_property_setter(
 		"Employee Onboarding",
 		"boarding_status",
@@ -56,7 +43,6 @@ def update_employee_onboarding_fields():
 		"Check"
 	)
 	
-	# 5. Update Status field options to match workflow states
 	status_options = (
 		"Draft\n"
 		"Email Sent\n"
@@ -70,7 +56,6 @@ def update_employee_onboarding_fields():
 		"Text"
 	)
 	
-	# 6. Update default status to "Draft"
 	update_property_setter(
 		"Employee Onboarding",
 		"boarding_status",
@@ -79,13 +64,10 @@ def update_employee_onboarding_fields():
 		"Data"
 	)
 	
-	# 7. Remove any filters from Job Applicant field to show all job applicants
-	# Clear any existing filters by setting filter to empty
+	# Clear any Job Applicant field filters so all applicants show.
 	try:
-		# Get the field definition
 		field = frappe.get_doc("DocField", {"parent": "Employee Onboarding", "fieldname": "job_applicant"})
 		if field:
-			# Remove any filters
 			if hasattr(field, 'filters'):
 				field.filters = ""
 				field.save(ignore_permissions=True)
@@ -97,7 +79,7 @@ def update_employee_onboarding_fields():
 
 
 def update_property_setter(doctype, fieldname, property_name, value, property_type="Data"):
-	"""Create or update a property setter"""
+	"""Create or update a property setter."""
 	try:
 		existing = frappe.db.exists(
 			"Property Setter",

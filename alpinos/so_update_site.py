@@ -1,16 +1,7 @@
-# Update the Site Name on specific Sales Orders and cascade every site-derived
-# field (billing/shipping GSTIN, billing/shipping address text, tax category +
-# tax template) exactly the way selecting a site on the entry page does.
-#
-# Reuses the app's own derivation:
-#   _gst_for_site                     -> site's GSTIN (owning Buyer Master)
-#   get_customer_addresses_for_display-> the site's billing/shipping address rows
-#   get_tax_template_for_sales_order  -> tax category + template from billing state
-#
-# Dry run by default: prints current -> new for every field and writes nothing.
-# Draft orders are re-saved (validate/GST sync + tax rebuild run cleanly). Submitted
-# orders are reported and skipped for now — changing their tax rows needs a separate
-# decision (see the dry-run output).
+# Update the Site Name on specific Sales Orders and cascade every site-derived field
+# (billing/shipping GSTIN + address text, tax category + template) the way the entry
+# page does, reusing the app's own derivation helpers. Dry run by default; draft orders
+# are re-saved, submitted orders are reported and skipped.
 #
 #   bench --site <site> execute alpinos.so_update_site.run
 #   bench --site <site> execute alpinos.so_update_site.run --kwargs "{'apply': 1}"
@@ -48,8 +39,8 @@ SITE_MAP = {
 
 
 def _derive(so, new_site):
-	"""What the site change should cascade to — mirrors the entry page."""
-	# Site-wise GST only — no fallback to the family parent's GSTIN (blank if unresolved).
+	"""Fields the site change should cascade, mirroring the entry page."""
+	# Site-wise GST only, no fallback to the family parent's GSTIN.
 	gstin = (_gst_for_site(new_site, "") or "").strip().upper()
 
 	addrs = get_customer_addresses_for_display(so.customer, new_site) or []
@@ -118,8 +109,7 @@ def run(apply=0):
 
 
 def _apply_draft(so, new_site, d):
-	"""Draft order: set the cascaded fields and re-save (validate GST sync + tax
-	template rebuild + totals recompute run the same as a manual edit)."""
+	"""Set the cascaded fields on a draft order and re-save, re-running GST + tax rebuild."""
 	so.custom_site_name = new_site
 	so.custom_billing_address_text = d["billing_text"]
 	so.custom_shipping_address_text = d["shipping_text"]

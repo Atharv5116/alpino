@@ -4,12 +4,11 @@ import requests
 from frappe.utils import get_datetime, now_datetime, add_days
 import xml.etree.ElementTree as ET
 
-# Defaults used to seed eSSL Settings the first time and as fall-backs when a
-# device row leaves the credential fields blank.
+# defaults for seeding eSSL Settings and as fallbacks for blank device credentials
 DEFAULT_API_URL = "http://103.250.149.126:85/iclock/WebAPIService.asmx"
 DEFAULT_USERNAME = "API"
 DEFAULT_PASSWORD = "Developer@123"
-# Pre-existing devices (serial number -> location category). Seeded once.
+# pre-existing devices, seeded once
 DEFAULT_DEVICES = [
 	{"serial_number": "NCD8252100411", "category": "Warehouse"},
 	{"serial_number": "NCD8252100444", "category": "Warehouse"},
@@ -47,12 +46,9 @@ def get_essl_devices():
 
 @frappe.whitelist()
 def sync_essl_logs(from_date=None, to_date=None, force=False, serial_numbers=None, category=None):
-	"""
-	Sync logs from eSSL biometric machine via Web API.
-	Can be called manually, from the sync dialog, or scheduled.
+	"""Sync logs from the eSSL biometric devices via Web API (manual, dialog, or scheduled).
 
-	serial_numbers : optional JSON list / list of serial numbers to sync.
-	category       : optional "HO" / "Warehouse" filter (ignored if blank/"All").
+	serial_numbers: optional list to sync; category: optional "HO"/"Warehouse" filter.
 	"""
 	if not from_date:
 		# Default to last 2 days to catch up
@@ -124,8 +120,7 @@ def fetch_logs_from_api(serial_number, from_date, to_date, api_url=None, usernam
 		'Content-Type': 'application/soap+xml; charset=utf-8'
 	}
 
-	# Ensure date format yyyy-MM-dd HH:mm as required by eSSL
-	# If to_date is datetime object, format it
+	# eSSL wants yyyy-MM-dd HH:mm
 	if not isinstance(to_date, str):
 		to_date = to_date.strftime("%Y-%m-%d %H:%M")
 
@@ -155,7 +150,6 @@ def fetch_logs_from_api(serial_number, from_date, to_date, api_url=None, usernam
 
 def process_logs(response_text, serial_number, category=None):
 	try:
-		# Check for error message in response result first
 		if "Unathorised User" in response_text:
 			frappe.log_error(title="eSSL Sync Error", message=f"eSSL API Unauthorised for SN {serial_number}")
 			return {"synced": 0, "fetched": 0, "duplicate": 0, "unmatched": [], "unauthorised": True}
@@ -198,8 +192,7 @@ def process_logs(response_text, serial_number, category=None):
 			elif status == "no_employee":
 				unmatched.add(detail or log["device_id"])
 			else:
-				# "error" / "bad_time" — previously swallowed silently; surface them so a
-				# fetched-but-not-created punch is never invisible. Full trace is in Error Log.
+				# "error"/"bad_time": surface them instead of swallowing (full trace in Error Log)
 				errors.append(detail or f"ID {log['device_id']} @ {log['timestamp_str']}")
 
 		return {
@@ -283,9 +276,7 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 		except Exception:
 			pass
 
-		# Fetch coordinates of the Shift Location matching THIS device's category
-		# (HO / Warehouse). Each category maps to a Shift Location of the same name,
-		# so punches are tagged with the location they actually came from.
+		# coordinates from the Shift Location named after this device's category (HO/Warehouse)
 		if category:
 			device_location = frappe.db.get_value(
 				"Shift Location", category, ["latitude", "longitude"], as_dict=True

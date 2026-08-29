@@ -1,4 +1,4 @@
-"""API helpers for Quotation → Sales Order Entry desk page."""
+"""API helpers for the Quotation to Sales Order Entry desk page."""
 
 import frappe
 from frappe import _

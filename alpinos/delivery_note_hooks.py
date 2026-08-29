@@ -7,11 +7,8 @@ from frappe.utils import flt
 
 
 def strip_non_batch_item_batches(doc, method=None):
-	"""Runs on before_validate (i.e. before ERPNext validates batches): batch_no
-	(a Link to Batch) must only carry real Batch masters on batch-tracked items,
-	otherwise the Delivery Note fails on submit with "Could not find Batch No: ...".
-	The code itself is preserved in custom_batch_code (free text) — the batch
-	mention must survive the whole cycle even without a Batch master."""
+	"""before_validate: keep batch_no only on batch-tracked items with a real Batch master,
+	preserving the typed code in custom_batch_code so it survives the whole cycle."""
 	if doc.get("is_return"):
 		return
 	meta_dn_item = frappe.get_meta("Delivery Note Item")
@@ -91,9 +88,8 @@ def _sync_items_from_pick_list(doc):
 			f = _box_factor(row.item_code) or 1
 			row.custom_box = ceil(flt(row.qty) / f) if flt(row.qty) else 0
 
-		# Free-text batch code always travels with the row; batch_no (Link) only
-		# for batch-tracked items with a real Batch master — anything else there
-		# fails DN batch validation on submit ("Could not find Batch No: ...").
+		# free-text batch code always travels with the row; batch_no (Link) only for
+		# batch-tracked items with a real Batch master, else DN batch validation fails on submit
 		if pli.get("custom_batch_code") and meta_dn_item.get_field("custom_batch_code"):
 			row.custom_batch_code = pli.get("custom_batch_code")
 
@@ -171,8 +167,7 @@ def _validate_dn_mandatory(doc):
 			frappe.throw(f"Row #{row.idx}: SKU is mandatory.")
 		if not flt(row.qty):
 			frappe.throw(f"Row #{row.idx}: Quantity is mandatory.")
-		# Box is no longer mandatory on the Delivery Note (validation removed per spec).
-		# Check if the item is batched in the Item master
+		# Box is no longer mandatory on the Delivery Note (per spec)
 		has_batch_no = frappe.db.get_value("Item", row.item_code, "has_batch_no") if row.item_code else 0
 		if has_batch_no:
 			if not row.batch_no:
@@ -181,7 +176,7 @@ def _validate_dn_mandatory(doc):
 				frappe.throw(f"Row #{row.idx}: MFG Date is mandatory.")
 			if meta_dn_item.get_field("custom_expiry_date") and not row.get("custom_expiry_date"):
 				frappe.throw(f"Row #{row.idx}: Expiry Date is mandatory.")
-		# Expiry must be on or after MFG whenever both are present (catches manual entry on the page).
+		# expiry must be on or after MFG when both are present
 		if row.get("custom_mfg_date") and row.get("custom_expiry_date"):
 			from frappe.utils import getdate
 			if getdate(row.custom_expiry_date) < getdate(row.custom_mfg_date):

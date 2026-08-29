@@ -1,6 +1,4 @@
-"""
-Configure Employee naming to allow manual entry (like Item Code)
-"""
+"""Configure Employee naming to allow manual entry (like Item Code)."""
 
 import frappe
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
@@ -9,8 +7,6 @@ from frappe.custom.doctype.property_setter.property_setter import make_property_
 def setup_employee_manual_naming():
 	"""Change Employee naming from auto-series to manual entry (prompt)"""
 	try:
-		# Change autoname from series to prompt
-		# This allows manual entry of Employee ID like Item Code
 		make_property_setter(
 			doctype="Employee",
 			fieldname=None,  # DocType level property
@@ -32,7 +28,6 @@ def setup_employee_manual_naming():
 def revert_employee_naming_to_series():
 	"""Revert Employee naming back to auto-series (if needed)"""
 	try:
-		# Find and delete the property setter
 		property_setter = frappe.db.get_value(
 			"Property Setter",
 			{

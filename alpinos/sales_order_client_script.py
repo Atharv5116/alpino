@@ -1,11 +1,4 @@
-"""
-Client Script for Sales Order customizations:
-- Auto-fetch Order Type from Customer master
-- Auto-fetch MRP from Customer Item MRP table
-- Units ↔ Boxes auto-calculation using Item UOM conversion factor
-- Flat Discount calculation based on MRP
-- Cash Discount calculation
-"""
+"""Client Script for Sales Order customizations (pricing, box conversion, dispatch date, PO fetch)."""
 
 import frappe
 

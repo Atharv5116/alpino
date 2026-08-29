@@ -1,6 +1,4 @@
-"""
-Setup custom pages for alpinos app
-"""
+"""Setup custom pages for alpinos app."""
 
 import frappe
 import json
@@ -8,11 +6,10 @@ import os
 
 
 def create_screening_page():
-	"""Delete existing Screening page and create a new one from JSON file"""
-	
+	"""Delete any existing Screening page and recreate it from the JSON file."""
+
 	page_name = "screening"
-	
-	# Delete existing page if it exists
+
 	if frappe.db.exists("Page", page_name):
 		try:
 			frappe.delete_doc("Page", page_name, force=1, ignore_permissions=True)
@@ -23,23 +20,20 @@ def create_screening_page():
 			frappe.db.rollback()
 	
 	try:
-		# Get the path to the page JSON file
 		app_path = frappe.get_app_path("alpinos")
 		json_path = os.path.join(app_path, "alpinos_development", "page", page_name, f"{page_name}.json")
-		
-		# Read and import the page JSON
+
 		if os.path.exists(json_path):
 			with open(json_path, 'r') as f:
 				page_data = json.load(f)
-			
-			# Remove name and creation/modified fields to allow fresh creation
+
+			# Drop name/timestamps so the page is created fresh.
 			page_data.pop('name', None)
 			page_data.pop('creation', None)
 			page_data.pop('modified', None)
 			page_data.pop('modified_by', None)
 			page_data.pop('owner', None)
-			
-			# Create the page document
+
 			page = frappe.get_doc(page_data)
 			page.insert(ignore_permissions=True)
 			frappe.db.commit()

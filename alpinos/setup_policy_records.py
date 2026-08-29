@@ -1,13 +1,10 @@
-"""
-Create default Policy records for each policy field in Employee Onboarding
-"""
+"""Create default Policy records for each policy field in Employee Onboarding."""
 
 import frappe
 
 
 def create_default_policies():
-	"""Create Policy records for each policy field"""
-	
+
 	policy_names = [
 		"Policy Assignment",
 		"Leave Policy",
@@ -29,14 +26,12 @@ def create_default_policies():
 	
 	for policy_name in policy_names:
 		try:
-			# Check if policy already exists by policy_name
 			existing_policy = frappe.db.get_value("Policy", {"policy_name": policy_name}, "name")
 			if existing_policy:
 				print(f"ℹ️  Policy '{policy_name}' already exists (name: {existing_policy})")
 				existing_count += 1
 				continue
 			
-			# Create new policy - use policy_name as the document name
 			policy = frappe.get_doc({
 				"doctype": "Policy",
 				"name": policy_name,  # Set name explicitly since autoname is "prompt"

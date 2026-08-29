@@ -1,10 +1,4 @@
-"""
-Automation scripts for Employee Onboarding
-- Auto-populate fields from Job Applicant
-- Create Employee Onboarding from Job Applicant/Interview
-- Allow HR Manager to save without mandatory fields
-- Handle pre-onboarding workflow with interview creation and email scheduling
-"""
+"""Employee Onboarding automation: auto-fill from Job Applicant, interviews, email scheduling."""
 
 import frappe
 from frappe import _
@@ -14,12 +8,8 @@ from datetime import datetime, timedelta
 
 
 def populate_from_job_applicant(doc, method=None):
-	"""
-	Auto-populate Employee Onboarding fields from Job Applicant
-	This runs on validate and before_save to populate fields marked as "Auto"
-	"""
+	"""Auto-populate Employee Onboarding fields from the linked Job Applicant."""
 	if not doc.job_applicant:
-		# Clear candidate_id if job_applicant is cleared
 		if hasattr(doc, 'candidate_id'):
 			doc.candidate_id = ""
 		return
@@ -29,8 +19,7 @@ def populate_from_job_applicant(doc, method=None):
 	except:
 		return
 	
-	# Candidate ID = Link to Job Applicant
-	# Always update to ensure it's synced with job_applicant
+	# candidate_id mirrors job_applicant
 	if hasattr(doc, 'candidate_id'):
 		doc.candidate_id = doc.job_applicant
 	
@@ -128,34 +117,25 @@ def populate_from_job_applicant(doc, method=None):
 				if len(city_state_parts) >= 1:
 					doc.work_experience_city = city_state_parts[0].strip()
 	
-	# Notice Period
-	
-	# Designation - `onboarding_designation` is the single source of truth (editable; auto-fills
-	# from the Job Applicant). Only seed it from the applicant when not already set/overridden.
+	# onboarding_designation is the source of truth; only seed it from the applicant if unset
 	if job_applicant.designation and not doc.onboarding_designation:
 		doc.onboarding_designation = job_applicant.designation
 
-	# Keep the now-hidden `designation_company_profile` mirrored to onboarding_designation, so the
-	# hidden standard `designation` Link resolution and the Employee mapping (which read it) keep
-	# working. Back-fill the other way for legacy records that only have designation_company_profile.
+	# mirror designation_company_profile <-> onboarding_designation (back-fill legacy records)
 	if doc.get("onboarding_designation"):
 		doc.designation_company_profile = doc.onboarding_designation
 	elif doc.get("designation_company_profile"):
 		doc.onboarding_designation = doc.designation_company_profile
 
-	# Auto-populate hidden standard 'designation' field (Link) from the (mirrored) designation text.
-	# This ensures the hidden field is populated for Employee creation.
+	# populate the hidden standard designation Link from the mirrored text
 	if hasattr(doc, 'designation_company_profile') and doc.designation_company_profile:
-		# Try to find matching Designation record
-		# If designation_company_profile is a string, try to match it with Designation doctype
 		if not doc.designation:
 			try:
-				# Check if designation_company_profile matches a Designation name
 				designation_match = frappe.db.exists("Designation", doc.designation_company_profile)
 				if designation_match:
 					doc.designation = designation_match
 				else:
-					# If no exact match, try to find by name (case-insensitive)
+					# no exact match: try a fuzzy name match
 					designation_match = frappe.db.get_value("Designation", 
 						{"name": ["like", f"%{doc.designation_company_profile}%"]}, 
 						"name"
@@ -163,25 +143,15 @@ def populate_from_job_applicant(doc, method=None):
 					if designation_match:
 						doc.designation = designation_match
 			except Exception:
-				# If there's any error, just skip - don't break the save process
+				# never break the save
 				pass
 	else:
-		# If designation_company_profile is empty, ensure designation is also empty
-		# This prevents validation errors on unsaved documents
 		if hasattr(doc, 'designation') and doc.designation and not doc.designation_company_profile:
-			# Only clear if designation_company_profile is explicitly empty
-			# Don't clear if it's just not set yet (unsaved document)
 			pass
 
 
 def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
-	"""
-	Allow saving Employee Onboarding even if certain mandatory fields are not filled.
-	- While the form is in Draft workflow state: allow any user to save without mandatory fields.
-	- On first save of a new document: allow any user to save without filling mandatory fields.
-	- On subsequent saves: allow HR Manager role to skip specific fields (as per SRS).
-	Also ensures hidden designation field is non-mandatory for all users.
-	"""
+	"""Let HR Manager (and drafts) save Employee Onboarding without the mandatory fields."""
 	# Normalize legacy status value before field validation runs.
 	# "Document Pending" is invalid for current options; valid value is "Email Sent".
 	if getattr(doc, "boarding_status", None) in ["Document Pending", "Documents Pending"]:
@@ -314,11 +284,7 @@ def allow_hr_manager_to_save_without_mandatory_fields(doc, method=None):
 
 
 def calculate_probation_end_date(doc, method=None):
-	"""Auto-calculate Probation End Date = Date of Joining (DOJ) + Probation Period (days).
-
-	The field is read-only on the form, so this is the source of truth (covers Job-Applicant
-	and web-form created onboardings where no client script runs). No DOJ -> leave it untouched.
-	"""
+	"""Set Probation End Date = Date of Joining + Probation Period (days)."""
 	doj = doc.get("date_of_joining_onboarding")
 	if not doj:
 		return
@@ -327,9 +293,7 @@ def calculate_probation_end_date(doc, method=None):
 
 
 def validate_date_of_birth(doc, method=None):
-	"""
-	Validate that date_of_birth is at least 18 years old
-	"""
+	"""Reject a date of birth under 18 years old."""
 	if not doc.date_of_birth:
 		return
 	
@@ -348,11 +312,7 @@ def validate_date_of_birth(doc, method=None):
 
 @frappe.whitelist()
 def create_employee_onboarding_from_job_applicant(job_applicant_name):
-	"""
-	Open new Employee Onboarding form with prefetched values from Job Applicant
-	This is called from the button in Job Applicant form
-	Just opens a new form, doesn't create/submit - user can fill and save manually
-	"""
+	"""Return the existing onboarding for the applicant, else the applicant name to open a new form."""
 	if not job_applicant_name:
 		frappe.throw(_("Job Applicant is required"))
 	
@@ -372,10 +332,7 @@ def create_employee_onboarding_from_job_applicant(job_applicant_name):
 
 @frappe.whitelist()
 def create_employee_onboarding_from_interview(interview_name):
-	"""
-	Create Employee Onboarding from Interview
-	This is called from the button in Interview form
-	"""
+	"""Open Employee Onboarding from an Interview (via its Job Applicant)."""
 	if not interview_name:
 		frappe.throw(_("Interview is required"))
 	
@@ -390,9 +347,7 @@ def create_employee_onboarding_from_interview(interview_name):
 
 
 def create_job_offer_from_applicant(job_applicant):
-	"""
-	Create a Job Offer from Job Applicant if it doesn't exist
-	"""
+	"""Create an accepted Job Offer for the applicant."""
 	try:
 		job_offer = frappe.get_doc({
 			"doctype": "Job Offer",
@@ -414,10 +369,7 @@ def create_job_offer_from_applicant(job_applicant):
 
 
 def check_all_required_fields_filled(doc):
-	"""
-	Check if all required fields for pre-onboarding are filled
-	Returns True if all fields are filled, False otherwise
-	"""
+	"""Return (all_filled, missing_labels) for the pre-onboarding required fields."""
 	required_fields = {
 		# Unique ID and Company
 		"candidate_id": "Unique ID",
@@ -507,11 +459,7 @@ def check_all_required_fields_filled(doc):
 
 
 def ensure_pre_onboarding_interview_round_exists():
-	"""
-	Ensure "pre-onboarding" Interview Round exists
-	Creates it if it doesn't exist
-	Returns the Interview Round name
-	"""
+	"""Return the "pre-onboarding" Interview Round, creating it if missing."""
 	round_name = "pre-onboarding"
 	
 	# Check if it already exists
@@ -582,10 +530,7 @@ def ensure_pre_onboarding_interview_round_exists():
 
 
 def create_pre_onboarding_interview(doc):
-	"""
-	Create a pre-onboarding Interview for the Employee Onboarding document
-	Returns the Interview name
-	"""
+	"""Create (or reuse) the pre-onboarding Interview for the onboarding doc."""
 	if not doc.job_applicant:
 		frappe.throw(_("Job Applicant is required to create Interview"))
 	
@@ -635,11 +580,7 @@ def create_pre_onboarding_interview(doc):
 
 
 def schedule_pre_onboarding_email(doc):
-	"""
-	Schedule an email to be sent to the applicant 1 week before the date of joining
-	Sets status to "Document Pending" when email is sent
-	This function marks the document for email sending, which will be handled by a scheduled job
-	"""
+	"""Send the pre-onboarding email now if it's due (a week before joining), else leave it to the scheduler."""
 	if not doc.date_of_joining_onboarding:
 		return
 	
@@ -666,10 +607,7 @@ def schedule_pre_onboarding_email(doc):
 
 
 def send_pre_onboarding_email(doc, applicant_email):
-	"""
-	Send pre-onboarding email to the applicant
-	Sets status to "Document Pending" after sending
-	"""
+	"""Send the pre-onboarding email to the applicant and mark boarding_status Email Sent."""
 	# DEBUG: Log that this function was called and from where
 	frappe.log_error(
 		title="Onboarding Email Trace",
@@ -820,10 +758,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 
 
 def send_scheduled_pre_onboarding_emails():
-	"""
-	Scheduled job to send pre-onboarding emails 1 week before date of joining
-	Runs daily to check for Employee Onboarding documents that need emails sent
-	"""
+	"""Daily job: send pre-onboarding emails a week before the date of joining."""
 	today = getdate(nowdate())
 	email_date = add_days(today, 7)  # 1 week from today
 	
@@ -865,9 +800,7 @@ def send_scheduled_pre_onboarding_emails():
 
 
 def DEPRECATED_send_onboarding_created_email(doc, method=None):
-	"""
-	DEPRECATED: This was sending the wrong email.
-	"""
+	"""DEPRECATED: was sending the wrong email."""
 	frappe.log_error(f"DEPRECATED_send_onboarding_created_email called for {doc.name}", "Onboarding Email Debug")
 	return
 	# try:
@@ -1005,12 +938,7 @@ def DEPRECATED_send_onboarding_created_email(doc, method=None):
 
 
 def handle_pre_onboarding_workflow(doc, method=None):
-	"""
-	Handle pre-onboarding workflow when all required fields are filled
-	- Set status to "Pre-Onboarding Initiated"
-	- Create pre-onboarding Interview
-	- Schedule email 1 week before date of joining
-	"""
+	"""When all required fields are filled: set status, create the interview, schedule the email."""
 	# Only process if document is being saved (not on validate)
 	if doc.is_new():
 		return
@@ -1059,12 +987,7 @@ def handle_pre_onboarding_workflow(doc, method=None):
 
 
 def send_welcome_formalities_reminders():
-	"""
-	Scheduled job to send notifications to HR Manager:
-	1. 1 day before welcome formalities are due (reminder)
-	2. When TAT has passed and formality is still pending (overdue reminder)
-	Runs daily to check for employees with welcome formalities due tomorrow or overdue
-	"""
+	"""Daily job: notify HR Manager of welcome formalities due tomorrow or overdue."""
 	from frappe.desk.doctype.notification_log.notification_log import make_notification_logs
 	
 	# Field name to label mapping for welcome formalities
@@ -1239,11 +1162,7 @@ def send_welcome_formalities_reminders():
 
 
 def handle_workflow_transition(doc, method=None):
-	"""
-	Handle Employee Onboarding workflow transitions.
-	- When state changes to 'Email Sent': send pre-onboarding email to candidate.
-	- When state changes to 'Employee Created': trigger create employee mapped doc.
-	"""
+	"""On the 'Email Sent' workflow transition, send the pre-onboarding email."""
 	# Determine the current workflow state
 	current_state = getattr(doc, "boarding_status", None) or getattr(doc, "workflow_state", None)
 
@@ -1266,10 +1185,7 @@ def handle_workflow_transition(doc, method=None):
 
 
 def _send_email_on_workflow_transition(doc):
-	"""
-	Send pre-onboarding email when workflow transitions to 'Email Sent'.
-	Uses the 'Onboarding - Document Reminder' email template with webform link.
-	"""
+	"""Send the pre-onboarding email on the 'Email Sent' workflow transition."""
 	# DEBUG: Log that this function was called
 	frappe.log_error(
 		title="Onboarding Email Trace",

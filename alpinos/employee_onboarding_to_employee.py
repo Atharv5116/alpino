@@ -1,11 +1,4 @@
-"""
-Custom Employee creation from Employee Onboarding.
-
-This extends the standard HRMS mapping by:
-- Copying all salary and bank details from onboarding to employee
-- Copying qualification and work experience summary fields
-- Creating rows in the Policy and Company Documents child tables
-"""
+"""Create an Employee from Employee Onboarding with Alpinos-specific field mappings."""
 
 from __future__ import annotations
 
@@ -16,43 +9,34 @@ from frappe.model.mapper import get_mapped_doc
 
 @frappe.whitelist()
 def make_employee_with_details(source_name: str, target_doc: str | None = None):
-	"""
-	Create an `Employee` from `Employee Onboarding` with Alpinos-specific mappings.
-
-	This is meant to be called via `frappe.model.open_mapped_doc` from the
-	Employee Onboarding form.
-	"""
+	"""Create an Employee from Employee Onboarding (called via open_mapped_doc)."""
 
 	if not source_name:
 		frappe.throw(_("Employee Onboarding name is required"))
 
-	# Import the core helper to reuse validation logic
 	from hrms.hr.doctype.employee_onboarding import employee_onboarding as core_onboarding
 
 	source_doc = frappe.get_doc("Employee Onboarding", source_name)
 	source_doc.validate_employee_creation()
 
 	def set_missing_values(source, target):
-		# Call the same helper used in core HRMS make_employee
 		if hasattr(core_onboarding, "EmployeeOnboarding"):
-			# Personal email from Job Applicant (same as core implementation)
 			if source.job_applicant:
 				target.personal_email = frappe.db.get_value(
 					"Job Applicant", source.job_applicant, "email_id"
 				)
 
-		# Ensure new employee starts as Active
 		if not target.status:
 			target.status = "Active"
 
-		# ---- 1) Policies -> policy_child (Policy child table) ----
+		# Policies
 		try:
 			if not target.policy_child:
 				row = target.append("policy_child", {})
 			else:
 				row = target.policy_child[0]
 
-			# Fieldname differences: wfh/geofencing names differ slightly
+			# wfh/geofencing fieldnames differ
 			policy_field_map = {
 				"policy_assignment": "policy_assignment",
 				"leave_policy": "leave_policy",
@@ -73,13 +57,13 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				if hasattr(source, src_field):
 					row.set(tgt_field, source.get(src_field))
 		except Exception:
-			# Don't block employee creation if policies mapping fails
+			# don't block employee creation if policies mapping fails
 			frappe.log_error(
 				frappe.get_traceback(),
 				"Alpinos: Error while mapping policies from Employee Onboarding",
 			)
 
-		# ---- 2) Company Documents -> company_document_child ----
+		# Company Documents
 		try:
 			if not target.company_document_child:
 				company_row = target.append("company_document_child", {})
@@ -90,11 +74,10 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				if hasattr(source, field):
 					company_row.set(field, source.get(field))
 
-			# Optional: carry over current onboarding status as initial document status
-			# Only set if it's a valid status for the child table
+			# Carry onboarding status as the initial document status.
 			if hasattr(company_row, "status") and source.get("boarding_status"):
 				boarding_status = source.boarding_status
-				# Don't set "Pending" as it's not valid for company documents
+				# "Pending" isn't valid for company documents
 				if boarding_status and boarding_status != "Pending":
 					company_row.status = boarding_status
 		except Exception:
@@ -103,7 +86,7 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				"Alpinos: Error while mapping company documents from Employee Onboarding",
 			)
 
-		# ---- 2b) Company Details Section -> Employee main fields ----
+		# Company Details
 		try:
 			company_details_field_map = {
 				"company_mobile_number": "company_mobile_number",
@@ -118,14 +101,12 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				"date_of_joining_onboarding": "date_of_joining",
 			}
 
-			# Link fields that should not accept "NA" values
-			# Note: employment_type is now a Select field, not a Link field
+			# Link fields that must reject "NA".
 			link_fields = {"location", "reports_to", "hod", "designation", "department", "salary_category"}
 
 			for src_field, tgt_field in company_details_field_map.items():
 				if hasattr(source, src_field) and hasattr(target, tgt_field):
 					value = source.get(src_field)
-					# Skip "NA" values for link fields
 					if value and (value != "NA" or tgt_field not in link_fields):
 						target.set(tgt_field, value)
 		except Exception:
@@ -134,12 +115,11 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				"Alpinos: Error while mapping company details from Employee Onboarding",
 			)
 
-		# ---- 3) Qualification Child Table -> qualification_child table ----
+		# Qualification
 		try:
-			# Reload source to ensure child tables are loaded
+			# reload so child tables load
 			source.reload()
-			
-			# Get qualification_child table from source
+
 			qualification_child = source.get("qualification_child") or []
 			
 			frappe.log_error(
@@ -149,7 +129,6 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 			
 			if qualification_child and len(qualification_child) > 0:
 				for qual_row in qualification_child:
-					# Create new row in Employee's qualification_child table
 					qual_data = {
 						"degree": qual_row.get("degree") or "",
 						"grade": qual_row.get("grade") or "",
@@ -157,15 +136,13 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 						"graduation_year": qual_row.get("graduation_year") or "",
 						"degree_certificate_upload": qual_row.get("degree_certificate_upload") or "",
 					}
-					
-					# Append the row
+
 					new_row = target.append("qualification_child", qual_data)
 					frappe.log_error(
 						f"DEBUG: Appended qualification_child row - degree: {qual_data.get('degree')}, university: {qual_data.get('university')}",
 						"Alpinos: Qualification Child Append"
 					)
 			else:
-				# Log if no qualification_child data found for debugging
 				frappe.log_error(
 					f"No qualification_child rows found in Employee Onboarding {source.name}. Row count: {len(qualification_child)}",
 					"Alpinos: Qualification Child Table Mapping"
@@ -176,12 +153,10 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				f"Alpinos: Error while mapping qualification_child table from Employee Onboarding {source.name} to Employee: {str(e)}",
 			)
 
-		# ---- 4) Experience Table -> experience table ----
+		# Experience
 		try:
-			# Reload source to ensure child tables are loaded
 			source.reload()
-			
-			# Get experience table from source
+
 			experience = source.get("experience") or []
 			
 			frappe.log_error(
@@ -191,7 +166,6 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 			
 			if experience and len(experience) > 0:
 				for exp_row in experience:
-					# Create new row in Employee's experience table
 					exp_data = {
 						"company_name": exp_row.get("company_name") or "",
 						"start_date": exp_row.get("start_date") or None,
@@ -199,15 +173,13 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 						"designation": exp_row.get("designation") or "",
 						"city": exp_row.get("city") or "",
 					}
-					
-					# Append the row
+
 					new_row = target.append("experience", exp_data)
 					frappe.log_error(
 						f"DEBUG: Appended experience row - company: {exp_data.get('company_name')}, designation: {exp_data.get('designation')}",
 						"Alpinos: Experience Append"
 					)
 			else:
-				# Log if no experience data found for debugging
 				frappe.log_error(
 					f"No experience rows found in Employee Onboarding {source.name}. Row count: {len(experience)}",
 					"Alpinos: Experience Table Mapping"
@@ -218,7 +190,7 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				f"Alpinos: Error while mapping experience table from Employee Onboarding {source.name} to Employee: {str(e)}",
 			)
 
-		# ---- 5) Salary & Bank details ----
+		# Salary & bank details
 		salary_field_map = {
 			"ctc_monthly": "ctc_monthly",
 			"salary_template": "salary_template",
@@ -234,17 +206,15 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 			"tax_regime": "tax_regime",
 		}
 
-		# Link fields in salary that should not accept "NA"
+		# Salary link fields that must reject "NA".
 		salary_link_fields = {"salary_template"}
-		
+
 		for src_field, tgt_field in salary_field_map.items():
 			if hasattr(source, src_field) and hasattr(target, tgt_field):
 				value = source.get(src_field)
-				# Skip "NA" values for link fields
 				if value and (value != "NA" or tgt_field not in salary_link_fields):
 					target.set(tgt_field, value)
 
-		# Bank details mapping
 		bank_field_map = {
 			"bank_name": "bank_name",
 			"account_number": "bank_account_number",
@@ -258,7 +228,7 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 			if hasattr(source, src_field) and hasattr(target, tgt_field):
 				target.set(tgt_field, source.get(src_field))
 
-		# ---- 6) Family Details ----
+		# Family details
 		try:
 			family_field_map = {
 				"family_name": "family_member_name",
@@ -278,7 +248,7 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				"Alpinos: Error while mapping family details from Employee Onboarding to Employee",
 			)
 
-		# ---- 7) Emergency Contact Details ----
+		# Emergency contact
 		try:
 			emergency_field_map = {
 				"emergency_contact_name": "person_to_be_contacted",
@@ -297,8 +267,7 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 				"Alpinos: Error while mapping emergency contact details from Employee Onboarding to Employee",
 			)
 
-	# Base mapping – similar to hrms.hr.doctype.employee_onboarding.employee_onboarding.make_employee
-	# Note: Child tables are handled manually in set_missing_values to ensure they're copied correctly
+	# Child tables are mapped manually in set_missing_values.
 	doc = get_mapped_doc(
 		"Employee Onboarding",
 		source_name,
@@ -310,14 +279,13 @@ def make_employee_with_details(source_name: str, target_doc: str | None = None):
 					"employee_grade": "grade",
 				},
 			},
-			# Prevent automatic mapping of child tables - we'll handle them manually
 			"Qualification Child": {
 				"doctype": "Qualification Child",
-				"ignore": True,  # Ignore automatic mapping, we'll do it manually
+				"ignore": True,
 			},
 			"Experience": {
 				"doctype": "Experience",
-				"ignore": True,  # Ignore automatic mapping, we'll do it manually
+				"ignore": True,
 			},
 		},
 		target_doc,

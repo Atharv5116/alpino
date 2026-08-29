@@ -1,10 +1,4 @@
-"""Hide the "Stock Levels" section from the Item form dashboard.
-
-ERPNext's item.js adds a form-dashboard section titled "Stock Levels" (warehouse-wise
-stock) asynchronously on refresh. We hide it with an Item Form client script — the
-async load means we re-hide a couple of times after refresh so we catch it once rendered.
-Installed on after_migrate (see hooks.py).
-"""
+"""Hide the "Stock Levels" section from the Item form dashboard via a client script."""
 
 import frappe
 

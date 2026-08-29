@@ -1,11 +1,4 @@
-"""Quantity-flow guards across the document chain
-Opportunity -> Quotation -> Sales Order -> Pick List -> Delivery Note.
-
-Whenever a downstream document carries LESS quantity of an item than its
-upstream source, the row's remark becomes mandatory (Quotation Item /
-Sales Order Item `custom_remarks`, Pick List Item / Delivery Note Item
-`custom_remark`). The four "X to Y" comparison reports read the same links.
-"""
+"""Require a row remark whenever a downstream doc carries less qty than its upstream source."""
 
 import frappe
 from frappe import _
@@ -93,8 +86,7 @@ def sales_order_qty_remarks(doc, method=None):
 
 
 def pick_list_qty_remarks(doc, method=None):
-	"""Pick List vs the Sales Order snapshot (custom_ordered_qty) — checked on
-	submit only: draft rows legitimately sit at 0 during picking."""
+	"""Pick List vs the Sales Order snapshot; checked on submit only."""
 	if doc.docstatus != 1:
 		return
 	for row in doc.get("locations") or []:
@@ -109,7 +101,7 @@ def pick_list_qty_remarks(doc, method=None):
 
 
 def delivery_note_qty_remarks(doc, method=None):
-	"""Delivery Note vs its Pick List rows — checked on submit only."""
+	"""Delivery Note vs its Pick List rows; checked on submit only."""
 	if doc.docstatus != 1 or doc.get("is_return"):
 		return
 	if not frappe.get_meta("Delivery Note Item").has_field("custom_remark"):

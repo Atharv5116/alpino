@@ -1,34 +1,4 @@
-"""Recover the cost of over-utilised (pro-rata excess) leave in the Full and Final Statement.
-
-Scenario: an employee is entitled to a yearly leave quota that accrues over the year (e.g.
-12 Casual Leave = 1/month). If they consume the whole quota and then leave mid-year, they
-have taken MORE leave than they had earned up to their relieving date. The unearned days are
-recovered from the final settlement.
-
-Example: 12 CL/year (1/month). Employee takes all 12 and is relieved in March. By March only
-3 days are earned (Jan, Feb, Mar) -> 9 days are excess -> 9 days of pay is recovered in the FnF.
-
-Wired as Full and Final Statement `validate` (see hooks.py). For each leave type the employee
-has an allocation for, we compute:
-
-    earned (pro-rata)  = carry-forwarded leaves (already earned in a prior period)
-                         + monthly accrual rate * months worked in this allocation period
-    taken              = leave days consumed in this allocation period up to the relieving date
-    excess             = max(taken - earned, 0)
-    recovery amount    = excess * per-day salary
-
-and add one "Excess Leave Recovery (<Leave Type>)" row to the FnF *receivables* (amounts the
-company recovers from the employee). Rows are rebuilt on every validate, so editing the
-relieving date / re-saving keeps them in sync and never duplicates.
-
-A Leave Type can be opted out with the custom check `custom_recover_excess_leave_on_exit`
-(added in setup_leave_type_recovery_field; default ON, NULL treated as ON). LWP leave types
-are always skipped.
-
-Per-day salary = latest Salary Structure Assignment `base` (on/before relieving) / number of
-calendar days in the relieving month. Tweak PER_DAY_DIVISOR_MODE below if a different basis
-(e.g. fixed 30, or 26 working days) is required.
-"""
+"""Recover the cost of over-utilised (pro-rata excess) leave in the Full and Final Statement."""
 
 import calendar
 
@@ -40,10 +10,7 @@ from frappe.utils import add_days, cint, flt, getdate
 # Marks the auto-generated receivable rows so they can be rebuilt without duplicating.
 RECOVERY_COMPONENT_PREFIX = "Excess Leave Recovery"
 
-# How the per-day rate is derived from the monthly base salary:
-#   "month_days" -> base / number of calendar days in the relieving month (default)
-#   "fixed_30"   -> base / 30
-#   "working_26" -> base / 26
+# Per-day rate basis: "month_days" (default), "fixed_30", or "working_26".
 PER_DAY_DIVISOR_MODE = "month_days"
 
 
@@ -52,7 +19,7 @@ def add_excess_leave_recovery(doc, method=None):
 	try:
 		_rebuild_recovery_rows(doc)
 	except Exception:
-		# Never block the FnF save because of a recovery-calculation problem.
+		# Never block the FnF save over a recovery-calc problem.
 		frappe.log_error(
 			f"Excess leave recovery failed for FnF {doc.get('name')} / employee {doc.get('employee')}\n"
 			f"{frappe.get_traceback()}",
@@ -100,8 +67,7 @@ def _rebuild_recovery_rows(doc):
 			},
 		)
 
-	# The controller's set_totals() already ran before this hook, so recompute now that the
-	# recovery rows are in place (keeps total_receivable_amount correct).
+	# set_totals() already ran before this hook; recompute with the new rows in place.
 	if hasattr(doc, "set_totals"):
 		doc.set_totals()
 
@@ -138,7 +104,7 @@ def _excess_leave_by_type(employee, relieving):
 			continue
 
 		new_grant = flt(alloc.new_leaves_allocated)
-		# Anything beyond the fresh grant is carry-forward from a prior period = already earned.
+		# Anything beyond the fresh grant is carry-forward from a prior period (already earned).
 		carry_forward_earned = max(flt(alloc.total_leaves_allocated) - new_grant, 0)
 
 		monthly_rate = new_grant / period_months
@@ -160,7 +126,7 @@ def _excess_leave_by_type(employee, relieving):
 
 
 def _leave_type_recoverable(leave_type):
-	"""Skip LWP types; honour the per-type opt-out (NULL/missing -> recover)."""
+	"""Skip LWP types; honour the per-type opt-out (defaults to recover)."""
 	row = frappe.db.get_value(
 		"Leave Type", leave_type, ["is_lwp", "custom_recover_excess_leave_on_exit"], as_dict=True
 	)
@@ -168,17 +134,13 @@ def _leave_type_recoverable(leave_type):
 		return False
 	if cint(row.is_lwp):
 		return False
-	# Field may not exist yet (pre-migrate) -> default to enabled.
+	# Field may not exist yet (pre-migrate); default to enabled.
 	val = row.get("custom_recover_excess_leave_on_exit")
 	return True if val is None else bool(cint(val))
 
 
 def _leaves_taken(employee, leave_type, period_from, relieving):
-	"""Leave days consumed (from the Leave Ledger) in [period_from, relieving] for this type.
-
-	Leave Application ledger entries store consumed leave as NEGATIVE `leaves`; we sum those and
-	flip the sign. Carry-forward/allocation/expiry entries are excluded by transaction_type.
-	"""
+	"""Leave days consumed (from the Leave Ledger) in [period_from, relieving] for this type."""
 	taken = frappe.db.sql(
 		"""
 		SELECT COALESCE(SUM(leaves), 0)
@@ -202,11 +164,7 @@ def _leaves_taken(employee, leave_type, period_from, relieving):
 
 
 def _month_span(start, end):
-	"""Inclusive count of calendar months touched between start and end (>=0).
-
-	Jan->Mar = 3; Jan->Jan = 1; end before start = 0. A partial month counts as a whole month,
-	matching the monthly-accrual model (any day worked in a month earns that month's quota).
-	"""
+	"""Inclusive count of calendar months touched between start and end (>=0). A partial month counts as whole."""
 	start, end = getdate(start), getdate(end)
 	if end < start:
 		return 0

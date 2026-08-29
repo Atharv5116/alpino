@@ -1,14 +1,7 @@
-"""Allow Transporter / LR No / Dispatch Date to be changed AFTER submission on the
-Pick List and Delivery Note, keep the two docs in sync, and audit every change.
+"""Let Transporter / LR No / Dispatch Date change after submission on Pick List and
+Delivery Note, keep the two in sync, and log every change.
 
-- Pick List: Transporter + Dispatch Date edits propagate to the linked Delivery
-  Note(s) (even if the DN is already submitted).
-- Delivery Note: Transporter + Dispatch Date edits propagate back to the Pick List;
-  LR No. edits are logged only.
-- Every change is written to the Field Change Log (previous/new/user/time) and the
-  edited doc's "Changed After Submission" flag is set.
-
-Propagation uses db.set_value (no doc events), so PL<->DN updates never loop.
+Propagation uses db.set_value (no doc events) so PL<->DN updates never loop.
 """
 
 import frappe
@@ -98,11 +91,7 @@ _DN_DRAFT_WATCH = {
 
 
 def delivery_note_on_update_draft(doc, method=None):
-	"""While a Delivery Note is still in DRAFT, a Transporter edit propagates to the
-	linked Pick List(s) and is logged on both docs. (A submitted DN goes through
-	delivery_note_on_update_after_submit instead.) Fires on every draft save but only
-	acts on a genuine change vs the pre-save value, so creating a DN — which just
-	inherits the Pick List's transporter — never loops back onto the Pick List."""
+	"""On a draft Delivery Note, propagate a Transporter edit to the linked Pick List(s)."""
 	if doc.docstatus != 0:
 		return
 	changes = _changed(doc, _DN_DRAFT_WATCH)
@@ -127,9 +116,7 @@ _AFTER_SUBMIT_EDITABLE = {
 
 @frappe.whitelist()
 def update_after_submit_fields(doctype, name, values):
-	"""Save Transporter / LR No / Dispatch Date edits on a SUBMITTED Pick List / Delivery
-	Note (from the custom entry pages). doc.save() runs update_after_submit, which fires
-	on_update_after_submit -> PL<->DN propagation + Field Change Log audit."""
+	"""Save Transporter / LR No / Dispatch Date edits on a submitted Pick List / Delivery Note."""
 	import json
 
 	if isinstance(values, str):
@@ -158,8 +145,7 @@ def update_after_submit_fields(doctype, name, values):
 
 
 def ensure_after_submit_fields():
-	"""Idempotently make the watched fields editable after submit and add the
-	'Changed After Submission' indicator to Pick List + Delivery Note. Run on migrate."""
+	"""Make the watched fields editable after submit and add the indicator field. Run on migrate."""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 
@@ -187,9 +173,8 @@ def ensure_after_submit_fields():
 			if frappe.get_meta(dt).has_field(f):
 				make_property_setter(dt, f, "allow_on_submit", 1, "Check", validate_fields_for_doctype=False)
 
-	# Delivery Note Transporter must be EDITABLE in Draft (BRD). It was originally
-	# read-only ("fetched from Pick List"); a draft edit now propagates back to the
-	# Pick List. A read-only field's changes are dropped by doc.save(), so clear it.
+	# Delivery Note Transporter must be editable in Draft (a read-only field's edits
+	# are dropped by doc.save()), so clear the read-only property.
 	if frappe.get_meta("Delivery Note").has_field("custom_transporter_name"):
 		make_property_setter(
 			"Delivery Note", "custom_transporter_name", "read_only", 0, "Check",

@@ -3,8 +3,7 @@ from frappe.utils import flt
 import math
 
 def _doc_tax_rate(doc):
-	"""Combined On-Net-Total tax rate on the order (IGST 5%, or CGST 2.5% + SGST 2.5% = 5).
-	0 for a GST-Exclusive buyer, whose SO carries no tax rows at all."""
+	"""Combined On-Net-Total tax rate on the order (0 for GST-exclusive buyers)."""
 	return flt(
 		sum(
 			flt(t.get("rate"))
@@ -15,27 +14,7 @@ def _doc_tax_rate(doc):
 
 
 def _inclusive_line_amount(row, doc_tax_rate=0.0):
-	"""GST-INCLUSIVE line total for a saved Sales Order Item — the figure the printed Grand
-	Total is built from, unlike the stored row.amount, which is the NET (taxable) value.
-
-	In preference order:
-	  1. net + the line's own stored GST (custom_item_tax). Both come from the same
-	     single-rounded figure in sales_order_api, so this reconstructs selling price x qty
-	     to the paisa and ties to the Grand Total by construction.
-	  2. selling price x qty, LESS the line's Additional Discount % — for rows saved before
-	     per-line GST was stored. custom_selling_price is the per-unit GST-inclusive price
-	     (offer already baked in, additional discount not). Uses the selling price and NOT
-	     the stored net rate x qty, whose per-unit rounding qty amplifies (46.67 x 120 =
-	     5600.40 vs 49 x 120 / 1.05 = 5600.00).
-	  3. that figure grossed up by the order's own tax rate, when the line carries no GST %
-	     of its own while the order does tax it (an item with no custom_gst_percent). The
-	     pricing engine then treats the selling price as EXCLUSIVE (net == amount) and
-	     ERPNext charges On-Net-Total tax across the whole net, so the gross-up is what the
-	     Grand Total actually contains.
-
-	GST-Exclusive buyers fall through to the stored amount: no line tax, no doc taxes, and
-	their selling price IS the taxable value — every branch returns the same figure.
-	"""
+	"""GST-inclusive line total for a saved Sales Order Item (the figure the Grand Total is built from)."""
 	net = flt(row.get("amount"))
 	tax = flt(row.get("custom_item_tax"))
 	if tax:
@@ -54,15 +33,7 @@ def _inclusive_line_amount(row, doc_tax_rate=0.0):
 
 
 def get_combined_items(doc):
-	"""Explodes product bundles and groups items if combine_product_bundles is checked on the Buyer Master.
-
-	Pricing rule: a plain (non-exploded) line reflects EXACTLY what the Sales Order
-	stored — its own custom_customer_mrp / custom_flat_discount / custom_offer /
-	custom_selling_price — so the printed PDF matches the on-screen Sales Order View
-	and never silently re-prices a confirmed order from the (possibly since-edited)
-	buyer catalog. Only exploded bundle components, which have no saved row of their
-	own, are priced from the catalog as a fallback.
-	"""
+	"""Explode product bundles and optionally group items (per Buyer Master combine_product_bundles)."""
 	obm_name = doc.get("custom_offline_buyer_master")
 	if not obm_name and doc.get("customer"):
 		obm_name = frappe.db.get_value("Buyer Master", {"customer": doc.customer}, "name")
@@ -76,10 +47,7 @@ def get_combined_items(doc):
 	doc_tax_rate = _doc_tax_rate(doc)
 
 	if not combine_product_bundles:
-		# Rows as they are — but with the SAME GST-inclusive Amount the combined path below
-		# produces. The saved row.amount is the NET (taxable) line total while the printed
-		# Grand Total is GST-inclusive, so returning the rows untouched left the PDF's Sub
-		# Total short by exactly the GST. Copies, so doc.items is never mutated.
+		# Copy rows but swap in the GST-inclusive Amount (saved row.amount is net).
 		return [
 			frappe._dict(dict(r.as_dict(), amount=_inclusive_line_amount(r, doc_tax_rate)))
 			for r in doc.items
@@ -92,11 +60,7 @@ def get_combined_items(doc):
 	combined = {}
 
 	def _pick_image(live_img, snapshot_img, variant_of):
-		"""Choose a product image that actually exists, so a broken/missing primary
-		falls back to another source. Order: current Item image -> the SO Item's own
-		snapshot -> the variant's template Item image. Returns the first that resolves
-		to a real file; if none do, the preferred URL (pdf_tolerant drops it if it's
-		genuinely unreadable, so it never errors); '' when there's nothing to show."""
+		"""First product image that resolves to a real file; '' when there's nothing to show."""
 		cands = []
 		for c in (live_img, snapshot_img):
 			if c and c not in cands:
@@ -110,14 +74,7 @@ def get_combined_items(doc):
 		return first_existing_file_url(cands) or cands[0]
 
 	def add_item_to_combined(item_code, qty, parent_row, source_row=None):
-		"""Add `qty` of `item_code` to the combined map.
-
-		`source_row` is the saved Sales Order Item whose stored pricing is
-		authoritative — passed for a plain line so the print shows exactly what the
-		order was confirmed at. Left None for exploded bundle components, which have
-		no saved row and are therefore priced from the buyer catalog as a fallback.
-		"""
-		# Fetch item UOM, name, CURRENT master image and variant parent safely
+		"""Add qty of item_code to the combined map (source_row = saved row, else catalog fallback)."""
 		res_item = frappe.db.get_value(
 			"Item", item_code,
 			["item_name", "stock_uom", "valuation_rate", "image", "variant_of"],
@@ -125,9 +82,7 @@ def get_combined_items(doc):
 		)
 		item_name = res_item.get("item_name") if res_item else item_code
 		uom = res_item.get("stock_uom") if res_item else "Nos"
-		# Mirror the on-screen Sales Order View: prefer the live Item-master image so
-		# pictures uploaded/changed after the order was placed still print; the SO Item's
-		# custom_product_image is only a snapshot taken at creation (and may be empty).
+		# Prefer the live Item-master image; the SO Item snapshot is only a fallback.
 		live_img = (res_item.get("image") if res_item else None) or None
 		variant_of = res_item.get("variant_of") if res_item else None
 
@@ -145,9 +100,7 @@ def get_combined_items(doc):
 				item_name = source_row.get("item_name")
 			if source_row.get("uom"):
 				uom = source_row.get("uom")
-			# GST-INCLUSIVE line total (see _inclusive_line_amount) — the same helper the
-			# non-combined path uses, so both print the same Amount and the PDF's Sub Total
-			# ties to the Grand Total either way.
+			# GST-inclusive line total (see _inclusive_line_amount).
 			line_amt = _inclusive_line_amount(source_row, doc_tax_rate)
 		else:
 			# Exploded bundle component: no saved price -> derive from the buyer catalog.
@@ -170,8 +123,7 @@ def get_combined_items(doc):
 			offer = flt(parent_row.get("custom_offer") or 0)
 			add_disc = flt(parent_row.get("custom_additional_discount") or 0)
 			image = _pick_image(live_img, parent_row.get("custom_product_image"), variant_of)
-			# Bundle component has no saved row -> net selling price x qty, less the
-			# parent's offer / additional discount.
+			# No saved row: net selling price x qty, less the parent's offer/additional discount.
 			line_amt = flt(sp) * flt(qty) * (100 - offer) / 100.0 * (100 - add_disc) / 100.0
 
 		if item_code not in combined:
@@ -204,10 +156,7 @@ def get_combined_items(doc):
 				for p in pb_items:
 					add_item_to_combined(p.item_code, flt(p.qty) * flt(r.qty), r)
 			else:
-				# Alpino bundles are defined via Item.custom_is_bundle + Product Bundle Mapping,
-				# which can exist WITHOUT a native Product Bundle (and the SO may have no packed
-				# items). Fall back to that mapping — the same source the pick list / DN use — so
-				# the bundle still explodes when "Combine Product Bundles" is on.
+				# Fall back to Item.custom_is_bundle + Product Bundle Mapping (no native Product Bundle).
 				comps = _bundle_components(r.item_code)
 				if comps:
 					for c in comps:
@@ -216,15 +165,13 @@ def get_combined_items(doc):
 					# Plain saved line: price it from the Sales Order Item itself.
 					add_item_to_combined(r.item_code, flt(r.qty), r, source_row=r)
 
-	# Convert back to a list of row-like dict objects (using frappe._dict to support dot notation in Jinja)
+	# Back to a list of _dict rows for Jinja.
 	result = []
 	for idx, (code, item_dict) in enumerate(combined.items(), start=1):
 		cf = flt(get_box_conversion_factor(code))
 		item_dict["custom_box"] = math.ceil(item_dict["qty"] / cf) if cf else 0
 		item_dict["idx"] = idx
-		# Amount = the order's own selling price x qty (accumulated above), GST-inclusive —
-		# matches the reference PDF; NOT rate x qty (whose per-unit rounding the qty amplifies)
-		# and NOT MRP x %s (which would print gross list value on a price-based discount).
+		# Amount = accumulated selling price x qty, GST-inclusive.
 		item_dict["amount"] = flt(item_dict.get("amount") or 0, 2)
 		item_dict["custom_item_tax"] = 0
 		result.append(frappe._dict(item_dict))
@@ -232,10 +179,7 @@ def get_combined_items(doc):
 	return result
 
 def sku_sort_key(sku_no):
-	"""Natural ascending sort key for an Item's SKU No (custom_sku_no, a Data field):
-	numeric SKUs sort numerically (2 before 10), other codes sort lexically after them,
-	and blanks sort last. Shared by Pick List creation, the packing sheet and stickers
-	so all three order items the same way."""
+	"""Natural ascending sort key for an Item's SKU No; blanks sort last."""
 	v = (sku_no or "").strip()
 	if not v:
 		return (2, 0, "")
@@ -245,10 +189,7 @@ def sku_sort_key(sku_no):
 
 
 def sort_locations_by_sku(locations):
-	"""Return Pick List location rows ordered ascending by the Item's SKU No. The Pick
-	List Item row does NOT persist custom_sku_no, so it's read from the Item master
-	(cached) — this lets the packing sheet print sorted even for pick lists created
-	before SKU ordering was added."""
+	"""Pick List location rows sorted ascending by the Item's SKU No (read from Item master)."""
 	rows = list(locations or [])
 	cache = {}
 
@@ -264,8 +205,7 @@ def sort_locations_by_sku(locations):
 
 
 def pack_size(item_code):
-	"""Units-per-box (box conversion factor) for a SKU as an int — the Pick List packing
-	sheet's PACK column. Returns '' when unknown; never raises inside a print render."""
+	"""Units-per-box for a SKU as int; '' when unknown."""
 	try:
 		from alpinos.sales_order_api import get_box_conversion_factor
 		f = flt(get_box_conversion_factor(item_code))
@@ -275,8 +215,7 @@ def pack_size(item_code):
 
 
 def available_stock(item_code):
-	"""Total available (actual) stock for a SKU across all warehouses — the Pick List
-	packing sheet's Stock column. Returns '' when unknown; never raises inside a render."""
+	"""Total available stock for a SKU across warehouses; '' when unknown."""
 	try:
 		res = frappe.db.sql("SELECT SUM(actual_qty) FROM `tabBin` WHERE item_code=%s", item_code)
 		v = flt(res[0][0]) if res and res[0][0] is not None else 0.0
@@ -285,12 +224,8 @@ def available_stock(item_code):
 		return ""
 
 
-# Expose to Jinja environment
 def site_buyer_master(site_name, fallback=None):
-	"""Buyer Master doc for a SITE — the master that owns a Buyer Address child row whose
-	site_name matches — so the SO print shows that site's contact / email / GST, not the
-	family parent's. Falls back to `fallback` (a Buyer Master name, e.g. the SO's
-	custom_offline_buyer_master) when the site can't be resolved. Used by the SO print format."""
+	"""Buyer Master that owns the given site's Buyer Address row; falls back to `fallback`."""
 	name = None
 	if site_name:
 		rows = frappe.db.sql(

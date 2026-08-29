@@ -1,15 +1,9 @@
-"""
-Dispatch date utilities for Alpinos.
-
-- Before 2 PM  → default dispatch date = today
-- At/after 2 PM → default = next working day (skips weekends + company holiday list)
-- Validation: today's date cannot be selected at/after 2 PM
-"""
+"""Dispatch date utilities: default dispatch date and validation around a 2 PM cutoff."""
 
 import frappe
 from frappe.utils import today, now_datetime, add_days, getdate
 
-CUTOFF_HOUR = 14  # 2:00 PM — change here to adjust cutoff
+CUTOFF_HOUR = 14  # 2:00 PM
 
 
 @frappe.whitelist()
@@ -23,12 +17,7 @@ def get_default_dispatch_date():
 
 @frappe.whitelist()
 def validate_dispatch_date(date):
-	"""Return {valid, message} for the chosen dispatch date.
-
-	Two rejections:
-	  1. Any date before today is invalid.
-	  2. Today is invalid once the clock is past the cutoff (default 2:00 PM).
-	"""
+	"""Return {valid, message} for the chosen dispatch date."""
 	chosen = getdate(date)
 	today_date = getdate(today())
 	if chosen < today_date:
@@ -46,7 +35,7 @@ def validate_dispatch_date(date):
 
 
 def validate_dispatch_date_on_save(doc, method=None):
-	"""Doc-event hook — called on Sales Order validate."""
+	"""Doc-event hook called on Sales Order validate."""
 	if not doc.custom_dispatch_date:
 		return
 	result = validate_dispatch_date(doc.custom_dispatch_date)

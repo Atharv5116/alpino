@@ -1,17 +1,4 @@
-"""Raven approval notifications — sent as DIRECT MESSAGES to the people who need them.
-
-Whenever an approval request moves through its workflow, the dedicated Raven bot DMs:
-  * the **applicant** — a status update on their own request, and
-  * the **approver(s) for the current stage** — Pending Reporting Manager -> the employee's
-    reporting manager; Pending HOD -> users with the HOD role; Pending HR -> HR Managers.
-
-So each person sees only what's relevant to them (no broadcast channels). The bot
-(default name "HR & RM Notifier", overridable via site_config `raven_notification_bot`)
-is created on migrate by setup_raven_notification_bot.
-
-Everything is defensive: if Raven isn't installed or a recipient/bot can't be resolved, it
-is a silent no-op — it never blocks the underlying submit/approve.
-"""
+"""Raven approval notifications, DM'd to the applicant and the current-stage approver(s)."""
 
 import frappe
 
@@ -25,11 +12,7 @@ def _bot_name():
 
 
 def setup_raven_notification_bot():
-	"""Create the notification bot (after_migrate). No-op without Raven.
-
-	Notifications are DMs to the relevant people (applicant, reporting manager, HOD, HR),
-	so no broadcast channels are created — only the bot is needed.
-	"""
+	"""Create the notification bot (after_migrate). No-op without Raven."""
 	if not _raven_installed() or not frappe.db.exists("DocType", "Raven Bot"):
 		return
 	name = _bot_name()
@@ -69,7 +52,7 @@ def _get_bot():
 
 
 def _applicant_user(doc):
-	"""User id of the person the request is FOR (gets updates on their own request)."""
+	"""User id of the person the request is for."""
 	emp = doc.get("employee")
 	return frappe.db.get_value("Employee", emp, "user_id") if emp else None
 
@@ -97,8 +80,7 @@ def _role_users(role):
 
 
 def _hod_users(doc):
-	"""Users with the HOD role who belong to the SAME department as the applicant — so an HOD
-	is only notified about their own department's requests."""
+	"""HOD-role users in the applicant's own department."""
 	dept = doc.get("department") or frappe.db.get_value("Employee", doc.get("employee"), "department")
 	if not dept:
 		return []
@@ -116,11 +98,7 @@ def _hod_users(doc):
 
 
 def _approvers_for_state(doc, state):
-	"""Users who need to ACT at this stage, scoped to the applicant:
-	  Pending RM  -> the employee's OWN reporting manager (reports_to),
-	  Pending HOD -> the HOD(s) of the employee's OWN department,
-	  Pending HR  -> all HR Managers (HR acts company-wide).
-	Outcomes -> nobody (only the applicant is told)."""
+	"""Users who need to act at this stage, scoped to the applicant."""
 	s = (state or "").lower()
 	if "reporting manager" in s or "rm approval" in s:
 		rm = _rm_user(doc)
@@ -163,7 +141,7 @@ def _stage_icon(state):
 
 
 def _send_dm(bot, user, text, doc=None):
-	"""DM one user as the bot. Silent no-op on any failure — never blocks submit/approve."""
+	"""DM one user as the bot; silent no-op on failure."""
 	if not (bot and user):
 		return
 	try:
@@ -178,11 +156,7 @@ def _send_dm(bot, user, text, doc=None):
 
 
 def _notify_stage(label, doc, state, detail=""):
-	"""Targeted DMs for a stage change: the applicant gets a status update on their own
-	request; the stage's approver(s) get an action ping.
-
-	The DM carries the document as a link card (name + preview fields), so the text
-	itself stays free of the doc name and raw URLs — no repeated data."""
+	"""DM the applicant a status update and ping the stage's approver(s)."""
 	bot = _get_bot()
 	if not bot:
 		return
@@ -229,9 +203,7 @@ def _submitted(label, who, detail, doc):
 
 
 def notify_leave_application(doc, method=None):
-	# Per-stage, workflow-driven via `workflow_state`
-	# (Draft -> Pending Reporting Manager Approval -> HOD -> HR -> Approved/Rejected).
-	# Pending stages are docstatus 0 (on_update); Approved/Rejected submit (on_submit).
+	# per-stage, driven by workflow_state; pending stages are on_update, outcomes on_submit
 	if method == "on_update" and not doc.has_value_changed("workflow_state"):
 		return
 	state = doc.get("workflow_state")
@@ -248,7 +220,7 @@ def notify_attendance_request(doc, method=None):
 
 
 def notify_work_from_home(doc, method=None):
-	# Workflow-driven via the `status` field (Pending RM -> HOD -> HR -> Approved/Rejected).
+	# workflow-driven via the status field
 	if method == "on_update" and doc.has_value_changed("status"):
 		status = doc.get("status")
 		if not status or status == "Draft":
@@ -261,7 +233,7 @@ def notify_work_from_home(doc, method=None):
 
 
 def notify_job_requisition(doc, method=None):
-	# Workflow-driven: notify the next approver (RM/HOD/HR) on each state change.
+	# notify the next approver on each state change
 	if method == "on_update" and doc.has_value_changed("workflow_state"):
 		state = doc.get("workflow_state")
 		if not state or state == "Draft":
@@ -270,8 +242,7 @@ def notify_job_requisition(doc, method=None):
 
 
 def notify_expense_claim(doc, method=None):
-	# Per-stage via approval_status / workflow_state
-	# (Draft -> Pending RM Approval -> Approved by RM -> Submitted to Payroll -> Paid / Rejected).
+	# per-stage via approval_status / workflow_state
 	if method in ("on_update", "on_update_after_submit") and not (
 		doc.has_value_changed("approval_status") or doc.has_value_changed("workflow_state")
 	):

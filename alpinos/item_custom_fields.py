@@ -1,9 +1,4 @@
-"""
-Item master customization for Alpinos.
-
-- Existing Item fields are adjusted through Property Setters.
-- New Item fields are created as Custom Fields (e.g. SKU No, Pack Type, freebie flags).
-"""
+"""Item master customisation for Alpinos: custom fields + property setters."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -95,10 +90,7 @@ def setup_item_custom_fields():
 				insert_after="weight_uom",
 				description="Used by Pick List as Std Weight / Box and for gross weight totals.",
 			),
-			# --- Product Bundle ---
-			# Anchored in the Details tab (after `description`), NOT the Inventory tab —
-			# a bundle is forced non-stock, which hides the Inventory tab, so the section
-			# must live outside it or it would vanish the moment Is Bundle is ticked.
+			# Product Bundle. Kept in the Details tab because a bundle is non-stock and the Inventory tab is hidden.
 			dict(
 				fieldname="custom_product_bundle_section",
 				label="Product Bundle",
@@ -122,10 +114,7 @@ def setup_item_custom_fields():
 				insert_after="custom_is_bundle",
 				depends_on="eval:doc.custom_is_bundle",
 			),
-			# --- Allowed Customer Types (new tab) ---
-			# Channel-grouped selection of which Alpino Customer Types may use this item.
-			# Empty selection = available to ALL customer types (default). The grouped
-			# checkbox widget is rendered into the HTML field by the Item client script.
+			# Allowed Customer Types tab. Empty selection means available to all types.
 			dict(
 				fieldname="custom_customer_access_tab",
 				label="Allowed Customer Types",
@@ -172,9 +161,7 @@ def _setup_item_property_setters():
 			value="SKU",
 			property_type="Data",
 		),
-		# Valuation Rate is the default price the Sales Order falls back to (when the buyer
-		# has no Offline Buyer catalogue MRP). ERPNext hides it for non-stock items, but a
-		# bundle is forced non-stock — so show it for bundles too, giving them a default price.
+		# Show Valuation Rate for bundles too (they are non-stock) so they get a fallback price.
 		dict(
 			doctype_or_field="DocField",
 			doc_type="Item",

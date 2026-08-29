@@ -1,29 +1,17 @@
 """Keep employee salary confidential from the reporting hierarchy.
 
-Two parts:
-
-  1. Salary Slip is limited to the owning employee — managers (HOD / RM) never see a
-     subordinate's slip via the team/subordinate visibility. HR Manager and HR User (the
-     payroll roles) still see everything. Enforced through permission_query_conditions
-     (list views) + has_permission (single document).
-
-  2. The Employee salary section fields are moved to permission level 1, and only the HR
-     roles are granted that level — so a manager who can open a subordinate's Employee record
-     (via User Permissions) still cannot see the compensation fields.
-
-setup_employee_salary_field_permissions runs on every migrate (after_migrate hook).
+Salary Slip is limited to the owning employee (HR roles see everything), and Employee
+salary fields are moved to permission level 1 granted only to the HR roles.
 """
 
 import frappe
 
 
-# Roles allowed to see all salary (slips + Employee salary fields). Everyone else is limited
-# to their own employee record.
+# Roles that see all salary; everyone else is limited to their own employee record.
 SALARY_ADMIN_ROLES = ("HR Manager", "HR User")
 
-# Core Employee compensation fields always kept behind permission level 1. The full set is
-# discovered dynamically (every field under the "Salary" tab) so custom salary fields are
-# covered too — see _employee_salary_fields().
+# Core compensation fields kept behind permlevel 1; the full set is discovered
+# dynamically in _employee_salary_fields().
 EMPLOYEE_SALARY_FIELDS = (
 	"ctc",
 	"salary_mode",
@@ -41,23 +29,23 @@ def _employee_for_user(user):
 	return frappe.db.get_value("Employee", {"user_id": user}, "name")
 
 
-# --------------------------------------------------------------------------- Salary Slip
+# Salary Slip
 
 
 def salary_slip_query_conditions(user=None):
-	"""permission_query_conditions hook: restrict Salary Slip lists to the user's own employee."""
+	"""permission_query_conditions: restrict Salary Slip lists to the user's own employee."""
 	user = user or frappe.session.user
 	if _is_salary_admin(user):
 		return ""
 	employee = _employee_for_user(user)
 	if employee:
 		return f"`tabSalary Slip`.`employee` = {frappe.db.escape(employee)}"
-	# No linked employee -> see nothing (a condition that never matches).
+	# No linked employee: see nothing.
 	return "1=0"
 
 
 def salary_slip_has_permission(doc, user=None, permission_type=None):
-	"""has_permission hook: a non-admin user may only access their own salary slip."""
+	"""has_permission: a non-admin user may only access their own salary slip."""
 	user = user or frappe.session.user
 	if _is_salary_admin(user):
 		return True
@@ -65,16 +53,14 @@ def salary_slip_has_permission(doc, user=None, permission_type=None):
 	return bool(employee) and doc.get("employee") == employee
 
 
-# --------------------------------------------------------------- Employee salary field perms
+# Employee salary field perms
 
 
 def _employee_salary_fields(meta):
 	"""Every field under the Employee "Salary" tab, plus the core compensation fields.
 
-	Discovered dynamically so the custom salary fields on this site (CTC Monthly, Pay Frequency,
-	bank details, etc.) are covered without hard-coding their names. Walks the doctype's field
-	order: once inside a Tab Break labelled "Salary", every data field belongs to the section
-	until the next Tab Break.
+	Discovered by walking the field order: once inside a Tab Break labelled "Salary",
+	every data field belongs to the section until the next Tab Break.
 	"""
 	names = set(EMPLOYEE_SALARY_FIELDS)
 	in_salary = False

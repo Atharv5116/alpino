@@ -1,9 +1,4 @@
-"""
-Client Script for Stock Entry customizations:
-- Auto set Entry By to logged-in user
-- Default item UOM to Nos
-- Material Transfer warehouse rules
-"""
+"""Client Script for Stock Entry customizations."""
 
 import frappe
 

@@ -1,8 +1,4 @@
-"""Outside-geo-location check-ins for HR review (Alpinos workspace widget).
-
-Lists Employee Checkins flagged as outside the assigned geo-location (custom_outside_location),
-with the reason the employee gave. Visible to HR roles only.
-"""
+"""Outside-geo-location check-ins for HR review (Alpinos workspace widget)."""
 
 import frappe
 from frappe.utils import getdate
@@ -38,7 +34,7 @@ def get_outside_geo_checkins(from_date=None, to_date=None):
 			"custom_outside_reason",
 			"custom_outside_remarks",
 			"checkout_reason",
-			# IN (check-in) fields — the type the employee picks + free text for "Other"
+			# IN (check-in) fields
 			"custom_checkin_type",
 			"custom_checkin_reason",
 		],
@@ -58,9 +54,7 @@ def get_outside_geo_checkins(from_date=None, to_date=None):
 				"date": dt.strftime("%d-%m-%Y") if dt else "",
 				"checkin_time": dt.strftime("%H:%M") if dt else "",
 				"log_type": r.get("log_type"),
-				# Reason source depends on direction: a check-IN captures a type
-				# (Client/Vendor / Shoot / Meeting / Other) with free text for "Other";
-				# a check-OUT captures the outside/checkout reason.
+				# check-IN carries a type; check-OUT carries the outside/checkout reason
 				"reason": (
 					(r.get("custom_checkin_type") or "")
 					if r.get("log_type") == "IN"
@@ -78,8 +72,7 @@ def get_outside_geo_checkins(from_date=None, to_date=None):
 
 @frappe.whitelist()
 def download_outside_geo_checkins(from_date=None, to_date=None):
-	"""Excel export of the outside-geo-location check-ins for a date range (HR only).
-	Reuses get_outside_geo_checkins so the permission gate and query stay in one place."""
+	"""Excel export of the outside-geo-location check-ins for a date range (HR only)."""
 	from frappe.utils.xlsxutils import make_xlsx
 
 	res = get_outside_geo_checkins(from_date, to_date)

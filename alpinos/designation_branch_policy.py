@@ -1,15 +1,4 @@
-"""Branch-wise policy access on Designation, auto-filled into Employee Onboarding.
-
-- Adds a "Branch Policy Access" child table to Designation (one row per Branch, holding
-  the 13 Link->Policy values).
-- On Employee Onboarding, when `onboarding_designation` or `location` (office Branch) changes,
-  the 13 policy fields are auto-filled from the matching Designation/branch row. All values stay
-  editable and are not re-overwritten on a normal save. NOTE: onboarding_designation is a
-  free-text Data field, so a match requires its text to equal a Designation record's name
-  (get_branch_policy returns {} otherwise -> no fill).
-
-Wired via the after_migrate hook (setup_designation_branch_policy).
-"""
+"""Branch-wise policy access on Designation, auto-filled into Employee Onboarding."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -63,9 +52,7 @@ def _add_designation_table_field():
 
 @frappe.whitelist()
 def get_branch_policy(designation, branch):
-	"""Return {policy_fieldname: value} from the Designation's Branch Policy Access row
-	matching `branch`. Empty dict when designation/branch is missing or no row matches.
-	"""
+	"""Policy fields from the Designation's Branch Policy Access row matching branch, else {}."""
 	if not designation or not branch:
 		return {}
 	rows = frappe.get_all(
@@ -86,14 +73,7 @@ def get_branch_policy(designation, branch):
 
 
 def autofill_onboarding_policy(doc, method=None):
-	"""Server-side auto-fill of the Employee Onboarding Policy section.
-
-	Runs on validate (save) so it works regardless of how the onboarding was created — including
-	records auto-created from a Job Applicant, where the client-script field-change events never
-	fire. Fills the 13 policy fields from the Designation's Branch Policy Access row matching the
-	office Branch (`location`). Only EMPTY policy fields are filled, so manually entered values are
-	preserved and a normal re-save does not overwrite them.
-	"""
+	"""Fill empty onboarding policy fields from the Designation's branch row, on validate."""
 	designation = doc.get("designation")
 	# `onboarding_designation` is free text; fall back to matching it to a Designation name.
 	if not designation and doc.get("onboarding_designation"):

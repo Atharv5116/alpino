@@ -1,13 +1,8 @@
 """Role-based visibility for Pick List and Delivery Note.
 
-Two roles, created idempotently on `bench migrate`:
-
-* **Alpinos Full Access** — sees every Pick List and Delivery Note (no filter).
-* **Alpinos Assigned Only** — sees only documents where `custom_assigned_to`
-  equals the user OR `owner` equals the user.
-
-Users with neither role fall through to Frappe's standard permission system
-(no extra filter applied here). Administrator always bypasses.
+Alpinos Full Access sees everything; Alpinos Assigned Only sees only docs where
+custom_assigned_to or owner is the user. Others fall through to standard perms;
+Administrator always bypasses.
 """
 
 import frappe
@@ -18,9 +13,6 @@ FULL_ACCESS_ROLE = "Alpinos Full Access"
 
 
 def setup_visibility_roles():
-	"""Create the two visibility roles if they don't exist. Idempotent; safe to
-	run on every migrate.
-	"""
 	for role_name, description in [
 		(
 			FULL_ACCESS_ROLE,
@@ -55,13 +47,12 @@ def _is_full_access(user):
 	return _has_role(user, FULL_ACCESS_ROLE)
 
 
-# Per-doctype roles that are restricted to their own assigned documents
-# (in addition to the explicit "Alpinos Assigned Only" role).
+# Per-doctype roles restricted to their own assigned documents.
 _DT_ASSIGNED_ROLES = {
 	"Pick List": {"PL User"},
 	"Delivery Note": {"DN User"},
 }
-# Roles that always see everything for these doctypes (override the restriction).
+# Roles that always see everything (override the restriction).
 _DT_FULL_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager"}
 
 

@@ -1,7 +1,4 @@
-"""
-Workflow Setup for Employee Onboarding
-Creates a simple workflow: Draft → Email Sent → Employee Created
-"""
+"""Workflow setup for Employee Onboarding (Draft, Email Sent, Employee Created)."""
 
 import frappe
 from frappe import _
@@ -58,12 +55,10 @@ def setup_employee_onboarding_workflow():
 	workflow_name = "Employee Onboarding Workflow"
 	doctype = "Employee Onboarding"
 
-	# Delete existing workflow if any
 	if frappe.db.exists("Workflow", workflow_name):
 		frappe.delete_doc("Workflow", workflow_name, force=1, ignore_permissions=True)
 		frappe.db.commit()
 
-	# Workflow states
 	states = [
 		{
 			"state": "Draft",
@@ -94,7 +89,6 @@ def setup_employee_onboarding_workflow():
 		},
 	]
 
-	# Workflow transitions
 	transitions = [
 		{
 			"state": "Draft",
@@ -114,7 +108,6 @@ def setup_employee_onboarding_workflow():
 		},
 	]
 
-	# Create workflow
 	workflow_doc = frappe.get_doc({
 		"doctype": "Workflow",
 		"workflow_name": workflow_name,
@@ -142,13 +135,11 @@ def setup_employee_onboarding_workflow():
 
 
 def update_boarding_status_options():
-	"""Update boarding_status field options to match the new workflow states.
-	This ensures 'Draft', 'Email Sent', 'Employee Created' are valid values."""
+	"""Point the boarding_status field options and default at the workflow states."""
 	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 
 	new_options = "Draft\nEmail Sent\nEmployee Created"
 
-	# Update options via property setter
 	try:
 		existing = frappe.db.exists(
 			"Property Setter",
@@ -174,7 +165,7 @@ def update_boarding_status_options():
 	except Exception as e:
 		print(f"⚠️  Could not update boarding_status options: {str(e)}")
 
-	# Update default value
+	# default value
 	try:
 		existing = frappe.db.exists(
 			"Property Setter",
@@ -202,23 +193,13 @@ def update_boarding_status_options():
 
 
 def execute():
-	"""Execute Employee Onboarding workflow setup"""
 	try:
-		# Step 1: Update boarding_status field options FIRST
+		# options must exist before the workflow references the states
 		update_boarding_status_options()
-
-		# Step 2: Create workflow states
 		create_workflow_states()
-
-		# Step 3: Create workflow actions
 		create_workflow_actions()
-
-		# Step 4: Clear cache so meta is fresh
 		frappe.clear_cache()
-
-		# Step 5: Create the workflow
 		setup_employee_onboarding_workflow()
-
 		frappe.clear_cache()
 		print("\n✅ Employee Onboarding Workflow setup completed!")
 	except Exception as e:

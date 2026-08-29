@@ -1,13 +1,4 @@
-"""
-Item sequence management for Alpinos.
-
-When an item is saved with a sequence value that is already taken,
-all existing items with sequence >= the new value are shifted up by 1
-to make room (insert-before semantics).
-
-When an existing item's sequence is changed, items between the old
-and new positions are shifted accordingly to keep sequences contiguous.
-"""
+"""Item sequence management: shift existing items to keep custom_sequence contiguous."""
 
 import frappe
 

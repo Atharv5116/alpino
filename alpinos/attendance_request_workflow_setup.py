@@ -1,26 +1,8 @@
 """Approval workflow for Attendance Request (created on migrate).
 
-Flow:
-  - MISSING request (no prior punch on record): Reporting Manager approves -> done.
-  - EDIT request  (a prior punch exists)       : Reporting Manager approves -> HR Manager approves -> done.
-
-Everything below is enforced from this setup script — there is nothing to configure by
-hand:
-
-  * "Missing vs edit" is decided from the request's Existing Check-in Logs snapshot: if
-    any logged check-in/check-out is set, a prior punch existed (edit); otherwise it's
-    missing. The branch happens at the Reporting Manager step via two same-action
-    transitions whose conditions are mutually exclusive (only one is ever valid).
-
-  * Only the employee's OWN reporting person may act on the Reporting Manager step — not
-    any reporting manager. The request stores that person's user in `reporting_person`
-    (set on validate from Employee.reports_to -> user_id), so the condition is simply
-    `frappe.session.user == doc.reporting_person`.
-
-Approved = submitted (doc_status 1), which is when the app applies the requested
-check-ins (Attendance Request on_submit). HR Manager is also allowed on the Reporting
-Manager step as a safety valve so a request can never get stuck if the employee has no
-reporting person on record.
+Missing punch: Reporting Manager approves. Punch edit: Reporting Manager then HR Manager.
+Missing vs edit comes from custom_is_punch_edit; only the employee's own reporting person
+(reporting_person) may act on the RM step, with HR Manager as a safety valve.
 """
 
 import frappe
@@ -35,11 +17,8 @@ S_HR = "Pending HR Approval"
 S_APPROVED = "Approved"
 S_REJECTED = "Rejected"
 
-# EDIT = the request OVERWRITES a punch already on record; MISSING = it only fills a
-# genuinely-missing side. This is decided per-side (a ticked Edit Check-in/Check-out on a
-# side the Existing Logs snapshot already holds) and stamped onto `custom_is_punch_edit`
-# during validate — see CustomAttendanceRequest._set_punch_edit_flag. A day that already has
-# the OTHER side punched does NOT, by itself, make the request an edit.
+# EDIT overwrites a punch already on record; MISSING fills a missing side. Stamped onto
+# custom_is_punch_edit during validate (see CustomAttendanceRequest._set_punch_edit_flag).
 EDIT_COND = "doc.custom_is_punch_edit"
 MISSING_COND = "not doc.custom_is_punch_edit"
 
@@ -66,7 +45,7 @@ STATES = (
 # (state, action, next_state, allowed_role, condition)
 TRANSITIONS = (
 	(S_DRAFT, "Submit for Approval", S_RM, "Employee", ""),
-	# Reporting Manager step — only the employee's OWN reporting person; branch missing vs edit.
+	# RM step: only the employee's own reporting person; branch missing vs edit
 	(S_RM, "Approve", S_APPROVED, "Reporting Manager", _and(MISSING_COND, RM_IS_OWN_MANAGER)),
 	(S_RM, "Approve", S_HR, "Reporting Manager", _and(EDIT_COND, RM_IS_OWN_MANAGER)),
 	(S_RM, "Reject", S_REJECTED, "Reporting Manager", RM_IS_OWN_MANAGER),

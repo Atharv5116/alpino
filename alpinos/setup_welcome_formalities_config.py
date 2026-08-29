@@ -1,15 +1,9 @@
-"""
-Setup script to create default Welcome Formalities Config records
-Run: bench --site alpino console
-Then: exec(open('apps/alpinos/alpinos/setup_welcome_formalities_config.py').read())
-"""
+"""Create default Welcome Formalities Config records. Run in bench console: exec this file."""
 
 import frappe
 
 def setup_welcome_formalities_config():
-	"""
-	Create default configuration records for all 11 Welcome Formalities fields
-	"""
+	"""Create config records for all 11 Welcome Formalities fields."""
 	field_configs = [
 		{
 			"field_name": "collect_documents",
@@ -66,18 +60,15 @@ def setup_welcome_formalities_config():
 	
 	for config in field_configs:
 		try:
-			# Check if config already exists
 			existing = frappe.db.exists("Welcome Formalities Config", {"field_name": config["field_name"]})
-			
+
 			if existing:
-				# Update existing
 				config_doc = frappe.get_doc("Welcome Formalities Config", existing)
 				config_doc.tat_days = config["tat_days"]
 				config_doc.save()
 				updated_count += 1
 				print(f"✅ Updated: {config['field_name']} - TAT: {config['tat_days']} days")
 			else:
-				# Create new
 				config_doc = frappe.get_doc({
 					"doctype": "Welcome Formalities Config",
 					"field_name": config["field_name"],

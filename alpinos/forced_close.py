@@ -1,17 +1,8 @@
-"""
-Forced Close (Workflow 3).
+"""Forced Close: permanently close a Sales Order at whatever qty was dispatched.
 
-At any point where dispatched qty < ordered qty, the warehouse may permanently close
-a Sales Order at whatever has been dispatched — abandoning the remaining qty. Available
-on ANY order regardless of the Partial flag. A mandatory reason is captured and logged.
-
-Adaptation to this app's architecture (there is no PL-submission modal): Forced Close is
-the alternative to "Create PL for Remaining Qty" — a "Force Close Order" action on the SO
-view. Once closed, no new Pick List / Delivery Note can be created (enforced in
-partial_dispatch.validate_pick_list_partial).
-
-Status chain: ... -> Forced Dispatched -> Forced Completed (terminal). If nothing was
-dispatched, it closes straight to Forced Completed.
+Available on any order regardless of the Partial flag, with a mandatory reason. Once
+closed, no new Pick List / Delivery Note can be created. The status chain ends at
+Forced Completed (terminal); an order with nothing dispatched closes straight there.
 """
 
 import frappe
@@ -153,11 +144,9 @@ def force_close_sales_order(sales_order, reason):
 
 
 def apply_forced_close_after_pl(sales_order, pick_list, reason):
-	"""Force-close chosen in the short-pick modal at PL submission.
+	"""Force-close at Pick List submission: set the flag and move PL + SO to Forced Ready.
 
-	Called AFTER the closing Pick List is submitted (so its own validate never sees
-	the lock). Sets the force-close flag and moves PL + SO into the Forced Ready state;
-	the Delivery Note flow then drives Forced DN Created -> Forced Dispatched.
+	Called after the closing Pick List is submitted, so its own validate never sees the lock.
 	"""
 	from alpinos.workflow_engine import PL_FORCED_READY, SO_FORCED_READY, _set_status
 
@@ -189,7 +178,7 @@ def apply_forced_close_after_pl(sales_order, pick_list, reason):
 
 @frappe.whitelist()
 def confirm_forced_completion(sales_order):
-	"""Sales confirms delivery of a force-dispatched order -> Forced Completed (terminal)."""
+	"""Sales confirms delivery of a force-dispatched order, marking it Forced Completed."""
 	from alpinos.workflow_engine import SALES_ROLES, _require_roles, _set_status
 
 	_require_roles(SALES_ROLES)

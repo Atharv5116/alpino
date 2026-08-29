@@ -1,13 +1,6 @@
-# Bulk-restore Sales Orders from a Frappe report-export CSV, preserving the exact
-# Sales Order ID (name), stored values, docstatus and Workflow Status.
-#
-# "Force exact" restore: fields are set straight from the CSV and the doc is inserted
-# with validation/recompute bypassed, so rate/amount/tax/totals stay exactly as
-# exported. Submitted orders are flipped to docstatus 1 (Cancelled to 2) directly,
-# WITHOUT running submit side effects (no stock reservation / workflow engine / email).
-#
-# Fresh-create only: any ID that already exists is reported and skipped (never
-# overwritten). Dry run by default.
+# Bulk-restore Sales Orders from a report-export CSV, preserving name, stored values,
+# docstatus and Workflow Status. Fields are inserted with validation/recompute bypassed
+# so totals stay exactly as exported; existing IDs are skipped. Dry run by default.
 #
 #   bench --site <site> execute alpinos.so_bulk_restore.run --kwargs "{'csv_path': '/path/Sales Order (9).csv'}"
 #   bench --site <site> execute alpinos.so_bulk_restore.run --kwargs "{'csv_path': '...', 'apply': 1}"
@@ -21,9 +14,7 @@ from frappe.utils import cint, flt
 
 PARENT_DT = "Sales Order"
 
-# Default CSV location on the server (kept OUT of the repo — it holds customer PII).
-# Upload the export here once, then run() needs no csv_path:
-#   scp ~/Downloads/"Sales Order (9).csv" frappe@<server>:~/so_restore_9.csv
+# Default CSV location on the server (kept out of the repo — holds PII).
 DEFAULT_CSV = os.path.expanduser("~/so_restore_9.csv")
 
 # CSV child-table suffix -> child doctype
@@ -54,8 +45,8 @@ SKIP_FIELDS = {
 	"_liked_by", "_seen",
 }
 
-# parent monetary fields force-written after insert (belt-and-suspenders vs any
-# before_save recompute); only those present in the CSV are written
+# parent monetary fields force-written after insert (guard against a before_save recompute);
+# only those present in the CSV are written
 FORCE_PARENT = [
 	"total", "base_total", "net_total", "base_net_total",
 	"total_taxes_and_charges", "base_total_taxes_and_charges",
@@ -224,9 +215,7 @@ def run(csv_path=None, apply=0, limit=None, prefix="U"):
 			continue
 		try:
 			_create_one(gp, ci, parent_cols, child_maps, prefix)
-			# Commit each order on its own so one bad row cannot roll back the
-			# good orders already created in this run (the except-path rollback
-			# then only discards the current, uncommitted order).
+			# commit each order on its own so one bad row can't roll back the good ones
 			frappe.db.commit()
 			created += 1
 		except Exception as e:

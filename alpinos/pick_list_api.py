@@ -7,20 +7,10 @@ from frappe.utils import cint, flt, now_datetime
 
 
 def _link_family_addresses_to_customer(dn):
-	"""Make the DN's billing/shipping Address validate against its own customer.
+	"""Add the DN's customer to a family-shared Address so validate_party_address passes.
 
-	A Buyer Master family shares one address book: a customer can own several
-	masters (one per site), and picking any site shows that owning master's whole
-	address book. So a Sales Order placed on the family's PARENT customer can carry
-	a site Address whose Dynamic Link points at the CHILD master's customer that
-	owns the site. The address content is correct, but ERPNext's
-	validate_party_address checks the Dynamic Link and throws "Billing Address does
-	not belong to the customer", blocking DN creation from the Pick List.
-
-	Fix: when the Address is linked to a customer in the SAME buyer family, add the
-	missing Dynamic Link to this DN's customer too, so the DN validates AND keeps
-	its (correct) address. A genuinely foreign address — not in the family — is
-	left untouched so a real data error still surfaces rather than being masked."""
+	A genuinely foreign address is left untouched so a real data error still surfaces.
+	"""
 	from alpinos.sales_order_offline_buyer import buyer_family_customers
 
 	customer = dn.get("customer")
@@ -37,21 +27,16 @@ def _link_family_addresses_to_customer(dn):
 			pluck="link_name",
 		)
 		if customer in linked:
-			continue  # already this customer's address — nothing to do
+			continue  # already this customer's address
 		if not any(c in family for c in linked):
-			continue  # genuinely foreign address — leave it so the real error shows
+			continue  # foreign address, leave it so the real error shows
 		addr_doc = frappe.get_doc("Address", addr)
 		addr_doc.append("links", {"link_doctype": "Customer", "link_name": customer})
 		addr_doc.save(ignore_permissions=True)
 
 
 def _format_address_text(address_name: Optional[str]) -> str:
-	"""Return a plain-text, comma-separated address for the given Address name.
-
-	Used to seed Delivery Note Dispatch From / Dispatch To fields (Small Text)
-	from the standard ERPNext company / shipping address links. Returns "" when
-	the address can't be loaded so callers can fall back silently.
-	"""
+	"""Plain-text, comma-separated address for an Address name; "" when it can't load."""
 	if not address_name:
 		return ""
 	try:
@@ -118,22 +103,12 @@ def get_box_conversion_factor(item_code):
 
 SAMPLE_SOURCE_TABLES = {"Marketing Freebies", "Scheme Table", "Additional Units"}
 
-# Display order of source tables on the pick_list_entry page — used to keep
-# sticker output in the same sequence the user sees on screen.
+# Display order of source tables on the pick_list_entry page.
 SOURCE_TABLE_ORDER = ("Items", "Marketing Freebies", "Scheme Table", "Additional Units")
 
 
 def _ensure_batch_exists(item_code, batch_name, mfg_date=None, expiry_date=None):
-	"""Create the Batch master if it doesn't exist already.
-
-	Returns the batch name (string) on success, or None when:
-	  - item_code or batch_name is missing,
-	  - the Item is not batched (has_batch_no=0),
-	  - the insert raised — error is logged for follow-up.
-
-	Used when persisting custom_batch_code (free text) onto Delivery Note
-	Item.batch_no, which is a Link to Batch.
-	"""
+	"""Create the Batch master if missing; return its name or None (missing input / non-batched / insert failed)."""
 	if not item_code or not batch_name:
 		return None
 	if frappe.db.exists("Batch", batch_name):
@@ -169,22 +144,9 @@ DEFAULT_DN_DISPATCH_FROM = (
 
 
 def combine_sample_boxes(sample_infos):
-	"""Combine sample-box fractions continuously across the sample sections.
-
-	`sample_infos` is the ordered list of sample rows (Marketing Freebies → Scheme →
-	Additional Units, SKU-ascending within each), every entry a dict carrying at least
-	`frac` = qty / box-conversion-factor (the row's fractional box count) and `sku_name`.
-
-	Decimal box quantities are combined to complete whole boxes WITHOUT resetting between
-	sections: a SKU's whole-box part prints one single-SKU box each, and its leftover
-	fraction accumulates into a shared "mixed" box that shows every contributing SKU code.
-
-	Example: SKU1=0.56, SKU2=2.44, SKU3=3.00 →
-	  SKU1(0.56)+SKU2(0.44) = 1 mixed box (SKU1 & SKU2), SKU2 remainder = 2 boxes,
-	  SKU3 = 3 boxes → 6 boxes total.
+	"""Combine sample-box fractions continuously across sample sections into whole boxes.
 
 	Returns an ordered list of box units, each {'parts': [info, ...], 'is_mixed': bool}.
-	A trailing partial box (fractions that never reached a full box) still ships as one box.
 	"""
 	EPS = 1e-9
 	units = []
@@ -207,7 +169,7 @@ def combine_sample_boxes(sample_infos):
 			if carry >= 1.0 - EPS:
 				units.append({"parts": carry_parts, "is_mixed": _mixed(carry_parts)})
 				carry, carry_parts = 0.0, []
-		# 2. Whole boxes from the integer part — one single-SKU box each.
+		# 2. Whole boxes from the integer part.
 		full = int(remaining + EPS)
 		for _ in range(full):
 			units.append({"parts": [info], "is_mixed": False})
@@ -251,20 +213,13 @@ _sample_frac = sample_box_fraction
 
 
 def _collect_pick_list_stickers(doc):
-	"""Build the flat list of sticker dicts for one Pick List doc.
-
-	One sticker per box per row, ordered to match the page's section order.
-	Shared by the single-pick-list download and the bulk-download endpoint so
-	both produce identical stickers.
-	"""
+	"""Flat list of sticker dicts for one Pick List — one per box per row, in section order."""
 	party_name = doc.get("custom_customer_name") or ""
 	po_no = doc.get("custom_po_no") or ""
-	# Gate now lives on the PL header (one value for the whole pick), so we
-	# read it once outside the row loop and apply it to every sticker.
+	# Gate lives on the PL header, one value for the whole pick.
 	gate = doc.get("custom_gate") or ""
 
-	# SKU No (Item.custom_sku_no) per row — the Pick List Item doesn't store it, so read
-	# it from the Item master once and reuse for both sorting and the sticker value.
+	# SKU No per row (not stored on Pick List Item); read from Item master once.
 	from alpinos.utils import sku_sort_key
 	sku_no_map = {}
 	for row in doc.locations or []:
@@ -272,9 +227,7 @@ def _collect_pick_list_stickers(doc):
 		if code and code not in sku_no_map:
 			sku_no_map[code] = frappe.db.get_value("Item", code, "custom_sku_no") or ""
 
-	# Match the page's section order (Items > Marketing Freebies > Scheme >
-	# Additional Units), then order ascending by SKU No within each section — same
-	# ascending-SKU arrangement as the Pick List form and packing sheet.
+	# Section order, then ascending SKU No within each section.
 	def _row_sort_key(row):
 		src = row.get("custom_source_table") or "Items"
 		try:
@@ -296,11 +249,7 @@ def _collect_pick_list_stickers(doc):
 			"mfg_date": mfg_date,
 		}
 
-	# Build printable box units in page order. Item rows print one single-SKU box per
-	# custom_box, exactly as before. Sample rows (Marketing Freebies / Scheme /
-	# Additional Units) have their FRACTIONAL boxes (qty / conversion factor) combined
-	# continuously across all three sections, so leftover fractions share a "mixed"
-	# box whose sticker lists every contributing SKU code (see combine_sample_boxes).
+	# Item rows print one box per custom_box; sample rows have fractional boxes combined (see combine_sample_boxes).
 	item_units, sample_infos = [], []
 	for row in sorted_rows:
 		source_table = row.get("custom_source_table") or "Items"
@@ -332,8 +281,7 @@ def _collect_pick_list_stickers(doc):
 	for serial, unit in enumerate(all_units, start=1):
 		parts = unit["parts"]
 		if unit.get("is_mixed"):
-			# Mixed box — one physical box holding more than one SKU. Show every code
-			# ("<sku#> <code>" per SKU, joined) and mark the box number as MIX.
+			# Mixed box: one physical box holding several SKUs, numbered MIX.
 			sku_no = "MIX"
 			sku_name = " + ".join(
 				(f"{p['sku_no']} {p['sku_name']}").strip() for p in parts
@@ -361,27 +309,10 @@ def _collect_pick_list_stickers(doc):
 
 
 def _render_stickers_pdf(stickers, label, paper="label"):
-	"""Render a flat list of sticker dicts into a single PDF — one 100mm x 75mm
-	sticker per page.
+	"""Render sticker dicts into a PDF, one 100x75mm sticker per page.
 
-	`paper`:
-	  * "label" (default) — the page IS 100x75mm, so the sticker fills the whole
-	    label. For a 100x75mm label printer / roll.
-	  * "a4" — the SAME 100x75mm sticker centered on an A4 sheet (rest blank), for
-	    an ordinary A4 printer.
-
-	Both start from the identical 100x75mm render. wkhtmltopdf renders absolute
-	CSS lengths at a build-dependent scale (the box came out ~0.77x, ≈77x58mm, on
-	the production server), so straight after rendering we run
-	_normalize_stickers_to_exact_size() to force every page to a true 100x75mm.
-	For A4 we then compose that exact 100x75mm page, unscaled, onto a blank A4
-	page with pypdf — so the sticker keeps its exact physical size and just gets
-	A4 whitespace around it.
-
-	Calls pdfkit directly rather than frappe.utils.pdf.get_pdf ON PURPOSE:
-	get_pdf.prepare_options injects page-size=A4 alongside our page-width/height,
-	which wkhtmltopdf lets win — pushing the sticker into the corner of an A4 page.
-	Passing ONLY page-width/height yields an exact 100x75mm page.
+	`paper`: "label" (100x75mm page) or "a4" (same sticker centered on A4).
+	Calls pdfkit directly, not get_pdf, which would force page-size=A4.
 	"""
 	import pdfkit
 
@@ -401,12 +332,9 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 		"disable-smart-shrinking": "",
 		"disable-javascript": "",
 		"quiet": "",
-		# NOTE: deliberately no "zoom" here. wkhtmltopdf mis-scales absolute CSS
-		# lengths (mm/pt/px) by a factor that varies per build, and a --zoom fudge
-		# only ever fixed one build while breaking another. The exact size is
-		# enforced afterwards, geometrically, by _normalize_stickers_to_exact_size.
+		# No zoom: wkhtmltopdf mis-scales absolute lengths per build; size is fixed later by _normalize_stickers_to_exact_size.
 	}
-	# output_path=False -> return the PDF as bytes.
+	# output_path=False returns bytes.
 	label_pdf = pdfkit.from_string(html, False, options=options)
 	# wkhtmltopdf's absolute-length scale is build-dependent; force exact 100x75mm.
 	label_pdf = _normalize_stickers_to_exact_size(label_pdf)
@@ -416,25 +344,9 @@ def _render_stickers_pdf(stickers, label, paper="label"):
 
 
 def _normalize_stickers_to_exact_size(label_pdf):
-	"""Rescale every sticker page to a true 100mm x 75mm, whatever scale
-	wkhtmltopdf actually rendered at.
+	"""Rescale every sticker page to a true 100x75mm using its calibration anchor.
 
-	wkhtmltopdf renders absolute CSS lengths (mm/pt) at a build-dependent scale —
-	~1.0 on some builds, ~0.58 on the production server — so the nominally
-	100x75mm box lands at the wrong physical size (≈77x58mm on the server). We
-	can't fix that reliably with a --zoom constant, so we measure and correct.
-
-	Each sticker carries an invisible <a class="pl-cal"> anchor sized to the exact
-	100x75mm design box (see templates/print/pick_list_stickers.html). wkhtmltopdf
-	emits it as a PDF link annotation whose /Rect is the anchor's ACTUAL rendered
-	size — i.e. it reports the real scale directly. We read that rectangle, scale
-	every page (anchored at its top-left corner) so the box becomes exactly
-	100x75mm, reset the mediabox, and strip the calibration annotation.
-
-	The scale is identical for every page in one render, so it's measured once
-	from the first calibrated page and applied to all. Falls back to the
-	unmodified PDF if pypdf is missing or no calibration annotation is found — so
-	the worst case is the pre-existing behaviour, never an error.
+	Falls back to the unmodified PDF if pypdf is missing or no anchor is found.
 	"""
 	try:
 		import io
@@ -449,9 +361,7 @@ def _normalize_stickers_to_exact_size(label_pdf):
 	try:
 		reader = PdfReader(io.BytesIO(label_pdf))
 
-		# Find the calibration anchor's rendered rectangle on the first page that
-		# has one. Its width/height reveal wkhtmltopdf's real scale; its top-left
-		# corner (x0, y1 — PDF origin is bottom-left) is where content is anchored.
+		# Calibration anchor's rendered rect reveals the real scale; its top-left corner anchors content.
 		sx = sy = None
 		anchor_x0 = anchor_y1 = 0.0
 		for page in reader.pages:
@@ -472,29 +382,26 @@ def _normalize_stickers_to_exact_size(label_pdf):
 				break
 
 		if not sx:
-			# No calibration annotation (unexpected) — leave the PDF untouched.
+			# No calibration annotation; leave the PDF untouched.
 			return label_pdf
 
 		writer = PdfWriter()
 		for page in reader.pages:
-			# Scale about the anchor's top-left corner so the box grows/shrinks to
-			# exactly 100x75mm while staying pinned to the page's top-left.
+			# Scale about the anchor's top-left corner to exactly 100x75mm.
 			page.add_transformation(
 				Transformation(ctm=(sx, 0, 0, sy, -sx * anchor_x0, h_new - sy * anchor_y1))
 			)
 			page.mediabox = RectangleObject([0, 0, w_new, h_new])
 			page.cropbox = RectangleObject([0, 0, w_new, h_new])
 			if "/Annots" in page:
-				del page["/Annots"]  # drop the (now invisible) calibration link
+				del page["/Annots"]  # drop the calibration link
 			writer.add_page(page)
 
 		out = io.BytesIO()
 		writer.write(out)
 		return out.getvalue()
 	except Exception:
-		# Never let a normalization glitch break sticker printing — fall back to
-		# the un-normalized PDF (the pre-existing behaviour). Guard the log call
-		# itself so it can't raise out of this handler.
+		# Never let a normalization glitch break sticker printing.
 		try:
 			frappe.log_error(title="Pick List sticker size normalization failed")
 		except Exception:
@@ -503,12 +410,7 @@ def _normalize_stickers_to_exact_size(label_pdf):
 
 
 def _compose_stickers_on_a4(label_pdf):
-	"""Place each 100x75mm sticker page, unscaled, centered on its own A4 page.
-
-	Pure PDF geometry (pypdf) — no re-rendering — so the sticker keeps its exact
-	100x75mm physical size; only A4 whitespace is added around it. Falls back to
-	the original 100x75 PDF if pypdf is unavailable.
-	"""
+	"""Place each 100x75mm sticker page, unscaled, centered on its own A4 page."""
 	try:
 		import io
 		from pypdf import PdfReader, PdfWriter
@@ -535,16 +437,9 @@ def _compose_stickers_on_a4(label_pdf):
 
 @frappe.whitelist()
 def generate_pick_list_stickers(pick_list, paper="label"):
-	"""Return a PDF stream of pick-list stickers — one per box per row.
+	"""Return a PDF stream of pick-list stickers, one per box per row.
 
-	`paper`: "label" (100x75mm page, for a label printer) or "a4" (A4 page with
-	the same 100x75mm sticker upright at the top-left). See _render_stickers_pdf.
-
-	Sticker layout fields (per sticker dict): see templates/print/pick_list_stickers.html.
-	Rows whose custom_source_table is in SAMPLE_SOURCE_TABLES are marked
-	is_sample=1 so the template overlays a SAMPLE watermark + flag.
-	Box index is 1..N within the SKU; total_box is N (per-row, per spec answer).
-	Dispatch area is left blank until that source is confirmed.
+	`paper`: "label" (100x75mm) or "a4".
 	"""
 	doc = frappe.get_doc("Pick List", pick_list)
 	doc.check_permission("read")
@@ -562,12 +457,7 @@ def generate_pick_list_stickers(pick_list, paper="label"):
 
 @frappe.whitelist()
 def generate_pick_list_stickers_bulk(pick_lists, paper="label"):
-	"""Return a single PDF of stickers for several Pick Lists at once.
-
-	`pick_lists` is a JSON list of Pick List names (sent by the list page's
-	bulk "Download Stickers" action). Stickers are concatenated in the given
-	order; each sticker is its own page (page-break CSS lives in the template).
-	"""
+	"""Single PDF of stickers for several Pick Lists (JSON list of names)."""
 	if isinstance(pick_lists, str):
 		import json
 		pick_lists = json.loads(pick_lists)
@@ -589,10 +479,7 @@ def generate_pick_list_stickers_bulk(pick_lists, paper="label"):
 
 @frappe.whitelist()
 def download_pick_list_pdfs_zip(pick_lists):
-	"""Bulk export the packing-sheet PDFs for the selected Pick Lists, bundled into one ZIP
-	(the list page's "Download PDF" action — mirrors the Sales Order list's Export). One
-	PDF per Pick List, named by the Pick List. Lists that can't be rendered are skipped;
-	raises rather than returning an empty zip."""
+	"""Bulk export packing-sheet PDFs for the selected Pick Lists as one ZIP."""
 	import json
 	import zipfile
 	from io import BytesIO
@@ -628,18 +515,13 @@ def download_pick_list_pdfs_zip(pick_lists):
 
 @frappe.whitelist()
 def update_pick_list_assignment(pick_list, assigned_to):
-	"""Lightweight assignment update — works on any docstatus.
-
-	Used by the pick_list_entry page's on-change handler so the value sticks
-	immediately without going through the full save/submit flow. The field
-	is allow_on_submit=1, so this is safe even for docstatus=1 docs.
-	"""
+	"""Lightweight assignment update that works on any docstatus."""
 	if not pick_list:
 		frappe.throw("Pick List name is required.")
 	if not frappe.db.exists("Pick List", pick_list):
 		frappe.throw(f"Pick List {pick_list} not found.")
 	frappe.has_permission("Pick List", "write", doc=pick_list, throw=True)
-	# A PL User cannot (re)assign — only the warehouse manages assignment.
+	# A PL User cannot reassign; only the warehouse manages assignment.
 	_roles = set(frappe.get_roles())
 	if "PL User" in _roles and not (_roles & {"Warehouse Admin", "Warehouse Manager", "System Manager", "DN Manager"}):
 		frappe.throw(frappe._("You are not permitted to change the assigned picker."))
@@ -651,11 +533,7 @@ def update_pick_list_assignment(pick_list, assigned_to):
 
 @frappe.whitelist()
 def remove_pick_list_row_with_reason(pick_list, row_name, reason):
-	"""Remove a draft Pick List Item row with an audit entry in custom_removed_items.
-
-	Used by the pick_list_entry custom page. Returns True on success; throws on
-	invalid input.
-	"""
+	"""Remove a draft Pick List Item row, logging it in custom_removed_items."""
 	if not reason or not str(reason).strip():
 		frappe.throw("A reason is required to remove a row.")
 
@@ -690,14 +568,7 @@ def remove_pick_list_row_with_reason(pick_list, row_name, reason):
 
 @frappe.whitelist()
 def split_pick_list_row(pick_list, row_name, split_box):
-	"""Split a draft Pick List row by box count.
-
-	Clones the source row with `custom_box = split_box` and the matching
-	`qty = split_box * factor`, decrements the original's box and qty, clears
-	batch/MFG/expiry on the new row so a different batch can be assigned.
-	Throws if the item has no UOM 'Box' configured — we don't silently fall
-	back to a 1:1 factor.
-	"""
+	"""Split a draft Pick List row by box count into a new row (batch cleared)."""
 	split_box = cint(split_box)
 	doc = frappe.get_doc("Pick List", pick_list)
 	doc.check_permission("write")
@@ -824,16 +695,12 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	from erpnext.stock.doctype.pick_list.pick_list import create_delivery_note
 	import json
 
-	# Load Pick List to get its custom fields
 	pick_list = frappe.get_doc("Pick List", pick_list_name)
 
-	# Ensure Pick List is submitted
 	if pick_list.docstatus != 1:
 		frappe.throw("Pick List must be submitted to create a Delivery Note.")
 
-	# Ensure every referenced Sales Order is submitted — ERPNext's SO→DN mapper
-	# silently throws a cryptic "Cannot map because following condition fails:
-	# docstatus=1" otherwise.
+	# Every referenced Sales Order must be submitted, else the SO->DN mapper throws a cryptic error.
 	unsubmitted_sos = []
 	seen = set()
 	for loc in pick_list.locations or []:
@@ -854,8 +721,7 @@ def create_delivery_note_from_pick_list(pick_list_name):
 			f"submitted: {details}. Submit or amend the Sales Order(s) first."
 		)
 
-	# If a DN already exists against this pick list (previous attempt), return it
-	# instead of trying to create a duplicate — frontend can navigate to the real doc.
+	# Return an existing DN for this pick list instead of duplicating.
 	existing_dn = frappe.db.get_value(
 		"Delivery Note Item",
 		{"against_pick_list": pick_list_name, "docstatus": ["<", 2]},
@@ -864,13 +730,8 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	if existing_dn:
 		return existing_dn
 
-	# Bundle components are packed by ERPNext's native make_packing_list, which copies
-	# the batch/warehouse onto each packed item via update_packed_item_with_pick_list_info
-	# — but it reads the STANDARD batch_no field on the Pick List Item. The custom flow
-	# stores the picker's batch in custom_batch_code (free text) and leaves batch_no blank,
-	# so resolve it to a real Batch and stamp batch_no on the bundle-component rows first.
-	# (Native picks the single largest-qty batch per component; a component split across
-	# several batches keeps only the dominant one in the packed item.)
+	# make_packing_list reads the standard batch_no; our picker batch is in custom_batch_code,
+	# so resolve it to a real Batch and stamp batch_no on bundle-component rows first.
 	for loc in pick_list.locations or []:
 		if loc.get("product_bundle_item") and not loc.get("batch_no") and loc.get("custom_batch_code"):
 			bn = _ensure_batch_exists(
@@ -1001,9 +862,7 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	frappe.get_doc = _custom_get_doc
 	frappe.get_all = _custom_get_all
 
-	# Patch create_dn_with_so / create_dn_wo_so to drop zero-qty rows
-	# (items already fully delivered or never picked) before save, otherwise
-	# erpnext's validate_qty_is_not_zero blows up the whole DN creation.
+	# Patch create_dn_with_so / create_dn_wo_so to drop zero-qty rows before save.
 	from erpnext.stock.doctype.pick_list import pick_list as _pl_module
 	_orig_create_dn_with_so = _pl_module.create_dn_with_so
 	_orig_create_dn_wo_so = _pl_module.create_dn_wo_so
@@ -1033,7 +892,6 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	_pl_module.create_dn_wo_so = _patched_create_dn_wo_so
 
 	try:
-		# Call standard erpnext mapper to create Delivery Note
 		dn = create_delivery_note(pick_list_name)
 
 		if not dn:
@@ -1045,25 +903,20 @@ def create_delivery_note_from_pick_list(pick_list_name):
 		if isinstance(dn, str):
 			dn = frappe.get_doc("Delivery Note", dn)
 
-		# Map custom fields from Pick List to Delivery Note
 		dn.custom_sales_order_id = pick_list.custom_sales_order_id
 		dn.custom_dn_so_customer_name = pick_list.custom_customer_name
-		# Dispatch Date must be the Pick List's DISPATCH date (mirrors the SO's dispatch date),
-		# not its order date — otherwise the DN shows the order date and drifts from the PL.
+		# Use the Pick List's dispatch date, not its order date.
 		dn.custom_dispatch_date = (
 			pick_list.custom_dispatch_date or pick_list.custom_order_date or frappe.utils.now_datetime()
 		)
 		dn.custom_delivery_date = pick_list.custom_order_date or frappe.utils.now_datetime()
 
-		# Transporter — copy verbatim from Pick List (custom_transporter_name is
-		# now a Data field; no Select-option matching needed).
+		# Transporter: copy verbatim from Pick List.
 		dn.custom_transporter_name = pick_list.custom_transporter or ""
 		# Picklist PO No. lives in vehicle_no (re-labelled via Property Setter).
 		dn.vehicle_no = pick_list.custom_po_no or ""
 
-		# Copy custom_mfg_date / custom_expiry_date / custom_box from the matching
-		# Pick List Item rows — ERPNext's standard mapper drops these custom fields
-		# and Delivery Note Item declares them as reqd=1, blocking submit.
+		# Copy custom_mfg_date / custom_expiry_date / custom_box from the Pick List rows (mapper drops them).
 		pl_rows_by_name = {row.name: row for row in (pick_list.locations or [])}
 		for dn_item in dn.items:
 			pl_row = pl_rows_by_name.get(dn_item.get("pick_list_item"))
@@ -1075,12 +928,10 @@ def create_delivery_note_from_pick_list(pick_list_name):
 				dn_item.custom_expiry_date = pl_row.custom_expiry_date
 			if not dn_item.get("custom_box") and pl_row.get("custom_box"):
 				dn_item.custom_box = pl_row.custom_box
-			# Mirror the picker's free-text batch code onto DN Item unconditionally
-			# so it survives even when the Item isn't batched or Batch insert fails.
+			# Mirror the free-text batch code onto DN Item unconditionally.
 			if pl_row.get("custom_batch_code") and not dn_item.get("custom_batch_code"):
 				dn_item.custom_batch_code = pl_row.custom_batch_code
-			# Standard batch_no link: only set when the Item is batched and the
-			# Batch can be auto-created (or already exists).
+			# Standard batch_no link only when the Item is batched.
 			if not dn_item.get("batch_no") and pl_row.get("custom_batch_code"):
 				bn = _ensure_batch_exists(
 					dn_item.item_code,
@@ -1091,17 +942,14 @@ def create_delivery_note_from_pick_list(pick_list_name):
 				if bn:
 					dn_item.batch_no = bn
 
-		# Dispatch From: fixed company address (per spec). Override blanks.
+		# Dispatch From: fixed company address (per spec).
 		if not dn.get("custom_dispatch_from"):
 			dn.custom_dispatch_from = DEFAULT_DN_DISPATCH_FROM
 
 		if not (dn.get("custom_dispatch_to") or []):
 			dispatch_to = _format_address_text(dn.get("shipping_address_name"))
 			if not dispatch_to:
-				# E-com orders store the shipping address as free text on the SO
-				# (no ERPNext Address record), so shipping_address_name is blank —
-				# fall back to that text, else the billing text, so Dispatch To is
-				# populated (and the submit-time "Dispatch To required" check passes).
+				# E-com orders keep the address as free text on the SO; fall back to it.
 				so_name = dn.get("custom_sales_order_id")
 				if so_name:
 					addr = frappe.db.get_value(
@@ -1114,12 +962,10 @@ def create_delivery_note_from_pick_list(pick_list_name):
 			if dispatch_to:
 				dn.append("custom_dispatch_to", {"dispatch_to_address": dispatch_to})
 
-		# Save updated Delivery Note bypassing validations for Draft
 		dn.flags.ignore_mandatory = True
 		dn.save(ignore_permissions=True)
 		frappe.db.commit()
 	finally:
-		# Restore original msgprint, get_doc, and get_all
 		frappe.msgprint = _original_msgprint
 		frappe.get_doc = _original_get_doc
 		frappe.get_all = _original_get_all
@@ -1133,8 +979,7 @@ def create_delivery_note_from_pick_list(pick_list_name):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def warehouse_user_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Link query for Pick List 'Assigned To' — only enabled users holding the
-	PL User or PL Manager role."""
+	"""Link query for Pick List 'Assigned To': enabled PL User / PL Manager users."""
 	txt = txt or ""
 	return frappe.db.sql(
 		"""

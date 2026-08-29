@@ -55,7 +55,6 @@ def recalculate_quotation_item_row(doc, row) -> None:
 	if not flt(_rget(row, "custom_mrp")):
 		return
 
-	# Retrieve GST percent
 	gst_pct = flt(_rget(row, "custom_item_tax_percent") or _rget(row, "custom_gst_percent") or _rget(row, "gst_percent") or 0)
 	if not gst_pct and _rget(row, "item_code"):
 		import frappe

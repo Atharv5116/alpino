@@ -1,7 +1,4 @@
-"""
-Workflow Setup for Job Requisition
-Creates approval workflow as per SRS requirements
-"""
+"""Approval workflow setup for Job Requisition."""
 
 import frappe
 from frappe import _
@@ -20,7 +17,6 @@ def create_required_roles():
 			"desk_access": 1,
 			"is_custom": 1
 		},
-		# HR Manager might already exist, but we'll check
 		{
 			"role_name": "HR Manager",
 			"desk_access": 1,
@@ -106,7 +102,7 @@ def create_workflow_states():
 					"doctype": "Workflow State",
 					"workflow_state_name": state_name,
 					"icon": "",
-					"style": ""  # Use empty string - valid values: "", "Primary", "Info", "Success", "Warning", "Danger", "Inverse"
+					"style": ""  # valid: "", Primary, Info, Success, Warning, Danger, Inverse
 				})
 				state_doc.insert(ignore_permissions=True)
 				frappe.db.commit()
@@ -116,12 +112,11 @@ def create_workflow_states():
 				error_msg = str(e)
 				print(f"⚠️  Could not create Workflow State {state_name}: {error_msg}")
 				failed_states.append((state_name, error_msg))
-				# Don't raise here, collect all failures first
+				# collect all failures before raising
 		else:
 			existing_count += 1
 			print(f"ℹ️  Workflow State {state_name} already exists")
 	
-	# If there are failures, try to provide helpful error message
 	if failed_states:
 		error_details = "\n".join([f"  - {name}: {error}" for name, error in failed_states])
 		raise Exception(
@@ -146,7 +141,6 @@ def update_status_field_options():
 	)
 	
 	try:
-		# Get the field
 		field = frappe.get_doc("DocField", {"parent": "Job Requisition", "fieldname": "status"})
 		if field:
 			field.options = status_options
@@ -155,7 +149,6 @@ def update_status_field_options():
 			print("✅ Updated status field options")
 	except Exception as e:
 		print(f"⚠️  Could not update status field: {str(e)}")
-		# Try using property setter as fallback
 		try:
 			from alpinos.patches.v1_0.update_job_requisition_fields import update_property_setter
 			update_property_setter("Job Requisition", "status", "options", status_options, "Text")
@@ -171,57 +164,55 @@ def setup_job_requisition_workflow():
 	
 	workflow_name = "Job Requisition Approval Workflow"
 	doctype = "Job Requisition"
-	
-	# Delete existing workflow if any
+
 	if frappe.db.exists("Workflow", workflow_name):
 		frappe.delete_doc("Workflow", workflow_name, force=1, ignore_permissions=True)
 		frappe.db.commit()
-	
-	# Define workflow states
+
 	states = [
 		{
 			"state": "Draft",
-			"doc_status": "0",  # Saved (not submitted)
+			"doc_status": "0",
 			"update_field": "status",
 			"update_value": "Draft",
 			"is_optional_state": 0,
 			"next_action_email_template": "",
-			"allow_edit": "All",  # Requestor can edit
+			"allow_edit": "All",
 			"send_email": 0
 		},
 		{
 			"state": "Pending Reporting Manager Approval",
-			"doc_status": "0",  # Saved (not submitted until final approval)
+			"doc_status": "0",
 			"update_field": "status",
 			"update_value": "Pending Reporting Manager Approval",
 			"is_optional_state": 0,
 			"next_action_email_template": "",
-			"allow_edit": "Reporting Manager",  # Only Reporting Manager can edit
+			"allow_edit": "Reporting Manager",
 			"send_email": 1
 		},
 		{
 			"state": "Pending HOD Approval",
-			"doc_status": "0",  # Saved (not submitted until final approval)
+			"doc_status": "0",
 			"update_field": "status",
 			"update_value": "Pending HOD Approval",
 			"is_optional_state": 0,
 			"next_action_email_template": "",
-			"allow_edit": "HOD",  # Only HOD can edit
+			"allow_edit": "HOD",
 			"send_email": 1
 		},
 		{
 			"state": "Pending HR Approval",
-			"doc_status": "0",  # Saved (not submitted until final approval)
+			"doc_status": "0",
 			"update_field": "status",
 			"update_value": "Pending HR Approval",
 			"is_optional_state": 0,
 			"next_action_email_template": "",
-			"allow_edit": "HR Manager",  # Only HR can edit
+			"allow_edit": "HR Manager",
 			"send_email": 1
 		},
 		{
 			"state": "Live",
-			"doc_status": "1",  # Submitted (published with job opening)
+			"doc_status": "1",
 			"update_field": "status",
 			"update_value": "Live",
 			"is_optional_state": 0,
@@ -231,7 +222,7 @@ def setup_job_requisition_workflow():
 		},
 		{
 			"state": "Rejected",
-			"doc_status": "0",  # Saved (rejected before final submission)
+			"doc_status": "0",
 			"update_field": "status",
 			"update_value": "Rejected",
 			"is_optional_state": 0,
@@ -241,40 +232,37 @@ def setup_job_requisition_workflow():
 		},
 		{
 			"state": "Returned to Requestor",
-			"doc_status": "0",  # Saved (not submitted, allowing edits)
+			"doc_status": "0",
 			"update_field": "status",
 			"update_value": "Returned to Requestor",
 			"is_optional_state": 0,
 			"next_action_email_template": "",
-			"allow_edit": "All",  # Requestor can edit
+			"allow_edit": "All",
 			"send_email": 1
 		},
 		{
 			"state": "On Hold",
-			"doc_status": "0",  # Saved (not submitted, temporarily paused)
+			"doc_status": "0",
 			"update_field": "status",
 			"update_value": "On Hold",
 			"is_optional_state": 0,
 			"next_action_email_template": "",
-			"allow_edit": "HR Manager",  # HR/Management can edit
+			"allow_edit": "HR Manager",
 			"send_email": 1
 		}
 	]
 	
-	# Define workflow transitions
 	transitions = [
-		# Forward flow: Draft → Reporting Manager
+		# forward flow
 		{
 			"state": "Draft",
 			"action": "Submit for Approval",
 			"next_state": "Pending Reporting Manager Approval",
-			"allowed": "All",  # Requestor can submit
+			"allowed": "All",
 			"allow_self_approval": 1,
 			"condition": "",
 			"send_email_to_creator": 0
 		},
-		
-		# Forward flow: Reporting Manager → HOD (or HR if no HOD)
 		{
 			"state": "Pending Reporting Manager Approval",
 			"action": "Approve",
@@ -293,8 +281,6 @@ def setup_job_requisition_workflow():
 			"condition": "",
 			"send_email_to_creator": 1
 		},
-		
-		# Forward flow: HOD → HR
 		{
 			"state": "Pending HOD Approval",
 			"action": "Approve",
@@ -304,8 +290,6 @@ def setup_job_requisition_workflow():
 			"condition": "",
 			"send_email_to_creator": 1
 		},
-		
-		# Forward flow: HR → Live (create published job opening)
 		{
 			"state": "Pending HR Approval",
 			"action": "Live",
@@ -315,8 +299,8 @@ def setup_job_requisition_workflow():
 			"condition": "",
 			"send_email_to_creator": 0
 		},
-		
-		# Rejection transitions (from any approval state)
+
+		# rejections
 		{
 			"state": "Pending Reporting Manager Approval",
 			"action": "Reject",
@@ -344,8 +328,8 @@ def setup_job_requisition_workflow():
 			"condition": "",
 			"send_email_to_creator": 1
 		},
-		
-		# Return to Requestor transitions
+
+		# return to requestor
 		{
 			"state": "Pending Reporting Manager Approval",
 			"action": "Return to Requestor",
@@ -373,8 +357,8 @@ def setup_job_requisition_workflow():
 			"condition": "",
 			"send_email_to_creator": 1
 		},
-		
-		# On Hold transitions (from any approval state)
+
+		# on hold
 		{
 			"state": "Pending Reporting Manager Approval",
 			"action": "Put on Hold",
@@ -402,7 +386,7 @@ def setup_job_requisition_workflow():
 			"condition": "",
 			"send_email_to_creator": 1
 		},
-		# Resume from Hold
+		# resume from hold
 		{
 			"state": "On Hold",
 			"action": "Resume",
@@ -430,8 +414,8 @@ def setup_job_requisition_workflow():
 			"condition": "",
 			"send_email_to_creator": 1
 		},
-		
-		# Resubmit after Return
+
+		# resubmit after return
 		{
 			"state": "Returned to Requestor",
 			"action": "Resubmit",
@@ -443,26 +427,21 @@ def setup_job_requisition_workflow():
 		}
 	]
 	
-	# Create workflow document
 	workflow_doc = frappe.get_doc({
 		"doctype": "Workflow",
 		"workflow_name": workflow_name,
 		"document_type": doctype,
 		"is_active": 1,
-		"override_status": 1,  # Override status field with workflow state
-		"workflow_state_field": "status",  # Use existing status field
-		"send_email_alert": 1  # Send email alerts
+		"override_status": 1,
+		"workflow_state_field": "status",
+		"send_email_alert": 1
 	})
-	
-	# Add states
+
 	for state_data in states:
 		workflow_doc.append("states", state_data)
-	
-	# Add transitions
 	for transition_data in transitions:
 		workflow_doc.append("transitions", transition_data)
-	
-	# Insert workflow
+
 	workflow_doc.insert(ignore_permissions=True)
 	frappe.db.commit()
 	
@@ -502,29 +481,15 @@ def verify_workflow_states_exist():
 
 
 def execute():
-	"""Execute workflow setup"""
 	try:
-		# Step 1: Create Workflow State master records FIRST (required for workflow validation)
+		# states and actions must exist before the workflow references them
 		create_workflow_states()
-		
-		# Step 2: Verify all states exist (fail fast if any are missing)
 		verify_workflow_states_exist()
-		
-		# Step 3: Create Workflow Action Master records (required for transitions)
 		create_workflow_actions()
-		
-		# Step 4: Update status field options (critical for workflow validation)
 		update_status_field_options()
-		
-		# Step 5: Create required roles
 		create_required_roles()
-		
-		# Step 6: Clear cache to ensure updated field options are loaded
 		frappe.clear_cache()
-		
-		# Step 7: Create workflow (now all prerequisites are met)
 		setup_job_requisition_workflow()
-		
 		frappe.clear_cache()
 		print("\n✅ Job Requisition Workflow setup completed successfully!")
 	except Exception as e:

@@ -9,17 +9,13 @@ from alpinos.pick_list_api import resolve_batch_no_from_args
 
 @frappe.whitelist()
 def update_delivery_note_assignment(delivery_note, assigned_to):
-	"""Lightweight assignment update — works on any docstatus.
-
-	Used by the delivery_note_entry page's on-change handler. custom_assigned_to
-	is allow_on_submit=1, so this is safe even for submitted DNs.
-	"""
+	"""Assignment-only update; works on any docstatus (custom_assigned_to is allow_on_submit)."""
 	if not delivery_note:
 		frappe.throw("Delivery Note name is required.")
 	if not frappe.db.exists("Delivery Note", delivery_note):
 		frappe.throw(f"Delivery Note {delivery_note} not found.")
 	frappe.has_permission("Delivery Note", "write", doc=delivery_note, throw=True)
-	# A DN User cannot (re)assign — only the warehouse manages assignment.
+	# DN User cannot reassign; only the warehouse manages assignment
 	_roles = set(frappe.get_roles())
 	if "DN User" in _roles and not (_roles & {"Warehouse Admin", "Warehouse Manager", "System Manager", "PL Manager"}):
 		frappe.throw(frappe._("You are not permitted to change the assigned person."))

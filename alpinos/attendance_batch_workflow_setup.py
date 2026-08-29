@@ -1,15 +1,4 @@
-"""Approval workflow for Monthly Attendance Batch (created on migrate).
-
-Flow: Draft -> Pending Approval -> Approved (submit) -> Locked.
-
-  * HR User / HR Manager build the batch in Draft (fetch/upload/edit rows).
-  * Submit for Approval parks it with HR Manager.
-  * Approve submits the document (docstatus 1) — Frappe then blocks all edits,
-    and the controller additionally blocks populate_rows outside Draft.
-  * Lock is the month-end hard stop (payroll has consumed the batch). Same
-    docstatus, but pages and APIs treat Locked as terminal.
-  * Reject returns the batch to Draft for correction.
-"""
+"""Approval workflow for Monthly Attendance Batch: Draft -> Pending Approval -> Approved -> Locked."""
 
 import frappe
 
