@@ -1,14 +1,9 @@
-"""
-E-Commerce Sales Order — Excel/CSV bulk import.
+"""E-Commerce Sales Order bulk import from Excel/CSV.
 
-One row per SKU line; order-level columns (customer, PO, dates, flags, addresses)
-repeat on each line and rows are grouped into one order by PO Number + Customer.
-
-Import routes every group through the real create_ecom_sales_order API, so channel
-= E-com, the buyer flags, Margin% -> Selling Price, PO-uniqueness / GSTIN / margin
-validations and the buyer-catalogue write-back all apply exactly as the entry page.
-Each order commits on its own; a failed order is rolled back and reported without
-blocking the rest.
+One row per SKU line; order-level columns repeat and rows are grouped into one order by
+PO Number + Customer. Each group is routed through create_ecom_sales_order, so all the
+entry-page validations and write-backs apply. Each order commits on its own; a failure
+is rolled back and reported without blocking the rest.
 """
 
 import frappe
@@ -18,8 +13,7 @@ from frappe.utils import cint, flt, getdate
 from alpinos.ecom_sales_order_api import create_ecom_sales_order
 from alpinos.sales_order_offline_buyer import get_offline_buyer_for_customer
 
-# Column order for the template (header row). Keep labels stable — the importer
-# matches on these (case-insensitive, trimmed).
+# Template header row. Keep labels stable; the importer matches on these (case-insensitive).
 COLUMNS = [
 	"Customer", "Customer Type", "PO Number", "PO Date", "PO Expiry Date",
 	"Dispatch Date", "Delivery By Date", "Site Name",
@@ -161,10 +155,10 @@ def _orders_from_rows(rows):
 
 
 def _assert_sheet_matches_master(first, buyer, site_name):
-	"""Point (3): values the sheet supplies for site/buyer-derived fields must MATCH what the
-	system would auto-fetch - the Buyer Master SITE for GST / GST-Exclusive, the buyer master for
-	Customer Type and the order flags. A blank sheet cell just auto-fetches (no error); a
-	mismatch rejects the order. Address columns are exempt - taken as-is."""
+	"""Sheet values for site/buyer-derived fields must match what the system would auto-fetch.
+
+	A blank cell just auto-fetches; a mismatch rejects the order. Address columns are exempt.
+	"""
 	from alpinos.sales_order_offline_buyer import _gst_for_site, _flag_for_site
 
 	def _norm(v):

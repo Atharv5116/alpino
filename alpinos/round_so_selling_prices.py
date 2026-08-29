@@ -1,24 +1,14 @@
-"""One-time bulk fix: re-derive EXISTING Sales Order amounts from selling_price x qty.
+"""One-time bulk fix: re-derive existing Sales Order amounts from selling_price x qty.
 
-Problem: ERPNext stores the net rate at 2 dp (49 / 1.05 = 46.6667 -> 46.67) and computes
-`amount = rate x qty`, so 46.67 x 120 = 5,600.40 -> 5,880.40 incl, instead of the clean
-49 x 120 = 5,880.00. The stray paise live in the stored amount/rate, not the (already
-2-dp) selling price.
+ERPNext stores the net rate at 2dp and computes amount = rate x qty, leaving stray paise in
+the stored amount/rate. This resets each line's net amount to round(selling_price x qty /
+(1 + gst%/100), 2), recomputes rate/tax and the order totals, and writes direct to the DB
+(db_update, no doc.save()) so submitted orders update in place. Only orders whose stored
+amount actually differs from the clean recompute are touched.
 
-Fix (matches the save-time behaviour in sales_order_api._apply_clean_gst_amounts): for
-each line set net amount = round(selling_price x qty / (1 + gst%/100), 2), recompute rate
-and custom_item_tax, then recompute the order totals (net_total, the On-Net-Total GST rows
-IGST/CGST+SGST, grand_total, rounded_total). Writes are DIRECT DB (db_update) -- no
-doc.save(), so no validate/notification hooks fire and submitted orders update in place.
-
-This CHANGES order grand totals (each affected order drops a few paise to ~1 rupee) --
-that is the point (removing the accumulated rounding). Only orders whose stored amount
-actually differs from the clean recompute are touched.
-
-DRY-RUN by default.
-  Preview:  bench --site SITE execute alpinos.round_so_selling_prices.run
-  Commit :  bench --site SITE execute alpinos.round_so_selling_prices.run --kwargs '{"commit": true}'
-  Inspect:  bench --site SITE execute alpinos.round_so_selling_prices.diagnose --kwargs '{"name": "SOR-..."}'
+DRY-RUN by default:
+  bench --site SITE execute alpinos.round_so_selling_prices.run
+  bench --site SITE execute alpinos.round_so_selling_prices.run --kwargs '{"commit": true}'
 """
 
 import frappe
@@ -28,8 +18,7 @@ _TOL = 0.01
 
 
 def diagnose(name):
-	"""Show, per line, the stored vs clean-recomputed amount, and the order totals before
-	vs after, without writing anything."""
+	"""Per-line stored vs clean-recomputed amounts and order totals, without writing."""
 	from alpinos.sales_order_api import _apply_clean_gst_amounts
 
 	doc = frappe.get_doc("Sales Order", name)
@@ -104,8 +93,7 @@ def run(commit=False, limit=None, names=None, full=False):
 		lines_changed += len(changed)
 		for r in changed:
 			if len(line_samples) < cap:
-				# stored NET amount old -> new, and the GST-INCLUSIVE amount shown on the
-				# screen/PDF (selling_price x qty) so it can be cross-checked with the view.
+				# old -> new net amount, plus the GST-inclusive amount (selling_price x qty)
 				incl = flt(flt(r.custom_selling_price) * flt(r.qty), 2)
 				line_samples.append(
 					(name, r.item_code, before_amt.get(r.name, 0), flt(r.amount), incl)

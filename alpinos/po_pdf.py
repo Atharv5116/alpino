@@ -1,12 +1,4 @@
-"""Fetch customer PO PDFs onto Sales Orders.
-
-The PDFs live in a server folder configured in Alpino General Settings
-(`po_pdf_folder`). A Sales Order names its PO file in `custom_po_no_for_pdf`;
-fetch_po_pdf reads `<that value>.pdf` from the folder and attaches it to the
-order (`custom_po_pdf`). Triggered on leaving the field, by the Fetch PO PDF
-buttons (desk form + Alpino Sales Order View), and automatically after an
-entry-page save when the field is set.
-"""
+"""Fetch customer PO PDFs from the configured server folder onto Sales Orders."""
 
 import os
 
@@ -21,7 +13,7 @@ def _resolve_pdf_path(po_no):
 	if not os.path.isdir(folder):
 		frappe.throw(_("PO PDF Folder does not exist on the server: {0}").format(folder))
 
-	# The PO number is a file name only — never a path (blocks traversal).
+	# file name only, never a path (blocks traversal)
 	safe = os.path.basename((po_no or "").strip())
 	if not safe:
 		frappe.throw(_("Set 'PO No for PDF' first."))
@@ -40,8 +32,7 @@ def _resolve_pdf_path(po_no):
 
 @frappe.whitelist()
 def fetch_po_pdf(sales_order, po_no_for_pdf=None):
-	"""Fetch the PO PDF for a Sales Order and attach it (replaces a previously
-	fetched one). Returns {file_url, file_name}."""
+	"""Fetch the PO PDF for a Sales Order and attach it, replacing any previous one."""
 	doc = frappe.get_doc("Sales Order", sales_order)
 	doc.check_permission("write")
 
@@ -51,7 +42,7 @@ def fetch_po_pdf(sales_order, po_no_for_pdf=None):
 	with open(path, "rb") as f:
 		content = f.read()
 
-	# Replace the previously fetched attachment so re-fetching doesn't pile up files.
+	# drop the previous attachment before re-attaching
 	if doc.get("custom_po_pdf"):
 		old = frappe.db.get_value(
 			"File",
@@ -77,8 +68,7 @@ def fetch_po_pdf(sales_order, po_no_for_pdf=None):
 		}
 	).insert(ignore_permissions=True)
 
-	# db_set: works on submitted orders too (fields are allow_on_submit) and
-	# avoids re-running the whole SO validate chain for a file fetch.
+	# db_set works on submitted orders (allow_on_submit) and skips the SO validate chain
 	doc.db_set("custom_po_no_for_pdf", po_no, update_modified=False)
 	doc.db_set("custom_po_pdf", file_doc.file_url, update_modified=False)
 	frappe.db.commit()
@@ -86,8 +76,7 @@ def fetch_po_pdf(sales_order, po_no_for_pdf=None):
 
 
 def maybe_fetch_po_pdf(sales_order):
-	"""Best-effort fetch after entry-page saves — never breaks the save; the
-	user can always use the Fetch PO PDF button and get the real error."""
+	"""Best-effort fetch after an entry-page save; never breaks the save."""
 	try:
 		if frappe.db.get_value("Sales Order", sales_order, "custom_po_no_for_pdf"):
 			fetch_po_pdf(sales_order)

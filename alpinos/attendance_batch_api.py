@@ -1,9 +1,4 @@
-"""Backend for the Attendance Batch pages (list + entry).
-
-The pages are thin clients over Monthly Attendance Batch:
-  - attendance_batch_list : ledger of batches with rule-engine tabs
-  - attendance_batch_entry: one batch — ingestion, grid, summary, workflow actions
-"""
+"""Backend for the Attendance Batch pages (list + entry)."""
 
 import frappe
 from frappe import _

@@ -2,10 +2,7 @@ import frappe
 
 
 def raven_channel_query(user: str | None = None) -> str:
-	"""
-	Only show channels where the user is a member.
-	This is used only for standard get_list/get_all security filtering.
-	"""
+	"""Only show channels where the user is a member."""
 	if not user:
 		user = frappe.session.user
 	escaped_user = frappe.db.escape(user)
@@ -17,10 +14,7 @@ def raven_channel_query(user: str | None = None) -> str:
 
 
 def raven_message_query(user: str | None = None) -> str:
-	"""
-	Only show messages in channels where the user is a member.
-	Kept in alpinos so we don't need to modify the raven app.
-	"""
+	"""Only show messages in channels where the user is a member."""
 	if not user:
 		user = frappe.session.user
 	escaped_user = frappe.db.escape(user)

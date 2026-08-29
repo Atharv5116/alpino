@@ -1,27 +1,11 @@
-"""Default Present.
-
-An Employee ticked `custom_default_present` is marked **Present for every working
-day** using the assigned shift's timing, ignoring their actual check-ins AND
-overriding any leave for that day (per the client's "present always" choice),
-until the box is un-ticked.
-
-Cadence: DAILY. A day is deterministic (no punches needed), so a daily job
-pre-marks today + a short look-back for each such employee. Marking the day
-early means the normal auto-attendance run finds an Attendance already there and
-skips it — no "Absent then Present" flicker.
-
-  * setup_default_present_field()  -> after_migrate: the Employee checkbox
-  * run_daily()                    -> scheduled: mark today + look-back
-  * mark_default_present_for_day() -> the single-day marker (create OR override)
-  * backfill()                     -> whitelisted one-off for a date range
-"""
+"""Mark Default-Present employees Present on every working day using their shift timing."""
 
 import datetime
 
 import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate, now_datetime
 
-LOOKBACK_DAYS = 3  # daily job also re-checks the last few days in case it was down
+LOOKBACK_DAYS = 3  # also re-check the last few days in case the job was down
 
 
 def setup_default_present_field():
@@ -49,16 +33,14 @@ def setup_default_present_field():
 
 
 def _is_holiday(holiday_list, date):
-	"""True when `date` is a Public Holiday or weekly-off on the employee's Holiday List
-	(i.e. NOT a working day). No holiday list -> treat every day as working."""
+	"""True when date is a holiday or weekly-off on the employee's Holiday List."""
 	if not holiday_list:
 		return False
 	return bool(frappe.db.exists("Holiday", {"parent": holiday_list, "holiday_date": date}))
 
 
 def _shift_for(employee, date, default_shift):
-	"""The Shift Type in force for the employee on `date`: an active Shift Assignment
-	covering the date, else the Employee's default shift."""
+	"""Active Shift Assignment covering the date, else the employee's default shift."""
 	rows = frappe.db.sql(
 		"""
 		SELECT shift_type FROM `tabShift Assignment`
@@ -80,8 +62,8 @@ def _shift_times(shift, date):
 	s = start_t.total_seconds() if hasattr(start_t, "total_seconds") else 0
 	e = end_t.total_seconds() if hasattr(end_t, "total_seconds") else 0
 	span = (e - s) / 3600.0
-	if span <= 0:  # overnight shift -> ends the next day
-		span += 24.0
+	if span <= 0:
+		span += 24.0  # overnight shift ends next day
 		out_date = add_days(date, 1)
 	else:
 		out_date = date
@@ -93,9 +75,7 @@ def _shift_times(shift, date):
 
 
 def mark_default_present_for_day(employee, date):
-	"""Mark ONE working day Present with the assigned shift timing, overriding whatever
-	is there (punches / leave / Absent). Skips holidays/weekly-offs and days outside the
-	employee's active employment. Returns the Attendance name, or None if skipped."""
+	"""Mark one working day Present with the shift timing. Returns the Attendance name, or None if skipped."""
 	date = getdate(date)
 	emp = frappe.db.get_value(
 		"Employee",
@@ -115,7 +95,7 @@ def mark_default_present_for_day(employee, date):
 
 	shift = _shift_for(employee, date, emp.default_shift)
 	if not shift:
-		return None  # no shift -> no timing to apply
+		return None
 	in_time, out_time, working_hours = _shift_times(shift, date)
 	if in_time is None:
 		return None
@@ -139,7 +119,7 @@ def mark_default_present_for_day(employee, date):
 		"name",
 	)
 	if existing:
-		# Override in place (works for submitted rows too; bypasses validate on purpose).
+		# override in place, works for submitted rows too
 		frappe.db.set_value("Attendance", existing, values, update_modified=True)
 		return existing
 
@@ -149,8 +129,7 @@ def mark_default_present_for_day(employee, date):
 	doc.company = emp.company
 	for k, v in values.items():
 		setattr(doc, k, v)
-	# "present always" — bypass the leave-overlap / duplicate guards so a leave day still
-	# becomes Present.
+	# bypass leave-overlap/duplicate guards so a leave day still becomes Present
 	doc.flags.ignore_validate = True
 	doc.insert(ignore_permissions=True)
 	doc.submit()
@@ -183,11 +162,7 @@ def run_daily():
 
 @frappe.whitelist()
 def backfill(from_date, to_date, employee=None, apply=0):
-	"""One-off backfill for a date range. DRY-RUN by default; apply=1 writes.
-
-	  bench --site SITE execute alpinos.default_present.backfill --kwargs "{'from_date':'2026-08-01','to_date':'2026-08-31'}"
-	  ... --kwargs "{'from_date':'2026-08-01','to_date':'2026-08-31','apply':1}"
-	"""
+	"""One-off backfill for a date range. Dry-run by default; apply=1 writes."""
 	apply = int(apply)
 	start, end = getdate(from_date), getdate(to_date)
 	filters = {"custom_default_present": 1, "status": "Active"}
@@ -201,7 +176,7 @@ def backfill(from_date, to_date, employee=None, apply=0):
 		guard = 0
 		while d <= end and guard < 400:
 			guard += 1
-			# preview: only count days that WOULD be marked (working day, in employment, has shift)
+			# only count days that would actually be marked
 			row = frappe.db.get_value(
 				"Employee", emp,
 				["date_of_joining", "relieving_date", "holiday_list", "default_shift"],

@@ -1,25 +1,7 @@
-"""
-Sales Order — simplified Desk view (Alpinos).
+"""Sales Order simplified Desk view: Property Setters only, strict field whitelist.
 
-Uses Property Setters only (Customize Form-compatible). Exactly the field groups
-requested stay visible via a strict whitelist: required ERPNext bookkeeping fields
-stay hidden unless listed (defaults / server-side logic still populate them).
-
-**Scheme vs damage:** `custom_scheme_item_table` (Sales Order Scheme Item) holds scheme
-rows only (includes **Scheme** column). When **Additional Units — Damage** is checked,
-`custom_additional_units_damage_items` (Sales Order Additional Units Item) holds damage
-lines (no scheme column).
-
-**Customer header:** ``insert_after`` Property Setters reorder name, type, billing and
-shipping addresses, date, PO#, GSTIN, and delivery date into the agreed sequence, with
-labels matching the print spec. All tab headers are hidden so this block appears on the
-main Details scroll area. Offline Buyer fields are inserted after GSTIN in ``custom_fields.py``
-so they no longer sit between Customer and Customer Name.
-
-Rollback: ``rollback_sales_order_desk_customizations()`` (or migrate patch
-``alpinos.patches.v1_0.revert_sales_order_desk_layout`` — remove ``after_migrate``
-``setup_sales_order_form_layout`` *before* migrate or the hook will re-apply).
-
+Rollback via rollback_sales_order_desk_customizations() (or the revert patch); remove the
+after_migrate setup_sales_order_form_layout hook first or it will re-apply.
 """
 
 import frappe
@@ -127,7 +109,7 @@ def _apply_sales_order_field_visibility():
 
 	_apply_sales_order_customer_header(meta)
 
-	# User-visible Sales Order canvas (actual fields — not wrappers).
+	# User-visible Sales Order canvas (actual fields, not wrappers).
 	base_show_data = frozenset(
 		{
 			"customer",
@@ -307,7 +289,7 @@ def _apply_sales_order_field_visibility():
 
 
 def _apply_sales_order_item_grid():
-	# Exact grid columns (Sr. No. → Amount); all others hidden; all eleven in list view.
+	# Exact grid columns (Sr. No. to Amount); all others hidden; all shown in list view.
 	visible_ordered = [
 		"idx",
 		"custom_product_image",

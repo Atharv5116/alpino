@@ -43,8 +43,7 @@ def _sync_order_information(doc):
 	if first_so:
 		doc.custom_sales_order_id = first_so
 		doc.custom_customer_name = frappe.db.get_value("Sales Order", first_so, "customer_name") or ""
-		# Dispatch Date always mirrors the Sales Order (set by warehouse via
-		# Future Dispatch / Update Dispatch Date on the order).
+		# Dispatch Date always mirrors the Sales Order.
 		so_dispatch = frappe.db.get_value("Sales Order", first_so, "custom_dispatch_date")
 		if so_dispatch:
 			doc.custom_dispatch_date = so_dispatch
@@ -86,8 +85,7 @@ def _sync_rows_and_totals(doc):
 				["manufacturing_date", "expiry_date"],
 				as_dict=True,
 			) or {}
-			# Only mirror dates the Batch master actually has — manually entered
-			# MFG/Expiry must survive when the master lacks them.
+			# Only mirror dates the Batch master has; keep manually entered MFG/Expiry otherwise.
 			if batch_details.get("manufacturing_date"):
 				row.custom_mfg_date = batch_details.get("manufacturing_date")
 			if batch_details.get("expiry_date"):
@@ -100,16 +98,14 @@ def _sync_rows_and_totals(doc):
 			actual_box += row_box
 			gross_weight += row_box * row_weight_per_box
 		else:
-			# Sample rows carry FRACTIONAL boxes (qty / factor); they are combined
-			# continuously across the sample sections below, not summed per row.
+			# Sample rows carry fractional boxes (qty / factor), combined continuously below.
 			sample_infos.append({"sku_name": row.item_code, "frac": qty / factor})
 			sample_weight += row_box * row_weight_per_box
 
 		total_unit += qty
 
-	# Sample Box = number of physical boxes after combining decimal quantities across
-	# Marketing Freebies + Scheme + Additional Units (mixed boxes shared between SKUs).
-	# Single source of truth with the sticker generator, so form/report/stickers agree.
+	# Sample Box = physical boxes after combining decimal quantities across sample tables.
+	# Shares combine_sample_boxes with the sticker generator so form/report/stickers agree.
 	from alpinos.pick_list_api import combine_sample_boxes
 	sample_box = len(combine_sample_boxes(sample_infos))
 
@@ -122,19 +118,15 @@ def _sync_rows_and_totals(doc):
 
 
 def before_validate_pick_list(doc, method):
-	# Hack to ensure backend doesn't enforce batch_no mandatory regardless of DB/Cache state
-	# Since Frappe's _validate_mandatory checks doc.meta.get("fields", {"reqd": 1}),
-	# we strip reqd=1 from batch_no before the validation runs.
+	# Strip reqd=1 from batch_no before validation so the backend doesn't force it,
+	# regardless of DB/cache state.
 	meta = frappe.get_meta("Pick List Item")
 	df = meta.get_field("batch_no")
 	if df and df.reqd:
 		df.reqd = 0
 
-	# Free-text batch codes (items without batch tracking, or codes typed before
-	# the Batch master exists) must live in custom_batch_code, never in batch_no
-	# (a Link to Batch) — a non-existent value there fails link validation here
-	# and batch validation on the Delivery Note. Move it instead of dropping it:
-	# the batch mention has to survive the whole SO → PL → DN cycle.
+	# Free-text batch codes must live in custom_batch_code, not batch_no (a Link to Batch),
+	# where a non-existent value fails link validation. Move it so the code survives SO->PL->DN.
 	for row in doc.get("locations") or []:
 		if row.get("batch_no") and not frappe.db.exists("Batch", row.batch_no):
 			if hasattr(row, "custom_batch_code") and not row.get("custom_batch_code"):
@@ -153,8 +145,7 @@ def _validate_mandatory_rows(doc):
 	if not doc.custom_qc_attended_by:
 		frappe.throw("QC Attended By is mandatory.")
 
-	# Transporter + PO No. are mandatory before the Pick List can be submitted
-	# (draft may still be saved without them so the details can be filled later).
+	# Transporter + PO No. are mandatory before submit (draft may be saved without them).
 	if doc.docstatus == 1:
 		if not (doc.get("custom_transporter") or "").strip():
 			frappe.throw("Transporter is mandatory before submitting the Pick List.")

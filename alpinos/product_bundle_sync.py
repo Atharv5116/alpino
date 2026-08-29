@@ -1,23 +1,8 @@
-"""Bridge the custom Item bundle mapping to ERPNext's native Product Bundle.
+"""Keep a native Product Bundle in sync with each Item's custom bundle mapping.
 
-The Alpinos "bundle" is authored on the Item itself (`custom_is_bundle` +
-`custom_product_mapping`), which drives the custom pick-list explosion and the
-COMBO table. But the *stock* side — deduct the component items, not the bundle,
-at the Delivery Note — is exactly what ERPNext's native Product Bundle already
-does (bundle = priced non-stock line item, components = `packed_items` that hit
-the stock ledger; `delivered_qty`/billing track on the bundle).
-
-So rather than re-implement packing-list + SLE logic, we keep one native
-**Product Bundle** in lock-step with each Item's custom mapping:
-
-  * `custom_is_bundle` ticked  -> the Item is forced non-stock (a bundle must
-    never hold its own stock, else the DN double-counts), and a Product Bundle
-    (`new_item_code` = the Item, `items` = the mapping with `qty` = `base_qty`)
-    is created/refreshed.
-  * unticked / mapping cleared -> the Product Bundle is removed.
-
-With that in place, any SO/DN/SI carrying the bundle SKU explodes into component
-`packed_items` natively, and component stock moves at the Delivery Note.
+A bundle Item (custom_is_bundle + custom_product_mapping) is forced non-stock and mirrored
+into a native Product Bundle, so the SO/DN/SI explode it into component packed_items and
+component stock moves at the Delivery Note. Clearing the flag/mapping removes the bundle.
 """
 
 import frappe
@@ -29,9 +14,7 @@ def _existing_bundle(item_code):
 
 
 def _product_bundle_in_use(item_code):
-	"""True if the bundle SKU is on any submitted transaction — mirrors ERPNext's Product
-	Bundle on_trash check, so we can skip a delete that would only raise 'linked with ...'.
-	"""
+	"""True if the bundle SKU is on any submitted transaction (mirrors Product Bundle on_trash)."""
 	for item_dt in (
 		"Sales Order Item",
 		"Delivery Note Item",
@@ -45,12 +28,7 @@ def _product_bundle_in_use(item_code):
 
 
 def force_bundle_non_stock(doc, method=None):
-	"""Item validate hook: a bundle SKU must be a non-stock item.
-
-	Runs on validate so the change is persisted with the save. If the item
-	already carries stock, ERPNext's own is_stock_item guard raises a clear
-	error — we don't try to override that.
-	"""
+	"""Item validate hook: a bundle SKU must be a non-stock item."""
 	if doc.get("custom_is_bundle") and doc.get("is_stock_item"):
 		doc.is_stock_item = 0
 
@@ -66,8 +44,7 @@ def sync_item_product_bundle(doc, method=None):
 		if existing:
 			pb = frappe.get_doc("Product Bundle", existing)
 			current = [(i.item_code, flt(i.qty)) for i in pb.items]
-			# Nothing about the bundle changed — do NOT re-save the Product Bundle. Editing
-			# unrelated Item fields must never touch (and risk erroring on) a linked bundle.
+			# Nothing changed: don't re-save the bundle when only other Item fields were edited.
 			if pb.new_item_code == doc.name and current == desired:
 				return
 		else:
@@ -81,9 +58,7 @@ def sync_item_product_bundle(doc, method=None):
 		pb.flags.ignore_permissions = True
 		pb.save()
 	elif existing:
-		# No longer a bundle (or mapping emptied) — drop the native bundle, but only if no
-		# submitted transaction references it (else ERPNext's on_trash raises "linked with
-		# ..." and would block the Item save). Leave it in place otherwise.
+		# No longer a bundle: drop the native bundle, unless a submitted transaction still uses it.
 		if not _product_bundle_in_use(doc.name):
 			try:
 				frappe.delete_doc("Product Bundle", existing, force=1, ignore_permissions=True)
@@ -92,10 +67,7 @@ def sync_item_product_bundle(doc, method=None):
 
 
 def backfill_product_bundles():
-	"""after_migrate: sync every bundle Item, and remove orphaned Product Bundles.
-
-	Safe to run repeatedly.
-	"""
+	"""after_migrate: sync every bundle Item and remove orphaned Product Bundles. Idempotent."""
 	if not frappe.db.exists("DocType", "Product Bundle"):
 		return
 

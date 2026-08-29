@@ -1,9 +1,4 @@
-"""
-Quotation customization for Alpinos.
-
-- Existing Quotation/Quotation Item fields are updated via Property Setters.
-- New fields are created via Custom Field.
-"""
+"""Quotation customization for Alpinos."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields

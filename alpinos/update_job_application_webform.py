@@ -1,24 +1,19 @@
-"""
-Update Job Application Web Form to auto-populate job_title from URL
-"""
+"""Update the Job Application web form to auto-populate job_title from the URL."""
 import frappe
 
 def update_web_form_script():
-	"""Update the job-application web form client script and field defaults"""
-	
+	"""Update the job-application web form client script."""
+
 	web_form = frappe.get_doc("Web Form", "job-application")
-	
-	# Update job_title field to get default from URL
+
+	# job_title has no static default; the URL param is picked up by Frappe itself.
 	for field in web_form.web_form_fields:
 		if field.fieldname == "job_title":
-			# Don't set a static default, but ensure it can be set from URL
-			# The URL parameter will be picked up by Frappe's built-in mechanism
 			pass
-	
-	# No-op base script (avoid attaching to missing fields)
+
+	# Start from an empty base to avoid attaching to missing fields.
 	existing_script = ""
 
-	# Script to ensure job_requisition is set from URL parameter (job_title)
 	new_script = """
 // Ensure job_requisition from URL parameter job_title is set in form data
 (function() {
@@ -789,8 +784,7 @@ $(document).ready(function() {
         });
     });
 });"""
-	
-	# Combine scripts
+
 	web_form.client_script = existing_script + new_script
 
 	# Standard Web Forms can only be saved in developer mode

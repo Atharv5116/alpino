@@ -1,9 +1,4 @@
-"""
-Automation scripts for Job Requisition
-- Auto-populate approved_on and approved_by on approval
-- Auto-create Job Opening when status becomes Approved
-- Sync status with Job Opening
-"""
+"""Automation hooks for Job Requisition (approval fields, Job Opening creation, status sync)."""
 
 import frappe
 from frappe import _
@@ -11,22 +6,17 @@ from frappe.utils import getdate, now
 
 
 def set_requested_by(doc, method=None):
-	"""
-	Auto-populate custom_requested_by field and fetch requestor's employee record
-	"""
+	"""Set custom_requested_by and fetch the requestor's employee record."""
 	if doc.doctype != "Job Requisition":
 		return
-	
-	# Set custom_requested_by if not already set or if it's set to invalid value "user"
+
 	if not doc.custom_requested_by or doc.custom_requested_by == "user":
-		# Only set if we have a valid session user
 		if frappe.session.user and frappe.session.user != "Guest":
 			doc.custom_requested_by = frappe.session.user
 		else:
-			# If no valid user, skip to avoid errors
 			return
-	
-	# Validate that the user exists (skip if it's the literal string "user")
+
+	# skip validation for the literal string "user"
 	if doc.custom_requested_by and doc.custom_requested_by != "user":
 		if not frappe.db.exists("User", doc.custom_requested_by):
 			frappe.throw(
@@ -34,52 +24,41 @@ def set_requested_by(doc, method=None):
 				title=_("Invalid User")
 			)
 	
-	# Fetch the employee record of the requestor
 	if doc.custom_requested_by and not doc.requested_by_employee:
 		employee = frappe.db.get_value("Employee", {"user_id": doc.custom_requested_by}, "name")
 		if employee:
 			doc.requested_by_employee = employee
-			
-			# Fetch the requestor's reporting manager
+
 			reports_to = frappe.db.get_value("Employee", employee, "reports_to")
 			if reports_to:
 				doc.requestor_reporting_manager = reports_to
-				
-				# Fetch the User ID of the reporting manager for workflow
+
 				manager_user_id = frappe.db.get_value("Employee", reports_to, "user_id")
 				if manager_user_id:
 					doc.requestor_manager_user = manager_user_id
 
 
 def fetch_reporting_manager(doc, method=None):
-	"""
-	Auto-fetch reporting managers:
-	1. Requestor's manager (always, for primary workflow)
-	2. Linked employee's manager (if replacement position)
-	"""
-	# Always fetch requestor's manager if requestor is set
+	"""Fetch reporting managers: requestor's always, linked employee's for replacements."""
 	if doc.custom_requested_by:
 		requestor_employee = frappe.db.get_value("Employee", {"user_id": doc.custom_requested_by}, "name")
 		if requestor_employee:
 			doc.requested_by_employee = requestor_employee
-			
-			# Fetch requestor's reporting manager
+
 			requestor_manager = frappe.db.get_value("Employee", requestor_employee, "reports_to")
 			if requestor_manager:
 				doc.requestor_reporting_manager = requestor_manager
-				
-				# Fetch User ID for workflow
+
 				manager_user_id = frappe.db.get_value("Employee", requestor_manager, "user_id")
 				if manager_user_id:
 					doc.requestor_manager_user = manager_user_id
-	
-	# If there's a linked employee (replacement position), fetch their manager too
+
+	# replacement position: fetch the linked employee's manager too
 	if doc.linked_employee:
 		linked_emp_manager = frappe.db.get_value("Employee", doc.linked_employee, "reports_to")
 		if linked_emp_manager:
 			doc.reporting_manager = linked_emp_manager
-			
-			# Fetch User ID
+
 			user_id = frappe.db.get_value("Employee", linked_emp_manager, "user_id")
 			if user_id:
 				doc.reporting_manager_user = user_id

@@ -1,10 +1,4 @@
-"""Client Script for the Item 'Allowed Customer Types' tab.
-
-Renders a channel-grouped checkbox widget into the custom_customer_access_html field.
-Ticking a Channel grants the whole channel (stored in custom_allowed_channels, dynamic);
-individual ticks are stored in custom_allowed_customer_types. Everything ticked → both
-tables cleared = available to ALL customer types (the default).
-"""
+"""Client Script rendering the Item 'Allowed Customer Types' channel/type checkbox widget."""
 
 import frappe
 

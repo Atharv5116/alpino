@@ -1,24 +1,9 @@
-"""Leave allocation when an employee is confirmed (employment type leaves "Probation").
-
-On confirmation we allocate, for the current calendar year:
-  - Casual Leave    : 1 per month from the CONFIRMATION month through December
-                      (confirmed in Dec -> 1, Nov -> 2, ... Jan -> 12).
-  - Bereavement Leave: 7 (flat, no proration)
-  - Restricted Leave : 1 (flat, no proration)
-
-The transition is detected in alpinos.employee_confirmation.on_employee_update, which
-calls allocate_confirmation_leaves(employee). A guard Check on Employee
-(custom_confirmation_leaves_allocated, added in alpinos.employee_custom_fields) plus a
-per-(employee, leave_type, period) existence check make this idempotent.
-
-ensure_leave_setup() creates the three Leave Types and a calendar-year Leave Period if
-missing; it runs on every migrate via the after_migrate hook.
-"""
+"""Allocate leaves when an employee is confirmed off probation."""
 
 import frappe
 from frappe.utils import getdate, nowdate
 
-# leave_type_name -> count rule. "prorate_to_year_end" => 12 - month + 1; int => flat.
+# rule is "prorate_to_year_end" (12 - month + 1) or a flat count
 CONFIRMATION_LEAVES = [
 	{"leave_type": "Casual Leave", "rule": "prorate_to_year_end"},
 	{"leave_type": "Bereavement Leave", "rule": 7},
@@ -35,7 +20,7 @@ def _default_company():
 
 
 def _get_or_create_leave_period(company, on_date):
-	"""Return a Leave Period covering `on_date` for `company`, creating a calendar-year one if needed."""
+	"""Return a Leave Period covering on_date, creating a calendar-year one if needed."""
 	on_date = getdate(on_date)
 	existing = frappe.get_all(
 		"Leave Period",
@@ -63,10 +48,7 @@ def _get_or_create_leave_period(company, on_date):
 
 
 def ensure_leave_setup(company=None):
-	"""Idempotently create the three Leave Types and a calendar-year Leave Period.
-
-	Safe to run repeatedly (after_migrate / `bench execute`).
-	"""
+	"""Create the three Leave Types and a calendar-year Leave Period if missing."""
 	for cfg in CONFIRMATION_LEAVES:
 		name = cfg["leave_type"]
 		if not frappe.db.exists("Leave Type", name):
@@ -99,12 +81,7 @@ def _count_for_rule(rule, confirmation_date):
 
 
 def allocate_confirmation_leaves(employee, confirmation_date=None):
-	"""Create submitted Leave Allocations for a just-confirmed employee.
-
-	`employee` may be an Employee doc or its name. Returns the list of
-	(leave_type, count) actually allocated. Idempotent: skips if the guard flag
-	is set or an allocation already exists for the (employee, leave_type, period).
-	"""
+	"""Create submitted Leave Allocations for a just-confirmed employee."""
 	emp = employee if hasattr(employee, "doctype") else frappe.get_doc("Employee", employee)
 
 	if emp.get("custom_confirmation_leaves_allocated"):
@@ -170,7 +147,7 @@ def allocate_confirmation_leaves(employee, confirmation_date=None):
 				"Confirmation Leave Allocation",
 			)
 
-	# Mark done so we never re-allocate (direct db write -> no recursive Employee on_update).
+	# mark done via a direct db write to avoid a recursive Employee on_update
 	frappe.db.set_value(
 		"Employee", emp.name, "custom_confirmation_leaves_allocated", 1, update_modified=False
 	)

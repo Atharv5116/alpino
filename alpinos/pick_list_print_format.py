@@ -1,14 +1,4 @@
-"""Pick List packing / picking sheet print format.
-
-Replicates the customer's reference sheet as a SINGLE fixed-layout grid — the header block
-(box / weight / unit totals + party / PO / transporter / date, with QC Attended By + Party
-Code on the right) and the item rows share the exact same columns, so everything lines up
-vertically. Lists ONLY the items actually on this Pick List (doc.locations); the reference
-is a master sheet pre-printed with every SKU, here we print just what is picked.
-
-Registered idempotently on every migrate as a custom Jinja Print Format named
-"Pick List Packing Sheet" for the "Pick List" doctype.
-"""
+"""Pick List packing sheet print format (custom Jinja, registered on migrate)."""
 
 import frappe
 

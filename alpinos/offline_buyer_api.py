@@ -63,13 +63,7 @@ def get_all_records():
 
 @frappe.whitelist()
 def get_buyer_items(record_name):
-	"""Return active variant items for the catalog grid, merged with saved rows and Buyer Master margins.
-
-	When this catalog's **buyer** (Customer) has an Buyer Master with margin rows, the page only lists
-	SKUs that appear on that master (plus any SKUs already saved on this catalog). Default **margin %** and
-	**MRP** match the master (and Sales Order Entry): MRP from Item ``valuation_rate``, margin from
-	``Buyer Margin``; saved child rows still win if present.
-	"""
+	"""Active variant items for the catalog grid, merged with saved rows and Buyer Master margins."""
 	# All active, saleable variant items from Item master
 	items = frappe.get_all(
 		"Item",
@@ -77,9 +71,7 @@ def get_buyer_items(record_name):
 			"disabled": 0,
 			"is_sales_item": 1,
 		},
-		# Sellable SKUs = variants OR bundles. Bundles have an empty variant_of, so the
-		# plain variant_of filter would wrongly drop them; templates (variant_of empty,
-		# not a bundle) still fall out.
+		# sellable = variants OR bundles; bundles have empty variant_of, templates fall out
 		or_filters=[["variant_of", "!=", ""], ["custom_is_bundle", "=", 1]],
 		fields=["name", "item_name", "item_group", "valuation_rate", "variant_of"],
 		order_by="item_group, item_name",
@@ -176,11 +168,7 @@ def save_buyer_items(record_name, items):
 
 @frappe.whitelist()
 def create_record(title, buyer=None, offline_buyer_master=None, description=None):
-	"""Create a new Buyer Items record and return its name.
-
-	Prefer ``offline_buyer_master`` (desk page): resolves to the auto-created Customer on that master.
-	Legacy ``buyer`` (Customer name) is still accepted for API callers.
-	"""
+	"""Create a new Buyer Items record and return its name."""
 	cust = None
 	if offline_buyer_master:
 		cust = frappe.db.get_value("Buyer Master", offline_buyer_master, "customer")
@@ -217,10 +205,7 @@ def create_record(title, buyer=None, offline_buyer_master=None, description=None
 
 @frappe.whitelist()
 def get_parent_group_filter_data(item_groups):
-	"""For catalog rows, return parent Item Groups and each parent's subtree (all descendant group names).
-
-	Used by Offline Buyer Catalog: filter by Parent Item Group so items in any child group match.
-	"""
+	"""Return parent Item Groups and each parent's descendant group names."""
 	if isinstance(item_groups, str):
 		item_groups = json.loads(item_groups)
 	item_groups = list({g for g in item_groups if g})
@@ -326,18 +311,11 @@ def get_variant_items_for_group(item_group):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def sellable_item_link_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Link-field query for SO / Quotation / Opportunity item selection.
-
-	Same intent as the `variant_of != ''` filter (show variants, hide templates) but ALSO
-	lets bundle SKUs through (they have an empty variant_of). A plain filter dict can't
-	express the OR, so the forms point their item get_query at this method instead.
-	"""
+	"""Link-field query for SO/Quotation/Opportunity items: variants plus bundle SKUs."""
 	like = "%{0}%".format(txt or "")
 	params = {"txt": like, "start": int(start or 0), "page_len": int(page_len or 20)}
 
-	# Optional customer-type gate: only items that allow this Alpino Customer Type.
-	# An item allows a type when it has NO restriction (both tables empty), OR the type is
-	# granted directly, OR the type's Channel is granted. Empty restriction = all allowed.
+	# optional customer-type gate: no restriction = all allowed, else the type or its channel must be granted
 	ct_clause = ""
 	customer_type = (filters or {}).get("customer_type") if filters else None
 	if customer_type:
@@ -435,9 +413,7 @@ POC_SALES_ROLES = ("Sales User", "Sales Manager")
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def poc_employee_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Buyer Master POC "Employee Name" link: Employees whose linked User holds the role(s)
-	for the buyer's Channel. E-com -> E-Commerce Admin/Coordinator/Manager; Offline /
-	General Trade (and anything else) -> Sales User / Sales Manager."""
+	"""POC Employee link: Employees whose User holds the role(s) for the buyer's Channel."""
 	channel = ((filters or {}).get("channel") or "").strip()
 	roles = list(POC_ECOM_ROLES if channel == "E-com" else POC_SALES_ROLES)
 	txt = txt or ""
@@ -571,14 +547,8 @@ def quick_create_offline_buyer(
 	partial_order_allowed=0,
 	gst_exclusive_buyer=0,
 ):
-	"""Create a minimal Buyer Master from the Catalog quick-create dialog.
-
-	Returns the new OBM name so the caller can pre-fill the catalog form.
-	"""
-	# Automatic hierarchy logic:
-	# 1. If parent_buyer is provided, use it.
-	# 2. If not, check if a parent with this business_name already exists.
-	# 3. If still not found, create a new Parent record (no site name, is_parent=1).
+	"""Create a minimal Buyer Master from the Catalog quick-create dialog."""
+	# parent hierarchy: use parent_buyer if given, else find or create a parent by business name
 
 	actual_parent = parent_buyer
 	biz_name_stripped = (business_name or "").strip()
@@ -591,11 +561,10 @@ def quick_create_offline_buyer(
 		)
 
 		if not actual_parent:
-			# Create a new Parent record automatically (no address rows — site/child holds the real address).
+			# create a parent record (no address rows; the child holds the real address)
 			parent_obm = frappe.new_doc("Buyer Master")
 			parent_obm.customer_business_name = biz_name_stripped
 			parent_obm.is_parent = 1
-			# Use some defaults from the current dialog if applicable
 			parent_obm.customer_type = customer_type
 			parent_obm.channel = channel or ""
 			parent_obm.level = level or ""
@@ -628,7 +597,7 @@ def quick_create_offline_buyer(
 	obm.contact_no = contact_no
 	obm.contact_person = contact_person
 	obm.combine_product_bundles = combine_product_bundles
-	obm.is_parent = 0 # Children are not parents by default
+	obm.is_parent = 0
 	obm.parent_buyer = actual_parent or ""
 
 	obm.append(
@@ -654,12 +623,7 @@ def quick_create_offline_buyer(
 
 @frappe.whitelist()
 def seed_customer_types():
-	"""Seed the Alpino Customer Type master with default values and expiry thresholds.
-
-	Threshold semantics: rows with `min_expiry_days` set drive batch-expiry warnings on
-	Pick List / Delivery Note (see alpinos.expiry_validation). Rows left blank (e.g. OTHERS)
-	skip the check entirely.
-	"""
+	"""Seed the Alpino Customer Type master with default values and expiry thresholds."""
 	# (name, min_expiry_days). None = leave blank, no expiry validation for that type.
 	types = [
 		("GENERAL TRADE", 30),

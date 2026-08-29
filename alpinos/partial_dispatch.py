@@ -1,21 +1,9 @@
-"""
-Partial Dispatch — cumulative qty ledger + over-dispatch guards.
+"""Partial dispatch: cumulative qty ledger + over-dispatch guards.
 
-An SO with custom_partial_order_allowed = 1 may be fulfilled over several Pick List
-/ Delivery Note rounds. The one hard rule (Hetvi): the SUM of dispatched qty per SKU
-across ALL rounds must never exceed the ordered qty (ordered 30 -> all partials <= 30).
-
-Everything here is gated on is_partial_order() for the cumulative behaviour, so plain
-(offline / non-partial) orders are completely unaffected. The single-PL lock is the
-one rule that applies to non-partial orders (spec: only one PL when partial not allowed).
-
-Qty is keyed per SKU:
-  - ordered   = SUM(Sales Order Item.qty)                  (main order lines)
-  - committed = SUM(Pick List Item.qty)  across non-cancelled PLs of the SO
-  - dispatched= SUM(Delivery Note Item.qty) across submitted DNs of the SO
-  - remaining = ordered - committed
-Only SKUs present in the ordered map are guarded (freebies / bundle components are
-not order lines and are left to the existing per-row / box-multiple checks).
+Only partial orders get the cumulative behaviour; the single-PL lock applies to
+non-partial orders. Per SKU: committed dispatched qty across all rounds must never
+exceed the ordered qty. Only ordered-line SKUs are guarded (freebies / bundle
+components are left to the per-row / box-multiple checks).
 """
 
 import frappe
@@ -25,24 +13,15 @@ from frappe.utils import cint, flt
 _EPS = 1e-6
 
 
-# ---------------------------------------------------------------------------
-# Flags
-# ---------------------------------------------------------------------------
 def is_partial_order(sales_order) -> bool:
 	if not sales_order:
 		return False
 	return bool(cint(frappe.db.get_value("Sales Order", sales_order, "custom_partial_order_allowed")))
 
 
-# ---------------------------------------------------------------------------
-# Per-SKU qty maps
-# ---------------------------------------------------------------------------
 def ordered_qty_by_sku(sales_order) -> dict:
-	# Combo/bundle SO lines carry the combo SKU (e.g. PB-CHCR-1000x2), but the
-	# Pick List and Delivery Note carry the EXPLODED component SKUs. Explode the
-	# ordered map to components too, so committed/dispatched line up — otherwise a
-	# fully-picked combo order never matches, leaving a phantom "remaining qty"
-	# and blocking auto-completion.
+	# Combo/bundle SO lines carry the combo SKU but PL/DN carry the exploded
+	# component SKUs, so explode the ordered map to components to line up.
 	from alpinos.sales_order_api import _bundle_components
 
 	rows = frappe.db.sql(
@@ -114,9 +93,7 @@ def has_remaining_qty(sales_order) -> bool:
 
 
 def _committed_by_line(sales_order, exclude_pl=None):
-	"""Committed Pick List Item qty split by bundle tag: (standalone_by_item, combo_by_(item, bundle)).
-	Lets a combo line count ITS OWN picks (custom_bundle_parent) instead of pooling with a
-	standalone line of the same component SKU."""
+	"""Committed PL qty split by bundle tag: (standalone_by_item, combo_by_(item, bundle))."""
 	params = {"so": sales_order}
 	excl = ""
 	if exclude_pl:
@@ -144,10 +121,7 @@ def _committed_by_line(sales_order, exclude_pl=None):
 
 
 def remaining_qty_by_so_line(sales_order, exclude_pl=None) -> dict:
-	"""Remaining (ordered - committed) per SALES ORDER LINE item_code, WITHOUT exploding combos:
-	a combo line reports remaining in COMBO units (its own picks, tagged custom_bundle_parent),
-	standalone lines in their own units. Basis for the SO View 'Remaining' column so combo
-	remaining stays on the combo line instead of being pushed onto the component SKUs."""
+	"""Remaining (ordered - committed) per SO line item_code, combo lines in combo units."""
 	from alpinos.sales_order_api import _bundle_components
 
 	std, combo = _committed_by_line(sales_order, exclude_pl=exclude_pl)
@@ -171,14 +145,10 @@ def remaining_qty_by_so_line(sales_order, exclude_pl=None) -> dict:
 
 
 def picking_started(sales_order) -> bool:
-	"""True once at least one non-cancelled Pick List has committed some qty for the SO -
-	i.e. partial picking has actually begun, not merely been allowed."""
+	"""True once a non-cancelled Pick List has committed some qty for the SO."""
 	return any(v > _EPS for v in committed_pl_qty_by_sku(sales_order).values())
 
 
-# ---------------------------------------------------------------------------
-# Coverage / completion
-# ---------------------------------------------------------------------------
 def committed_covers_ordered(sales_order) -> bool:
 	"""True when the non-cancelled Pick Lists already cover the full ordered qty."""
 	ordered = ordered_qty_by_sku(sales_order)
@@ -198,12 +168,8 @@ def is_partial_round(sales_order) -> bool:
 	return is_partial_order(sales_order) and not committed_covers_ordered(sales_order)
 
 
-# ---------------------------------------------------------------------------
-# Guards (doc_events)
-# ---------------------------------------------------------------------------
 def apply_partial_future_dispatch(sales_order, future_date, reason=None):
-	"""Record the Future Dispatch Date for the remaining qty (short-pick modal ->
-	Partial). Reschedules the SO's dispatch date and logs the reason."""
+	"""Reschedule the SO dispatch date for the remaining qty and log the reason."""
 	if not sales_order or not future_date:
 		return
 	frappe.db.set_value(
@@ -230,16 +196,14 @@ def _rows_qty_by_sku(rows) -> dict:
 
 
 def validate_pick_list_partial(doc, method=None):
-	"""Block a 2nd PL when partial isn't allowed, and enforce the cumulative
-	committed-qty <= ordered-qty guard per SKU across all Pick Lists of the SO."""
+	"""Block a 2nd PL when partial isn't allowed; enforce cumulative committed <= ordered per SKU."""
 	if doc.docstatus == 2:
 		return
 	so = doc.get("custom_sales_order_id")
 	if not so:
 		return
 
-	# Force-closed orders are permanently locked — no NEW Pick List (the PL that
-	# enacted the close is submitted before the flag is set, so it isn't blocked).
+	# Force-closed orders are locked: no new Pick List.
 	if doc.is_new() and frappe.db.get_value("Sales Order", so, "custom_force_closed"):
 		frappe.throw(
 			_("This order has been Force Closed. No new Pick List can be created."),
@@ -259,7 +223,7 @@ def validate_pick_list_partial(doc, method=None):
 			title=_("Partial Dispatch Not Allowed"),
 		)
 
-	# Cumulative over-dispatch guard (only meaningful once more than one round exists).
+	# Cumulative over-dispatch guard (only matters once more than one round exists).
 	if not other_active_pl:
 		return
 	ordered = ordered_qty_by_sku(so)
@@ -267,7 +231,7 @@ def validate_pick_list_partial(doc, method=None):
 	this = _rows_qty_by_sku(doc.get("locations"))
 	for sku, q in this.items():
 		if sku not in ordered:
-			continue  # freebie / bundle component — not an order line
+			continue  # freebie / bundle component, not an order line
 		allowed = flt(ordered[sku])
 		already = flt(committed_others.get(sku, 0))
 		if already + flt(q) > allowed + _EPS:
@@ -280,11 +244,11 @@ def validate_pick_list_partial(doc, method=None):
 
 
 def validate_delivery_note_partial(doc, method=None):
-	"""Enforce cumulative dispatched-qty <= ordered-qty per SKU across all DNs of the SO.
+	"""Enforce cumulative dispatched <= ordered per SKU across all DNs. Partial orders only.
 
-	Gated to partial orders: a non-partial (offline) order has one DN and may carry
-	same-SKU freebie top-ups whose qty legitimately exceeds the ordered line qty, so
-	the cumulative guard must not run there."""
+	Non-partial orders may carry same-SKU freebie top-ups exceeding the line qty, so the
+	cumulative guard must not run there.
+	"""
 	if doc.docstatus == 2 or doc.get("is_return"):
 		return
 	so = doc.get("custom_sales_order_id")

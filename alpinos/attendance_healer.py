@@ -1,34 +1,19 @@
-"""Attendance healer — recompute an already-marked day from ALL its punches.
+"""Attendance healer: recompute an already-marked day from ALL its punches.
 
-HRMS marks a day once from the punches eligible at that moment, then freezes it:
-once a punch is linked to an Attendance it is excluded from re-processing, so a
-punch that lands later (synced late / processed in a separate run) hits the
-"attendance already marked" branch, gets skip_auto_attendance=1, and NEVER updates
-the in/out. On an odd-count day (IN, OUT, IN) that leaves the out-time at the last
-OUT and drops the trailing IN — understating hours and the status.
-
-`recompute_attendance` re-derives one Attendance from its day's same-shift punches
-using the SHIFT'S OWN get_attendance (patched calculate_working_hours = last log is
-out + the shift thresholds) and the Saturday override — never hand-rolled. It is
-called by two callers so they can never diverge:
-  * backfill()          — one-time fix for the historical records
-  * heal_on_checkin()   — Employee Checkin after_insert, so late punches self-heal
+HRMS freezes a day after marking it, so a late-synced punch never updates the in/out.
+recompute_attendance re-derives one Attendance from its day's same-shift punches using the
+shift's own get_attendance and the Saturday override. Shared by backfill() and heal_on_checkin().
 """
 
 import frappe
 from frappe.utils import flt, get_datetime, getdate
 
-# Auto-attendance produces exactly these; On Leave / Holiday / Work From Home / etc.
-# are intentional and must never be touched by the healer.
+# Only these auto-marked statuses are healable; leave/holiday/WFH are left alone.
 HEALABLE_STATUSES = {"Present", "Half Day", "Absent"}
 
 
 def _day_shift_logs(employee, attendance_date, shift):
-	"""Every check-in for this employee ON attendance_date for this shift, chronological.
-
-	Same-date + same-shift scoping is what protects against cross-date mis-linked
-	punches (a next-day punch attached to the wrong Attendance) — those simply are
-	not in this set, so they can never push the out-time into another day."""
+	"""Every check-in for this employee on attendance_date for this shift, chronological."""
 	d = getdate(attendance_date)
 	return frappe.get_all(
 		"Employee Checkin",
@@ -46,8 +31,7 @@ def _day_shift_logs(employee, attendance_date, shift):
 
 
 def _apply_saturday_override(attendance_date, shift, status, working_hours, half_day_status):
-	"""Run the exact Saturday-threshold override used at marking time. Returns
-	(status, half_day_status). Non-Saturday dates are returned unchanged."""
+	"""Apply the Saturday-threshold override used at marking time; returns (status, half_day_status)."""
 	from alpinos.attendance_request_automation import validate_saturday_attendance_threshold
 
 	tmp = frappe._dict(
@@ -67,14 +51,10 @@ def _apply_saturday_override(attendance_date, shift, status, working_hours, half
 def recompute_attendance(att_name, apply=False, fallback_shift=None):
 	"""Recompute one auto-marked Attendance from its day's same-shift punches.
 
-	Returns a change dict (old/new status, hours, out-time) or None when the record
-	is out of scope. Writes via db_set only when apply=True. Idempotent: re-running
-	on an already-correct record reports changed=False and writes nothing.
-
-	`fallback_shift` supplies a shift for the calc when the Attendance itself carries
-	none — the half-day-LEAVE case: HRMS marks the leave day (often shift-less) and the
-	worked-other-half punches must still fold in. The leave still defines the day, so a
-	leave-backed Half Day keeps its 'Half Day' status; the punches only add in/out/hours."""
+	Returns a change dict (or None when out of scope); writes only when apply=True. Idempotent.
+	fallback_shift supplies a shift for the calc when the Attendance carries none (half-day-LEAVE
+	case); a leave-backed Half Day keeps its status while the punches add in/out/hours.
+	"""
 	att = frappe.db.get_value(
 		"Attendance",
 		att_name,
@@ -87,9 +67,8 @@ def recompute_attendance(att_name, apply=False, fallback_shift=None):
 	)
 	if not att:
 		return None
-	# Scope: only submitted, auto-marked (no Attendance Request), auto-status records.
-	# Manual / regularized records are left alone. A leave-backed Half Day IS in scope so
-	# the worked other half folds in — but its leave status is preserved below.
+	# Scope: submitted, auto-marked (no Attendance Request), auto-status records only.
+	# A leave-backed Half Day stays in scope but keeps its leave status (preserved below).
 	effective_shift = att.shift or fallback_shift
 	if att.docstatus != 1 or att.attendance_request or att.status not in HEALABLE_STATUSES or not effective_shift:
 		return None
@@ -98,8 +77,7 @@ def recompute_attendance(att_name, apply=False, fallback_shift=None):
 	if len(logs) < 2:
 		return None  # a single punch cannot yield an out-time
 
-	# Ensure the last-log-as-out patch is bound in this process, then reuse the shift's
-	# own attendance calc so hours + status match normal marking exactly.
+	# Bind the last-log-as-out patch, then reuse the shift's own attendance calc.
 	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
 
 	_apply_checkout_reason_patch()
@@ -110,9 +88,8 @@ def recompute_attendance(att_name, apply=False, fallback_shift=None):
 		att.attendance_date, effective_shift, status, working_hours, att.half_day_status
 	)
 
-	# A half-day LEAVE defines the day: keep 'Half Day' (never let the worked-half punches
-	# flip it to Present/Absent and orphan the leave). The punches only decide whether the
-	# OTHER (worked) half reads Present or Absent, via the shift's half-day threshold.
+	# A half-day LEAVE defines the day: keep 'Half Day'. The punches only decide whether
+	# the worked half reads Present or Absent, via the shift's half-day threshold.
 	if att.status == "Half Day" and (att.leave_application or att.leave_type):
 		from alpinos.attendance_request_automation import half_day_status_from_threshold
 
@@ -170,19 +147,14 @@ def recompute_attendance(att_name, apply=False, fallback_shift=None):
 # Prevention — heal on a late punch (Employee Checkin after_insert)
 # ---------------------------------------------------------------------------
 def heal_on_checkin(doc, method=None):
-	"""If this punch lands on a day that already has an auto-marked Attendance,
-	recompute it so the punch folds in — the fix for the 'skip - already marked'
-	freeze. No-op when the day isn't marked yet (normal marking handles that) or the
-	punch is from an Attendance Request."""
+	"""Recompute an already-marked day when a late punch lands, so the punch folds in."""
 	if (
 		doc.flags.get("skip_attendance_heal")
 		or doc.get("from_attendance_request")
 		or not doc.get("time")
 	):
 		return
-	# Shift-agnostic lookup: a half-day-LEAVE Attendance is often shift-less, so filtering
-	# by the punch's shift would miss it. recompute_attendance uses the punch's shift as a
-	# fallback for the hours calc and preserves the leave.
+	# Shift-agnostic lookup: a half-day-LEAVE Attendance is often shift-less.
 	att_name = frappe.db.get_value(
 		"Attendance",
 		{
@@ -207,8 +179,7 @@ def heal_on_checkin(doc, method=None):
 # Backfill — one-time fix for the historical records
 # ---------------------------------------------------------------------------
 def _affected_attendance_names(from_date=None, to_date=None, limit=None):
-	"""Auto-marked Attendances whose recorded out-time is EARLIER than the day's last
-	same-shift punch — the true 'last log dropped' signature (independent of linking)."""
+	"""Auto-marked Attendances whose out-time is earlier than the day's last same-shift punch."""
 	conditions = [
 		"a.docstatus = 1",
 		"IFNULL(a.attendance_request, '') = ''",
@@ -242,10 +213,8 @@ def _affected_attendance_names(from_date=None, to_date=None, limit=None):
 
 @frappe.whitelist()
 def backfill(apply=0, from_date=None, to_date=None, limit=None):
-	"""Heal historical records. apply=0 (default) is a DRY RUN — it recomputes and
-	returns exactly what WOULD change, writing nothing. apply=1 applies the fixes.
+	"""Heal historical records. apply=0 (default) is a DRY RUN; apply=1 writes the fixes.
 
-	  bench --site SITE execute alpinos.attendance_healer.backfill                  # dry run
 	  bench --site SITE execute alpinos.attendance_healer.backfill --kwargs "{'apply':1}"
 	"""
 	apply = int(apply)
@@ -281,24 +250,12 @@ def backfill(apply=0, from_date=None, to_date=None, limit=None):
 
 @frappe.whitelist()
 def create_checkins_from_attendance(from_date=None, to_date=None, apply=0):
-	"""One-time backfill: for every Attendance in [from_date, to_date] that has BOTH an
-	in_time and an out_time but NO Employee Checkin for that employee that day, create a
-	matching pair of punches — an IN checkin at the attendance's in_time and an OUT checkin
-	at its out_time — each linked back to that Attendance (the `attendance` field) and
-	flagged skip_auto_attendance=1.
+	"""Backfill Employee Checkins for Attendances that have in/out times but no punches that day.
 
-	The Attendance itself is left UNCHANGED: the heal hook is suppressed on these inserts
-	(flags.skip_attendance_heal) and skip_auto_attendance=1 keeps auto-marking from
-	reprocessing them, so the punches simply *back* the existing record with the same in/out
-	rather than re-deriving its status/hours. HRMS's own validate can override the shift /
-	drop the link, so both are force-set again after insert.
+	Creates an IN + OUT pair linked back to the Attendance (skip_auto_attendance=1); the
+	Attendance itself is left unchanged. Skips days that already have a punch. DRY-RUN by default.
 
-	Skips any day that already has a punch for that employee (never duplicates) and any
-	attendance missing a timestamp. Each pair is committed atomically; a pair that fails
-	validation is rolled back and reported in `errors`. DRY-RUN by default.
-
-	  Preview:  bench --site SITE execute alpinos.attendance_healer.create_checkins_from_attendance --kwargs '{"from_date": "2026-07-07", "to_date": "2026-07-08"}'
-	  Apply  :  bench --site SITE execute alpinos.attendance_healer.create_checkins_from_attendance --kwargs '{"from_date": "2026-07-07", "to_date": "2026-07-08", "apply": 1}'
+	  bench --site SITE execute alpinos.attendance_healer.create_checkins_from_attendance --kwargs '{"from_date": "2026-07-07", "to_date": "2026-07-08", "apply": 1}'
 	"""
 	apply = int(apply)
 
@@ -333,8 +290,7 @@ def create_checkins_from_attendance(from_date=None, to_date=None, apply=0):
 	samples = []
 
 	for att in rows:
-		# Only backfill genuinely missing punches — skip any day that already has a
-		# checkin for this employee, so we never create a duplicate.
+		# Skip any day that already has a checkin for this employee (never duplicate).
 		if frappe.db.sql(
 			"SELECT name FROM `tabEmployee Checkin` WHERE employee=%s AND DATE(`time`)=%s LIMIT 1",
 			(att.employee, att.attendance_date),
@@ -355,8 +311,7 @@ def create_checkins_from_attendance(from_date=None, to_date=None, apply=0):
 					ci.attendance = att.name
 					ci.skip_auto_attendance = 1
 					ci.insert(ignore_permissions=True)
-					# HRMS validate/fetch_shift may override shift or drop the attendance
-					# link — force the intended linkage back on.
+					# HRMS validate/fetch_shift may override shift or drop the link; force it back on.
 					frappe.db.set_value(
 						"Employee Checkin",
 						ci.name,

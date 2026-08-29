@@ -1,18 +1,13 @@
 """Build a Google Drive link to a Sales Order's PO file.
 
-The PO documents live in Drive under:  <root>/<Channel>/<Customer>/<prefix + Customer>/
-and the file itself is named after the PO No (custom_po_no_for_pdf). Given a Sales
-Order, we walk that path with the invoice-sync service account, find the file, and
-store a clickable Drive link on custom_po_drive_url.
-
-Config (Invoice Sync Settings): service_account_json (reused), po_drive_root_folder_id,
-po_folder_prefix. If the file isn't there yet, we link to the deepest folder that DOES
-exist so the link still opens the right place in Drive (to upload into).
+The PO documents live in Drive under <root>/<Channel>/<Customer>/<prefix + Customer>/, named
+after the PO No. If the file isn't there yet, link to the deepest folder that does exist.
+Config lives in Invoice Sync Settings (service_account_json, po_drive_root_folder_id, po_folder_prefix).
 """
 
 import frappe
 from frappe import _
-from frappe.utils import flt  # noqa: F401  (kept for parity; harmless)
+from frappe.utils import flt  # noqa: F401
 
 # Reuse the Drive plumbing already built for invoice sync.
 from alpinos.invoice_sync import _settings, _drive_service, _folder_id, _child_folder, _find_file
@@ -27,10 +22,7 @@ def _drive_folder_url(folder_id):
 
 
 def _resolve_po_drive_url(channel, customer, po_no):
-	"""Return a Drive URL for the PO file, or the deepest existing folder as a fallback.
-
-	Returns (url, note). Raises only when Drive isn't configured or the top-level
-	Channel folder is missing (so the caller can surface a helpful message)."""
+	"""Return a Drive URL for the PO file, or the deepest existing folder as a fallback. Returns (url, note)."""
 	s = _settings()
 	root = _folder_id(s.get("po_drive_root_folder_id") or s.get("drive_root_folder_id") or "")
 	if not (s.get("service_account_json") and root):
@@ -45,8 +37,7 @@ def _resolve_po_drive_url(channel, customer, po_no):
 	if prefix is None:
 		prefix = "PO "
 
-	# Walk root -> Channel -> Customer -> "<prefix>Customer", remembering the deepest
-	# folder that exists so we can fall back to it if a deeper level is missing.
+	# Walk root -> Channel -> Customer -> "<prefix>Customer", tracking the deepest folder reached.
 	deepest_id, deepest_label = root, "root"
 	steps = [
 		(channel, f"Channel '{channel}'"),
@@ -59,12 +50,12 @@ def _resolve_po_drive_url(channel, customer, po_no):
 		if not folder:
 			if i == 0:
 				frappe.throw(_("Drive folder for {0} not found under the PO root.").format(label))
-			# Deeper level missing -> link to the deepest folder we did reach.
+			# Deeper level missing; link to the deepest folder reached.
 			return _drive_folder_url(deepest_id), _("Folder {0} not found; linked to the {1} folder instead.").format(label, deepest_label)
 		parent = deepest_id = folder
 		deepest_label = label
 
-	# We're in the "<prefix>Customer" folder — look for the file named after the PO No.
+	# In the "<prefix>Customer" folder; look for the file named after the PO No.
 	ext = (s.get("pdf_extension") or ".pdf").strip()
 	file_id = _find_file(drive, parent, (po_no or "").strip(), ext) if po_no else None
 	if file_id:
@@ -88,8 +79,7 @@ def build_po_drive_url(sales_order, po_no_for_pdf=None):
 
 
 def maybe_build_po_drive_url(sales_order):
-	"""Best-effort build after an entry-page save — never breaks the save; the user can
-	always use the 'Fetch PO Drive Link' button and get the real error."""
+	"""Best-effort build after an entry-page save; never breaks the save."""
 	try:
 		if frappe.db.get_value("Sales Order", sales_order, "custom_po_no_for_pdf"):
 			build_po_drive_url(sales_order)

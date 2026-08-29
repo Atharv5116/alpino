@@ -1,12 +1,8 @@
-"""Shared engine for the four quantity-flow comparison reports:
+"""Shared engine for the four quantity-flow comparison reports (Opportunity to Quotation,
+Quotation to Sales Order, Sales Order to Pick List, Pick List to Delivery Note).
 
-Opportunity to Quotation / Quotation to Sales Order /
-Sales Order to Pick List / Pick List to Delivery Note.
-
-Each report lists document pairs with one row per SKU: upstream qty,
-downstream qty, difference and the downstream row remarks. The report JS
-highlights the lesser of the two quantities. The remark-compulsory rule for
-reduced quantities lives in alpinos.qty_flow (validate hooks).
+One row per SKU with upstream qty, downstream qty and difference; the reduced-qty remark
+rule lives in alpinos.qty_flow.
 """
 
 import frappe
@@ -113,9 +109,7 @@ def _pairs_quo_so(filters):
 
 
 def _exploded_so_qty(so):
-	"""{item_code: qty} for a Sales Order with bundle SKUs exploded into their
-	components (bundle qty x per-unit base qty) — the Pick List stores exploded
-	component rows, so both sides of the comparison must speak components."""
+	"""{item_code: qty} for a Sales Order with bundle SKUs exploded into components, to match the Pick List."""
 	from alpinos.sales_order_api import _bundle_components
 
 	out = {}
@@ -143,8 +137,7 @@ def _pairs_so_pl(filters):
 		order_by="creation desc", limit_page_length=0,
 	):
 		so = pl.custom_sales_order_id
-		# Only main order lines — freebies / scheme rows have their own source
-		# tables and would inflate the picked qty.
+		# main order lines only; freebie/scheme rows would inflate the picked qty
 		down_rows = [
 			r for r in frappe.get_all(
 				"Pick List Item", filters={"parent": pl.name},

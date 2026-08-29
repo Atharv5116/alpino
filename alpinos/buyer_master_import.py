@@ -1,67 +1,12 @@
 """Bulk importer for Buyer Master sheets exported from the Data Import tool.
 
-Why this exists — the three errors Data Import reports on this file:
+Preflight first, then run:
 
-1. **COLUMN 17 (Parent Buyer)** — the sheet holds parent buyers *and* their
-   child sites, so `parent_buyer` points at IDs that live in the same file.
-   Data Import validates every Link against the DB *before* inserting anything,
-   so those rows can never resolve. This script inserts each referenced parent
-   first (`_order_parents_first`) and forces the sheet's own ID onto the new
-   record, so the link resolves.
-2. **COLUMN 37 (Customer)** — Buyer Master creates its *own* ERPNext Customer
-   on save (the field is hidden and read-only on the form), so the sheet names
-   Customers that do not exist yet. This script pre-creates them under exactly
-   the IDs in the sheet (`_ensure_customers`), keeping the source site's
-   mapping intact — sibling sites of one GST entity are named
-   "<Business> - <Site>" there. Where two rows claim one Customer, the value is
-   handed back to the controller, whose per-site derivation
-   (`_customer_id_for_obm`) gives each buyer a distinct ID.
-3. **COLUMN 62 (SKU (Margins))** — a few margin rows point at Items that were
-   never created. Those rows are skipped (or their SKU blanked) and listed in
-   the report instead of aborting the whole file.
+    bench --site <site> execute alpinos.buyer_master_import.preflight --kwargs "{'path': '/path/to/sheet.csv'}"
+    bench --site <site> execute alpinos.buyer_master_import.run --kwargs "{'path': '/path/to/sheet.csv'}"
 
-Updating existing records works the way Data Import does: a blank cell leaves
-the current value alone rather than clearing it. So re-importing over a record
-that is a *different* buyer leaves its old GST or parent behind under the new
-name — which is why `id-collision` blocks that case up front.
-
-Usage
------
-Always preflight first — it writes a per-issue CSV next to the sheet::
-
-    bench --site <site> execute alpinos.buyer_master_import.preflight \
-        --kwargs "{'path': '/path/to/Buyer Master UAT BU 31-07.csv'}"
-
-Then import::
-
-    bench --site <site> execute alpinos.buyer_master_import.run \
-        --kwargs "{'path': '/path/to/Buyer Master UAT BU 31-07.csv'}"
-
-`run` refuses to start while blocking issues remain and prints the flag that
-clears each one. Keyword arguments:
-
-    path                 csv/xlsx exported from Data Import (required)
-    update_existing      update Buyer Masters that already exist  (default True)
-    create_masters       create missing State/City from the sheet (default False)
-    clear_missing_links  blank other unresolvable links instead of failing the
-                         record — customer_type/channel/party_owner/poc_employee
-                         (default False)
-    allow_duplicate_gst  import buyers that reuse a GSTIN already held by an
-                         unrelated buyer, the way the source site holds them:
-                         saved without the GST, which is then written straight
-                         to the row. This deliberately bypasses the "a GSTIN can
-                         belong to only one buyer" rule — only for mirroring
-                         legacy data (default False)
-    renumber_collisions  when a sheet ID names a *different* buyer on this site,
-                         import the row as a new buyer under a freshly generated
-                         ID instead of overwriting that record. Refused when the
-                         ID is used as a Parent Buyer by other rows (default False)
-    skip_records         Buyer Master IDs to leave out entirely — a list, or one
-                         comma-separated string
-    on_missing_sku       "skip" the margin row (default) or "blank" its SKU
-    force                import despite blocking issues; bad records just fail
-    limit                only process the first N records (smoke test)
-    report_path          where the per-record result CSV is written
+run() refuses to start while blocking issues remain and prints the flag that clears each one.
+See the run() signature for the available keyword arguments.
 """
 
 import csv
@@ -73,8 +18,7 @@ import frappe
 
 DOCTYPE = "Buyer Master"
 
-# CSV label -> (child table or "" for Buyer Master itself, fieldname).
-# fieldname None = column is read but not imported (source child-row IDs).
+# CSV label -> (child table or "" for Buyer Master itself, fieldname); fieldname None = read but not imported
 COLUMN_MAP = OrderedDict(
 	[
 		("ID", ("", "name")),
@@ -160,8 +104,7 @@ TRUE_VALUES = {"1", "1.0", "y", "yes", "true", "checked"}
 
 
 def _cell(fieldname, val):
-	"""Sheet cell -> python value. Checkboxes must become a real 0/1: the string
-	"0" is truthy, which would silently tick every unchecked box in the sheet."""
+	"""Sheet cell to python value; force checkboxes to a real 0/1 since the string "0" is truthy."""
 	if fieldname in CHECK_FIELDS:
 		return 1 if str(val).strip().lower() in TRUE_VALUES else 0
 	return val
@@ -258,10 +201,9 @@ def _child_payload(row, idx, table):
 
 
 def parse(path):
-	"""Sheet -> list of record dicts, in file order.
+	"""Sheet to a list of record dicts, in file order.
 
-	Data Import layout: a row carrying an ID starts a record; the rows after it
-	with a blank ID only contribute child-table rows to that same record.
+	An ID row starts a record; following blank-ID rows add child-table rows to it.
 	"""
 	header, rows = _read_rows(path)
 	idx = {h: i for i, h in enumerate(header)}
@@ -326,37 +268,25 @@ def _existing(doctype, values):
 
 
 def _lower(names):
-	"""MariaDB matches link values case-insensitively, so the report must too —
-	otherwise 'Nutritional Trade' reads as missing next to 'NUTRITIONAL TRADE'."""
+	"""Lowercase names; MariaDB matches link values case-insensitively."""
 	return {n.lower() for n in names}
 
 
 def _has_derivation_fix():
-	"""Whether this site's Buyer Master derives a distinct Customer per site.
-
-	Without it, clearing a conflicting Customer value does not help: the
-	controller hands every sibling site the same "<Business> - <GSTIN>" ID and
-	merges them without raising, so the conflict has to stay blocking.
-	"""
+	"""Whether this site's Buyer Master derives a distinct Customer per site."""
 	from alpinos.alpinos_development.doctype.buyer_master import buyer_master
 
 	return hasattr(buyer_master, "_customer_id_for_obm")
 
 
 def _family_root(rec):
-	"""The buyer family a record belongs to — a shared GSTIN is legal inside one."""
+	"""The buyer family a record belongs to; a shared GSTIN is legal inside one."""
 	d = rec["doc"]
 	return (d.get("parent_buyer") or "").strip() or (rec["name"] if d.get("is_parent") else None)
 
 
 def analyse(records):
-	"""Resolve every link against the DB and collect issues.
-
-	Returns (issues, resolved, gst_dupes):
-	  issues     list of dicts, one per problem found
-	  resolved   doctype -> set of names that already exist in the DB
-	  gst_dupes  names of records whose GSTIN is already held by an unrelated buyer
-	"""
+	"""Resolve every link against the DB and collect issues."""
 	wanted = defaultdict(set)
 	for rec in records:
 		for fieldname, dt in PARENT_LINKS.items():
@@ -372,7 +302,7 @@ def analyse(records):
 	resolved[DOCTYPE] = _existing(DOCTYPE, {r["name"] for r in records})
 	have = {dt: _lower(names) for dt, names in resolved.items()}
 
-	# Customers already claimed by a Buyer Master that is not the sheet's own row
+	# Customers already claimed by a Buyer Master other than the sheet's own row
 	claimed = {}
 	sheet_customers = wanted["Customer"] - {""}
 	if sheet_customers:
@@ -381,9 +311,7 @@ def analyse(records):
 		):
 			claimed[(row.customer or "").lower()] = row.name
 
-	# Sheet IDs that already name a *different* buyer on this site. Updating one
-	# blends the two: the sheet's values land on top, while fields blank in the
-	# sheet keep the old record's data (a stale GSTIN, say).
+	# sheet IDs that already name a different buyer here; updating one blends the two
 	occupied, existing_gst = {}, {}
 	if resolved[DOCTYPE]:
 		for row in frappe.get_all(
@@ -394,13 +322,11 @@ def analyse(records):
 			occupied[row.name] = (row.customer_business_name or "").strip()
 			existing_gst[row.name] = (row.gst_no or "").strip().upper()
 
-	# IDs another row depends on — those can never be renumbered.
+	# IDs another row depends on cannot be renumbered
 	referenced_parents = {(r["doc"].get("parent_buyer") or "").strip() for r in records}
 
-	# GSTINs already held by buyers on this site. A new row carrying one of them
-	# fails the same "one GSTIN per buyer" rule, even though nothing in the
-	# sheet looks duplicated — so seed the owner map from the DB, not just the
-	# sheet, and let both conflicts flow through one check.
+	# seed the GSTIN owner map from the DB too, so a new row reusing an existing
+	# GSTIN trips the same "one GSTIN per buyer" check
 	sheet_gsts = {
 		(r["doc"].get("gst_no") or "").strip().upper()
 		for r in records
@@ -419,8 +345,7 @@ def analyse(records):
 
 	names = {r["name"] for r in records}
 	issues, gst_dupes, cust_conflicts = [], set(), set()
-	# With the per-site derivation in place, a contested Customer value can just
-	# be dropped — the controller then assigns "<Business> - <Site Name>".
+	# with the per-site derivation, a contested Customer can just be dropped and re-derived
 	derivable = _has_derivation_fix()
 
 	def add(rec, category, message, value="", severity=None):
@@ -575,7 +500,7 @@ def _effective_severity(
 	if cat == "duplicate-gstin" and allow_duplicate_gst:
 		return "auto"
 	if cat == "id-collision" and (renumber_collisions or not update_existing):
-		return "auto"  # renumbered, or skipped — either way nothing is overwritten
+		return "auto"  # renumbered or skipped, nothing is overwritten
 	return issue["severity"]
 
 
@@ -707,7 +632,7 @@ def _ensure_city(cache, city, state, country, notes):
 	if not city or cache.exists("City", city):
 		return bool(city)
 	if not state or not cache.exists("State", state):
-		return False  # a City needs a valid State — the caller clears the value
+		return False  # a City needs a valid State; the caller clears the value
 	if not country or not cache.exists("Country", country):
 		country = "India"
 	doc = frappe.new_doc("City")
@@ -723,13 +648,10 @@ def _ensure_city(cache, city, state, country, notes):
 def _ensure_masters(records, cache):
 	"""Create every State/City the sheet needs, as a committed pre-pass.
 
-	This cannot happen inside the import loop: a record that fails is rolled
-	back, and the rollback also removes any State/City that record created —
-	while the cache still reports them as present, so every later record using
-	that city saves a link to a row that no longer exists and fails.
+	Done outside the import loop: a failed record's rollback would drop rows the cache still reports present.
 	"""
 	made = []
-	for rec in records:  # states first — a City row needs a valid State
+	for rec in records:  # states first, a City row needs a valid State
 		d = rec["doc"]
 		for a in rec["addresses"]:
 			_ensure_state(cache, (a.get("state") or "").strip(), (a.get("country") or "").strip(), made)
@@ -760,11 +682,8 @@ def _ensure_masters(records, cache):
 def _ensure_customers(records, cache):
 	"""Create every Customer the sheet names, under that exact ID.
 
-	Must run as a pre-pass over the whole file, before any Buyer Master is
-	saved. `_ensure_customer_for_obm` renames the Customer it adopts to
-	"<Business> - <GSTIN>" whenever that ID is free, so a sibling site
-	processed early would otherwise steal the ID belonging to the buyer that
-	actually holds that GSTIN.
+	A whole-file pre-pass: the controller renames an adopted Customer once its ID is free,
+	so a sibling site processed early would otherwise steal the ID of the buyer holding that GSTIN.
 	"""
 	from alpinos.alpinos_development.doctype.buyer_master.buyer_master import (
 		_default_company,
@@ -784,12 +703,11 @@ def _ensure_customers(records, cache):
 		if not cust_id or not biz or cache.exists("Customer", cust_id):
 			continue
 		cust = frappe.new_doc("Customer")
-		cust.customer_name = biz  # plain name — what SOs and stickers display
+		cust.customer_name = biz  # plain name shown on SOs and stickers
 		cust.customer_type = "Company"
 		cust.customer_group = cg
 		cust.territory = territory
-		# custom_order_type links to Alpino Customer Type (its label reads
-		# "Order Type"), so an unknown value fails the whole insert.
+		# custom_order_type is a link to Alpino Customer Type; an unknown value fails the insert
 		if d.get("customer_type") and cache.exists("Alpino Customer Type", d["customer_type"]):
 			cust.custom_order_type = d["customer_type"]
 		if d.get("gst_type") == "Registered Business" and d.get("gst_no"):
@@ -917,10 +835,8 @@ def run(
 	if not allow_duplicate_gst:
 		gst_dupes = set()
 
-	# Two rows naming one Customer cannot both own it. Hand those back to the
-	# controller — with the per-site derivation it assigns each a distinct
-	# "<Business> - <Site Name>" instead. Done before the pre-pass so the
-	# contested ID is never created for the wrong buyer.
+	# two rows naming one Customer are handed back to the controller to re-derive;
+	# done before the pre-pass so the contested ID is never created for the wrong buyer
 	for rec in records:
 		if rec["name"] in cust_conflicts and rec["doc"].get("customer"):
 			rec["dropped_customer"] = rec["doc"].pop("customer")
@@ -942,9 +858,7 @@ def run(
 			notes = _sanitise(rec, cache, on_missing_sku, clear_missing_links)
 			if rec.get("dropped_customer"):
 				notes.append(f"customer '{rec['dropped_customer']}' is taken — the controller derives a site-scoped ID")
-			# The sheet's ID belongs to a different buyer here, so this row is a
-			# new buyer that happens to collide. Insert it under a fresh ID
-			# instead of overwriting the record already sitting on that ID.
+			# sheet ID collides with a different buyer here; insert under a fresh ID rather than overwrite
 			renumbered = name in renumber
 			exists = frappe.db.exists(DOCTYPE, name) and not renumbered
 			if exists and not update_existing:
@@ -952,12 +866,8 @@ def run(
 				skipped += 1
 				continue
 
-			# The source site holds this GSTIN on an unrelated buyer too. Save
-			# without it and write it straight to the row once every record is
-			# in — the state the source data is in, which validate() tolerates
-			# only while the value is unchanged. The write has to wait until the
-			# end: land it now and it becomes the duplicate that makes every
-			# later buyer legitimately holding that GSTIN fail.
+			# GSTIN is held by an unrelated buyer too; save without it and write it after the run.
+			# validate() tolerates the unchanged value; writing it now would break later buyers.
 			deferred_gst = None
 			if name in gst_dupes and rec["doc"].get("gst_no"):
 				deferred_gst = (rec["doc"].pop("gst_no") or "").strip().upper()
@@ -998,9 +908,7 @@ def run(
 			if deferred_gst:
 				pending_gst.append((doc.name, doc.customer, deferred_gst))
 
-			# The controller renames an adopted Customer to "<Business> - <GSTIN>"
-			# whenever that ID is still free — expected for source rows whose
-			# Customer predates that rule, but worth showing in the report.
+			# controller may rename an adopted Customer once its ID is free; note it in the report
 			wanted_customer = (rec["doc"].get("customer") or "").strip()
 			if wanted_customer and doc.customer != wanted_customer:
 				notes.append(f"customer renamed by the controller: '{wanted_customer}' -> '{doc.customer}'")
@@ -1012,8 +920,7 @@ def run(
 			frappe.db.rollback()
 			failed += 1
 			msg = " ".join(str(e).split())[:400]
-			# Buyer Master.after_insert commits, so a failure in on_update can
-			# leave the row behind — say so rather than implying a clean skip.
+			# after_insert commits, so a later failure can leave the row behind
 			partial = "row exists despite the failure — review it" if frappe.db.exists(DOCTYPE, name) else ""
 			results.append([name, rec["line"], "failed", msg, partial])
 			print(f"  [{i}/{len(records)}] {name} FAILED: {msg[:160]}")
@@ -1052,11 +959,7 @@ def run(
 
 
 def verify(path=None, limit=None, report_path=None):
-	"""Compare what is in the site against the sheet, after an import.
-
-	Margin rows whose SKU is not an Item are expected to be missing — they are
-	counted separately rather than reported as a mismatch.
-	"""
+	"""Compare the site against the sheet after an import (margin rows with an unknown SKU counted separately)."""
 	records = parse(path)
 	if limit:
 		records = records[: int(limit)]

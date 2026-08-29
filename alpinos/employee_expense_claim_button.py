@@ -1,15 +1,10 @@
-"""
-Create Client Script for Employee doctype
-Adds "Create Reimbursement" button that opens Expense Claim with employee pre-filled
-Button only visible for active employees
-"""
+"""Client Script on Employee that adds a Create Reimbursement button."""
 
 import frappe
 
 
 def create_employee_expense_claim_button():
-	"""Create client script for Employee to add Create Reimbursement button"""
-	
+
 	employee_script = """
 frappe.ui.form.on('Employee', {
 	refresh: function(frm) {
@@ -30,7 +25,6 @@ frappe.ui.form.on('Employee', {
 });
 """
 	
-	# Create or update Employee client script
 	create_or_update_client_script(
 		"Employee - Create Reimbursement Button",
 		"Employee",
@@ -41,9 +35,7 @@ frappe.ui.form.on('Employee', {
 
 
 def create_or_update_client_script(name, doctype, script):
-	"""Create or update a client script"""
 	try:
-		# Check if client script already exists
 		if frappe.db.exists("Client Script", name):
 			client_script = frappe.get_doc("Client Script", name)
 			client_script.script = script
@@ -51,7 +43,6 @@ def create_or_update_client_script(name, doctype, script):
 			client_script.save(ignore_permissions=True)
 			frappe.db.commit()
 		else:
-			# Create new client script
 			client_script = frappe.get_doc({
 				"doctype": "Client Script",
 				"name": name,
@@ -68,7 +59,6 @@ def create_or_update_client_script(name, doctype, script):
 
 
 def execute():
-	"""Main execution function"""
 	try:
 		print("=" * 60)
 		print("Creating Employee - Create Reimbursement Button")

@@ -47,9 +47,7 @@ app_include_js = [
 # page_js = {"screening": "public/js/screening.js"}
 
 # include js in doctype views
-# Note: Job Applicant, Interview, and Employee Onboarding are in HRMS module
-# All JavaScript functionality is handled via Client Scripts (see employee_onboarding_client_scripts.py)
-# No doctype_js needed - client scripts are the correct approach for doctypes in other modules
+# HRMS doctypes (Job Applicant, Interview, Employee Onboarding) use Client Scripts instead.
 doctype_js = {
 	"User": "public/js/user_override.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
@@ -88,8 +86,7 @@ doctype_list_js = {
 # ----------
 
 # add methods and filters to jinja environment
-# NOTE: each entry must be a dotted path to a FUNCTION (exposed under its own name).
-# Pointing at a dict (alpinos.utils.jinja_methods) does NOT expose its members to Jinja.
+# Each entry must be a dotted path to a function; a dict does not expose its members.
 jinja = {
 	"methods": [
 		"alpinos.utils.get_combined_items",
@@ -471,9 +468,8 @@ doc_events = {
 		"after_submit": "alpinos.attendance_request_automation.populate_attendance_reason_after_submit"
 	},
 	"Employee Checkin": {
-		# Prevention: a punch that lands on an already auto-marked day re-opens and
-		# recomputes that day's Attendance (first->in, last->out) so late/out-of-order
-		# punches fold in — fixes the "skip - already marked" freeze at the source.
+		# A punch on an already auto-marked day re-opens and recomputes that day's
+		# Attendance, so late or out-of-order punches still fold in.
 		"after_insert": "alpinos.attendance_healer.heal_on_checkin"
 	}
 }

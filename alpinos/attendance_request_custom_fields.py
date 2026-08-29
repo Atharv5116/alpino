@@ -1,6 +1,4 @@
-"""
-Custom Fields for Attendance Request and Attendance DocTypes
-"""
+"""Custom Fields for Attendance Request and Attendance DocTypes."""
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -9,14 +7,11 @@ from frappe.custom.doctype.property_setter.property_setter import make_property_
 
 def setup_attendance_request_custom_fields():
 	"""Update reason field options and add custom fields to Attendance and Attendance Request"""
-	
-	# Update reason field options in Attendance Request
 	update_attendance_request_reason_options()
 
 	# Show From/To only for "On Duty"; single date is used otherwise
 	set_attendance_request_date_visibility()
 
-	# Add custom fields to Attendance Request doctype
 	add_attendance_request_custom_fields()
 
 	# Remove superseded fields, clear stale depends_on, hide the site-added "Time" field
@@ -24,19 +19,13 @@ def setup_attendance_request_custom_fields():
 	clear_attendance_request_details_depends_on()
 	hide_attendance_request_time_field()
 
-	# Disable any stray Attendance Request client script (tied to custom_time) that fills
-	# the check-in/out cells — only this app's script should drive the form.
+	# Disable any stray Attendance Request client script that fills the check-in/out cells.
 	disable_conflicting_attendance_request_client_scripts()
-	
-	# Add custom fields to Attendance doctype
+
 	add_attendance_custom_fields()
-	
-	# Add custom fields to Employee Checkin
 	add_employee_checkin_custom_fields()
-	
-	# Add custom fields to Shift Type
 	add_shift_type_custom_fields()
-	
+
 	print("✅ Attendance Request and Attendance custom fields setup completed")
 
 
@@ -53,10 +42,8 @@ def add_attendance_request_custom_fields():
 				read_only=1,
 				allow_on_submit=1,
 			),
-			# Set on validate (CustomAttendanceRequest._set_punch_edit_flag): 1 only when the
-			# request OVERWRITES a punch already on record (a ticked Edit Check-in/Check-out on a
-			# side the Existing Logs snapshot already has). The approval workflow reads this to
-			# branch the Reporting Manager step: edit -> HR Manager, missing -> approved by RM.
+			# Set on validate: 1 only when the request overwrites a punch already on record;
+			# the approval workflow branches on it (edit routes to HR Manager, missing to RM).
 			dict(
 				fieldname="custom_is_punch_edit",
 				label="Is Punch Edit",
@@ -67,22 +54,19 @@ def add_attendance_request_custom_fields():
 				allow_on_submit=1,
 				default="0",
 			),
-			# Single date used for non "On Duty" requests (From/To are hidden then and
-			# auto-set from this). For "On Duty" the standard From/To range is shown instead.
+			# Single date for non "On Duty" requests; From/To are hidden and auto-set from this.
 			dict(
 				fieldname="custom_request_date",
 				label="Date",
 				fieldtype="Date",
-				# Sit right next to From/To (same top-right spot) so the date field doesn't
-				# jump columns when switching between Office (single day) and On Duty (range).
+				# Keep it next to From/To so the field doesn't jump columns between Office and On Duty.
 				insert_after="to_date",
 				depends_on="eval:doc.reason!='On Duty'",
 				mandatory_depends_on="eval:doc.reason!='On Duty'",
 				description="Single day of the request. For 'On Duty' use the From/To range instead.",
 			),
 			# --- Check-in / Check-out Details (editable, every reason) ---
-			# One row per date (single day = 1 row; On Duty = one per date). Check-in/out are
-			# TIME fields — the row Date supplies the date. Applied on approval.
+			# One row per date; check-in/out are TIME fields, the row Date supplies the date.
 			dict(
 				fieldname="custom_checkin_section",
 				label="Check-in / Check-out Details",
@@ -132,8 +116,7 @@ def add_attendance_request_custom_fields():
 def update_attendance_request_reason_options():
 	"""Update reason field options in Attendance Request"""
 	try:
-		# Update the reason field options using property setter
-		# First option becomes the default
+		# First option becomes the default.
 		make_property_setter(
 			doctype="Attendance Request",
 			fieldname="reason",
@@ -141,8 +124,7 @@ def update_attendance_request_reason_options():
 			value="On Duty\nWork From Home\nOffice\nOther",
 			property_type="Text"
 		)
-		
-		# Set default value to "Office"
+
 		make_property_setter(
 			doctype="Attendance Request",
 			fieldname="reason",
@@ -159,14 +141,10 @@ def update_attendance_request_reason_options():
 
 
 def set_attendance_request_date_visibility():
-	"""From Date / To Date are shown only for the 'On Duty' reason (a range).
-	For every other reason a single 'Date' field (custom_request_date) is used and
-	From/To are auto-set from it on the server and client.
-	"""
+	"""From/To Date are shown only for the 'On Duty' reason; other reasons use custom_request_date."""
 	try:
 		on_duty = "eval:doc.reason=='On Duty'"
 		for fieldname in ("from_date", "to_date"):
-			# Show only for On Duty.
 			make_property_setter(
 				doctype="Attendance Request",
 				fieldname=fieldname,
@@ -174,9 +152,7 @@ def set_attendance_request_date_visibility():
 				value=on_duty,
 				property_type="Data",
 			)
-			# Make them conditionally mandatory (only when shown), so the hidden
-			# single-day case never triggers a mandatory error. The single Date field
-			# drives From/To then, server- and client-side.
+			# Conditionally mandatory (only when shown) so the single-day case never errors.
 			make_property_setter(
 				doctype="Attendance Request",
 				fieldname=fieldname,
@@ -202,9 +178,7 @@ def set_attendance_request_date_visibility():
 
 
 def cleanup_attendance_request_legacy_fields():
-	"""Delete superseded Attendance Request custom fields. The single-day Check-in/out
-	Time fields and the old Existing Datetime fields are replaced by the two tables
-	(editable Check-in/Check-out Details + read-only Existing Check-in Logs)."""
+	"""Delete superseded Attendance Request custom fields (old single-day time / datetime fields)."""
 	for fieldname in (
 		"custom_existing_check_in",
 		"custom_existing_check_out",
@@ -221,19 +195,16 @@ def cleanup_attendance_request_legacy_fields():
 
 
 def hide_attendance_request_time_field():
-	"""Hide the site-added "Time" field on Attendance Request (fieldname custom_time, or a
-	plain "time"). Handles both a Custom Field and a standard field, only if present."""
+	"""Hide the site-added "Time" field on Attendance Request, if present."""
 	try:
 		meta = frappe.get_meta("Attendance Request")
 		for fieldname in ("custom_time", "time"):
-			# If it's a Custom Field, hide it directly.
 			cf = frappe.db.get_value(
 				"Custom Field", {"dt": "Attendance Request", "fieldname": fieldname}, "name"
 			)
 			if cf:
 				frappe.db.set_value("Custom Field", cf, "hidden", 1)
-			# Also set a hidden property setter (covers a standard field, and overrides any
-			# stale visible state) when the field is present on the doctype.
+			# Also hide via property setter (covers a standard field / stale visible state).
 			if meta.has_field(fieldname):
 				make_property_setter("Attendance Request", fieldname, "hidden", "1", "Check")
 		frappe.db.commit()
@@ -244,9 +215,7 @@ def hide_attendance_request_time_field():
 
 
 def disable_conflicting_attendance_request_client_scripts():
-	"""Disable any OTHER Attendance Request client script that touches the check-in/out
-	cells (a stale customization tied to the custom_time field was filling blank cells with
-	the current time on save). Only this app's script should drive the form."""
+	"""Disable any OTHER Attendance Request client script that touches the check-in/out cells."""
 	mine = "Attendance Request - Check-in/Check-out Management"
 	try:
 		others = frappe.get_all(
@@ -272,10 +241,7 @@ def disable_conflicting_attendance_request_client_scripts():
 
 
 def clear_attendance_request_details_depends_on():
-	"""Force-clear stale depends_on on the two tables + their sections. Earlier versions
-	had reason-based depends_on (On Duty / not On Duty); create_custom_fields(update=True)
-	doesn't remove a depends_on that's no longer passed, so the editable Details table
-	stayed hidden. These fields must show for every reason."""
+	"""Force-clear stale depends_on on the two tables and their sections (must show for every reason)."""
 	for fieldname in (
 		"custom_checkin_section",
 		"custom_attendance_details",
@@ -292,7 +258,6 @@ def clear_attendance_request_details_depends_on():
 
 def add_attendance_custom_fields():
 	"""Add custom fields to Attendance doctype"""
-	# Delete the checkbox field if it exists
 	try:
 		checkbox_field = frappe.db.get_value(
 			"Custom Field",
@@ -407,8 +372,7 @@ def add_shift_type_custom_fields():
 				insert_after="working_hours_threshold_for_half_day",
 				description="Minimum working hours required on Saturday to be marked as Present. If hours are less, Employee will be marked Absent. (Used as the Half Day threshold when the Saturday Half Day threshold below is not set.)"
 			),
-			# Saturday-specific thresholds. When auto-marking attendance on a Saturday,
-			# these replace the standard half-day / absent thresholds.
+			# Saturday-specific thresholds; replace the standard half-day/absent thresholds on Saturdays.
 			dict(
 				fieldname="saturday_working_hours_threshold_for_half_day",
 				label="Saturday Working Hours Threshold for Half Day",
@@ -423,8 +387,7 @@ def add_shift_type_custom_fields():
 				insert_after="saturday_working_hours_threshold_for_half_day",
 				description="On Saturdays: if working hours are below this, the day is marked Absent. Leave 0 for the legacy two-way (Present/Absent) behaviour.",
 			),
-			# Late-entry deduction tiers (e.g. 15 min -> 0.5/4, 30 min -> 1/4). Used by the
-			# Attendance Summary report to deduct paid days for repeated late entries.
+			# Late-entry deduction tiers, used by the Attendance Summary report.
 			dict(
 				fieldname="custom_late_entry_thresholds",
 				label="Late Entry Deduction Thresholds",

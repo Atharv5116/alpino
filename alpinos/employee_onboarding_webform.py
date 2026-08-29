@@ -1,7 +1,4 @@
-"""
-Webform handler for Employee Onboarding Details
-Processes webform submissions and updates the Employee Onboarding record
-"""
+"""Webform handler for Employee Onboarding Details."""
 
 import frappe
 from frappe import _
@@ -23,10 +20,7 @@ def _delete_temp_onboarding(temp_name, target_name=None):
 
 
 def prepare_webform_temp_onboarding(doc, method=None):
-	"""
-	Prepare temporary webform-created Employee Onboarding docs so they don't fail
-	HRMS duplicate validation before our after_insert copy handler runs.
-	"""
+	"""Let webform temp docs skip HRMS duplicate validation before the after_insert copy runs."""
 	web_form_name = frappe.form_dict.get("web_form") or getattr(doc, "web_form_name", None)
 	is_webform_submission = (
 		bool(getattr(frappe.flags, "in_web_form", False))
@@ -37,20 +31,14 @@ def prepare_webform_temp_onboarding(doc, method=None):
 	if not is_webform_submission:
 		return
 
-	# Temp capture docs should bypass only duplicate onboarding check from HRMS.
-	# This check can fail for webform temp docs (especially when job_applicant is empty/None)
-	# before our after_insert copy logic runs.
+	# Bypass only the HRMS duplicate-onboarding check, which can fail for temp docs.
 	if hasattr(doc, "validate_duplicate_employee_onboarding"):
 		doc.validate_duplicate_employee_onboarding = lambda *args, **kwargs: None
 
 
 def process_webform_submission(doc, method=None):
-	"""
-	Process webform submission for Employee Onboarding Details
-	This function is called when the webform is submitted
-	"""
-	# Detect web form submission robustly.
-	# `frappe.flags.in_web_form` is not always reliable in all event contexts.
+	"""Process a webform submission for Employee Onboarding Details."""
+	# frappe.flags.in_web_form is not reliable in all event contexts, so detect broadly.
 	web_form_name = (
 		frappe.form_dict.get("web_form")
 		or getattr(doc, "web_form_name", None)
@@ -68,14 +56,13 @@ def process_webform_submission(doc, method=None):
 	if not is_webform_submission:
 		return
 
-	# Resolve target Employee Onboarding from multiple sources.
-	# `name` is reserved by Frappe; use `onboarding` as primary param.
+	# `name` is reserved by Frappe; use `onboarding` as the primary param.
 	employee_onboarding_name = (
 		doc.get("employee_onboarding_name")
 		or frappe.form_dict.get("onboarding")
 	)
 
-	# Fallback: parse posted web form payload
+	# Fallback: parse the posted web form payload.
 	if not employee_onboarding_name and frappe.form_dict.get("data"):
 		try:
 			payload = json.loads(frappe.form_dict.get("data"))
@@ -83,8 +70,7 @@ def process_webform_submission(doc, method=None):
 		except Exception:
 			pass
 
-	# Fallback: parse onboarding from browser Referer query params.
-	# This helps when submit API call does not carry page query params forward.
+	# Fallback: parse onboarding from the Referer query params.
 	if not employee_onboarding_name and referer:
 		try:
 			parsed = urlparse(referer)
@@ -100,21 +86,17 @@ def process_webform_submission(doc, method=None):
 	if doc.name == employee_onboarding_name:
 		return
 	
-	# Validate that Employee Onboarding exists
 	if not frappe.db.exists("Employee Onboarding", employee_onboarding_name):
 		frappe.throw(_("Invalid Employee Onboarding reference. Please contact HR."))
-	
-	# Get the Employee Onboarding document
+
 	onboarding_doc = frappe.get_doc("Employee Onboarding", employee_onboarding_name)
 	temp_doc_name = doc.name
-	
-	# Check if webform has already been submitted
+
 	if onboarding_doc.get('webform_submitted'):
 		frappe.throw(_("This form has already been submitted. Please contact HR if you need to make changes."))
 	
-	# Enqueue the actual processing to run after the current request finishes.
-	# This is CRUCIAL because Frappe's webform `accept` method attaches base64 files
-	# to this temporary document AFTER `after_insert` hooks run.
+	# Process after the request finishes: the webform `accept` attaches base64 files
+	# to the temp doc AFTER after_insert hooks run.
 	frappe.enqueue(
 		"alpinos.employee_onboarding_webform.process_webform_submission_async",
 		temp_doc_name=temp_doc_name,
@@ -123,7 +105,6 @@ def process_webform_submission(doc, method=None):
 		now=frappe.flags.in_test
 	)
 	
-	# Set a flag to indicate successful processing
 	frappe.local.response.message = {
 		"success": True,
 		"message": _("Your onboarding details have been successfully submitted!")
@@ -288,10 +269,7 @@ def _notify_hr_webform_submitted(onboarding_doc):
 
 
 def get_webform_url(employee_onboarding_name):
-	"""
-	Generate webform URL with Employee Onboarding parameter.
-	Use `onboarding` (not `name`) because Frappe reserves `name` for edit/view modes.
-	"""
+	"""Build the webform URL. Uses `onboarding` (not `name`, reserved by Frappe for edit/view)."""
 	from frappe.utils import get_url
 	
 	base_url = get_url()

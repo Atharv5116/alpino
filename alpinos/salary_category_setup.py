@@ -1,10 +1,7 @@
 """Seed the default Salary Category records (run on migrate).
 
-Salary Category is the single categorization driver for HRMS Payroll: every
-category maps to one of three Attendance Rule Engines (HO/Admin, WH ESSL,
-Offline Sales), and batch generation / payroll pick their calculation rules
-from the engine — never from the category name. HR may add more categories
-later (e.g. "HO Managers") as long as each points at an engine.
+Each category maps to one of three Attendance Rule Engines; payroll picks its rules from the
+engine, never the category name. HR may add more categories as long as each points at an engine.
 """
 
 import frappe
@@ -37,7 +34,7 @@ def seed_salary_categories():
 
 	for name, engine, description in DEFAULT_CATEGORIES:
 		if frappe.db.exists("Salary Category", name):
-			# Keep the engine current (field may be blank on pre-existing rows).
+			# Keep the engine current (may be blank on pre-existing rows).
 			if frappe.db.get_value("Salary Category", name, "attendance_rule_engine") != engine:
 				frappe.db.set_value("Salary Category", name, "attendance_rule_engine", engine)
 			continue

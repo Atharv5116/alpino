@@ -1,10 +1,8 @@
-"""
-Post Dispatch — API for the work-queue page.
+"""Post Dispatch API for the work-queue page.
 
-Queue = created Delivery Notes whose Sales Order is post-delivery-applicable
-(SO.custom_appointment_required) and whose Post Dispatch entry isn't Completed yet.
-"Start Post Dispatch" gets-or-creates the Post Dispatch doc for a DN, auto-filling
-transport + GRN SKU rows from the Delivery Note.
+Queue = created Delivery Notes on a post-delivery-applicable Sales Order whose Post
+Dispatch entry isn't Completed yet. Start Post Dispatch gets-or-creates the doc for a
+DN, auto-filling transport and GRN SKU rows from the Delivery Note.
 """
 
 import frappe
@@ -106,9 +104,8 @@ def start_post_delivery(delivery_note):
 	pd.delivery_note = delivery_note
 	pd.customer = dn.customer
 	pd.channel = so.get("custom_channel") or ""
-	# #29 Post Dispatch fields: Customer's PO No. (offline po_no / e-com custom_po_number),
-	# Invoice No. (from the SO once synced), and Total Invoice Value = this DN's grand total
-	# (the dispatched/picked products WITH GST).
+	# #29: Customer PO No (offline po_no / e-com custom_po_number), Invoice No from the
+	# SO, and Total Invoice Value = this DN's grand total (with GST).
 	pd.customer_po_no = (so.get("po_no") or so.get("custom_po_number") or "")
 	pd.invoice_no = (so.get("custom_invoice_no") or "")
 	pd.total_invoice_value = flt(dn.get("grand_total") or dn.get("base_grand_total"))

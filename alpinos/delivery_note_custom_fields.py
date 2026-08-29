@@ -243,9 +243,7 @@ def setup_delivery_note_alpinos():
 			"value": "Quantity",
 			"property_type": "Data",
 		},
-		# vehicle_no is re-purposed to carry the Pick List PO No. value
-		# (fetched from Pick List.custom_po_no). Renaming the label keeps the
-		# data column in place — no migration needed.
+		# vehicle_no is re-purposed to carry the Pick List PO No.; relabel only, no migration.
 		{
 			"doctype_or_field": "DocField",
 			"doc_type": "Delivery Note",
@@ -254,8 +252,7 @@ def setup_delivery_note_alpinos():
 			"value": "Picklist PO No.",
 			"property_type": "Data",
 		},
-		# Transporter Name is now free text (mirrors Pick List.custom_transporter
-		# which is itself a Data field).
+		# Transporter Name is now free text (mirrors Pick List.custom_transporter).
 		{
 			"doctype_or_field": "DocField",
 			"doc_type": "Delivery Note",

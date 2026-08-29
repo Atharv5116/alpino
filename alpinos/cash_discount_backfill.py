@@ -1,23 +1,9 @@
-"""One-time backfill: correct Sales Orders whose CASH DISCOUNT was over-charged.
+"""One-time backfill to correct Sales Orders whose cash discount was over-charged.
 
-Older orders computed the cash discount via ERPNext's additional_discount_percentage
-on "Grand Total" while the net/GST were mis-stored (gross treated as net, GST added on
-top), so the discount base inflated past the item value — e.g. 5% of a 1,74,066 order
-became 9,573.65 instead of 8,703.30. Current code stores clean GST-inclusive amounts, so
-NEW orders are correct; only the OLD ones need fixing.
-
-Correct cash discount = cash% x the GST-INCLUSIVE item value (selling_price x qty, less
-the line's additional discount). This is exactly what a re-save produces today.
-
-Run (ALWAYS dry-run first):
+Correct cash discount = cash% x the GST-inclusive item value (selling_price x qty, less
+the line's additional discount). Always dry-run first:
     bench --site <site> execute alpinos.cash_discount_backfill.backfill
     bench --site <site> execute alpinos.cash_discount_backfill.backfill --kwargs "{'dry_run':0}"
-
-Both draft and submitted orders get a surgical correction of just the discount +
-grand-total fields (net_total / taxes / item rows are left untouched) — a full re-save is
-avoided so unrelated validations can't block the fix. Any order whose net+taxes don't
-already reconcile to the item value is SKIPPED and listed for manual review, so this never
-guesses at a deeper problem.
 """
 
 import frappe
@@ -26,16 +12,12 @@ from frappe.utils import flt
 # net_total + taxes must sit within this of the item value for a safe auto-fix.
 _TOLERANCE = 0.10
 
-# An order counts as over-charged only if the discount is off by more than ~a rupee. The
-# live calc rounds the intermediate net, so a correctly-computed order can sit a paisa or
-# two off this script's flat cash% x item_value formula (e.g. 8703.28 vs 8703.30) — that is
-# rounding noise, NOT a bug, so it must not be "corrected".
+# Off by more than ~a rupee counts as over-charged; below that is rounding noise.
 _DISC_TOLERANCE = 1.00
 
 
 def _item_value(doc):
-	"""GST-inclusive order value = sum of selling_price x qty less each line's additional
-	discount. selling_price is stored correctly on the rows, so this is the reliable base."""
+	"""GST-inclusive order value = sum of selling_price x qty less each line's additional discount."""
 	total = 0.0
 	for it in doc.get("items") or []:
 		sp = flt(it.get("custom_selling_price") or it.get("selling_price"), 2)
@@ -91,8 +73,7 @@ def backfill(dry_run=1, limit=None):
 			already_ok += 1
 			continue
 
-		# Only auto-fix when net+taxes already reconcile to the item value; otherwise the
-		# order has a deeper mis-store and is left for manual review.
+		# Only auto-fix when net+taxes reconcile to the item value; else leave for manual review.
 		reconciles = abs(flt(doc.get("net_total")) + flt(doc.get("total_taxes_and_charges")) - item_value) <= _TOLERANCE
 		info = {
 			"name": name, "docstatus": doc.docstatus, "cash_pct": cash,

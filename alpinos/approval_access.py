@@ -1,15 +1,4 @@
-"""Restrict the Approvals workspace to HR + reporting managers / HODs.
-
-The Approvals workspace and its pending-approvals queue (alpinos.approval_dashboard)
-are meant only for HR Managers/Users and reporting managers (anyone with direct
-reports). A Frappe workspace gates visibility by ROLE, but the "Reporting Manager" /
-"HOD" roles are typically unassigned. Those roles carry NO doctype permissions — their
-only effect here is the sidebar entry — so we safely grant "Reporting Manager" to every
-user who is someone's reports_to, and gate the workspace by HR + Reporting Manager + HOD.
-
-A public workspace with no roles is shown to everyone; once roles are set, only users
-with one of them (or System/Workspace Managers) see it.
-"""
+"""Gate the Approvals workspace to HR + reporting managers/HODs, and grant Reporting Manager to every user with reports."""
 
 import frappe
 

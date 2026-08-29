@@ -1,15 +1,7 @@
-"""Stock reservation across the Pick List -> Delivery Note flow, on top of
-ERPNext's native Stock Reservation Entry (SRE).
+"""Stock reservation across the Pick List -> Delivery Note flow, on top of ERPNext's native SRE.
 
-Rules:
-1. When a Pick List is created, reserve the **Sales Order** quantity for each
-   picked stock item (an SRE against the SO, sourced from this Pick List).
-2. The Delivery Note submission deducts stock natively for the picked qty and
-   consumes the matching reservation.
-3. Whatever was reserved but not delivered (SO qty - delivered qty) is released
-   right after the Delivery Note is submitted.
-
-Cancelling the Pick List releases its reservations too.
+Reserve the full Sales Order qty when a Pick List is created; the Delivery Note consumes the
+matching reservation and the undelivered balance is released. Cancelling the Pick List releases too.
 """
 
 import frappe
@@ -36,8 +28,7 @@ def _reservation_enabled():
 
 
 def reserve_for_pick_list(doc, method=None):
-	"""On Pick List creation: reserve the Sales Order qty for each picked stock
-	item (rule 1)."""
+	"""On Pick List creation, reserve the Sales Order qty for each picked stock item."""
 	if doc.docstatus != 0 or not _reservation_enabled():
 		return
 
@@ -51,8 +42,7 @@ def reserve_for_pick_list(doc, method=None):
 	for row in doc.get("locations") or []:
 		so = row.get("sales_order")
 		so_item = row.get("sales_order_item")
-		# Need a real SO line + warehouse, and a stock item (skip bundles/samples
-		# that don't carry stock or a direct SO line).
+		# Need a real SO line, warehouse, and stock item (skip bundles/samples).
 		if not so or not so_item or not row.get("warehouse"):
 			continue
 		if not frappe.db.get_value("Item", row.get("item_code"), "is_stock_item"):
@@ -72,7 +62,7 @@ def reserve_for_pick_list(doc, method=None):
 			items_details.append({
 				"sales_order_item": row.sales_order_item,
 				"warehouse": row.warehouse,
-				"qty_to_reserve": so_qty,  # reserve the full SO qty (rule 1)
+				"qty_to_reserve": so_qty,  # full SO qty
 				"from_voucher_no": doc.name,
 				"from_voucher_detail_no": row.name,
 			})
@@ -90,8 +80,7 @@ def reserve_for_pick_list(doc, method=None):
 
 
 def release_pick_list_reservation(pick_list):
-	"""Release any still-reserved (not yet delivered) SREs sourced from this Pick
-	List. Used on Pick List cancel and to release leftovers after a DN."""
+	"""Release still-reserved (undelivered) SREs sourced from this Pick List."""
 	if not _reservation_enabled() or not pick_list:
 		return
 	from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
@@ -107,8 +96,7 @@ def release_pick_list_reservation(pick_list):
 
 
 def release_leftover_after_delivery_note(doc, method=None):
-	"""After a Delivery Note is submitted (rule 3): the delivered qty has consumed
-	its reservation; release the remaining SO-vs-PL difference."""
+	"""After a Delivery Note is submitted, release the remaining SO-vs-PL reservation."""
 	if doc.get("is_return") or not _reservation_enabled():
 		return
 	pick_lists = {row.get("against_pick_list") for row in (doc.get("items") or []) if row.get("against_pick_list")}

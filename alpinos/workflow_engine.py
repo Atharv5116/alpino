@@ -1,20 +1,9 @@
-"""Operations workflow engine — keeps `custom_workflow_status` accurate across
-the Sales Order -> Pick List -> Delivery Note lifecycle.
+"""Operations workflow engine: keeps custom_workflow_status accurate across the
+Sales Order -> Pick List -> Delivery Note lifecycle.
 
-Phase 2 of the Operations workflow (Phase 1 = roles / permissions / status
-fields, see workflow_role_access.py). This module drives the status *fields*
-through their lifecycle via doc_events, enforces the cross-document
-cancellation rules, and exposes the few user actions that have no document
-event to hang off (Future Dispatch, Mark Delivered, Start Picking).
-
-Status sources of truth:
-  * Sales Order.custom_workflow_status  — 10 stages
-  * Pick List.custom_workflow_status    — 8 stages
-  * Delivery Note uses native docstatus (Draft / Dispatched / Cancelled)
-
-Stock movement is intentionally left to native ERPNext (deducted on Delivery
-Note submit). "Reserved" in the spec is reflected by the workflow status, not
-by separate stock ledger entries.
+Drives the status fields via doc_events, enforces cross-document cancellation rules,
+and exposes the user actions that have no document event to hang off. Stock movement
+stays native (deducted on Delivery Note submit); "Reserved" is only a workflow status.
 """
 
 import frappe
@@ -45,9 +34,7 @@ SO_COMPLETED = "Completed"
 SO_CANCELLED = "Cancelled"
 SO_REJECTED = "Rejected"
 
-# SO stages that may still be steered by Pick List progress (never regress past
-# these — once a DN exists or the order is dispatched, PL edits must not pull it
-# backwards).
+# SO stages that Pick List progress may still steer; never regress once a DN exists.
 SO_EARLY_STAGES = {
 	SO_WAREHOUSE_PENDING,
 	SO_FUTURE_DISPATCH,
@@ -58,9 +45,8 @@ SO_EARLY_STAGES = {
 	SO_SUBMISSION_PENDING,
 }
 
-# Warehouse can REJECT an order once it has reached the warehouse workflow, up to the
-# point a Pick List is submitted (SO_EARLY_STAGES). After that a Pick List / Delivery
-# Note carries picked/reserved stock, so rejection is blocked — cancel those first.
+# Warehouse can reject an order up to the point a Pick List is submitted; after that,
+# picked/reserved stock exists, so rejection is blocked (cancel the PL/DN first).
 SO_REJECTABLE = set(SO_EARLY_STAGES)
 
 PL_DRAFT = "Draft"
@@ -74,12 +60,11 @@ PL_FORCED_READY = "Forced Ready To Dispatch"
 PL_DISPATCHED = "Dispatched"
 PL_CANCELLED = "Cancelled"
 
-# PL stages that mean "actively being worked" -> the Sales Order mirrors them.
+# PL stages that mean "actively being worked"; the Sales Order mirrors them.
 PL_ACTIVE_STAGES = {PL_PICKING, PL_STICKER_PENDING, PL_SUBMISSION_PENDING}
 
-# A Pick List picking stage -> the Sales Order status it should reflect.
-# Note: "Sticker Pending" is a Pick-List-only stage; while the PL is at Sticker
-# Pending the Sales Order stays at "Picking In Progress".
+# Pick List picking stage -> the Sales Order status it maps to. Sticker Pending is
+# PL-only, so the SO stays at Picking In Progress while the PL is there.
 PL_TO_SO_STATUS = {
 	PL_PICKING: SO_PICKING,
 	PL_STICKER_PENDING: SO_PICKING,
@@ -96,9 +81,7 @@ PICKER_ROLES = {"PL User", "Warehouse User", "Warehouse Admin", "Warehouse Manag
 # ---------------------------------------------------------------------------
 
 def _set_status(doctype, name, status):
-	"""Write a workflow status only when it actually changes. Direct DB write so
-	it never re-triggers document hooks (no recursion) and works on submitted
-	docs (the field is allow_on_submit)."""
+	"""Write a workflow status only when it changes. Direct DB write: no hooks, works on submit."""
 	if not name or not status:
 		return
 	if frappe.db.get_value(doctype, name, "custom_workflow_status") == status:
@@ -181,8 +164,7 @@ def _active_delivery_notes_for_pick_list(pl):
 # ---------------------------------------------------------------------------
 
 def _all_items_picked(doc):
-	"""True when every location row has a picked qty and (for batched items) a
-	batch — i.e. picking is complete and stickers can be printed."""
+	"""True when every location row has a picked qty and (for batched items) a batch."""
 	rows = doc.get("locations") or []
 	if not rows:
 		return False
@@ -206,11 +188,8 @@ def _compute_pick_list_status(doc):
 			limit=1,
 		)
 		return PL_DISPATCHED if dn_submitted else PL_READY
-	# Draft progression (most-advanced first). Note: this app pre-fills picked
-	# qty from the SO at PL creation, so "all items picked" can be true before
-	# any picking happens — we therefore gate the picked states behind the
-	# picker explicitly starting (custom_picking_started), matching the spec's
-	# Draft -> Picking Pending -> Picking In Progress -> Sticker Pending flow.
+	# Draft progression, most-advanced first. Picked qty is pre-filled from the SO,
+	# so gate the picked states behind custom_picking_started (the picker actually starting).
 	if doc.get("custom_sticker_printed"):
 		return PL_SUBMISSION_PENDING
 	if doc.get("custom_picking_started"):
@@ -228,10 +207,10 @@ def _apply_pick_list_status(doc):
 
 
 def refresh_todays_dispatch():
-	"""Daily scheduled job: flip APPROVED, future-dated Sales Orders to "Today's
-	Dispatch" on the day their dispatch date arrives. Only Future Dispatch orders
-	are flipped — Warehouse Approval Pending is a manual gate (approve_sales_order)
-	and must never be auto-approved by this job."""
+	"""Daily job: flip Future Dispatch orders to Today's Dispatch when their date arrives.
+
+	Warehouse Approval Pending is a manual gate and is never auto-approved here.
+	"""
 	rows = frappe.get_all(
 		"Sales Order",
 		filters={
@@ -260,10 +239,7 @@ def sales_order_validate(doc, method=None):
 
 
 def sales_order_on_submit(doc, method=None):
-	# "Send for Warehouse Approval" always lands in Warehouse Approval Pending —
-	# the approval stage must never be skipped. The date-driven Today's Dispatch
-	# transition happens afterwards via refresh_todays_dispatch (the daily job
-	# flips due-today orders forward), so it's the stage after, not instead.
+	# Submit always lands in Warehouse Approval Pending; the daily job moves it forward later.
 	doc.db_set("custom_workflow_status", SO_WAREHOUSE_PENDING, update_modified=False)
 	from alpinos import so_notifications as son
 	_notify(lambda: son.n01_so_submitted(doc))
@@ -282,10 +258,7 @@ _ENTRY_PAGE_ROUTES = {
 
 
 def _linked_doc_refs(doctype, names):
-	"""Linked-document IDs for cancellation guard messages. Rendered as links
-	to the doctype's entry page only when the current user may read that
-	doctype — otherwise plain IDs, so users without access see the ID but
-	cannot navigate to it."""
+	"""Linked-document IDs for cancellation guard messages; links only if the user can read them."""
 	if frappe.has_permission(doctype, "read"):
 		route = _ENTRY_PAGE_ROUTES[doctype]
 		return ", ".join(
@@ -319,10 +292,7 @@ def _guard_sales_order_cancellation(doc):
 # ---------------------------------------------------------------------------
 
 def _sync_so_from_pick_list(so, pl_status):
-	"""Mirror the Pick List's picking stage onto the Sales Order:
-	Picking In Progress / Sticker Pending / Submission Pending. A Draft or
-	Picking Pending PL leaves the SO at its date-driven status (Today's
-	Dispatch / Warehouse queue). Never regress past Ready For Dispatch."""
+	"""Mirror the Pick List's picking stage onto the Sales Order. Never regress past Ready."""
 	if not so:
 		return
 	cur = frappe.db.get_value("Sales Order", so, "custom_workflow_status")
@@ -363,9 +333,8 @@ def pick_list_on_update(doc, method=None):
 			_notify(lambda: son.n07_sticker_pending(doc))
 		elif status == PL_SUBMISSION_PENDING:
 			_notify(lambda: son.n08_submission_pending(doc))
-	# Assignment notice: only on a real re-assignment of an EXISTING doc.
-	# On insert, has_value_changed() is True (no prior value) and
-	# pick_list_after_insert already fires n06 — guard against the double-send.
+	# Assignment notice only on a real re-assignment of an existing doc; on insert,
+	# pick_list_after_insert already fires n06, so guard against the double-send.
 	if (
 		doc.get_doc_before_save()
 		and doc.has_value_changed("custom_assigned_to")
@@ -382,7 +351,7 @@ def pick_list_on_submit(doc, method=None):
 	if so and is_force_closed(so):
 		doc.db_set("custom_workflow_status", PL_FORCED_READY, update_modified=False)
 		_set_status("Sales Order", so, SO_FORCED_READY)
-	# Partial order still short of full coverage -> partial ready statuses.
+	# Partial order still short of full coverage: partial ready statuses.
 	elif so and pd.is_partial_round(so):
 		doc.db_set("custom_workflow_status", PL_PARTIAL_READY, update_modified=False)
 		_set_status("Sales Order", so, SO_PARTIAL_READY)
@@ -396,7 +365,7 @@ def pick_list_on_submit(doc, method=None):
 def pick_list_on_cancel(doc, method=None):
 	_guard_pick_list_cancellation(doc)
 	doc.db_set("custom_workflow_status", PL_CANCELLED, update_modified=False)
-	# Reservation released — recompute the SO back to its date-driven queue.
+	# Reservation released: recompute the SO back to its date-driven queue.
 	so = _so_of_pick_list(doc)
 	if so:
 		_set_status("Sales Order", so, _recompute_so_status(so))
@@ -450,8 +419,7 @@ def delivery_note_on_submit(doc, method=None):
 			_set_status("Sales Order", so, SO_FORCED_DISPATCHED)
 			_notify(lambda: son.n18_forced_dn_submitted(so, doc))
 		elif pd.is_partial_order(so):
-			# Auto-complete once cumulative dispatched covers the full order;
-			# otherwise the order stays in the partial chain (no Partial Completed).
+			# Auto-complete once cumulative dispatched covers the order, else stay partial.
 			if pd.so_fully_dispatched(so):
 				_set_status("Sales Order", so, SO_COMPLETED)
 				_notify(lambda: son.n16_auto_completed(so, doc))
@@ -483,12 +451,7 @@ def delivery_note_on_cancel(doc, method=None):
 
 @frappe.whitelist()
 def cancel_document(doctype, name):
-	"""Cancel a Sales Order / Pick List / Delivery Note from its entry page.
-
-	Requires cancel permission on the doctype (the page only shows the button
-	when the user has it; this is the server-side enforcement). Cancellation
-	guards run via on_cancel and block with the linked document's ID when a
-	downstream document is still active."""
+	"""Cancel a Sales Order / Pick List / Delivery Note from its entry page (needs cancel perm)."""
 	if doctype not in _ENTRY_PAGE_ROUTES:
 		frappe.throw(frappe._("Cancellation is not supported for {0}.").format(doctype))
 	doc = frappe.get_doc(doctype, name)
@@ -501,10 +464,7 @@ def cancel_document(doctype, name):
 
 @frappe.whitelist()
 def submit_sales_order(sales_order):
-	"""Submit a draft Sales Order -> Warehouse Approval Pending.
-
-	Used by the 'Send for Warehouse Approval' button on the Sales Order view
-	page (the page now saves new orders as Draft, then this advances them)."""
+	"""Submit a draft Sales Order (Send for Warehouse Approval button) -> Warehouse Approval Pending."""
 	doc = frappe.get_doc("Sales Order", sales_order)
 	if doc.docstatus != 0:
 		frappe.throw(frappe._("This Sales Order is already submitted."))
@@ -515,8 +475,7 @@ def submit_sales_order(sales_order):
 
 @frappe.whitelist()
 def approve_sales_order(sales_order):
-	"""Warehouse approves an order pending approval -> it enters the dispatch queue:
-	Today's Dispatch if the dispatch date is due (<= today), else Future Dispatch."""
+	"""Warehouse approves a pending order into the dispatch queue (Today's or Future Dispatch)."""
 	_require_roles(WAREHOUSE_ROLES)
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
 	if cur != SO_WAREHOUSE_PENDING:
@@ -530,10 +489,7 @@ def approve_sales_order(sales_order):
 
 @frappe.whitelist()
 def reject_sales_order(sales_order):
-	"""Warehouse Admin / Manager rejects an order that has reached the warehouse
-	workflow -> Rejected (terminal). Allowed only up to Ready For Dispatch and while
-	no Pick List has been submitted, so a rejection never strands picked/dispatched
-	stock — cancel a submitted Pick List first if the order got that far."""
+	"""Warehouse rejects an order (terminal). Allowed only before a Pick List is submitted."""
 	_require_roles(WAREHOUSE_ROLES)
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
 	if cur not in SO_REJECTABLE:
@@ -552,15 +508,11 @@ def mark_future_dispatch(sales_order, expected_date):
 	if not expected_date:
 		frappe.throw(frappe._("Expected Dispatch Date is mandatory for Future Dispatch."))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
-	# Allowed while the order is still in the warehouse queue (a submitted Pick
-	# List moves the SO to Ready For Dispatch, which is not in this set, so it's
-	# naturally blocked). A *draft* Pick List is fine — we re-sync its date below.
+	# Only while the order is still in the warehouse queue (a draft Pick List is fine).
 	if cur not in (SO_WAREHOUSE_PENDING, SO_FUTURE_DISPATCH, SO_TODAYS_DISPATCH):
 		frappe.throw(frappe._("The dispatch date can only be changed while the order is awaiting warehouse dispatch."))
-	# Picking today -> "Today's Dispatch"; a future date -> "Future Dispatch".
 	new_status = SO_TODAYS_DISPATCH if getdate(expected_date) == getdate(today()) else SO_FUTURE_DISPATCH
-	# Move the visible Dispatch Date to the chosen date too (and record it as the
-	# expected dispatch date), so the order reschedules to when it will go out.
+	# Move the visible Dispatch Date to the chosen date so the order reschedules.
 	frappe.db.set_value(
 		"Sales Order",
 		sales_order,
@@ -622,8 +574,7 @@ def start_picking(pick_list):
 
 @frappe.whitelist()
 def stop_picking(pick_list):
-	"""Picker presses Stop at the sticker-generation point -> Submission Pending
-	(picking finished; the Pick List is now ready to submit)."""
+	"""Picker presses Stop at the sticker point -> Submission Pending (ready to submit)."""
 	_require_roles(PICKER_ROLES)
 	if frappe.db.get_value("Pick List", pick_list, "docstatus") != 0:
 		frappe.throw(frappe._("Picking can only be stopped on a draft Pick List."))
@@ -635,8 +586,7 @@ def stop_picking(pick_list):
 
 
 def mark_sticker_printed(pick_list):
-	"""Flip the sticker-printed flag and advance to Submission Pending. Called
-	from the sticker-generation endpoint (not whitelisted directly)."""
+	"""Flip the sticker-printed flag and advance to Submission Pending."""
 	if frappe.db.get_value("Pick List", pick_list, "docstatus") != 0:
 		return
 	if frappe.db.get_value("Pick List", pick_list, "custom_sticker_printed"):
@@ -648,7 +598,7 @@ def mark_sticker_printed(pick_list):
 
 
 # ---------------------------------------------------------------------------
-# Notifications (defensive — must never block the workflow)
+# Notifications (must never block the workflow)
 # ---------------------------------------------------------------------------
 
 def _notify(fn):
@@ -705,8 +655,7 @@ def _notify_dn_dispatched(doc):
 # ---------------------------------------------------------------------------
 
 def _recompute_so_status(so):
-	"""Derive a Sales Order's workflow status purely from its current docstatus
-	and linked Pick List / Delivery Note state. Used for backfill and migrate."""
+	"""Derive a Sales Order's workflow status from its docstatus and linked PL/DN state."""
 	ds = frappe.db.get_value("Sales Order", so, "docstatus")
 	if ds == 2:
 		return SO_CANCELLED
@@ -739,17 +688,12 @@ def _recompute_so_status(so):
 		for stage in (PL_SUBMISSION_PENDING, PL_STICKER_PENDING, PL_PICKING):  # most advanced first
 			if stage in statuses:
 				return PL_TO_SO_STATUS[stage]
-	# Warehouse approval is a MANUAL gate. A never-approved order (still Pending,
-	# or with no status yet) must never be auto-advanced into the dispatch queue
-	# by this date-driven recompute — which runs on every migrate via
-	# backfill_workflow_statuses. Only orders already past approval (Future/Today's
-	# Dispatch, or returning from a cancelled Pick List/DN with a picking-stage
-	# status) get the date-driven flip below. This mirrors refresh_todays_dispatch,
-	# which likewise refuses to auto-approve Pending orders.
+	# Warehouse approval is a manual gate: never auto-advance a never-approved order
+	# into the dispatch queue (this runs on every migrate). Only past-approval orders
+	# get the date-driven flip below.
 	if cur in (None, "", SO_WAREHOUSE_PENDING):
 		return SO_WAREHOUSE_PENDING
-	# Otherwise the warehouse-queue status is date-driven:
-	# due today (or overdue) -> Today's Dispatch; future -> waiting / parked.
+	# Otherwise the warehouse-queue status is date-driven: due today -> Today's Dispatch.
 	dd = frappe.db.get_value("Sales Order", so, "custom_dispatch_date")
 	if dd and getdate(dd) <= getdate(today()):
 		return SO_TODAYS_DISPATCH
@@ -757,9 +701,7 @@ def _recompute_so_status(so):
 
 
 def backfill_workflow_statuses():
-	"""Recompute workflow status for every existing Pick List and Sales Order.
-	Idempotent; safe to run on every migrate. Pick Lists first so the Sales
-	Order derivation reads fresh PL statuses."""
+	"""Recompute workflow status for every Pick List and Sales Order. Pick Lists first."""
 	for pl in frappe.get_all("Pick List", pluck="name"):
 		doc = frappe.get_doc("Pick List", pl)
 		_set_status("Pick List", pl, _compute_pick_list_status(doc))

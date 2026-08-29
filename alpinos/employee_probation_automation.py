@@ -1,17 +1,4 @@
-"""Auto-calculate Probation End Date on the Employee doctype.
-
-Probation End Date = Date of Joining + Probation Period (days). Mirrors the Employee
-Onboarding behaviour so that an Employee edited directly (not created from onboarding) also
-gets the end date filled.
-
-  - calculate_probation_end_date : validate doc_event — the source of truth (covers API /
-    import / direct edits).
-  - setup_employee_probation : after_migrate — marks probation_end_date read-only (it is
-    derived) and installs a client script for a live preview as the days / DOJ are edited.
-
-The probation_period / probation_end_date fields are assumed to already exist on Employee;
-everything here is defensive (guards on field presence) so it is a no-op where they don't.
-"""
+"""Auto-calculate Probation End Date (Date of Joining + Probation Period days) on Employee."""
 
 import frappe
 from frappe.utils import add_days, getdate
@@ -37,14 +24,14 @@ def setup_employee_probation():
 	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 
 	try:
-		# Probation End Date is derived — make it read-only on the form.
+		# derived field, read-only on the form
 		if frappe.get_meta("Employee").has_field("probation_end_date"):
 			make_property_setter(
 				"Employee", "probation_end_date", "read_only", 1, "Check",
 				validate_fields_for_doctype=False,
 			)
 
-		# Live preview as days / DOJ change (server-side validate stays the source of truth).
+		# live preview as days/DOJ change; validate stays the source of truth
 		script = """
 frappe.ui.form.on('Employee', {
 	probation_period: function(frm) { alp_emp_probation_end(frm); },
