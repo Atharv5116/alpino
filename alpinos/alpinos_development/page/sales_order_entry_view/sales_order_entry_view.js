@@ -1,5 +1,4 @@
-// Dim placeholder dashes and bare zeros so real figures read first — visual
-// only, never hides a value. Skips cells holding controls / links / images.
+// dims placeholder dashes/zeros so real figures read first — visual only, never hides a value
 var ALP_DIM_RE = /^(?:—|-|0|0\.0+|₹\s*0(?:\.0+)?)$/;
 function alpDimPlaceholderCells(root) {
 	if (!root || !root.querySelectorAll) return;
@@ -20,11 +19,9 @@ frappe.pages['sales-order-entry-view'].on_page_load = function (wrapper) {
 	wrapper.so_entry_view = new SalesOrderEntryView(page);
 };
 
-// Frappe caches custom pages, so on_page_load runs only once. Without re-rendering on
-// show, navigating back (e.g. from the SO list) leaves a blank/stale wrapper that needs a
-// manual browser refresh. Re-render the body + reload the order (the view reads its name
-// from the route) on every show. setup_toolbar() is idempotent (clears toolbar/menu
-// first) and the view binds no delegated container events, so nothing duplicates.
+// Frappe caches custom pages, so on_page_load runs once — re-render + reload the order on
+// every show or navigating back leaves a stale wrapper. setup_toolbar() is idempotent and
+// the view binds no delegated container events, so nothing duplicates.
 frappe.pages['sales-order-entry-view'].on_page_show = function (wrapper) {
 	const page = wrapper.__so_view_page;
 	if (!page) return;
@@ -42,30 +39,24 @@ var SalesOrderEntryView = class {
 	}
 
 	setup_toolbar() {
-		// Idempotent: if this page instance is ever re-created, clear the existing
-		// buttons/menu first so the action bar never accumulates duplicates.
+		// idempotent — clear existing buttons/menu first so the action bar never accumulates duplicates
 		this.page.clear_inner_toolbar && this.page.clear_inner_toolbar();
 		this.page.clear_menu && this.page.clear_menu();
-		// Utility actions live in the "⋯" menu to keep the action bar uncluttered.
 		this.page.add_menu_item(__('Print'), () => this.open_default_print_preview());
 		this.page.add_menu_item(__('Download PDF'), () => this.download_default_print_pdf());
-		// List redirect goes to the channel's own list (E-com orders -> e-com list).
+		// E-com orders -> e-com list
 		const goToList = () => frappe.set_route(
 			this._channel === 'E-com' ? 'ecom-sales-order-entry-list' : 'sales-order-entry-list'
 		);
 		this.page.add_menu_item(__('Back to Sales Order List'), goToList);
-		// Resync Invoice PDF (accounts only): remove the current invoice PDF and
-		// re-fetch it from Drive by Invoice No. The server re-checks the role and
-		// that the order has an Invoice No, so it's safe to always offer here.
+		// server re-checks the role and that the order has an Invoice No, so safe to always offer
 		const _acctRoles = ['Accounts User', 'Accounts Manager', 'System Manager'];
 		if ((frappe.user_roles || []).some((r) => _acctRoles.indexOf(r) !== -1)) {
 			this.page.add_menu_item(__('Resync Invoice PDF'), () => this.resync_invoice_pdf());
 		}
-		// Always-visible: jump back to the list, and Download PDF (any status).
 		this.page.add_inner_button(__('Sales Order List'), goToList);
 		this.page.add_inner_button(__('Download PDF'), () => this.download_default_print_pdf(), __('PDF'));
-		// Fetch the customer PO PDF (named by 'PO No for PDF') from the folder
-		// set in Alpino General Settings and attach it to the order.
+		// fetches the customer PO PDF (named by 'PO No for PDF') from the folder in Alpino General Settings
 		this.page.add_inner_button(__('Fetch PO PDF'), () => {
 			const me = this;
 			frappe.call({
@@ -80,10 +71,8 @@ var SalesOrderEntryView = class {
 				}
 			});
 		}, __('PDF'));
-		// Edit re-opens the entry form on the SAME draft (shown for drafts only).
-		// E-com orders edit on the e-com entry page; offline on the offline one.
-		// Only for users who can actually write Sales Orders — view-only roles (e.g.
-		// Accounts User, Warehouse Manager) would otherwise see a dead-end Edit button.
+		// re-opens the entry form on the same draft (drafts only); only for users who can write Sales
+		// Orders — view-only roles (Accounts User, Warehouse Manager) would otherwise see a dead-end button
 		if (frappe.model.can_write('Sales Order')) {
 			this.btn_edit_so = this.page.add_inner_button(__('Edit Order'), () => {
 				if (this._channel === 'E-com') {
@@ -96,8 +85,7 @@ var SalesOrderEntryView = class {
 			}, __('Order'));
 			if (this.btn_edit_so) this.btn_edit_so.hide();
 		}
-		// Duplicate prefills the entry form with this order's data; saving creates a NEW
-		// order — so only offer it to users who can create Sales Orders.
+		// saving creates a NEW order, so only offer to users who can create Sales Orders
 		if (frappe.model.can_create('Sales Order')) {
 			this.page.add_inner_button(__('Duplicate'), () => {
 				if (this._channel === 'E-com') {
@@ -109,9 +97,7 @@ var SalesOrderEntryView = class {
 				}
 			}, __('Order'));
 		}
-		// Cancel: submitted orders only, and only for roles with cancel rights
-		// (server re-checks). The guard blocks with the linked Pick List /
-		// Delivery Note ID while one is still active.
+		// submitted orders only; server blocks with the linked Pick List / Delivery Note ID while active
 		this.btn_cancel_so = this.page.add_inner_button(__('Cancel Order'), () => {
 			const me = this;
 			frappe.confirm(__('Cancel Sales Order {0}?', [me._so_name]), () => {
@@ -129,8 +115,7 @@ var SalesOrderEntryView = class {
 			});
 		}, __('Order'));
 		if (this.btn_cancel_so) this.btn_cancel_so.hide();
-		// Reject — Warehouse Admin / Manager rejects an order in the early warehouse
-		// stages (before a Pick List is submitted). Sets status to Rejected.
+		// Warehouse Admin/Manager only, early stages before a Pick List is submitted
 		this.btn_reject_so = this.page.add_inner_button(__('Reject Order'), () => {
 			const me = this;
 			// A reason is mandatory and is stored on the order — the server rejects
@@ -167,15 +152,12 @@ var SalesOrderEntryView = class {
 			d.show();
 		}, __('Order'));
 		if (this.btn_reject_so) this.btn_reject_so.hide();
-		// The main "next stage" action is set as the page primary action by
-		// update_actions(). This is the only stage-secondary inline button.
 		this.btn_future_dispatch = this.page.add_inner_button(
 			__('Mark as Future Dispatch'),
 			() => this.do_future_dispatch(),
 			__('Order')
 		);
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
-		// Forced Close — permanently close the order at the qty already dispatched.
 		this.btn_force_close = this.page.add_inner_button(
 			__('Force Close Order'),
 			() => this.do_force_close(),
@@ -189,9 +171,7 @@ var SalesOrderEntryView = class {
 		return roles.some((r) => mine.includes(r));
 	}
 
-	/** One coherent action bar: a prominent primary "next stage" button + at
-	 * most one contextual secondary button + the status badge. Folds in the
-	 * Pick List create/continue logic so nothing is scattered. */
+	/** Primary "next stage" button + at most one secondary button + status badge; folds in Pick List create/continue logic. */
 	update_actions() {
 		this.page.clear_primary_action();
 		if (this.btn_future_dispatch) this.btn_future_dispatch.hide();
@@ -212,18 +192,15 @@ var SalesOrderEntryView = class {
 		]).then(([sv, pl]) => {
 			const status = (sv && sv.message && sv.message.custom_workflow_status) || '';
 			const docstatus = cint(sv && sv.message && sv.message.docstatus);
-			// Edit only while the order is still a draft (server enforces too).
 			if (me.btn_edit_so) {
 				if (docstatus === 0 && status !== 'Cancelled') me.btn_edit_so.show();
 				else me.btn_edit_so.hide();
 			}
-			// Cancel: submitted only + role must have cancel rights (server re-checks).
 			if (me.btn_cancel_so) {
 				const can_cancel = frappe.model.can_cancel && frappe.model.can_cancel('Sales Order');
 				if (docstatus === 1 && status !== 'Cancelled' && can_cancel) me.btn_cancel_so.show();
 				else me.btn_cancel_so.hide();
 			}
-			// Status badge next to the title.
 			const colorMap = {
 				Draft: 'gray',
 				'Warehouse Approval Pending': 'orange',
@@ -253,17 +230,12 @@ var SalesOrderEntryView = class {
 			}
 
 			const isWarehouse = me._has_any_role(['Warehouse Admin', 'Warehouse Manager', 'System Manager']);
-			// E-Commerce roles are the sales side for E-com orders, so they get the
-			// same sales-stage actions (Send for Warehouse Approval, etc.). The
-			// server re-checks submit/write permission, so this only affects
-			// button visibility.
+			// E-Commerce roles are the sales side for E-com orders; server re-checks permission, this only affects visibility
 			const isSales = me._has_any_role([
 				'Sales Admin', 'Sales Manager', 'System Manager',
 				'E-Commerce Admin', 'E-Commerce Manager', 'E-Commerce Coordinator',
 			]);
 
-			// Force Close available to warehouse while an order has been picked but
-			// isn't fully dispatched, isn't already force-closed, and isn't terminal.
 			const terminal = ['Completed', 'Forced Completed', 'Cancelled'].includes(status);
 			if (me.btn_force_close) {
 				const can_force = isWarehouse && docstatus === 1 && !terminal &&
@@ -272,8 +244,7 @@ var SalesOrderEntryView = class {
 				else me.btn_force_close.hide();
 			}
 
-			// Reject — Warehouse Admin / Manager, early warehouse stages only (before a
-			// Pick List is submitted). Server re-checks the stage + submitted-PL guard.
+			// server re-checks the stage + submitted-PL guard
 			if (me.btn_reject_so) {
 				const _rejectable = [
 					'Warehouse Approval Pending', 'Future Dispatch', "Today's Dispatch",
@@ -283,11 +254,9 @@ var SalesOrderEntryView = class {
 				else me.btn_reject_so.hide();
 			}
 
-			// PRIMARY action = the clear "next stage" step for this stage + role.
 			if (status === 'Draft' && isSales) {
 				me.page.set_primary_action(__('Send for Warehouse Approval'), () => me.do_submit_order());
 			} else if (status === 'Warehouse Approval Pending' && isWarehouse) {
-				// Warehouse must approve before the order enters the dispatch queue.
 				me.page.set_primary_action(__('Approve Order'), () => me.do_approve());
 			} else if (
 				['Future Dispatch', "Today's Dispatch", 'Warehouse Approved'].includes(status) &&
@@ -299,9 +268,8 @@ var SalesOrderEntryView = class {
 					);
 				} else if (!pl.has_pick_list) {
 					me.page.set_primary_action(__('Create Pick List'), () => {
-						// Also stash the current SO in the same sessionStorage key the entry page
-						// falls back to, so a re-navigation (where frappe.route_options is dropped)
-						// never resolves a stale, previously-created Pick List's Sales Order.
+						// stash in the same sessionStorage key the entry page falls back to, so a re-navigation
+						// (route_options dropped) never resolves a stale, previously-created Pick List's SO
 						try {
 							sessionStorage.setItem('alpinos_pick_list_entry_so_name', me._so_name);
 							sessionStorage.setItem('alpinos_pick_list_entry_remaining_only', '0');
@@ -318,8 +286,7 @@ var SalesOrderEntryView = class {
 				['Partial Dispatched', 'Partial Delivery Note Created', 'Partial Ready For Dispatch'].includes(status) &&
 				isWarehouse
 			) {
-				// Partial chain: continue an in-progress round, or start a Pick List
-				// for the outstanding qty (pre-filled with remaining only).
+				// continue an in-progress round, or start a Pick List for the outstanding qty
 				if (pl.has_draft) {
 					me.page.set_primary_action(__('Continue Pick List'), () =>
 						frappe.set_route('pick_list_entry', pl.draft_name)
@@ -335,13 +302,11 @@ var SalesOrderEntryView = class {
 					});
 				}
 			} else if (pl.has_draft && isWarehouse) {
-				// Mid-flow (Warehouse Approved / Picking) — jump back into the Pick List.
 				me.page.set_primary_action(__('Continue Pick List'), () =>
 					frappe.set_route('pick_list_entry', pl.draft_name)
 				);
 			}
 
-			// SECONDARY: park / update the dispatch date (warehouse, early stages).
 			if (
 				me.btn_future_dispatch &&
 				isWarehouse &&
@@ -381,8 +346,6 @@ var SalesOrderEntryView = class {
 	do_future_dispatch() {
 		if (!this._so_name) return;
 		const me = this;
-		// Prefill the date: the existing expected date if already parked, else
-		// fall back to the Sales Order's own dispatch date.
 		frappe.db
 			.get_value('Sales Order', this._so_name, [
 				'custom_expected_dispatch_date',
@@ -523,13 +486,11 @@ var SalesOrderEntryView = class {
 		return true;
 	}
 
-	/** Desk print preview: uses DocType default print format (same as Form → Print). */
 	open_default_print_preview() {
 		if (!this._ensure_loaded_name()) return;
 		frappe.set_route('print', 'Sales Order', this._so_name);
 	}
 
-	/** PDF download using the default print format for Sales Order. */
 	download_default_print_pdf() {
 		if (!this._ensure_loaded_name()) return;
 
@@ -605,7 +566,6 @@ var SalesOrderEntryView = class {
 		this.load_order(so_name);
 	}
 
-	/** Prefer URL path `/app/sales-order-entry-view/<name>` so refresh and router do not drop context. */
 	_resolve_sales_order_name() {
 		const ro = frappe.route_options || {};
 		let so_name = ro.sales_order || ro.name || '';
@@ -621,13 +581,11 @@ var SalesOrderEntryView = class {
 	}
 
 	sync_from_route() {
-		// Always re-fetch on page show — returning here after an edit lands on the
-		// SAME order name, so a "skip if unchanged" guard would leave stale data on
-		// screen until a manual browser refresh.
+		// always re-fetch — editing lands back on the SAME order name, so a "skip if unchanged"
+		// guard would leave stale data on screen
 		const so_name = this._resolve_sales_order_name();
 		if (so_name) {
-			// First open freezes (reassuring); later re-shows refresh silently so
-			// navigating back doesn't flash a loading overlay each time.
+			// first open freezes; later re-shows refresh silently so navigating back doesn't flash a loading overlay
 			this.load_order(so_name, { silent: !!this._loaded_once });
 			this._loaded_once = true;
 		}
@@ -666,10 +624,9 @@ var SalesOrderEntryView = class {
 					frappe.msgprint(__('Could not load Sales Order data.'));
 					return;
 				}
-				// #26 Show the Order Id FIRST so it stays visible beside the status badge
-				// (the long "Alpino Sales Order View — <id>" title truncated the id away).
+				// #26 Order Id first so it stays visible beside the status badge (long title truncated it away)
 				this.page.set_title(name);
-				// Channel drives where Edit/Duplicate route (offline vs e-com entry).
+				// drives where Edit/Duplicate route (offline vs e-com entry)
 				this._channel = r.message.channel || '';
 				this.render(r.message);
 				alpDimPlaceholderCells(this.wrapper && this.wrapper[0]);
@@ -685,7 +642,6 @@ var SalesOrderEntryView = class {
 		return frappe.utils.escape_html(s == null ? '' : String(s));
 	}
 
-	/** Decode HTML entities (e.g. `&amp;` → `&`) for plain Select / Data fields. */
 	_plain_text(s) {
 		if (s == null || s === '') return '';
 		const t = document.createElement('textarea');
@@ -693,7 +649,6 @@ var SalesOrderEntryView = class {
 		return t.value;
 	}
 
-	/** Turn address HTML from ERPNext into readable multiline plain text. */
 	_address_plain(html) {
 		if (html == null || html === '') return '';
 		let s = String(html)
@@ -747,7 +702,6 @@ var SalesOrderEntryView = class {
 
 		this.update_actions();
 
-		// Customer block — order matches template
 		w.find('.v-customer-name').text(
 			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'
 		);
@@ -755,9 +709,8 @@ var SalesOrderEntryView = class {
 		w.find('.v-site-name').text(
 			this._has(p, 'custom_site_name') && p.custom_site_name ? this._plain_text(p.custom_site_name) : '—'
 		);
-		// E-com orders store billing/shipping as free text (custom_*_address_text),
-		// not as ERPNext Address records — prefer that so the entered/fetched
-		// address shows instead of the customer's auto-linked default (or blank).
+		// E-com orders store billing/shipping as free text, not ERPNext Address records — prefer
+		// that so the entered/fetched address shows instead of the customer's auto-linked default
 		const billing_txt = (this._has(p, 'custom_billing_address_text') && p.custom_billing_address_text)
 			? p.custom_billing_address_text
 			: (this._has(p, 'address_display') ? this._address_plain(p.address_display) : '—');
@@ -768,8 +721,7 @@ var SalesOrderEntryView = class {
 		w.find('.v-shipping').text(shipping_txt);
 		w.find('.v-date').text(this._fmt_date(p, 'transaction_date'));
 		w.find('.v-po-no').text(this._has(p, 'po_no') ? this._plain_text(p.po_no) : '—');
-		// #24 Billing GST No. — the view payload's `parent` carries the real fieldname
-		// custom_billing_gstin (not a derived billing_gstin key); fall back to tax_id.
+		// #24 `parent` carries the real fieldname custom_billing_gstin, not a derived billing_gstin key
 		w.find('.v-tax-id').text(
 			(this._has(p, 'custom_billing_gstin') && p.custom_billing_gstin) ? this._plain_text(p.custom_billing_gstin)
 			: (this._has(p, 'tax_id') ? this._plain_text(p.tax_id) : '—')
@@ -781,13 +733,9 @@ var SalesOrderEntryView = class {
 			this._has(p, 'creation') && p.creation ? frappe.datetime.str_to_user(p.creation) : '—'
 		);
 
-		// E-com order flags (carried from Buyer Master) — surface what was stored.
 		if ((this._channel || '') === 'E-com') {
 			const yn = (v) => (cint(v) ? 'Yes' : 'No');
-			// One span per flag (styled via .v-ecom-flag in the page style block) so
-			// each "Label: Yes/No" pair wraps as a unit on narrow screens instead of
-			// one long dot-separated string breaking mid-label. Static labels +
-			// Yes/No values only — nothing user-supplied is interpolated.
+			// one span per flag so each "Label: Yes/No" pair wraps as a unit on narrow screens
 			const flag = (label, v) => `<span class="v-ecom-flag">${label}: ${yn(v)}</span>`;
 			w.find('.v-ecom-flags').html(
 				flag('Appointment Required', p.custom_appointment_required) +
@@ -800,7 +748,6 @@ var SalesOrderEntryView = class {
 			w.find('.v-ecom-flags-row').hide();
 		}
 
-		// Hide customer rows where field not permitted
 		[
 			['customer_name', '.v-customer-name'],
 			['order_type', '.v-order-type'],
@@ -820,8 +767,7 @@ var SalesOrderEntryView = class {
 				$tr.show();
 			}
 		});
-		// E-com free-text addresses keep the billing/shipping rows visible even
-		// when there is no linked ERPNext Address record.
+		// keep billing/shipping rows visible even with no linked ERPNext Address record
 		if (this._has(p, 'custom_billing_address_text') && p.custom_billing_address_text) {
 			w.find('.v-billing').closest('tr').show();
 		}
@@ -832,7 +778,7 @@ var SalesOrderEntryView = class {
 		const items = Array.isArray(payload.items) ? payload.items : [];
 		w.find('.sec-order-items').show();
 		const tb = w.find('.v-items tbody').empty();
-		// Partial orders: per-SKU Remaining column (outstanding = ordered − committed).
+		// per-SKU Remaining column (outstanding = ordered − committed) for partial orders
 		const show_remaining = !!cint(payload.show_remaining);
 		const remaining_map = payload.remaining_qty || {};
 		w.find('.v-remaining-th').toggle(show_remaining);
@@ -863,11 +809,8 @@ var SalesOrderEntryView = class {
 				const rmk = this._has(it, 'custom_remarks') && String(it.custom_remarks).trim() !== ''
 					? this._esc(it.custom_remarks)
 					: '—';
-				// Amount = selling price x qty LESS the line's Additional Discount % (GST-
-				// inclusive), matching the SO PDF and the saved amount
-				// (sales_order_api._calculate_sales_order_line_values). Using the per-unit price
-				// directly avoids the net-rate rounding that amount = rate x qty amplifies by
-				// qty (46.67 x 120 = 5600.40 -> 5880.40 vs 49 x 120 = 5880.00).
+				// amount = selling price x qty less the Additional Discount % (GST-incl), matching the SO
+				// PDF; using per-unit price avoids the net-rate rounding that amount = rate x qty amplifies
 				const amt = this._has(it, 'custom_selling_price')
 					? format_currency(flt(it.custom_selling_price) * flt(it.qty) * (100 - (flt(it.custom_additional_discount) || 0)) / 100.0, rowCur)
 					: (this._has(it, 'amount')
@@ -957,7 +900,6 @@ var SalesOrderEntryView = class {
 
 		const cashPct = flt(p.custom_cash_discount);
 		const cashAmt = flt(p.custom_cash_discount_amount);
-		// Only surface cash discount when one was actually applied.
 		if (cashPct > 0) {
 			w.find('.sec-cash-disc').show();
 			w.find('.v-cash-disc-pct').text(

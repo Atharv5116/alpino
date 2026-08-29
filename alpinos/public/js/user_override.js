@@ -1,22 +1,12 @@
-/**
- * Override User form to show Impersonate button for users with Impersonate role
- * (not just Administrator)
- */
+// Shows the Impersonate button for users with the Impersonate role, not just Administrator.
 
 frappe.ui.form.on('User', {
 	refresh: function(frm) {
-		// Check if current user has Impersonate role or is Administrator
 		const can_impersonate = frappe.user_roles.includes('Impersonate') || frappe.session.user === 'Administrator';
-		
-		// Only show button if:
-		// 1. User has Impersonate role or is Administrator
-		// 2. Not viewing own profile
-		// 3. Not viewing Administrator profile
+
 		if (can_impersonate && frm.doc.name !== frappe.session.user && frm.doc.name !== 'Administrator') {
-			// Remove existing button if any
 			frm.remove_custom_button(__('Impersonate'));
-			
-			// Add Impersonate button
+
 			frm.add_custom_button(__('Impersonate'), () => {
 				if (frm.doc.restrict_ip) {
 					frappe.msgprint({

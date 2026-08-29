@@ -7,10 +7,9 @@ frappe.pages['sales-order-entry-list'].on_page_load = function (wrapper) {
 	wrapper.__so_list_page = new SalesOrderEntryListPage(page);
 };
 
-// Frappe keeps custom pages cached, so on_page_load runs only once. Without this,
-// navigating back (e.g. after creating an entry) shows a blank/stale cached page until a
-// manual browser refresh. Re-render the body on every show (toolbar buttons are left
-// alone, so they don't duplicate).
+// Frappe caches custom pages, so on_page_load runs once — re-render the body on every
+// show or navigating back leaves a blank/stale page. Toolbar buttons aren't touched here,
+// so they don't duplicate.
 frappe.pages['sales-order-entry-list'].on_page_show = function (wrapper) {
 	if (wrapper.__so_list_page) wrapper.__so_list_page.render_body();
 };
@@ -66,10 +65,8 @@ function alpDimPlaceholderCells(root) {
 
 // Role-based column layouts. Warehouse staff (without a sales role) get the
 // warehouse layout; everyone else — sales roles, System Manager — gets sales.
-// E-Com layout is specced but deferred (see project memory) — add here later.
-// `width` drives the <colgroup> so headers and data share one fixed column grid
-// (table-layout: fixed) instead of auto-sizing to content. Percentages are ratios
-// — the browser scales them to fill the table / its min-width.
+// E-Com layout is specced but deferred — add here later.
+// `width` drives the <colgroup> so headers and data share one fixed column grid.
 var SO_LIST_LAYOUTS = {
 	sales: [
 		{ label: 'ID', sort: 'name', width: '12%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
@@ -124,16 +121,13 @@ var SalesOrderEntryListPage = class {
 		this.render_body();
 	}
 
-	// (Re)render the page body + reload the list. Safe to call on every page show so a
-	// cached/blank wrapper is refreshed without a manual browser reload. Does NOT touch the
-	// page-header toolbar (re-adding those buttons would duplicate them).
+	// Safe to call on every page show; does NOT touch the toolbar (re-adding buttons would duplicate them).
 	render_body() {
 		this.page.main.html(frappe.render_template('sales_order_entry_list'));
 		this.wrapper = $(this.page.main);
 		this.render_header();
 		this.setup_filters();
-		// Restore the user's saved view (filters, sort, page size) BEFORE the
-		// first load and before events are bound, so nothing fires mid-restore.
+		// Restore filters/sort/page size BEFORE the first load and before events bind, so nothing fires mid-restore.
 		this._restore_view_prefs();
 		this.bind_events();
 		this.wrapper.find('.so-list-filters-title').text(__('Filters'));
@@ -163,14 +157,12 @@ var SalesOrderEntryListPage = class {
 			this.export_selected_invoices()
 		);
 		if (this.btn_export_invoices) this.btn_export_invoices.hide();
-		// Order + Invoice: one merged PDF, each order's Sales Order PDF followed by its
-		// fetched invoice PDF — SO1, Invoice1, SO2, Invoice2, ...
+		// merged PDF: SO1, Invoice1, SO2, Invoice2, ...
 		this.btn_order_invoice = this.page.add_inner_button(__('Order + Invoice'), () =>
 			this.download_orders_with_invoices()
 		);
 		if (this.btn_order_invoice) this.btn_order_invoice.hide();
-		// Bulk Resync Invoice (role-gated). Resyncs selected orders' invoice PDFs and
-		// KEEPS the selection so Export Invoices / Download PDFs can run right after.
+		// Keeps the selection after resync so Export Invoices / Download PDFs can run right after.
 		this._can_resync = ['Accounts User', 'Accounts Manager', 'System Manager']
 			.some((r) => (frappe.user_roles || []).includes(r));
 		if (this._can_resync) {
@@ -179,7 +171,6 @@ var SalesOrderEntryListPage = class {
 			);
 			if (this.btn_resync_invoices) this.btn_resync_invoices.hide();
 		}
-		// Always-visible entry to the tick-and-download invoice queue page.
 		this.page.add_inner_button(__('Pending Invoices'), () =>
 			frappe.set_route('invoice-download-queue')
 		);
@@ -206,8 +197,7 @@ var SalesOrderEntryListPage = class {
 					},
 					7
 				);
-				// Selection is intentionally NOT cleared — the same orders stay ticked so
-				// the user can click Export Invoices / Download PDFs immediately after.
+				// selection intentionally not cleared — user can Export Invoices / Download PDFs right after
 			},
 		});
 	}
@@ -250,7 +240,6 @@ var SalesOrderEntryListPage = class {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
-		// One PDF per order, bundled into a single ZIP download.
 		const url =
 			'/api/method/alpinos.sales_order_api.download_sales_orders_zip?names=' +
 			encodeURIComponent(JSON.stringify(names));
@@ -265,15 +254,13 @@ var SalesOrderEntryListPage = class {
 			return;
 		}
 		const open_merged = () => {
-			// One merged PDF: each Sales Order PDF immediately followed by its invoice PDF.
 			const url =
 				'/api/method/alpinos.sales_order_api.download_orders_with_invoices_pdf?names=' +
 				encodeURIComponent(JSON.stringify(names));
 			const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 			if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDF.'));
 		};
-		// Warn when some selected orders have no fetched invoice yet — those still download
-		// with just their Sales Order (no invoice after it).
+		// orders with no fetched invoice yet still download, just without an invoice after them
 		frappe.call({
 			method: 'alpinos.sales_order_api.sales_invoices_availability',
 			args: { names: JSON.stringify(names) },
@@ -298,8 +285,7 @@ var SalesOrderEntryListPage = class {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
-		// Pre-check availability first so "none have an invoice" shows a clean message
-		// instead of a raw server-error page (the download opens in a new tab).
+		// pre-check so "none have an invoice" shows a clean message, not a raw server-error tab
 		frappe.call({
 			method: 'alpinos.sales_order_api.sales_invoices_availability',
 			args: { names: JSON.stringify(names) },
@@ -335,8 +321,7 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-search'),
 			render_input: true,
 		});
-		// #27 Dedicated PO No. search — separate from the ID/customer box so an Order Id
-		// and a Customer PO number can't be confused in one field.
+		// #27 separate from the ID/customer box so Order Id and Customer PO number aren't confused
 		this._filter_fields.po_no = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Data',
@@ -406,8 +391,7 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-au-damage-filter'),
 			render_input: true,
 		});
-		// Show All — reveal Dispatched / Cancelled / Rejected (warehouse view) and all
-		// channels. Default off.
+		// reveals Dispatched / Cancelled / Rejected (warehouse view) and all channels; default off
 		this._filter_fields.show_all = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Check',
@@ -420,9 +404,8 @@ var SalesOrderEntryListPage = class {
 	}
 
 	bind_events() {
-		// render_body() calls this again on every page show. Direct handlers below are on
-		// freshly-rendered children (can't duplicate), but the delegated handlers are on the
-		// persistent container, so clear them first via the .solist namespace.
+		// render_body() calls this on every page show; delegated handlers live on the persistent
+		// container so they'd duplicate without this — clear via the .solist namespace first.
 		this.wrapper.off('.solist');
 		this.wrapper.find('.btn-so-list-apply').on('click', () => {
 			this.start = 0;
@@ -467,9 +450,7 @@ var SalesOrderEntryListPage = class {
 			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
-		// SI: download this single order's already-fetched invoice PDF (no resync).
-		// Can be used any number of times; it also marks the order downloaded so the
-		// bulk export skips it.
+		// downloads the already-fetched invoice PDF (no resync); marks the order downloaded so bulk export skips it
 		this.wrapper.on('click.solist', '.so-list-si-btn', (e) => {
 			e.stopPropagation();
 			const so = String($(e.currentTarget).data('so') || '');
@@ -486,7 +467,6 @@ var SalesOrderEntryListPage = class {
 			this.update_selection();
 		});
 		this.wrapper.on('change.solist', '.so-list-row-select', () => this.update_selection());
-		// Click a sortable header to sort; click again to flip direction.
 		this.wrapper.on('click.solist', '.so-sort-th', (e) => {
 			const field = $(e.currentTarget).data('sort');
 			if (this._sort.field === field) {
@@ -500,8 +480,7 @@ var SalesOrderEntryListPage = class {
 			this._save_view_prefs();
 			this.load_list();
 		});
-		// Dynamic filters: apply as the user types/picks (debounced); the Apply
-		// button stays for an explicit trigger.
+		// filters apply as the user types/picks, debounced; Apply button stays for an explicit trigger
 		const apply = frappe.utils.debounce(() => {
 			this.start = 0;
 			this._save_view_prefs();
@@ -512,9 +491,7 @@ var SalesOrderEntryListPage = class {
 		});
 	}
 
-	// Collapsible filter card. The toggle button is display:none above 768px
-	// (local style block in the page HTML), so desktop behaviour is unchanged;
-	// on phones the 8 stacked filter fields start collapsed to save a screenful.
+	// toggle button is display:none above 768px; on phones the filters start collapsed to save space
 	_init_filter_collapse() {
 		const card = this.wrapper.find('.so-list-filters');
 		const btn = this.wrapper.find('.btn-so-list-toggle-filters');
@@ -534,9 +511,7 @@ var SalesOrderEntryListPage = class {
 		sync();
 	}
 
-	// Per-user saved view: one snapshot of every user-adjustable piece of view
-	// state (filters + sort + page size — never the pagination offset), stored
-	// via the shared alpinos.list_prefs helper.
+	// snapshots filters + sort + page size (never the pagination offset) via alpinos.list_prefs
 	_save_view_prefs() {
 		if (!window.alpinos || !alpinos.list_prefs) return;
 		const f = this._filter_fields;
@@ -564,8 +539,7 @@ var SalesOrderEntryListPage = class {
 		const saved = alpinos.list_prefs.load(SO_LIST_ROUTE);
 		if (!saved || typeof saved !== 'object') return;
 
-		// Filters: only keys that map to an existing control; Select values must
-		// still be a known option (renamed statuses etc. are silently dropped).
+		// Select values must still be a known option — renamed statuses etc. are silently dropped
 		const filters = saved.filters && typeof saved.filters === 'object' ? saved.filters : {};
 		Object.keys(filters).forEach((name) => {
 			const field = this._filter_fields[name];
@@ -576,30 +550,28 @@ var SalesOrderEntryListPage = class {
 				if (!options.includes(value)) return;
 			}
 			try {
-				// set_input applies synchronously, so the first load_list() sees
-				// the restored value via get_value(); set_value is promise-based
-				// and can land after the first request.
+				// set_input applies synchronously so the first load_list() sees it via get_value();
+				// set_value is promise-based and can land after the first request.
 				if (typeof field.set_input === 'function') field.set_input(value);
 				else field.set_value(value);
 			} catch (e) {
-				// A bad saved value must never break the page.
+				// a bad saved value must never break the page
 			}
 		});
 
-		// Sort: only fields present in this user's column layout (sales vs
-		// warehouse layouts expose different sortable columns).
+		// only fields present in this user's column layout (sales vs warehouse differ)
 		const sortable = this._columns.filter((c) => c.sort).map((c) => c.sort);
 		if (typeof saved.sort_field === 'string' && sortable.includes(saved.sort_field)) {
 			this._sort.field = saved.sort_field;
 			this._sort.dir = saved.sort_dir === 'asc' ? 'asc' : 'desc';
-			this.render_header(); // refresh the sort indicator
+			this.render_header();
 		}
 
 		const pl = cint(saved.page_length);
 		if (SO_LIST_PAGE_LENGTHS.includes(pl)) this.page_length = pl;
 		this.wrapper.find('.so-list-page-length').val(String(this.page_length));
 
-		// Pagination offset is deliberately never restored — always page 1.
+		// pagination offset is deliberately never restored — always page 1
 		this.start = 0;
 	}
 
@@ -654,8 +626,7 @@ var SalesOrderEntryListPage = class {
 	}
 
 	render_header() {
-		// Fixed column grid: a <colgroup> so the header row and every data row share
-		// the same intentional widths (checkbox col first, then each column's width).
+		// colgroup so header row and data rows share the same column widths
 		const table = this.wrapper.find('.so-list-table');
 		let cg = table.children('colgroup');
 		if (!cg.length) { cg = $('<colgroup></colgroup>'); table.prepend(cg); }
@@ -699,16 +670,13 @@ var SalesOrderEntryListPage = class {
 				const c = SO_WF_COLORS[wf] || 'gray';
 				return wf ? `<span class="indicator-pill ${c}">${esc(wf)}</span>` : '—';
 			},
-			// Redirect buttons to the latest linked Pick List / Delivery Note /
-			// Sales Invoice — shown only when the doc exists AND the user's role
-			// can read that doctype.
+			// shown only when the doc exists AND the user's role can read that doctype
 			links: (d) => {
 				const btns = [];
 				const mk = (label, route, title) =>
 					`<button type="button" class="btn btn-xs btn-default so-list-link-btn"
 						data-route='${esc(JSON.stringify(route))}' title="${esc(title)}">${label}</button>`;
-				// PL / DN open the LIST filtered to this Sales Order, so every linked
-				// Pick List / Delivery Note is shown (not just the latest one).
+				// PL / DN open the list filtered to this SO, so every linked doc is shown, not just the latest
 				const mkList = (label, listRoute, title) =>
 					`<button type="button" class="btn btn-xs btn-default so-list-link-btn"
 						data-route='${esc(JSON.stringify([listRoute]))}' data-so="${esc(d.name)}" title="${esc(title)}">${label}</button>`;
@@ -721,7 +689,6 @@ var SalesOrderEntryListPage = class {
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) {
 					btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
 				}
-				// SI: download this order's invoice PDF (only when one is fetched).
 				if (d.has_invoice_pdf) {
 					btns.push(`<button type="button" class="btn btn-xs btn-default so-list-si-btn"
 						data-so="${esc(d.name)}" title="${esc(__('Download invoice PDF {0}', [d.invoice_no || '']))}">SI</button>`);

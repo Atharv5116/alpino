@@ -12,8 +12,7 @@ frappe.ui.form.on("Buyer Master", {
 		frm.set_query("party_owner", () => ({
 			query: "alpinos.offline_buyer_api.party_owner_user_query",
 		}));
-		// POC "Employee Name" is scoped to the buyer's Channel: E-com -> E-Commerce
-		// role holders; Offline / General Trade -> Sales User / Sales Manager.
+		// POC is scoped to Channel: E-com -> E-Commerce role holders; Offline -> Sales User/Manager.
 		frm.set_query("poc_employee", () => ({
 			query: "alpinos.offline_buyer_api.poc_employee_query",
 			filters: { channel: frm.doc.channel || "" },
@@ -24,13 +23,12 @@ frappe.ui.form.on("Buyer Master", {
 				name: ["!=", frm.doc.name || ""],
 			},
 		}));
-		// Customer Type is scoped to the selected Channel (Alpino Customer Type
-		// carries a `channel` link). No channel yet -> show all so the field stays usable.
+		// Customer Type is scoped to the selected Channel; no channel yet -> show all.
 		frm.set_query("customer_type", () => ({
 			filters: frm.doc.channel ? { channel: frm.doc.channel } : {},
 		}));
 
-		// Administrator-only: re-create/refresh the Customer's Address + Contact from this record.
+		// Administrator-only: refresh the Customer's Address + Contact from this record.
 		if (!frm.is_new() && frm.doc.customer && frappe.session.user === "Administrator") {
 			frm.add_custom_button(__("Sync to Customer"), () => {
 				frappe.call({
@@ -64,8 +62,7 @@ frappe.ui.form.on("Buyer Master", {
 	},
 
 	channel(frm) {
-		// A customer type belongs to one channel — clear a stale value when the
-		// channel changes so it can't survive across channels.
+		// A customer type belongs to one channel — clear a stale value on channel change.
 		if (frm.doc.customer_type) {
 			frappe.db.get_value("Alpino Customer Type", frm.doc.customer_type, "channel", (r) => {
 				if (r && r.channel !== frm.doc.channel) {
@@ -80,7 +77,7 @@ frappe.ui.form.on("Buyer Master", {
 			frappe.db.get_value("Buyer Master", frm.doc.parent_buyer, "customer_business_name", (r) => {
 				if (r && r.customer_business_name) {
 					frm.set_value("parent_business_name", r.customer_business_name);
-					// Auto-fill business name if it's a child of the same business
+					// Auto-fill only if blank
 					if (!frm.doc.customer_business_name) {
 						frm.set_value("customer_business_name", r.customer_business_name);
 					}
@@ -141,9 +138,8 @@ frappe.ui.form.on("Buyer Address", {
 		const row = locals[cdt][cdn];
 		if (row.is_primary) {
 			// One Primary (billing) PER SITE — a Buyer Master can host several sites,
-			// each with its own billing row, so multiple primaries are allowed as long
-			// as they belong to different sites. Only clear other primaries that share
-			// THIS row's Site Name (blank counts as its own single site).
+			// so multiple primaries are fine as long as they're on different sites.
+			// Only clear other primaries sharing THIS row's Site Name.
 			const site = (row.site_name || "").trim().toLowerCase();
 			(frm.doc.addresses || []).forEach((r) => {
 				if (
@@ -255,7 +251,7 @@ function set_margin_queries(frm) {
 	}));
 
 	frm.set_query("sku", "margins", () => ({
-		// Variants OR bundles (bundles have empty variant_of); templates stay hidden.
+		// Variants or bundles only; templates stay hidden.
 		query: "alpinos.offline_buyer_api.sellable_item_link_query",
 	}));
 }

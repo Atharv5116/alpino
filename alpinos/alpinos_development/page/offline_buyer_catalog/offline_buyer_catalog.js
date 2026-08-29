@@ -9,13 +9,11 @@ frappe.pages['offline-buyer-catalog'].on_page_load = function (wrapper) {
 	window.obi_page = new OfflineBuyerCatalogPage(page);
 };
 
-// ── helpers ────────────────────────────────────────────────────────────────
 function flt(val, precision) {
 	const n = parseFloat(val) || 0;
 	return precision !== undefined ? parseFloat(n.toFixed(precision)) : n;
 }
 
-// ── main class ─────────────────────────────────────────────────────────────
 var OfflineBuyerCatalogPage = class {
 	constructor(page) {
 		this.page = page;
@@ -27,7 +25,7 @@ var OfflineBuyerCatalogPage = class {
 		this._current_record = null;   // { name, title, buyer }
 		this.all_rows    = [];         // full item list
 		this.visible_rows = [];
-		/** @type {Record<string, string[]>} parent item group name -> all group names in its subtree */
+		// parent item group name -> all group names in its subtree
 		this._parent_descendants = {};
 		this._dirty = false;
 
@@ -35,9 +33,7 @@ var OfflineBuyerCatalogPage = class {
 		this._load_records(null);
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   LIST VIEW
-	══════════════════════════════════════════════════════════════════════════ */
+	// LIST VIEW
 
 	_load_records(done) {
 		frappe.call({
@@ -142,9 +138,8 @@ var OfflineBuyerCatalogPage = class {
 	_show_new_dialog() {
 		const me = this;
 
-		// ── helper: do the actual catalog creation (duplicate-check then insert) ──
+		// create_record handles customer resolution and duplicate checking server-side
 		const do_create_catalog = (d, obm, title, description) => {
-			// create_record handles customer resolution and duplicate checking server-side
 			frappe.call({
 				method: 'alpinos.offline_buyer_api.create_record',
 				args: { title, offline_buyer_master: obm, description: description || '' },
@@ -164,13 +159,11 @@ var OfflineBuyerCatalogPage = class {
 			});
 		};
 
-		// ── quick-create buyer sub-dialog ─────────────────────────────────────
 		const show_create_buyer_dialog = (catalog_title, catalog_desc) => {
 			const bd = new frappe.ui.Dialog({
 				title: 'Create New Buyer',
 				fields: [
-					// Classification first — channel, customer type and the four
-					// buyer flags are asked before anything else (general masters).
+					// classification first — general masters asked before profile/contact fields
 					{ label: 'Channel', fieldname: 'channel', fieldtype: 'Link', options: 'Channel' },
 					{
 						label: 'Customer Type', fieldname: 'customer_type', fieldtype: 'Link',
@@ -264,7 +257,6 @@ var OfflineBuyerCatalogPage = class {
 							const obm_name = r.message;
 							frappe.show_alert({ message: __('Buyer created: {0}', [v.business_name]), indicator: 'green' });
 
-							// Now create the catalog for the newly created buyer
 							do_create_catalog(
 								{ hide: () => {} },  // already hidden
 								obm_name,
@@ -276,7 +268,6 @@ var OfflineBuyerCatalogPage = class {
 				},
 			});
 
-			// State → City dependency
 			bd.fields_dict.state && bd.fields_dict.state.$input.on('change awesomplete-selectcomplete', function () {
 				const st = bd.get_value('state');
 				if (bd.fields_dict.city) {
@@ -285,7 +276,6 @@ var OfflineBuyerCatalogPage = class {
 				}
 			});
 
-			// Parent Buyer filter & auto-fetch
 			bd.fields_dict.parent_buyer && (bd.fields_dict.parent_buyer.df.get_query = () => ({
 				filters: { is_parent: 1 }
 			}));
@@ -303,7 +293,6 @@ var OfflineBuyerCatalogPage = class {
 			bd.show();
 		};
 
-		// ── main catalog creation dialog ──────────────────────────────────────
 		const d = new frappe.ui.Dialog({
 			title: 'New Catalog',
 			fields: [
@@ -340,7 +329,6 @@ var OfflineBuyerCatalogPage = class {
 			},
 		});
 
-		// Wire up the "Create New Buyer" button inside the dialog
 		d.fields_dict.btn_new_buyer && d.fields_dict.btn_new_buyer.$input.on('click', () => {
 			const catalog_title = d.get_value('title');
 			const catalog_desc = d.get_value('description');
@@ -351,9 +339,7 @@ var OfflineBuyerCatalogPage = class {
 		d.show();
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   MODE SWITCHING
-	══════════════════════════════════════════════════════════════════════════ */
+	// MODE SWITCHING
 
 	_show_list_mode() {
 		$('.obi-list-view').show();
@@ -377,7 +363,6 @@ var OfflineBuyerCatalogPage = class {
 		$('.obi-list-view').hide();
 		$('.obi-detail-view').show();
 
-		// update breadcrumb
 		$('.obi-detail-record-name').text(`${rec.title || rec.name}  (${rec.name})`);
 		const buyer_bits = [];
 		if (rec.customer_business_name) {
@@ -426,9 +411,7 @@ var OfflineBuyerCatalogPage = class {
 		this._load_items();
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   DETAIL VIEW – DATA
-	══════════════════════════════════════════════════════════════════════════ */
+	// DETAIL VIEW – DATA
 
 	_load_items() {
 		this._set_status('Loading…');
@@ -445,9 +428,7 @@ var OfflineBuyerCatalogPage = class {
 		});
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   DETAIL VIEW – FILTER & RENDER
-	══════════════════════════════════════════════════════════════════════════ */
+	// DETAIL VIEW – FILTER & RENDER
 
 	_load_parent_group_filter() {
 		const groups = [...new Set(this.all_rows.map(r => r.item_group).filter(Boolean))];
@@ -529,19 +510,14 @@ var OfflineBuyerCatalogPage = class {
 		this._update_counts();
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   EVENT BINDING
-	══════════════════════════════════════════════════════════════════════════ */
+	// EVENT BINDING
 
 	_bind_events() {
-		// ── LIST VIEW ──────────────────────────────────────────────────────────
-
-		// search list
+		// list view
 		$(document).on('input', '.obi-list-search', (e) => {
 			this._filter_list($(e.target).val());
 		});
 
-		// click on a record row
 		$(document).on('click', '.obi-records-tbody tr', (e) => {
 			const name = $(e.currentTarget).data('record');
 			if (!name) return;
@@ -549,12 +525,9 @@ var OfflineBuyerCatalogPage = class {
 			if (rec) this._open_record(rec);
 		});
 
-		// new record
 		$(document).on('click', '.obi-btn-new', () => this._show_new_dialog());
 
-		// ── DETAIL VIEW ────────────────────────────────────────────────────────
-
-		// back to list
+		// detail view
 		$(document).on('click', '.obi-back-btn', () => {
 			if (this._dirty) {
 				frappe.confirm(
@@ -567,11 +540,9 @@ var OfflineBuyerCatalogPage = class {
 			}
 		});
 
-		// search & group filter
 		$(document).on('input',  '.obi-search',      () => this._apply_filters());
 		$(document).on('change', '.obi-parent-group-filter', () => this._apply_filters());
 
-		// row checkbox
 		$(document).on('change', '.obi-row-chk', (e) => {
 			const $tr    = $(e.target).closest('tr');
 			const code   = $tr.data('code');
@@ -582,7 +553,6 @@ var OfflineBuyerCatalogPage = class {
 			this._update_counts();
 		});
 
-		// header select-all
 		$(document).on('change', '.obi-chk-all', (e) => {
 			const checked = e.target.checked;
 			$('.obi-tbody .obi-row-chk').prop('checked', checked).each((_, el) => {
@@ -593,7 +563,6 @@ var OfflineBuyerCatalogPage = class {
 			this._update_counts();
 		});
 
-		// MRP → recalc selling rate
 		$(document).on('change', '.obi-mrp', (e) => {
 			const $tr  = $(e.target).closest('tr');
 			const code = $tr.data('code');
@@ -605,7 +574,6 @@ var OfflineBuyerCatalogPage = class {
 			this._mark_dirty();
 		});
 
-		// Margin % → recalc selling rate
 		$(document).on('change', '.obi-margin', (e) => {
 			const $tr  = $(e.target).closest('tr');
 			const code = $tr.data('code');
@@ -620,7 +588,7 @@ var OfflineBuyerCatalogPage = class {
 			this._mark_dirty();
 		});
 
-		// Selling Rate → back-calc margin
+		// back-calculates margin from a manually entered rate
 		$(document).on('change', '.obi-rate', (e) => {
 			const $tr  = $(e.target).closest('tr');
 			const code = $tr.data('code');
@@ -635,7 +603,6 @@ var OfflineBuyerCatalogPage = class {
 			this._mark_dirty();
 		});
 
-		// Select All / Deselect All buttons
 		$(document).on('click', '.obi-btn-select-all', () => {
 			$('.obi-tbody .obi-row-chk').prop('checked', true).each((_, el) => {
 				const $tr = $(el).closest('tr');
@@ -657,7 +624,6 @@ var OfflineBuyerCatalogPage = class {
 			this._update_counts();
 		});
 
-		// Bulk apply
 		$(document).on('click', '.obi-btn-apply-bulk', () => {
 			const bulk_mrp    = $('.obi-bulk-mrp').val();
 			const bulk_margin = $('.obi-bulk-margin').val();
@@ -688,18 +654,14 @@ var OfflineBuyerCatalogPage = class {
 			frappe.show_alert({ message: `Applied to ${count} rows`, indicator: 'green' });
 		});
 
-		// Save
 		$(document).on('click', '.obi-btn-save', () => this._save());
 
-		// Edit Buyer Info
 		$(document).on('click', '.obi-btn-edit-buyer', () => {
 			if (this._current_record) this._show_edit_buyer_dialog(this._current_record);
 		});
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   EDIT BUYER DIALOG
-	══════════════════════════════════════════════════════════════════════════ */
+	// EDIT BUYER DIALOG
 
 	_show_edit_buyer_dialog(rec) {
 		const me = this;
@@ -724,13 +686,10 @@ var OfflineBuyerCatalogPage = class {
 	_render_edit_buyer_dialog(rec, obm_name, obm) {
 		const me = this;
 
-		// ── address row tracker ────────────────────────────────────────────────
-		// Each entry: { address_label, address_line, pincode, country, state, city,
-		//               area, sub_area, is_primary, is_shipping, $el }
+		// { address_label, address_line, pincode, country, state, city, area, sub_area, is_primary, is_shipping }
 		const addr_rows = [];
 
-		// State → City lookup cache
-		let _all_states = [];      // ['Gujarat', 'Maharashtra', ...]
+		let _all_states = [];
 		let _cities_by_state = {}; // { Gujarat: ['Ahmedabad', 'Surat', ...], ... }
 
 		const _load_states_cities = (cb) => {
@@ -843,7 +802,6 @@ var OfflineBuyerCatalogPage = class {
 				</tr>
 			`);
 
-			// State → filter City dropdown
 			$tr.on('change', '.addr-state', function () {
 				_refresh_city_select($tr, $(this).val(), '');
 			});
@@ -878,12 +836,10 @@ var OfflineBuyerCatalogPage = class {
 			return result;
 		};
 
-		// ── dialog ────────────────────────────────────────────────────────────
 		const d = new frappe.ui.Dialog({
 			title: `Edit Buyer — ${obm.customer_business_name || obm_name}`,
 			size: 'extra-large',
 			fields: [
-				// Business info
 				{ fieldtype: 'Section Break', label: 'Business Information' },
 				{ label: 'Business Name', fieldname: 'customer_business_name', fieldtype: 'Data', reqd: 1, default: obm.customer_business_name },
 				{ label: 'Is Parent', fieldname: 'is_parent', fieldtype: 'Check', default: obm.is_parent },
@@ -908,7 +864,6 @@ var OfflineBuyerCatalogPage = class {
 				  depends_on: 'eval:doc.gst_type=="Registered Business"' },
 				{ label: 'PAN No', fieldname: 'pan_no', fieldtype: 'Data', default: obm.pan_no,
 				  depends_on: 'eval:doc.gst_type=="Unregistered Business"' },
-				// Payment
 				{ fieldtype: 'Section Break', label: 'Payment Terms' },
 				{
 					label: 'Payment Term', fieldname: 'payment_term', fieldtype: 'Select',
@@ -922,14 +877,12 @@ var OfflineBuyerCatalogPage = class {
 					label: 'Combine Product Bundles', fieldname: 'combine_product_bundles', fieldtype: 'Check',
 					default: obm.combine_product_bundles,
 				},
-				// Contact
 				{ fieldtype: 'Section Break', label: 'Contact' },
 				{ label: 'Email', fieldname: 'email', fieldtype: 'Data', options: 'Email', reqd: 1, default: obm.email },
 				{ label: 'Contact No', fieldname: 'contact_no', fieldtype: 'Data', options: 'Phone', reqd: 1, default: obm.contact_no },
 				{ fieldtype: 'Column Break' },
 				{ label: 'Alternate No', fieldname: 'alternate_no', fieldtype: 'Data', options: 'Phone', default: obm.alternate_no },
 				{ label: 'Contact Person', fieldname: 'contact_person', fieldtype: 'Data', reqd: 1, default: obm.contact_person },
-				// Addresses (custom HTML section)
 				{ fieldtype: 'Section Break', label: 'Addresses' },
 				{ fieldtype: 'HTML', fieldname: 'addresses_html', options: '<div class="obi-addr-host"></div>' },
 			],
@@ -977,12 +930,10 @@ var OfflineBuyerCatalogPage = class {
 						if (r.exc) return;
 						d.hide();
 						frappe.show_alert({ message: __('Buyer info updated'), indicator: 'green' });
-						// Refresh the list so the header reflects new values
 						me._load_records(() => {
 							const updated = me._all_records.find(row => row.name === rec.name);
 							if (updated) {
 								me._current_record = updated;
-								// Update breadcrumb text inline
 								$('.obi-detail-buyer').html(
 									[
 										updated.customer_business_name ? `Business: ${updated.customer_business_name}` : '',
@@ -1001,7 +952,7 @@ var OfflineBuyerCatalogPage = class {
 		d.set_values(obm);
 		d.show();
 
-		// Render the address host after dialog is shown — load states/cities first
+		// dialog must be shown before its host div exists in the DOM
 		setTimeout(() => {
 			const $host = d.$wrapper.find('.obi-addr-host');
 			render_addr_table($host);
@@ -1011,9 +962,7 @@ var OfflineBuyerCatalogPage = class {
 		}, 80);
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   HELPERS
-	══════════════════════════════════════════════════════════════════════════ */
+	// HELPERS
 
 	_calc_rate(mrp, margin) {
 		return mrp > 0 ? flt(mrp * (1 - margin / 100), 2) : 0;
@@ -1054,9 +1003,7 @@ var OfflineBuyerCatalogPage = class {
 		$('.obi-dirty-badge').toggle(this._dirty);
 	}
 
-	/* ═══════════════════════════════════════════════════════════════════════
-	   SAVE
-	══════════════════════════════════════════════════════════════════════════ */
+	// SAVE
 
 	_save() {
 		if (!this._current_record) return;
@@ -1082,7 +1029,7 @@ var OfflineBuyerCatalogPage = class {
 				const saved = r.message && r.message.saved;
 				this._dirty = false;
 				this._update_dirty_badge();
-				// update item count in memory for when user goes back
+				// so the count is right if the user goes back without a full reload
 				const rec = this._all_records.find(r2 => r2.name === this._current_record.name);
 				if (rec) rec.item_count = saved;
 				frappe.show_alert({

@@ -1,7 +1,6 @@
 frappe.pages['screening'].on_page_load = function(wrapper) {
 	var me = this;
-	
-	// Create page container
+
 	var $wrapper = $(wrapper);
 	$wrapper.html('<div class="screening-page">\
 		<div class="page-header">\
@@ -64,14 +63,11 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			</div>\
 		</div>\
 	</div>');
-	
-	// Store all applicants data
+
 	var allApplicants = [];
-	
-	// Load data
+
 	load_screening_data();
-	
-	// Filter change handlers
+
 	$wrapper.find('#category-filter, #status-filter, #from-date-filter, #to-date-filter').on('change', function() {
 		apply_filters();
 	});
@@ -101,7 +97,7 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 					'creation'
 				],
 				order_by: 'creation desc',
-				limit_page_length: 0  // 0 means no limit - fetch all records
+				limit_page_length: 0  // 0 = no limit
 			},
 			callback: function(r) {
 				if (r.message) {
@@ -120,29 +116,25 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 	
 	function filter_and_render_table(applicants, categoryFilter, statusFilter, fromDate, toDate) {
 		var filtered = applicants.filter(function(applicant) {
-			// Category filter
-			// If "All" is selected, show all entries EXCEPT Black and Hold
+			// "All" shows everything except Black and Hold
 			if (!categoryFilter || categoryFilter === '' || categoryFilter === 'All') {
 				var category = applicant.candidate_category || '';
 				if (category === 'Black' || category === 'Hold') {
 					return false;
 				}
 			} else {
-				// If a specific filter is selected (White, Hold, or Black), show that category only
 				if (applicant.candidate_category !== categoryFilter) {
 					return false;
 				}
 			}
-			
-			// Status filter - only filter if a specific status is selected
+
 			if (statusFilter && statusFilter !== '') {
 				var applicantStatus = applicant.screening_status || '';
 				if (applicantStatus !== statusFilter) {
 					return false;
 				}
 			}
-			
-			// Date filter (based on creation date)
+
 			if (fromDate || toDate) {
 				var creationDate = applicant.creation ? new Date(applicant.creation.split(' ')[0]) : null;
 				if (!creationDate) {
@@ -158,7 +150,7 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 				
 				if (toDate) {
 					var to = new Date(toDate);
-					to.setHours(23, 59, 59, 999); // Include the entire day
+					to.setHours(23, 59, 59, 999); // include the entire day
 					if (creationDate > to) {
 						return false;
 					}
@@ -182,8 +174,7 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 		
 		applicants.forEach(function(applicant) {
 			var row = $('<tr data-name="' + applicant.name + '"></tr>');
-			
-			// Candidate ID - make it a clickable link to Job Applicant form
+
 			var candidateId = applicant.candidate_id || applicant.name || '-';
 			var candidateIdLink = '';
 			if (applicant.name) {
@@ -192,24 +183,18 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 				candidateIdLink = candidateId;
 			}
 			row.append('<td>' + candidateIdLink + '</td>');
-			
-			// Applicant Name
+
 			row.append('<td>' + (applicant.applicant_name || '-') + '</td>');
-			
-			// Resume Link - only use resume_attachment field
+
+			// resume_attachment only; may come in as a full URL, an already-prefixed path, or a bare filename
 			var resumeLink = '';
 			if (applicant.resume_attachment) {
-				// Get file URL from resume_attachment (File doctype)
 				var fileUrl = applicant.resume_attachment;
-				// Handle different file URL formats
 				if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-					// Already a full URL
 					resumeLink = '<a href="' + fileUrl + '" target="_blank" class="btn btn-sm btn-link">View Resume</a>';
 				} else if (fileUrl.startsWith('/files/') || fileUrl.startsWith('/private/files/')) {
-					// Already has /files/ prefix
 					resumeLink = '<a href="' + fileUrl + '" target="_blank" class="btn btn-sm btn-link">View Resume</a>';
 				} else {
-					// Just file name - prepend /files/
 					fileUrl = '/files/' + fileUrl;
 					resumeLink = '<a href="' + fileUrl + '" target="_blank" class="btn btn-sm btn-link">View Resume</a>';
 				}
@@ -217,22 +202,18 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 				resumeLink = '-';
 			}
 			row.append('<td>' + resumeLink + '</td>');
-			
-			// Degree
+
 			row.append('<td>' + (applicant.degree || '-') + '</td>');
-			
-			// Expected CTC
+
 			var expectedCTC = '-';
 			if (applicant.employment_expected_ctc) {
 				var ctcValue = parseFloat(applicant.employment_expected_ctc) || 0;
 				if (ctcValue > 0) {
-					// Format as currency (INR by default, or get from company settings)
 					expectedCTC = 'INR ' + format_currency(ctcValue);
 				}
 			}
 			row.append('<td>' + expectedCTC + '</td>');
-			
-			// Category dropdown
+
 			var categoryDropdown = '<select class="form-control candidate-category" data-name="' + applicant.name + '" data-field="candidate_category">\
 				<option value="">-- Select --</option>\
 				<option value="White"' + (applicant.candidate_category === 'White' ? ' selected' : '') + '>White</option>\
@@ -240,15 +221,14 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 				<option value="Black"' + (applicant.candidate_category === 'Black' ? ' selected' : '') + '>Black</option>\
 			</select>';
 			row.append('<td>' + categoryDropdown + '</td>');
-			
-			// Screening Status (read-only display - automatically updated)
+
+			// read-only display — screening_status is auto-updated elsewhere
 			var statusDisplay = applicant.screening_status || 'Pending Screening';
 			row.append('<td><span class="badge badge-secondary">' + statusDisplay + '</span></td>');
-			
-			// Actions
+
 			var actionsHtml = '<button class="btn btn-sm btn-primary save-btn" data-name="' + applicant.name + '">Save</button>';
-			
-			// Schedule Interview button - only show for WHITE category
+
+			// only WHITE category can schedule an interview
 			if (applicant.candidate_category === 'White') {
 				actionsHtml += ' <button class="btn btn-sm btn-success schedule-interview-btn" data-name="' + applicant.name + '" style="margin-left: 5px;">Schedule Interview</button>';
 			}
@@ -257,13 +237,12 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			
 			tbody.append(row);
 		});
-		
-		// Attach event handlers
+
 		attach_event_handlers();
 	}
-	
+
 	function attach_event_handlers() {
-		// Save button handler - only saves category (screening_status is auto-updated)
+		// only saves category — screening_status is auto-updated
 		$wrapper.find('.save-btn').off('click').on('click', function() {
 			var applicant_name = $(this).data('name');
 			var row = $(this).closest('tr');
@@ -273,8 +252,7 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 				candidate_category: category
 			});
 		});
-		
-		// Schedule Interview button handler
+
 		$wrapper.find('.schedule-interview-btn').off('click').on('click', function() {
 			var applicant_name = $(this).data('name');
 			schedule_interview(applicant_name);
@@ -295,7 +273,6 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 						message: __('Updated successfully'),
 						indicator: 'green'
 					}, 3);
-					// Reload the page data
 					setTimeout(function() {
 						load_screening_data();
 					}, 500);
@@ -323,32 +300,26 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 	}
 	
 	function create_interview_with_resume(job_applicant, interview_round, resumeLink) {
-		// Create a new Interview - set job_applicant first, then resume_link
-		// The form's fetch_from will auto-populate other fields from job_applicant
+		// job_applicant must be set before resume_link — the form's fetch_from auto-populates other fields from it
 		var interviewDoc = frappe.model.get_new_doc("Interview");
-		
-		// Set basic fields
+
 		interviewDoc.job_applicant = job_applicant.name;
 		interviewDoc.interview_round = interview_round;
-		
-		// Set resume_link from resume_attachment if it exists
+
 		if (resumeLink) {
 			interviewDoc.resume_link = resumeLink;
 		}
-		
-		// Open the form
+
 		frappe.set_route("Form", "Interview", interviewDoc.name);
 	}
-	
+
 	function schedule_interview(applicant_name) {
-		// First, ensure "Call Round Interview" exists
 		frappe.call({
 			method: 'alpinos.job_applicant_automation.ensure_call_round_interview_exists',
 			callback: function(round_r) {
 				if (round_r.message) {
 					var interview_round = round_r.message;
-					
-					// Get the Job Applicant document
+
 					frappe.call({
 						method: 'frappe.client.get',
 						args: {
@@ -358,25 +329,19 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 						callback: function(r) {
 							if (r.message) {
 								var job_applicant = r.message;
-								
-								// Get resume link - only use resume_attachment field
+
 								var resumeLink = '';
 								if (job_applicant.resume_attachment) {
 									var fileUrl = job_applicant.resume_attachment;
-									// Handle different file URL formats
 									if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-										// Already a full URL
 										resumeLink = fileUrl;
 									} else if (fileUrl.startsWith('/files/') || fileUrl.startsWith('/private/files/')) {
-										// Already has /files/ or /private/files/ prefix
 										resumeLink = fileUrl;
 									} else {
-										// Just file name - prepend /files/
 										resumeLink = '/files/' + fileUrl;
 									}
 								}
-								
-								// Create interview with resume link
+
 								create_interview_with_resume(job_applicant, interview_round, resumeLink);
 							} else {
 								frappe.msgprint({
@@ -411,8 +376,7 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 			}
 		});
 	}
-	
-	// Add some basic styling
+
 	if (!$('style#screening-page-styles').length) {
 		$('<style id="screening-page-styles">').prop('type', 'text/css').html(`
 			.screening-page {

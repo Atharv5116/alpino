@@ -1,14 +1,8 @@
 /**
- * Send users to the Alpinos entry-list pages instead of the standard ERPNext
- * list views for Sales Order, Pick List and Delivery Note.
- *
- * The Report view (List/<doctype>/Report) stays reachable — e.g. from the
- * awesomebar "Sales Order Report" — but every other list-type view (List,
- * Kanban, Dashboard, ...) redirects to the custom page, so clicking
- * "List View" from inside the report also lands on the custom page.
- *
- * Desk does not define `frappe.ready` (that API is website-only). Register after
- * the desk app has bootstrapped so we do not throw on every page load.
+ * Send users to the Alpinos entry-list pages instead of the standard ERPNext list views
+ * for Sales Order, Pick List and Delivery Note. The Report view stays reachable; every
+ * other list-type view (List, Kanban, Dashboard, ...) redirects to the custom page.
+ * Desk has no `frappe.ready` (website-only), so register after the app bootstraps.
  */
 (function register_sales_order_hub_redirect() {
 	const CUSTOM_LIST_PAGE = {
@@ -24,9 +18,8 @@
 		frappe.router.on("change", function () {
 			const r = frappe.get_route() || [];
 			if (r[0] === "List" && CUSTOM_LIST_PAGE[r[1]]) {
-				// Defer one tick and re-read the route: opening the Report view
-				// can fire an intermediate change without the view suffix, which
-				// would wrongly bounce the report to the custom list page.
+				// defer one tick and re-read the route: opening the Report view can fire an
+				// intermediate change without the view suffix, wrongly bouncing to the custom list
 				const target = CUSTOM_LIST_PAGE[r[1]];
 				setTimeout(function () {
 					const cur = frappe.get_route() || [];
@@ -37,7 +30,6 @@
 					}
 				}, 0);
 			} else if (r[0] === "Pick List" && r[1] && r[1] !== "List") {
-				// Intercept standard Pick List form and redirect to custom entry
 				frappe.set_route("pick_list_entry", r[1]);
 			} else if (r[0] === "Form" && r[1] === "Pick List" && r[2]) {
 				frappe.set_route("pick_list_entry", r[2]);
@@ -46,6 +38,6 @@
 	}
 
 	$(document).on("app_ready", attach);
-	// Also try attaching after a short timeout in case app_ready already fired
+	// in case app_ready already fired
 	setTimeout(attach, 1000);
 })();

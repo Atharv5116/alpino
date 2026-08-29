@@ -32,8 +32,7 @@ var EcomSalesOrderEntry = class {
 		this.load_recent_orders();
 	}
 
-	// Action buttons in the page header (top), matching the offline Sales Order
-	// entry page — Save (primary), Clear (secondary), and a link to the list.
+	// Header buttons, matching the offline Sales Order entry page.
 	setup_header_actions() {
 		this.page.set_primary_action(__('Save Sales Order'), () => this.save(), 'fa fa-check');
 		this.page.set_secondary_action(__('Clear'), () => this.clear_form());
@@ -42,7 +41,7 @@ var EcomSalesOrderEntry = class {
 		});
 	}
 
-	// ---- field construction ------------------------------------------------
+	// field construction
 	make_fields() {
 		const w = this.wrapper;
 		const mk = (sel, df) =>
@@ -144,7 +143,7 @@ var EcomSalesOrderEntry = class {
 		});
 	}
 
-	// ---- events ------------------------------------------------------------
+	// events
 	bind_events() {
 		const w = this.wrapper;
 		w.find('.btn-add-item').on('click', () => this.add_item_row());
@@ -199,19 +198,14 @@ var EcomSalesOrderEntry = class {
 			this.clear_form();
 			this.load_prefill(name, 'duplicate');
 		} else {
-			// Plain "New" visit — the page instance is reused across visits, so
-			// clear stale data from the previously created/edited order and
-			// refresh the recent-orders list (shows the just-created order).
+			// Plain "New" visit — page instance is reused, so clear stale data
+			// and refresh the recent-orders list.
 			this.clear_form();
 			this.load_recent_orders();
 		}
 	}
 
-	// ---- customer / buyer autofill ----------------------------------------
-	// Family-wide address dropdown: pool every Address of the parent + all child
-	// sites so any site under the parent can be billed/shipped to. Option value is
-	// the clean address text (stored as the SO's free-text address); the label
-	// shows the site so you can tell sites apart.
+	// customer / buyer autofill
 	_load_family_sites(customer) {
 		if (!customer || !this.f_site || !this.f_site.set_data) return;
 		frappe.call({
@@ -286,7 +280,7 @@ var EcomSalesOrderEntry = class {
 		});
 	}
 
-	// ---- per-row SKU link (awesomplete, mirrors the offline page) ----------
+	// per-row SKU link (awesomplete, mirrors the offline page)
 	_make_item_link_field(parent, fieldname, filterType) {
 		const me = this;
 		const field = frappe.ui.form.make_control({
@@ -311,7 +305,7 @@ var EcomSalesOrderEntry = class {
 		return field;
 	}
 
-	// ---- ordered products (inline Add Row) ---------------------------------
+	// ordered products (inline Add Row)
 	add_item_row(data) {
 		const me = this;
 		const row = Object.assign({
@@ -416,11 +410,8 @@ var EcomSalesOrderEntry = class {
 		});
 	}
 
-	// One-time Qty → Box conversion (decimals). Only fires on Qty / item change;
-	// a manual Box edit is never overwritten by MRP / Margin / Selling edits.
-	// Apply the order's box rounding mode to qty / factor: 'up' -> ceil,
-	// 'down' -> floor, else decimals. Mode from the Alpino Customer Type unless
-	// the site's Buyer Master excludes box conversion.
+	// Rounding mode: 'up' -> ceil, 'down' -> floor, else decimals. Mode from the
+	// Alpino Customer Type unless the site's Buyer Master excludes box conversion.
 	_round_box(qty, factor) {
 		const cf = flt(factor);
 		if (!cf) return 0;
@@ -484,7 +475,7 @@ var EcomSalesOrderEntry = class {
 		this.wrapper.find('.eso-total').text(__('Order Value (incl. GST): {0}', [format_number(total, null, 2)]));
 	}
 
-	// ---- freebies (inline Add Freebie) -------------------------------------
+	// freebies (inline Add Freebie)
 	add_freebie_row(data) {
 		const me = this;
 		const row = Object.assign({ item_code: '', item_name: '', qty: 0, box: 0 }, data || {});
@@ -566,7 +557,7 @@ var EcomSalesOrderEntry = class {
 		this.wrapper.find('.eso-freebies-title').text(on ? __('Freebie Items (Entire PO)') : __('Freebies'));
 	}
 
-	// ---- sticker attachments (multiple uploads) ----------------------------
+	// sticker attachments (multiple uploads)
 	upload_sticker() {
 		new frappe.ui.FileUploader({
 			allow_multiple: true,
@@ -611,7 +602,7 @@ var EcomSalesOrderEntry = class {
 		});
 	}
 
-	// ---- recent orders (mirrors the offline entry page) --------------------
+	// recent orders (mirrors the offline entry page)
 	load_recent_orders() {
 		const me = this;
 		frappe.call({
@@ -661,7 +652,7 @@ var EcomSalesOrderEntry = class {
 			</div>`);
 	}
 
-	// ---- save --------------------------------------------------------------
+	// save
 	_valid_items() {
 		return this.items.filter((r) => r.item_code && flt(r.qty) > 0);
 	}
@@ -765,7 +756,7 @@ var EcomSalesOrderEntry = class {
 		});
 	}
 
-	// ---- prefill / clear ---------------------------------------------------
+	// prefill / clear
 	load_prefill(name, mode) {
 		mode = mode || 'edit';
 		frappe.call({
