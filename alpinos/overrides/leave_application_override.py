@@ -2,8 +2,10 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, getdate
 from hrms.hr.doctype.leave_application.leave_application import LeaveApplication as HRMSLeaveApplication
+
+SATURDAY = 5
 
 
 class CustomLeaveApplication(HRMSLeaveApplication):
@@ -12,6 +14,21 @@ class CustomLeaveApplication(HRMSLeaveApplication):
 	def validate(self):
 		super().validate()
 		self.validate_supporting_document()
+		self.validate_saturday_half_day()
+
+	def validate_saturday_half_day(self):
+		"""Saturday counts as a full working day, so it cannot be taken as a half day."""
+		if not self.get("half_day"):
+			return
+
+		half_day_date = self.get("half_day_date") or self.get("from_date")
+		if half_day_date and getdate(half_day_date).weekday() == SATURDAY:
+			frappe.throw(
+				_("Saturday is a full working day, so {0} cannot be applied as a half day.").format(
+					frappe.format(getdate(half_day_date), {"fieldtype": "Date"})
+				),
+				title=_("Half Day Not Allowed on Saturday"),
+			)
 
 	def validate_supporting_document(self):
 		"""Require a supporting document when the leave is longer than 3 days."""

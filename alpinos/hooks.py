@@ -138,6 +138,7 @@ patches = [
 after_migrate = [
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.default_present.setup_default_present_field",
+	"alpinos.employee_suspension.setup_suspension_date_field",
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
 	"alpinos.employee_field_visibility.execute",
 	"alpinos.employee_onboarding_client_scripts.create_employee_onboarding_client_scripts",
@@ -438,7 +439,10 @@ doc_events = {
 		]
 	},
 	"Employee": {
-		"validate": "alpinos.employee_probation_automation.calculate_probation_end_date",
+		"validate": [
+			"alpinos.employee_probation_automation.calculate_probation_end_date",
+			"alpinos.employee_suspension.stamp_suspension_date",
+		],
 		"on_update": [
 			"alpinos.approval_access.grant_rm_role_for_employee",
 		]
@@ -448,10 +452,12 @@ doc_events = {
 		"validate": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
+			"alpinos.work_from_home_request_automation.block_saturday_half_day",
 		],
 		"before_save": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
+			"alpinos.work_from_home_request_automation.block_saturday_half_day",
 		],
 		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},

@@ -7,7 +7,8 @@ from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_d
 from datetime import datetime, timedelta
 import calendar
 from alpinos.alpinos_development.report.attendance_summary.attendance_summary_helpers import (
-	calculate_attendance_stats
+	SUNDAY,
+	calculate_attendance_stats,
 )
 
 
@@ -115,7 +116,11 @@ def get_data(filters, from_date, to_date):
 
 
 def get_employees(filters, from_date, to_date):
-	"""Employees active within the report date range (joined on/before end, not relieved before start)."""
+	"""Employees active within the report date range.
+
+	Someone who left or was suspended during the month still appears for that month; they
+	drop off from the next month onward.
+	"""
 	conditions = []
 
 	if filters.get("employee"):
@@ -126,16 +131,20 @@ def get_employees(filters, from_date, to_date):
 
 	conditions.append(f"date_of_joining IS NOT NULL AND date_of_joining <= '{getdate(to_date)}'")
 	conditions.append(f"(relieving_date IS NULL OR relieving_date >= '{getdate(from_date)}')")
+	conditions.append(
+		f"(custom_suspension_date IS NULL OR custom_suspension_date >= '{getdate(from_date)}')"
+	)
 
 	where_clause = " AND ".join(conditions) if conditions else "1=1"
-	
+
 	query = f"""
-		SELECT 
+		SELECT
 			name as employee,
 			employee_name,
 			status,
 			date_of_joining,
 			relieving_date,
+			custom_suspension_date,
 			department,
 			company
 		FROM `tabEmployee`
@@ -156,12 +165,14 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.department = emp.department
 	row.company = emp.company
 
-	# Cap the calculation at the relieving date for anyone relieved mid-month.
+	# Cap the calculation at the exit date for anyone relieved or suspended mid-month.
 	period_end = getdate(to_date)
-	if emp.get("relieving_date"):
-		rel = getdate(emp.relieving_date)
-		if getdate(from_date) <= rel < period_end:
-			period_end = rel
+	for exit_date in (emp.get("relieving_date"), emp.get("custom_suspension_date")):
+		if not exit_date:
+			continue
+		exit_date = getdate(exit_date)
+		if getdate(from_date) <= exit_date < period_end:
+			period_end = exit_date
 	
 	if emp.date_of_joining:
 		row.aging = date_diff(period_end, emp.date_of_joining)
@@ -219,10 +230,11 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 		date_str = current_date.strftime("%Y-%m-%d")
 		field_name = f"day_{day_num}"
 		
-		# Weekly-off days show as WEEKEND, other Holiday List entries as the holiday name.
+		# Sundays show as WEEKEND, other Holiday List entries as the holiday name.
 		if date_str in holiday_map:
 			hinfo = holiday_map[date_str]
-			row[field_name] = "WEEKEND" if hinfo.get("weekly_off") else f"HOLIDAY - {hinfo.get('description')}"
+			is_sunday = current_date.weekday() == SUNDAY
+			row[field_name] = "WEEKEND" if is_sunday else f"HOLIDAY - {hinfo.get('description')}"
 		elif date_str in leave_map:
 			leave_info = leave_map[date_str]
 			row[field_name] = format_leave_info(leave_info)

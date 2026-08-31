@@ -4,6 +4,8 @@
 import frappe
 from frappe.utils import date_diff, flt, getdate
 
+SUNDAY = 6
+
 
 def get_location_details(location):
 	if not location:
@@ -60,8 +62,8 @@ def _required_hours(shift_name, is_saturday, cache):
 def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, to_date, employee):
 	"""Monthly attendance statistics for the Final Format layout.
 
-	Public Holiday vs Weekend come from the Holiday List's weekly_off flag, not a hard-coded
-	Sat/Sun (Alpino works Saturdays).
+	Weekend counts Sundays only (Alpino works Saturdays); every other Holiday List entry
+	counts as a public holiday.
 	"""
 	stats = frappe._dict({
 		"clock_in_days": 0,
@@ -77,9 +79,9 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		"avg_working_hours": 0,
 	})
 
-	# Public Holiday vs Weekend from the Holiday List's weekly_off flag.
-	for info in holiday_map.values():
-		if info.get("weekly_off"):
+	# Sundays are the weekend; anything else on the Holiday List is a public holiday.
+	for holiday_date in holiday_map:
+		if getdate(holiday_date).weekday() == SUNDAY:
 			stats.weekend += 1
 		else:
 			stats.public_holiday += 1
