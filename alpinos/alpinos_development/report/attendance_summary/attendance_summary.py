@@ -288,14 +288,46 @@ def _get_shift_late_config(shift_name, cache):
 	return cfg
 
 
+def _is_first_half_leave(att, cache):
+	"""True when the day's half-day leave covers the FIRST half.
+
+	The employee is on leave until midday, so checking in for the second half is expected
+	and must not be measured against the shift start.
+	"""
+	if att.get("status") != "Half Day":
+		return False
+
+	leave = att.get("leave_application")
+	if not leave:
+		return False
+
+	if not frappe.get_meta("Leave Application").has_field("custom_half_day_period"):
+		return False
+
+	if leave not in cache:
+		cache[leave] = (
+			frappe.db.get_value(
+				"Leave Application", leave, ["half_day", "custom_half_day_period"], as_dict=True
+			)
+			or {}
+		)
+	info = cache[leave]
+	return bool(cint(info.get("half_day"))) and (
+		info.get("custom_half_day_period") or ""
+	).strip() == "First Half"
+
+
 def compute_late_deduction(attendance_map):
 	"""Late-entry flag counts and days to deduct, per the Shift Type late-entry tiers.
 
 	Each late check-in falls in the highest tier its lateness meets. Per tier, every full
 	group of 4 lates deducts that tier's days; leftovers across tiers combining to 4 deduct
 	the smallest tier's days. Nothing deducts below a group of 4.
+
+	A first-half leave day is exempt: the second-half check-in is not a late arrival.
 	"""
 	cache = {}
+	leave_cache = {}
 	counts = {}        # late_by: number of late entries
 	ded_by_tier = {}   # late_by: deduction days for that tier
 
@@ -304,6 +336,8 @@ def compute_late_deduction(attendance_map):
 		shift = att.get("shift")
 		att_date = att.get("attendance_date")
 		if not in_time or not shift or not att_date:
+			continue
+		if _is_first_half_leave(att, leave_cache):
 			continue
 		cfg = _get_shift_late_config(shift, cache)
 		if not cfg:
