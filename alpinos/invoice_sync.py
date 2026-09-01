@@ -226,10 +226,13 @@ def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None):
 	"""Find the invoice PDF (filename == invoice_no) and attach it to the Sales Order's
 	custom_invoice_pdf. Returns (file_url, error) with error set when the folder/PDF isn't found."""
 	ext = ext or (s.get("pdf_extension") or ".pdf")
-	so_date = frappe.db.get_value("Sales Order", so_id, "transaction_date")
-	month = _month_label(so_date) if so_date else None
+	# Invoices are filed by the month they were dispatched in, not the month the order
+	# was raised — an order taken in one month and dispatched in the next lives in the
+	# later folder.
+	dispatch_date = frappe.db.get_value("Sales Order", so_id, "custom_dispatch_date")
+	month = _month_label(dispatch_date) if dispatch_date else None
 	if not month:
-		return None, "Sales Order has no date"
+		return None, "Sales Order has no dispatch date"
 	folder = _resolve_month_folder(drive, s.drive_root_folder_id, s.get("fy_label") or "", month, folder_cache)
 	if not folder:
 		return None, f"folder {s.get('fy_label') or ''}/{month} not found"
