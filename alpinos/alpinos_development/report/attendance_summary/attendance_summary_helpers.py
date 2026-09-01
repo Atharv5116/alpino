@@ -174,9 +174,17 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			stats.working_hours_shortage += _whs(att, date_str)
 			continue
 
-		# Classify by punches and hours, not the stored status: a day with both a clock-in and
-		# a clock-out is Present (plus a shortage tier), never Absent. Only a missing clock-out
-		# or no punches at all is Absent.
+		# A day already marked Absent stays Absent, even when both punches are present:
+		# the hours were short enough for the marking rules to reject the day, so it costs a
+		# full day rather than a shortage tier.
+		if status == "Absent":
+			if not on_holiday:
+				stats.absent_days += 1
+			continue
+
+		# Otherwise classify by punches and hours rather than the stored status: a day with
+		# both a clock-in and a clock-out is a worked day plus a shortage tier. Only a missing
+		# clock-out or no punches at all is Absent.
 		if has_in and has_out and wh > 0:
 			stats.clock_in_days += 1
 			total_working_hours += wh
