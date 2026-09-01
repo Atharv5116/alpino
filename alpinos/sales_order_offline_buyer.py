@@ -249,36 +249,24 @@ def site_exists_in_buyer_family(customer, site_name):
 	return bool(frappe.db.exists("Buyer Address", {"parent": ["in", masters], "site_name": site_name}))
 
 
-# Customer types (channels) for which a Site Name is MANDATORY on import — each has
-# many sites (dark stores / FCs), so the order must name one. Other types may omit it.
-SITE_MANDATORY_CUSTOMER_TYPES = {
-	"Other E-commerce", "Zepto", "Swiggy", "Bigbasket", "Reliance",
-	"Flipkart", "Amazon", "Modern Trade", "Blinkit",
-}
-
-
 def assert_import_site_requirements(customer, site_name, customer_type=None):
 	"""Import guard for a Sales Order's Site (the site-validation spec).
 
-	Site Name is mandatory only for the e-commerce / modern-trade customer types in
-	SITE_MANDATORY_CUSTOMER_TYPES. When a Site IS given (mandatory or not) it must map to a
-	Buyer Master site of the family, and that SITE record must carry its OWN required data
-	- never taken from the family parent (only the customer / parent-buyer name may come
-	from the parent). Raises on the first problem, so the importer reports it per order.
+	Site Name is mandatory on every Sales Order, offline and e-commerce alike. It must map
+	to a Buyer Master site of the family, and that SITE record must carry its OWN required
+	data - never taken from the family parent (only the customer / parent-buyer name may
+	come from the parent). Raises on the first problem, so the importer reports it per order.
 	"""
 	site_name = (site_name or "").strip()
 	if customer_type is None:
 		customer_type = frappe.db.get_value("Buyer Master", {"customer": customer}, "customer_type") or ""
-	site_mandatory = (customer_type or "").strip() in SITE_MANDATORY_CUSTOMER_TYPES
 
-	# (1)(2) Site Name: mandatory for the listed channels; optional otherwise.
+	# (1)(2) Site Name is required for every buyer; the parent buyer is never a fallback.
 	if not site_name:
-		if site_mandatory:
-			frappe.throw(
-				_("Site Name is required for customer type '{0}'.").format(customer_type),
-				title=_("Missing Site"),
-			)
-		return
+		frappe.throw(
+			_("Site Name is required on every Sales Order. Select the Site for {0} - the parent buyer is not used as a fallback.").format(customer),
+			title=_("Missing Site"),
+		)
 	if not site_exists_in_buyer_family(customer, site_name):
 		frappe.throw(
 			_("Site Name '{0}' is not mapped in the Buyer Master for {1}. Add the site to the Buyer Master before importing.").format(site_name, customer),
@@ -464,11 +452,10 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 			doc.custom_grn_available = int(row.get("grn_available") or 0)
 			doc.custom_partial_order_allowed = int(row.get("partial_order_allowed") or 0)
 		# Site validation for every entry path — Frappe's native Data Import and the
-		# entry pages, not just the Excel bulk importer. For the e-commerce / modern-
-		# trade customer types a Site is mandatory; when a Site is given (any type) it
-		# must map to a Buyer Master site of this family and that site must carry its
-		# own site-level data (no parent-buyer fallback). New orders only, so edits /
-		# submits of legacy orders are never retroactively blocked.
+		# entry pages, not just the Excel bulk importer. A Site is mandatory for every
+		# buyer, it must map to a Buyer Master site of this family, and that site must
+		# carry its own site-level data (no parent-buyer fallback). New orders only, so
+		# edits / submits of legacy orders are never retroactively blocked.
 		if doc.is_new():
 			assert_import_site_requirements(
 				doc.customer,
