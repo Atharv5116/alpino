@@ -384,10 +384,17 @@ doc_events = {
 		"on_submit": [
 			"alpinos.workflow_engine.delivery_note_on_submit",
 			"alpinos.stock_reservation.release_leftover_after_delivery_note",
+			"alpinos.so_invoice_value.refresh_from_delivery_note",
 		],
 		"on_update": "alpinos.after_submit_sync.delivery_note_on_update_draft",
-		"on_update_after_submit": "alpinos.after_submit_sync.delivery_note_on_update_after_submit",
-		"on_cancel": "alpinos.workflow_engine.delivery_note_on_cancel",
+		"on_update_after_submit": [
+			"alpinos.after_submit_sync.delivery_note_on_update_after_submit",
+			"alpinos.so_invoice_value.refresh_from_delivery_note",
+		],
+		"on_cancel": [
+			"alpinos.workflow_engine.delivery_note_on_cancel",
+			"alpinos.so_invoice_value.refresh_from_delivery_note",
+		],
 	},
 	"Batch": {
 		"before_validate": "alpinos.batch_hooks.compute_expiry_from_shelf_life",
