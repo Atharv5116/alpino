@@ -557,6 +557,19 @@ def _insert_address_resilient(addr):
 		return addr.name
 
 
+SERIES_NAME_LIMIT = 100
+
+
+def _max_address_title(address_type):
+	"""Longest Address Title that still leaves the naming series a key it can store.
+
+	When "<title>-<address_type>" is already taken, Frappe renames via
+	make_autoname("<title>-<address_type>-.#") and stores that prefix in tabSeries.name,
+	which is varchar(100). A longer title fails the insert with "Data too long".
+	"""
+	return SERIES_NAME_LIMIT - len(address_type or "Billing") - 3
+
+
 def _ensure_address_doc(
 	customer,
 	*,
@@ -598,11 +611,11 @@ def _ensure_address_doc(
 
 	addr = frappe.new_doc("Address")
 	addr.flags.ignore_permissions = True
+	addr.address_type = address_type or "Billing"
 	ti = address_title if address_title else (line1_u[:40] if line1_u else _nz(customer))
-	addr.address_title = (ti or customer)[:140]
+	addr.address_title = (ti or customer)[:_max_address_title(addr.address_type)]
 	if site_name:
 		addr.custom_site_name = site_name
-	addr.address_type = address_type or "Billing"
 	addr.address_line1 = line1_u
 	addr.city = _nz(city) or _("N/A")
 	addr.state = _nz(state) if state else ""
