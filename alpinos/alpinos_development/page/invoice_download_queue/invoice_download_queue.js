@@ -2,19 +2,22 @@ frappe.pages['invoice-download-queue'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
 		title: __('Invoice Download Queue'),
-		single_column: true,
+		single_column: false,
 	});
 	page.main.html(frappe.render_template('invoice_download_queue'));
 	new InvoiceDownloadQueue(page);
 };
 
+var IDQ_SETTINGS_KEY = 'invoice_download_queue';
+
 var IDQ_COLUMNS = [
-	{ label: 'Sales Order', render: (d, h) => `<strong>${h.esc(d.sales_order)}</strong>` },
+	{ label: 'Sales Order', render: (d, h) => h.link('Sales Order', d.sales_order, `<strong>${h.esc(d.sales_order)}</strong>`) },
 	{ label: 'Invoice ID', render: (d, h) => h.esc(d.invoice_id || '—') },
 	{ label: 'PDF Ready', render: (d, h) => (d.pdf_ready === 'Yes' ? h.pill('Yes', 'green') : h.pill('No', 'gray')) },
 	{ label: 'Order Date', render: (d, h) => h.date(d.order_date) },
+	{ label: 'PO Date', render: (d, h) => h.date(d.po_date) },
 	{ label: 'Dispatch Date', render: (d, h) => h.date(d.dispatch_date) },
-	{ label: 'Pick List', render: (d, h) => h.esc(d.pick_list || '—') },
+	{ label: 'Pick List', render: (d, h) => (d.pick_list ? h.link('Pick List', d.pick_list, h.esc(d.pick_list)) : '—') },
 	{ label: 'LR Number', render: (d, h) => h.esc(d.lr_number || '—') },
 	{ label: 'Customer PO No', render: (d, h) => h.esc(d.customer_po_no || '—') },
 	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || '—') },
@@ -41,7 +44,9 @@ var InvoiceDownloadQueue = class {
 		this.btn_dl_selected = this.page.add_inner_button(__('Download Selected'), () => this.download_selected());
 		this.page.add_inner_button(__('Download All'), () => this.download_all());
 		this.setup_filters();
+		this.render_sidebar();
 		this.bind_events();
+		this.restore_last_filters();
 		this.load_list();
 	}
 
@@ -55,6 +60,10 @@ var InvoiceDownloadQueue = class {
 			df: { fieldtype: 'Date', fieldname: 'order_date', label: __('Order Date') },
 			parent: w.find('.fld-order-date'), render_input: true,
 		});
+		this._filters.po_date = frappe.ui.form.make_control({
+			df: { fieldtype: 'Date', fieldname: 'po_date', label: __('PO Date') },
+			parent: w.find('.fld-po-date'), render_input: true,
+		});
 		this._filters.dispatch_date = frappe.ui.form.make_control({
 			df: { fieldtype: 'Date', fieldname: 'dispatch_date', label: __('Dispatch Date') },
 			parent: w.find('.fld-dispatch-date'), render_input: true,
@@ -62,6 +71,77 @@ var InvoiceDownloadQueue = class {
 		this._filters.customer = frappe.ui.form.make_control({
 			df: { fieldtype: 'Link', fieldname: 'customer', label: __('Customer'), options: 'Customer' },
 			parent: w.find('.fld-customer'), render_input: true,
+		});
+	}
+
+	// ----- saved filters -----
+	_settings() {
+		return frappe.get_user_settings(IDQ_SETTINGS_KEY) || {};
+	}
+
+	_saved_filters() {
+		const s = this._settings();
+		return Array.isArray(s.saved_filters) ? s.saved_filters : [];
+	}
+
+	_store(key, value) {
+		const s = this._settings();
+		s[key] = value;
+		frappe.model.user_settings.save(IDQ_SETTINGS_KEY, key, value);
+	}
+
+	restore_last_filters() {
+		const last = this._settings().last_filters;
+		if (last) this._apply_values(last);
+	}
+
+	_apply_values(vals) {
+		Object.keys(this._filters).forEach((k) => {
+			const f = this._filters[k];
+			if (f) f.set_value(vals && vals[k] ? vals[k] : '');
+		});
+	}
+
+	save_current_filter() {
+		const vals = this._args();
+		if (!Object.keys(vals).length) {
+			frappe.msgprint(__('Set at least one filter before saving.'));
+			return;
+		}
+		frappe.prompt(
+			[{ fieldname: 'title', fieldtype: 'Data', label: __('Filter Name'), reqd: 1 }],
+			({ title }) => {
+				const list = this._saved_filters().filter((f) => f.title !== title);
+				list.push({ title: title, filters: vals });
+				this._store('saved_filters', list);
+				this.render_sidebar();
+				frappe.show_alert({ message: __('Filter saved'), indicator: 'green' });
+			},
+			__('Save Filter'),
+			__('Save')
+		);
+	}
+
+	render_sidebar() {
+		const sb = this.page.sidebar;
+		if (!sb || !sb.length) return;
+		sb.empty();
+		const list = this._saved_filters();
+		const $box = $('<div class="idq-sidebar"></div>').appendTo(sb);
+		$box.append(`<div class="sidebar-label">${__('Saved Filters')}</div>`);
+		if (!list.length) {
+			$box.append(`<p class="text-muted small">${__('No saved filters yet.')}</p>`);
+			return;
+		}
+		const $ul = $('<ul class="list-unstyled idq-saved-list"></ul>').appendTo($box);
+		list.forEach((f, i) => {
+			const title = frappe.utils.escape_html(f.title);
+			$ul.append(
+				`<li class="idq-saved-item" data-idx="${i}">
+					<a href="#" class="idq-apply-saved">${title}</a>
+					<a href="#" class="idq-remove-saved text-muted pull-right" title="${__('Remove')}">&times;</a>
+				</li>`
+			);
 		});
 	}
 
@@ -81,6 +161,24 @@ var InvoiceDownloadQueue = class {
 			Object.values(this._filters).forEach((f) => f && f.set_value(''));
 			this.load_list();
 		});
+		w.find('.btn-idq-save-filter').on('click', () => this.save_current_filter());
+		// Saved filters live in the sidebar, which is outside this.wrapper.
+		$(this.page.sidebar).on('click', '.idq-apply-saved', (e) => {
+			e.preventDefault();
+			const idx = $(e.target).closest('.idq-saved-item').data('idx');
+			const entry = this._saved_filters()[idx];
+			if (!entry) return;
+			this._apply_values(entry.filters);
+			this.load_list();
+		});
+		$(this.page.sidebar).on('click', '.idq-remove-saved', (e) => {
+			e.preventDefault();
+			const idx = $(e.target).closest('.idq-saved-item').data('idx');
+			const list = this._saved_filters();
+			list.splice(idx, 1);
+			this._store('saved_filters', list);
+			this.render_sidebar();
+		});
 		// Select-all + per-row selection (delegated so it survives re-renders).
 		w.on('change', '.idq-select-all', (e) => {
 			w.find('.idq-row-select').prop('checked', $(e.target).prop('checked'));
@@ -91,9 +189,11 @@ var InvoiceDownloadQueue = class {
 
 	load_list() {
 		const me = this;
+		const args = me._args();
+		me._store('last_filters', args);
 		frappe.call({
 			method: 'alpinos.pending_invoice_api.get_pending_invoice_downloads',
-			args: me._args(),
+			args: args,
 			freeze: true, freeze_message: __('Loading...'),
 			callback(r) {
 				if (r.exc) return;
@@ -121,6 +221,8 @@ var InvoiceDownloadQueue = class {
 			esc,
 			date: (v) => (v && frappe.datetime.str_to_user(String(v))) || '—',
 			pill: (v, c) => `<span class="indicator-pill ${c}">${esc(v)}</span>`,
+			link: (doctype, name, label) =>
+				`<a href="/app/${encodeURIComponent(frappe.router.slug(doctype))}/${encodeURIComponent(name)}">${label}</a>`,
 		};
 		rows.forEach((d) => {
 			const cells = this._columns.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`).join('');

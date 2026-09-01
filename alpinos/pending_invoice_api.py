@@ -13,7 +13,9 @@ from alpinos.alpinos_development.report.pending_invoice_downloads.pending_invoic
 
 
 @frappe.whitelist()
-def get_pending_invoice_downloads(sales_order=None, order_date=None, dispatch_date=None, customer=None):
+def get_pending_invoice_downloads(
+	sales_order=None, order_date=None, po_date=None, dispatch_date=None, customer=None
+):
 	if not frappe.has_permission("Sales Order", "read"):
 		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
 	filters = {}
@@ -21,6 +23,8 @@ def get_pending_invoice_downloads(sales_order=None, order_date=None, dispatch_da
 		filters["sales_order"] = sales_order
 	if order_date:
 		filters["order_date"] = order_date
+	if po_date:
+		filters["po_date"] = po_date
 	if dispatch_date:
 		filters["dispatch_date"] = dispatch_date
 	if customer:

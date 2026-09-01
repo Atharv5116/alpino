@@ -15,6 +15,7 @@ def execute(filters=None):
 		{"label": _("Sales Order"), "fieldname": "sales_order", "fieldtype": "Link", "options": "Sales Order", "width": 160},
 		{"label": _("Invoice ID"), "fieldname": "invoice_id", "fieldtype": "Data", "width": 130},
 		{"label": _("Order Date"), "fieldname": "order_date", "fieldtype": "Date", "width": 110},
+		{"label": _("PO Date"), "fieldname": "po_date", "fieldtype": "Date", "width": 110},
 		{"label": _("Dispatch Date"), "fieldname": "dispatch_date", "fieldtype": "Date", "width": 120},
 		{"label": _("Pick List"), "fieldname": "pick_list", "fieldtype": "Link", "options": "Pick List", "width": 160},
 		{"label": _("LR Number"), "fieldname": "lr_number", "fieldtype": "Data", "width": 140},
@@ -34,6 +35,9 @@ def execute(filters=None):
 	if filters.get("order_date"):
 		conditions.append("so.transaction_date = %(order_date)s")
 		params["order_date"] = filters["order_date"]
+	if filters.get("po_date"):
+		conditions.append("so.custom_po_date = %(po_date)s")
+		params["po_date"] = filters["po_date"]
 	if filters.get("dispatch_date"):
 		conditions.append("so.custom_dispatch_date = %(dispatch_date)s")
 		params["dispatch_date"] = filters["dispatch_date"]
@@ -45,6 +49,7 @@ def execute(filters=None):
 		"""
 		SELECT so.name AS sales_order,
 			so.transaction_date AS order_date,
+			so.custom_po_date AS po_date,
 			so.custom_dispatch_date AS dispatch_date,
 			so.custom_invoice_no AS invoice_id,
 			COALESCE(NULLIF(so.po_no, ''), NULLIF(so.custom_po_number, ''), '') AS customer_po_no,

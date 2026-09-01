@@ -687,6 +687,21 @@ def download_sales_orders_zip(names, no_letterhead=0):
 	frappe.local.response.type = "download"
 
 
+def _invoice_file_base(name, invoice_no):
+	"""File name for a downloaded invoice: the order, then its invoice no, else its pick list."""
+	so = str(name).strip().replace("/", "-")
+	tag = str(invoice_no or "").strip().replace("/", "-")
+	if not tag:
+		pick_list = frappe.db.get_value(
+			"Pick List",
+			{"custom_sales_order_id": name, "docstatus": ["<", 2]},
+			"name",
+			order_by="modified asc",
+		)
+		tag = str(pick_list or "").strip().replace("/", "-")
+	return "{0} - {1}".format(so, tag) if tag else so
+
+
 @frappe.whitelist()
 def download_sales_invoices_zip(names):
 	"""Bulk export the fetched Sales Invoice PDFs (custom_invoice_pdf) for the selected
@@ -723,9 +738,7 @@ def download_sales_invoices_zip(names):
 			except Exception:
 				frappe.log_error(title="Bulk invoice export: cannot read {0} ({1})".format(file_url, name))
 				continue
-			inv = str(row.get("custom_invoice_no") or "").strip().replace("/", "-")
-			so = str(name).strip().replace("/", "-")
-			base = "{0} - {1}".format(so, inv) if inv else so
+			base = _invoice_file_base(name, row.get("custom_invoice_no"))
 			fname = base + ".pdf"
 			# two orders can share an invoice no; keep both files rather than overwrite
 			if fname in used:
@@ -855,9 +868,7 @@ def download_single_invoice(name):
 	content = get_file(file_url)[1]
 	if isinstance(content, str):
 		content = content.encode("utf-8")
-	inv = str(row.get("custom_invoice_no") or "").strip().replace("/", "-")
-	so = str(name).strip().replace("/", "-")
-	base = "{0} - {1}".format(so, inv) if inv else so
+	base = _invoice_file_base(name, row.get("custom_invoice_no"))
 	if not frappe.db.get_value("Sales Order", name, "custom_invoice_downloaded"):
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
 		frappe.db.commit()
