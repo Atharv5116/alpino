@@ -174,11 +174,20 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			stats.working_hours_shortage += _whs(att, date_str)
 			continue
 
-		# A day already marked Absent stays Absent, even when both punches are present:
-		# the hours were short enough for the marking rules to reject the day, so it costs a
-		# full day rather than a shortage tier.
+		# A day marked Absent still costs a full day, but how it is reported depends on
+		# whether the employee actually worked. With both punches the day was rejected for
+		# short hours, so it counts as a full working-hours shortage rather than an
+		# absence; with no punches it is a genuine absence. Either way the deduction is
+		# 1.0, so paid days are the same.
 		if status == "Absent":
-			if not on_holiday:
+			if on_holiday:
+				continue
+			if has_in and has_out and wh > 0:
+				stats.clock_in_days += 1
+				total_working_hours += wh
+				working_days_count += 1
+				stats.working_hours_shortage += 1.0
+			else:
 				stats.absent_days += 1
 			continue
 

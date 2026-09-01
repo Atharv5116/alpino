@@ -513,7 +513,10 @@ def format_attendance_info(att_info):
 	late_entry = att_info.get("late_entry", 0)
 	early_exit = att_info.get("early_exit", 0)
 
-	if status == "Absent":
+	# An Absent day that still has both punches was rejected for short hours, not missed:
+	# keep its real times and label it WHS. A true absence shows blank times as before.
+	worked_short = status == "Absent" and in_time and out_time and flt(working_hours) > 0
+	if status == "Absent" and not worked_short:
 		in_time = None
 		out_time = None
 		working_hours = 0
@@ -548,7 +551,14 @@ def format_attendance_info(att_info):
 	early_str = f"{shift_start_str} To {out_str}" if early_exit else ""
 
 	tag = "WFH" if status == "Work From Home" else ("OD" if status == "On Duty" else "")
-	head = "HALF DAY" if status == "Half Day" else ("ABSENT" if status == "Absent" else "Present")
+	if status == "Half Day":
+		head = "HALF DAY"
+	elif worked_short:
+		head = "WHS"
+	elif status == "Absent":
+		head = "ABSENT"
+	else:
+		head = "Present"
 
 	lines = []
 	if tag:
