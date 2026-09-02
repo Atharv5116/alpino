@@ -156,24 +156,32 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.department = emp.department
 	row.company = emp.company
 
+	# Start the calculation at the joining date for a mid-month joiner, the mirror of the
+	# exit cap below: days before someone joined are not days they were due to work.
+	period_start = getdate(from_date)
+	if emp.get("date_of_joining"):
+		doj = getdate(emp.date_of_joining)
+		if period_start < doj <= getdate(to_date):
+			period_start = doj
+
 	# Cap the calculation at the relieving date for anyone relieved mid-month.
 	period_end = getdate(to_date)
 	if emp.get("relieving_date"):
 		rel = getdate(emp.relieving_date)
-		if getdate(from_date) <= rel < period_end:
+		if period_start <= rel < period_end:
 			period_end = rel
-	
+
 	if emp.date_of_joining:
 		row.aging = date_diff(period_end, emp.date_of_joining)
 	else:
 		row.aging = 0
 
-	attendance_map = get_attendance_map(emp.employee, from_date, period_end)
-	holiday_map = get_holiday_map(emp.employee, from_date, period_end)
-	leave_map = get_leave_map(emp.employee, from_date, period_end)
-	wfh_map = get_wfh_map(emp.employee, from_date, period_end)
+	attendance_map = get_attendance_map(emp.employee, period_start, period_end)
+	holiday_map = get_holiday_map(emp.employee, period_start, period_end)
+	leave_map = get_leave_map(emp.employee, period_start, period_end)
+	wfh_map = get_wfh_map(emp.employee, period_start, period_end)
 
-	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, period_end, emp.employee)
+	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, period_start, period_end, emp.employee)
 	
 	# Summary fields (Final Format layout).
 	row.clock_in_days = stats["clock_in_days"]
@@ -199,7 +207,7 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	#   Present Working Days = Month - Paid Leave - Unpaid Leave - Absent - Working Hours Shortage
 	#   Final Payable Days   = Present + Paid Leave
 	#   Final Paid Days      = Payable - late penalty
-	total_days = date_diff(period_end, from_date) + 1
+	total_days = date_diff(period_end, period_start) + 1
 	row.month_working_days = flt(total_days - flt(stats["public_holiday"]) - flt(stats["weekend"]), 2)
 	row.present_working_days = flt(
 		flt(row.month_working_days)
