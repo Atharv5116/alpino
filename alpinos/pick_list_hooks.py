@@ -130,7 +130,7 @@ def _sync_rows_and_totals(doc):
 	doc.custom_total_unit = flt(total_unit, 2)
 
 
-def before_validate_pick_list(doc, method):
+def _unset_batch_no_mandatory():
 	# Hack to ensure backend doesn't enforce batch_no mandatory regardless of DB/Cache state
 	# Since Frappe's _validate_mandatory checks doc.meta.get("fields", {"reqd": 1}),
 	# we strip reqd=1 from batch_no before the validation runs.
@@ -138,6 +138,19 @@ def before_validate_pick_list(doc, method):
 	df = meta.get_field("batch_no")
 	if df and df.reqd:
 		df.reqd = 0
+
+
+def before_update_after_submit_pick_list(doc, method=None):
+	"""Editing a submitted pick list skips before_validate, but still checks mandatory fields.
+
+	Frappe only runs before_validate for save/submit, so the strip above never reached an
+	edit-after-submit (changing the dispatch date, say) and every row failed on Batch No.
+	"""
+	_unset_batch_no_mandatory()
+
+
+def before_validate_pick_list(doc, method):
+	_unset_batch_no_mandatory()
 
 	# Free-text batch codes (items without batch tracking, or codes typed before
 	# the Batch master exists) must live in custom_batch_code, never in batch_no

@@ -353,6 +353,7 @@ doc_events = {
 	},
 	"Pick List": {
 		"before_validate": "alpinos.pick_list_hooks.before_validate_pick_list",
+		"before_update_after_submit": "alpinos.pick_list_hooks.before_update_after_submit_pick_list",
 		"validate": [
 			"alpinos.pick_list_hooks.validate_pick_list",
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
