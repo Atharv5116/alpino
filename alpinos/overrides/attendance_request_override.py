@@ -272,21 +272,20 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 
 	# ----- Rule: Check-in/out mandatory unless On Duty; punches sane vs the assigned shift -----
 	def _enforce_mandatory_punches(self):
-		"""Both Check-in and Check-out are required on every date unless the reason is On Duty."""
+		"""At least one of Check-in / Check-out is required per date unless the reason is On Duty.
+
+		Only the missing side usually needs correcting — the other punch is already on record —
+		so a request is valid with either time. A row with neither would change nothing.
+		"""
 		if self.reason == "On Duty":
 			return
 		for row in (self.custom_attendance_details or []):
 			if not row.attendance_date:
 				continue
-			missing = []
-			if not row.get("check_in"):
-				missing.append(_("Check-in"))
-			if not row.get("check_out"):
-				missing.append(_("Check-out"))
-			if missing:
+			if not row.get("check_in") and not row.get("check_out"):
 				frappe.throw(
-					_("{0} required for {1} — Check-in and Check-out are mandatory when the reason is not On Duty (tick Edit and enter the time).").format(
-						" & ".join(missing), formatdate(row.attendance_date)
+					_("Enter a Check-in or a Check-out for {0} — at least one is required when the reason is not On Duty (tick Edit and enter the time).").format(
+						formatdate(row.attendance_date)
 					),
 					title=_("Check-in / Check-out Required"),
 				)
