@@ -322,14 +322,9 @@ def _setup_pick_list_property_setters():
 			"value": "Quantity",
 			"property_type": "Data",
 		},
-		{
-			"doctype_or_field": "DocField",
-			"doc_type": "Pick List Item",
-			"field_name": "batch_no",
-			"property": "reqd",
-			"value": "1",
-			"property_type": "Check",
-		},
+		# batch_no is deliberately NOT mandatory: Alpino's batch codes are free text and
+		# live in custom_batch_code, because batch_no is a Link to Batch and a typed code
+		# is not a Batch record. Any stale reqd=1 setter is cleared below.
 		{
 			"doctype_or_field": "DocField",
 			"doc_type": "Pick List Item",
@@ -363,3 +358,16 @@ def _setup_pick_list_property_setters():
 			ps.save(ignore_permissions=True)
 		else:
 			frappe.get_doc({"doctype": "Property Setter", **ps_data}).insert(ignore_permissions=True)
+
+	# An older build made batch_no mandatory. Editing a SUBMITTED pick list (e.g. changing
+	# the dispatch date) runs Frappe's mandatory check but not before_validate, so the
+	# runtime strip in pick_list_hooks cannot save it and every row fails. Clear the setter
+	# here so a migrate heals a site that still carries it.
+	stale = frappe.db.get_value(
+		"Property Setter",
+		{"doc_type": "Pick List Item", "field_name": "batch_no", "property": "reqd"},
+		"name",
+	)
+	if stale:
+		frappe.delete_doc("Property Setter", stale, ignore_permissions=True, force=True)
+		frappe.clear_cache(doctype="Pick List Item")
