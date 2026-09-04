@@ -1,0 +1,553 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "PQC-.YYYY.-.#####",
+ "creation": "2026-09-03 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "inward_section",
+  "purchase_inward",
+  "supplier",
+  "supplier_name",
+  "supplier_order_no",
+  "invoice_number",
+  "inward_type",
+  "inward_col",
+  "received_qty",
+  "inspection_date",
+  "inspector",
+  "company",
+  "status_col",
+  "qc_status",
+  "qc_result",
+  "amended_from",
+  "sla_section",
+  "sla_start",
+  "sla_due",
+  "sla_col",
+  "sla_breached",
+  "last_escalation_on",
+  "vehicle_section",
+  "vehicle_inspection_done",
+  "vehicle_inspection",
+  "material_section",
+  "material_inspection_done",
+  "material_inspection",
+  "packaging_section",
+  "packaging_inspection_done",
+  "packaging_inspection",
+  "sample_section",
+  "sample_testing_done",
+  "sample_testing",
+  "evidence_section",
+  "inspection_evidence",
+  "control_sample_section",
+  "control_sample",
+  "decision_section",
+  "items",
+  "totals_section",
+  "total_received_qty",
+  "total_sample_qty",
+  "total_control_sample_qty",
+  "totals_col_break",
+  "total_approved_qty",
+  "total_rejected_qty",
+  "remarks_section",
+  "rejection_reason",
+  "final_qc_remarks",
+  "remarks_col",
+  "overall_remarks",
+  "override_section",
+  "system_qc_result",
+  "manual_qc_result",
+  "override_col",
+  "qc_result_overridden",
+  "override_reason",
+  "links_section",
+  "purchase_receipt",
+  "links_col",
+  "debit_note"
+ ],
+ "fields": [
+  {
+   "fieldname": "inward_section",
+   "fieldtype": "Section Break",
+   "label": "Purchase Inward Information"
+  },
+  {
+   "bold": 1,
+   "description": "The submitted Purchase Inward under inspection (VAL-QC-01).",
+   "fieldname": "purchase_inward",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Purchase Inward ID",
+   "options": "Purchase Inward",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "purchase_inward.supplier",
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Vendor Name",
+   "options": "Supplier",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "purchase_inward.supplier_name",
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "label": "Vendor",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "purchase_inward.supplier_order_no",
+   "fieldname": "supplier_order_no",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Supplier Order No.",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "purchase_inward.invoice_number",
+   "fieldname": "invoice_number",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_standard_filter": 1,
+   "label": "Invoice Number",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "purchase_inward.inward_type",
+   "fieldname": "inward_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Inward Type",
+   "options": "RM\nPM\nFG\nMM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "inward_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Quantity received on the Purchase Inward. Approved Qty + Rejected Qty must equal Received Qty (BRD 4.6.2.1). Sample Qty is carved OUT OF the approved quantity and moved to the QC Sample warehouse by a separate stock movement - it is NOT a third bucket, because the GRN (Purchase Receipt) has only two: qty (accepted) and rejected_qty.",
+   "fetch_from": "purchase_inward.total_received_qty",
+   "fieldname": "received_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Received Quantity",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "description": "Stamped when the QC user starts the inspection (BRD 4.1.1); blank while Pending QC.",
+   "fieldname": "inspection_date",
+   "fieldtype": "Datetime",
+   "in_standard_filter": 1,
+   "label": "Inspection Date"
+  },
+  {
+   "description": "The logged-in QC user who starts the inspection (BRD 4.1.1); blank while the row is still Pending QC.",
+   "fieldname": "inspector",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Inspector",
+   "options": "User"
+  },
+  {
+   "fetch_from": "purchase_inward.company",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "status_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "bold": 1,
+   "default": "Pending QC",
+   "fieldname": "qc_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Current Status",
+   "no_copy": 1,
+   "options": "Pending QC\nQC In Progress\nQC SLA Breached\nQC Ready for Decision\nQC Completed\nCancelled",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Pending",
+   "description": "Derived from the approved / rejected split (BRD 4.6.2); never typed by the user.",
+   "fieldname": "qc_result",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "QC Result",
+   "no_copy": 1,
+   "options": "Pending\nApproved\nPartially Approved\nRejected\nExcess Qty Approved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Purchase QC",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "sla_section",
+   "fieldtype": "Section Break",
+   "label": "QC SLA"
+  },
+  {
+   "description": "Stamped when the Store Team submits the material receipt.",
+   "fieldname": "sla_start",
+   "fieldtype": "Datetime",
+   "label": "SLA Start",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sla_due",
+   "fieldtype": "Datetime",
+   "label": "SLA Due",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sla_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "sla_breached",
+   "fieldtype": "Check",
+   "label": "SLA Breached",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Watermark for the 30-minute escalation sweep.",
+   "fieldname": "last_escalation_on",
+   "fieldtype": "Datetime",
+   "label": "Last Escalation Sent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vehicle_section",
+   "fieldtype": "Section Break",
+   "label": "Vehicle Inspection"
+  },
+  {
+   "default": "0",
+   "fieldname": "vehicle_inspection_done",
+   "fieldtype": "Check",
+   "label": "Vehicle Inspection Complete"
+  },
+  {
+   "fieldname": "vehicle_inspection",
+   "fieldtype": "Table",
+   "label": "Vehicle Inspection",
+   "options": "Purchase QC Vehicle Inspection"
+  },
+  {
+   "fieldname": "material_section",
+   "fieldtype": "Section Break",
+   "label": "Material Inspection"
+  },
+  {
+   "default": "0",
+   "fieldname": "material_inspection_done",
+   "fieldtype": "Check",
+   "label": "Material Inspection Complete"
+  },
+  {
+   "fieldname": "material_inspection",
+   "fieldtype": "Table",
+   "label": "Material Inspection",
+   "options": "Purchase QC Material Inspection"
+  },
+  {
+   "fieldname": "packaging_section",
+   "fieldtype": "Section Break",
+   "label": "Packaging / Box Inspection"
+  },
+  {
+   "default": "0",
+   "fieldname": "packaging_inspection_done",
+   "fieldtype": "Check",
+   "label": "Packaging Inspection Complete"
+  },
+  {
+   "fieldname": "packaging_inspection",
+   "fieldtype": "Table",
+   "label": "Packaging Inspection",
+   "options": "Purchase QC Packaging Inspection"
+  },
+  {
+   "fieldname": "sample_section",
+   "fieldtype": "Section Break",
+   "label": "Sample Testing"
+  },
+  {
+   "default": "0",
+   "fieldname": "sample_testing_done",
+   "fieldtype": "Check",
+   "label": "Sample Testing Complete"
+  },
+  {
+   "fieldname": "sample_testing",
+   "fieldtype": "Table",
+   "label": "Sample Testing",
+   "options": "Purchase QC Sample"
+  },
+  {
+   "fieldname": "evidence_section",
+   "fieldtype": "Section Break",
+   "label": "Inspection Evidence",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "inspection_evidence",
+   "fieldtype": "Table",
+   "label": "Inspection Evidence",
+   "options": "Purchase QC Attachment",
+   "description": "BRD 4.1.2-4.1.4: one or more images / video per inspection section."
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "control_sample_section",
+   "fieldtype": "Section Break",
+   "label": "Control Sample"
+  },
+  {
+   "fieldname": "control_sample",
+   "fieldtype": "Table",
+   "label": "Control Sample",
+   "options": "Purchase QC Control Sample"
+  },
+  {
+   "fieldname": "decision_section",
+   "fieldtype": "Section Break",
+   "label": "QC Decision"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Item-wise Decision",
+   "options": "Purchase QC Item",
+   "reqd": 1
+  },
+  {
+   "description": "Approved Qty + Rejected Qty must equal Received Qty (BRD 4.6.2.1). Sample Qty is carved OUT OF the approved quantity and moved to the QC Sample warehouse by a separate stock movement - it is NOT a third bucket, because the GRN (Purchase Receipt) has only two: qty (accepted) and rejected_qty.",
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break",
+   "label": "Quantity Reconciliation"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Sum of the item rows. Received Quantity (fetched from the Purchase Inward) is the single authority - PurchaseQC.validate() throws when this diverges from it, so the two stored copies can never drift (VAL-QC-08).",
+   "fieldname": "total_received_qty",
+   "fieldtype": "Float",
+   "label": "Total Received Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Sum of the Sample Testing rows. Carved out of the approved quantity, not an extra bucket.",
+   "fieldname": "total_sample_qty",
+   "fieldtype": "Float",
+   "label": "Total Sample Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Sum of the Control Sample rows, rolled up on the QC Item Row key. Retained quantity carved out of the approved quantity - never a separate bucket, so it must stay visible in this reconciliation (BRD 4.6.2.1).",
+   "fieldname": "total_control_sample_qty",
+   "fieldtype": "Float",
+   "label": "Total Control Sample Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "totals_col_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Goes to the GRN as Accepted Quantity.",
+   "fieldname": "total_approved_qty",
+   "fieldtype": "Float",
+   "label": "Total Approved Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Goes to the GRN as Rejected Quantity.",
+   "fieldname": "total_rejected_qty",
+   "fieldtype": "Float",
+   "label": "Total Rejected Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks_section",
+   "fieldtype": "Section Break",
+   "label": "Remarks"
+  },
+  {
+   "description": "Mandatory once anything is rejected (BRD 4.6.2.1); also enforced server-side.",
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason",
+   "mandatory_depends_on": "eval:doc.total_rejected_qty > 0"
+  },
+  {
+   "fieldname": "final_qc_remarks",
+   "fieldtype": "Small Text",
+   "label": "Final QC Remarks"
+  },
+  {
+   "fieldname": "remarks_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "General QC remarks (BRD 4.1.1).",
+   "fieldname": "overall_remarks",
+   "fieldtype": "Small Text",
+   "label": "Overall Remarks"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "override_section",
+   "fieldtype": "Section Break",
+   "label": "QC Result Override"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "BRD 4.6.2 \u2014 what the approved / rejected split produced, before any human override.",
+   "fieldname": "system_qc_result",
+   "fieldtype": "Select",
+   "label": "System QC Result",
+   "no_copy": 1,
+   "options": "\nPending\nApproved\nPartially Approved\nRejected\nExcess Qty Approved",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "BRD 4.6 \u2014 written only by the Override QC Result action. Blank means the system result stands. Without this field the override was recomputed away on the next save.",
+   "fieldname": "manual_qc_result",
+   "fieldtype": "Select",
+   "label": "Manual QC Result",
+   "no_copy": 1,
+   "options": "\nPending\nApproved\nPartially Approved\nRejected\nExcess Qty Approved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "override_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "qc_result_overridden",
+   "fieldtype": "Check",
+   "label": "QC Result Overridden",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "override_reason",
+   "fieldtype": "Small Text",
+   "label": "Override Reason",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "links_section",
+   "fieldtype": "Section Break",
+   "label": "Linked Documents"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "purchase_receipt",
+   "fieldtype": "Link",
+   "label": "GRN (Purchase Receipt)",
+   "no_copy": 1,
+   "options": "Purchase Receipt",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "links_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "debit_note",
+   "fieldtype": "Link",
+   "label": "Debit Note",
+   "no_copy": 1,
+   "options": "Purchase Invoice",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-09-04 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase QC",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "purchase_inward,supplier_name,invoice_number,qc_status",
+ "show_name_in_global_search": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "supplier_name",
+ "track_changes": 1
+}

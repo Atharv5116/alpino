@@ -1,0 +1,217 @@
+{
+ "actions": [],
+ "creation": "2026-09-03 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "warehouse_section",
+  "company",
+  "qc_hold_warehouse",
+  "qc_sample_warehouse",
+  "warehouse_col",
+  "rejected_warehouse",
+  "quarantine_warehouse",
+  "control_sample_warehouse",
+  "tolerance_section",
+  "block_over_receipt",
+  "over_receipt_tolerance_percent",
+  "tolerance_col",
+  "sync_stock_settings",
+  "qc_section",
+  "qc_sla_hours",
+  "qc_escalation_interval_minutes",
+  "qc_col",
+  "notify_qc_on_submit",
+  "qc_notification_roles",
+  "batch_section",
+  "rm_pm_batch_format",
+  "fg_batch_format",
+  "batch_col",
+  "rmid_format",
+  "pmid_format"
+ ],
+ "fields": [
+  {
+   "fieldname": "warehouse_section",
+   "fieldtype": "Section Break",
+   "label": "Warehouses",
+   "description": "Created per company by purchase_warehouse_setup on every migrate."
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "qc_hold_warehouse",
+   "fieldtype": "Link",
+   "label": "QC Hold Warehouse",
+   "options": "Warehouse",
+   "description": "Received stock waits here until QC releases it."
+  },
+  {
+   "fieldname": "qc_sample_warehouse",
+   "fieldtype": "Link",
+   "label": "QC Sample Warehouse",
+   "options": "Warehouse",
+   "description": "Destination for sample quantities drawn during QC."
+  },
+  {
+   "fieldname": "warehouse_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "rejected_warehouse",
+   "fieldtype": "Link",
+   "label": "Rejected Warehouse",
+   "options": "Warehouse",
+   "description": "QC-rejected quantity is received here and excluded from usable stock."
+  },
+  {
+   "fieldname": "quarantine_warehouse",
+   "fieldtype": "Link",
+   "label": "Quarantine Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "control_sample_warehouse",
+   "fieldtype": "Link",
+   "label": "Control Sample Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "tolerance_section",
+   "fieldtype": "Section Break",
+   "label": "Receipt Tolerance"
+  },
+  {
+   "fieldname": "block_over_receipt",
+   "fieldtype": "Check",
+   "label": "Block Over-Receipt",
+   "default": "1",
+   "description": "When set, Received Qty above Pending Qty is blocked unless the receipt ticks Allow Excess Quantity (VAL-PI-07)."
+  },
+  {
+   "fieldname": "over_receipt_tolerance_percent",
+   "fieldtype": "Float",
+   "label": "Over-Receipt Tolerance %",
+   "default": "0",
+   "precision": "2",
+   "description": "Excess allowed without ticking Allow Excess Quantity, as a percent of Pending Qty."
+  },
+  {
+   "fieldname": "tolerance_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sync_stock_settings",
+   "fieldtype": "Check",
+   "label": "Apply Tolerance to Stock Settings",
+   "default": "1",
+   "description": "Mirror the tolerance into ERPNext Stock Settings on every migrate."
+  },
+  {
+   "fieldname": "qc_section",
+   "fieldtype": "Section Break",
+   "label": "QC SLA & Notification"
+  },
+  {
+   "fieldname": "qc_sla_hours",
+   "fieldtype": "Float",
+   "label": "QC SLA (hours)",
+   "default": "2",
+   "precision": "2",
+   "description": "Starts when the Store Team submits the material receipt (BR-QC-03)."
+  },
+  {
+   "fieldname": "qc_escalation_interval_minutes",
+   "fieldtype": "Int",
+   "label": "Escalation Interval (minutes)",
+   "default": "30",
+   "description": "Repeat alert interval once the SLA is breached (BR-QC-04)."
+  },
+  {
+   "fieldname": "qc_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "notify_qc_on_submit",
+   "fieldtype": "Check",
+   "label": "Notify QC Team on Submit for QC",
+   "default": "1"
+  },
+  {
+   "fieldname": "qc_notification_roles",
+   "fieldtype": "Small Text",
+   "label": "QC Notification Roles",
+   "default": "Purchase QC User\nPurchase QC Manager",
+   "description": "One role per line; every enabled user with these roles is notified."
+  },
+  {
+   "fieldname": "batch_section",
+   "fieldtype": "Section Break",
+   "label": "Batch Numbering",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "rm_pm_batch_format",
+   "fieldtype": "Data",
+   "label": "RM / PM Internal Batch Format",
+   "default": "{invoice_no}-{inward_date}",
+   "description": "BR-QC-11. Placeholders: {invoice_no} {inward_date} {item_code} {supplier}."
+  },
+  {
+   "fieldname": "fg_batch_format",
+   "fieldtype": "Data",
+   "label": "FG Internal Batch Format",
+   "default": "{batch_no}-{mfg_date}",
+   "description": "BR-QC-12. Placeholders: {batch_no} {mfg_date} {item_code} {supplier}."
+  },
+  {
+   "fieldname": "batch_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "rmid_format",
+   "fieldtype": "Data",
+   "label": "RMID Format",
+   "default": "RMID-{yy}{mm}-{####}"
+  },
+  {
+   "fieldname": "pmid_format",
+   "fieldtype": "Data",
+   "label": "PMID Format",
+   "default": "PMID-{yy}{mm}-{####}"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-09-03 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase Inward Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "allow_rename": 0,
+ "track_changes": 1,
+ "issingle": 1
+}

@@ -1,0 +1,620 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-09-03 14:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "inward_section",
+  "naming_series",
+  "purchase_order",
+  "inward_type",
+  "supplier",
+  "supplier_name",
+  "supplier_order_no",
+  "col_inward",
+  "invoice_number",
+  "invoice_date",
+  "challan_no",
+  "gross_weight",
+  "inward_datetime",
+  "company",
+  "status_section",
+  "inward_status",
+  "col_status",
+  "qc_status",
+  "col_status2",
+  "grn_status",
+  "doc_section",
+  "attachment",
+  "col_doc",
+  "remarks",
+  "planned_section",
+  "po_vehicle_no",
+  "po_driver_contact_no",
+  "col_planned",
+  "po_estimated_arrival",
+  "delivery_location",
+  "items_section",
+  "items",
+  "totals_section",
+  "total_order_qty",
+  "total_previously_received_qty",
+  "col_totals",
+  "total_pending_qty",
+  "total_received_qty",
+  "col_totals2",
+  "total_excess_qty",
+  "total_items",
+  "receiving_section",
+  "receiving_html",
+  "actual_arrival_datetime",
+  "vehicle_details_verified",
+  "actual_vehicle_no",
+  "actual_driver_contact_no",
+  "col_receiving",
+  "allow_excess_qty",
+  "target_warehouse",
+  "received_by",
+  "receiving_datetime",
+  "receiving_remarks_section",
+  "receiving_remarks",
+  "dispute_section",
+  "dispute_attachments",
+  "links_section",
+  "purchase_qc",
+  "purchase_receipt",
+  "col_links",
+  "purchase_invoice",
+  "debit_note",
+  "audit_section",
+  "merged_into",
+  "col_audit",
+  "original_invoice_number",
+  "invoice_change_log_section",
+  "invoice_change_log",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "inward_section",
+   "fieldtype": "Section Break",
+   "label": "Purchase Inward"
+  },
+  {
+   "default": "PIW-.YYYY.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "no_copy": 1,
+   "options": "PIW-.YYYY.-.#####",
+   "print_hide": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "bold": 1,
+   "description": "Only a submitted Purchase Order not marked Direct Purchase Invoice may be inwarded (VAL-PO-10 / VAL-PO-13).",
+   "fieldname": "purchase_order",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Purchase Order",
+   "options": "Purchase Order",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "purchase_order.custom_inward_type",
+   "fetch_if_empty": 1,
+   "fieldname": "inward_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Inward Type",
+   "options": "RM\nPM\nFG\nMM",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "bold": 1,
+   "fetch_from": "purchase_order.supplier",
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Vendor Name",
+   "options": "Supplier",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "supplier.supplier_name",
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "label": "Vendor",
+   "read_only": 1
+  },
+  {
+   "description": "The vendor's own order reference.",
+   "fetch_from": "purchase_order.custom_supplier_order_no",
+   "fetch_if_empty": 1,
+   "fieldname": "supplier_order_no",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Supplier Order No."
+  },
+  {
+   "fieldname": "col_inward",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Supplier invoice number. Must be unique for this vendor (BR-PI-15).",
+   "fieldname": "invoice_number",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_standard_filter": 1,
+   "label": "Invoice Number",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "invoice_date",
+   "fieldtype": "Date",
+   "label": "Invoice Date"
+  },
+  {
+   "description": "Validated for duplication against the same vendor (VAL-PI-22).",
+   "fieldname": "challan_no",
+   "fieldtype": "Data",
+   "label": "Challan / Delivery Challan No."
+  },
+  {
+   "description": "Gross weight on the supplier invoice or transport document.",
+   "fieldname": "gross_weight",
+   "fieldtype": "Float",
+   "label": "Gross Weight"
+  },
+  {
+   "default": "Now",
+   "fieldname": "inward_datetime",
+   "fieldtype": "Datetime",
+   "in_standard_filter": 1,
+   "label": "Inward Date & Time",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "purchase_order.company",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "print_hide": 1,
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "status_section",
+   "fieldtype": "Section Break",
+   "label": ""
+  },
+  {
+   "allow_on_submit": 1,
+   "bold": 1,
+   "default": "Draft",
+   "fieldname": "inward_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "no_copy": 1,
+   "options": "Draft\nPending Material Receipt\nPending QC\nQC In Progress\nQC Completed\nGRN Generated\nPayment Pending\nCompleted\nCancelled",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "col_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "qc_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "QC Status",
+   "no_copy": 1,
+   "options": "\nPending QC\nQC In Progress\nQC SLA Breached\nQC Ready for Decision\nQC Completed\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_status2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "grn_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "GRN Status",
+   "no_copy": 1,
+   "options": "\nDraft\nCompleted\nCancelled",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "doc_section",
+   "fieldtype": "Section Break",
+   "label": "Documents"
+  },
+  {
+   "description": "Supplier invoice, delivery challan or other supporting document.",
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "label": "Attachment"
+  },
+  {
+   "fieldname": "col_doc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "planned_section",
+   "fieldtype": "Section Break",
+   "label": "Planned Shipment (from Purchase Order)"
+  },
+  {
+   "fetch_from": "purchase_order.custom_vehicle_no",
+   "fetch_if_empty": 1,
+   "fieldname": "po_vehicle_no",
+   "fieldtype": "Data",
+   "label": "Planned Vehicle Number",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "purchase_order.custom_driver_contact_no",
+   "fetch_if_empty": 1,
+   "fieldname": "po_driver_contact_no",
+   "fieldtype": "Data",
+   "label": "Planned Driver Contact Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_planned",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "purchase_order.custom_estimated_arrival",
+   "fetch_if_empty": 1,
+   "fieldname": "po_estimated_arrival",
+   "fieldtype": "Datetime",
+   "label": "Estimated Arrival Date & Time",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "purchase_order.set_warehouse",
+   "fetch_if_empty": 1,
+   "fieldname": "delivery_location",
+   "fieldtype": "Link",
+   "label": "Delivery Location",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Purchase Inward Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_order_qty",
+   "fieldtype": "Float",
+   "label": "Total Order Qty",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_previously_received_qty",
+   "fieldtype": "Float",
+   "label": "Total Previously Received Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_totals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_pending_qty",
+   "fieldtype": "Float",
+   "label": "Total Pending Qty",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_received_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total Received Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_totals2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_excess_qty",
+   "fieldtype": "Float",
+   "label": "Total Excess Qty",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_items",
+   "fieldtype": "Int",
+   "label": "Total Items",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:!doc.__islocal && doc.docstatus==1",
+   "fieldname": "receiving_section",
+   "fieldtype": "Section Break",
+   "label": "Store Receiving Details"
+  },
+  {
+   "fieldname": "receiving_html",
+   "fieldtype": "HTML",
+   "label": "",
+   "options": "<p class='text-muted small'>Completed by the Store Team when the material physically arrives. Verify the vehicle and driver fetched from the Purchase Order; tick <b>Vehicle Details Verified</b> only if they need correcting (VAL-PI-04).</p>"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "When the shipment actually reached the store (VAL-PI-12).",
+   "fieldname": "actual_arrival_datetime",
+   "fieldtype": "Datetime",
+   "label": "Actual Arrival Date & Time"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "Tick ONLY to correct the fetched vehicle / driver details. Leave unticked if the Purchase Order details are correct (VAL-PI-04 / VAL-PI-06).",
+   "fieldname": "vehicle_details_verified",
+   "fieldtype": "Check",
+   "label": "Vehicle Details Verified"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "vehicle_details_verified",
+   "fieldname": "actual_vehicle_no",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Actual Vehicle Number"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "vehicle_details_verified",
+   "fieldname": "actual_driver_contact_no",
+   "fieldtype": "Data",
+   "label": "Actual Driver Contact Number"
+  },
+  {
+   "fieldname": "col_receiving",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "Permits a received quantity above the pending quantity (BR-PI-13 / BR-PI-14).",
+   "fieldname": "allow_excess_qty",
+   "fieldtype": "Check",
+   "label": "Allow Excess Quantity"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Applied to every item line that has no target location of its own.",
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Target Location",
+   "options": "Warehouse"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "received_by",
+   "fieldtype": "Link",
+   "label": "Received By",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "receiving_datetime",
+   "fieldtype": "Datetime",
+   "label": "Receipt Recorded On",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.docstatus==1",
+   "fieldname": "receiving_remarks_section",
+   "fieldtype": "Section Break",
+   "label": ""
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "receiving_remarks",
+   "fieldtype": "Small Text",
+   "label": "Receiving Remarks"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.docstatus==1",
+   "fieldname": "dispute_section",
+   "fieldtype": "Section Break",
+   "label": "Photos & Videos (Discrepancies / Disputes)"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Photo or video evidence captured at receipt when the shipment is disputed.",
+   "fieldname": "dispute_attachments",
+   "fieldtype": "Table",
+   "label": "Attachments",
+   "options": "Purchase Inward Attachment"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.docstatus==1",
+   "fieldname": "links_section",
+   "fieldtype": "Section Break",
+   "label": "Downstream"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "purchase_qc",
+   "fieldtype": "Link",
+   "label": "Purchase QC",
+   "no_copy": 1,
+   "options": "Purchase QC",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "purchase_receipt",
+   "fieldtype": "Link",
+   "label": "GRN (Purchase Receipt)",
+   "no_copy": 1,
+   "options": "Purchase Receipt",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "col_links",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "purchase_invoice",
+   "fieldtype": "Link",
+   "label": "Purchase Invoice",
+   "no_copy": 1,
+   "options": "Purchase Invoice",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "debit_note",
+   "fieldtype": "Link",
+   "label": "Debit Note",
+   "no_copy": 1,
+   "options": "Purchase Invoice",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "audit_section",
+   "fieldtype": "Section Break",
+   "label": "Merge & Audit"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Set when this inward was merged into another with the same vendor and invoice number.",
+   "fieldname": "merged_into",
+   "fieldtype": "Link",
+   "label": "Merged Into",
+   "no_copy": 1,
+   "options": "Purchase Inward",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_audit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "original_invoice_number",
+   "fieldtype": "Data",
+   "label": "Original Invoice Number",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice_change_log_section",
+   "fieldtype": "Section Break",
+   "label": ""
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Every admin correction of the invoice number after completion (BR-PI-20).",
+   "fieldname": "invoice_change_log",
+   "fieldtype": "Table",
+   "label": "Invoice Number Change Log",
+   "no_copy": 1,
+   "options": "Purchase Invoice Change Log",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Purchase Inward",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-09-03 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase Inward",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "supplier_name,invoice_number,purchase_order,inward_status",
+ "show_name_in_global_search": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "supplier_name",
+ "track_changes": 1
+}

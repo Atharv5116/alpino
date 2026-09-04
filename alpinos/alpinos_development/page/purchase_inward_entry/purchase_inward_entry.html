@@ -1,0 +1,181 @@
+<style>
+/* Card look, section titles and scroll wrappers come from the central
+   alpinos_pages.css (eso-card / eso-card-title / eso-subtitle / alp-scroll).
+   Only what that file does not cover lives here. */
+.purchase-inward-entry .eso-subtitle {
+	margin-top: 8px;
+	margin-bottom: 10px;
+	border-top: 1px solid var(--border-color);
+	padding-top: 12px;
+}
+.purchase-inward-entry .eso-fld { margin-bottom: 8px; }
+.purchase-inward-entry .piw-table { font-size: 12px; margin-bottom: 0; }
+.purchase-inward-entry .piw-table thead th { white-space: nowrap; }
+.purchase-inward-entry .piw-table th,
+.purchase-inward-entry .piw-table td { padding: 4px 5px; vertical-align: middle; }
+.purchase-inward-entry .piw-table .control-value,
+.purchase-inward-entry .piw-table input { font-size: 12px; }
+.purchase-inward-entry .items-table { overflow: visible !important; }
+.purchase-inward-entry .items-table td { overflow: visible !important; position: relative; }
+/* The Store half is dimmed until it is this user's turn, so the two teams can
+   tell at a glance which half of the shared document (BR-PI-01) is theirs. */
+.purchase-inward-entry .piw-locked { opacity: .55; pointer-events: none; }
+.purchase-inward-entry .piw-stage {
+	display: inline-block; padding: 2px 10px; border-radius: 10px;
+	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
+	background: var(--bg-color); margin-left: 8px; vertical-align: middle;
+}
+.purchase-inward-entry .piw-hint { font-size: 12px; margin-bottom: 12px; }
+.purchase-inward-entry .piw-num { text-align: right; }
+</style>
+<div class="purchase-inward-entry" style="padding: 12px;">
+
+	<p class="text-muted piw-hint">
+		One document, two teams (BR-PI-01). <strong>Purchase</strong> fills the header and the
+		item lines against an approved Purchase Order; <strong>Store</strong> records the
+		physical receipt below and submits it for QC. Each half is editable only by the team
+		that owns it, and only at the right stage.
+	</p>
+
+	<!-- ============================ BRD 2.1.1 header ============================ -->
+	<div class="piw-header eso-card">
+		<h6 class="eso-card-title">
+			Purchase Inward
+			<span class="piw-stage field-stage-badge"></span>
+		</h6>
+		<div class="row">
+			<div class="col-md-4 col-sm-6 eso-fld field-purchase-order"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-inward-type"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-supplier"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-supplier-order-no"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-invoice-number"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-invoice-date"></div>
+		</div>
+
+		<h6 class="eso-subtitle">Consignment</h6>
+		<div class="row">
+			<div class="col-md-4 col-sm-6 eso-fld field-challan-no"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-gross-weight"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-inward-datetime"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-attachment"></div>
+			<div class="col-md-8 eso-fld field-remarks"></div>
+		</div>
+	</div>
+
+	<!-- ============================ BRD 2.2.2 item grid ======================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Item Details</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered items-table piw-table">
+				<thead>
+					<tr>
+						<th style="width: 28px;">#</th>
+						<th style="min-width: 150px;">Item Code</th>
+						<th style="min-width: 130px;">Item Name</th>
+						<th style="width: 60px;">UOM</th>
+						<th style="width: 80px;">Order Qty</th>
+						<th style="width: 90px;">Prev. Received</th>
+						<th style="width: 80px;">Pending</th>
+						<th style="min-width: 110px;">Remarks</th>
+						<th style="width: 30px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<div class="alp-actions" style="margin-top: 8px;">
+			<button class="btn btn-sm btn-light btn-get-items">
+				<i class="fa fa-download"></i> Get Items from Purchase Order
+			</button>
+			<button class="btn btn-sm btn-light btn-add-row">
+				<i class="fa fa-plus"></i> Add Row
+			</button>
+		</div>
+	</div>
+
+	<!-- ======================= BRD 2.2.1 Store Receiving ======================= -->
+	<div class="eso-card piw-receiving">
+		<h6 class="eso-card-title">
+			Store Receiving
+			<span class="piw-stage field-receiving-badge"></span>
+		</h6>
+
+		<h6 class="eso-subtitle">Vehicle &amp; Arrival</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-po-vehicle-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-po-driver-contact"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-actual-vehicle-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-actual-driver-contact"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-actual-arrival"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-vehicle-verified"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-allow-excess"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-target-warehouse"></div>
+		</div>
+
+		<h6 class="eso-subtitle">Received Quantity</h6>
+		<div class="alp-scroll alp-scroll--xwide">
+			<table class="table table-bordered receiving-table piw-table">
+				<thead>
+					<tr>
+						<th style="width: 28px;">#</th>
+						<th style="min-width: 140px;">Item</th>
+						<th style="width: 76px;">Pending</th>
+						<th style="width: 82px;">Received</th>
+						<th style="width: 72px;">Excess</th>
+						<th style="min-width: 120px;">Target Location</th>
+						<th style="min-width: 100px;">Batch No.</th>
+						<th style="width: 90px;">Mfg Date</th>
+						<th style="width: 90px;">Expiry</th>
+						<th style="width: 74px;">MRP</th>
+						<th style="min-width: 80px;">USP</th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+
+		<h6 class="eso-subtitle">Discrepancy Evidence</h6>
+		<div class="row">
+			<div class="col-md-4 eso-fld field-dispute-file"></div>
+			<div class="col-md-4 eso-fld field-dispute-kind"></div>
+			<div class="col-md-4 eso-fld field-dispute-description"></div>
+		</div>
+		<div class="alp-actions">
+			<button class="btn btn-sm btn-light btn-add-attachment">
+				<i class="fa fa-paperclip"></i> Attach Photo / Video
+			</button>
+		</div>
+		<div class="alp-scroll" style="margin-top: 8px;">
+			<table class="table table-bordered attachments-table piw-table">
+				<thead>
+					<tr>
+						<th style="width: 28px;">#</th>
+						<th style="min-width: 200px;">File</th>
+						<th style="width: 90px;">Kind</th>
+						<th style="min-width: 160px;">Description</th>
+						<th style="min-width: 140px;">Uploaded By</th>
+						<th style="width: 30px;"></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+
+		<div class="row" style="margin-top: 10px;">
+			<div class="col-md-8 eso-fld field-receiving-remarks"></div>
+		</div>
+	</div>
+
+	<!-- ============================== totals ================================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Summary</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-total-order-qty"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-received-qty"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-pending-qty"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-excess-qty"></div>
+		</div>
+	</div>
+
+	<div class="alp-actions alp-actions--end piw-actionbar" style="margin: 14px 0 24px;"></div>
+</div>

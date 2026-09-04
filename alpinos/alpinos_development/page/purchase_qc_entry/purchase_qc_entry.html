@@ -1,0 +1,248 @@
+<style>
+/* Cards, titles and scroll wrappers come from public/css/alpinos_pages.css. */
+.purchase-qc-entry .eso-subtitle {
+	margin-top: 8px; margin-bottom: 10px;
+	border-top: 1px solid var(--border-color); padding-top: 12px;
+}
+.purchase-qc-entry .eso-fld { margin-bottom: 8px; }
+.purchase-qc-entry .pqc-table { font-size: 12px; margin-bottom: 0; }
+.purchase-qc-entry .pqc-table thead th { white-space: nowrap; }
+.purchase-qc-entry .pqc-table th,
+.purchase-qc-entry .pqc-table td { padding: 4px 5px; vertical-align: middle; }
+.purchase-qc-entry .pqc-table input,
+.purchase-qc-entry .pqc-table .control-value { font-size: 12px; }
+.purchase-qc-entry .pqc-locked { opacity: .55; pointer-events: none; }
+.purchase-qc-entry .pqc-stage {
+	display: inline-block; padding: 2px 10px; border-radius: 10px;
+	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
+	background: var(--bg-color); margin-left: 8px; vertical-align: middle;
+}
+/* BR-QC-05: the four inspections run in parallel, so each card carries its own
+   completion tick rather than a wizard step. */
+.purchase-qc-entry .pqc-done { float: right; font-size: 12px; font-weight: 500; }
+.purchase-qc-entry .pqc-done .form-group { margin-bottom: 0; }
+.purchase-qc-entry .pqc-num { text-align: right; }
+.purchase-qc-entry .pqc-sla { font-size: 12px; }
+.purchase-qc-entry .pqc-sla.pqc-breached { color: var(--red-500, #e24c4c); font-weight: 600; }
+</style>
+<div class="purchase-qc-entry" style="padding: 12px;">
+
+	<p class="text-muted" style="font-size:12px; margin-bottom:12px;">
+		BRD 4 — Vehicle, Material, Packaging and Sample Testing run <strong>in parallel</strong>;
+		there is no mandatory order. Tick each section as it is completed, then record the
+		decision. The final submission is allowed only once every applicable inspection is
+		marked complete (BR-QC-06).
+	</p>
+
+	<!-- ==================== BRD 4.1.1 inward info (read only) ================= -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">
+			Purchase Inward Information
+			<span class="pqc-stage field-stage-badge"></span>
+			<span class="pqc-sla field-sla-badge"></span>
+		</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-purchase-inward"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier-order-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-invoice-number"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-inward-type"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-received-qty"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-inspection-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-inspector"></div>
+			<div class="col-md-8 eso-fld field-overall-remarks"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 4.1.2 vehicle inspection ====================== -->
+	<div class="eso-card pqc-section" data-section="vehicle">
+		<h6 class="eso-card-title">
+			Vehicle Inspection
+			<span class="pqc-done field-vehicle-done"></span>
+		</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered vehicle-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:120px;">Vehicle No.</th>
+					<th style="width:110px;">Condition</th>
+					<th style="width:70px;">Damage</th>
+					<th style="min-width:150px;">Damage Reason</th>
+					<th style="min-width:140px;">Attachment</th>
+					<th style="min-width:130px;">Inspector Remarks</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button class="btn btn-sm btn-light btn-add" data-table="vehicle" style="margin-top:8px;">
+			<i class="fa fa-plus"></i> Add Row
+		</button>
+	</div>
+
+	<!-- ==================== BRD 4.1.3 material inspection ===================== -->
+	<div class="eso-card pqc-section" data-section="material">
+		<h6 class="eso-card-title">
+			Material Inspection
+			<span class="pqc-done field-material-done"></span>
+		</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered material-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:140px;">Item</th>
+					<th style="width:110px;">Condition</th>
+					<th style="width:70px;">Damage</th>
+					<th style="width:90px;">Damaged Qty</th>
+					<th style="min-width:150px;">Damage Reason</th>
+					<th style="min-width:140px;">Images</th>
+					<th style="min-width:130px;">Inspector Remarks</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button class="btn btn-sm btn-light btn-add" data-table="material" style="margin-top:8px;">
+			<i class="fa fa-plus"></i> Add Row
+		</button>
+	</div>
+
+	<!-- ==================== BRD 4.1.4 packaging inspection ==================== -->
+	<div class="eso-card pqc-section" data-section="packaging">
+		<h6 class="eso-card-title">
+			Packaging / Box Inspection
+			<span class="pqc-done field-packaging-done"></span>
+		</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered packaging-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:140px;">Item</th>
+					<th style="width:110px;">Condition</th>
+					<th style="width:70px;">Damage</th>
+					<th style="width:100px;">Damaged Pkgs</th>
+					<th style="min-width:150px;">Damage Reason</th>
+					<th style="min-width:140px;">Attachment</th>
+					<th style="min-width:130px;">Inspector Remarks</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button class="btn btn-sm btn-light btn-add" data-table="packaging" style="margin-top:8px;">
+			<i class="fa fa-plus"></i> Add Row
+		</button>
+	</div>
+
+	<!-- ==================== BRD 4.1.5 sample testing ========================== -->
+	<div class="eso-card pqc-section" data-section="sample">
+		<h6 class="eso-card-title">
+			Sample Testing
+			<span class="pqc-done field-sample-done"></span>
+		</h6>
+		<div class="alp-scroll alp-scroll--xwide">
+			<table class="table table-bordered sample-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:140px;">SKU</th>
+					<th style="width:70px;">Line</th>
+					<th style="min-width:120px;">Supplier Batch</th>
+					<th style="min-width:150px;">Internal Batch</th>
+					<th style="width:90px;">Sample Qty</th>
+					<th style="min-width:130px;">RMID / PMID</th>
+					<th style="min-width:120px;">Remarks</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<div class="alp-actions" style="margin-top:8px;">
+			<button class="btn btn-sm btn-light btn-add" data-table="sample">
+				<i class="fa fa-plus"></i> Add Row
+			</button>
+			<button class="btn btn-sm btn-light btn-print-sticker">
+				<i class="fa fa-tag"></i> Print Sample Sticker
+			</button>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 4.1.6 control sample ========================== -->
+	<div class="eso-card pqc-section" data-section="control">
+		<h6 class="eso-card-title">Control Sample</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered control-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="width:70px;">Taken</th>
+					<th style="min-width:140px;">SKU</th>
+					<th style="width:70px;">Line</th>
+					<th style="min-width:110px;">Batch</th>
+					<th style="width:90px;">Qty</th>
+					<th style="min-width:140px;">Storage Location</th>
+					<th style="width:100px;">Retain Until</th>
+					<th style="min-width:110px;">Remarks</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button class="btn btn-sm btn-light btn-add" data-table="control" style="margin-top:8px;">
+			<i class="fa fa-plus"></i> Add Row
+		</button>
+	</div>
+
+	<!-- ============ BRD 4.1.2-4.1.4 evidence (one or more per section) ======== -->
+	<div class="eso-card pqc-section" data-section="evidence">
+		<h6 class="eso-card-title">Inspection Evidence</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered evidence-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="width:120px;">Section</th>
+					<th style="min-width:180px;">File</th>
+					<th style="width:90px;">Kind</th>
+					<th style="min-width:130px;">Item</th>
+					<th style="min-width:140px;">Description</th>
+					<th style="min-width:130px;">Uploaded By</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button class="btn btn-sm btn-light btn-add" data-table="evidence" style="margin-top:8px;">
+			<i class="fa fa-paperclip"></i> Add Evidence
+		</button>
+	</div>
+
+	<!-- ==================== BRD 4.6 QC decision =============================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">QC Decision</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered decision-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:150px;">Item</th>
+					<th style="width:80px;">Received</th>
+					<th style="width:80px;">Sample</th>
+					<th style="width:90px;">Approved</th>
+					<th style="width:90px;">Rejected</th>
+					<th style="min-width:160px;">Rejection Reason</th>
+					<th style="width:120px;">Result</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+
+		<h6 class="eso-subtitle">Summary</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-total-received"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-approved"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-rejected"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-qc-result"></div>
+			<div class="col-md-6 eso-fld field-rejection-reason"></div>
+			<div class="col-md-6 eso-fld field-final-remarks"></div>
+		</div>
+	</div>
+
+	<div class="alp-actions alp-actions--end pqc-actionbar" style="margin: 14px 0 24px;"></div>
+</div>

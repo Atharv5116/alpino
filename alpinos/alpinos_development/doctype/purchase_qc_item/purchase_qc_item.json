@@ -1,0 +1,185 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-03 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "uom",
+  "received_qty",
+  "sample_qty",
+  "control_sample_qty",
+  "approved_qty",
+  "rejected_qty",
+  "rejection_reason",
+  "qc_result",
+  "internal_batch_no",
+  "manufacturing_date",
+  "expiry_date",
+  "target_warehouse",
+  "quarantine",
+  "po_detail",
+  "purchase_inward_item"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "description": "Received on the Purchase Inward row. Approved Qty + Rejected Qty must equal Received Qty (BRD 4.6.2.1). Sample Qty is carved OUT OF the approved quantity and moved to the QC Sample warehouse by a separate stock movement - it is NOT a third bucket, because the GRN (Purchase Receipt) has only two: qty (accepted) and rejected_qty.",
+   "fieldname": "received_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Received Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "description": "Rolled up from the Sample Testing rows whose QC Item Row key is this row. Carved OUT OF Approved Qty, not a third bucket - it leaves the accepted warehouse via its own stock movement.",
+   "fieldname": "sample_qty",
+   "fieldtype": "Float",
+   "label": "Sample Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "description": "Rolled up from the Control Sample rows whose QC Item Row key is this row. Like the test sample it comes out of Approved Qty, never a separate bucket.",
+   "fieldname": "control_sample_qty",
+   "fieldtype": "Float",
+   "label": "Control Sample Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "description": "Becomes Purchase Receipt Item.qty (Accepted Quantity). Approved + Rejected must equal Received.",
+   "fieldname": "approved_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Approved Qty",
+   "precision": "3"
+  },
+  {
+   "columns": 1,
+   "description": "Becomes Purchase Receipt Item.rejected_qty. Approved + Rejected must equal Received.",
+   "fieldname": "rejected_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Rejected Qty",
+   "precision": "3"
+  },
+  {
+   "columns": 2,
+   "description": "Mandatory when Rejected Qty is greater than zero (BRD 4.6.2.1); also enforced server-side.",
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Rejection Reason",
+   "mandatory_depends_on": "eval:doc.rejected_qty > 0"
+  },
+  {
+   "columns": 1,
+   "default": "Pending",
+   "description": "Derived from the approved / rejected split (BRD 4.6.2); never typed by the user.",
+   "fieldname": "qc_result",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "QC Result",
+   "options": "Pending\nApproved\nPartially Approved\nRejected\nExcess Qty Approved",
+   "read_only": 1
+  },
+  {
+   "description": "Invoice No + Inward Date for RM/PM (BR-QC-11), Batch No + Manufacturing Date for FG (BR-QC-12).",
+   "fieldname": "internal_batch_no",
+   "fieldtype": "Data",
+   "label": "Internal Batch No.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manufacturing_date",
+   "fieldtype": "Date",
+   "label": "Manufacturing Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Date",
+   "label": "Expiry Date",
+   "read_only": 1
+  },
+  {
+   "description": "Where the approved quantity lands on the GRN; defaults from the Purchase Inward row.",
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Row-level quarantine flag (BR-QC-10). Flag only in this phase - no hold, quarantine view or release is built.",
+   "fieldname": "quarantine",
+   "fieldtype": "Check",
+   "label": "Quarantine"
+  },
+  {
+   "description": "Purchase Order Item row name, mirroring Purchase Receipt Item.purchase_order_item.",
+   "fieldname": "po_detail",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "PO Item Row",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Source Purchase Inward Item row name - the only safe join, since a Purchase Inward can hold two rows of the same item.",
+   "fieldname": "purchase_inward_item",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Purchase Inward Item Row",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-03 16:45:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase QC Item",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

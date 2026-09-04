@@ -201,6 +201,23 @@ after_migrate = [
 	"alpinos.sales_order_print_format_patch.execute",
 	"alpinos.pick_list_print_format.execute",
 	"alpinos.after_submit_sync.ensure_after_submit_fields",
+	# --- Purchase Inward module (BRD "Purchase Inward Part -1") ---------------
+	# Order matters: fields before roles (the DocPerm matrix validates against a
+	# doctype that must already carry its custom fields), roles before warehouses
+	# (which name the excess-override role in Stock Settings).
+	"alpinos.purchase.purchase_order_fields.setup_purchase_order_fields",
+	"alpinos.purchase.purchase_receipt_fields.setup_purchase_receipt_fields",
+	"alpinos.purchase.roles.setup_purchase_roles",
+	"alpinos.purchase.warehouses.setup_purchase_warehouses",
+	# Behaviour layer: client scripts, page access and print formats all need the
+	# doctypes and roles above to exist first.
+	"alpinos.purchase.qc_client.create_purchase_qc_client_script",
+	"alpinos.purchase.inward_list_api.setup_inward_list_page_access",
+	"alpinos.purchase.workspace.setup_entry_page_access",
+	"alpinos.purchase.workspace.setup_purchase_workspace",
+	"alpinos.purchase.inward_client.execute",
+	"alpinos.purchase.qc_list_api.setup_qc_list_page_access",
+	"alpinos.purchase.print_formats.execute",
 ]
 
 # Uninstallation
@@ -289,6 +306,37 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	"Purchase Order": {
+		"validate": "alpinos.purchase.purchase_order_fields.normalize_estimated_arrival"
+	},
+	"Purchase Inward": {
+		"validate": "alpinos.purchase.inward_api.validate_merge_link",
+		"before_submit": [
+			"alpinos.purchase.roles.assert_can_submit_inward",
+			"alpinos.purchase.inward_api.assert_submit_transition"
+		]
+	},
+	"Purchase Receipt": {
+		"validate": "alpinos.purchase.purchase_receipt_fields.validate_grn_fields",
+		"before_update_after_submit": (
+			"alpinos.purchase.purchase_receipt_fields.validate_grn_status"
+		),
+		"before_submit": [
+			"alpinos.purchase.roles.assert_can_submit_grn",
+			# VAL-GRN-03 / VAL-QC-20: name everything that is missing, in one pass.
+			"alpinos.purchase.purchase_receipt_fields.validate_grn_completeness"
+		],
+		"on_submit": "alpinos.purchase.hooks_glue.purchase_receipt_on_submit",
+		# BRD 5.3: the GRN must be cancellable BEFORE its QC and inward. before_cancel puts
+		# the QC samples back while the ledger is still intact (otherwise the cancel dies
+		# with NegativeStockError on the sample Stock Entry).
+		"before_cancel": "alpinos.purchase.hooks_glue.purchase_receipt_before_cancel",
+		# BR-GRN-07: a cancelled GRN must stop reading "Completed" on the receipt and on
+		# the parent Purchase Inward. Also the only window in which ignore_linked_doctypes
+		# survives (PurchaseReceipt.on_cancel reassigns it) and still precedes frappe's
+		# check_no_back_links_exist.
+		"on_cancel": "alpinos.purchase.hooks_glue.purchase_receipt_on_cancel"
+	},
 	"Job Requisition": {
 		"before_insert": "alpinos.job_requisition_automation.set_requested_by",
 		"validate": [
@@ -500,7 +548,8 @@ scheduler_events = {
 	],
 	"cron": {
 		"*/5 * * * *": [
-			"alpinos.essl_sync.sync_essl_logs"
+			"alpinos.essl_sync.sync_essl_logs",
+			"alpinos.purchase.notifications.run_qc_sla_escalation"
 		],
 		"*/30 * * * *": [
 			"alpinos.attendance_scheduler.process_auto_attendance_periodic"

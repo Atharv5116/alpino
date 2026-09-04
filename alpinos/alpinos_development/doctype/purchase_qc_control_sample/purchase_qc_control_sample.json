@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-03 10:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "control_sample_taken",
+  "item_code",
+  "item_name",
+  "qc_item_idx",
+  "batch_no",
+  "control_sample_qty",
+  "storage_location",
+  "retention_until",
+  "stock_entry",
+  "remarks",
+  "qc_item"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "default": "1",
+   "fieldname": "control_sample_taken",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Control Sample Taken"
+  },
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SKU",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "description": "Which line of the Item Decision table this control sample was drawn from - the row number shown in that grid. Leave blank to use the first line carrying this item; set it when the same item was received on more than one line (two PO lines, two target warehouses, two batches), so the retained quantity leaves the right warehouse and is capped against the right approved quantity.",
+   "fieldname": "qc_item_idx",
+   "fieldtype": "Int",
+   "label": "Received Line #",
+   "non_negative": 1
+  },
+  {
+   "columns": 2,
+   "description": "Internal batch the control sample was drawn from. Free text because the ERPNext Batch is only minted at GRN.",
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Batch",
+   "mandatory_depends_on": "eval:doc.control_sample_taken"
+  },
+  {
+   "columns": 1,
+   "description": "Retained quantity. Like the test sample, it comes out of the approved quantity - never a separate bucket.",
+   "fieldname": "control_sample_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Control Sample Quantity",
+   "mandatory_depends_on": "eval:doc.control_sample_taken",
+   "precision": "3"
+  },
+  {
+   "columns": 2,
+   "fieldname": "storage_location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Storage Location",
+   "options": "Warehouse"
+  },
+  {
+   "description": "End of the retention period for this control sample.",
+   "fieldname": "retention_until",
+   "fieldtype": "Date",
+   "label": "Retain Until"
+  },
+  {
+   "description": "Stock movement that took the retained quantity out of the approved quantity into the control sample warehouse (Purchase Inward Settings control_sample_warehouse).",
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Control Sample Stock Entry",
+   "no_copy": 1,
+   "options": "Stock Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "description": "Purchase QC Item row this control sample was drawn from - the only safe join, since one Purchase QC can hold two rows of the same item (two batches, two PO lines, two target warehouses).",
+   "fieldname": "qc_item",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "QC Item Row",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "qc_item_idx",
+   "fieldtype": "Int",
+   "label": "Received Line #",
+   "non_negative": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-04 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase QC Control Sample",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-03 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "material_condition",
+  "material_damage",
+  "damaged_qty",
+  "damage_reason",
+  "image",
+  "inspector_remarks",
+  "qc_item"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "default": "Good",
+   "fieldname": "material_condition",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Material Condition",
+   "options": "Good\nDamaged",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "fieldname": "material_damage",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Material Damage"
+  },
+  {
+   "columns": 1,
+   "description": "Mandatory when Material Damage is ticked; also enforced server-side.",
+   "fieldname": "damaged_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Damaged Quantity",
+   "mandatory_depends_on": "eval:doc.material_damage",
+   "precision": "3"
+  },
+  {
+   "columns": 2,
+   "description": "Mandatory once a damaged quantity is entered; also enforced server-side.",
+   "fieldname": "damage_reason",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Damage Reason",
+   "mandatory_depends_on": "eval:doc.material_damage || doc.damaged_qty"
+  },
+  {
+   "description": "Supporting image of the damage.",
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "Material Images"
+  },
+  {
+   "fieldname": "inspector_remarks",
+   "fieldtype": "Small Text",
+   "label": "Inspector Remarks"
+  },
+  {
+   "description": "Purchase QC Item row this inspection line covers - the only safe join for attributing Damaged Quantity, since one Purchase QC can hold two rows of the same item.",
+   "fieldname": "qc_item",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "QC Item Row",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-03 16:45:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase QC Material Inspection",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

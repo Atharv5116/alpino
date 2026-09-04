@@ -1,0 +1,145 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-03 10:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "qc_item_idx",
+  "supplier_batch_no",
+  "internal_batch_no",
+  "sample_qty",
+  "uom",
+  "sample_id",
+  "sample_sticker",
+  "stock_entry",
+  "remarks",
+  "qc_item"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "SKU",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "description": "Which line of the Item Decision table this sample was drawn from - the row number shown in that grid. Leave blank to use the first line carrying this item; set it when the same item was received on more than one line (two PO lines, two target warehouses, two batches), so the sample leaves the right warehouse and is capped against the right approved quantity.",
+   "fieldname": "qc_item_idx",
+   "fieldtype": "Int",
+   "label": "Received Line #",
+   "non_negative": 1
+  },
+  {
+   "columns": 1,
+   "description": "Optional - a blank supplier batch number never blocks QC completion (BR-QC-13).",
+   "fieldname": "supplier_batch_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Supplier Batch No."
+  },
+  {
+   "columns": 2,
+   "description": "System generated: Invoice No + Inward Date for RM/PM (BR-QC-11), Batch No + Manufacturing Date for FG (BR-QC-12).",
+   "fieldname": "internal_batch_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Internal Batch No.",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "description": "Quantity drawn for testing. Approved Qty + Rejected Qty must equal Received Qty (BRD 4.6.2.1). Sample Qty is carved OUT OF the approved quantity and moved to the QC Sample warehouse by a separate stock movement - it is NOT a third bucket, because the GRN (Purchase Receipt) has only two: qty (accepted) and rejected_qty.",
+   "fieldname": "sample_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Sample Quantity",
+   "precision": "3",
+   "reqd": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "description": "System generated RMID (RM) / PMID (PM) once a sample quantity is recorded (BR-QC-14).",
+   "fieldname": "sample_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "RMID / PMID",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Optional copy of the printed sticker. The sticker itself is printed from the 'QC Sample Sticker' print format, which is keyed on the RMID/PMID (BRD 4.1.5).",
+   "fieldname": "sample_sticker",
+   "fieldtype": "Attach",
+   "label": "Sample Sticker",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Stock movement that took the sample quantity out of the approved quantity into the QC Sample warehouse.",
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Sample Stock Entry",
+   "no_copy": 1,
+   "options": "Stock Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "description": "Purchase QC Item row this sample was drawn from - the only safe join, since one Purchase QC can hold two rows of the same item (two batches, two PO lines, two target warehouses).",
+   "fieldname": "qc_item",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "QC Item Row",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "qc_item_idx",
+   "fieldtype": "Int",
+   "label": "Received Line #",
+   "non_negative": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase QC Sample",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

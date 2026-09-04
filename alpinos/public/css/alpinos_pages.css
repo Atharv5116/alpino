@@ -7,7 +7,9 @@
      ecom-sales-order-entry, ecom-sales-order-entry-list,
      pick_list_entry, pick_list_list,
      delivery_note_entry, delivery_note_entry_list,
-     post-delivery-queue
+     post-delivery-queue,
+     purchase_inward_list, purchase_qc_list,
+     purchase_inward_entry, purchase_qc_entry
 
    The only globally-defined class names are the opt-in .alp-* utilities,
    which no existing page uses, so they cannot affect other pages.
@@ -28,7 +30,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(.page-head, .page-body) .container {
   max-width: 100% !important;
   width: 100% !important;
@@ -77,7 +83,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .eso-card,
   .mt-ecom-card,
@@ -126,7 +136,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .eso-card-title,
   .table-section-title,
@@ -155,7 +169,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .eso-card-title,
   .table-section-title,
@@ -197,7 +215,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -232,7 +254,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -271,7 +297,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -305,7 +335,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -332,7 +366,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) :is(
   .so-list-row,
   .eso-list-row,
@@ -370,7 +408,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) .layout-main-section :is(.form-control, .btn) {
   border-radius: 6px;
 }
@@ -386,7 +428,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) .page-head .page-actions {
   flex-wrap: wrap;
   row-gap: 6px;
@@ -486,7 +532,11 @@
     [data-page-route="pick_list_list"],
     [data-page-route="delivery_note_entry"],
     [data-page-route="delivery_note_entry_list"],
-    [data-page-route="post-delivery-queue"]
+    [data-page-route="post-delivery-queue"],
+    [data-page-route="purchase_inward_list"],
+    [data-page-route="purchase_qc_list"],
+    [data-page-route="purchase_inward_entry"],
+    [data-page-route="purchase_qc_entry"]
   ) :is(
     .eso-card,
     .mt-ecom-card,
@@ -517,7 +567,11 @@
     [data-page-route="pick_list_list"],
     [data-page-route="delivery_note_entry"],
     [data-page-route="delivery_note_entry_list"],
-    [data-page-route="post-delivery-queue"]
+    [data-page-route="post-delivery-queue"],
+    [data-page-route="purchase_inward_list"],
+    [data-page-route="purchase_qc_list"],
+    [data-page-route="purchase_inward_entry"],
+    [data-page-route="purchase_qc_entry"]
   ) :is(.page-head, .page-body) .container {
     padding-left: 12px;
     padding-right: 12px;
@@ -553,7 +607,11 @@
     [data-page-route="pick_list_list"],
     [data-page-route="delivery_note_entry"],
     [data-page-route="delivery_note_entry_list"],
-    [data-page-route="post-delivery-queue"]
+    [data-page-route="post-delivery-queue"],
+    [data-page-route="purchase_inward_list"],
+    [data-page-route="purchase_qc_list"],
+    [data-page-route="purchase_inward_entry"],
+    [data-page-route="purchase_qc_entry"]
   ) :is(
     .so-table,
     .so-list-table,
@@ -586,7 +644,11 @@
     [data-page-route="pick_list_list"],
     [data-page-route="delivery_note_entry"],
     [data-page-route="delivery_note_entry_list"],
-    [data-page-route="post-delivery-queue"]
+    [data-page-route="post-delivery-queue"],
+    [data-page-route="purchase_inward_list"],
+    [data-page-route="purchase_qc_list"],
+    [data-page-route="purchase_inward_entry"],
+    [data-page-route="purchase_qc_entry"]
   ) .layout-main-section :is(
     .form-control:not(.input-xs),
     .btn:not(.btn-xs)
@@ -657,7 +719,11 @@
   [data-page-route="pick_list_list"],
   [data-page-route="delivery_note_entry"],
   [data-page-route="delivery_note_entry_list"],
-  [data-page-route="post-delivery-queue"]
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
 ) .indicator-pill {
   height: auto !important;
   min-height: 20px;

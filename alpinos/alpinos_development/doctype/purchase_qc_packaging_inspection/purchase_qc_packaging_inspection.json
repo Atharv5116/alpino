@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-03 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "packaging_condition",
+  "packaging_damage",
+  "damaged_qty",
+  "damage_reason",
+  "attachment",
+  "inspector_remarks",
+  "qc_item"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "default": "Good",
+   "fieldname": "packaging_condition",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Packaging Condition",
+   "options": "Good\nDamaged",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "fieldname": "packaging_damage",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Packaging Damage"
+  },
+  {
+   "columns": 1,
+   "description": "Required once packaging damage is ticked.",
+   "fieldname": "damaged_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Damaged Quantity",
+   "precision": "3",
+   "mandatory_depends_on": "eval:doc.packaging_damage"
+  },
+  {
+   "columns": 2,
+   "description": "Mandatory when packaging damage exists; also enforced server-side.",
+   "fieldname": "damage_reason",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Damage Reason",
+   "mandatory_depends_on": "eval:doc.packaging_damage || doc.damaged_qty"
+  },
+  {
+   "description": "Supporting image or video of the packaging.",
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "label": "Packaging Attachment"
+  },
+  {
+   "fieldname": "inspector_remarks",
+   "fieldtype": "Small Text",
+   "label": "Inspector Remarks"
+  },
+  {
+   "description": "Purchase QC Item row this inspection line covers - the only safe join for attributing Damaged Quantity, since one Purchase QC can hold two rows of the same item.",
+   "fieldname": "qc_item",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "QC Item Row",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-04 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase QC Packaging Inspection",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

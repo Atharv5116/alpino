@@ -1,0 +1,45 @@
+{
+ "content": null,
+ "creation": "2026-09-04 12:00:00.000000",
+ "doctype": "Page",
+ "icon": "fa fa-sign-in",
+ "idx": 0,
+ "modified": "2026-09-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "purchase_inward_entry",
+ "owner": "Administrator",
+ "page_name": "purchase_inward_entry",
+ "roles": [
+  {
+   "role": "Purchase Inward User"
+  },
+  {
+   "role": "Purchase Inward Manager"
+  },
+  {
+   "role": "Store Receiving User"
+  },
+  {
+   "role": "Store Receiving Manager"
+  },
+  {
+   "role": "Purchase QC User"
+  },
+  {
+   "role": "Purchase QC Manager"
+  },
+  {
+   "role": "Purchase Accounts User"
+  },
+  {
+   "role": "Purchase Inward Admin"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "standard": "Yes",
+ "system_page": 0,
+ "title": "Purchase Inward Entry"
+}
