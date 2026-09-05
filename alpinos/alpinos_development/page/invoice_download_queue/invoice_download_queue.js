@@ -234,7 +234,7 @@ var InvoiceDownloadQueue = class {
 	render_rows(rows) {
 		const tb = this.wrapper.find('.idq-table tbody').empty();
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="${this._columns.length + 1}" class="text-muted text-center">${__('No pending invoice downloads')}</td></tr>`);
+			tb.append(`<tr><td colspan="${this._columns.length + 1}" class="text-muted text-center">${__('No invoices to show')}</td></tr>`);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
@@ -265,7 +265,9 @@ var InvoiceDownloadQueue = class {
 		this.wrapper.find('.idq-select-all').prop('checked', all.length > 0 && checked.length === all.length);
 		const n = checked.length;
 		this.wrapper.find('.idq-count').text(
-			n ? __('{0} selected of {1}', [n, all.length]) : __('{0} pending invoice(s)', [all.length])
+			// Not "pending": a downloaded row stays in the list now (Changes(HP) #30 MAIN
+			// NOTE), so the count describes what is listed, not what is outstanding.
+			n ? __('{0} selected of {1}', [n, all.length]) : __('{0} invoice(s)', [all.length])
 		);
 	}
 
