@@ -1007,6 +1007,42 @@ def run_wave_d(_report_now=True):
 				f"{name}: the page never renders the template it registered"
 			)
 
+	def page_templates_carry_no_quote_that_breaks_them():
+		"""frappe wraps a page's .html in a SINGLE-QUOTED JS string:
+
+		    frappe.templates["<page>"] = '<html>';
+
+		and scrub_html_template (frappe/build.py) strips HTML comments but NOT CSS
+		comments, and does not escape an apostrophe inside them. One `user's` in a
+		/* ... */ block inside <style> therefore closed the string early and the whole
+		page died with "SyntaxError: Unexpected identifier". The page renders blank with
+		the error only in the console, so nothing on screen points at the cause.
+		"""
+		import glob
+		import os
+
+		for path in sorted(glob.glob(f"{APP_PAGE_DIR}/purchase_*/*.html")):
+			body = open(path).read()
+			name = os.path.basename(path)
+			for ch, label in (("'", "apostrophe"), ("`", "backtick"), ("\\", "backslash")):
+				assert ch not in body, (
+					f"{name} contains a {label}, which breaks the compiled page template"
+				)
+
+	def served_page_templates_are_intact():
+		"""The end state the check above protects: the template really is closed."""
+		import re
+
+		from frappe.desk.desk_page import get as get_page
+
+		for name in ("purchase_inward_entry", "purchase_qc_entry"):
+			script = get_page(name)["script"]
+			m = re.search(r"frappe\.templates\[\"" + name + r"\"\] = '(.*?)';", script, re.S)
+			assert m, f"{name}: no closed template literal in the served script"
+			assert "'" not in m.group(1), (
+				f"{name}: an unescaped apostrophe survives inside the template literal"
+			)
+
 	def entry_pages_use_the_house_design():
 		"""They must reuse the shared design system, not invent a second look."""
 		from frappe.desk.desk_page import get as get_page
@@ -1079,6 +1115,8 @@ def run_wave_d(_report_now=True):
 	check("Wave D all four module desk pages exist and are role-granted", pages_exist)
 	check("Wave D the entry pages register and render their own template", entry_pages_render_their_template)
 	check("Wave D the entry pages reuse the shared design system", entry_pages_use_the_house_design)
+	check("Wave D no page HTML carries a quote that breaks its template", page_templates_carry_no_quote_that_breaks_them)
+	check("Wave D the served page templates are intact", served_page_templates_are_intact)
 	check("Wave D the shared stylesheet scopes the module's pages", shared_css_covers_the_module)
 	check("Wave D the list pages open the BRD entry screens", lists_open_the_entry_pages)
 	check("Wave D the workspace reaches every module page", workspace_reaches_them)
