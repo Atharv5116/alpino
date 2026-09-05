@@ -1041,10 +1041,40 @@ def run_wave_d(_report_now=True):
 		assert "purchase_qc_entry" in qc_js, "the QC list never routes to its entry page"
 
 	def workspace_reaches_them():
-		ws = frappe.get_doc("Workspace", "Purchase Inward")
+		from alpinos.purchase.workspace import WORKSPACE
+
+		ws = frappe.get_doc("Workspace", WORKSPACE)
 		targets = {s.link_to for s in ws.shortcuts}
 		for name in ("purchase_inward_list", "purchase_qc_list", "purchase_inward_entry"):
 			assert name in targets, f"no workspace shortcut points at {name}"
+
+	def workspace_does_not_collide_with_a_doctype():
+		"""A Workspace and a DocType of the same name both resolve to the same /app route,
+		which sent the desk to the DocType's new-document URL with an empty body."""
+		from alpinos.purchase.workspace import WORKSPACE
+
+		assert not frappe.db.exists("DocType", WORKSPACE), (
+			f"workspace {WORKSPACE!r} collides with a DocType of the same name"
+		)
+		assert not frappe.db.exists("Workspace", "Purchase Inward"), (
+			"the colliding 'Purchase Inward' workspace is still present"
+		)
+
+	def workspace_actually_renders():
+		"""A workspace draws from `content`; shortcuts/links rows alone render nothing."""
+		import json
+
+		from alpinos.purchase.workspace import WORKSPACE
+
+		ws = frappe.get_doc("Workspace", WORKSPACE)
+		blocks = json.loads(ws.content or "[]")
+		assert blocks, "workspace content is empty, so the page renders blank"
+		kinds = {b.get("type") for b in blocks}
+		assert "shortcut" in kinds, "no shortcut blocks, so the shortcuts are invisible"
+		assert "card" in kinds, "no card block, so the links are invisible"
+		named = {b["data"].get("shortcut_name") for b in blocks if b.get("type") == "shortcut"}
+		for shortcut in ws.shortcuts:
+			assert shortcut.label in named, f"shortcut {shortcut.label!r} has no block drawing it"
 
 	check("Wave D all four module desk pages exist and are role-granted", pages_exist)
 	check("Wave D the entry pages register and render their own template", entry_pages_render_their_template)
@@ -1052,6 +1082,8 @@ def run_wave_d(_report_now=True):
 	check("Wave D the shared stylesheet scopes the module's pages", shared_css_covers_the_module)
 	check("Wave D the list pages open the BRD entry screens", lists_open_the_entry_pages)
 	check("Wave D the workspace reaches every module page", workspace_reaches_them)
+	check("Wave D the workspace name does not collide with a DocType", workspace_does_not_collide_with_a_doctype)
+	check("Wave D the workspace has content blocks so it renders", workspace_actually_renders)
 
 	return _report() if _report_now else R
 

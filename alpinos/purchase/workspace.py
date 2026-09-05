@@ -11,7 +11,14 @@ Re-run on every migrate; idempotent.
 
 import frappe
 
-WORKSPACE = "Purchase Inward"
+#: NOT "Purchase Inward": a Workspace and a DocType of the same name both resolve to
+#: /app/purchase-inward, and the collision left the desk landing on the DocType's
+#: new-document route with an empty body. The card inside is still labelled Purchase
+#: Inward — a card name is not a route.
+WORKSPACE = "Goods Inward"
+
+#: The colliding workspace an earlier build created. Removed on migrate.
+LEGACY_WORKSPACE = "Purchase Inward"
 
 SHORTCUTS = (
 	# (label, type, link_to, doc_view)
@@ -116,10 +123,52 @@ def setup_purchase_workspace():
 			"is_query_report": 0,
 		})
 
+	# A workspace renders from `content`, NOT from the shortcuts/links rows: those rows
+	# only supply the data each block points at. Leaving content empty is what produced a
+	# blank page with nothing but the Edit / + New buttons.
+	ws.content = _workspace_content(ws)
+
 	ws.flags.ignore_permissions = True
 	ws.flags.ignore_links = True
 	ws.save(ignore_permissions=True)
+
+	_drop_legacy_workspace()
 	frappe.clear_cache()
+
+
+def _block(kind, data, seed):
+	"""One content block. The id is derived from the seed so re-running does not churn it."""
+	import hashlib
+
+	return {
+		"id": hashlib.md5(f"{kind}:{seed}".encode()).hexdigest()[:10],
+		"type": kind,
+		"data": data,
+	}
+
+
+def _workspace_content(ws):
+	"""Header, the shortcut row, then the link card — the layout the desk actually draws."""
+	import json
+
+	blocks = [
+		_block("header", {"text": "<span class='h4'>Goods Inward</span>", "col": 12}, "hdr"),
+	]
+	for shortcut in ws.shortcuts:
+		blocks.append(
+			_block("shortcut", {"shortcut_name": shortcut.label, "col": 3}, shortcut.label)
+		)
+	blocks.append(_block("spacer", {"col": 12}, "spacer"))
+	for link in ws.links:
+		if link.type == "Card Break":
+			blocks.append(_block("card", {"card_name": link.label, "col": 4}, link.label))
+	return json.dumps(blocks)
+
+
+def _drop_legacy_workspace():
+	"""Remove the same-named workspace that collided with the DocType route."""
+	if frappe.db.exists("Workspace", LEGACY_WORKSPACE):
+		frappe.delete_doc("Workspace", LEGACY_WORKSPACE, ignore_permissions=True, force=True)
 
 
 def execute():
