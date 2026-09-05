@@ -402,6 +402,13 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 				billing_gst = (row.get("gst_no") or "").strip().upper()
 			if billing_gst:
 				doc.custom_billing_gstin = billing_gst
+			elif _party_or_site_changed(doc):
+				# The order just moved to a different customer/site and the new one
+				# resolves no GST. Keeping the old value would leave the PREVIOUS
+				# buyer's GSTIN on the invoice, which is worse than leaving it blank
+				# for the operator to fill. Only a save that does NOT change the party
+				# preserves a hand-typed value.
+				doc.custom_billing_gstin = None
 			# else: keep whatever is on the doc (manual entry) — don't clobber to blank
 		if meta.has_field("custom_shipping_gstin"):
 			doc.custom_shipping_gstin = _site_gst
@@ -462,9 +469,36 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 				(doc.get("custom_site_name") or "").strip(),
 				row.get("customer_type"),
 			)
+		# Billing/Shipping must come from the Site's own Buyer Master rows — mirror one
+		# into the other when only one is given, and never leave an address ERPNext
+		# defaulted in for us. Runs on EVERY entry path (offline / e-com / bulk import /
+		# native Data Import).
+		#
+		# Also re-run when the CUSTOMER or the SITE changes on an existing order. Rule 3
+		# inside apply_site_addresses drops an address the site never offered, and while
+		# this was new-orders-only, switching the customer left the PREVIOUS customer's
+		# billing address on the document — which then printed on the invoice. Changing
+		# the party is exactly when the address has to be re-resolved.
+		if doc.is_new() or _party_or_site_changed(doc):
+			apply_site_addresses(doc, (doc.get("custom_site_name") or "").strip())
 	else:
 		doc.custom_offline_buyer_master = None
 		doc.custom_offline_buyer_customer_type = None
+
+
+def _party_or_site_changed(doc):
+	"""True when this save moves the order to a different customer or site.
+
+	Returns False for a brand-new doc (there is nothing to compare against) and for a
+	programmatic save with no baseline, so the caller keeps its own is_new() branch.
+	"""
+	before = doc.get_doc_before_save() if not doc.is_new() else None
+	if not before:
+		return False
+	for fieldname in ("customer", "custom_site_name"):
+		if str(before.get(fieldname) or "").strip() != str(doc.get(fieldname) or "").strip():
+			return True
+	return False
 
 
 def _nz(val):
@@ -1328,6 +1362,105 @@ def _address_name_for_buyer_row(customer, line1, city, pincode):
 		{"cust": customer, "l1": line1, "city": _nz(city), "pin": _nz(pincode)},
 	)
 	return found[0][0] if found else None
+
+
+def site_address_options(customer, site_name=None):
+	"""The ERPNext Address links a Site legitimately offers, split by role.
+
+	Mirrors get_customer_addresses_for_display(): a Site resolves to the Buyer
+	Master(s) that OWN it, and ALL of those masters' address rows are then on
+	offer (a master can host several sites). Rows the sync has not materialised
+	into an Address yet are skipped, exactly as the dropdown skips them.
+
+	Returns (billing, shipping, every) — three lists of Address names in Buyer
+	Address row order, so a caller can take the FIRST one deterministically
+	instead of letting ERPNext pick one for it.
+	"""
+	billing, shipping, every = [], [], []
+	if not customer:
+		return billing, shipping, every
+	masters = buyer_family_masters(customer)
+	if not masters:
+		return billing, shipping, every
+
+	site_name = (site_name or "").strip()
+	if site_name:
+		owners = _masters_owning_site([m.name for m in masters], site_name)
+		if owners:
+			masters = [m for m in masters if m.name in owners]
+
+	for m in masters:
+		obm = frappe.get_doc("Buyer Master", m.name)
+		for brow in obm.get("addresses") or []:
+			line1 = _nz(brow.get("address_line"))
+			if not line1:
+				continue
+			addr = _address_name_for_buyer_row(
+				obm.customer, line1, brow.get("city"), brow.get("pincode")
+			)
+			if not addr:
+				continue
+			if addr not in every:
+				every.append(addr)
+			is_primary = cint(brow.get("is_primary"))
+			is_shipping = cint(brow.get("is_shipping"))
+			# Same routing as the entry page: Primary (or untagged) -> Billing,
+			# Shipping-ticked -> Shipping, a row ticked both -> both.
+			if (is_primary or not is_shipping) and addr not in billing:
+				billing.append(addr)
+			if is_shipping and addr not in shipping:
+				shipping.append(addr)
+
+	return billing, shipping, every
+
+
+def apply_site_addresses(doc, site_name=None):
+	"""Fill / repair a Sales Order's Address links so neither is ever picked at random.
+
+	Client spec:
+	  1. Billing blank + Shipping set -> the Shipping address is used as Billing,
+	     and vice versa.
+	  2. Both blank -> take the Site's OWN Buyer Master address (Primary row for
+	     Billing, Shipping row for Shipping), then mirror per rule 1.
+	  3. An address the Site never offered is DROPPED and re-resolved, instead of
+	     being left on the order.
+
+	Rule 3 is what stops the stray billing addresses: the e-com / import path
+	never sets customer_address itself (_ecom_common_populate passes
+	billing_address=None), so ERPNext's get_party_details() fills it from
+	get_default_address(), which just takes the customer's addresses ordered by
+	is_primary_address desc, name asc — an arbitrary pick.
+
+	New orders only, so legacy orders are never rewritten.
+	"""
+	billing_opts, shipping_opts, every = site_address_options(doc.get("customer"), site_name)
+	if not every:
+		# No materialised Buyer Master address to resolve against — leave the doc
+		# untouched rather than blanking whatever it already carries.
+		return
+
+	billing = (doc.get("customer_address") or "").strip()
+	shipping = (doc.get("shipping_address_name") or "").strip()
+
+	# (3) anything this Site does not offer is not a valid pick
+	if billing and billing not in every:
+		billing = ""
+	if shipping and shipping not in every:
+		shipping = ""
+
+	# (2) nothing usable left -> the Site's own rows
+	if not billing and not shipping:
+		billing = (billing_opts or every)[0]
+		shipping = (shipping_opts or [billing])[0]
+
+	# (1) mirror whichever side is still missing
+	if not billing:
+		billing = shipping
+	if not shipping:
+		shipping = billing
+
+	doc.customer_address = billing
+	doc.shipping_address_name = shipping
 
 
 @frappe.whitelist()
