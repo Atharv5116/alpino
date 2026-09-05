@@ -12,6 +12,7 @@ def execute(filters=None):
 	columns = [
 		{"label": _("Download"), "fieldname": "download", "fieldtype": "Data", "width": 110},
 		{"label": _("PDF Ready"), "fieldname": "pdf_ready", "fieldtype": "Data", "width": 90},
+		{"label": _("Downloaded"), "fieldname": "downloaded", "fieldtype": "Data", "width": 100},
 		{"label": _("Sales Order"), "fieldname": "sales_order", "fieldtype": "Link", "options": "Sales Order", "width": 160},
 		{"label": _("Invoice ID"), "fieldname": "invoice_id", "fieldtype": "Data", "width": 130},
 		{"label": _("Order Date"), "fieldname": "order_date", "fieldtype": "Date", "width": 110},
@@ -25,7 +26,12 @@ def execute(filters=None):
 
 	conditions = [
 		"IFNULL(so.custom_invoice_no, '') <> ''",
-		"IFNULL(so.custom_invoice_downloaded, 0) = 0",
+		# Changes(HP) #30, MAIN NOTE: "once it's downloaded remove it from queue --
+		# this logic should not be applied". The list is a working view of every order
+		# that HAS an invoice, not a one-shot outbox, so a row stays after it is
+		# downloaded and can be downloaded again. custom_invoice_downloaded is still
+		# stamped and is surfaced as the Downloaded column, so nothing is lost --
+		# it just no longer decides membership.
 		"so.docstatus < 2",
 	]
 	params = {}
@@ -54,7 +60,8 @@ def execute(filters=None):
 			so.custom_invoice_no AS invoice_id,
 			COALESCE(NULLIF(so.po_no, ''), NULLIF(so.custom_po_number, ''), '') AS customer_po_no,
 			so.customer_name AS customer_name,
-			CASE WHEN IFNULL(so.custom_invoice_pdf, '') <> '' THEN 'Yes' ELSE 'No' END AS pdf_ready
+			CASE WHEN IFNULL(so.custom_invoice_pdf, '') <> '' THEN 'Yes' ELSE 'No' END AS pdf_ready,
+			CASE WHEN IFNULL(so.custom_invoice_downloaded, 0) = 1 THEN 'Yes' ELSE 'No' END AS downloaded
 		FROM `tabSales Order` so
 		WHERE {conditions}
 		ORDER BY so.transaction_date DESC, so.name DESC

@@ -828,6 +828,165 @@ def download_orders_with_invoices_pdf(names, no_letterhead=0):
 	frappe.local.response.type = "download"
 
 
+#: Parts a bundle may contain, in the order the paperwork is read.
+BUNDLE_PARTS = ("so", "pl", "invoice")
+
+BUNDLE_LABELS = {"so": "Sales Order", "pl": "Pick List", "invoice": "Invoice"}
+
+
+def _pick_list_for(sales_order):
+	"""The live Pick List raised against an order, oldest first (the one that shipped)."""
+	return frappe.db.get_value(
+		"Pick List",
+		{"custom_sales_order_id": sales_order, "docstatus": ["<", 2]},
+		"name",
+		order_by="modified asc",
+	)
+
+
+def _bundle_pdf(name, wanted, format_name, no_letterhead):
+	"""One merged PDF for `name` holding the requested parts. Returns (bytes, missing[]).
+
+	A part that cannot be produced is reported rather than failing the whole bundle: a
+	pick list that was never raised, or an invoice not yet fetched from Drive, should
+	not deny the operator the pages that DO exist.
+	"""
+	from io import BytesIO
+
+	from frappe.utils.file_manager import get_file
+	from pypdf import PdfReader, PdfWriter
+
+	writer = PdfWriter()
+	added, missing = 0, []
+
+	def _append(pdf_bytes):
+		nonlocal added
+		if isinstance(pdf_bytes, str):
+			pdf_bytes = pdf_bytes.encode("latin-1", "ignore")
+		for page in PdfReader(BytesIO(pdf_bytes)).pages:
+			writer.add_page(page)
+		added += 1
+
+	for part in BUNDLE_PARTS:
+		if part not in wanted:
+			continue
+		try:
+			if part == "so":
+				_append(
+					frappe.get_print(
+						"Sales Order", name, format_name, as_pdf=True, no_letterhead=no_letterhead
+					)
+				)
+			elif part == "pl":
+				pick_list = _pick_list_for(name)
+				if not pick_list:
+					missing.append(BUNDLE_LABELS[part])
+					continue
+				_append(
+					frappe.get_print(
+						"Pick List", pick_list, print_format="Pick List Packing Sheet", as_pdf=True
+					)
+				)
+			else:
+				file_url = (frappe.db.get_value("Sales Order", name, "custom_invoice_pdf") or "").strip()
+				if not file_url:
+					missing.append(BUNDLE_LABELS[part])
+					continue
+				content = get_file(file_url)[1]
+				if isinstance(content, str):
+					content = content.encode("utf-8")
+				_append(content)
+				# Still stamped, but it no longer decides queue membership -- see the
+				# MAIN NOTE on Changes(HP) #30 and pending_invoice_downloads.
+				frappe.db.set_value(
+					"Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False
+				)
+		except Exception:
+			frappe.log_error(title="Bundle: {0} failed for {1}".format(part, name))
+			missing.append(BUNDLE_LABELS[part])
+
+	if not added:
+		return None, missing
+
+	out = BytesIO()
+	writer.write(out)
+	return out.getvalue(), missing
+
+
+@frappe.whitelist()
+def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
+	"""Changes(HP) #30 - the individual and "club" downloads on the Invoice Download Page.
+
+	`parts` is any combination of so / pl / invoice and drives every button the spec asks
+	for: one part on its own is the individual download, "so,invoice" and "so,pl,invoice"
+	are the two club bundles.
+
+	One selected order returns a single PDF named by the spec's naming rule (Sales Order
+	ID + Invoice ID, falling back to the Pick List ID). Several return a ZIP holding one
+	such PDF per order, so a bulk download stays splittable instead of arriving as a
+	single merge nobody can take apart again.
+	"""
+	import json
+	import zipfile
+	from io import BytesIO
+
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		frappe.throw(_("Please select at least one Sales Order."))
+
+	wanted = [p.strip().lower() for p in str(parts or "").split(",") if p.strip()]
+	wanted = [p for p in wanted if p in BUNDLE_PARTS]
+	if not wanted:
+		frappe.throw(_("Choose at least one of: Sales Order, Pick List, Invoice."))
+
+	meta = frappe.get_meta("Sales Order")
+	format_name = (meta.default_print_format or "").strip() or "Standard"
+	no_letterhead = cint(no_letterhead)
+
+	built, skipped, incomplete = [], [], []
+	for name in names:
+		if not frappe.has_permission("Sales Order", "read", doc=name):
+			skipped.append(name)
+			continue
+		invoice_no = frappe.db.get_value("Sales Order", name, "custom_invoice_no")
+		content, missing = _bundle_pdf(name, wanted, format_name, no_letterhead)
+		if not content:
+			skipped.append(name)
+			continue
+		built.append((_invoice_file_base(name, invoice_no) + ".pdf", content))
+		if missing:
+			incomplete.append("{0} (no {1})".format(name, ", ".join(missing)))
+
+	if not built:
+		frappe.throw(_("Nothing could be generated for the selection."))
+	frappe.db.commit()
+
+	if incomplete:
+		frappe.msgprint(
+			_("Some documents were not available and were left out:<br>{0}").format(
+				"<br>".join(incomplete[:20])
+			),
+			title=_("Partial bundle"),
+			indicator="orange",
+		)
+
+	if len(built) == 1:
+		filename, content = built[0]
+		frappe.local.response.filename = filename
+		frappe.local.response.filecontent = content
+		frappe.local.response.type = "download"
+		return
+
+	buf = BytesIO()
+	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+		for filename, content in built:
+			zf.writestr(filename, content)
+	frappe.local.response.filename = "{0}-{1}.zip".format("-".join(wanted), len(built))
+	frappe.local.response.filecontent = buf.getvalue()
+	frappe.local.response.type = "download"
+
+
 @frappe.whitelist()
 def sales_invoices_availability(names):
 	"""How many of the selected Sales Orders have a fetched invoice PDF (lets the list page

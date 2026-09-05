@@ -14,6 +14,8 @@ var IDQ_COLUMNS = [
 	{ label: 'Sales Order', render: (d, h) => h.link('Sales Order', d.sales_order, `<strong>${h.esc(d.sales_order)}</strong>`) },
 	{ label: 'Invoice ID', render: (d, h) => h.esc(d.invoice_id || '—') },
 	{ label: 'PDF Ready', render: (d, h) => (d.pdf_ready === 'Yes' ? h.pill('Yes', 'green') : h.pill('No', 'gray')) },
+	// A row no longer leaves the queue when downloaded, so say so on the row instead.
+	{ label: 'Downloaded', render: (d, h) => (d.downloaded === 'Yes' ? h.pill('Yes', 'blue') : h.pill('No', 'gray')) },
 	{ label: 'Order Date', render: (d, h) => h.date(d.order_date) },
 	{ label: 'PO Date', render: (d, h) => h.date(d.po_date) },
 	{ label: 'Dispatch Date', render: (d, h) => h.date(d.dispatch_date) },
@@ -21,13 +23,22 @@ var IDQ_COLUMNS = [
 	{ label: 'LR Number', render: (d, h) => h.esc(d.lr_number || '—') },
 	{ label: 'Customer PO No', render: (d, h) => h.esc(d.customer_po_no || '—') },
 	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || '—') },
+	// Changes(HP) #30 "Individual Downloadable files + button": each document on its own.
+	// PL is offered only when a pick list exists and Invoice only once the PDF is fetched,
+	// so a button is never shown for a file that cannot be produced.
 	{
 		label: 'Download',
-		cls: 'text-center',
+		cls: 'text-center idq-dl-col',
 		render: (d, h) => {
-			if (d.pdf_ready !== 'Yes') return '<span class="text-muted">—</span>';
-			const url = '/api/method/alpinos.sales_order_api.download_single_invoice?name=' + encodeURIComponent(d.sales_order);
-			return `<a href="${h.esc(url)}" class="btn btn-xs btn-default">${__('Download')}</a>`;
+			const one = (part, text, on) => {
+                                if (!on) return `<span class="text-muted idq-dl-off">${text}</span>`;
+				return `<a href="#" class="idq-dl" data-so="${h.esc(d.sales_order)}" data-parts="${part}">${text}</a>`;
+			};
+			return [
+				one('so', __('SO'), true),
+				one('pl', __('PL'), !!d.pick_list),
+				one('invoice', __('INV'), d.pdf_ready === 'Yes'),
+			].join('<span class="idq-dl-sep">·</span>');
 		},
 	},
 ];
@@ -43,6 +54,10 @@ var InvoiceDownloadQueue = class {
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
 		this.btn_dl_selected = this.page.add_inner_button(__('Download Selected'), () => this.download_selected());
 		this.page.add_inner_button(__('Download All'), () => this.download_all());
+		// Changes(HP) #30 "club downloadable file + button", both combinations, each
+		// named by the naming rule (Sales Order ID + Invoice ID, else Pick List ID).
+		this.page.add_inner_button(__('SO + Invoice'), () => this.download_bundle('so,invoice'), __('Club Download'));
+		this.page.add_inner_button(__('SO + PL + Invoice'), () => this.download_bundle('so,pl,invoice'), __('Club Download'));
 		this.setup_filters();
 		this.render_sidebar();
 		this.bind_events();
@@ -185,6 +200,12 @@ var InvoiceDownloadQueue = class {
 			this.update_selection();
 		});
 		w.on('change', '.idq-row-select', () => this.update_selection());
+		// Per-row individual downloads (delegated so they survive a re-render).
+		w.on('click', '.idq-dl', (e) => {
+			e.preventDefault();
+			const $a = $(e.currentTarget);
+			this._download([$a.data('so')], $a.data('parts'));
+		});
 	}
 
 	load_list() {
@@ -248,21 +269,31 @@ var InvoiceDownloadQueue = class {
 		);
 	}
 
-	_download(names) {
+	_download(names, parts) {
 		if (!names.length) {
 			frappe.msgprint(__('No invoices to download.'));
 			return;
 		}
-		const url =
-			'/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
-			encodeURIComponent(JSON.stringify(names));
+		const url = parts
+			? '/api/method/alpinos.sales_order_api.download_order_bundle?parts=' +
+				encodeURIComponent(parts) +
+				'&names=' +
+				encodeURIComponent(JSON.stringify(names))
+			: '/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
+				encodeURIComponent(JSON.stringify(names));
 		const win = window.open(frappe.urllib.get_full_url(url), '_blank');
 		if (!win) {
 			frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
 			return;
 		}
-		// Downloading marks those orders — refresh so they drop off the queue.
+		// A downloaded row STAYS in the list (Changes(HP) #30 MAIN NOTE); the refresh is
+		// only so the Downloaded column catches up.
 		setTimeout(() => this.load_list(), 2500);
+	}
+
+	download_bundle(parts) {
+		const names = this._selected();
+		this._download(names.length ? names : (this._rows || []).map((d) => d.sales_order).filter(Boolean), parts);
 	}
 
 	download_selected() {
