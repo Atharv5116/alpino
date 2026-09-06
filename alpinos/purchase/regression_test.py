@@ -14,6 +14,10 @@ from alpinos.purchase import constants as C
 from alpinos.purchase import e2e_test as H
 from alpinos.purchase import workflow
 
+# The e2e harness owns the assertion helper; alias it so the waves below read the
+# same as the ones in e2e_test.
+_assert = H._assert
+
 R = []
 
 
@@ -445,7 +449,368 @@ def run_all():
 	run_wave_d(_report_now=False)
 	run_wave_e(_report_now=False)
 	run_wave_f(_report_now=False)
+	run_wave_g(_report_now=False)
 	return _report()
+
+
+# =====================================================================================
+# Wave G - Purchase Order approval (BRD 3). The approval loop runs at docstatus 0 and
+# approving is what submits, so Approved == docstatus 1 == what Purchase Inward already
+# gates on. These pin that equivalence down as much as the transitions themselves.
+# =====================================================================================
+
+
+def _draft_po(supplier, item_code):
+	"""A Purchase Order left in Draft, so the approval loop can be driven over it."""
+	po = frappe.new_doc("Purchase Order")
+	po.supplier = supplier
+	po.company = H.COMPANY
+	po.transaction_date = today()
+	po.schedule_date = add_days(today(), 7)
+	po.set_warehouse = H._warehouse()
+	po.custom_inward_type = C.INWARD_RM
+	po.custom_supplier_order_no = f"SO-APR-{H.SEQ}"
+	po.append("items", {
+		"item_code": item_code, "qty": 10, "rate": 5,
+		"schedule_date": add_days(today(), 7), "warehouse": H._warehouse(),
+	})
+	po.flags.ignore_permissions = True
+	po.insert(ignore_permissions=True)
+	return po
+
+
+def run_wave_g(_report_now=True):
+	if _report_now:
+		R.clear()
+		H.SEQ = H._seq()
+		H.COMPANY = H._company()
+		frappe.set_user("Administrator")
+
+	from alpinos.purchase import purchase_order_approval as A
+
+	supplier = H.ensure_supplier()
+	item = H.ensure_item(f"PITEST-APR-{H.SEQ}")
+
+	# ---- 3.3 the happy path: Draft -> Pending Approval -> Approved -----------
+	po = _draft_po(supplier, item)
+
+	check(
+		"BRD 3.4 a new Purchase Order starts in Draft",
+		lambda: _assert(A._current_status(po) == C.PO_DRAFT, A._current_status(po)),
+	)
+
+	A.perform_action(po.name, "Submit for Approval")
+	po.reload()
+	check(
+		"3.3 Submit for Approval moves it to Pending Approval, still unsubmitted",
+		lambda: _assert(
+			po.custom_approval_status == C.PO_PENDING_APPROVAL and cint(po.docstatus) == 0,
+			f"{po.custom_approval_status} docstatus={po.docstatus}",
+		),
+	)
+
+	# VAL-PO-08 / BR-PO-12: locked for editing while it waits.
+	def _edit_pending():
+		fresh = frappe.get_doc("Purchase Order", po.name)
+		fresh.custom_supplier_order_no = "SO-EDITED"
+		fresh.save(ignore_permissions=True)
+
+	expect_throw(
+		"VAL-PO-08 an order awaiting approval is locked for editing",
+		_edit_pending,
+		"cannot be edited",
+	)
+
+	A.perform_action(po.name, "Approve", remarks="Checked against the quotation.")
+	po.reload()
+	check(
+		"3.1 Approve submits the order and stamps who approved it",
+		lambda: _assert(
+			po.custom_approval_status == C.PO_APPROVED
+			and cint(po.docstatus) == 1
+			and po.custom_approval_action_by
+			and po.custom_approval_datetime,
+			f"{po.custom_approval_status} docstatus={po.docstatus} by={po.custom_approval_action_by}",
+		),
+	)
+	check(
+		"BR-PO-05 Approved is exactly docstatus 1, which is what Purchase Inward gates on",
+		lambda: _assert(
+			(cint(po.docstatus) == 1)
+			== (po.custom_approval_status in C.PO_LIVE_STATUSES),
+			"the two notions of Approved have diverged",
+		),
+	)
+
+	# ---- 3.2 the audit trail -----------------------------------------------
+	check(
+		"3.2 every action left an audit row, in order",
+		lambda: _assert(
+			[r.approval_status for r in po.custom_approval_log]
+			== [A.ACTION_SUBMITTED, A.ACTION_APPROVED],
+			[r.approval_status for r in po.custom_approval_log],
+		),
+	)
+	check(
+		"3.2 the audit row carries who, when, and both statuses",
+		lambda: _assert(
+			all(
+				r.action_by and r.action_on and r.previous_status and r.new_status
+				for r in po.custom_approval_log
+			),
+			"an audit row is missing its provenance",
+		),
+	)
+	check(
+		"3.2 the approval remarks reached the trail",
+		lambda: _assert(
+			any("quotation" in (r.remarks or "") for r in po.custom_approval_log),
+			[r.remarks for r in po.custom_approval_log],
+		),
+	)
+
+	# ---- 3.1 Send to Supplier ----------------------------------------------
+	A.perform_action(po.name, "Send to Supplier")
+	po.reload()
+	check(
+		"3.3 Approved -> Send to Supplier",
+		lambda: _assert(po.custom_approval_status == C.PO_SENT_TO_SUPPLIER, po.custom_approval_status),
+	)
+	check(
+		"BR-PO-05 an order sent to the supplier is still inward-eligible",
+		lambda: _assert(
+			po.custom_approval_status in C.PO_LIVE_STATUSES and cint(po.docstatus) == 1,
+			"Send to Supplier must not take the order out of the inward flow",
+		),
+	)
+
+	# ---- VAL-PO-09 reject without remarks ----------------------------------
+	po2 = _draft_po(supplier, item)
+	A.perform_action(po2.name, "Submit for Approval")
+	expect_throw(
+		"VAL-PO-09 a rejection without remarks is refused",
+		lambda: A.perform_action(po2.name, "Reject"),
+		"Rejection Remarks",
+	)
+	A.perform_action(po2.name, "Reject", remarks="Rate is above the approved ceiling.")
+	po2.reload()
+	check(
+		"3.3 Reject leaves the order unsubmitted so it can be corrected",
+		lambda: _assert(
+			po2.custom_approval_status == C.PO_REJECTED and cint(po2.docstatus) == 0,
+			f"{po2.custom_approval_status} docstatus={po2.docstatus}",
+		),
+	)
+	check(
+		"BR-PO-06 a rejected order is NOT available for Purchase Inward",
+		lambda: _assert(cint(po2.docstatus) != 1, "a rejected order must not be submitted"),
+	)
+	# BRD 3.3 "Rejected -> Edit -> Draft": it is a real draft again.
+	po2.custom_supplier_order_no = "SO-CORRECTED"
+	po2.save(ignore_permissions=True)
+	check(
+		"3.3 a rejected order is editable again",
+		lambda: _assert(
+			frappe.db.get_value("Purchase Order", po2.name, "custom_supplier_order_no")
+			== "SO-CORRECTED",
+			"the correction did not save",
+		),
+	)
+	A.perform_action(po2.name, "Submit for Approval")
+	check(
+		"3.3 a corrected order can be resubmitted for approval",
+		lambda: _assert(
+			frappe.db.get_value("Purchase Order", po2.name, "custom_approval_status")
+			== C.PO_PENDING_APPROVAL,
+			frappe.db.get_value("Purchase Order", po2.name, "custom_approval_status"),
+		),
+	)
+
+	# ---- 3.1 Return for Correction -----------------------------------------
+	A.perform_action(po2.name, "Return for Correction", remarks="Add the freight terms.")
+	po2.reload()
+	check(
+		"3.3 Return for Correction puts the order back in Draft",
+		lambda: _assert(
+			po2.custom_approval_status == C.PO_DRAFT and cint(po2.docstatus) == 0,
+			f"{po2.custom_approval_status} docstatus={po2.docstatus}",
+		),
+	)
+
+	# ---- illegal transitions ------------------------------------------------
+	expect_throw(
+		"an action that is not legal from the current status is refused",
+		lambda: A.perform_action(po2.name, "Approve"),
+		"not available",
+	)
+	expect_throw(
+		"a made-up action is refused rather than silently ignored",
+		lambda: A.perform_action(po2.name, "Bless"),
+		"not available",
+	)
+
+	# ---- a direct submit still works and still leaves a trail ---------------
+	po3 = _draft_po(supplier, item)
+	po3.submit()
+	po3.reload()
+	check(
+		"a scripted submit is treated as the approval and logged as one",
+		lambda: _assert(
+			po3.custom_approval_status == C.PO_APPROVED
+			and [r.approval_status for r in po3.custom_approval_log] == [A.ACTION_APPROVED],
+			f"{po3.custom_approval_status} {[r.approval_status for r in po3.custom_approval_log]}",
+		),
+	)
+
+	# ---- 3.4 cancellation ---------------------------------------------------
+	po3.cancel()
+	po3.reload()
+	check(
+		"BRD 3.4 a cancelled order records the cancellation in the trail",
+		lambda: _assert(
+			po3.custom_approval_status == C.PO_CANCELLED
+			and po3.custom_approval_log[-1].approval_status == A.ACTION_CANCELLED,
+			f"{po3.custom_approval_status} {[r.approval_status for r in po3.custom_approval_log]}",
+		),
+	)
+
+	# ---- the backfill invariant --------------------------------------------
+	def _no_status_contradicts_its_docstatus():
+		bad = []
+		for row in frappe.get_all(
+			"Purchase Order",
+			fields=["name", "docstatus", "custom_approval_status"],
+			limit_page_length=0,
+		):
+			allowed = A._STATUS_BY_DOCSTATUS[cint(row.docstatus)]
+			if (row.custom_approval_status or "") not in allowed:
+				bad.append(f"{row.name}={row.custom_approval_status}@{row.docstatus}")
+		_assert(not bad, f"{len(bad)} contradict, e.g. {bad[:3]}")
+
+	check(
+		"no Purchase Order carries a status that contradicts its docstatus",
+		_no_status_contradicts_its_docstatus,
+	)
+	check(
+		"the backfill is idempotent once the invariant holds",
+		lambda: _assert(
+			A.backfill_approval_status() == 0, "a second pass still wanted to change rows"
+		),
+	)
+
+	# ---- BR-PO-04 the role gate --------------------------------------------
+	# ---- BR-PO-04 the gate is real, not just a button that is hidden --------
+	def _ensure_user(email, role):
+		if not frappe.db.exists("User", email):
+			frappe.get_doc({
+				"doctype": "User", "email": email, "first_name": email.split("@")[0],
+				"send_welcome_email": 0, "user_type": "System User",
+			}).insert(ignore_permissions=True)
+		u = frappe.get_doc("User", email)
+		if role not in [r.role for r in u.roles]:
+			u.append("roles", {"role": role})
+			u.save(ignore_permissions=True)
+		return email
+
+	buyer = _ensure_user(f"pitest.buyer.{H.SEQ}@example.com", C.ROLE_PURCHASE_USER)
+	po4 = _draft_po(supplier, item)
+	frappe.db.commit()
+
+	def _buyer_cannot_self_approve():
+		"""Two independent layers must both refuse, so check the OUTCOME not a message.
+
+		The DocPerm matrix denies `submit` to the Purchase Team, so Frappe throws its
+		own PermissionError before the hook is ever reached. That is the outer layer;
+		assert_may_approve below is the one that still holds when a role does carry
+		submit (core "Purchase User" does).
+		"""
+		frappe.set_user(buyer)
+		try:
+			threw = False
+			try:
+				frappe.get_doc("Purchase Order", po4.name).submit()
+			except Exception:
+				threw = True
+			_assert(threw, "a Purchase Team user was allowed to submit the order")
+		finally:
+			frappe.set_user("Administrator")
+		_assert(
+			cint(frappe.db.get_value("Purchase Order", po4.name, "docstatus")) == 0,
+			"the order was approved despite the refusal",
+		)
+
+	check(
+		"BR-PO-04 a non-approver cannot self-approve by pressing Submit",
+		_buyer_cannot_self_approve,
+	)
+
+	def _hook_refuses_a_non_approver():
+		frappe.set_user(buyer)
+		try:
+			A.assert_may_approve(frappe.get_doc("Purchase Order", po4.name))
+		finally:
+			frappe.set_user("Administrator")
+
+	expect_throw(
+		"BR-PO-04 the submit-time gate names the Approver when it refuses",
+		_hook_refuses_a_non_approver,
+		"Approver",
+	)
+
+	def _every_approver_can_actually_submit():
+		missing = []
+		for role in C.PO_APPROVER_ROLES:
+			if role == "System Manager" or not frappe.db.exists("Role", role):
+				continue
+			can = frappe.db.get_value(
+				"Custom DocPerm",
+				{"parent": "Purchase Order", "role": role, "permlevel": 0},
+				"submit",
+			)
+			if not cint(can):
+				missing.append(role)
+		_assert(not missing, f"named an Approver but cannot submit a PO: {missing}")
+
+	check(
+		"BR-PO-04 every approver role can actually submit, so no button throws on click",
+		_every_approver_can_actually_submit,
+	)
+	check(
+		"BR-PO-02 the Purchase Team can raise an order but not approve its own",
+		lambda: _assert(
+			cint(frappe.db.get_value(
+				"Custom DocPerm",
+				{"parent": "Purchase Order", "role": C.ROLE_PURCHASE_USER, "permlevel": 0},
+				"create",
+			))
+			and not cint(frappe.db.get_value(
+				"Custom DocPerm",
+				{"parent": "Purchase Order", "role": C.ROLE_PURCHASE_USER, "permlevel": 0},
+				"submit",
+			)),
+			"Purchase Inward User must be able to create but not submit a Purchase Order",
+		),
+	)
+
+	check(
+		"BR-PO-04 only approver roles own Approve / Reject / Return",
+		lambda: _assert(
+			all(
+				roles == C.PO_APPROVER_ROLES
+				for _label, _to, roles in A.TRANSITIONS[C.PO_PENDING_APPROVAL]
+			),
+			A.TRANSITIONS[C.PO_PENDING_APPROVAL],
+		),
+	)
+	check(
+		"every approval status has a transition row, so none is a dead end by accident",
+		lambda: _assert(
+			set(A.TRANSITIONS) == set(C.PO_APPROVAL_STATUSES),
+			set(C.PO_APPROVAL_STATUSES) - set(A.TRANSITIONS),
+		),
+	)
+
+	return _report() if _report_now else R
 
 
 # =====================================================================================

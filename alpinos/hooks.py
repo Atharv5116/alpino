@@ -206,6 +206,7 @@ after_migrate = [
 	# doctype that must already carry its custom fields), roles before warehouses
 	# (which name the excess-override role in Stock Settings).
 	"alpinos.purchase.purchase_order_fields.setup_purchase_order_fields",
+	"alpinos.purchase.purchase_order_approval.setup_purchase_order_approval",
 	"alpinos.purchase.purchase_receipt_fields.setup_purchase_receipt_fields",
 	"alpinos.purchase.roles.setup_purchase_roles",
 	"alpinos.purchase.warehouses.setup_purchase_warehouses",
@@ -216,6 +217,7 @@ after_migrate = [
 	"alpinos.purchase.workspace.setup_entry_page_access",
 	"alpinos.purchase.workspace.setup_purchase_workspace",
 	"alpinos.purchase.inward_client.execute",
+	"alpinos.purchase.purchase_order_approval.create_purchase_order_approval_client_script",
 	"alpinos.purchase.qc_list_api.setup_qc_list_page_access",
 	"alpinos.purchase.print_formats.execute",
 ]
@@ -307,7 +309,20 @@ override_doctype_class = {
 
 doc_events = {
 	"Purchase Order": {
-		"validate": "alpinos.purchase.purchase_order_fields.normalize_estimated_arrival"
+		"validate": [
+			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
+			# VAL-PO-08 / BR-PO-12: an order awaiting approval is locked for editing.
+			"alpinos.purchase.purchase_order_approval.assert_editable",
+		],
+		# before_*, not on_*: Frappe runs these from run_before_save_methods, so the
+		# status, the stamp and the BRD 3.2 audit row are written by the same save.
+		"before_submit": [
+			# BR-PO-04 first: submitting IS approving, so the role gate has to sit here
+			# and not only on the Approve button.
+			"alpinos.purchase.purchase_order_approval.assert_may_approve",
+			"alpinos.purchase.purchase_order_approval.stamp_on_submit",
+		],
+		"before_cancel": "alpinos.purchase.purchase_order_approval.stamp_on_cancel",
 	},
 	"Purchase Inward": {
 		"validate": "alpinos.purchase.inward_api.validate_merge_link",

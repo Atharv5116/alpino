@@ -17,7 +17,7 @@
    "fieldname": "approval_status",
    "fieldtype": "Select",
    "label": "Approval Status",
-   "options": "\nApproved\nRejected\nReturned",
+   "options": "\nSubmitted for Approval\nApproved\nRejected\nReturned for Correction\nSent to Supplier\nCancelled",
    "read_only": 1,
    "in_list_view": 1,
    "columns": 2
@@ -67,7 +67,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-03 10:00:00.000000",
+ "modified": "2026-09-06 08:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase Approval Log",

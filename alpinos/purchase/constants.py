@@ -191,6 +191,43 @@ INVOICE_CORRECTION_ROLES = ADMIN_ROLES
 EXCESS_OVERRIDE_ROLES = (ROLE_STORE_MANAGER,) + ADMIN_ROLES
 
 
+# --- Purchase Order approval (BRD 3, "Purchase Order Approval") -------------
+
+# The BRD's PO statuses. Draft / Pending Approval / Rejected are pre-submit states:
+# ERPNext cannot un-submit a document, so "Return for Correction -> Draft" and
+# "Rejected -> Edit -> Draft" (BRD 3.3) are only expressible while docstatus is still 0.
+# Approving is therefore what submits the order, which makes Approved exactly equal to
+# docstatus == 1 -- the condition Purchase Inward already gates on (BR-PO-05 / VAL-PO-15).
+PO_DRAFT = "Draft"
+PO_PENDING_APPROVAL = "Pending Approval"
+PO_APPROVED = "Approved"
+PO_REJECTED = "Rejected"
+PO_SENT_TO_SUPPLIER = "Sent to Supplier"
+PO_CANCELLED = "Cancelled"
+
+PO_APPROVAL_STATUSES = (
+	PO_DRAFT,
+	PO_PENDING_APPROVAL,
+	PO_APPROVED,
+	PO_REJECTED,
+	PO_SENT_TO_SUPPLIER,
+	PO_CANCELLED,
+)
+
+# Statuses that mean the order has cleared approval and is live.
+PO_LIVE_STATUSES = (PO_APPROVED, PO_SENT_TO_SUPPLIER)
+
+# BR-PO-04: only authorized Approvers may approve, reject or return an order.
+# Reuses existing roles rather than provisioning a ninth one. ERPNext's core
+# "Purchase Manager" is in the set because on a stock site that IS the buying
+# approver -- and because approving submits the order, so every role here must also
+# hold `submit` on Purchase Order or the button would throw at click time.
+# roles.PERMISSION_MATRIX["Purchase Order"] keeps that true.
+PO_APPROVER_ROLES = ("Purchase Manager", ROLE_PURCHASE_MANAGER) + ADMIN_ROLES
+# BR-PO-02: who may raise an order and send it for approval.
+PO_SUBMITTER_ROLES = PURCHASE_ROLES + ADMIN_ROLES
+
+
 # --- SLA (BRD 3 preamble, BR-QC-03 / BR-QC-04) ------------------------------
 
 QC_SLA_HOURS = 2

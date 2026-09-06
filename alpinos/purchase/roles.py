@@ -167,9 +167,15 @@ PERMISSION_MATRIX = {
 		C.ROLE_ADMIN: "FULL",
 	},
 	# The PO is upstream of this module; everyone reads it to raise an inward against it.
+	# The two Purchase rows also carry BRD 3 (Purchase Order Approval): BR-PO-02 lets the
+	# Purchase Team raise an order and send it for approval (a docstatus-0 save, so
+	# CREATE_EDIT and deliberately no submit), and BR-PO-04 makes the Manager an
+	# authorized Approver. Approving IS submitting under purchase_order_approval, so the
+	# Manager needs `submit` or the Approve button would exist and then throw -- the exact
+	# failure the module docstring above warns about.
 	"Purchase Order": {
-		C.ROLE_PURCHASE_USER: "VIEW",
-		C.ROLE_PURCHASE_MANAGER: "VIEW",
+		C.ROLE_PURCHASE_USER: "CREATE_EDIT",
+		C.ROLE_PURCHASE_MANAGER: "CREATE_SUBMIT",
 		C.ROLE_STORE_USER: "VIEW",
 		C.ROLE_STORE_MANAGER: "VIEW",
 		C.ROLE_QC_USER: "VIEW",
