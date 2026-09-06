@@ -11,22 +11,169 @@
 .purchase-qc-entry .pqc-table td { padding: 4px 5px; vertical-align: middle; }
 .purchase-qc-entry .pqc-table input,
 .purchase-qc-entry .pqc-table .control-value { font-size: 12px; }
+
+/* Read-only header and summary values are DATA, not an input nobody filled in.
+   Frappe paints them as .control-value.like-disabled-input, the same grey slab as
+   an editable control in both themes, so drop the box and keep a baseline rule.
+   The control height is held so a read-only field still lines up with an editable
+   one beside it, and a blank value states itself with a dash instead of looking
+   like an empty box. Grid cells keep their own smaller treatment. */
+.purchase-qc-entry .eso-fld .control-value.like-disabled-input {
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--border-color);
+	border-radius: 0;
+	padding: 4px 2px 3px 0;
+	min-height: var(--input-height, 28px);
+	line-height: 20px;
+	color: var(--text-color);
+	font-weight: 500;
+}
+.purchase-qc-entry .eso-fld .control-value.like-disabled-input:empty::after {
+	content: "—";
+	color: var(--text-muted);
+	font-weight: 400;
+}
+/* Small Text controls arrive with an inline height of 150px set by the Frappe
+   control itself, which lets Overall Remarks tower over its card. Three lines is
+   enough to write in, and the resize handle still drags it taller. */
+.purchase-qc-entry .eso-fld textarea.form-control {
+	height: 72px !important;
+	min-height: 72px;
+	resize: vertical;
+}
+
 .purchase-qc-entry .pqc-locked { opacity: .55; pointer-events: none; }
 .purchase-qc-entry .pqc-stage {
 	display: inline-block; padding: 2px 10px; border-radius: 10px;
 	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
 	background: var(--bg-color); margin-left: 8px; vertical-align: middle;
 }
-/* BR-QC-05: the four inspections run in parallel, so each card carries its own
-   completion tick rather than a wizard step. */
-.purchase-qc-entry .pqc-done { float: right; font-size: 12px; font-weight: 500; }
-.purchase-qc-entry .pqc-done .form-group { margin-bottom: 0; }
 .purchase-qc-entry .pqc-num { text-align: right; }
-.purchase-qc-entry .pqc-sla { font-size: 12px; }
-.purchase-qc-entry .pqc-sla.pqc-breached { color: var(--red-500, #e24c4c); font-weight: 600; }
-</style>
-<div class="purchase-qc-entry" style="padding: 12px;">
+.purchase-qc-entry .pqc-sla {
+	display: inline-block; padding: 2px 10px; border-radius: 10px;
+	font-size: 11px; font-weight: 500; vertical-align: middle;
+	border: 1px solid var(--border-color); background: var(--bg-color);
+	color: var(--text-muted);
+}
+.purchase-qc-entry .pqc-sla.pqc-breached {
+	color: var(--red-500, #e24c4c); border-color: var(--red-500, #e24c4c); font-weight: 600;
+}
+/* apply_state writes an empty string into these spans when the document has no
+   status and no SLA. An empty pill beside the heading reads as a broken render,
+   so a badge with nothing in it collapses instead. */
+.purchase-qc-entry .pqc-stage:empty,
+.purchase-qc-entry .pqc-sla:empty { display: none; }
 
+/* Resting state (no document): the form describes an inspection that does not
+   exist, so the body is replaced by one card pointing at the queue. Toggled by
+   apply_state through .pqc-blank on the root; the template ships blank so the
+   first paint is already right. */
+.purchase-qc-entry .pqc-empty { display: none; }
+.purchase-qc-entry.pqc-blank .pqc-empty { display: block; }
+.purchase-qc-entry.pqc-blank .pqc-body { display: none; }
+.purchase-qc-entry .eso-card.pqc-empty-card {
+	max-width: 520px; text-align: center;
+	margin: 40px auto 0 !important; padding: 40px 28px !important;
+}
+.purchase-qc-entry .pqc-empty-icon {
+	font-size: 24px; color: var(--text-muted); opacity: .55; margin-bottom: 12px;
+}
+.purchase-qc-entry .pqc-empty-title {
+	font-size: 15px; font-weight: 600; color: var(--heading-color); margin-bottom: 6px;
+}
+.purchase-qc-entry .pqc-empty-text {
+	font-size: 12.5px; color: var(--text-muted); margin: 0 auto 18px; max-width: 40em;
+}
+.purchase-qc-entry .pqc-empty .alp-actions { justify-content: center; }
+
+/* BR-QC-05: the four inspections run in parallel, so each card carries its own
+   completion tick rather than a wizard step. The tick is a chip inside its own
+   section title, and a completed section is tinted green so the QC user can see
+   at a glance which inspections are still open. .eso-card-title is forced to
+   display:flex by the shared stylesheet, so the old float never took effect. */
+.purchase-qc-entry .pqc-section { position: relative; }
+.purchase-qc-entry .pqc-section > .eso-card-title { flex-wrap: wrap; row-gap: 6px; }
+.purchase-qc-entry .pqc-done {
+	--checkbox-right-margin: 6px;
+	display: inline-flex; align-items: center;
+	padding: 2px 10px; border: 1px solid var(--border-color); border-radius: 10px;
+	background: var(--bg-color); color: var(--text-muted);
+	font-size: 11px; letter-spacing: 0; text-transform: none;
+}
+.purchase-qc-entry .pqc-done .form-group,
+.purchase-qc-entry .pqc-done .checkbox { margin-bottom: 0; }
+.purchase-qc-entry .pqc-done .checkbox label { cursor: pointer; }
+.purchase-qc-entry .pqc-done .label-area { font-size: 11px; font-weight: 600; color: inherit; }
+.purchase-qc-entry .pqc-done .help-box { display: none; }
+.purchase-qc-entry .pqc-section.pqc-complete .pqc-done {
+	background: var(--alert-bg-success); border-color: var(--alert-bg-success);
+	color: var(--alert-text-success);
+}
+.purchase-qc-entry .pqc-section.pqc-complete > .eso-card-title::before { background: var(--green-500); }
+.purchase-qc-entry .pqc-section.pqc-complete::after {
+	content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+	border-radius: 12px 0 0 12px; background: var(--green-500); pointer-events: none;
+}
+.purchase-qc-entry .pqc-gate { margin-right: auto; font-size: 12px; color: var(--text-muted); }
+.purchase-qc-entry .pqc-gate.pqc-gate-open { color: var(--text-color); }
+
+/* Empty grids must read as EMPTY rather than broken. The message text lives in
+   data-empty on the scroll wrapper and is painted by a pseudo-element, so no
+   placeholder row is ever put into a tbody: row indexes, redraw and the remove
+   handler stay untouched, and every path that empties a tbody (load, redraw,
+   route change) restores the message for free. Where :has is unsupported the
+   rule is simply dropped and the grid looks exactly as it does today. */
+.purchase-qc-entry .alp-scroll[data-empty]:has(tbody:empty)::after {
+	content: attr(data-empty);
+	display: block;
+	position: sticky;
+	left: 0;
+	padding: 18px 12px;
+	text-align: center;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-muted);
+	background: var(--card-bg);
+}
+/* Add Row belongs to the grid above it, so it spans that grid and reads as the
+   next, still empty line instead of a stray button under a card. */
+.purchase-qc-entry .btn.btn-add {
+	border: 1px dashed var(--border-color);
+	background: transparent;
+	color: var(--text-muted);
+	font-weight: 500;
+}
+.purchase-qc-entry .btn.btn-add:hover,
+.purchase-qc-entry .btn.btn-add:focus {
+	border-style: solid;
+	background: var(--bg-color);
+	color: var(--fg-color);
+}
+.purchase-qc-entry .alp-scroll + .btn.btn-add {
+	display: block;
+	width: 100%;
+	text-align: center;
+}
+</style>
+<div class="purchase-qc-entry pqc-blank" style="padding: 12px;">
+
+	<div class="pqc-empty">
+		<div class="eso-card pqc-empty-card">
+			<div class="pqc-empty-icon"><i class="fa fa-clipboard"></i></div>
+			<div class="pqc-empty-title">No inspection open</div>
+			<p class="pqc-empty-text">
+				This screen records one Purchase QC at a time. Pick an inspection from the
+				QC queue and its vehicle, material, packaging and sample sections load here.
+			</p>
+			<div class="alp-actions">
+				<a class="btn btn-sm btn-primary" href="/app/purchase_qc_list">Open QC Queue</a>
+				<a class="btn btn-sm btn-light" href="/app/purchase-qc">All QC Records</a>
+			</div>
+		</div>
+	</div>
+
+	<div class="pqc-body">
 	<p class="text-muted" style="font-size:12px; margin-bottom:12px;">
 		BRD 4 — Vehicle, Material, Packaging and Sample Testing run <strong>in parallel</strong>;
 		there is no mandatory order. Tick each section as it is completed, then record the
@@ -60,7 +207,7 @@
 			Vehicle Inspection
 			<span class="pqc-done field-vehicle-done"></span>
 		</h6>
-		<div class="alp-scroll alp-scroll--wide">
+		<div class="alp-scroll alp-scroll--wide" data-empty="No vehicle checked yet. Use Add Row to record the vehicle and its condition.">
 			<table class="table table-bordered vehicle-table pqc-table">
 				<thead><tr>
 					<th style="width:28px;">#</th>
@@ -86,7 +233,7 @@
 			Material Inspection
 			<span class="pqc-done field-material-done"></span>
 		</h6>
-		<div class="alp-scroll alp-scroll--wide">
+		<div class="alp-scroll alp-scroll--xwide" data-empty="No material lines inspected yet. Use Add Row for each item you check.">
 			<table class="table table-bordered material-table pqc-table">
 				<thead><tr>
 					<th style="width:28px;">#</th>
@@ -113,7 +260,7 @@
 			Packaging / Box Inspection
 			<span class="pqc-done field-packaging-done"></span>
 		</h6>
-		<div class="alp-scroll alp-scroll--wide">
+		<div class="alp-scroll alp-scroll--xwide" data-empty="No packaging or box checks yet. Use Add Row for each item you open.">
 			<table class="table table-bordered packaging-table pqc-table">
 				<thead><tr>
 					<th style="width:28px;">#</th>
@@ -140,7 +287,7 @@
 			Sample Testing
 			<span class="pqc-done field-sample-done"></span>
 		</h6>
-		<div class="alp-scroll alp-scroll--xwide">
+		<div class="alp-scroll alp-scroll--xwide" data-empty="No samples drawn yet. Use Add Row for each sample, then print the sticker.">
 			<table class="table table-bordered sample-table pqc-table">
 				<thead><tr>
 					<th style="width:28px;">#</th>
@@ -169,7 +316,7 @@
 	<!-- ==================== BRD 4.1.6 control sample ========================== -->
 	<div class="eso-card pqc-section" data-section="control">
 		<h6 class="eso-card-title">Control Sample</h6>
-		<div class="alp-scroll alp-scroll--wide">
+		<div class="alp-scroll alp-scroll--xwide" data-empty="No control sample recorded yet. Use Add Row only when a retention sample was kept.">
 			<table class="table table-bordered control-table pqc-table">
 				<thead><tr>
 					<th style="width:28px;">#</th>
@@ -194,7 +341,7 @@
 	<!-- ============ BRD 4.1.2-4.1.4 evidence (one or more per section) ======== -->
 	<div class="eso-card pqc-section" data-section="evidence">
 		<h6 class="eso-card-title">Inspection Evidence</h6>
-		<div class="alp-scroll alp-scroll--wide">
+		<div class="alp-scroll alp-scroll--wide" data-empty="No extra photos or videos yet. Use Add Evidence for shots beyond the per-row attachment.">
 			<table class="table table-bordered evidence-table pqc-table">
 				<thead><tr>
 					<th style="width:28px;">#</th>
@@ -217,7 +364,7 @@
 	<!-- ==================== BRD 4.6 QC decision =============================== -->
 	<div class="eso-card">
 		<h6 class="eso-card-title">QC Decision</h6>
-		<div class="alp-scroll alp-scroll--wide">
+		<div class="alp-scroll alp-scroll--wide" data-empty="Item lines appear here when a Purchase QC is opened from the QC list.">
 			<table class="table table-bordered decision-table pqc-table">
 				<thead><tr>
 					<th style="width:28px;">#</th>
@@ -245,4 +392,5 @@
 	</div>
 
 	<div class="alp-actions alp-actions--end pqc-actionbar" style="margin: 14px 0 24px;"></div>
+	</div>
 </div>

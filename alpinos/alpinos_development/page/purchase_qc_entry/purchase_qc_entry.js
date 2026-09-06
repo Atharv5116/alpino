@@ -11,6 +11,17 @@
  * Design language matches the other alpinos entry pages (sales_order_entry).
  */
 
+// A Datetime straight out of the database carries microseconds
+// (2026-09-06 07:20:44.774097). frappe.datetime.validate parses strictly against
+// YYYY-MM-DD HH:mm:ss, so the control rejects the value, raises a msgprint and
+// blanks the field. Trim the fraction before any value reaches a control.
+// var, not const: desk pages are re-evaluated on navigation.
+var ALP_TRIM_MICROSECONDS = function (v) {
+	if (typeof v !== 'string') return v;
+	var m = v.match(/^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\.\d+$/);
+	return m ? m[1] : v;
+};
+
 frappe.pages['purchase_qc_entry'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -26,6 +37,16 @@ frappe.pages['purchase_qc_entry'].on_page_show = function (wrapper) {
 };
 
 var PQC_CONDITION = ['Good', 'Damaged'];
+
+// BR-QC-05: the four parallel inspections, as [section key, done fieldname, short
+// title]. Declared with var, not const: desk pages are re-evaluated on navigation
+// and a re-declared const blanks the page.
+var PQC_SECTIONS = [
+	['vehicle', 'vehicle_inspection_done', 'Vehicle'],
+	['material', 'material_inspection_done', 'Material'],
+	['packaging', 'packaging_inspection_done', 'Packaging'],
+	['sample', 'sample_testing_done', 'Sample Testing'],
+];
 
 var PurchaseQCEntry = class {
 	constructor(page) {
@@ -57,7 +78,7 @@ var PurchaseQCEntry = class {
 			parent: parent,
 			render_input: true,
 		});
-		c.set_value(value === undefined || value === null ? '' : value);
+		c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 		c.refresh();
 		this.fields[df.fieldname] = c;
 		return c;
@@ -66,16 +87,20 @@ var PurchaseQCEntry = class {
 	_val(f) { const c = this.fields[f]; return c ? c.get_value() : null; }
 	_set(f, v) {
 		const c = this.fields[f];
-		if (c) { c.set_value(v === undefined || v === null ? '' : v); c.refresh(); }
+		if (c) { c.set_value(v === undefined || v === null ? '' : ALP_TRIM_MICROSECONDS(v)); c.refresh(); }
 	}
 	_toast(m, i) { frappe.show_alert({ message: m, indicator: i || 'blue' }, 5); }
 
 	// ------------------------------------------------- BRD 4.1.1 (read only)
 
 	make_header_fields() {
+		// hide_timezone stops the Datetime control appending the site time zone to
+		// df.description, which rendered as a loose "Asia/Kolkata" under Inspection Date.
+		// It is inert on the other field types this helper builds.
 		const ro = (fieldname, label, fieldtype, options) =>
 			this._ctl(`.field-${fieldname.replace(/_/g, '-')}`, {
 				fieldname, label, fieldtype: fieldtype || 'Data', options, read_only: 1,
+				hide_timezone: 1,
 			});
 
 		ro('purchase_inward', 'Purchase Inward ID', 'Link', 'Purchase Inward');
@@ -91,18 +116,38 @@ var PurchaseQCEntry = class {
 		});
 	}
 
+	// The tick belongs to its section heading, so the label only has to say
+	// "Complete" -- the card title already names the inspection.
 	make_done_flags() {
 		const me = this;
-		[
-			['vehicle', 'vehicle_inspection_done', 'Vehicle inspection complete'],
-			['material', 'material_inspection_done', 'Material inspection complete'],
-			['packaging', 'packaging_inspection_done', 'Packaging inspection complete'],
-			['sample', 'sample_testing_done', 'Sample testing complete'],
-		].forEach(([key, fieldname, label]) => {
-			me._ctl(`.field-${key}-done`, {
-				fieldname, label, fieldtype: 'Check',
+		PQC_SECTIONS.forEach(([key, fieldname]) => {
+			const c = me._ctl(`.field-${key}-done`, {
+				fieldname, label: __('Complete'), fieldtype: 'Check',
 			});
+			if (c && c.$input) c.$input.on('change', () => me.sync_done_flags());
 		});
+		this.sync_done_flags();
+	}
+
+	// BR-QC-05/06: each inspection is ticked on its own and every tick gates the
+	// submit, so a done section is tinted and whatever is still outstanding is
+	// named next to the button it blocks.
+	sync_done_flags() {
+		const me = this;
+		const pending = [];
+		PQC_SECTIONS.forEach(([key, fieldname, title]) => {
+			const done = cint(me._val(fieldname));
+			me.wrapper.find(`.pqc-section[data-section="${key}"]`)
+				.toggleClass('pqc-complete', !!done);
+			if (!done) pending.push(title);
+		});
+		const $gate = this.wrapper.find('.pqc-gate');
+		if (!$gate.length) return;
+		$gate.toggleClass('pqc-gate-open', pending.length > 0).text(
+			pending.length
+				? __('Still open: {0}', [pending.join(', ')])
+				: __('All four inspections marked complete')
+		);
 	}
 
 	make_summary_fields() {
@@ -138,7 +183,7 @@ var PurchaseQCEntry = class {
 			parent: $tr.find(sel),
 			render_input: true,
 		});
-		c.set_value(value === undefined || value === null ? '' : value);
+		c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 		me.fields[name] = c;
 		if (onchange && c.$input) c.$input.on('change', onchange);
 		return c;
@@ -367,6 +412,9 @@ var PurchaseQCEntry = class {
 		const name = route[1] || (frappe.route_options && frappe.route_options.purchase_qc);
 		if (frappe.route_options) delete frappe.route_options.purchase_qc;
 		if (name && name !== this.docname) {
+			// Drop the resting card before the fetch so the form is not swapped in
+			// behind the freeze overlay.
+			this.wrapper.find('.purchase-qc-entry').removeClass('pqc-blank');
 			this.load(name);
 		} else if (!name && this.docname) {
 			// Opened bare after viewing an inspection: the previous document must not
@@ -424,12 +472,17 @@ var PurchaseQCEntry = class {
 
 	apply_state() {
 		const doc = this.doc || {};
+		// With no document loaded the form describes nothing, so the template swaps in
+		// its resting card. The badges below collapse on their own when left empty.
+		this.wrapper.find('.purchase-qc-entry').toggleClass('pqc-blank', !this.docname);
 		this.wrapper.find('.field-stage-badge').text(doc.qc_status || '');
 
 		const $sla = this.wrapper.find('.field-sla-badge');
 		if (doc.sla_due) {
 			const breached = cint(doc.sla_breached);
-			$sla.text(breached ? `SLA breached (due ${doc.sla_due})` : `SLA due ${doc.sla_due}`)
+			// The raw field carries microseconds; show it the way the rest of the desk does.
+			const due = frappe.datetime.str_to_user(doc.sla_due);
+			$sla.text(breached ? `SLA breached (due ${due})` : `SLA due ${due}`)
 				.toggleClass('pqc-breached', !!breached);
 		} else {
 			$sla.text('');
@@ -440,6 +493,7 @@ var PurchaseQCEntry = class {
 		this.wrapper.find('.pqc-section').toggleClass('pqc-locked', locked);
 		this.wrapper.find('.decision-table').closest('.eso-card').toggleClass('pqc-locked', locked);
 		this.make_actions();
+		this.sync_done_flags();
 	}
 
 	make_actions() {
@@ -452,6 +506,9 @@ var PurchaseQCEntry = class {
 			return;
 		}
 		const doc = this.doc || {};
+		// BR-QC-06 gates the submit on the four ticks, so say what is still open right
+		// beside the button that is blocked. Filled by sync_done_flags().
+		if (cint(doc.docstatus) === 0) $bar.append('<span class="pqc-gate"></span>');
 		const btn = (label, cls, handler) => {
 			$(`<button class="btn btn-sm ${cls}" style="margin-left:8px;">${frappe.utils.escape_html(label)}</button>`)
 				.on('click', handler)

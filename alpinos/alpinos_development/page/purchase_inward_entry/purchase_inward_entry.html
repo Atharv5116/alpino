@@ -15,6 +15,38 @@
 .purchase-inward-entry .piw-table td { padding: 4px 5px; vertical-align: middle; }
 .purchase-inward-entry .piw-table .control-value,
 .purchase-inward-entry .piw-table input { font-size: 12px; }
+
+/* Read-only header, vehicle and summary values are DATA, not an input nobody
+   filled in. Frappe paints them as .control-value.like-disabled-input, the same
+   grey slab as an editable control in both themes, so drop the box and keep a
+   baseline rule. The control height is held so PO Vehicle No. still lines up
+   with the editable Actual Vehicle No. beside it, and a blank value states
+   itself with a dash instead of looking like an empty box. */
+.purchase-inward-entry .eso-fld .control-value.like-disabled-input {
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--border-color);
+	border-radius: 0;
+	padding: 4px 2px 3px 0;
+	min-height: var(--input-height, 28px);
+	line-height: 20px;
+	color: var(--text-color);
+	font-weight: 500;
+}
+.purchase-inward-entry .eso-fld .control-value.like-disabled-input:empty::after {
+	content: "—";
+	color: var(--text-muted);
+	font-weight: 400;
+}
+/* Small Text controls arrive with an inline height of 150px set by the Frappe
+   control itself, which lets Remarks and Receiving Remarks tower over their
+   cards. Three lines is enough to write in, and the handle still drags taller. */
+.purchase-inward-entry .eso-fld textarea.form-control {
+	height: 72px !important;
+	min-height: 72px;
+	resize: vertical;
+}
+
 .purchase-inward-entry .items-table { overflow: visible !important; }
 .purchase-inward-entry .items-table td { overflow: visible !important; position: relative; }
 /* The Store half is dimmed until it is that team turn to act, so both teams can
@@ -27,6 +59,45 @@
 }
 .purchase-inward-entry .piw-hint { font-size: 12px; margin-bottom: 12px; }
 .purchase-inward-entry .piw-num { text-align: right; }
+/* Same rule as the QC screen: apply_context fills these spans, and until it does
+   an empty pill beside the heading reads as a broken render. */
+.purchase-inward-entry .piw-stage:empty { display: none; }
+
+/* Empty grids must read as EMPTY rather than broken. The message text lives in
+   data-empty on the scroll wrapper and is painted by a pseudo-element, so no
+   placeholder row is ever put into a tbody: load_items, redraw_items,
+   redraw_attachments and reset all keep their row indexes, and every one of them
+   restores the message for free. Where :has is unsupported the rule is simply
+   dropped and the grid looks exactly as it does today. */
+.purchase-inward-entry .alp-scroll[data-empty]:has(tbody:empty)::after {
+	content: attr(data-empty);
+	display: block;
+	position: sticky;
+	left: 0;
+	padding: 18px 12px;
+	text-align: center;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-muted);
+	background: var(--card-bg);
+}
+/* Quiet the two add buttons so the solid Get Items from Purchase Order reads as
+   the primary action of the item card, which is how lines actually arrive. */
+.purchase-inward-entry .btn.btn-add-row,
+.purchase-inward-entry .btn.btn-add-attachment {
+	border: 1px dashed var(--border-color);
+	background: transparent;
+	color: var(--text-muted);
+	font-weight: 500;
+}
+.purchase-inward-entry .btn.btn-add-row:hover,
+.purchase-inward-entry .btn.btn-add-row:focus,
+.purchase-inward-entry .btn.btn-add-attachment:hover,
+.purchase-inward-entry .btn.btn-add-attachment:focus {
+	border-style: solid;
+	background: var(--bg-color);
+	color: var(--fg-color);
+}
 </style>
 <div class="purchase-inward-entry" style="padding: 12px;">
 
@@ -65,7 +136,7 @@
 	<!-- ============================ BRD 2.2.2 item grid ======================== -->
 	<div class="eso-card">
 		<h6 class="eso-card-title">Item Details</h6>
-		<div class="alp-scroll alp-scroll--wide">
+		<div class="alp-scroll alp-scroll--wide" data-empty="No item lines yet. Use Get Items from Purchase Order to pull the pending lines.">
 			<table class="table table-bordered items-table piw-table">
 				<thead>
 					<tr>
@@ -113,7 +184,7 @@
 		</div>
 
 		<h6 class="eso-subtitle">Received Quantity</h6>
-		<div class="alp-scroll alp-scroll--xwide">
+		<div class="alp-scroll alp-scroll--xwide" data-empty="Received quantities appear here once the item lines above are loaded.">
 			<table class="table table-bordered receiving-table piw-table">
 				<thead>
 					<tr>
@@ -145,7 +216,7 @@
 				<i class="fa fa-paperclip"></i> Attach Photo / Video
 			</button>
 		</div>
-		<div class="alp-scroll" style="margin-top: 8px;">
+		<div class="alp-scroll" style="margin-top: 8px;" data-empty="No discrepancy files attached yet. Attach a photo or video above when quantities do not match.">
 			<table class="table table-bordered attachments-table piw-table">
 				<thead>
 					<tr>

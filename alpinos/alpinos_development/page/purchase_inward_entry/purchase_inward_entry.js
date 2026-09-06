@@ -12,6 +12,17 @@
  * public/css/alpinos_pages.css, which scopes on data-page-route.
  */
 
+// A Datetime straight out of the database carries microseconds
+// (2026-09-06 07:20:44.774097). frappe.datetime.validate parses strictly against
+// YYYY-MM-DD HH:mm:ss, so the control rejects the value, raises a msgprint and
+// blanks the field. Trim the fraction before any value reaches a control.
+// var, not const: desk pages are re-evaluated on navigation.
+var ALP_TRIM_MICROSECONDS = function (v) {
+	if (typeof v !== 'string') return v;
+	var m = v.match(/^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\.\d+$/);
+	return m ? m[1] : v;
+};
+
 frappe.pages['purchase_inward_entry'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -60,7 +71,7 @@ var PurchaseInwardEntry = class {
 			parent: parent,
 			render_input: true,
 		});
-		control.set_value(value === undefined ? '' : value);
+		control.set_value(value === undefined ? '' : ALP_TRIM_MICROSECONDS(value));
 		control.refresh();
 		this.fields[df.fieldname] = control;
 		return control;
@@ -74,7 +85,7 @@ var PurchaseInwardEntry = class {
 	_set(fieldname, value) {
 		const c = this.fields[fieldname];
 		if (c) {
-			c.set_value(value === undefined || value === null ? '' : value);
+			c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 			c.refresh();
 		}
 	}
@@ -152,6 +163,9 @@ var PurchaseInwardEntry = class {
 			fieldname: 'inward_datetime',
 			label: 'Inward Date & Time',
 			fieldtype: 'Datetime',
+			// Without this the control appends the site time zone as a description, which
+			// renders as a loose "Asia/Kolkata" under the field.
+			hide_timezone: 1,
 		}, frappe.datetime.now_datetime());
 		this._ctl('.field-attachment', {
 			fieldname: 'attachment',
@@ -267,7 +281,7 @@ var PurchaseInwardEntry = class {
 			parent: $tr.find('.cell-remarks'),
 			render_input: true,
 		});
-		remarks.set_value(row.item_remarks || '');
+		remarks.set_value(ALP_TRIM_MICROSECONDS(row.item_remarks || ''));
 		remarks.$input && remarks.$input.on('change', function () {
 			me.items[idx].item_remarks = $(this).val();
 		});
@@ -295,6 +309,7 @@ var PurchaseInwardEntry = class {
 		this._ctl('.field-actual-arrival', {
 			fieldname: 'actual_arrival_datetime', label: 'Actual Arrival Date & Time',
 			fieldtype: 'Datetime',
+			hide_timezone: 1,
 		});
 		this._ctl('.field-vehicle-verified', {
 			fieldname: 'vehicle_details_verified', label: 'Vehicle Details Verified',
@@ -338,7 +353,7 @@ var PurchaseInwardEntry = class {
 			if (!row.target_warehouse) {
 				row.target_warehouse = wh;
 				const c = this.fields[`target_warehouse_${idx}`];
-				if (c) c.set_value(wh);
+				if (c) c.set_value(ALP_TRIM_MICROSECONDS(wh));
 			}
 		});
 	}
@@ -373,7 +388,7 @@ var PurchaseInwardEntry = class {
 					parent: $tr.find(sel),
 					render_input: true,
 				});
-				c.set_value(value === undefined || value === null ? '' : value);
+				c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 				me.fields[`${df.fieldname}_${idx}`] = c;
 				if (onchange && c.$input) c.$input.on('change', onchange);
 				return c;

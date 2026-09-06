@@ -911,3 +911,57 @@
   margin-left: auto !important;
   margin-right: auto !important;
 }
+
+/* ----------------------------------------------------------------------------
+   Frappe's page header ships an EMPTY status pill.
+
+   frappe/public/js/frappe/ui/page.html renders
+       <span class="indicator-pill whitespace-nowrap"></span>
+   unconditionally, and page.set_indicator() is what fills it. A custom desk page
+   that never calls set_indicator therefore paints a bare grey lozenge next to its
+   title, which reads as a status that failed to load. Collapse it while it is
+   empty; the moment anything calls set_indicator the rule stops matching and the
+   pill appears on its own.
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
+) .page-head .indicator-pill:empty {
+  display: none !important;
+}
+
+/* ----------------------------------------------------------------------------
+   The sticky page head paints over the top of the page body.
+
+   frappe/public/scss/desk/page.scss puts .page-head at
+       position: sticky; top: var(--navbar-height);
+   Sticky repositioning does NOT reflow siblings: the head still only reserves
+   its natural flow box, so shifting it down by the navbar height leaves it
+   overlapping whatever follows. Measured on purchase_inward_entry: the head
+   painted 48px-108px while .page-body began at 65px, hiding 31 of the 36px of
+   the BRD explainer paragraph that opens both entry screens.
+
+   Reserve the sticky offset so the first element in the body clears the head.
+   Scoped to this module's four routes rather than the whole family above, so it
+   cannot move a screen nobody asked to change.
+   ---------------------------------------------------------------------------- */
+:is(
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_qc_entry"]
+) .page-body {
+  padding-top: var(--navbar-height, 48px);
+}

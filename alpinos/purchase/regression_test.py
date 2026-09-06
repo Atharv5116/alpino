@@ -1112,6 +1112,68 @@ def run_wave_d(_report_now=True):
 		for shortcut in ws.shortcuts:
 			assert shortcut.label in named, f"shortcut {shortcut.label!r} has no block drawing it"
 
+	def controls_never_see_a_microsecond_datetime():
+		"""A Datetime read straight out of the database carries microseconds
+		(2026-09-06 07:20:44.774097). frappe.datetime.validate (utils/datetime.js)
+		parses STRICTLY against YYYY-MM-DD HH:mm:ss, so ControlDate.validate rejected
+		the value, raised a msgprint modal over the page on every load AND returned ""
+		-- blanking Inward Date & Time. Every value handed to a control must therefore
+		go through the trim helper first, including the ones built for grid cells."""
+		import re
+
+		for page in ("purchase_inward_entry", "purchase_qc_entry"):
+			src = _page_js(page)
+			assert "ALP_TRIM_MICROSECONDS" in src, f"{page}: no microsecond trim helper"
+			for line in src.splitlines():
+				if ".set_value(" not in line:
+					continue
+				assert "ALP_TRIM_MICROSECONDS" in line, (
+					f"{page}: a control is fed a raw value, which a microsecond "
+					f"datetime would blank: {line.strip()}"
+				)
+
+	def the_empty_status_pill_is_collapsed():
+		"""frappe/public/js/frappe/ui/page.html always renders
+		    <span class="indicator-pill whitespace-nowrap"></span>
+		and page.set_indicator() is what fills it. A page that never sets an indicator
+		therefore paints a bare grey lozenge beside its title that reads as a status
+		which failed to load."""
+		css = open(SHARED_CSS).read()
+		assert ".indicator-pill:empty" in css, (
+			"nothing collapses the empty page-header pill Frappe ships unconditionally"
+		)
+		for name in MODULE_PAGES:
+			assert f'data-page-route="{name}"' in css
+
+	def the_body_clears_the_sticky_page_head():
+		"""frappe/public/scss/desk/page.scss puts .page-head at
+		    position: sticky; top: var(--navbar-height)
+		and sticky repositioning does not reflow siblings, so the head keeps only its
+		natural flow box and paints over whatever follows. Measured on
+		purchase_inward_entry: head 48px-108px, .page-body starting at 65px, which hid
+		31 of the 36px of the explainer paragraph opening both entry screens."""
+		css = open(SHARED_CSS).read()
+		assert "padding-top: var(--navbar-height" in css, (
+			"nothing reserves the sticky head offset, so the top of the body is covered"
+		)
+
+	def empty_grids_say_they_are_empty():
+		"""A grid rendered as a bare header row plus a stray Add Row button is
+		indistinguishable from one that failed to render. The message lives in
+		data-empty on the scroll wrapper (never as a placeholder <tr>, which would
+		shift the data-idx the remove handler reads)."""
+		import glob
+		import os
+
+		for path in sorted(glob.glob(f"{APP_PAGE_DIR}/purchase_*_entry/*.html")):
+			body = open(path).read()
+			name = os.path.basename(path)
+			wrappers = body.count('class="alp-scroll')
+			labelled = body.count("data-empty=")
+			assert wrappers and labelled == wrappers, (
+				f"{name}: {labelled} of {wrappers} grids carry an empty state"
+			)
+
 	check("Wave D all four module desk pages exist and are role-granted", pages_exist)
 	check("Wave D the entry pages register and render their own template", entry_pages_render_their_template)
 	check("Wave D the entry pages reuse the shared design system", entry_pages_use_the_house_design)
@@ -1122,6 +1184,10 @@ def run_wave_d(_report_now=True):
 	check("Wave D the workspace reaches every module page", workspace_reaches_them)
 	check("Wave D the workspace name does not collide with a DocType", workspace_does_not_collide_with_a_doctype)
 	check("Wave D the workspace has content blocks so it renders", workspace_actually_renders)
+	check("Wave D no control is fed a microsecond datetime", controls_never_see_a_microsecond_datetime)
+	check("Wave D the empty page-header status pill is collapsed", the_empty_status_pill_is_collapsed)
+	check("Wave D the page body clears the sticky page head", the_body_clears_the_sticky_page_head)
+	check("Wave D every entry-page grid states when it is empty", empty_grids_say_they_are_empty)
 
 	return _report() if _report_now else R
 
