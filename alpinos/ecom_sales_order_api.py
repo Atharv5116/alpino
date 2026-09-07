@@ -181,8 +181,13 @@ def _apply_ecom_header(so, *, flags, po_number, po_date, delivery_by_date,
 	so.custom_delivery_by_date = delivery_by_date or None
 	so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	so.custom_shipping_gstin = (shipping_gstin or "").strip().upper()
-	so.custom_billing_address_text = (billing_address or "").strip()
-	so.custom_shipping_address_text = (shipping_address or "").strip()
+	# Billing / Shipping free text: when only one side is supplied (common on the
+	# import sheet, where a row fills Shipping Address but leaves Billing Address
+	# empty), the given one stands in for the missing one instead of being blank.
+	_billing_txt = (billing_address or "").strip()
+	_shipping_txt = (shipping_address or "").strip()
+	so.custom_billing_address_text = _billing_txt or _shipping_txt
+	so.custom_shipping_address_text = _shipping_txt or _billing_txt
 	so.custom_is_freebie_po = cint(is_freebie_po)
 	# We own the flags — stop the generic sync from re-defaulting them from the buyer.
 	so.flags.skip_ecom_flag_default = True

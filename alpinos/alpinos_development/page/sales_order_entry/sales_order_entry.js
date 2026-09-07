@@ -110,8 +110,16 @@ var SalesOrderEntry = class {
 					me._site_name_manual = true;
 				}
 				if (me.dispatch_date_field && d.dispatch_date) me.dispatch_date_field.set_value(d.dispatch_date);
-				// so the async buyer autofill applies these, not the buyer defaults, when customer is set
-				if (d.ecom) me._mt_saved = d.ecom;
+				// The saved order's own MT values (flags, PO fields, GSTINs) win over the buyer
+				// defaults. customer_field is a Link bound through $input events, so setting it
+				// programmatically never fires on_customer_change — apply them here instead of
+				// waiting for an autofill pass that only a real user change would trigger.
+				if (d.ecom) {
+					me._mt_saved = d.ecom;
+					me.apply_mt_buyer_flags(null);
+					me.toggle_mt_ecom();
+					me._gstin_locked = true;
+				}
 				me._apply_quotation_prefill(d);
 			}
 		});
@@ -293,15 +301,19 @@ var SalesOrderEntry = class {
 		});
 		this.site_name_field.$input && this.site_name_field.$input.on('input', function() {
 			me._site_name_manual = true;
+			me._gstin_locked = false;
 			// cleared site -> address dropdowns go back to the whole family
-			if (!$(this).val()) { me._reload_addresses_for_site(); me._refresh_box_round_mode(); }
+			if (!$(this).val()) { me._reload_addresses_for_site(); me._refresh_box_round_mode(); me._refresh_party_gstin(); }
 		});
 		// awesomplete-selectcomplete only fires on a real user choice, never the programmatic default fill,
 		// so narrowing the address dropdowns here doesn't loop
 		this.site_name_field.$input && this.site_name_field.$input.on('awesomplete-selectcomplete', function() {
 			me._site_name_manual = true;
+			me._gstin_locked = false;
 			me._reload_addresses_for_site();
 			me._refresh_box_round_mode();
+			// GST is site-wise, so a site change moves the GSTIN just like a party change does
+			me._refresh_party_gstin();
 		});
 		// every Site Name in the buyer family (parent + children)
 		me._load_family_sites = function(customer) {
@@ -314,7 +326,37 @@ var SalesOrderEntry = class {
 		};
 		me._set_site_name_default = function(value) {
 			if (me._site_name_manual) return;
+			const before = me.site_name_field ? (me.site_name_field.get_value() || '') : '';
 			me.site_name_field && me.site_name_field.set_value(value || '');
+			// The site carries the GSTIN, and this default can land asynchronously (the
+			// shipping address decides it), after on_customer_change has already run.
+			if ((value || '') !== before) me._refresh_party_gstin();
+		};
+		// Billing / Shipping GSTIN for the party + site currently on screen. Always writes
+		// both fields, blank included: leaving the previous buyer's GSTIN visible after a
+		// switch is what put a wrong GSTIN on the invoice. The server applies the same rule
+		// on save (get_party_gstin mirrors it), so what is shown is what gets saved.
+		me._refresh_party_gstin = function() {
+			if (!me.billing_gstin_field) return;
+			// A loaded order keeps its own GSTINs until the user actually moves the party or
+			// the site; the async site default must not overwrite a hand-typed value.
+			if (me._gstin_locked) return;
+			const customer = me.customer_field.get_value();
+			const set = function(billing, shipping) {
+				me.billing_gstin_field.set_value(billing || '');
+				me.mt && me.mt.shipping_gstin && me.mt.shipping_gstin.set_value(shipping || '');
+			};
+			if (!customer) { set('', ''); return; }
+			frappe.call({
+				method: 'alpinos.sales_order_offline_buyer.get_party_gstin',
+				args: { customer: customer, site_name: (me.site_name_field && me.site_name_field.get_value()) || '' },
+				callback: function(r) {
+					const g = r.message || {};
+					// Ignore a reply for a party the user has already moved off.
+					if (me.customer_field.get_value() !== customer) return;
+					set(g.billing_gstin, g.shipping_gstin);
+				},
+			});
 		};
 		me._update_site_from_shipping = function() {
 			if (me._site_name_manual) return;
@@ -428,6 +470,8 @@ var SalesOrderEntry = class {
 		let on_customer_change = function() {
 			setTimeout(() => {
 				let customer = me.customer_field.get_value();
+				// a real party change always re-resolves, whatever was loaded before
+				me._gstin_locked = false;
 				if (customer) {
 					frappe.call({
 						method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_for_customer',
@@ -442,6 +486,9 @@ var SalesOrderEntry = class {
 							me.apply_mt_buyer_flags(r.message);
 							me.toggle_mt_ecom();
 							me._refresh_box_round_mode();
+							// The party moved, so the GSTIN has to move with it — including to
+							// blank when the new buyer resolves none.
+							me._refresh_party_gstin();
 						}
 					});
 					frappe.call({
@@ -464,6 +511,7 @@ var SalesOrderEntry = class {
 					if (me.tax_template_field) me.tax_template_field.set_value('');
 					me._obm_site_name = '';
 					me._set_site_name_default('');
+					me._refresh_party_gstin();
 				}
 			}, 300);
 		};
@@ -814,10 +862,9 @@ var SalesOrderEntry = class {
 		this.mt.partial.set_value(cint(buyer.partial_order_allowed));
 		this.mt.gst_excl.set_value(cint(buyer.gst_exclusive_buyer));
 		this._toggle_gst_excl_note && this._toggle_gst_excl_note();
-		if (buyer.gst_no) {
-			if (!this.billing_gstin_field.get_value()) this.billing_gstin_field.set_value(buyer.gst_no);
-			if (!this.mt.shipping_gstin.get_value()) this.mt.shipping_gstin.set_value(buyer.gst_no);
-		}
+		// Billing / Shipping GSTIN are NOT filled here. They are site-wise and must be
+		// rewritten on every party change (blank included), which _refresh_party_gstin
+		// does; the old blank-only fill left the previous buyer's GSTIN on screen.
 	}
 
 	mt_ecom_payload() {
@@ -2047,11 +2094,15 @@ var SalesOrderEntry = class {
 		this.billing_address_field && this.billing_address_field.set_value('');
 		this.shipping_address_field && this.shipping_address_field.set_value('');
 		this.tax_template_field && this.tax_template_field.set_value('');
+		// Billing GST No. was moved out of this.mt into its own field, so the mt sweep
+		// below no longer reaches it — clear it explicitly or it survives the reset.
+		this.billing_gstin_field && this.billing_gstin_field.set_value('');
 		this.cash_discount_field && this.cash_discount_field.set_value(0);
 		this.created_by_field && this.created_by_field.set_value(frappe.session.user_fullname || frappe.session.user);
 		this.additional_units_damage_field && this.additional_units_damage_field.set_value(0);
 		this.wrapper.find('.additional-units-section').toggle(false);
 		this._mt_saved = null;
+		this._gstin_locked = false;
 		if (this.mt) {
 			Object.values(this.mt).forEach((f) => f && f.set_value(''));
 		}

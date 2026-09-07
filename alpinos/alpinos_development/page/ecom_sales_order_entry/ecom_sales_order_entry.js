@@ -87,7 +87,6 @@ var EcomSalesOrderEntry = class {
 		// Address
 		this.f_site = mk('.fld-site-name', {
 			fieldtype: 'Autocomplete', fieldname: 'site_name', label: __('Site Name'),
-			onchange: () => { this._site_manual = true; },
 		});
 		// Picking a site narrows the address dropdowns to that site's buyer master;
 		// clearing it restores the whole family. awesomplete-selectcomplete only
@@ -97,9 +96,17 @@ var EcomSalesOrderEntry = class {
 				this._site_manual = true;
 				this._reload_ecom_addresses_for_site();
 				this._refresh_box_round_mode();
+				// GST is site-wise, so a site change moves the GSTIN just like a party change
+				this._refresh_party_gstin();
 			});
 			this.f_site.$input.on('input', (e) => {
-				if (!$(e.target).val()) { this._reload_ecom_addresses_for_site(); this._refresh_box_round_mode(); }
+				// typing here is a real user edit — that, not the auto-fill, pins the site
+				this._site_manual = true;
+				if (!$(e.target).val()) {
+					this._reload_ecom_addresses_for_site();
+					this._refresh_box_round_mode();
+					this._refresh_party_gstin();
+				}
 			});
 		}
 		this.f_bill_gstin = mk('.fld-billing-gstin', {
@@ -254,11 +261,40 @@ var EcomSalesOrderEntry = class {
 		this._load_ecom_address_options(customer, site, true);
 	}
 
+	// Billing / Shipping GSTIN for the party + site on screen. Always writes both fields,
+	// blank included: leaving the previous buyer's GSTIN visible after a switch is what put
+	// a wrong GSTIN on the invoice. get_party_gstin applies the same site-wise rule the
+	// save does, so what is shown is what gets saved.
+	_refresh_party_gstin() {
+		const customer = this.f_customer.get_value();
+		const set = (billing, shipping) => {
+			this.f_bill_gstin.set_value(billing || '');
+			this.f_ship_gstin.set_value(shipping || '');
+		};
+		if (!customer) { set('', ''); return; }
+		frappe.call({
+			method: 'alpinos.sales_order_offline_buyer.get_party_gstin',
+			args: { customer, site_name: (this.f_site && this.f_site.get_value()) || '' },
+			callback: (r) => {
+				const g = r.message || {};
+				// Ignore a reply for a party the user has already moved off.
+				if (this.f_customer.get_value() !== customer) return;
+				set(g.billing_gstin, g.shipping_gstin);
+			},
+		});
+	}
+
 	on_customer_change() {
 		const customer = this.f_customer.get_value();
 		if (!customer) return;
 		this._load_ecom_address_options(customer);
 		this._load_family_sites(customer);
+		// f_customer carries onchange in its df, so the edit-prefill's set_value lands here
+		// too. Its async reply used to overwrite the loaded order's own type, addresses and
+		// GSTINs with the buyer defaults; the loader sets those itself, so stand down once.
+		const from_prefill = this._prefill_customer === customer;
+		this._prefill_customer = null;
+		if (from_prefill) return;
 		frappe.call({
 			method: 'alpinos.ecom_sales_order_api.get_ecom_buyer_for_customer',
 			args: { customer },
@@ -269,12 +305,12 @@ var EcomSalesOrderEntry = class {
 				this.f_grn.set_value(cint(d.grn_available));
 				this.f_partial.set_value(cint(d.partial_order_allowed));
 				this.f_gst_excl.set_value(cint(d.gst_exclusive_buyer));
-				if (!this._site_manual && d.site_name) this.f_site.set_value(d.site_name);
+				if (!this._site_manual) this.f_site.set_value(d.site_name || '');
 				const b = d.billing || {}, s = d.shipping || {};
 				this.f_bill_addr.set_value(b.address || '');
-				this.f_bill_gstin.set_value(b.gstin || '');
 				this.f_ship_addr.set_value(s.address || '');
-				this.f_ship_gstin.set_value(s.gstin || '');
+				// after the site above, so the GSTIN follows the new site
+				this._refresh_party_gstin();
 				this._refresh_box_round_mode();
 			},
 		});
@@ -774,6 +810,7 @@ var EcomSalesOrderEntry = class {
 					this.editing = d.name;
 					this.page.set_title(__('E-Com Sales Order Entry — {0}', [d.name]));
 				}
+				this._prefill_customer = d.customer;
 				this.f_customer.set_value(d.customer);
 				this._load_ecom_address_options(d.customer);
 				this._load_family_sites(d.customer);
@@ -824,6 +861,7 @@ var EcomSalesOrderEntry = class {
 	clear_form() {
 		this.editing = null;
 		this._site_manual = false;
+		this._prefill_customer = null;
 		this.items = [];
 		this.freebies = [];
 		this.stickers = [];

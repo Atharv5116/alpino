@@ -11,7 +11,7 @@ print on the invoice.
 """
 
 import frappe
-from frappe.utils import add_days, today
+from frappe.utils import add_days, getdate, today
 
 R = []
 
@@ -64,7 +64,11 @@ def run():
 
 	def _load():
 		doc = frappe.get_doc("Sales Order", so)
-		if not doc.get("custom_dispatch_date"):
+		# The fixture is a real draft, so its stored dispatch date goes stale as soon as
+		# that date passes and every save then dies on "Dispatch Date cannot be in the
+		# past". Push it forward whenever it is missing OR already behind us.
+		stored = doc.get("custom_dispatch_date")
+		if not stored or getdate(stored) < getdate(today()):
 			doc.custom_dispatch_date = add_days(today(), 2)
 		doc.flags.ignore_permissions = True
 		return doc
@@ -88,10 +92,9 @@ def run():
 
 	def address_is_stable_on_an_unrelated_save():
 		"""The re-resolve must be triggered by the party changing, not by every save."""
-		doc = frappe.get_doc("Sales Order", so)
+		doc = _load()
 		before = doc.customer_address
 		doc.po_no = "PARTYTEST-" + frappe.generate_hash(length=4)
-		doc.flags.ignore_permissions = True
 		doc.save()
 		doc.reload()
 		assert doc.customer_address == before, (
@@ -106,9 +109,51 @@ def run():
 			"_party_or_site_changed must be False on a new doc, which has no baseline"
 		)
 
+	def gstin_resolver_agrees_with_the_save():
+		"""The entry pages show get_party_gstin; the save writes its own GST block.
+
+		They are the same rule written twice, so they have to agree — otherwise the
+		operator approves one GSTIN and the order stores another.
+		"""
+		from alpinos.sales_order_offline_buyer import get_party_gstin
+
+		doc = _load()
+		doc.customer = other
+		doc.save()
+		doc.reload()
+
+		shown = get_party_gstin(doc.customer, doc.get("custom_site_name") or "")
+		assert (doc.get("custom_billing_gstin") or "") == shown["billing_gstin"], (
+			f"saved billing GSTIN {doc.get('custom_billing_gstin')!r} != "
+			f"the {shown['billing_gstin']!r} the page showed"
+		)
+		assert (doc.get("tax_id") or "") == shown["shipping_gstin"], (
+			f"saved tax_id {doc.get('tax_id')!r} != the site GSTIN {shown['shipping_gstin']!r}"
+		)
+
+	def switching_party_never_keeps_the_old_gstin():
+		"""A GSTIN belonging to the previous buyer must not survive a party switch."""
+		from alpinos.sales_order_offline_buyer import get_party_gstin
+
+		doc = _load()
+		stale = "07AAAAA0000A1Z5"  # not a real buyer's GSTIN
+		doc.custom_billing_gstin = stale
+		doc.customer = state.get("old_customer") or doc.customer
+		doc.save()
+		doc.reload()
+		assert (doc.get("custom_billing_gstin") or "") != stale, (
+			"the previous buyer's GSTIN survived the switch"
+		)
+		expected = get_party_gstin(doc.customer, doc.get("custom_site_name") or "")["billing_gstin"]
+		assert (doc.get("custom_billing_gstin") or "") == expected, (
+			f"billing GSTIN {doc.get('custom_billing_gstin')!r} != expected {expected!r}"
+		)
+
 	_check("changing the customer re-resolves the billing address", changing_customer_reresolves_the_address)
 	_check("an unrelated save does not churn the address", address_is_stable_on_an_unrelated_save)
 	_check("the change-detector is quiet for a new document", helper_is_quiet_for_a_new_doc)
+	_check("the GSTIN the page shows is the GSTIN the save writes", gstin_resolver_agrees_with_the_save)
+	_check("switching party never keeps the old GSTIN", switching_party_never_keeps_the_old_gstin)
 
 	frappe.db.rollback()
 
