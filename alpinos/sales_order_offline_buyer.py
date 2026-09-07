@@ -350,6 +350,43 @@ def _flag_for_site(site_name, field, fallback=0):
 	return int(fallback or 0)
 
 
+@frappe.whitelist()
+def get_party_gstin(customer, site_name=None):
+	"""Billing / Shipping GSTIN for a party + site, by the same rule the save applies.
+
+	The entry pages have to show what the order will actually be saved with, so this is
+	deliberately the one rule expressed twice — keep it in step with the GST block in
+	sync_sales_order_offline_buyer_fields:
+
+	  shipping = the SELECTED SITE's GSTIN, blank when the site resolves no master
+	  billing  = the site's GSTIN, else the buyer's OWN GSTIN but only when it has no
+	             Parent Buyer, else blank. NEVER the Parent Buyer's GSTIN.
+
+	Blank is a real answer, not a "leave it alone" — the caller is expected to write it,
+	so a party switch cannot leave the previous buyer's GSTIN on screen.
+	"""
+	# Buyer GSTINs are party data — same gate as the other buyer lookups on these pages.
+	if not frappe.has_permission("Sales Order", "create"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	blank = {"billing_gstin": "", "shipping_gstin": "", "site_gstin": ""}
+	if not customer:
+		return blank
+
+	row = frappe.db.get_value(
+		"Buyer Master", {"customer": customer}, ["gst_no", "parent_buyer"], as_dict=True
+	)
+	if not row:
+		return blank
+
+	site_gst = (_gst_for_site((site_name or "").strip(), "") or "").strip().upper()
+	billing_gst = site_gst
+	if not billing_gst and not row.get("parent_buyer"):
+		billing_gst = (row.get("gst_no") or "").strip().upper()
+
+	return {"billing_gstin": billing_gst, "shipping_gstin": site_gst, "site_gstin": site_gst}
+
+
 def sync_sales_order_offline_buyer_fields(doc, method=None):
 	"""Keep OBM link and trade Customer Type on Sales Order in sync with Customer (save/API/import)."""
 	if doc.docstatus != 0:

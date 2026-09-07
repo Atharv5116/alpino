@@ -3,6 +3,32 @@
 import frappe
 
 SALES_ORDER_CLIENT_SCRIPT = """
+// Billing / Shipping GSTIN for the party + site on the form. Always writes both fields,
+// blank included: leaving the previous customer's GSTIN on the document is what put a
+// wrong GSTIN on the invoice. get_party_gstin applies the same site-wise rule the save
+// does, so the form shows what will be saved instead of waiting for the save.
+//
+// tax_id is deliberately left alone: it is read-only with fetch_from customer.tax_id, so
+// the framework's own fetch would race this write, and validate() sets it site-wise anyway.
+function _refresh_party_gstin(frm) {
+    const customer = frm.doc.customer;
+    const set = function(billing, shipping) {
+        if (frm.fields_dict.custom_billing_gstin) frm.set_value('custom_billing_gstin', billing || '');
+        if (frm.fields_dict.custom_shipping_gstin) frm.set_value('custom_shipping_gstin', shipping || '');
+    };
+    if (!customer) { set('', ''); return; }
+    frappe.call({
+        method: 'alpinos.sales_order_offline_buyer.get_party_gstin',
+        args: { customer: customer, site_name: frm.doc.custom_site_name || '' },
+        callback: function(r) {
+            const g = r.message || {};
+            // Ignore a reply for a party the user has already moved off.
+            if (frm.doc.customer !== customer) return;
+            set(g.billing_gstin, g.shipping_gstin);
+        }
+    });
+}
+
 frappe.ui.form.on('Sales Order', {
     onload: function(frm) {
         if (frm.is_new() && !frm.doc.custom_dispatch_date) {
@@ -45,6 +71,12 @@ frappe.ui.form.on('Sales Order', {
                 }
             });
         }
+        _refresh_party_gstin(frm);
+    },
+
+    custom_site_name: function(frm) {
+        // GST is site-wise, so a site change moves the GSTIN just like a party change
+        _refresh_party_gstin(frm);
     },
 
     setup: function(frm) {
