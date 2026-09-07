@@ -429,11 +429,20 @@ doc_events = {
 			"alpinos.stock_reservation.reserve_for_pick_list",
 		],
 		"on_update": "alpinos.workflow_engine.pick_list_on_update",
-		"on_submit": "alpinos.workflow_engine.pick_list_on_submit",
-		"on_update_after_submit": "alpinos.after_submit_sync.pick_list_on_update_after_submit",
+		"on_submit": [
+			"alpinos.workflow_engine.pick_list_on_submit",
+			# An order with no Delivery Note yet is valued from its pick, so the figure
+			# appears when the list is signed off rather than only when stock ships.
+			"alpinos.so_invoice_value.refresh_from_pick_list",
+		],
+		"on_update_after_submit": [
+			"alpinos.after_submit_sync.pick_list_on_update_after_submit",
+			"alpinos.so_invoice_value.refresh_from_pick_list",
+		],
 		"on_cancel": [
 			"alpinos.workflow_engine.pick_list_on_cancel",
 			"alpinos.stock_reservation.release_for_cancelled_pick_list",
+			"alpinos.so_invoice_value.refresh_from_pick_list",
 		],
 	},
 	"Delivery Note": {
