@@ -505,13 +505,26 @@ var SalesOrderEntry = class {
 						},
 					});
 				} else {
+					// No customer -> nothing is derived from one. Everything the buyer filled
+					// in goes back to blank, because leaving the previous customer's type,
+					// flags, site and addresses on screen is exactly how they end up saved
+					// against the NEXT order. What the user typed themselves (PO number,
+					// dates, item rows) is deliberately left alone.
+					me.order_type_field && me.order_type_field.set_value('');
+					me.clear_mt_buyer_flags();
+					me.toggle_mt_ecom();
 					me.billing_address_field && me.billing_address_field.set_value('');
 					me.shipping_address_field && me.shipping_address_field.set_value('');
 					me._load_address_options(null);
 					if (me.tax_template_field) me.tax_template_field.set_value('');
 					me._obm_site_name = '';
+					// clearing the party also drops "the user picked this site", so the site
+					// itself clears instead of surviving into the next customer
+					me._site_name_manual = false;
 					me._set_site_name_default('');
+					me.site_name_field && me.site_name_field.set_data && me.site_name_field.set_data([]);
 					me._refresh_party_gstin();
+					me._refresh_box_round_mode();
 				}
 			}, 300);
 		};
@@ -865,6 +878,14 @@ var SalesOrderEntry = class {
 		// Billing / Shipping GSTIN are NOT filled here. They are site-wise and must be
 		// rewritten on every party change (blank included), which _refresh_party_gstin
 		// does; the old blank-only fill left the previous buyer's GSTIN on screen.
+	}
+
+	clear_mt_buyer_flags() {
+		if (!this.mt) return;
+		['appointment', 'grn', 'partial', 'gst_excl'].forEach((k) => {
+			this.mt[k] && this.mt[k].set_value(0);
+		});
+		this._toggle_gst_excl_note && this._toggle_gst_excl_note();
 	}
 
 	mt_ecom_payload() {

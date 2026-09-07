@@ -284,9 +284,32 @@ var EcomSalesOrderEntry = class {
 		});
 	}
 
+	// No customer -> nothing is derived from one. Everything the buyer filled in goes back
+	// to blank, because leaving the previous customer's type, flags, site, addresses and
+	// GSTINs on screen is exactly how they end up saved against the NEXT order. What the
+	// user typed themselves (PO number, dates, item rows) is deliberately left alone.
+	_clear_party_fields() {
+		this._prefill_customer = null;
+		this.f_customer_type.set_value('');
+		this.f_appointment.set_value(0);
+		this.f_grn.set_value(0);
+		this.f_partial.set_value(0);
+		this.f_gst_excl.set_value(0);
+		// clearing the party also drops "the user picked this site", so the site itself
+		// clears instead of surviving into the next customer
+		this._site_manual = false;
+		this.f_site.set_value('');
+		this.f_site.set_data && this.f_site.set_data([]);
+		this.f_bill_addr.set_value('');
+		this.f_ship_addr.set_value('');
+		this._load_ecom_address_options(null);
+		this._refresh_party_gstin();
+		this._refresh_box_round_mode();
+	}
+
 	on_customer_change() {
 		const customer = this.f_customer.get_value();
-		if (!customer) return;
+		if (!customer) { this._clear_party_fields(); return; }
 		this._load_ecom_address_options(customer);
 		this._load_family_sites(customer);
 		// f_customer carries onchange in its df, so the edit-prefill's set_value lands here

@@ -70,6 +70,13 @@ frappe.ui.form.on('Sales Order', {
                     }
                 }
             });
+        } else {
+            // No customer -> nothing is derived from one. Matches what validate() writes
+            // when doc.customer is empty, so the form stops showing the previous
+            // customer's type and buyer link until a save clears them.
+            frm.set_value('order_type', '');
+            frm.set_value('custom_offline_buyer_customer_type', '');
+            frm.set_value('custom_offline_buyer_master', '');
         }
         _refresh_party_gstin(frm);
     },
