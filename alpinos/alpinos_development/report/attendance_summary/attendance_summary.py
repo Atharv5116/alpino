@@ -191,6 +191,7 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	holiday_map = get_holiday_map(emp.employee, period_start, period_end)
 	leave_map = get_leave_map(emp.employee, period_start, period_end)
 	wfh_map = get_wfh_map(emp.employee, period_start, period_end)
+	correction_map = get_correction_map(emp.employee, period_start, period_end)
 
 	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, period_start, period_end, emp.employee)
 	
@@ -229,6 +230,13 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.final_payable_days = flt(flt(row.present_working_days) + flt(stats["paid_leave"]), 2)
 	row.final_paid_days = flt(flt(row.final_payable_days) - flt(late_info["deduction"]), 2)
 	row.verify = ""
+
+	# Days whose punches were corrected through an Attendance Request. Carried as a plain
+	# comma list of day numbers so the client formatter and the Excel export can both
+	# highlight the same cells without re-querying.
+	row.corrected_days = ",".join(
+		str(getdate(d).day) for d in sorted(correction_map)
+	)
 
 	current_date = getdate(from_date)
 	end_date = _display_end_date(from_date, to_date)
@@ -432,6 +440,34 @@ def get_holiday_map(employee, from_date, to_date):
 		return holiday_map
 	except:
 		return {}
+
+
+def get_correction_map(employee, from_date, to_date):
+	"""Dates whose punches were CORRECTED through a submitted Attendance Request.
+
+	A correction means a punch already existed and was changed, which is why the log row
+	must carry an old check-in or check-out. A missing-punch request (both NULL) is an
+	addition, not a correction, and is deliberately not highlighted -- same test the
+	Attendance Request Punch Edits report uses.
+	"""
+	try:
+		rows = frappe.db.sql(
+			"""
+			SELECT DISTINCT log.attendance_date
+			FROM `tabAttendance Request Log` log
+			INNER JOIN `tabAttendance Request` ar ON ar.name = log.parent
+			WHERE log.parenttype = 'Attendance Request'
+			  AND ar.docstatus = 1
+			  AND ar.employee = %(employee)s
+			  AND log.attendance_date BETWEEN %(from_date)s AND %(to_date)s
+			  AND (log.check_in IS NOT NULL OR log.check_out IS NOT NULL)
+			""",
+			{"employee": employee, "from_date": getdate(from_date), "to_date": getdate(to_date)},
+			as_dict=True,
+		)
+		return {r.attendance_date.strftime("%Y-%m-%d") for r in rows if r.attendance_date}
+	except Exception:
+		return set()
 
 
 def get_leave_map(employee, from_date, to_date):

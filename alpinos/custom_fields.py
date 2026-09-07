@@ -606,6 +606,26 @@ def setup_custom_fields():
 			read_only=1,
 			description="Reason provided when employee checked out from outside office location (from Employee Checkin).",
 		),
+		# HRMS #8: HR's "Mark as Full Day" override, and the reason it was applied.
+		dict(
+			fieldname="custom_marked_full_day",
+			label="Marked as Full Day by HR",
+			fieldtype="Check",
+			insert_after="checkout_reason",
+			read_only=1,
+			allow_on_submit=1,
+			description="Set when HR marked this day a full day from the Attendance Summary report.",
+		),
+		dict(
+			fieldname="custom_full_day_reason",
+			label="Full Day Reason",
+			fieldtype="Small Text",
+			insert_after="custom_marked_full_day",
+			read_only=1,
+			allow_on_submit=1,
+			depends_on="eval:doc.custom_marked_full_day",
+			description="Why HR marked this day as a full day.",
+		),
 	],
 	"Sales Order": [
 		dict(

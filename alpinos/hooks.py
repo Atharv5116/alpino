@@ -371,6 +371,9 @@ doc_events = {
 		]
 	},
 	"Leave Application": {
+		# Alpino works a full Saturday, so it cannot be halved -- the same rule Work From
+		# Home Request already carries.
+		"validate": "alpinos.leave_application_rules.block_saturday_half_day",
 		"on_update": "alpinos.raven_notifications.notify_leave_application",
 		"on_submit": "alpinos.raven_notifications.notify_leave_application"
 	},
@@ -542,7 +545,13 @@ doc_events = {
 		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},
 	"Attendance Request": {
-		"validate": "alpinos.attendance_request_automation.set_reporting_person",
+		"validate": [
+			"alpinos.attendance_request_automation.set_reporting_person",
+			# Changes(HP) #6 / #7 -- regularisation can't point at the future, and a
+			# Saturday can't be halved.
+			"alpinos.attendance_request_rules.block_future_date_time",
+			"alpinos.attendance_request_rules.block_saturday_half_day",
+		],
 		"on_submit": "alpinos.raven_notifications.notify_attendance_request"
 	},
 	"Attendance": {
