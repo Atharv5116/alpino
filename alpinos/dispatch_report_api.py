@@ -5,22 +5,36 @@ from frappe.utils import today, getdate
 
 
 @frappe.whitelist()
-def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0):
+def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0, group_by_parent=0):
+	"""Daily dispatch grid.
+
+	group_by_parent swaps the breakdown columns from Customer Type to the buyer FAMILY:
+	every order is attributed to its Parent Buyer (or to itself when it is the root), so
+	the sites of one chain read as a single column instead of being spread across the
+	types their individual Buyer Masters happen to carry.
+	"""
 	if not date:
 		date = today()
 
 	# Frappe sends checkbox values as strings ("0"/"1") over the wire.
 	include_material_issue = int(include_material_issue or 0)
+	group_by_parent = int(group_by_parent or 0)
 
-	customer_types = _get_customer_types()
 	items = _get_sequenced_items()
-	dispatch_data = _get_dispatch_data(date)
+	dispatch_data = _get_dispatch_data(date, group_by_parent)
 	if include_material_issue:
-		_merge_dispatch_data(dispatch_data, _get_material_issue_data(date))
-	pending_data = _get_pending_data(date)
+		_merge_dispatch_data(dispatch_data, _get_material_issue_data(date, group_by_parent))
+	pending_data = _get_pending_data(date, group_by_parent)
 	stock_data = _get_stock_data(warehouse, date)
 	inward_data = _get_inward_data()
-	summary = _build_summary(date, customer_types, dispatch_data, pending_data)
+	# Customer Types are a fixed master list; parent buyers are not -- there are hundreds,
+	# so the columns are the families that actually moved on the day.
+	customer_types = (
+		_columns_from_data(dispatch_data, pending_data)
+		if group_by_parent
+		else _get_customer_types()
+	)
+	summary = _build_summary(date, customer_types, dispatch_data, pending_data, group_by_parent)
 
 	result_items = []
 	for item in items:
@@ -49,6 +63,7 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 	return {
 		"date": date,
 		"warehouse": warehouse or "",
+		"group_by_parent": group_by_parent,
 		"customer_types": customer_types,
 		"items": result_items,
 		"summary": summary,
@@ -58,6 +73,35 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 # ---------------------------------------------------------------------------
 # Data fetchers
 # ---------------------------------------------------------------------------
+
+def _group_sql(group_by_parent):
+	"""(column-key expression, extra JOINs) for a query that has `so` in scope.
+
+	Grouping by family walks Sales Order -> its Buyer Master -> that buyer's Parent Buyer,
+	falling back to the buyer itself, which is the right answer for a root or standalone
+	buyer. An order with no Buyer Master at all lands in "Other" rather than vanishing.
+	"""
+	if not group_by_parent:
+		return "COALESCE(so.order_type, 'Other')", ""
+	joins = (
+		" LEFT JOIN `tabBuyer Master` bm ON bm.name = so.custom_offline_buyer_master"
+		" LEFT JOIN `tabBuyer Master` pbm ON pbm.name = bm.parent_buyer"
+	)
+	expr = "COALESCE(pbm.customer_business_name, bm.customer_business_name, 'Other')"
+	return expr, joins
+
+
+def _columns_from_data(dispatch_data, pending_data):
+	"""Family columns actually present in the day's data, "Other" always last."""
+	seen = set()
+	for source in (dispatch_data, pending_data):
+		for entry in source.values():
+			seen.update(entry.get("by_ct", {}).keys())
+	names = sorted(n for n in seen if n and n != "Other")
+	if "Other" in seen:
+		names.append("Other")
+	return [{"name": n, "abbr": n} for n in names]
+
 
 def _get_customer_types():
 	"""Customer types as {name, abbr}, ordered by sequence then name."""
@@ -93,21 +137,22 @@ def _get_sequenced_items():
 	)
 
 
-def _get_dispatch_data(date):
+def _get_dispatch_data(date, group_by_parent=0):
 	"""Today's dispatch from Pick List items dispatched on the given date."""
+	key, joins = _group_sql(group_by_parent)
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT
 			pli.item_code,
 			SUM(pli.qty) AS qty,
-			COALESCE(so.order_type, 'Other') AS customer_type
+			{key} AS customer_type
 		FROM `tabPick List` pl
 		JOIN `tabPick List Item` pli ON pli.parent = pl.name
-		LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id
+		LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id{joins}
 		WHERE pl.custom_dispatch_date = %(date)s
 		  AND pl.docstatus != 2
 		  AND pl.purpose = 'Delivery'
-		GROUP BY pli.item_code, so.order_type
+		GROUP BY pli.item_code, {key}
 		""",
 		{"date": date},
 		as_dict=True,
@@ -115,20 +160,25 @@ def _get_dispatch_data(date):
 	return _aggregate_by_item(rows)
 
 
-def _get_material_issue_data(date):
-	"""Material Issue dispatch from submitted Stock Entries on the given date."""
+def _get_material_issue_data(date, group_by_parent=0):
+	"""Material Issue dispatch from submitted Stock Entries on the given date.
+
+	A Material Issue has no Sales Order, so there is no buyer family to attribute it to.
+	Grouping by family puts it in "Other" rather than inventing a parent for it.
+	"""
+	key = "'Other'" if group_by_parent else "COALESCE(se.custom_customer_type, 'Other')"
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT
 			sed.item_code,
 			SUM(sed.qty) AS qty,
-			COALESCE(se.custom_customer_type, 'Other') AS customer_type
+			{key} AS customer_type
 		FROM `tabStock Entry` se
 		JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
 		WHERE se.posting_date = %(date)s
 		  AND se.docstatus = 1
 		  AND se.purpose = 'Material Issue'
-		GROUP BY sed.item_code, se.custom_customer_type
+		GROUP BY sed.item_code, {key}
 		""",
 		{"date": date},
 		as_dict=True,
@@ -146,21 +196,22 @@ def _merge_dispatch_data(target, extra):
 			target[ic]["by_ct"][ct] = target[ic]["by_ct"].get(ct, 0) + qty
 
 
-def _get_pending_data(date):
+def _get_pending_data(date, group_by_parent=0):
 	"""Pending dispatch: Future Dispatch orders scheduled beyond the report date."""
+	key, joins = _group_sql(group_by_parent)
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT
 			soi.item_code,
 			SUM(soi.qty) AS qty,
-			COALESCE(so.order_type, 'Other') AS customer_type
+			{key} AS customer_type
 		FROM `tabSales Order` so
-		JOIN `tabSales Order Item` soi ON soi.parent = so.name
+		JOIN `tabSales Order Item` soi ON soi.parent = so.name{joins}
 		WHERE so.custom_workflow_status = 'Future Dispatch'
 		  AND so.custom_dispatch_date > %(date)s
 		  AND so.docstatus = 1
 		  AND so.status NOT IN ('Completed', 'Cancelled', 'Closed')
-		GROUP BY soi.item_code, so.order_type
+		GROUP BY soi.item_code, {key}
 		""",
 		{"date": date},
 		as_dict=True,
@@ -204,8 +255,13 @@ def _get_inward_data():
 	return {r["item_code"]: r["inward_date"] for r in rows}
 
 
-def _build_summary(date, customer_types, dispatch_data, pending_data):
-	"""Build top-level summary totals."""
+def _build_summary(date, customer_types, dispatch_data, pending_data, group_by_parent=0):
+	"""Build top-level summary totals.
+
+	The box / gross-weight rollups group on the same key as the grid above them, or the
+	two halves of the report would disagree about which column a chain belongs to.
+	"""
+	key, joins = _group_sql(group_by_parent)
 
 	# Unit totals per CT (for the merged section headers row)
 	dispatch_by_ct = {}
@@ -227,17 +283,17 @@ def _build_summary(date, customer_types, dispatch_data, pending_data):
 
 	# Box totals per CT from Pick List (dispatch)
 	pl_box = frappe.db.sql(
-		"""
+		f"""
 		SELECT
-			COALESCE(so.order_type, 'Other') AS ct,
+			{key} AS ct,
 			SUM(pl.custom_total_box) AS box,
 			SUM(pl.custom_gross_weight) AS gw
 		FROM `tabPick List` pl
-		LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id
+		LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id{joins}
 		WHERE pl.custom_dispatch_date = %(date)s
 		  AND pl.docstatus != 2
 		  AND pl.purpose = 'Delivery'
-		GROUP BY so.order_type
+		GROUP BY {key}
 		""",
 		{"date": date},
 		as_dict=True,
@@ -249,17 +305,17 @@ def _build_summary(date, customer_types, dispatch_data, pending_data):
 
 	# Box totals per CT from Sales Order Items (pending)
 	so_box = frappe.db.sql(
-		"""
+		f"""
 		SELECT
-			COALESCE(so.order_type, 'Other') AS ct,
+			{key} AS ct,
 			SUM(soi.custom_box) AS box
 		FROM `tabSales Order` so
-		JOIN `tabSales Order Item` soi ON soi.parent = so.name
+		JOIN `tabSales Order Item` soi ON soi.parent = so.name{joins}
 		WHERE so.custom_workflow_status = 'Future Dispatch'
 		  AND so.custom_dispatch_date > %(date)s
 		  AND so.docstatus = 1
 		  AND so.status NOT IN ('Completed', 'Cancelled', 'Closed')
-		GROUP BY so.order_type
+		GROUP BY {key}
 		""",
 		{"date": date},
 		as_dict=True,

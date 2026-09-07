@@ -46,6 +46,16 @@ frappe.ui.form.on("Buyer Master", {
 		}
 	},
 
+	is_parent(frm) {
+		// The field is hidden by depends_on, but a value set before the tick would stay on
+		// the doc and fail validate() with "cannot be both a Parent and a Child". Drop it
+		// so ticking Is Parent just works.
+		if (frm.doc.is_parent && frm.doc.parent_buyer) {
+			frm.set_value("parent_buyer", null);
+			frm.set_value("parent_business_name", null);
+		}
+	},
+
 	payment_term(frm) {
 		if (frm.doc.payment_term === "Advance") {
 			frm.set_value("payment_term_days", null);

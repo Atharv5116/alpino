@@ -140,13 +140,15 @@
    "fieldname": "parent_buyer",
    "fieldtype": "Link",
    "label": "Parent Buyer",
-   "options": "Buyer Master"
+   "options": "Buyer Master",
+   "depends_on": "eval:!doc.is_parent"
   },
   {
    "fieldname": "parent_business_name",
    "fieldtype": "Data",
    "label": "Parent Business Name",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:!doc.is_parent"
   },
   {
    "fieldname": "customer_id",
@@ -299,7 +301,7 @@
    "label": "Billing & Shipping Addresses"
   },
   {
-   "description": "✔ Primary = Billing Address (one per Site)   ✔ Shipping = Shipping Address",
+   "description": "\u2714 Primary = Billing Address (one per Site)   \u2714 Shipping = Shipping Address",
    "fieldname": "addresses",
    "fieldtype": "Table",
    "label": "Addresses",
@@ -473,7 +475,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-07 12:00:00.000000",
+ "modified": "2026-09-07 15:10:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Buyer Master",

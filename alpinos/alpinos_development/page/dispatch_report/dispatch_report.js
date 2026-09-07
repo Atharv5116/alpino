@@ -108,6 +108,13 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		default: 0,
 		change() { load_data(); },
 	});
+	// Off: one column per Customer Type. On: one column per buyer FAMILY, so a chain's
+	// sites read as a single column instead of spreading across their own types.
+	let parent_field = page.add_field({
+		fieldtype: 'Check', fieldname: 'group_by_parent', label: 'Group by Parent Buyer',
+		default: 0,
+		change() { load_data(); },
+	});
 	page.add_button(__('Refresh'), () => load_data(), { icon: 'refresh' });
 
 	// ── Container ─────────────────────────────────────────────────────────────
@@ -120,10 +127,11 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		let date = date_field.get_value();
 		let wh   = wh_field.get_value();
 		let include_mi = mi_field.get_value() ? 1 : 0;
+		let by_parent = parent_field.get_value() ? 1 : 0;
 		$content.html('<p style="padding:30px;color:#888;">Loading…</p>');
 		frappe.call({
 			method: 'alpinos.dispatch_report_api.get_dispatch_report_data',
-			args: { date, warehouse: wh, include_material_issue: include_mi },
+			args: { date, warehouse: wh, include_material_issue: include_mi, group_by_parent: by_parent },
 			callback(r) {
 				$content.html(r.message ? build_table(r.message)
 					: '<p style="padding:30px;color:#888;">No data found.</p>');
