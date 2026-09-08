@@ -738,9 +738,19 @@ def _get_data(filters):
 					else:
 						cf = flt(get_box_conversion_factor(citem))
 						cbox = math.ceil(cqty / cf) if cf else 0
-					mrp_v, flat_v, sp_v = _component_price(citem)
+					# Price the component from the COMBO LINE, not from the catalog.
+					#
+					# _component_price falls back to (mrp, 0.0, mrp) when the buyer catalog
+					# has no entry for the component, and emit() below takes its
+					# selling-price branch whenever selling_price is truthy -- a branch that
+					# never applies `flat`. So an exploded component silently reported at
+					# FULL MRP: on a 50%-flat order that is exactly double what was sold.
+					# The line already knows its own discount; carry it.
+					mrp_v, _catalog_flat, _catalog_sp = _component_price(citem)
+					flat_v = flt(r.get("custom_flat_discount"))
+					sp_v = flt(mrp_v) * (1 - flat_v / 100.0) if mrp_v else 0
 					emit(
-						citem, cqty, cbox,
+						r.item_code, cqty, cbox,
 						mrp_v, sp_v, flat_v,
 						r.get("custom_offer"), r.get("custom_additional_discount"),
 						is_priced=True, from_picklist=False,
