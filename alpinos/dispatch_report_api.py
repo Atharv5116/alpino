@@ -80,9 +80,16 @@ def _group_sql(group_by_parent):
 	Grouping by family walks Sales Order -> its Buyer Master -> that buyer's Parent Buyer,
 	falling back to the buyer itself, which is the right answer for a root or standalone
 	buyer. An order with no Buyer Master at all lands in "Other" rather than vanishing.
+
+	The default grouping is by Customer Type (so.order_type carries it), and a type that
+	names a Parent Customer Type reports inside its parent's column instead of its own --
+	so several types belonging to one chain read as a single column. Until somebody sets
+	a parent on a type the COALESCE falls through to the type itself, which is exactly
+	the behaviour this report had before, so nothing moves until it is configured.
 	"""
 	if not group_by_parent:
-		return "COALESCE(so.order_type, 'Other')", ""
+		joins = " LEFT JOIN `tabAlpino Customer Type` act ON act.name = so.order_type"
+		return "COALESCE(NULLIF(act.parent_customer_type, ''), so.order_type, 'Other')", joins
 	joins = (
 		" LEFT JOIN `tabBuyer Master` bm ON bm.name = so.custom_offline_buyer_master"
 		" LEFT JOIN `tabBuyer Master` pbm ON pbm.name = bm.parent_buyer"
@@ -104,11 +111,17 @@ def _columns_from_data(dispatch_data, pending_data):
 
 
 def _get_customer_types():
-	"""Customer types as {name, abbr}, ordered by sequence then name."""
+	"""Column headings: the customer types that are NOT rolled up into another one.
+
+	A type with a Parent Customer Type has no column of its own -- _group_sql attributes
+	its orders to the parent -- so listing it here would draw a column nothing can ever
+	land in. With no parents configured this returns every type, unchanged.
+	"""
 	rows = frappe.db.sql(
 		"""
 		SELECT name, abbreviation, sequence
 		FROM `tabAlpino Customer Type`
+		WHERE COALESCE(parent_customer_type, '') = ''
 		ORDER BY
 			CASE WHEN COALESCE(sequence, 0) = 0 THEN 1 ELSE 0 END,
 			sequence ASC,
