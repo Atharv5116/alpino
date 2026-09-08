@@ -263,12 +263,19 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 		if not status and current in holidays:
 			status = "Holiday"
 
+		# Both times read the PUNCH first and fall back to the Attendance record, so the
+		# pair always comes from the same source. The out-time used to read Attendance
+		# only, which showed a dash whenever the day had no Attendance yet, had one that
+		# was never submitted, or had one whose out_time was still null because the OUT
+		# punch landed after auto-attendance ran -- even though the OUT was sitting in
+		# Employee Checkin the whole time. It also let the in-time come from the punch
+		# while the out-time came from Attendance, so the two halves of one day could
+		# disagree. worked_minutes and the day colouring key off these, so this decides
+		# more than the label.
 		ci = checkins.get(current, {})
-		check_in_str = ci.get("check_in")
 		fallback = attendance_times.get(current, {})
-		if not check_in_str:
-			check_in_str = fallback.get("in_time")
-		check_out_str = fallback.get("out_time")
+		check_in_str = ci.get("check_in") or fallback.get("in_time")
+		check_out_str = ci.get("check_out") or fallback.get("out_time")
 
 		worked_minutes = None
 		late_coming = 0
