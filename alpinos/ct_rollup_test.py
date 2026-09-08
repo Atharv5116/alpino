@@ -42,7 +42,10 @@ def run():
 	R.clear()
 	frappe.set_user("Administrator")
 
-	base = get_dispatch_report_data(date=DATE)
+	# The roll-up is what the Group by Parent Customer Type toggle does, so every
+	# reading here is taken with it ON. The toggle-OFF view is asserted separately
+	# below -- that it does NOT roll up is the whole point of it being a toggle.
+	base = get_dispatch_report_data(date=DATE, group_by_parent=1)
 	before, headings_before = _cols(base), _headings(base)
 	grand_before = base["summary"]["dispatch_total"]
 	items_before = _item_cols(base)
@@ -56,7 +59,7 @@ def run():
 	frappe.db.commit()
 	frappe.clear_cache()
 	try:
-		after = get_dispatch_report_data(date=DATE)
+		after = get_dispatch_report_data(date=DATE, group_by_parent=1)
 		cols, headings = _cols(after), _headings(after)
 		items_after = _item_cols(after)
 
@@ -116,12 +119,67 @@ def run():
 			"a type that already has children cannot itself get a parent",
 			lambda: _expect_throw(_two_levels, "one level"),
 		)
+		# The toggle is the ONLY thing that rolls up: with it off, a type that has a
+		# parent still reports in its own column. Without this the feature could
+		# silently become always-on and every check above would still pass.
+		flat = get_dispatch_report_data(date=DATE, group_by_parent=0)
+		flat_cols, flat_headings = _cols(flat), _headings(flat)
+		_check(
+			"with the toggle off the child keeps its own column",
+			lambda: _assert(
+				flat_cols.get(child) == child_qty,
+				f"{child} = {flat_cols.get(child)}, expected {child_qty}",
+			),
+		)
+		_check(
+			"with the toggle off the child is still a column heading",
+			lambda: _assert(child in flat_headings, "child heading disappeared without the toggle"),
+		)
+		_check(
+			"with the toggle off the parent did NOT absorb the child",
+			lambda: _assert(
+				flat_cols.get(parent) == parent_qty,
+				f"{parent} = {flat_cols.get(parent)}, expected {parent_qty}",
+			),
+		)
 	finally:
 		frappe.db.set_value("Alpino Customer Type", child, "parent_customer_type", None)
 		frappe.db.commit()
 		frappe.clear_cache()
 
-	restored = get_dispatch_report_data(date=DATE)
+	# The "Other" column is added from the DATA, not the master, so a quantity with no
+	# Customer Type (a Material Issue especially) cannot go invisible under the toggle.
+	# Exercised directly: on most days nothing lands in Other, so this branch would
+	# otherwise ship untested.
+	from alpinos.dispatch_report_api import _with_other
+
+	cols_in = [{"name": "A", "abbr": "A"}]
+	_check(
+		"Other is not added when nothing landed there",
+		lambda: _assert([c["name"] for c in _with_other(cols_in, {"X": {"by_ct": {"A": 5}}}, {})] == ["A"]),
+	)
+	_check(
+		"Other is added when a dispatched quantity has no type",
+		lambda: _assert(
+			[c["name"] for c in _with_other(cols_in, {"X": {"by_ct": {"Other": 3}}}, {})] == ["A", "Other"]
+		),
+	)
+	_check(
+		"Other is added when only a PENDING quantity has no type",
+		lambda: _assert(
+			[c["name"] for c in _with_other(cols_in, {}, {"X": {"by_ct": {"Other": 7}}})] == ["A", "Other"]
+		),
+	)
+	_check(
+		"a zero in Other does not draw an empty column",
+		lambda: _assert([c["name"] for c in _with_other(cols_in, {"X": {"by_ct": {"Other": 0}}}, {})] == ["A"]),
+	)
+	_check(
+		"the heading list handed in is never mutated",
+		lambda: _assert(cols_in == [{"name": "A", "abbr": "A"}], "caller list was mutated"),
+	)
+
+	restored = get_dispatch_report_data(date=DATE, group_by_parent=1)
 	_check(
 		"clearing the parent restores the original columns exactly",
 		lambda: _assert(

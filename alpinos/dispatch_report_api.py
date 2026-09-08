@@ -27,13 +27,12 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 	pending_data = _get_pending_data(date, group_by_parent)
 	stock_data = _get_stock_data(warehouse, date)
 	inward_data = _get_inward_data()
-	# Customer Types are a fixed master list; parent buyers are not -- there are hundreds,
-	# so the columns are the families that actually moved on the day.
-	customer_types = (
-		_columns_from_data(dispatch_data, pending_data)
-		if group_by_parent
-		else _get_customer_types()
-	)
+	# Both views draw their headings from the Customer Type master, so the columns keep
+	# their configured sequence either way. The toggle only drops the types that are
+	# rolled up into a parent, and re-adds "Other" when the day put something there.
+	customer_types = _get_customer_types(roots_only=bool(group_by_parent))
+	if group_by_parent:
+		customer_types = _with_other(customer_types, dispatch_data, pending_data)
 	summary = _build_summary(date, customer_types, dispatch_data, pending_data, group_by_parent)
 
 	result_items = []
@@ -77,51 +76,52 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 def _group_sql(group_by_parent):
 	"""(column-key expression, extra JOINs) for a query that has `so` in scope.
 
-	Grouping by family walks Sales Order -> its Buyer Master -> that buyer's Parent Buyer,
-	falling back to the buyer itself, which is the right answer for a root or standalone
-	buyer. An order with no Buyer Master at all lands in "Other" rather than vanishing.
+	Both modes group by Customer Type -- Sales Order order_type carries it, populated
+	from Buyer Master.customer_type by get_offline_buyer_for_customer. The toggle is
+	what decides how far UP the type hierarchy the order is reported:
 
-	The default grouping is by Customer Type (so.order_type carries it), and a type that
-	names a Parent Customer Type reports inside its parent's column instead of its own --
-	so several types belonging to one chain read as a single column. Until somebody sets
-	a parent on a type the COALESCE falls through to the type itself, which is exactly
-	the behaviour this report had before, so nothing moves until it is configured.
+	  off  every Customer Type gets its own column, which is the detailed view
+	  on   a type that names a Parent Customer Type is reported inside its parent's
+	       column, so the several types belonging to one chain read as one column
+
+	An order whose type is missing or unknown lands in "Other" rather than vanishing,
+	which is also where a Material Issue goes -- it has no Sales Order and so no type.
 	"""
 	if not group_by_parent:
-		joins = " LEFT JOIN `tabAlpino Customer Type` act ON act.name = so.order_type"
-		return "COALESCE(NULLIF(act.parent_customer_type, ''), so.order_type, 'Other')", joins
-	joins = (
-		" LEFT JOIN `tabBuyer Master` bm ON bm.name = so.custom_offline_buyer_master"
-		" LEFT JOIN `tabBuyer Master` pbm ON pbm.name = bm.parent_buyer"
-	)
-	expr = "COALESCE(pbm.customer_business_name, bm.customer_business_name, 'Other')"
+		return "COALESCE(so.order_type, 'Other')", ""
+	joins = " LEFT JOIN `tabAlpino Customer Type` act ON act.name = so.order_type"
+	expr = "COALESCE(NULLIF(act.parent_customer_type, ''), so.order_type, 'Other')"
 	return expr, joins
 
 
-def _columns_from_data(dispatch_data, pending_data):
-	"""Family columns actually present in the day's data, "Other" always last."""
-	seen = set()
+def _with_other(columns, dispatch_data, pending_data):
+	"""Append an "Other" column when the day actually put something there.
+
+	Without this the roll-up view would silently drop every quantity that has no
+	Customer Type -- Material Issues especially -- because the headings come from the
+	master and "Other" is not a row in it.
+	"""
 	for source in (dispatch_data, pending_data):
 		for entry in source.values():
-			seen.update(entry.get("by_ct", {}).keys())
-	names = sorted(n for n in seen if n and n != "Other")
-	if "Other" in seen:
-		names.append("Other")
-	return [{"name": n, "abbr": n} for n in names]
+			if entry.get("by_ct", {}).get("Other"):
+				return columns + [{"name": "Other", "abbr": "Other"}]
+	return columns
 
 
-def _get_customer_types():
-	"""Column headings: the customer types that are NOT rolled up into another one.
+def _get_customer_types(roots_only=False):
+	"""Column headings, ordered by sequence then name.
 
-	A type with a Parent Customer Type has no column of its own -- _group_sql attributes
-	its orders to the parent -- so listing it here would draw a column nothing can ever
-	land in. With no parents configured this returns every type, unchanged.
+	roots_only drops the types that are rolled up into another one: under the toggle
+	_group_sql attributes their orders to the parent, so listing them would draw a
+	column nothing can ever land in. With no parents configured the two are identical.
 	"""
+	# A literal, not user input -- there is nothing here to parameterise.
+	where = "WHERE COALESCE(parent_customer_type, '') = ''" if roots_only else ""
 	rows = frappe.db.sql(
-		"""
+		f"""
 		SELECT name, abbreviation, sequence
 		FROM `tabAlpino Customer Type`
-		WHERE COALESCE(parent_customer_type, '') = ''
+		{where}
 		ORDER BY
 			CASE WHEN COALESCE(sequence, 0) = 0 THEN 1 ELSE 0 END,
 			sequence ASC,

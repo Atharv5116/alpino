@@ -108,10 +108,11 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		default: 0,
 		change() { load_data(); },
 	});
-	// Off: one column per Customer Type. On: one column per buyer FAMILY, so a chain's
-	// sites read as a single column instead of spreading across their own types.
+	// Off: one column per Customer Type. On: each type that names a Parent Customer
+	// Type is reported inside its parent's column, so the several types belonging to
+	// one chain read as a single column. Set the parent on Alpino Customer Type.
 	let parent_field = page.add_field({
-		fieldtype: 'Check', fieldname: 'group_by_parent', label: 'Group by Parent Buyer',
+		fieldtype: 'Check', fieldname: 'group_by_parent', label: 'Group by Parent Customer Type',
 		default: 0,
 		change() { load_data(); },
 	});
