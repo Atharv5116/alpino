@@ -185,7 +185,10 @@ var PurchaseQCEntry = class {
 		});
 		c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 		me.fields[name] = c;
-		if (onchange && c.$input) c.$input.on('change', onchange);
+		// Hand the handler the control's PARSED value. $(this).val() is the raw input
+		// text, which for a Date control is the user format (dd-mm-yyyy) and reaches
+		// the DATE column as an invalid date (MariaDB 1292).
+		if (onchange && c.$input) c.$input.on('change', () => onchange(c.get_value()));
 		return c;
 	}
 
@@ -210,18 +213,18 @@ var PurchaseQCEntry = class {
 				<td class="c-reason"></td><td class="c-att"></td><td class="c-rem"></td>${del}</tr>`);
 			$body.append($tr);
 			this._mk_cell($tr, '.c-no', key, idx, { fieldtype: 'Data', fieldname: 'vehicle_no' },
-				data.vehicle_no, function () { data.vehicle_no = $(this).val(); });
+				data.vehicle_no, function (val) { data.vehicle_no = val; });
 			this._mk_cell($tr, '.c-cond', key, idx,
 				{ fieldtype: 'Select', fieldname: 'vehicle_condition', options: PQC_CONDITION.join('\n') },
-				data.vehicle_condition || 'Good', function () { data.vehicle_condition = $(this).val(); });
+				data.vehicle_condition || 'Good', function (val) { data.vehicle_condition = val; });
 			this._mk_cell($tr, '.c-dmg', key, idx, { fieldtype: 'Check', fieldname: 'vehicle_damage' },
 				data.vehicle_damage, function () { data.vehicle_damage = cint($(this).prop('checked')); });
 			this._mk_cell($tr, '.c-reason', key, idx, { fieldtype: 'Data', fieldname: 'damage_reason' },
-				data.damage_reason, function () { data.damage_reason = $(this).val(); });
+				data.damage_reason, function (val) { data.damage_reason = val; });
 			this._mk_cell($tr, '.c-att', key, idx, { fieldtype: 'Attach', fieldname: 'attachment' },
-				data.attachment, function () { data.attachment = $(this).val(); });
+				data.attachment, function (val) { data.attachment = val; });
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'inspector_remarks' },
-				data.inspector_remarks, function () { data.inspector_remarks = $(this).val(); });
+				data.inspector_remarks, function (val) { data.inspector_remarks = val; });
 
 		} else if (key === 'material' || key === 'packaging') {
 			const cond_field = key === 'material' ? 'material_condition' : 'packaging_condition';
@@ -233,20 +236,20 @@ var PurchaseQCEntry = class {
 			$body.append($tr);
 			this._mk_cell($tr, '.c-item', key, idx,
 				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function () { data.item_code = $(this).val(); });
+				data.item_code, function (val) { data.item_code = val; });
 			this._mk_cell($tr, '.c-cond', key, idx,
 				{ fieldtype: 'Select', fieldname: cond_field, options: PQC_CONDITION.join('\n') },
-				data[cond_field] || 'Good', function () { data[cond_field] = $(this).val(); });
+				data[cond_field] || 'Good', function (val) { data[cond_field] = val; });
 			this._mk_cell($tr, '.c-dmg', key, idx, { fieldtype: 'Check', fieldname: dmg_field },
 				data[dmg_field], function () { data[dmg_field] = cint($(this).prop('checked')); });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'damaged_qty' },
-				data.damaged_qty, function () { data.damaged_qty = flt($(this).val()); });
+				data.damaged_qty, function (val) { data.damaged_qty = flt(val); });
 			this._mk_cell($tr, '.c-reason', key, idx, { fieldtype: 'Data', fieldname: 'damage_reason' },
-				data.damage_reason, function () { data.damage_reason = $(this).val(); });
+				data.damage_reason, function (val) { data.damage_reason = val; });
 			this._mk_cell($tr, '.c-att', key, idx, { fieldtype: 'Attach', fieldname: 'attachment' },
-				data.attachment, function () { data.attachment = $(this).val(); });
+				data.attachment, function (val) { data.attachment = val; });
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'inspector_remarks' },
-				data.inspector_remarks, function () { data.inspector_remarks = $(this).val(); });
+				data.inspector_remarks, function (val) { data.inspector_remarks = val; });
 
 		} else if (key === 'sample') {
 			$tr = $(`<tr data-idx="${idx}"><td class="text-muted">${idx + 1}</td>
@@ -256,20 +259,20 @@ var PurchaseQCEntry = class {
 			$body.append($tr);
 			this._mk_cell($tr, '.c-item', key, idx,
 				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function () { data.item_code = $(this).val(); });
+				data.item_code, function (val) { data.item_code = val; });
 			this._mk_cell($tr, '.c-line', key, idx,
 				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: '\n' + this._item_options() },
-				data.qc_item_idx, function () { data.qc_item_idx = $(this).val(); });
+				data.qc_item_idx, function (val) { data.qc_item_idx = val; });
 			this._mk_cell($tr, '.c-sbatch', key, idx, { fieldtype: 'Data', fieldname: 'supplier_batch_no' },
-				data.supplier_batch_no, function () { data.supplier_batch_no = $(this).val(); });
+				data.supplier_batch_no, function (val) { data.supplier_batch_no = val; });
 			this._mk_cell($tr, '.c-ibatch', key, idx,
 				{ fieldtype: 'Data', fieldname: 'internal_batch_no', read_only: 1 }, data.internal_batch_no);
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'sample_qty' },
-				data.sample_qty, function () { data.sample_qty = flt($(this).val()); });
+				data.sample_qty, function (val) { data.sample_qty = flt(val); });
 			this._mk_cell($tr, '.c-id', key, idx,
 				{ fieldtype: 'Data', fieldname: 'sample_id', read_only: 1 }, data.sample_id);
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'remarks' },
-				data.remarks, function () { data.remarks = $(this).val(); });
+				data.remarks, function (val) { data.remarks = val; });
 
 		} else if (key === 'evidence') {
 			// BRD 4.1.2-4.1.4 want one or more images/video per inspection. The per-row
@@ -283,17 +286,17 @@ var PurchaseQCEntry = class {
 			this._mk_cell($tr, '.c-sec', key, idx,
 				{ fieldtype: 'Select', fieldname: 'section',
 					options: 'Vehicle\nMaterial\nPackaging\nSample\nControl Sample\nGeneral' },
-				data.section || 'Vehicle', function () { data.section = $(this).val(); });
+				data.section || 'Vehicle', function (val) { data.section = val; });
 			this._mk_cell($tr, '.c-file', key, idx, { fieldtype: 'Attach', fieldname: 'file' },
-				data.file, function () { data.file = $(this).val(); });
+				data.file, function (val) { data.file = val; });
 			this._mk_cell($tr, '.c-kind', key, idx,
 				{ fieldtype: 'Select', fieldname: 'kind', options: 'Photo\nVideo\nDocument' },
-				data.kind || 'Photo', function () { data.kind = $(this).val(); });
+				data.kind || 'Photo', function (val) { data.kind = val; });
 			this._mk_cell($tr, '.c-item', key, idx,
 				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function () { data.item_code = $(this).val(); });
+				data.item_code, function (val) { data.item_code = val; });
 			this._mk_cell($tr, '.c-desc', key, idx, { fieldtype: 'Data', fieldname: 'description' },
-				data.description, function () { data.description = $(this).val(); });
+				data.description, function (val) { data.description = val; });
 
 		} else if (key === 'control') {
 			$tr = $(`<tr data-idx="${idx}"><td class="text-muted">${idx + 1}</td>
@@ -307,21 +310,21 @@ var PurchaseQCEntry = class {
 				function () { data.control_sample_taken = cint($(this).prop('checked')); });
 			this._mk_cell($tr, '.c-item', key, idx,
 				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function () { data.item_code = $(this).val(); });
+				data.item_code, function (val) { data.item_code = val; });
 			this._mk_cell($tr, '.c-line', key, idx,
 				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: '\n' + this._item_options() },
-				data.qc_item_idx, function () { data.qc_item_idx = $(this).val(); });
+				data.qc_item_idx, function (val) { data.qc_item_idx = val; });
 			this._mk_cell($tr, '.c-batch', key, idx, { fieldtype: 'Data', fieldname: 'batch_no' },
-				data.batch_no, function () { data.batch_no = $(this).val(); });
+				data.batch_no, function (val) { data.batch_no = val; });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'control_sample_qty' },
-				data.control_sample_qty, function () { data.control_sample_qty = flt($(this).val()); });
+				data.control_sample_qty, function (val) { data.control_sample_qty = flt(val); });
 			this._mk_cell($tr, '.c-loc', key, idx,
 				{ fieldtype: 'Link', fieldname: 'storage_location', options: 'Warehouse' },
-				data.storage_location, function () { data.storage_location = $(this).val(); });
+				data.storage_location, function (val) { data.storage_location = val; });
 			this._mk_cell($tr, '.c-retain', key, idx, { fieldtype: 'Date', fieldname: 'retention_until' },
-				data.retention_until, function () { data.retention_until = $(this).val(); });
+				data.retention_until, function (val) { data.retention_until = val; });
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'remarks' },
-				data.remarks, function () { data.remarks = $(this).val(); });
+				data.remarks, function (val) { data.remarks = val; });
 		}
 	}
 
@@ -343,13 +346,13 @@ var PurchaseQCEntry = class {
 
 			me._mk_cell($tr, '.c-appr', 'decision', idx,
 				{ fieldtype: 'Float', fieldname: 'approved_qty' }, row.approved_qty,
-				function () { row.approved_qty = flt($(this).val()); me.recalc_totals(); });
+				function (val) { row.approved_qty = flt(val); me.recalc_totals(); });
 			me._mk_cell($tr, '.c-rej', 'decision', idx,
 				{ fieldtype: 'Float', fieldname: 'rejected_qty' }, row.rejected_qty,
-				function () { row.rejected_qty = flt($(this).val()); me.recalc_totals(); });
+				function (val) { row.rejected_qty = flt(val); me.recalc_totals(); });
 			me._mk_cell($tr, '.c-reason', 'decision', idx,
 				{ fieldtype: 'Data', fieldname: 'rejection_reason' }, row.rejection_reason,
-				function () { row.rejection_reason = $(this).val(); });
+				function (val) { row.rejection_reason = val; });
 		});
 		this.recalc_totals();
 	}

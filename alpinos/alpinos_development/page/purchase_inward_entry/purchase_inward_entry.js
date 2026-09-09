@@ -282,8 +282,10 @@ var PurchaseInwardEntry = class {
 			render_input: true,
 		});
 		remarks.set_value(ALP_TRIM_MICROSECONDS(row.item_remarks || ''));
-		remarks.$input && remarks.$input.on('change', function () {
-			me.items[idx].item_remarks = $(this).val();
+		// Same rule as the grid cells below: the handler is handed the control's parsed
+		// value, never the raw input text.
+		remarks.$input && remarks.$input.on('change', () => {
+			me.items[idx].item_remarks = remarks.get_value();
 		});
 	}
 
@@ -390,34 +392,37 @@ var PurchaseInwardEntry = class {
 				});
 				c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 				me.fields[`${df.fieldname}_${idx}`] = c;
-				if (onchange && c.$input) c.$input.on('change', onchange);
+				// Hand the handler the control's PARSED value. $(this).val() is the raw
+				// input text, which for a Date control is the user format (dd-mm-yyyy)
+				// and reaches the DATE column as an invalid date (MariaDB 1292).
+				if (onchange && c.$input) c.$input.on('change', () => onchange(c.get_value()));
 				return c;
 			};
 
 			mk('.cell-received', { fieldtype: 'Float', fieldname: 'received_qty' },
-				row.received_qty, function () {
-					me.items[idx].received_qty = flt($(this).val());
+				row.received_qty, function (val) {
+					me.items[idx].received_qty = flt(val);
 					me.recalc_row(idx);
 					me.recalc_totals();
 				});
 			mk('.cell-warehouse', { fieldtype: 'Link', fieldname: 'target_warehouse', options: 'Warehouse' },
-				row.target_warehouse, function () {
-					me.items[idx].target_warehouse = $(this).val();
+				row.target_warehouse, function (val) {
+					me.items[idx].target_warehouse = val;
 				});
 			mk('.cell-batch', { fieldtype: 'Data', fieldname: 'batch_no' },
-				row.batch_no, function () { me.items[idx].batch_no = $(this).val(); });
+				row.batch_no, function (val) { me.items[idx].batch_no = val; });
 			mk('.cell-mfg', { fieldtype: 'Date', fieldname: 'manufacturing_date' },
-				row.manufacturing_date, function () {
-					me.items[idx].manufacturing_date = $(this).val();
+				row.manufacturing_date, function (val) {
+					me.items[idx].manufacturing_date = val;
 				});
 			// Expiry is derived server-side from Item.shelf_life_in_days; shown read-only
 			// so the Store user can see what will be stored.
 			mk('.cell-expiry', { fieldtype: 'Date', fieldname: 'expiry_date', read_only: 1 },
 				row.expiry_date);
 			mk('.cell-mrp', { fieldtype: 'Currency', fieldname: 'mrp' },
-				row.mrp, function () { me.items[idx].mrp = flt($(this).val()); });
+				row.mrp, function (val) { me.items[idx].mrp = flt(val); });
 			mk('.cell-usp', { fieldtype: 'Data', fieldname: 'usp' },
-				row.usp, function () { me.items[idx].usp = $(this).val(); });
+				row.usp, function (val) { me.items[idx].usp = val; });
 		});
 	}
 

@@ -13,6 +13,8 @@ would let two inwards raised in the same window both see the full pending quanti
 and jointly over-receive with no error.
 """
 
+import re
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -399,8 +401,42 @@ class PurchaseInward(Document):
 			if not line.target_warehouse:
 				line.target_warehouse = self.target_warehouse
 
+	# A Date field holds either a real date object or the ISO string the database
+	# accepts. Anything else is a client that sent the USER format.
+	_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+	def _validate_date_formats(self):
+		"""Refuse a user-format date rather than let it reach the DATE column.
+
+		A desk page that reads $(this).val() off a Date control gets the user format
+		(dd-mm-yyyy) and sends it verbatim; the column then fails with MariaDB 1292
+		"Incorrect date value", which says nothing about which row or field.
+
+		Deliberately a REFUSAL, not a conversion. frappe.utils.getdate("02-09-2026")
+		returns 9 FEBRUARY even on a dd-mm-yyyy site -- it reads month-first and only
+		falls back when the first number cannot be a month. Coercing here would
+		silently store the wrong date for every day of the month up to the 12th, which
+		is far worse than refusing the save.
+		"""
+		for line in self.get("items"):
+			for fieldname, label in (
+				("manufacturing_date", _("Manufacturing Date")),
+				("expiry_date", _("Expiry Date")),
+			):
+				value = line.get(fieldname)
+				if not value or not isinstance(value, str) or self._ISO_DATE.match(value):
+					continue
+				frappe.throw(
+					_(
+						"Row {0}: {1} was sent as {2}, which is not a date the database "
+						"accepts. It must be YYYY-MM-DD."
+					).format(line.idx, label, frappe.bold(value)),
+					title=_("Invalid Date"),
+				)
+
 	def _set_expiry_dates(self):
 		"""Expiry = Manufacturing Date + the item's shelf life (task 297)."""
+		self._validate_date_formats()
 		shelf = {}
 		for line in self.get("items"):
 			if not line.manufacturing_date:

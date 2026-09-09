@@ -792,6 +792,56 @@ def run_wave_g(_report_now=True):
 		),
 	)
 
+	# ---- a user-format date must never reach the DATE column -----------------
+	# Reported from UAT on PIW-2026-00002: submitting threw
+	#   pymysql OperationalError 1292 "Incorrect date value: '02-09-2026' for
+	#   column ... tabPurchase Inward Item.manufacturing_date"
+	# because the entry page read $(this).val() off the Date control, which is the
+	# user format. The page now sends get_value(); this pins the server twin.
+	po_d = H.make_po(supplier, [(item, 100, 5)])
+	inw_d = H.make_inward(po_d, po_d.items, invoice_no=f"PITEST-DATE-{H.SEQ}")
+
+	def _user_format_date():
+		inw_d.items[0].manufacturing_date = "02-09-2026"
+		inw_d.flags.ignore_permissions = True
+		inw_d.save()
+
+	expect_throw(
+		"a dd-mm-yyyy Manufacturing Date is refused with a readable message",
+		_user_format_date,
+		"must be YYYY-MM-DD",
+	)
+
+	def _iso_date_still_saves():
+		fresh = frappe.get_doc("Purchase Inward", inw_d.name)
+		fresh.items[0].manufacturing_date = "2026-09-02"
+		fresh.flags.ignore_permissions = True
+		fresh.save()
+		_assert(
+			str(frappe.db.get_value("Purchase Inward Item", fresh.items[0].name,
+				"manufacturing_date")) == "2026-09-02",
+			"an ISO date should save unchanged",
+		)
+
+	check("an ISO Manufacturing Date still saves", _iso_date_still_saves)
+
+	def _never_coerced_to_the_wrong_day():
+		"""getdate('02-09-2026') is 9 FEBRUARY even on a dd-mm-yyyy site, so the guard
+		must refuse rather than convert -- converting would silently store the wrong
+		date for every day of the month up to the 12th."""
+		from frappe.utils import getdate
+
+		_assert(str(getdate("02-09-2026")) == "2026-02-09", "getdate changed behaviour")
+		stored = frappe.db.get_value(
+			"Purchase Inward Item", {"parent": inw_d.name}, "manufacturing_date"
+		)
+		_assert(str(stored) != "2026-02-09", f"a wrong date was stored: {stored}")
+
+	check(
+		"the guard refuses rather than silently storing the month-first reading",
+		_never_coerced_to_the_wrong_day,
+	)
+
 	check(
 		"BR-PO-04 only approver roles own Approve / Reject / Return",
 		lambda: _assert(
