@@ -227,7 +227,11 @@ var GRNView = class {
 						args: { doc: me.doc },
 						freeze: true,
 						freeze_message: __('Submitting the GRN...'),
-						callback() {
+						callback(r) {
+							// BR-GRN-06 refuses a non-Admin here, and the callback still
+							// fires; without this it would report a submit that never
+							// happened.
+							if (r.exc) return;
 							frappe.show_alert({ message: __('GRN submitted'), indicator: 'green' }, 5);
 							me.load(me.docname);
 						},

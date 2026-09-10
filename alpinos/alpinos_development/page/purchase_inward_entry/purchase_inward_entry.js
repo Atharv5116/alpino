@@ -712,7 +712,10 @@ var PurchaseInwardEntry = class {
 						frappe.call({
 							method: 'alpinos.purchase.inward_api.cancel_draft',
 							args: { purchase_inward: me.docname },
-							callback() {
+							callback(r) {
+								// A refused cancel must not claim the draft is gone and
+								// then navigate away from it.
+								if (r.exc) return;
 								me._toast(__('Draft discarded'), 'orange');
 								frappe.set_route('purchase_inward_list');
 							},
@@ -752,6 +755,9 @@ var PurchaseInwardEntry = class {
 				freeze: true,
 				freeze_message: __('Working...'),
 				callback(r) {
+					// A guard the workflow refused -- quarantine still open, arrival not
+					// recorded -- comes back through this same callback.
+					if (r.exc) return;
 					me._toast(__('{0} done', [label]), 'green');
 					me.load(me.docname);
 					if (r.message && r.message.inward_status) {

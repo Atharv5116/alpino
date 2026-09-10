@@ -527,7 +527,13 @@ var PurchaseQCEntry = class {
 						args: { purchase_qc: me.docname },
 						freeze: true,
 						freeze_message: __('Completing QC...'),
-						callback() {
+						callback(r) {
+							// The callback fires even when the server threw. Without this
+							// guard a refused Complete QC -- VAL-QC-08, or an unticked
+							// inspection under BR-QC-06 -- still popped a green "QC
+							// completed" and reloaded unchanged, which reads as the button
+							// doing nothing while claiming it worked.
+							if (r.exc) return;
 							me._toast(__('QC completed'), 'green');
 							me.load(me.docname);
 						},

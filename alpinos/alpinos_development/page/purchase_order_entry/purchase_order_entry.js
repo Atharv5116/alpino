@@ -505,7 +505,7 @@ var PurchaseOrderEntry = class {
 			args: { purchase_order: me.docname, action: action, remarks: remarks },
 			freeze: true,
 			freeze_message: __('Updating the Purchase Order...'),
-			callback() { me.load(me.docname); },
+			callback(r) { if (r.exc) return; me.load(me.docname); },
 		});
 
 		if (!takes_remarks) {

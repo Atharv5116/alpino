@@ -792,6 +792,58 @@ def run_wave_g(_report_now=True):
 		),
 	)
 
+	# ---- a refused action must never report success --------------------------
+	def _no_callback_claims_success_blindly():
+		"""frappe.call fires `callback` even when the server threw.
+
+		Reported from UAT: pressing Complete QC on an unreconciled inspection popped a
+		green "QC completed" and reloaded the screen unchanged -- the server had
+		refused with VAL-QC-08 the whole time. Every callback that announces an
+		outcome has to rule out the exception first, either by checking r.exc or by
+		returning on a missing r.message (which a throw also produces).
+		"""
+		import glob
+		import os
+		import re
+
+		bad = []
+		for path in sorted(glob.glob(f"{APP_PAGE_DIR}/purchase_*/*.js")):
+			src = open(path).read()
+			name = os.path.basename(path)
+			# each callback body, from the opening brace to its matching close
+			for m in re.finditer(r"callback\s*\(([^)]*)\)\s*\{", src):
+				start = m.end() - 1
+				depth, i = 0, start
+				while i < len(src):
+					if src[i] == "{":
+						depth += 1
+					elif src[i] == "}":
+						depth -= 1
+						if depth == 0:
+							break
+					i += 1
+				body = src[start:i]
+				announces = any(
+					tok in body for tok in ("_toast(", "show_alert(", "set_route(")
+				)
+				# r.message && ... is as good a guard as an explicit r.exc check: a
+				# throw carries no message, so the branch never runs.
+				guarded = (
+					".exc" in body
+					or "!r.message" in body
+					or "!res.message" in body
+					or "r.message &&" in body
+				)
+				if announces and not guarded:
+					line = src[: m.start()].count("\n") + 1
+					bad.append(f"{name}:{line}")
+		_assert(not bad, f"callbacks announce an outcome without ruling out a throw: {bad}")
+
+	check(
+		"no page callback reports success without ruling out a server throw",
+		_no_callback_claims_success_blindly,
+	)
+
 	# ---- the GRN list screen and its boundary --------------------------------
 	def _grn_list_returns_rows():
 		from alpinos.purchase.grn_list_api import get_grn_list, get_filter_options
