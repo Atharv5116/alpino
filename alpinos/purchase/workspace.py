@@ -27,10 +27,11 @@ SHORTCUTS = (
 	("New Inward", "Page", "purchase_inward_entry", ""),
 	("New Purchase Order", "Page", "purchase_order_entry", ""),
 	("Purchase Orders", "DocType", "Purchase Order", "List"),
-	("GRN", "DocType", "Purchase Receipt", "List"),
+	("GRN", "Page", "purchase_grn_list", ""),
 	("Pending Receipts", "Report", "Purchase Pending Receipts", ""),
 	("QC Pending", "Report", "Purchase QC Pending", ""),
 	("GRN Register", "Report", "Purchase GRN Register", ""),
+	("Master Data Readiness", "Report", "Purchase Master Data Readiness", ""),
 )
 
 LINKS = (

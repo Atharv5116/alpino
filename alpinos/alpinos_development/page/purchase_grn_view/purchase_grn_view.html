@@ -1,0 +1,192 @@
+<style>
+/* Cards, titles and scroll wrappers come from public/css/alpinos_pages.css. */
+.purchase-grn-view .eso-subtitle {
+	margin-top: 8px; margin-bottom: 10px;
+	border-top: 1px solid var(--border-color); padding-top: 12px;
+}
+.purchase-grn-view .eso-fld { margin-bottom: 8px; }
+.purchase-grn-view .grn-table { font-size: 12px; margin-bottom: 0; }
+.purchase-grn-view .grn-table thead th { white-space: nowrap; }
+.purchase-grn-view .grn-table th,
+.purchase-grn-view .grn-table td { padding: 4px 5px; vertical-align: middle; }
+.purchase-grn-view .grn-num { text-align: right; }
+
+/* The whole screen is read-only by design (BRD 5.2), so every value is DATA and
+   none of it should wear the chrome of an input somebody failed to fill. */
+.purchase-grn-view .eso-fld .control-value.like-disabled-input {
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--border-color);
+	border-radius: 0;
+	padding: 4px 2px 3px 0;
+	min-height: var(--input-height, 28px);
+	line-height: 20px;
+	color: var(--text-color);
+	font-weight: 500;
+}
+.purchase-grn-view .eso-fld .control-value.like-disabled-input:empty::after {
+	content: "—";
+	color: var(--text-muted);
+	font-weight: 400;
+}
+.purchase-grn-view .eso-fld textarea.form-control {
+	height: 72px !important;
+	min-height: 72px;
+	resize: vertical;
+}
+
+.purchase-grn-view .grn-stage {
+	display: inline-block; padding: 2px 10px; border-radius: 10px;
+	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
+	background: var(--bg-color); margin-left: 8px; vertical-align: middle;
+}
+.purchase-grn-view .grn-stage:empty { display: none; }
+.purchase-grn-view .grn-stage.grn-done {
+	background: var(--alert-bg-success); border-color: var(--alert-bg-success);
+	color: var(--alert-text-success);
+}
+.purchase-grn-view .grn-stage.grn-draft {
+	background: var(--alert-bg-warning); border-color: var(--alert-bg-warning);
+	color: var(--alert-text-warning);
+}
+.purchase-grn-view .grn-rejected { color: var(--red-500, #e24c4c); font-weight: 600; }
+
+.purchase-grn-view .alp-scroll[data-empty]:has(tbody:empty)::after {
+	content: attr(data-empty);
+	display: block;
+	position: sticky;
+	left: 0;
+	padding: 18px 12px;
+	text-align: center;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-muted);
+	background: var(--card-bg);
+}
+
+/* Resting state: this screen only ever describes ONE receipt, so with no route it
+   shows where to find them rather than an empty skeleton. */
+.purchase-grn-view .grn-empty { display: none; }
+.purchase-grn-view.grn-blank .grn-empty { display: block; }
+.purchase-grn-view.grn-blank .grn-body { display: none; }
+.purchase-grn-view .eso-card.grn-empty-card {
+	max-width: 520px; text-align: center;
+	margin: 40px auto 0 !important; padding: 40px 28px !important;
+}
+.purchase-grn-view .grn-empty-icon {
+	font-size: 24px; color: var(--text-muted); opacity: .55; margin-bottom: 12px;
+}
+.purchase-grn-view .grn-empty-title {
+	font-size: 15px; font-weight: 600; color: var(--heading-color); margin-bottom: 6px;
+}
+.purchase-grn-view .grn-empty-text {
+	font-size: 12.5px; color: var(--text-muted); margin: 0 auto 18px; max-width: 40em;
+}
+.purchase-grn-view .grn-empty .alp-actions { justify-content: center; }
+</style>
+<div class="purchase-grn-view grn-blank" style="padding: 12px;">
+
+	<div class="grn-empty">
+		<div class="eso-card grn-empty-card">
+			<div class="grn-empty-icon"><i class="fa fa-file-text-o"></i></div>
+			<div class="grn-empty-title">No GRN open</div>
+			<p class="grn-empty-text">
+				This screen shows one goods receipt at a time, read-only. Pick a GRN from the
+				list and its quantities, stock split and audit trail load here.
+			</p>
+			<div class="alp-actions">
+				<a class="btn btn-sm btn-primary" href="/app/purchase_grn_list">Open GRN List</a>
+			</div>
+		</div>
+	</div>
+
+	<div class="grn-body">
+	<p class="text-muted" style="font-size:12px; margin-bottom:12px;">
+		BRD 5.2 — read-only by design. Everything here is decided upstream: the quantities
+		come from the Purchase QC decision, and only an Admin may finally submit the receipt
+		(BR-GRN-06). Corrections belong on the documents that produced it.
+	</p>
+
+	<!-- ==================== header ==================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">
+			GRN Details
+			<span class="grn-stage field-stage-badge"></span>
+		</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-name"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-posting-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-bill-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-purchase-inward"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-purchase-qc"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-grn-status"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-debit-note"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 5.2 the audit trail ==================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Received, Approved and Rejected</h6>
+		<div class="alp-scroll alp-scroll--xwide"
+			data-empty="This receipt carries no item lines.">
+			<table class="table table-bordered items-table grn-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:160px;">Item</th>
+					<th style="width:60px;">UOM</th>
+					<th style="width:95px;">Received</th>
+					<th style="width:95px;">Accepted</th>
+					<th style="width:95px;">Rejected</th>
+					<th style="min-width:140px;">Accepted Warehouse</th>
+					<th style="min-width:140px;">Rejected Warehouse</th>
+					<th style="min-width:120px;">Batch</th>
+					<th style="min-width:150px;">Rejection Reason</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<div class="eso-subtitle">Totals</div>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-total-received"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-accepted"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-rejected"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BR-GRN-07 final submission ==================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Final Submission</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-submitted-by"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-submitted-on"></div>
+			<div class="col-md-6 eso-fld field-receiving-remarks"></div>
+		</div>
+	</div>
+
+	<!-- ==================== VAL-GRN-06 change log ==================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Draft Edit Log</h6>
+		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
+			VAL-GRN-06 — every edit the Purchase Team made to the draft before it was
+			submitted.
+		</p>
+		<div class="alp-scroll alp-scroll--wide"
+			data-empty="No edits were made to this GRN while it was a draft.">
+			<table class="table table-bordered changelog-table grn-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:150px;">Field</th>
+					<th style="min-width:140px;">From</th>
+					<th style="min-width:140px;">To</th>
+					<th style="min-width:150px;">By</th>
+					<th style="min-width:150px;">On</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+
+	<div class="alp-actions alp-actions--end grn-actionbar" style="margin: 14px 0 24px;"></div>
+	</div>
+</div>

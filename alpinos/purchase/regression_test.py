@@ -792,9 +792,56 @@ def run_wave_g(_report_now=True):
 		),
 	)
 
+	# ---- the GRN list screen and its boundary --------------------------------
+	def _grn_list_returns_rows():
+		from alpinos.purchase.grn_list_api import get_grn_list, get_filter_options
+
+		out = get_grn_list()
+		_assert(out.get("total", 0) > 0, "no GRN rows at all")
+		_assert(out["rows"], "a page of rows was expected")
+		first = out["rows"][0]
+		for f in ("name", "custom_grn_status", "accepted_qty", "rejected_qty"):
+			_assert(f in first, f"the row is missing {f}")
+		opts = get_filter_options()
+		_assert(opts.get("grn_statuses"), "no GRN statuses offered to the filter")
+
+	check("the GRN list returns rows with their quantities", _grn_list_returns_rows)
+
+	def _grn_list_excludes_returns():
+		"""make_purchase_return copies custom_purchase_inward off the receipt it
+		returns, so a list filtered on that link alone would show every return
+		beside its own GRN. Build a real return and prove it stays out."""
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_return
+
+		from alpinos.purchase.grn_list_api import get_grn_list
+
+		src = frappe.db.get_value(
+			"Purchase Receipt",
+			{"docstatus": 1, "is_return": 0, "custom_purchase_inward": ("is", "set")},
+			"name",
+			order_by="creation desc",
+		)
+		_assert(src, "no submitted module GRN to return against")
+		ret = make_purchase_return(src)
+		ret.flags.ignore_permissions = True
+		ret.insert(ignore_permissions=True)
+
+		_assert(cint(ret.is_return) == 1, "the return did not come back as a return")
+		_assert(
+			ret.custom_purchase_inward == frappe.db.get_value(
+				"Purchase Receipt", src, "custom_purchase_inward"
+			),
+			"the return did NOT copy the inward link, so this test proves nothing",
+		)
+		names = {r["name"] for r in get_grn_list(page_length=2500)["rows"]}
+		_assert(ret.name not in names, f"the return {ret.name} leaked into the GRN list")
+
+	check("the GRN list keeps Purchase Returns out", _grn_list_excludes_returns)
+
 	# ---- the three module reports -------------------------------------------
 	MODULE_REPORTS = (
 		"Purchase Pending Receipts", "Purchase QC Pending", "Purchase GRN Register",
+		"Purchase Master Data Readiness",
 	)
 
 	def _reports_run():
@@ -829,6 +876,29 @@ def run_wave_g(_report_now=True):
 		_assert("is_return" in src, "the register does not exclude Purchase Returns")
 
 	check("the GRN register excludes Purchase Returns", _grn_register_excludes_returns)
+
+	def _readiness_names_the_consequence():
+		"""A readiness row is only useful if it says what the gap actually breaks."""
+		from frappe.desk.query_report import run as run_report
+
+		out = run_report(
+			"Purchase Master Data Readiness", filters={}, ignore_prepared_report=True
+		)
+		rows = [r for r in out["result"] if isinstance(r, dict)]
+		_assert(rows, "the readiness report found nothing to check at all")
+		for r in rows[:50]:
+			_assert(r.get("problem"), f"{r.get('subject')}: no problem stated")
+			_assert(r.get("consequence"), f"{r.get('subject')}: no consequence stated")
+			_assert(r.get("subject_doctype") in ("Item", "Supplier"), r.get("subject_doctype"))
+		# Blocking problems must sort above advisory ones, or the top of the report
+		# is not the work.
+		sev = [r["severity"] for r in rows]
+		blocks = [i for i, v in enumerate(sev) if v == "Blocks receiving"]
+		warns = [i for i, v in enumerate(sev) if v != "Blocks receiving"]
+		if blocks and warns:
+			_assert(max(blocks) < min(warns), "blocking rows are not sorted first")
+
+	check("readiness rows name the gap and what it breaks", _readiness_names_the_consequence)
 
 	def _reports_reachable():
 		targets = {s.link_to for s in frappe.get_doc("Workspace", "Goods Inward").shortcuts}
@@ -1551,8 +1621,9 @@ APP_PAGE_DIR = "/Users/hetvi/frappe-bench/apps/alpinos/alpinos/alpinos_developme
 SHARED_CSS = "/Users/hetvi/frappe-bench/apps/alpinos/alpinos/public/css/alpinos_pages.css"
 
 MODULE_PAGES = (
-	"purchase_inward_list", "purchase_qc_list",
+	"purchase_inward_list", "purchase_qc_list", "purchase_grn_list",
 	"purchase_order_entry", "purchase_inward_entry", "purchase_qc_entry",
+	"purchase_grn_view",
 )
 
 

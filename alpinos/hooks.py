@@ -219,6 +219,7 @@ after_migrate = [
 	"alpinos.purchase.inward_client.execute",
 	"alpinos.purchase.purchase_order_approval.create_purchase_order_approval_client_script",
 	"alpinos.purchase.qc_list_api.setup_qc_list_page_access",
+	"alpinos.purchase.grn_list_api.setup_grn_list_page_access",
 	"alpinos.purchase.print_formats.execute",
 ]
 
