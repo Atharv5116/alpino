@@ -25,6 +25,7 @@ SHORTCUTS = (
 	("Purchase Inward", "Page", "purchase_inward_list", ""),
 	("Purchase QC", "Page", "purchase_qc_list", ""),
 	("New Inward", "Page", "purchase_inward_entry", ""),
+	("New Purchase Order", "Page", "purchase_order_entry", ""),
 	("Purchase Orders", "DocType", "Purchase Order", "List"),
 	("GRN", "DocType", "Purchase Receipt", "List"),
 )
@@ -41,7 +42,7 @@ LINKS = (
 # click a row, and then be refused the entry screen is a dead end. What each role may
 # actually DO inside is still governed by the DocPerm matrix in purchase.roles and by the
 # per-section rules, not by this.
-ENTRY_PAGES = ("purchase_inward_entry", "purchase_qc_entry")
+ENTRY_PAGES = ("purchase_order_entry", "purchase_inward_entry", "purchase_qc_entry")
 
 
 def setup_entry_page_access():

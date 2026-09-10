@@ -34,7 +34,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(.page-head, .page-body) .container {
   max-width: 100% !important;
   width: 100% !important;
@@ -87,7 +88,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .eso-card,
   .mt-ecom-card,
@@ -140,7 +142,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .eso-card-title,
   .table-section-title,
@@ -173,7 +176,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .eso-card-title,
   .table-section-title,
@@ -219,7 +223,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -258,7 +263,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -301,7 +307,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -339,7 +346,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .so-table,
   .so-list-table,
@@ -370,7 +378,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) :is(
   .so-list-row,
   .eso-list-row,
@@ -412,7 +421,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) .layout-main-section :is(.form-control, .btn) {
   border-radius: 6px;
 }
@@ -432,7 +442,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) .page-head .page-actions {
   flex-wrap: wrap;
   row-gap: 6px;
@@ -536,7 +547,8 @@
     [data-page-route="purchase_inward_list"],
     [data-page-route="purchase_qc_list"],
     [data-page-route="purchase_inward_entry"],
-    [data-page-route="purchase_qc_entry"]
+    [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
   ) :is(
     .eso-card,
     .mt-ecom-card,
@@ -571,7 +583,8 @@
     [data-page-route="purchase_inward_list"],
     [data-page-route="purchase_qc_list"],
     [data-page-route="purchase_inward_entry"],
-    [data-page-route="purchase_qc_entry"]
+    [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
   ) :is(.page-head, .page-body) .container {
     padding-left: 12px;
     padding-right: 12px;
@@ -611,7 +624,8 @@
     [data-page-route="purchase_inward_list"],
     [data-page-route="purchase_qc_list"],
     [data-page-route="purchase_inward_entry"],
-    [data-page-route="purchase_qc_entry"]
+    [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
   ) :is(
     .so-table,
     .so-list-table,
@@ -648,7 +662,8 @@
     [data-page-route="purchase_inward_list"],
     [data-page-route="purchase_qc_list"],
     [data-page-route="purchase_inward_entry"],
-    [data-page-route="purchase_qc_entry"]
+    [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
   ) .layout-main-section :is(
     .form-control:not(.input-xs),
     .btn:not(.btn-xs)
@@ -723,7 +738,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) .indicator-pill {
   height: auto !important;
   min-height: 20px;
@@ -937,7 +953,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) .page-head .indicator-pill:empty {
   display: none !important;
 }
@@ -961,7 +978,8 @@
   [data-page-route="purchase_inward_list"],
   [data-page-route="purchase_qc_list"],
   [data-page-route="purchase_inward_entry"],
-  [data-page-route="purchase_qc_entry"]
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_order_entry"]
 ) .page-body {
   padding-top: var(--navbar-height, 48px);
 }

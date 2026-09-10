@@ -1,0 +1,236 @@
+<style>
+/* Cards, titles and scroll wrappers come from public/css/alpinos_pages.css. */
+.purchase-order-entry .eso-subtitle {
+	margin-top: 8px; margin-bottom: 10px;
+	border-top: 1px solid var(--border-color); padding-top: 12px;
+}
+.purchase-order-entry .eso-fld { margin-bottom: 8px; }
+.purchase-order-entry .po-table { font-size: 12px; margin-bottom: 0; }
+.purchase-order-entry .po-table thead th { white-space: nowrap; }
+.purchase-order-entry .po-table th,
+.purchase-order-entry .po-table td { padding: 4px 5px; vertical-align: middle; }
+.purchase-order-entry .po-table input,
+.purchase-order-entry .po-table .control-value { font-size: 12px; }
+.purchase-order-entry .po-num { text-align: right; }
+
+/* Read-only header and summary values are DATA, not an input nobody filled in.
+   Frappe paints them as .control-value.like-disabled-input, the same grey slab as
+   an editable control in both themes, so drop the box and keep a baseline rule. */
+.purchase-order-entry .eso-fld .control-value.like-disabled-input {
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--border-color);
+	border-radius: 0;
+	padding: 4px 2px 3px 0;
+	min-height: var(--input-height, 28px);
+	line-height: 20px;
+	color: var(--text-color);
+	font-weight: 500;
+}
+.purchase-order-entry .eso-fld .control-value.like-disabled-input:empty::after {
+	content: "—";
+	color: var(--text-muted);
+	font-weight: 400;
+}
+/* Small Text controls arrive with an inline height of 150px set by the Frappe
+   control itself, which lets Remarks tower over its card. */
+.purchase-order-entry .eso-fld textarea.form-control {
+	height: 72px !important;
+	min-height: 72px;
+	resize: vertical;
+}
+
+/* The whole order goes read-only once it is submitted or awaiting approval, so the
+   screen shows at a glance that it is no longer yours to edit. */
+.purchase-order-entry .po-locked { opacity: .55; pointer-events: none; }
+
+.purchase-order-entry .po-stage {
+	display: inline-block; padding: 2px 10px; border-radius: 10px;
+	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
+	background: var(--bg-color); margin-left: 8px; vertical-align: middle;
+}
+.purchase-order-entry .po-stage:empty { display: none; }
+.purchase-order-entry .po-stage.po-approved {
+	background: var(--alert-bg-success); border-color: var(--alert-bg-success);
+	color: var(--alert-text-success);
+}
+.purchase-order-entry .po-stage.po-rejected {
+	background: var(--alert-bg-danger); border-color: var(--alert-bg-danger);
+	color: var(--alert-text-danger);
+}
+.purchase-order-entry .po-stage.po-waiting {
+	background: var(--alert-bg-warning); border-color: var(--alert-bg-warning);
+	color: var(--alert-text-warning);
+}
+
+/* Empty grids must read as EMPTY rather than broken. The message lives in data-empty
+   on the scroll wrapper, so no placeholder row is ever put into a tbody. */
+.purchase-order-entry .alp-scroll[data-empty]:has(tbody:empty)::after {
+	content: attr(data-empty);
+	display: block;
+	position: sticky;
+	left: 0;
+	padding: 18px 12px;
+	text-align: center;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-muted);
+	background: var(--card-bg);
+}
+.purchase-order-entry .btn.btn-add-row {
+	border: 1px dashed var(--border-color);
+	background: transparent;
+	color: var(--text-muted);
+	font-weight: 500;
+	display: block; width: 100%; text-align: center;
+}
+.purchase-order-entry .btn.btn-add-row:hover,
+.purchase-order-entry .btn.btn-add-row:focus {
+	border-style: solid;
+	background: var(--bg-color);
+	color: var(--fg-color);
+}
+/* The item grid holds Link cells whose dropdown must escape the scroll wrapper. */
+.purchase-order-entry .items-table { overflow: visible !important; }
+.purchase-order-entry .items-table td { overflow: visible !important; position: relative; }
+
+/* Resting state: a bare route is a NEW order, which is legitimate, so the form
+   stays. Only the approval card is hidden until the order exists. */
+.purchase-order-entry .po-approval-card { display: none; }
+.purchase-order-entry.po-saved .po-approval-card { display: block; }
+</style>
+<div class="purchase-order-entry" style="padding: 12px;">
+
+	<p class="text-muted" style="font-size:12px; margin-bottom:12px;">
+		BRD 2 — the Purchase Team records the order here. Pricing, tax and totals are computed
+		by the ERP when the order is saved, so the Summary below always agrees with the document
+		itself. BRD 3 — an authorised Approver then approves it, and approving is what submits it.
+	</p>
+
+	<!-- ==================== BRD 2.1.1 header information ==================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">
+			Purchase Order Information
+			<span class="po-stage field-stage-badge"></span>
+		</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-name"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-inward-type"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-transaction-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-schedule-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-set-warehouse"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-currency"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-payment-terms-template"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier-order-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-buyer"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-attachment"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-direct-purchase-invoice"></div>
+			<div class="col-md-8 eso-fld field-remarks"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 2.2.2 supplier information =================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Supplier Information</h6>
+		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
+			Fetched from the Vendor Master. Read-only here — correct it on the Supplier record.
+		</p>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier-name"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-contact-person"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-contact-number"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-billing-address"></div>
+			<div class="col-md-6 eso-fld field-shipping-address"></div>
+		</div>
+	</div>
+
+	<!-- ==================== planned shipment (BR-PO-16) ====================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Planned Shipment</h6>
+		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
+			Planned by the Purchase Team. The Purchase Inward fetches these and Store records the
+			actual values where they differ (BR-PO-17 / BR-PO-18).
+		</p>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-vehicle-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-driver-contact-no"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-estimated-arrival"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 2.3.1 item details =========================== -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">Item Details</h6>
+		<div class="alp-scroll alp-scroll--xwide items-table"
+			data-empty="No item lines yet. Use Add Row to add the items being ordered.">
+			<table class="table table-bordered po-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:150px;">Item Code</th>
+					<th style="min-width:150px;">Item Name</th>
+					<th style="width:60px;">UOM</th>
+					<th style="width:90px;">Order Qty</th>
+					<th style="width:100px;">Rate</th>
+					<th style="width:90px;">Discount %</th>
+					<th style="width:110px;">Net Rate</th>
+					<th style="width:110px;">Amount</th>
+					<th style="min-width:120px;">Required By</th>
+					<th style="min-width:130px;">Warehouse</th>
+					<th style="min-width:130px;">Remarks</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<div class="alp-actions" style="margin-top:8px;">
+			<button class="btn btn-sm btn-light btn-add-row">
+				<i class="fa fa-plus"></i> Add Row
+			</button>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 2.3.2 PO summary ============================= -->
+	<div class="eso-card">
+		<h6 class="eso-card-title">PO Summary</h6>
+		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
+			Calculated by the ERP on save, so these always match the order document.
+		</p>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-total-qty"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-discount"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-taxes"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-grand-total"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 3 approval trail ============================= -->
+	<div class="eso-card po-approval-card">
+		<h6 class="eso-card-title">Approval</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-approval-status"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-approval-action-by"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-approval-datetime"></div>
+			<div class="col-md-8 eso-fld field-approval-remarks"></div>
+		</div>
+		<div class="eso-subtitle">Approval History</div>
+		<div class="alp-scroll alp-scroll--wide"
+			data-empty="No approval action yet. The history fills as the order is sent, approved, returned or rejected.">
+			<table class="table table-bordered approval-table po-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:150px;">Action</th>
+					<th style="min-width:160px;">By</th>
+					<th style="min-width:150px;">On</th>
+					<th style="min-width:120px;">From</th>
+					<th style="min-width:120px;">To</th>
+					<th style="min-width:180px;">Remarks</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+
+	<div class="alp-actions alp-actions--end po-actionbar" style="margin: 14px 0 24px;"></div>
+</div>

@@ -792,6 +792,50 @@ def run_wave_g(_report_now=True):
 		),
 	)
 
+	# ---- the Purchase Order entry page saves through the real doctype --------
+	# BRD 2. The page is a data-entry surface: it posts the header and the lines and
+	# lets ERPNext price them, so the Summary card can never disagree with the order.
+	def _po_page_payload_saves():
+		item2 = H.ensure_item(f"PITEST-POPAGE-{H.SEQ}")
+		po = frappe.get_doc(dict(
+			doctype="Purchase Order",
+			supplier=supplier,
+			company=H.COMPANY,
+			transaction_date=today(),
+			schedule_date=add_days(today(), 7),
+			set_warehouse=H._warehouse(),
+			custom_inward_type=C.INWARD_RM,
+			custom_supplier_order_no=f"SO-POPAGE-{H.SEQ}",
+			custom_vehicle_no="GJ-05-AB-1234",
+			items=[dict(
+				item_code=item2, qty=10, price_list_rate=100, discount_percentage=10,
+				schedule_date=add_days(today(), 7), warehouse=H._warehouse(),
+				custom_item_remarks="from the entry page",
+			)],
+		))
+		po.flags.ignore_permissions = True
+		po.insert(ignore_permissions=True)
+		po.reload()
+		line = po.items[0]
+		# ERPNext, not the page, owns the arithmetic.
+		# BRD Net Rate == ERPNext rate: price_list_rate less the discount.
+		_assert(flt(line.rate, 2) == 90.00, f"rate {line.rate}")
+		_assert(flt(line.amount, 2) == 900.00, f"amount {line.amount}")
+		_assert(flt(po.total_qty) == 10, f"total_qty {po.total_qty}")
+		_assert(flt(po.grand_total) > 0, "grand total not computed")
+		_assert(line.custom_item_remarks == "from the entry page", "item remarks lost")
+
+	check("BRD 2 the PO entry payload saves and the ERP prices it", _po_page_payload_saves)
+
+	def _po_entry_page_is_reachable():
+		from alpinos.purchase.workspace import ENTRY_PAGES
+		_assert("purchase_order_entry" in ENTRY_PAGES, "page not granted to module roles")
+		_assert(frappe.db.exists("Page", "purchase_order_entry"), "page missing")
+		targets = {s.link_to for s in frappe.get_doc("Workspace", "Goods Inward").shortcuts}
+		_assert("purchase_order_entry" in targets, "no workspace shortcut opens it")
+
+	check("BRD 2 the PO entry page is granted and reachable", _po_entry_page_is_reachable)
+
 	# ---- a user-format date must never reach the DATE column -----------------
 	# Reported from UAT on PIW-2026-00002: submitting threw
 	#   pymysql OperationalError 1292 "Incorrect date value: '02-09-2026' for
@@ -1388,7 +1432,10 @@ def run_wave_c(_report_now=True):
 APP_PAGE_DIR = "/Users/hetvi/frappe-bench/apps/alpinos/alpinos/alpinos_development/page"
 SHARED_CSS = "/Users/hetvi/frappe-bench/apps/alpinos/alpinos/public/css/alpinos_pages.css"
 
-MODULE_PAGES = ("purchase_inward_list", "purchase_qc_list", "purchase_inward_entry", "purchase_qc_entry")
+MODULE_PAGES = (
+	"purchase_inward_list", "purchase_qc_list",
+	"purchase_order_entry", "purchase_inward_entry", "purchase_qc_entry",
+)
 
 
 def run_wave_d(_report_now=True):
@@ -1413,7 +1460,7 @@ def run_wave_d(_report_now=True):
 		import re
 		from frappe.desk.desk_page import get as get_page
 
-		for name in ("purchase_inward_entry", "purchase_qc_entry"):
+		for name in ("purchase_order_entry", "purchase_inward_entry", "purchase_qc_entry"):
 			script = get_page(name)["script"]
 			m = re.search(r"frappe\.templates\[['\"]([a-z_]+)['\"]\]", script)
 			assert m, f"{name}: no template compiled into the served script"
@@ -1450,7 +1497,7 @@ def run_wave_d(_report_now=True):
 
 		from frappe.desk.desk_page import get as get_page
 
-		for name in ("purchase_inward_entry", "purchase_qc_entry"):
+		for name in ("purchase_order_entry", "purchase_inward_entry", "purchase_qc_entry"):
 			script = get_page(name)["script"]
 			m = re.search(r"frappe\.templates\[\"" + name + r"\"\] = '(.*?)';", script, re.S)
 			assert m, f"{name}: no closed template literal in the served script"
@@ -1462,7 +1509,7 @@ def run_wave_d(_report_now=True):
 		"""They must reuse the shared design system, not invent a second look."""
 		from frappe.desk.desk_page import get as get_page
 
-		for name in ("purchase_inward_entry", "purchase_qc_entry"):
+		for name in ("purchase_order_entry", "purchase_inward_entry", "purchase_qc_entry"):
 			script = get_page(name)["script"]
 			for cls in ("eso-card", "eso-card-title", "eso-fld", "alp-scroll", "alp-actions"):
 				assert cls in script, f"{name} does not use the shared {cls} class"
@@ -1536,7 +1583,7 @@ def run_wave_d(_report_now=True):
 		go through the trim helper first, including the ones built for grid cells."""
 		import re
 
-		for page in ("purchase_inward_entry", "purchase_qc_entry"):
+		for page in ("purchase_order_entry", "purchase_inward_entry", "purchase_qc_entry"):
 			src = _page_js(page)
 			assert "ALP_TRIM_MICROSECONDS" in src, f"{page}: no microsecond trim helper"
 			for line in src.splitlines():

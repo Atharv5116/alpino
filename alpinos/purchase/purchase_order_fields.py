@@ -190,6 +190,15 @@ def _custom_fields():
 		],
 		PO_ITEM: [
 			dict(
+				# BRD 2.3.1 lists item-level Remarks; Purchase Order Item has no such
+				# field of its own (description holds the item description).
+				fieldname="custom_item_remarks",
+				label="Remarks",
+				fieldtype="Data",
+				insert_after="description",
+				description="Line-level remarks for this order line.",
+			),
+			dict(
 				# Core received_qty counts submitted Purchase Receipts and is rewritten by
 				# StatusUpdater on every receipt submit/cancel, so the inward figure needs
 				# its own column.
