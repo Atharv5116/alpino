@@ -860,6 +860,139 @@ def setup_qc_sample_sticker_print_format():
 	_upsert_print_format(STICKER_PF_NAME, STICKER_DOC_TYPE, _STICKER_HTML)
 
 
+# --------------------------------------------------------------------------- GRN
+
+GRN_PF_NAME = "GRN"
+GRN_DOC_TYPE = "Purchase Receipt"
+
+# BRD 5.2 in printed form: what was received, what QC approved, what it rejected, and
+# who finally submitted it. Reuses the .piw stylesheet so the three module documents
+# print as one family.
+_GRN_HTML_RAW = r"""
+<style>
+  .piw { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+  .piw table { border-collapse: collapse; width: 100%; table-layout: fixed;
+      margin-bottom: 9px; font-size: 10px; }
+  .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important;
+      word-wrap: break-word; overflow: hidden; }
+  .piw table.g td { padding: 3px 4px !important; font-size: 9px; }
+  .piw table.g th { padding: 3px 4px !important; font-size: 8px; }
+  .piw th { background: #ececec; font-size: 9px; text-transform: uppercase; text-align: center;
+      font-weight: bold; }
+  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px;
+      letter-spacing: 0.6px; }
+  .piw .lbl { background: #f6f6f6; font-weight: bold; }
+  .piw .c { text-align: center; }
+  .piw .r { text-align: right; }
+  .piw .b { font-weight: bold; }
+  .piw .sub { font-size: 9px; color: #555; font-weight: normal; }
+  .piw .warn { color: #a30000; font-weight: bold; }
+  .piw .tot td { background: #f0f0f0; font-weight: bold; }
+  .piw .title { font-size: 17px; font-weight: bold; text-align: center; letter-spacing: 1.5px; }
+  .piw .subtitle { text-align: center; font-size: 10px; color: #555; margin: 2px 0 8px; }
+  .piw .avoid { page-break-inside: avoid; }
+  .piw .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }
+</style>
+<div class="piw">
+
+  <div class="title">GOODS RECEIPT NOTE</div>
+  <div class="subtitle">{{ doc.name or "" }}{% if doc.company %} &middot; {{ doc.company }}{% endif %}</div>
+
+  <!-- ===== header: where this receipt came from ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
+    <tr><td class="sec" colspan="4">GRN Details</td></tr>
+    <tr>
+      <td class="lbl">GRN No.</td><td class="b">{{ txt(doc.name) }}</td>
+      <td class="lbl">Posting Date</td><td>{{ dte(doc.posting_date) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Vendor</td><td class="b">{{ txt(doc.supplier_name or doc.supplier) }}</td>
+      <td class="lbl">Supplier Invoice No.</td><td>{{ txt(doc.bill_no) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Purchase Inward</td><td>{{ txt(doc.custom_purchase_inward) }}</td>
+      <td class="lbl">Purchase QC</td><td>{{ txt(doc.custom_purchase_qc) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">GRN Status</td><td class="b">{{ txt(doc.custom_grn_status) }}</td>
+      <td class="lbl">Document Status</td>
+      <td>{{ ["Draft", "Submitted", "Cancelled"][frappe.utils.cint(doc.docstatus)] }}</td>
+    </tr>
+  </table>
+
+  <!-- ===== BRD 5.2: received / approved / rejected, per line ===== -->
+  <table class="g">
+    <colgroup>
+      <col style="width:4%"><col style="width:22%"><col style="width:8%">
+      <col style="width:10%"><col style="width:10%"><col style="width:14%">
+      <col style="width:14%"><col style="width:18%">
+    </colgroup>
+    <tr><td class="sec" colspan="8">Received Quantity and QC Outcome</td></tr>
+    <tr>
+      <th>#</th><th>Item</th><th>UOM</th>
+      <th>Accepted</th><th>Rejected</th><th>Accepted Warehouse</th>
+      <th>Rejected Warehouse</th><th>Batch</th>
+    </tr>
+    {% set ns = namespace(acc=0, rej=0) %}
+    {% for row in doc.items %}
+      {% set ns.acc = ns.acc + frappe.utils.flt(row.qty) %}
+      {% set ns.rej = ns.rej + frappe.utils.flt(row.rejected_qty) %}
+      <tr>
+        <td class="c">{{ row.idx }}</td>
+        <td>{{ txt(row.item_code) }}<div class="sub">{{ txt(row.item_name) }}</div></td>
+        <td class="c">{{ txt(row.uom) }}</td>
+        <td class="r">{{ num3(row.qty) }}</td>
+        <td class="r {% if frappe.utils.flt(row.rejected_qty) %}warn{% endif %}">{{ num3(row.rejected_qty) }}</td>
+        <td>{{ txt(row.warehouse) }}</td>
+        <td>{{ txt(row.rejected_warehouse) }}</td>
+        <td>{{ txt(row.batch_no) }}</td>
+      </tr>
+    {% endfor %}
+    <tr class="tot">
+      <td class="c" colspan="3">Total</td>
+      <td class="r">{{ num3(ns.acc) }}</td>
+      <td class="r">{{ num3(ns.rej) }}</td>
+      <td colspan="3"></td>
+    </tr>
+  </table>
+
+  <!-- ===== BR-GRN-07: who let this into stock ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>
+    <tr><td class="sec" colspan="4">Final Submission</td></tr>
+    <tr>
+      <td class="lbl">Final Submitted By</td><td>{{ who(doc.custom_final_submitted_by) }}</td>
+      <td class="lbl">Final Submitted On</td><td>{{ dtm(doc.custom_final_submission_datetime) }}</td>
+    </tr>
+    {% if doc.custom_debit_note %}
+    <tr>
+      <td class="lbl">Debit Note</td>
+      <td class="b warn" colspan="3">{{ txt(doc.custom_debit_note) }}
+        <span class="sub">raised for the rejected quantity (BR-QC-21)</span></td>
+    </tr>
+    {% endif %}
+  </table>
+
+  <table class="avoid">
+    <colgroup><col style="width:33%"><col style="width:34%"><col style="width:33%"></colgroup>
+    <tr>
+      <td><div class="sign"></div><div class="c sub">Store</div></td>
+      <td><div class="sign"></div><div class="c sub">Quality Control</div></td>
+      <td><div class="sign"></div><div class="c sub">Authorised Signatory</div></td>
+    </tr>
+  </table>
+
+</div>
+"""
+
+_GRN_HTML = _MACROS + _GRN_HTML_RAW
+
+
+def setup_grn_print_format():
+	"""The 'GRN' print format on Purchase Receipt (BRD 5.2 in printed form)."""
+	_upsert_print_format(GRN_PF_NAME, GRN_DOC_TYPE, _GRN_HTML)
+
 def _set_default_print_format(doc_type, print_format):
 	"""Make `print_format` the default the Print button opens for `doc_type`.
 
@@ -889,6 +1022,7 @@ def execute():
 	setup_purchase_inward_print_format()
 	setup_qc_inspection_print_format()
 	setup_qc_sample_sticker_print_format()
+	setup_grn_print_format()
 	# Task 296 / 312: the Print button must open the module format, not Standard.
 	_set_default_print_format(INWARD_DOC_TYPE, INWARD_PF_NAME)
 	_set_default_print_format(QC_DOC_TYPE, QC_PF_NAME)

@@ -591,6 +591,8 @@ def run():
 	      lambda: _render("Purchase Inward", "Purchase Inward", pi1.name))
 	check("print format: QC Inspection Report renders",
 	      lambda: _render("QC Inspection Report", "Purchase QC", qc_name[0]))
+	check("print format: GRN renders",
+	      lambda: _render("GRN", "Purchase Receipt", pr_name[0]))
 
 	_report()
 	return R

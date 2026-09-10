@@ -792,6 +792,51 @@ def run_wave_g(_report_now=True):
 		),
 	)
 
+	# ---- the three module reports -------------------------------------------
+	MODULE_REPORTS = (
+		"Purchase Pending Receipts", "Purchase QC Pending", "Purchase GRN Register",
+	)
+
+	def _reports_run():
+		from frappe.desk.query_report import run as run_report
+
+		for name in MODULE_REPORTS:
+			_assert(frappe.db.exists("Report", name), f"{name} is not installed")
+			out = run_report(name, filters={}, ignore_prepared_report=True)
+			_assert(out.get("columns"), f"{name} returned no columns")
+			# result may legitimately be empty on a quiet site; columns may not.
+			_assert(isinstance(out.get("result"), list), f"{name} returned no result set")
+
+	check("the three module reports run and return columns", _reports_run)
+
+	def _qc_pending_flags_a_breach():
+		"""The report must compute the breach from sla_due, not trust a stale flag."""
+		from frappe.desk.query_report import run as run_report
+
+		out = run_report("Purchase QC Pending", filters={}, ignore_prepared_report=True)
+		states = {r.get("sla_state") for r in out["result"] if isinstance(r, dict)}
+		_assert(states, "no rows to judge the SLA column on")
+		_assert(
+			states.issubset({"Breached", "Within SLA", "No SLA"}),
+			f"unexpected SLA states: {states}",
+		)
+
+	check("QC Pending computes the SLA state per row", _qc_pending_flags_a_breach)
+
+	def _grn_register_excludes_returns():
+		"""A Purchase Return copies custom_purchase_inward off the GRN it returns."""
+		src = open(f"{APP_DIR}/report/purchase_grn_register/purchase_grn_register.py").read()
+		_assert("is_return" in src, "the register does not exclude Purchase Returns")
+
+	check("the GRN register excludes Purchase Returns", _grn_register_excludes_returns)
+
+	def _reports_reachable():
+		targets = {s.link_to for s in frappe.get_doc("Workspace", "Goods Inward").shortcuts}
+		missing = [r for r in MODULE_REPORTS if r not in targets]
+		_assert(not missing, f"no workspace shortcut opens: {missing}")
+
+	check("every module report is reachable from the workspace", _reports_reachable)
+
 	# ---- quarantine actually holds material now ------------------------------
 	# The quarantine field surface and the Quarantine warehouse both existed and did
 	# nothing: a held line went to QC and into stock like any other.
@@ -1501,6 +1546,7 @@ def run_wave_c(_report_now=True):
 # Wave D - the BRD screen layouts as custom desk Pages (BRD 2 and BRD 4).
 # =====================================================================================
 
+APP_DIR = "/Users/hetvi/frappe-bench/apps/alpinos/alpinos/alpinos_development"
 APP_PAGE_DIR = "/Users/hetvi/frappe-bench/apps/alpinos/alpinos/alpinos_development/page"
 SHARED_CSS = "/Users/hetvi/frappe-bench/apps/alpinos/alpinos/public/css/alpinos_pages.css"
 

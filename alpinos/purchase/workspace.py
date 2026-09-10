@@ -28,6 +28,9 @@ SHORTCUTS = (
 	("New Purchase Order", "Page", "purchase_order_entry", ""),
 	("Purchase Orders", "DocType", "Purchase Order", "List"),
 	("GRN", "DocType", "Purchase Receipt", "List"),
+	("Pending Receipts", "Report", "Purchase Pending Receipts", ""),
+	("QC Pending", "Report", "Purchase QC Pending", ""),
+	("GRN Register", "Report", "Purchase GRN Register", ""),
 )
 
 LINKS = (
@@ -98,6 +101,8 @@ def setup_purchase_workspace():
 		if link_type == "DocType" and not frappe.db.exists("DocType", link_to):
 			continue
 		if link_type == "Page" and not frappe.db.exists("Page", link_to):
+			continue
+		if link_type == "Report" and not frappe.db.exists("Report", link_to):
 			continue
 		ws.append("shortcuts", {
 			"label": label,
