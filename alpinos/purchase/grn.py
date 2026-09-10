@@ -37,6 +37,7 @@ from frappe.utils import cint, flt, getdate, now_datetime, nowtime
 
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
+from alpinos.purchase import quarantine
 from alpinos.purchase.settings import warehouse as settings_warehouse
 
 DOCTYPE = "Purchase Receipt"
@@ -523,6 +524,10 @@ def _grn_rows(inward, qc):
 			or line.target_warehouse
 			or inward.target_warehouse
 		)
+		# A line still under quarantine must not reach usable stock, whichever store
+		# it was destined for. The submit-for-QC guard should have stopped it long
+		# before here; this is the backstop on every other path into a receipt.
+		warehouse = quarantine.target_for_line(line, warehouse)
 		if rejected > 0:
 			if not rejected_warehouse:
 				frappe.throw(

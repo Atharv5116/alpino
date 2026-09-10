@@ -792,6 +792,78 @@ def run_wave_g(_report_now=True):
 		),
 	)
 
+	# ---- quarantine actually holds material now ------------------------------
+	# The quarantine field surface and the Quarantine warehouse both existed and did
+	# nothing: a held line went to QC and into stock like any other.
+	from alpinos.purchase import quarantine as Q
+
+	po_q = H.make_po(supplier, [(item, 100, 5)])
+	inw_q = H.make_inward(po_q, po_q.items, invoice_no=f"PITEST-QRTN-{H.SEQ}")
+	inw_q.submit()
+	inw_q.reload()
+	_receive(inw_q, 40)
+
+	# Store marks it, and a reason is not optional.
+	expect_throw(
+		"quarantine without a reason is refused",
+		lambda: Q.mark(inw_q.name, ""),
+		"Quarantine Reason",
+	)
+	Q.mark(inw_q.name, "Torn outer cartons, holding pending QC view")
+
+	def _held_now():
+		fresh = frappe.get_doc("Purchase Inward", inw_q.name)
+		_assert(Q.open_lines(fresh) == [1], Q.open_lines(fresh))
+		_assert(fresh.items[0].quarantine_status == C.QUARANTINE_HELD,
+			fresh.items[0].quarantine_status)
+
+	check("marking holds the line and stamps the status", _held_now)
+
+	from alpinos.purchase import inward_api as IA
+
+	expect_throw(
+		"a held line cannot be sent to QC",
+		lambda: IA.run_action(inw_q.name, "submit_for_qc"),
+		"quarantine",
+	)
+
+	def _grn_would_route_it_out_of_stock():
+		fresh = frappe.get_doc("Purchase Inward", inw_q.name)
+		routed = Q.target_for_line(fresh.items[0], "Stores - AHF")
+		_assert(routed != "Stores - AHF", "a held line still points at usable stock")
+
+	check("a held line is routed away from usable stock", _grn_would_route_it_out_of_stock)
+
+	# Releasing is a QC judgement, not a Store one.
+	def _store_cannot_release():
+		store = _ensure_user(f"pitest.store.{H.SEQ}@example.com", C.ROLE_STORE_USER)
+		frappe.db.commit()
+		frappe.set_user(store)
+		try:
+			Q.release(inw_q.name)
+		finally:
+			frappe.set_user("Administrator")
+
+	expect_throw("Store cannot release its own quarantine", _store_cannot_release, "Only")
+
+	Q.release(inw_q.name, remarks="QC inspected the cartons, contents intact")
+
+	def _released_but_still_visible():
+		fresh = frappe.get_doc("Purchase Inward", inw_q.name)
+		_assert(not Q.open_lines(fresh), "still held after release")
+		# The tick stays so the hold remains readable on the document.
+		_assert(cint(fresh.items[0].quarantine) == 1, "the hold vanished from the record")
+		_assert(fresh.items[0].quarantine_status == C.QUARANTINE_RELEASED,
+			fresh.items[0].quarantine_status)
+
+	check("releasing lifts the hold but keeps the history", _released_but_still_visible)
+
+	def _qc_flows_again():
+		fresh = frappe.get_doc("Purchase Inward", inw_q.name)
+		_assert(Q.assert_none_open(fresh) is None, "the guard still refuses after release")
+
+	check("a released line may go to QC", _qc_flows_again)
+
 	# ---- the Purchase Order entry page saves through the real doctype --------
 	# BRD 2. The page is a data-entry surface: it posts the header and the lines and
 	# lets ERPNext price them, so the Summary card can never disagree with the order.

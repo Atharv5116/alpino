@@ -37,6 +37,18 @@ def _guard_receiving_complete(doc):
 	return None
 
 
+def _guard_no_open_quarantine(doc):
+	"""Quarantine holds material OUT of the flow, so it cannot be handed to QC."""
+	from alpinos.purchase import quarantine
+
+	return quarantine.assert_none_open(doc)
+
+
+def _guard_receiving_and_quarantine(doc):
+	"""Both conditions on the same transition, first failure wins."""
+	return _guard_receiving_complete(doc) or _guard_no_open_quarantine(doc)
+
+
 def _guard_qc_exists(doc):
 	if not doc.get("purchase_qc"):
 		return _("No Purchase QC has been raised for this inward yet.")
@@ -81,7 +93,7 @@ INWARD_TRANSITIONS = {
 	],
 	C.PI_PENDING_RECEIPT: [
 		_T("submit_for_qc", _("Submit for QC"), C.PI_PENDING_QC, STORE,
-		   _guard_receiving_complete),
+		   _guard_receiving_and_quarantine),
 	],
 	C.PI_PENDING_QC: [
 		_T("start_qc", _("Start QC"), C.PI_QC_IN_PROGRESS, QC, _guard_qc_exists),
