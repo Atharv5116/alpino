@@ -1,41 +1,78 @@
 <style>
-	/* Page-local layout glue only; cards/tables/scroll come from alpinos_pages.css.
-	   No apostrophes in this file. */
-	.invoice-download-queue .idq-fld-col { margin-bottom: 10px; }
-	.invoice-download-queue .idq-list-header { justify-content: space-between; margin-bottom: 12px; }
-	.invoice-download-queue .idq-table th, .invoice-download-queue .idq-table td { vertical-align: middle; }
-	.invoice-download-queue .idq-table td.idq-check-col, .invoice-download-queue .idq-table th.idq-check-col { text-align: center; width: 40px; }
-	.invoice-download-queue .idq-dl-col { white-space: nowrap; }
-	.invoice-download-queue .idq-dl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
-	.invoice-download-queue .idq-dl-off { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; opacity: .45; }
-	.invoice-download-queue .idq-dl-sep { margin: 0 5px; opacity: .35; }
+.invoice-download-queue .idq-bar {
+	display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end;
+	margin-bottom: 10px;
+}
+.invoice-download-queue .idq-bar .idq-f { min-width: 150px; flex: 0 0 auto; }
+.invoice-download-queue .idq-bar .idq-f.wide { min-width: 200px; }
+.invoice-download-queue .idq-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.invoice-download-queue .idq-count { font-size: 12px; color: var(--text-muted); }
+
+.invoice-download-queue .idq-scroll { overflow-x: auto; max-width: 100%; }
+.invoice-download-queue .idq-table { font-size: 12px; margin-bottom: 0; width: 100%; }
+.invoice-download-queue .idq-table th,
+.invoice-download-queue .idq-table td { padding: 5px 7px; vertical-align: middle; white-space: nowrap; }
+.invoice-download-queue .idq-table th { background: var(--bg-color); font-weight: 600; }
+
+/* Sorting: the header is the control, so it has to look like one and show state. */
+.invoice-download-queue .idq-table th.idq-sortable { cursor: pointer; user-select: none; }
+.invoice-download-queue .idq-table th.idq-sortable:hover { color: var(--text-color); }
+.invoice-download-queue .idq-sort-arrow { margin-left: 4px; opacity: .3; font-size: 10px; }
+.invoice-download-queue .idq-table th.idq-sorted .idq-sort-arrow { opacity: 1; color: var(--primary); }
+.invoice-download-queue .idq-table th.idq-sorted { color: var(--text-color); }
+
+/* The Download column is an action and is pinned first. It is not draggable and has
+   no sort, because there is nothing in it to order by. */
+.invoice-download-queue .idq-dl-col { text-align: center; }
+.invoice-download-queue .idq-dl-sep { margin: 0 4px; color: var(--text-muted); }
+.invoice-download-queue .idq-dl-off { opacity: .4; }
+.invoice-download-queue .idq-check-col { width: 30px; text-align: center; }
+
+.invoice-download-queue .idq-num { text-align: right; }
+.invoice-download-queue .idq-empty { padding: 26px 12px; text-align: center; color: var(--text-muted); }
+
+/* Column picker */
+.idq-col-item {
+	display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+	border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 5px;
+	background: var(--card-bg); cursor: grab;
+}
+.idq-col-item.idq-locked { opacity: .6; cursor: not-allowed; background: var(--bg-color); }
+.idq-col-item .idq-col-handle { color: var(--text-muted); font-size: 11px; }
+.idq-col-item .idq-col-label { flex: 1; font-size: 13px; }
 </style>
 <div class="invoice-download-queue">
-	<div class="alp-card idq-filters-card">
-		<h6 class="alp-section-title">Filters</h6>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 idq-fld-col"><div class="fld-sales-order"></div></div>
-			<div class="col-md-2 col-sm-6 idq-fld-col"><div class="fld-order-date"></div></div>
-			<div class="col-md-2 col-sm-6 idq-fld-col"><div class="fld-po-date"></div></div>
-			<div class="col-md-2 col-sm-6 idq-fld-col"><div class="fld-dispatch-date"></div></div>
-			<div class="col-md-3 col-sm-6 idq-fld-col"><div class="fld-customer"></div></div>
-		</div>
-		<div class="alp-actions">
-			<button type="button" class="btn btn-primary btn-sm btn-idq-apply">Apply</button>
-			<button type="button" class="btn btn-default btn-sm btn-idq-clear">Clear</button>
-			<button type="button" class="btn btn-default btn-sm btn-idq-save-filter">Save Filter</button>
+
+	<div class="idq-bar">
+		<div class="idq-f fld-channel"></div>
+		<div class="idq-f fld-order-date-from"></div>
+		<div class="idq-f fld-order-date-to"></div>
+		<div class="idq-f fld-dispatch-date-from"></div>
+		<div class="idq-f fld-dispatch-date-to"></div>
+		<div class="idq-f fld-customer-type"></div>
+		<div class="idq-f fld-sales-order"></div>
+		<div class="idq-f fld-customer-po-no"></div>
+		<div class="idq-f wide fld-customer"></div>
+		<div class="idq-f fld-invoice-id"></div>
+		<div class="idq-f fld-lr-number"></div>
+		<div class="idq-f fld-state"></div>
+		<div class="idq-actions">
+			<button class="btn btn-sm btn-primary btn-idq-apply">Apply</button>
+			<button class="btn btn-sm btn-default btn-idq-clear">Clear</button>
+			<span class="idq-count"></span>
 		</div>
 	</div>
 
-	<div class="alp-card idq-list-card">
-		<div class="alp-actions idq-list-header">
-			<span class="text-muted idq-count"></span>
-		</div>
-		<div class="alp-scroll alp-scroll--wide">
-			<table class="table table-bordered idq-table">
-				<thead><tr></tr></thead>
-				<tbody></tbody>
-			</table>
-		</div>
+	<div class="idq-scroll">
+		<table class="table table-bordered idq-table">
+			<thead><tr></tr></thead>
+			<tbody></tbody>
+		</table>
+	</div>
+
+	<div class="alp-actions" style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+		<button class="btn btn-sm btn-default btn-idq-prev">Previous</button>
+		<button class="btn btn-sm btn-default btn-idq-next">Next</button>
+		<span class="text-muted idq-range" style="font-size:12px;"></span>
 	</div>
 </div>

@@ -513,3 +513,138 @@ def _cell(value):
 	if value is None:
 		return ""
 	return value
+
+
+# ---------------------------------------------------------------- saved views
+
+VIEW_DOCTYPE = "Alpino Saved View"
+PAGE_ROUTE = "invoice-download-queue"
+
+
+@frappe.whitelist()
+def list_views():
+	"""This user's saved views for this page, newest default first."""
+	_assert_can_read()
+	rows = frappe.get_all(
+		VIEW_DOCTYPE,
+		filters={"user": frappe.session.user, "page_route": PAGE_ROUTE},
+		fields=["name", "view_name", "is_default", "columns_json", "filters_json",
+		        "sort_field", "sort_dir"],
+		order_by="is_default desc, view_name asc",
+	)
+	for r in rows:
+		r["columns"] = frappe.parse_json(r.pop("columns_json") or "[]")
+		r["filters"] = frappe.parse_json(r.pop("filters_json") or "{}")
+	return rows
+
+
+@frappe.whitelist()
+def save_view(view_name, columns=None, filters=None, sort_field=None, sort_dir=None,
+              is_default=0):
+	"""Create or REPLACE one of this user's views. Saving the same name updates it."""
+	_assert_can_read()
+	view_name = (view_name or "").strip()
+	if not view_name:
+		frappe.throw(_("Please name the view."))
+
+	# Never store a column the catalogue does not allow, or a saved view becomes a
+	# way to smuggle one back in later.
+	columns = _clean_columns(columns)
+	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+
+	existing = frappe.db.exists(
+		VIEW_DOCTYPE,
+		{"user": frappe.session.user, "page_route": PAGE_ROUTE, "view_name": view_name},
+	)
+	doc = frappe.get_doc(VIEW_DOCTYPE, existing) if existing else frappe.new_doc(VIEW_DOCTYPE)
+	doc.update({
+		"view_name": view_name,
+		"page_route": PAGE_ROUTE,
+		"user": frappe.session.user,
+		"columns_json": frappe.as_json(columns),
+		"filters_json": frappe.as_json(filters),
+		"sort_field": sort_field or "",
+		"sort_dir": sort_dir or "desc",
+		"is_default": cint(is_default),
+	})
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name, "view_name": doc.view_name}
+
+
+@frappe.whitelist()
+def delete_view(name):
+	"""Remove one of YOUR OWN views. Somebody else's is not yours to delete."""
+	_assert_can_read()
+	owner = frappe.db.get_value(VIEW_DOCTYPE, name, "user")
+	if not owner:
+		frappe.throw(_("That view no longer exists."))
+	if owner != frappe.session.user and "System Manager" not in _roles():
+		frappe.throw(_("That view belongs to another user."), frappe.PermissionError)
+	frappe.delete_doc(VIEW_DOCTYPE, name, ignore_permissions=True)
+	return {"deleted": name}
+
+
+# ------------------------------------------------ customer link query helpers
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def customer_link_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link-field query for Customer, narrowed to the channel the user may see.
+
+	Driven off the ORDERS rather than the Customer master, so the dropdown can only
+	ever offer a party that appears in rows this user is allowed to read. Clearing
+	the Channel widens it back to everything they may see, never beyond.
+	"""
+	_assert_can_read()
+	channel = (filters or {}).get("channel") or None
+	where, params, _sel, _ob, _keys = _build({"channel": channel}, None, None, None)
+	params["txt"] = f"%{_escape_like(txt)}%"
+	return frappe.db.sql(
+		f"""
+		SELECT DISTINCT so.customer, so.customer_name
+		FROM `tabSales Order` so {_JOINS}
+		WHERE {where} AND (so.customer LIKE %(txt)s OR so.customer_name LIKE %(txt)s)
+		ORDER BY so.customer_name
+		LIMIT {cint(page_len) or 20} OFFSET {cint(start) or 0}
+		""",
+		params,
+	)
+
+
+@frappe.whitelist()
+def customer_in_channel(customer, channel=None):
+	"""Does this customer still appear in the chosen channel?
+
+	The page asks before keeping a Customer when the Channel changes; a party that
+	does not belong to the new channel is cleared instead of quietly filtering the
+	list down to nothing.
+	"""
+	_assert_can_read()
+	if not customer:
+		return True
+	where, params, _sel, _ob, _keys = _build({"channel": channel}, None, None, None)
+	params["cust"] = customer
+	row = frappe.db.sql(
+		f"SELECT 1 FROM `tabSales Order` so {_JOINS} WHERE {where} AND so.customer = %(cust)s LIMIT 1",
+		params,
+	)
+	return bool(row)
+
+
+@frappe.whitelist()
+def get_all_sales_orders(filters=None):
+	"""Every Sales Order in the CURRENT FILTER, not just the page on screen.
+
+	The queue is paged now. Download All and the Club Download buttons used to work
+	from every row because every row was loaded; without this they would quietly have
+	become "download this page", which is a change to the download behaviour rather
+	than to the presentation around it.
+	"""
+	_assert_can_read()
+	where, params, _sel, _ob, _keys = _build(filters, None, None, None)
+	rows = frappe.db.sql(
+		f"SELECT so.name FROM `tabSales Order` so {_JOINS} WHERE {where} ORDER BY so.name",
+		params,
+	)
+	return [r[0] for r in rows]

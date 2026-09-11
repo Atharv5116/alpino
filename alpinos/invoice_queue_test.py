@@ -209,6 +209,87 @@ def run():
 
 	check("undispatched quantity is computed per row", _undispatched_counts_in_component_units)
 
+	# ------------------------------------------------------------ saved views
+	def _view_round_trips():
+		Q.save_view(
+			"IQTest View",
+			columns=["sales_order", "customer_name", "invoice_id"],
+			filters={"customer_type": "Amazon"},
+			sort_field="order_date", sort_dir="asc", is_default=1,
+		)
+		views = [v for v in Q.list_views() if v["view_name"] == "IQTest View"]
+		_assert(views, "the view did not come back")
+		v = views[0]
+		_assert(v["columns"] == ["sales_order", "customer_name", "invoice_id"], v["columns"])
+		_assert(v["filters"] == {"customer_type": "Amazon"}, v["filters"])
+		_assert(v["sort_dir"] == "asc", v["sort_dir"])
+		_assert(cint(v["is_default"]) == 1, "default flag lost")
+
+	check("a saved view round-trips columns, order, filters and sort", _view_round_trips)
+
+	def _saving_the_same_name_replaces():
+		before = len([v for v in Q.list_views() if v["view_name"] == "IQTest View"])
+		Q.save_view("IQTest View", columns=["sales_order"], filters={})
+		after = [v for v in Q.list_views() if v["view_name"] == "IQTest View"]
+		_assert(before == 1 and len(after) == 1, f"{before} -> {len(after)} copies")
+		_assert(after[0]["columns"] == ["sales_order"], after[0]["columns"])
+
+	check("saving the same name replaces rather than piling up", _saving_the_same_name_replaces)
+
+	def _a_view_cannot_smuggle_a_column():
+		"""A saved view is user input like any other, so it goes through the catalogue."""
+		Q.save_view("IQTest Sneaky", columns=["sales_order", "so.custom_invoice_pdf"])
+		v = [x for x in Q.list_views() if x["view_name"] == "IQTest Sneaky"][0]
+		_assert(v["columns"] == ["sales_order"], v["columns"])
+		Q.delete_view(v["name"])
+
+	check("a saved view cannot store a column outside the catalogue", _a_view_cannot_smuggle_a_column)
+
+	def _views_are_per_user():
+		mine = {v["view_name"] for v in Q.list_views()}
+		theirs = _as(sales_user, lambda: {v["view_name"] for v in Q.list_views()})
+		_assert("IQTest View" in mine, "my own view is missing")
+		_assert("IQTest View" not in theirs, "another user can see my saved view")
+
+	check("saved views are private to their owner", _views_are_per_user)
+
+	# Resolve the target BEFORE switching user: a helper that flips back to
+	# Administrator inside the lambda would delete as Administrator and prove nothing.
+	_mine = [v for v in Q.list_views() if v["view_name"] == "IQTest View"][0]["name"]
+
+	expect_throw(
+		"deleting somebody else view is refused",
+		lambda: _as(sales_user, lambda: Q.delete_view(_mine)),
+		"another user",
+	)
+
+	# --------------------------------------------- download set spans all pages
+	def _download_all_is_not_just_the_page():
+		"""The queue is paged now; Download All must still mean every filtered row."""
+		page = Q.get_rows(page_length=1)
+		everything = Q.get_all_sales_orders()
+		_assert(len(page["rows"]) <= 1, "page size ignored")
+		_assert(
+			len(everything) == page["total"],
+			f"all-orders {len(everything)} != filtered total {page['total']}",
+		)
+
+	check("Download All spans every page, not the one on screen", _download_all_is_not_just_the_page)
+
+	def _download_set_obeys_the_channel_lock():
+		names = _as(ecom_user, lambda: Q.get_all_sales_orders())
+		bad = [
+			n for n in names
+			if frappe.db.get_value("Sales Order", n, "custom_channel") != "E-com"
+		]
+		_assert(not bad, f"the download set leaked {len(bad)} other-channel orders")
+
+	check("the Download All set obeys the channel lock too", _download_set_obeys_the_channel_lock)
+
+	for v in Q.list_views():
+		if v["view_name"].startswith("IQTest"):
+			Q.delete_view(v["name"])
+
 	frappe.set_user("Administrator")
 	width = max(len(r[1]) for r in R)
 	for status, label, detail in R:

@@ -1015,7 +1015,8 @@
   [data-page-route="purchase_qc_entry"],
   [data-page-route="purchase_order_entry"],
   [data-page-route="purchase_grn_list"],
-  [data-page-route="purchase_grn_view"]
+  [data-page-route="purchase_grn_view"],
+  [data-page-route="invoice-download-queue"]
 ) .page-body {
   padding-top: var(--navbar-height, 48px);
 }
