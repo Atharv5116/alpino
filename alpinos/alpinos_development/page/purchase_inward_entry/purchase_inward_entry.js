@@ -486,6 +486,11 @@ var PurchaseInwardEntry = class {
 			['total-received-qty', 'total_received_qty', 'Total Received Qty'],
 			['total-pending-qty', 'total_pending_qty', 'Total Pending Qty'],
 			['total-excess-qty', 'total_excess_qty', 'Total Excess Qty'],
+			// Not a stored field. BRD 2.2.1 fixes Pending Quantity as the balance BEFORE
+			// this receipt, because Excess = Received - Pending depends on it, so it
+			// cannot also drop as the Store types. Nothing then showed what was left
+			// after the receipt being entered, which read as "pending is not updating".
+			['total-balance-qty', 'total_balance_qty', 'Balance After This Receipt'],
 		].forEach(([sel, fieldname, label]) => {
 			this._ctl(`.field-${sel}`, {
 				fieldname: fieldname, label: label, fieldtype: 'Float', read_only: 1,
@@ -494,18 +499,24 @@ var PurchaseInwardEntry = class {
 	}
 
 	recalc_totals() {
-		let order = 0, received = 0, pending = 0, excess = 0;
+		let order = 0, received = 0, pending = 0, excess = 0, balance = 0;
 		this.items.forEach((row, idx) => {
 			this.recalc_row(idx);
 			order += flt(row.order_qty);
 			received += flt(row.received_qty);
 			pending += flt(row.pending_qty);
 			excess += flt(row.excess_qty);
+			// Ordered less everything received against the line, this inward included.
+			// Floored at zero: an excess receipt leaves nothing pending, it does not owe
+			// the supplier quantity back.
+			const left = flt(row.order_qty) - flt(row.previously_received_qty) - flt(row.received_qty);
+			balance += left > 0 ? left : 0;
 		});
 		this._set('total_order_qty', order);
 		this._set('total_received_qty', received);
 		this._set('total_pending_qty', pending);
 		this._set('total_excess_qty', excess);
+		this._set('total_balance_qty', balance);
 	}
 
 	// ----------------------------------------------------------- attachments
@@ -649,6 +660,7 @@ var PurchaseInwardEntry = class {
 			'vehicle_details_verified', 'allow_excess_qty', 'target_warehouse',
 			'receiving_remarks', 'dispute_file', 'dispute_kind', 'dispute_description',
 			'total_order_qty', 'total_received_qty', 'total_pending_qty', 'total_excess_qty',
+			'total_balance_qty',
 		];
 	}
 
@@ -752,13 +764,25 @@ var PurchaseInwardEntry = class {
 	make_actions() {
 		const me = this;
 		const $bar = this.wrapper.find('.piw-actionbar').empty();
-		const btn = (label, cls, handler, disabled, reason) => {
+		const btn = (label, cls, handler, blocked, reason) => {
 			const $b = $(
 				`<button class="btn btn-sm ${cls}" style="margin-left:8px;">${frappe.utils.escape_html(label)}</button>`
 			);
-			if (disabled) {
-				$b.prop('disabled', true);
-				if (reason) $b.attr('title', reason);
+			if (blocked) {
+				// Greyed out with the reason in a title attribute only, this looked like a
+				// button that did nothing: the workflow guard for Submit for QC is
+				// "Please enter the Actual Arrival Date & Time...", and a Store user who
+				// had not recorded the arrival yet clicked it and got silence. The button
+				// stays clickable and says why, which is the rule the rest of the module
+				// already follows -- refuse by name rather than hide.
+				$b.addClass('btn-default').css('opacity', 0.65).attr('title', reason || '');
+				$b.on('click', () => {
+					frappe.msgprint({
+						title: __('{0} Is Not Available Yet', [label]),
+						indicator: 'orange',
+						message: reason || __('This action is not available on this Purchase Inward yet.'),
+					});
+				});
 			} else {
 				$b.on('click', handler);
 			}

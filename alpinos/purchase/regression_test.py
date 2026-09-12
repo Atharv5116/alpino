@@ -451,6 +451,7 @@ def run_all():
 	run_wave_f(_report_now=False)
 	run_wave_g(_report_now=False)
 	run_wave_h(_report_now=False)
+	run_wave_i(_report_now=False)
 	return _report()
 
 
@@ -2312,5 +2313,139 @@ def run_wave_h(_report_now=True):
 		"BRD 1.4 note a Direct Purchase Invoice order reports the flag that hides the action",
 		t_direct_invoice_po_hides_create_inward,
 	)
+
+	return _report() if _report_now else R
+
+
+# =====================================================================================
+# Wave I - GST on the Purchase Order.
+#
+# Not a BRD requirement: GST appears nowhere in "Purchase Inward Part -1". These pin the
+# one piece of real logic (In-State vs Out-State from the two GSTIN state codes) and the
+# two refusals that keep it safe -- never overwrite a chosen category, never rewrite a
+# tax block that already exists.
+# =====================================================================================
+
+
+def run_wave_i(_report_now=True):
+	if _report_now:
+		R.clear()
+		H.SEQ = H._seq()
+		H.COMPANY = H._company()
+		frappe.set_user("Administrator")
+
+	from alpinos.purchase import purchase_gst as G
+
+	company = H.COMPANY
+
+	def t_state_codes():
+		cases = (
+			("24AAAAA0000A1Z5", "24BBBBB1111B1Z4", G.TAX_CATEGORY_IN_STATE),
+			("27CCCCC2222C1Z3", "24BBBBB1111B1Z4", G.TAX_CATEGORY_OUT_STATE),
+			("", "24BBBBB1111B1Z4", None),
+			("24AAAAA0000A1Z5", "", None),
+			("XX", "24BBBBB1111B1Z4", None),
+		)
+		for sup, comp, want in cases:
+			got = G.gst_tax_category(sup, comp)
+			_assert(got == want, f"supplier={sup!r} company={comp!r} -> {got!r}, wanted {want!r}")
+
+	check("GST category comes from the two GSTIN state codes, and is None if either is missing", t_state_codes)
+
+	def t_gstin_format():
+		_assert(G.is_valid_gstin("24AAAAA0000A1Z5"), "a well formed GSTIN was rejected")
+		for bad in ("NOTAGSTIN", "24AAAAA0000A1Z", "", "2400000000A1Z5"):
+			_assert(not G.is_valid_gstin(bad), f"{bad!r} was accepted as a GSTIN")
+
+	check("GSTIN format validation accepts a real GSTIN and rejects malformed ones", t_gstin_format)
+
+	# The templates are deliberately NOT created on migrate, so make them here.
+	G.create_purchase_gst_masters(rate=18, company=company, commit=True)
+	frappe.db.set_value("Company", company, "tax_id", "24AAAAA0000A1Z5")
+
+	item = H.ensure_item(f"PITEST-GSTR-{H.SEQ}")
+
+	def _supplier_with_gstin(suffix, gstin):
+		name = f"PITEST GSTR {suffix} {H.SEQ}"
+		base = H.ensure_supplier()
+		if not frappe.db.exists("Supplier", name):
+			frappe.get_doc({
+				"doctype": "Supplier", "supplier_name": name,
+				"supplier_group": frappe.db.get_value("Supplier", base, "supplier_group"),
+			}).insert(ignore_permissions=True)
+		frappe.db.set_value("Supplier", name, "tax_id", gstin)
+		frappe.db.commit()
+		return name
+
+	def t_in_state_po_gets_cgst_sgst():
+		sup = _supplier_with_gstin("IN", "24BBBBB1111B1Z4")
+		po = H.make_po(sup, [(item, 10, 100)])
+		po.reload()
+		_assert(po.custom_supplier_gstin == "24BBBBB1111B1Z4", f"gstin={po.custom_supplier_gstin!r}")
+		_assert(po.tax_category == G.TAX_CATEGORY_IN_STATE, f"category={po.tax_category!r}")
+		_assert(po.taxes_and_charges, "no purchase tax template was applied")
+		heads = sorted((t.account_head or "").rsplit(" - ", 1)[0] for t in po.taxes)
+		_assert(heads == ["Input CGST", "Input SGST"], f"tax rows={heads}")
+		_assert(flt(po.grand_total) == 1180.0, f"grand_total={po.grand_total}")
+
+	check("a same-state supplier gets In-State GST and CGST+SGST rows", t_in_state_po_gets_cgst_sgst)
+
+	def t_out_state_po_gets_igst():
+		sup = _supplier_with_gstin("OUT", "27CCCCC2222C1Z3")
+		po = H.make_po(sup, [(item, 10, 100)])
+		po.reload()
+		_assert(po.tax_category == G.TAX_CATEGORY_OUT_STATE, f"category={po.tax_category!r}")
+		heads = sorted((t.account_head or "").rsplit(" - ", 1)[0] for t in po.taxes)
+		_assert(heads == ["Input IGST"], f"tax rows={heads}")
+		_assert(flt(po.grand_total) == 1180.0, f"grand_total={po.grand_total}")
+
+	check("a different-state supplier gets Out-State GST and a single IGST row", t_out_state_po_gets_igst)
+
+	def t_chosen_category_is_not_overwritten():
+		"""An order to a same-state supplier that someone marked Out-State stays Out-State."""
+		sup = _supplier_with_gstin("KEEP", "24BBBBB1111B1Z4")
+		po = frappe.new_doc("Purchase Order")
+		po.supplier = sup
+		po.company = company
+		po.transaction_date = today()
+		po.schedule_date = add_days(today(), 7)
+		po.set_warehouse = H._warehouse()
+		po.custom_inward_type = C.INWARD_RM
+		po.tax_category = G.TAX_CATEGORY_OUT_STATE
+		po.append("items", {"item_code": item, "qty": 1, "rate": 100,
+		                    "schedule_date": add_days(today(), 7), "warehouse": H._warehouse()})
+		po.insert(ignore_permissions=True)
+		po.reload()
+		_assert(
+			po.tax_category == G.TAX_CATEGORY_OUT_STATE,
+			f"a hand-picked tax category was overwritten with {po.tax_category!r}",
+		)
+
+	check("a hand-picked tax category is never overwritten by the state-code rule", t_chosen_category_is_not_overwritten)
+
+	def t_existing_taxes_are_not_rewritten():
+		"""A corrected tax block survives a re-save: re-deriving would undo the correction."""
+		sup = _supplier_with_gstin("KEEPTAX", "24BBBBB1111B1Z4")
+		po = H.make_po(sup, [(item, 10, 100)])
+		po.reload()
+		before = [(t.account_head, flt(t.rate)) for t in po.taxes]
+		_assert(before, "the fixture produced no tax rows to protect")
+		# Mimic an accountant correcting the rate on the order itself.
+		frappe.db.set_value("Purchase Taxes and Charges", po.taxes[0].name, "rate", 7.0,
+		                    update_modified=False)
+		fresh = frappe.get_doc("Purchase Order", po.name)
+		fresh.flags.ignore_permissions = True
+		fresh.save()
+		fresh.reload()
+		_assert(
+			len(fresh.taxes) == len(before),
+			f"a re-save changed the number of tax rows: {len(before)} -> {len(fresh.taxes)}",
+		)
+		_assert(
+			flt(fresh.taxes[0].rate) == 7.0,
+			f"a re-save overwrote the corrected rate with {fresh.taxes[0].rate}",
+		)
+
+	check("an existing tax block is not re-derived on a later save", t_existing_taxes_are_not_rewritten)
 
 	return _report() if _report_now else R

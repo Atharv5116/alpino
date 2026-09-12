@@ -207,6 +207,10 @@ after_migrate = [
 	# (which name the excess-override role in Stock Settings).
 	"alpinos.purchase.purchase_order_fields.setup_purchase_order_fields",
 	"alpinos.purchase.purchase_order_approval.setup_purchase_order_approval",
+	# GST on the order (not a BRD requirement -- GST appears nowhere in it). Fields
+	# only; the templates and Tax Rules are created by
+	# purchase_gst.create_purchase_gst_masters when an accountant asks for them.
+	"alpinos.purchase.purchase_gst.setup_purchase_gst_fields",
 	"alpinos.purchase.purchase_receipt_fields.setup_purchase_receipt_fields",
 	"alpinos.purchase.roles.setup_purchase_roles",
 	"alpinos.purchase.warehouses.setup_purchase_warehouses",
@@ -312,6 +316,9 @@ doc_events = {
 	"Purchase Order": {
 		"validate": [
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
+			# Before the edit guard: stamping the GSTIN and deriving the tax category is
+			# part of building the order, not an edit of one awaiting approval.
+			"alpinos.purchase.purchase_gst.set_gst_tax_category",
 			# VAL-PO-08 / BR-PO-12: an order awaiting approval is locked for editing.
 			"alpinos.purchase.purchase_order_approval.assert_editable",
 		],
