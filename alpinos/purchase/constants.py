@@ -235,6 +235,43 @@ PO_APPROVER_ROLES = ("Purchase Manager", ROLE_PURCHASE_MANAGER) + ADMIN_ROLES
 PO_SUBMITTER_ROLES = ("Purchase User", "Purchase Manager") + PURCHASE_ROLES + ADMIN_ROLES
 
 
+
+# --- Purchase Invoice / Payment (BRD 6) -------------------------------------
+
+UNF_DRAFT = "Draft"
+UNF_PENDING_PAYMENT = "Pending Payment"
+UNF_PARTIALLY_PAID = "Partially Paid"
+UNF_COMPLETED = "Completed"
+UNF_CANCELLED = "Cancelled"
+
+#: BRD 6.2 "Workflow Actions & Status Definition", in order.
+UNF_STATUSES = (
+	UNF_DRAFT,
+	UNF_PENDING_PAYMENT,
+	UNF_PARTIALLY_PAID,
+	UNF_COMPLETED,
+	UNF_CANCELLED,
+)
+
+#: BRD 6.0 "Invoice Generation Trigger" -- the two creation paths. A Direct invoice
+#: carries no GRN and no Purchase Inward, because those stages are skipped by design.
+UNF_TYPE_NORMAL = "Normal"
+UNF_TYPE_DIRECT = "Direct Purchase Invoice"
+UNF_TYPES = (UNF_TYPE_NORMAL, UNF_TYPE_DIRECT)
+
+#: BRD 6.1.5 payment modes, and the ones VAL-UNF-05 requires a reference for. Cash is
+#: the only mode with no transaction to quote, so it is the only exemption.
+UNF_PAYMENT_MODES = ("Cash", "UPI", "Bank Transfer", "Cheque", "NEFT", "RTGS")
+UNF_MODES_REQUIRING_REFERENCE = tuple(m for m in UNF_PAYMENT_MODES if m != "Cash")
+
+UNF_PAYMENT_SUPPLIER = "Supplier Payment"
+UNF_PAYMENT_LOGISTICS = "Logistics Payment"
+
+#: BRD 6.2.1 "Performed By": the Purchase Team raises and submits the invoice, the
+#: Accounts Team records payment against it.
+UNF_CREATE_ROLES = PURCHASE_ROLES + ADMIN_ROLES
+UNF_PAYMENT_ROLES = ACCOUNTS_ROLES + ADMIN_ROLES
+
 # --- SLA (BRD 3 preamble, BR-QC-03 / BR-QC-04) ------------------------------
 
 QC_SLA_HOURS = 2

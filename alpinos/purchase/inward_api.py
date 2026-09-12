@@ -59,6 +59,7 @@ MERGE_OPEN_STATUSES = (C.PI_DRAFT, C.PI_PENDING_RECEIPT)
 ACTION_ENDPOINTS = {
 	"submit_for_qc": "alpinos.purchase.notifications.submit_for_qc",
 	"generate_grn": "alpinos.purchase.grn.generate_grn",
+	"create_purchase_invoice": "alpinos.purchase.purchase_invoice.create_purchase_invoice",
 }
 
 # Transitions whose implementation lives on the linked Purchase QC. These need their own

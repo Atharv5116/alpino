@@ -212,6 +212,7 @@ after_migrate = [
 	# purchase_gst.create_purchase_gst_masters when an accountant asks for them.
 	"alpinos.purchase.purchase_gst.setup_purchase_gst_fields",
 	"alpinos.purchase.purchase_receipt_fields.setup_purchase_receipt_fields",
+	"alpinos.purchase.purchase_invoice_fields.setup_purchase_invoice_fields",
 	"alpinos.purchase.roles.setup_purchase_roles",
 	"alpinos.purchase.warehouses.setup_purchase_warehouses",
 	# Behaviour layer: client scripts, page access and print formats all need the
@@ -313,6 +314,20 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
+	# BRD 6 "Purchase Invoice & Payment". The status here is derived from what Accounts
+	# recorded in Tally, which is a different fact from ERPNext's ledger status -- so it
+	# lives in its own field and recompute_payment_state is its only writer.
+	"Purchase Invoice": {
+		"validate": ["alpinos.purchase.purchase_invoice.validate"],
+		"before_submit": ["alpinos.purchase.purchase_invoice.before_submit"],
+		# BEFORE, not on_: Frappe runs before_update_after_submit from
+		# run_before_save_methods, so the BR-UNF-03 lock and the recomputed pending
+		# amounts are written by the same save -- the same reason Purchase Inward uses it.
+		"before_update_after_submit": [
+			"alpinos.purchase.purchase_invoice.before_update_after_submit"
+		],
+		"on_cancel": ["alpinos.purchase.purchase_invoice.on_cancel"],
+	},
 	"Purchase Order": {
 		"validate": [
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
