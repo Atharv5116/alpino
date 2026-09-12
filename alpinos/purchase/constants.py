@@ -224,8 +224,15 @@ PO_LIVE_STATUSES = (PO_APPROVED, PO_SENT_TO_SUPPLIER)
 # hold `submit` on Purchase Order or the button would throw at click time.
 # roles.PERMISSION_MATRIX["Purchase Order"] keeps that true.
 PO_APPROVER_ROLES = ("Purchase Manager", ROLE_PURCHASE_MANAGER) + ADMIN_ROLES
-# BR-PO-02: who may raise an order and send it for approval.
-PO_SUBMITTER_ROLES = PURCHASE_ROLES + ADMIN_ROLES
+# BR-PO-02 and BRD 3.3, where both "Draft -> Submit" and "Approved -> Send to
+# Supplier" are performed by the "Purchase Team".
+#
+# ERPNext's core "Purchase User" / "Purchase Manager" are in the set for the same
+# reason they are in PO_APPROVER_ROLES above: on a stock site those ARE the buying
+# team. Without them a real buyer holding only core roles saw no Submit for Approval
+# and no Send to Supplier at all, so the order could only move for a System Manager
+# -- which read as "only the approver can send to supplier".
+PO_SUBMITTER_ROLES = ("Purchase User", "Purchase Manager") + PURCHASE_ROLES + ADMIN_ROLES
 
 
 # --- SLA (BRD 3 preamble, BR-QC-03 / BR-QC-04) ------------------------------
