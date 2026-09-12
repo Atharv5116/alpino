@@ -202,23 +202,66 @@ var PurchaseInwardEntry = class {
 					me._set('po_vehicle_no', v.custom_vehicle_no);
 					me._set('po_driver_contact_no', v.custom_driver_contact_no);
 				});
-				if (!me.items.length) me.load_items(d.items || [], d.skipped || []);
+				// Always reload against the PO that is now selected. This used to be guarded by
+				// `if (!me.items.length)`, which meant that once any row was on screen, picking a
+				// different Purchase Order left the previous order's lines in the grid.
+				me.load_items(d.items || [], d.skipped || {}, d.unmatched_available || 0);
 			},
 		});
 	}
 
-	load_items(rows, skipped) {
+	load_items(rows, skipped, unmatched_available) {
 		this.items = [];
 		this.wrapper.find('.items-table tbody').empty();
 		(rows || []).forEach((row) => this.add_item_row(row));
 		this.render_receiving_rows();
 		this.recalc_totals();
-		if (skipped && skipped.length) {
-			this._toast(
-				`${skipped.length} Purchase Order line(s) were not offered (fully received or a different inward type).`,
-				'orange'
+		this.explain_skipped(rows, skipped, unmatched_available);
+	}
+
+	/**
+	 * get_purchase_order_items reports WHY it dropped a line, as a dict keyed by reason:
+	 * {fully_received: n, type_mismatch: n}. This read it as an array and tested
+	 * `skipped.length`, which is undefined on an object -- so the message never appeared
+	 * and a Purchase Order whose every line was dropped drew an empty grid with no
+	 * explanation, which is indistinguishable from the fetch being broken.
+	 */
+	explain_skipped(rows, skipped, unmatched_available) {
+		skipped = skipped || {};
+		const fully = cint(skipped.fully_received);
+		const mismatch = cint(skipped.type_mismatch);
+		const dropped = fully + mismatch;
+		if (!dropped) return;
+
+		const parts = [];
+		if (fully) parts.push(__('{0} fully received', [fully]));
+		if (mismatch) {
+			parts.push(
+				__('{0} of a different inward type than {1}', [
+					mismatch,
+					this._val('inward_type') || __('this inward'),
+				])
 			);
 		}
+		const detail = __('{0} Purchase Order line(s) were not offered: {1}.', [
+			dropped,
+			parts.join(__(' and ')),
+		]);
+
+		if ((rows || []).length) {
+			this._toast(detail, 'orange');
+			return;
+		}
+		// Nothing at all came back. A toast is too quiet for a screen the user cannot
+		// proceed from, so say it where they are looking and name the way out.
+		const hint = cint(unmatched_available)
+			? __('Tick Include Other Inward Types to receive them here, or raise this inward under the matching type.')
+			: __('Every line on this Purchase Order has already been received in full.');
+		frappe.msgprint({
+			title: __('No Lines To Receive'),
+			indicator: 'orange',
+			message: `${detail}<br><br>${hint}`,
+		});
 	}
 
 	// -------------------------------------------------------- BRD 2.2.2 grid
@@ -505,7 +548,12 @@ var PurchaseInwardEntry = class {
 				freeze: true,
 				freeze_message: __('Fetching Purchase Order lines...'),
 				callback(r) {
-					if (r.message) me.load_items(r.message.items || [], r.message.skipped || []);
+					if (r.exc || !r.message) return;
+					me.load_items(
+						r.message.items || [],
+						r.message.skipped || {},
+						r.message.unmatched_available || 0
+					);
 				},
 			});
 		});
@@ -563,13 +611,28 @@ var PurchaseInwardEntry = class {
 
 	handle_route_entry() {
 		const route = frappe.get_route() || [];
-		const name = route[1] || (frappe.route_options && frappe.route_options.purchase_inward);
-		if (frappe.route_options) delete frappe.route_options.purchase_inward;
+		const opts = frappe.route_options || {};
+		const name = route[1] || opts.purchase_inward;
+		// BRD 1.3 "Create Purchase Inward" arrives here from the Purchase Order form with
+		// the order already decided, rather than making the user retype it.
+		const po = opts.purchase_order;
+		if (frappe.route_options) {
+			delete frappe.route_options.purchase_inward;
+			delete frappe.route_options.purchase_order;
+		}
 		if (name && name !== this.docname) {
 			this.load(name);
-		} else if (!name && this.docname) {
-			this.reset();
+			return;
 		}
+		if (po) {
+			this.reset();
+			this._set('purchase_order', po);
+			// The normal change handler is what stamps supplier / inward type and pulls
+			// the pending lines, so the two entry points cannot drift apart.
+			this.on_purchase_order_change();
+			return;
+		}
+		if (!name && this.docname) this.reset();
 	}
 
 	//: Header + receiving controls that live in the template and are never destroyed.

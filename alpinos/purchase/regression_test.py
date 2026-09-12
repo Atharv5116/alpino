@@ -450,6 +450,7 @@ def run_all():
 	run_wave_e(_report_now=False)
 	run_wave_f(_report_now=False)
 	run_wave_g(_report_now=False)
+	run_wave_h(_report_now=False)
 	return _report()
 
 
@@ -2188,5 +2189,128 @@ def run_wave_f(_report_now=True):
 
 	check("311 an incomplete GRN is blocked and the gap is named", t311_completeness_names_what_is_missing)
 	check("311 a complete GRN passes the same check", t311_complete_grn_passes)
+
+	return _report() if _report_now else R
+
+
+# =====================================================================================
+# Wave H - the contracts the SCREENS depend on.
+#
+# Every test above drives the documents directly, which is why 38/38 e2e and 125/125
+# regression were green while the Purchase Inward screen showed no items at all:
+# `get_purchase_order_items` -- the one endpoint the grid is built from -- had no test
+# anywhere. These pin the API's SHAPE, not only its numbers, because the defect was the
+# form reading a dict as an array and silently drawing nothing.
+# =====================================================================================
+
+
+def run_wave_h(_report_now=True):
+	if _report_now:
+		R.clear()
+		H.SEQ = H._seq()
+		H.COMPANY = H._company()
+		frappe.set_user("Administrator")
+
+	from alpinos.purchase import inward_api as IA
+	from alpinos.purchase import purchase_order_approval as A
+
+	supplier = H.ensure_supplier()
+	item = H.ensure_item(f"PITEST-UI-{H.SEQ}")
+	po = H.make_po(supplier, [(item, 100, 10)])
+
+	def t_fetch_offers_the_pending_line():
+		res = IA.get_purchase_order_items(po.name)
+		_assert(len(res["items"]) == 1, f"items returned={len(res['items'])}")
+		row = res["items"][0]
+		_assert(
+			flt(row["order_qty"]) == 100 and flt(row["pending_qty"]) == 100,
+			f"order={row['order_qty']} pending={row['pending_qty']}",
+		)
+
+	check(
+		"the grid endpoint offers the pending Purchase Order line (previously untested)",
+		t_fetch_offers_the_pending_line,
+	)
+
+	def t_skipped_is_a_keyed_dict():
+		"""The form reads skipped BY KEY.
+
+		It used to test `skipped.length`, which is undefined on an object, so the
+		"lines were not offered" message never fired and a Purchase Order whose every
+		line was dropped drew an empty grid with no reason -- indistinguishable from a
+		broken fetch. Pin the shape so it cannot quietly become a list again.
+		"""
+		res = IA.get_purchase_order_items(po.name)
+		sk = res.get("skipped")
+		_assert(isinstance(sk, dict), f"skipped is {type(sk).__name__}; the form reads it by key")
+		_assert(
+			set(sk) == {"fully_received", "type_mismatch"},
+			f"skipped keys={sorted(sk)} -- the form names each reason separately",
+		)
+		_assert(
+			"unmatched_available" in res,
+			"the form needs unmatched_available to offer Include Other Inward Types",
+		)
+
+	check("the item fetch reports skipped lines as a keyed dict, not a list", t_skipped_is_a_keyed_dict)
+
+	def t_fully_received_is_reported_not_silent():
+		ch = _chain(supplier, H.ensure_item(f"PITEST-UI-FULL-{H.SEQ}"), 100, 100)
+		res = IA.get_purchase_order_items(ch["po"].name)
+		_assert(not res["items"], f"a fully received order still offered {len(res['items'])} line(s)")
+		_assert(
+			cint(res["skipped"]["fully_received"]) == 1,
+			f"the drop was not reported: skipped={res['skipped']}",
+		)
+
+	check(
+		"a fully received order returns no lines AND says why",
+		t_fully_received_is_reported_not_silent,
+	)
+
+	# ---- an inward with no lines is refused at SAVE, not only at submit ---------
+	def t_empty_inward_refused_on_save():
+		pi = frappe.new_doc("Purchase Inward")
+		pi.purchase_order = po.name
+		pi.invoice_number = f"PITEST-EMPTY-{H.SEQ}-{frappe.generate_hash(length=6)}"
+		pi.invoice_date = today()
+		pi.gross_weight = 10
+		pi.inward_datetime = now_datetime()
+		pi.flags.ignore_permissions = True
+		pi.insert(ignore_permissions=True)
+
+	expect_throw(
+		"an inward with no items is refused at save, not left to consume a number",
+		t_empty_inward_refused_on_save,
+		"at least one item",
+	)
+
+	# ---- BRD 1.4: what the PO form needs to draw the inward actions -------------
+	def t_actions_payload_carries_the_inward_flags():
+		info = A.get_available_actions(po.name)
+		_assert("direct_purchase_invoice" in info, "the form cannot hide the button without this")
+		_assert("inward_count" in info, "the form cannot offer View Purchase Inward without this")
+		_assert(cint(info["direct_purchase_invoice"]) == 0, str(info["direct_purchase_invoice"]))
+
+	check(
+		"BRD 1.4 the actions payload carries direct_purchase_invoice and inward_count",
+		t_actions_payload_carries_the_inward_flags,
+	)
+
+	def t_direct_invoice_po_hides_create_inward():
+		dpo = H.make_po(
+			supplier, [(item, 5, 10)], direct_invoice=1
+		)
+		info = A.get_available_actions(dpo.name)
+		_assert(
+			cint(info["direct_purchase_invoice"]) == 1,
+			"a Direct Purchase Invoice order must report the flag so the form hides "
+			"Create Purchase Inward (the note under BRD 1.4)",
+		)
+
+	check(
+		"BRD 1.4 note a Direct Purchase Invoice order reports the flag that hides the action",
+		t_direct_invoice_po_hides_create_inward,
+	)
 
 	return _report() if _report_now else R

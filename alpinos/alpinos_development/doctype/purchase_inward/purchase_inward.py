@@ -29,6 +29,7 @@ class PurchaseInward(Document):
 
 	def validate(self):
 		self._assert_section_access()
+		self._validate_has_items()
 		self._validate_purchase_order()
 		self._sync_item_provenance()
 		self._validate_unique_po_detail()
@@ -43,9 +44,27 @@ class PurchaseInward(Document):
 		self._roll_up_totals()
 		self._sync_status()
 
+	def _validate_has_items(self):
+		"""An inward with no lines is refused at SAVE, not only at submit.
+
+		The BRD states this rule for the Purchase Order (VAL-PO-03) as "block
+		submission", and that is where it used to sit here too -- `before_submit`. But
+		the Purchase Inward grid is filled by the screen the moment a Purchase Order is
+		chosen, so there is no step at which a line-less inward is a legitimate
+		work-in-progress: every one of them was a mis-fetch that silently consumed an
+		inward number and then sat in the list looking like real work.
+		"""
+		if self.get("items"):
+			return
+		frappe.throw(
+			_("Please add at least one item to the Purchase Inward."),
+			title=_("No Items"),
+		)
+
 	def before_submit(self):
-		if not self.get("items"):
-			frappe.throw(_("Please add at least one item to the Purchase Inward."))
+		# Kept as a submit-time twin of the save guard: a row can be emptied by a
+		# script or a merge between the last save and the submit.
+		self._validate_has_items()
 		self.inward_status = C.PI_PENDING_RECEIPT
 
 	def on_submit(self):

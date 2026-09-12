@@ -232,9 +232,19 @@ def get_available_actions(purchase_order):
 	"""Client entry point: the form asks rather than re-deriving the table."""
 	doc = frappe.get_doc(PO, purchase_order)
 	doc.check_permission("read")
+	inwards = frappe.get_all(
+		"Purchase Inward",
+		filters={"purchase_order": doc.name, "docstatus": ("<", 2)},
+		pluck="name",
+	)
 	return {
 		"status": _current_status(doc),
 		"actions": available_actions(doc),
+		# BRD 1.4 "Action Availability by Status" and the note under it: Create Purchase
+		# Inward belongs to a Sent-to-Supplier order and is never offered on a Direct
+		# Purchase Invoice order.
+		"direct_purchase_invoice": cint(doc.get("custom_direct_purchase_invoice")),
+		"inward_count": len(inwards),
 	}
 
 
@@ -479,6 +489,7 @@ frappe.ui.form.on('Purchase Order', {
             callback: function (r) {
                 if (!r.message) return;
                 alpinos_po_render_approval(frm, r.message.status, r.message.actions || []);
+                alpinos_po_render_inward_actions(frm, r.message);
             },
         });
     },
@@ -500,6 +511,14 @@ function alpinos_po_render_approval(frm, status, actions) {
     if (status) {
         frm.dashboard.add_indicator(__('Approval: {0}', [__(status)]),
             alpinos_po_indicator(status));
+        // Pending Approval / Rejected / Returned all live at docstatus 0, so ERPNext's own
+        // status field still reads "Draft" and the pill beside the title said Draft while
+        // the approval block said Pending Approval -- two statuses disagreeing on one
+        // screen. The approval status is the one that means something here, so it owns the
+        // pill. Not while the form is dirty: "Not Saved" outranks it.
+        if (!frm.is_dirty() && frm.page && frm.page.set_indicator) {
+            frm.page.set_indicator(__(status), alpinos_po_indicator(status));
+        }
     }
     actions.forEach(function (row) {
         // Reject carries a mandatory reason (VAL-PO-09); Return for Correction takes
@@ -531,6 +550,41 @@ function alpinos_po_render_approval(frm, status, actions) {
             d.show();
         }, __('Approval'));
     });
+}
+
+// BRD 1.3 "Create Purchase Inward" / "View Purchase Inward", offered per BRD 1.4
+// "Action Availability by Status": the order must be Sent to Supplier, and a Direct
+// Purchase Invoice order never offers it at all (the note under BRD 1.4).
+//
+// The button is drawn for every role rather than hidden from some, and the Purchase
+// Inward screen refuses what it must -- same rule the rest of the module follows, so a
+// user is told why instead of hunting for a missing action.
+function alpinos_po_render_inward_actions(frm, info) {
+    if (cint(info.direct_purchase_invoice)) return;
+
+    var status = info.status;
+    var group = __('Purchase Inward');
+
+    if (status === 'Sent to Supplier') {
+        frm.add_custom_button(__('Create Purchase Inward'), function () {
+            frappe.route_options = { purchase_order: frm.doc.name };
+            frappe.set_route('purchase_inward_entry');
+        }, group);
+    } else if (status === 'Approved') {
+        // Deliberately drawn but dead: BRD 1.4 puts this action on Sent to Supplier, and
+        // an absent button reads as a missing feature rather than a missing step.
+        var $b = frm.add_custom_button(__('Create Purchase Inward'), function () {}, group);
+        $b.prop('disabled', true).attr(
+            'title',
+            __('Send this Purchase Order to the supplier first (BRD 1.4).')
+        );
+    }
+
+    if (cint(info.inward_count)) {
+        frm.add_custom_button(__('View Purchase Inward ({0})', [info.inward_count]), function () {
+            frappe.set_route('List', 'Purchase Inward', { purchase_order: frm.doc.name });
+        }, group);
+    }
 }
 
 function alpinos_po_call(frm, action, remarks) {
