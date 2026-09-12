@@ -475,7 +475,17 @@ SECTIONS = {
 					"delivery_location",
 				),
 				"child_table": "items",
-				"child_fields": ("item_code", "description"),
+				# item_code only. `description` used to be guarded here too, and it broke
+				# Store receiving outright: it is PO-DERIVED, refilled by
+				# _sync_item_provenance whenever it is blank, and the entry page's
+				# collect_doc never sends it -- so every save from that page blanked it,
+				# assert_section_edits_allowed (which is change-based) counted it as an edit
+				# to the Purchase header, and a Store user was refused with "Only Purchase
+				# Inward User ... may edit the Purchase Inward Header section." Guarding a
+				# field nobody authors protected nothing and blocked the one team the
+				# section was built for. Its value is unaffected -- provenance restores it
+				# from the Purchase Order on the same save.
+				"child_fields": ("item_code",),
 				"view_roles": (),
 				"edit_roles": _PURCHASE,
 				"open_statuses": C.PI_HEADER_EDITABLE,

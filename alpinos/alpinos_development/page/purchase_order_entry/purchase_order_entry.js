@@ -528,6 +528,13 @@ var PurchaseOrderEntry = class {
 
 	_payload() {
 		return {
+			// Sent explicitly. The payload goes to frappe.client.insert as a plain dict,
+			// and the server does not resolve a field default of ":Company" for one -- so
+			// with nothing here the insert failed outright with "Please specify Company"
+			// for any user who had no Company default of their own. Reading it from
+			// frappe.defaults picks up the session default, which falls back to
+			// Global Defaults, so it no longer depends on per-user setup.
+			company: frappe.defaults.get_default('company') || undefined,
 			custom_inward_type: this._val('custom_inward_type'),
 			supplier: this._val('supplier'),
 			transaction_date: this._val('transaction_date'),
@@ -543,6 +550,13 @@ var PurchaseOrderEntry = class {
 			custom_driver_contact_no: this._val('custom_driver_contact_no'),
 			custom_estimated_arrival: this._val('custom_estimated_arrival'),
 			items: this.items.map((row) => ({
+				// The row's own name when it has one. save() does
+				// Object.assign({}, server_doc, _payload()), a SHALLOW merge, so this array
+				// replaces the server's: a nameless row is a NEW row to Frappe and the whole
+				// set is deleted and re-inserted under fresh hashes. Purchase Order Item names
+				// are stored by Purchase Inward Item.po_detail, which is the key the pending
+				// quantity is summed over, and by Purchase Receipt Item.purchase_order_item.
+				...(row.name ? { name: row.name } : {}),
 				item_code: row.item_code,
 				qty: flt(row.qty),
 				price_list_rate: flt(row.price_list_rate),
