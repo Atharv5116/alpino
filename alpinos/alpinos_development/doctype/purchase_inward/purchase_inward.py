@@ -85,6 +85,15 @@ class PurchaseInward(Document):
 		self._assert_section_access()
 		self._guard_engine_owned_fields()
 		self._validate_unique_po_detail()
+		# Re-derive order_qty and the rest of the provenance from the Purchase Order, the
+		# same as validate() does before submit. Without this an after-submit save kept
+		# whatever the caller sent, and a caller that sends only the receiving fields --
+		# the entry page does exactly that -- left order_qty at 0. _compute_previously_received
+		# then read pending as 0 - prev = 0 and refused the receipt with "Received Quantity
+		# cannot be greater than Pending Quantity. Pending is 0.0", or, when nothing was
+		# received yet, quietly stored an ordered quantity of zero. The PO owns these
+		# numbers, so they are taken from it rather than trusted from the payload.
+		self._sync_item_provenance()
 		self._compute_previously_received()
 		self._apply_default_target_warehouse()
 		self._set_expiry_dates()

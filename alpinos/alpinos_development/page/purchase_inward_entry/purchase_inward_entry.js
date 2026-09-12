@@ -887,6 +887,18 @@ var PurchaseInwardEntry = class {
 			target_warehouse: this._val('target_warehouse'),
 			receiving_remarks: this._val('receiving_remarks'),
 			items: this.items.map((row) => ({
+				// The row's OWN name, whenever it already has one.
+				//
+				// save() does Object.assign({}, server_doc, collect_doc()), and that is a
+				// SHALLOW merge: this `items` array replaces the server's wholesale. A child
+				// row arriving without a name is a NEW row to Frappe, so every save deleted
+				// all the rows and re-inserted them under fresh hashes. Purchase Inward Item
+				// autonames by hash, and two things store those hashes -- Purchase Receipt
+				// Item.custom_purchase_inward_item, which is a LINK, and the row map Purchase
+				// QC builds against the inward. One save orphaned both, which surfaced as
+				// "Purchase Inward Item <hash> not found" and as a line vanishing from the
+				// receipt it had been mapped into.
+				...(row.name ? { name: row.name } : {}),
 				item_code: row.item_code,
 				po_detail: row.po_detail,
 				received_qty: flt(row.received_qty),
@@ -898,6 +910,8 @@ var PurchaseInwardEntry = class {
 				item_remarks: row.item_remarks,
 			})),
 			dispute_attachments: this.attachments.map((a) => ({
+				// Same rule as the item rows above: keep the row identity across a save.
+				...(a.name ? { name: a.name } : {}),
 				file: a.file, kind: a.kind, description: a.description,
 			})),
 		};

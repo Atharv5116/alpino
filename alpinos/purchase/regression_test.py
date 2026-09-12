@@ -2314,6 +2314,126 @@ def run_wave_h(_report_now=True):
 		t_direct_invoice_po_hides_create_inward,
 	)
 
+	# ---- child row IDENTITY across a save ---------------------------------------
+	# The entry page saves with Object.assign({}, server_doc, collect_doc()), a SHALLOW
+	# merge, so its `items` array replaces the server's. A row that arrives without its
+	# name is a new row to Frappe: before the fix every save deleted all the rows and
+	# re-inserted them under fresh hashes. Purchase Inward Item autonames by hash and two
+	# things store those hashes, so one save orphaned both.
+
+	def _page_save(name, with_names=True, include_order_qty=False):
+		"""Replay exactly what the entry page sends: the receiving fields, nothing more."""
+		server = frappe.client.get("Purchase Inward", name)
+		rows = []
+		for r in server["items"]:
+			row = {
+				"item_code": r["item_code"], "po_detail": r["po_detail"],
+				"received_qty": r.get("received_qty") or 0,
+				"target_warehouse": r.get("target_warehouse"),
+				"batch_no": r.get("batch_no"),
+				"manufacturing_date": r.get("manufacturing_date"),
+			}
+			if with_names:
+				row["name"] = r["name"]
+			if include_order_qty:
+				row["order_qty"] = r.get("order_qty")
+			rows.append(row)
+		merged = dict(server)
+		merged.update({"doctype": "Purchase Inward", "name": name, "items": rows})
+		doc = frappe.get_doc(merged)
+		doc.flags.ignore_permissions = True
+		doc.save()
+		return doc
+
+	def _two_line_inward():
+		x = H.ensure_item(f"PITEST-ID-X-{H.SEQ}-{frappe.generate_hash(length=4)}")
+		y = H.ensure_item(f"PITEST-ID-Y-{H.SEQ}-{frappe.generate_hash(length=4)}")
+		order = H.make_po(supplier, [(x, 100, 10), (y, 50, 10)])
+		pi = H.make_inward(
+			order, order.items,
+			invoice_no=f"PITEST-ID-{H.SEQ}-{frappe.generate_hash(length=6)}",
+		)
+		frappe.db.commit()
+		return pi
+
+	def t_row_identity_survives_a_save():
+		pi = _two_line_inward()
+		before = {r.name for r in pi.items}
+		_page_save(pi.name)
+		after = {r.name for r in frappe.get_doc("Purchase Inward", pi.name).items}
+		_assert(
+			before == after,
+			f"child rows were re-created: {len(before & after)} of {len(before)} names kept. "
+			"Anything holding a row name (Purchase Receipt Item.custom_purchase_inward_item "
+			"is a Link, and Purchase QC maps its decision rows by it) is orphaned.",
+		)
+
+	check("a page-style save keeps each item row's identity", t_row_identity_survives_a_save)
+
+	def t_entry_page_sends_the_row_name():
+		"""Guard the CLIENT half of the contract.
+
+		The test above replays a save that carries row names, so it passes whatever the
+		page does -- it pins Frappe's behaviour, not ours. The defect was the page
+		omitting the name, and only the page source can prove that is still fixed.
+		"""
+		import os
+
+		path = os.path.join(
+			os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+			"alpinos_development", "page", "purchase_inward_entry", "purchase_inward_entry.js",
+		)
+		with open(path, encoding="utf-8") as fh:
+			src = fh.read()
+		start = src.find("items: this.items.map")
+		_assert(start != -1, "collect_doc no longer maps this.items -- update this check")
+		block = src[start:src.find("dispute_attachments:", start)]
+		_assert(
+			"name: row.name" in block,
+			"collect_doc does not send each item row's own name, so every save will delete "
+			"and re-insert the rows under new hashes and orphan whatever references them",
+		)
+
+	check("the entry page sends each item row's name back on save", t_entry_page_sends_the_row_name)
+
+	def t_after_submit_save_keeps_order_qty():
+		"""before_update_after_submit must re-derive provenance from the Purchase Order.
+
+		The page sends only the receiving fields, so order_qty is absent. Nothing used to
+		re-derive it after submit, which left it at 0 -- pending then read 0 - prev = 0 and
+		the receipt was refused with "Pending is 0.0", or an ordered quantity of zero was
+		stored quietly.
+		"""
+		pi = _two_line_inward()
+		pi.reload()
+		pi.flags.ignore_permissions = True
+		pi.submit()
+		pi.reload()
+		pi.actual_arrival_datetime = now_datetime()
+		pi.vehicle_details_verified = 1
+		pi.actual_vehicle_no = "GJ-05-ID-1"
+		pi.actual_driver_contact_no = "9000000009"
+		for r in pi.items:
+			r.received_qty = 10
+			r.target_warehouse = H._warehouse()
+			r.manufacturing_date = today()
+		pi.save()
+		frappe.db.commit()
+
+		_page_save(pi.name)  # the page never sends order_qty
+		fresh = frappe.get_doc("Purchase Inward", pi.name)
+		got = sorted(flt(r.order_qty) for r in fresh.items)
+		_assert(got == [50.0, 100.0], f"order_qty after an after-submit save = {got}")
+		_assert(
+			all(flt(r.pending_qty) > 0 for r in fresh.items),
+			f"pending collapsed: {[flt(r.pending_qty) for r in fresh.items]}",
+		)
+
+	check(
+		"an after-submit save re-derives order_qty from the Purchase Order",
+		t_after_submit_save_keeps_order_qty,
+	)
+
 	return _report() if _report_now else R
 
 
