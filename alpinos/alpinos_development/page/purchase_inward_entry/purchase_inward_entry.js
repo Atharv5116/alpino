@@ -225,12 +225,26 @@ var PurchaseInwardEntry = class {
 	 * `skipped.length`, which is undefined on an object -- so the message never appeared
 	 * and a Purchase Order whose every line was dropped drew an empty grid with no
 	 * explanation, which is indistinguishable from the fetch being broken.
+	 *
+	 * Reported in the grid itself, never through frappe.msgprint. `frappe.msg_dialog` is a
+	 * SINGLETON: when a message is already open, msgprint appends to it behind whatever
+	 * title got set last. Frappe uses it for its own "Version Updated" notice, so this
+	 * explanation appeared glued under that title with a Refresh button attached to it.
+	 * The empty-state text is painted from data-empty on the scroll wrapper, which is
+	 * where the user is already looking, needs no dismissing, and cannot collide.
 	 */
 	explain_skipped(rows, skipped, unmatched_available) {
 		skipped = skipped || {};
 		const fully = cint(skipped.fully_received);
 		const mismatch = cint(skipped.type_mismatch);
 		const dropped = fully + mismatch;
+		const $scroll = this.wrapper.find('.items-table').closest('.alp-scroll');
+
+		if (this._items_empty_default === undefined) {
+			this._items_empty_default = $scroll.attr('data-empty') || '';
+		}
+		$scroll.attr('data-empty', this._items_empty_default);
+
 		if (!dropped) return;
 
 		const parts = [];
@@ -252,16 +266,13 @@ var PurchaseInwardEntry = class {
 			this._toast(detail, 'orange');
 			return;
 		}
-		// Nothing at all came back. A toast is too quiet for a screen the user cannot
-		// proceed from, so say it where they are looking and name the way out.
+		// Nothing at all came back, so the grid is the right place to say why: it stays on
+		// screen for as long as the grid is empty.
 		const hint = cint(unmatched_available)
 			? __('Tick Include Other Inward Types to receive them here, or raise this inward under the matching type.')
 			: __('Every line on this Purchase Order has already been received in full.');
-		frappe.msgprint({
-			title: __('No Lines To Receive'),
-			indicator: 'orange',
-			message: `${detail}<br><br>${hint}`,
-		});
+		$scroll.attr('data-empty', `${detail} ${hint}`);
+		this._toast(detail, 'orange');
 	}
 
 	// -------------------------------------------------------- BRD 2.2.2 grid
