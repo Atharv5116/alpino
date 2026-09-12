@@ -263,19 +263,32 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 		if not status and current in holidays:
 			status = "Holiday"
 
-		# Both times read the PUNCH first and fall back to the Attendance record, so the
-		# pair always comes from the same source. The out-time used to read Attendance
-		# only, which showed a dash whenever the day had no Attendance yet, had one that
-		# was never submitted, or had one whose out_time was still null because the OUT
-		# punch landed after auto-attendance ran -- even though the OUT was sitting in
-		# Employee Checkin the whole time. It also let the in-time come from the punch
-		# while the out-time came from Attendance, so the two halves of one day could
-		# disagree. worked_minutes and the day colouring key off these, so this decides
-		# more than the label.
+		# The ATTENDANCE record is the source of truth for both times, and the punch only
+		# fills a gap it leaves. That ordering is the rule the calendar is meant to follow:
+		# a day's out-time arrives the next day, once auto-attendance has written it, and
+		# any correction HR made on the Attendance record therefore outranks the raw punch
+		# instead of being overwritten by it.
+		#
+		# The punch is still read, because "next day from Attendance" never arrives at all
+		# in three cases and the day would otherwise keep a dash forever: no Attendance row
+		# (a Sunday auto-attendance skips as a holiday), an Attendance that was never
+		# submitted (_get_attendance_times_map filters docstatus 1), and a submitted
+		# Attendance whose out_time is still null because the OUT punch landed after
+		# auto-attendance ran.
+		#
+		# For the out-time that fallback is limited to days already past. On TODAY the out
+		# is left blank until Attendance carries it, so the calendar does not start showing
+		# a live out-time the moment someone punches -- which is the behaviour the rule
+		# describes. The in-time has no such limit: today's check-in shows straight away.
+		#
+		# worked_minutes, the late/early flags and the day colouring all key off these two,
+		# so this decides more than the label.
 		ci = checkins.get(current, {})
 		fallback = attendance_times.get(current, {})
-		check_in_str = ci.get("check_in") or fallback.get("in_time")
-		check_out_str = ci.get("check_out") or fallback.get("out_time")
+		check_in_str = fallback.get("in_time") or ci.get("check_in")
+		check_out_str = fallback.get("out_time")
+		if not check_out_str and current < today:
+			check_out_str = ci.get("check_out")
 
 		worked_minutes = None
 		late_coming = 0

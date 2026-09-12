@@ -1,13 +1,19 @@
-"""The calendar must show a day's OUT punch whatever state its Attendance is in.
+"""What the calendar shows for a day's in/out, and which source wins.
 
-The out-time used to be read only from a submitted Attendance record, so a dash
-appeared whenever the Attendance was missing, unsubmitted, or carried a null
-out_time -- while the OUT punch sat in Employee Checkin the whole time.
+The rule: the Attendance record owns both times, so an out-time arrives the next day
+once auto-attendance has written it, and an HR correction on Attendance outranks the
+raw punch. The punch fills only the gaps Attendance leaves -- no Attendance row at all
+(a Sunday skipped as a holiday), one never submitted, or one whose out_time is still
+null -- because in those three cases "next day" never arrives and the day would keep a
+dash forever.
+
+For the out-time that fallback stops at today: today's out stays blank until Attendance
+carries it. Today's in-time still shows straight from the punch.
 
 Run:  bench --site alpinos.test execute alpinos.attendance_calendar_test.run
 """
 import frappe
-from frappe.utils import getdate
+from frappe.utils import getdate, now_datetime
 
 from alpinos.attendance_widget import get_monthly_attendance
 
@@ -44,11 +50,12 @@ def _employee_and_user():
 	return row[0].name, row[0].user_id
 
 
-def _day(user):
-	d = getdate(DATE)
+def _day(user, on=None):
+	key = on or DATE
+	d = getdate(key)
 	frappe.set_user(user)
 	try:
-		return (get_monthly_attendance(d.year, d.month).get("days") or {}).get(DATE) or {}
+		return (get_monthly_attendance(d.year, d.month).get("days") or {}).get(str(d)) or {}
 	finally:
 		frappe.set_user("Administrator")
 
@@ -120,6 +127,50 @@ def run():
 				f"{d3.get('check_in')} -> {d3.get('check_out')}",
 			),
 		)
+		# 4. Attendance is the SOURCE OF TRUTH, not merely a fallback: an out_time on the
+		#    submitted Attendance outranks the punch. Under the old punch-first ordering a
+		#    correction HR typed on the Attendance record was ignored in favour of the raw
+		#    punch, so this is the half of the rule the earlier tests could not see.
+		frappe.db.set_value("Attendance", att.name,
+			{"out_time": f"{DATE} 19:15:00"}, update_modified=False)
+		frappe.db.commit()
+		frappe.clear_cache()
+		d4 = _day(user)
+		_check(
+			"a corrected Attendance out_time outranks the OUT punch",
+			lambda: _assert(d4.get("check_out") == "19:15:00",
+				f"showed {d4.get('check_out')!r}, wanted the Attendance value 19:15:00"),
+		)
+
+		# 5. TODAY: the out arrives the next day from Attendance, so it stays blank even
+		#    though an OUT punch is already on the record. The in-time still shows.
+		tdy = str(getdate(now_datetime()))
+		blockers = frappe.db.sql(
+			"""SELECT name FROM tabAttendance WHERE employee = %s AND attendance_date = %s
+			   AND docstatus = 1 AND out_time IS NOT NULL""",
+			(employee, tdy),
+		)
+		if blockers:
+			R.append(("SKIP", "today's out-time stays blank until Attendance carries it",
+				f"a submitted Attendance already carries an out_time for {tdy}"))
+		else:
+			t_in = _punch(employee, "IN", f"{tdy} 09:05:00")
+			t_out = _punch(employee, "OUT", f"{tdy} 17:45:00")
+			made.extend([t_in, t_out])
+			frappe.db.commit()
+			frappe.clear_cache()
+			d5 = _day(user, on=tdy)
+			_check(
+				"today's out-time stays blank until Attendance carries it",
+				lambda: _assert(not d5.get("check_out"),
+					f"today showed an out-time of {d5.get('check_out')!r}"),
+			)
+			_check(
+				"today's in-time still shows straight from the punch",
+				lambda: _assert(d5.get("check_in") is not None,
+					"today showed no in-time at all"),
+			)
+
 	finally:
 		if att:
 			frappe.db.sql("DELETE FROM tabAttendance WHERE name = %s", att.name)
