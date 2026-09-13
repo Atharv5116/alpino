@@ -335,6 +335,35 @@ def create_from_grn(purchase_receipt):
 	return invoice
 
 
+def direct_invoices_for(purchase_orders):
+	"""{purchase_order: its live Direct Purchase Invoice} for the given orders.
+
+	The single definition of "this order is already invoiced", shared by the guard below,
+	the Purchase Order form and the Purchase Order list, so the three cannot disagree about
+	whether Create Invoice should still be offered.
+	"""
+	names = [n for n in (purchase_orders or []) if n]
+	if not names or not frappe.get_meta(PI).has_field(TYPE_FIELD):
+		return {}
+	rows = frappe.db.sql(
+		"""
+		SELECT pii.purchase_order, pi.name
+		FROM `tabPurchase Invoice Item` pii
+		JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+		WHERE pii.purchase_order IN %(names)s
+		  AND pi.docstatus < 2
+		  AND pi.custom_invoice_type = %(direct)s
+		ORDER BY pi.creation ASC
+		""",
+		{"names": tuple(names), "direct": C.UNF_TYPE_DIRECT},
+		as_dict=True,
+	)
+	out = {}
+	for r in rows:
+		out.setdefault(r.purchase_order, r.name)
+	return out
+
+
 @frappe.whitelist()
 def create_direct_from_po(purchase_order):
 	"""BRD 6.0 path 2 — straight from an approved PO, skipping Inward, QC and GRN.
@@ -358,6 +387,18 @@ def create_direct_from_po(purchase_order):
 				"through Purchase Inward, QC and GRN instead."
 			).format(order.name),
 			title=_("BRD 6.0"),
+		)
+
+	# BR-PO-25: one order, one Direct invoice. Without this a second click on Create
+	# Invoice -- or the list and the form both open at once -- raised a second invoice for
+	# the same goods.
+	existing = direct_invoices_for([order.name]).get(order.name)
+	if existing:
+		frappe.throw(
+			_("Purchase Invoice {0} already exists against this Purchase Order.").format(
+				frappe.utils.get_link_to_form(PI, existing)
+			),
+			title=_("Already Invoiced"),
 		)
 
 	invoice = make_purchase_invoice(order.name)

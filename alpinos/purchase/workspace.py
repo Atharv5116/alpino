@@ -26,7 +26,7 @@ SHORTCUTS = (
 	("Purchase QC", "Page", "purchase_qc_list", ""),
 	("New Inward", "Page", "purchase_inward_entry", ""),
 	("New Purchase Order", "Page", "purchase_order_entry", ""),
-	("Purchase Orders", "DocType", "Purchase Order", "List"),
+	("Purchase Orders", "Page", "purchase_order_list", ""),
 	("GRN", "Page", "purchase_grn_list", ""),
 	("Pending Receipts", "Report", "Purchase Pending Receipts", ""),
 	("QC Pending", "Report", "Purchase QC Pending", ""),

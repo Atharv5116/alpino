@@ -219,6 +219,7 @@ after_migrate = [
 	# doctypes and roles above to exist first.
 	"alpinos.purchase.qc_client.create_purchase_qc_client_script",
 	"alpinos.purchase.inward_list_api.setup_inward_list_page_access",
+	"alpinos.purchase.po_list_api.setup_po_list_page_access",
 	"alpinos.purchase.workspace.setup_entry_page_access",
 	"alpinos.purchase.workspace.setup_purchase_workspace",
 	"alpinos.purchase.inward_client.execute",

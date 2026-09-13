@@ -45,7 +45,7 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, flt, now_datetime
 
 from alpinos.purchase import constants as C
 
@@ -218,6 +218,18 @@ def _user_roles(user=None):
 
 def available_actions(doc, user=None):
 	"""The transitions this user may invoke on this order right now."""
+	# A Closed order is finished (BRD 3.4 "no further receiving is expected"). ERPNext keeps
+	# that on its own `status` while the approval status still reads Approved or Sent to
+	# Supplier, so without this a Closed order still offered Send to Supplier -- on the
+	# form, on the list, and to perform_action, which would have carried it out.
+	if cint(doc.get("docstatus")) == 1 and (doc.get("status") or "") == "Closed":
+		return []
+	# Once goods have been received the order is past the approval track (BRD 1.4:
+	# Partially Received offers only Continue Receiving, Fully Received only View). The
+	# server lets an inward be raised on an order that is Approved but never marked Sent,
+	# so without this such an order, fully received, still offered Send to Supplier.
+	if cint(doc.get("docstatus")) == 1 and flt(doc.get("custom_total_inward_qty")) > 0:
+		return []
 	roles = _user_roles(user)
 	status = _current_status(doc)
 	out = []
@@ -245,7 +257,18 @@ def get_available_actions(purchase_order):
 		# Purchase Invoice order.
 		"direct_purchase_invoice": cint(doc.get("custom_direct_purchase_invoice")),
 		"inward_count": len(inwards),
+		# BRD 1.2 note / BR-PO-22: what the form needs to offer Create or View Invoice on a
+		# Direct Purchase Invoice order, from the same lookup the invoice guard uses.
+		"direct_invoice": _direct_invoice(doc),
 	}
+
+
+def _direct_invoice(doc):
+	if not cint(doc.get("custom_direct_purchase_invoice")):
+		return None
+	from alpinos.purchase.purchase_invoice import direct_invoices_for
+
+	return direct_invoices_for([doc.name]).get(doc.name)
 
 
 # ----------------------------------------------------------------- audit trail
@@ -560,7 +583,14 @@ function alpinos_po_render_approval(frm, status, actions) {
 // Inward screen refuses what it must -- same rule the rest of the module follows, so a
 // user is told why instead of hunting for a missing action.
 function alpinos_po_render_inward_actions(frm, info) {
-    if (cint(info.direct_purchase_invoice)) return;
+    if (cint(info.direct_purchase_invoice)) {
+        // A Direct Purchase Invoice order skips Inward, QC and GRN (BR-PO-21), so it never
+        // offers Create Inward (BR-PO-24) -- but it used to offer nothing at all in its
+        // place, leaving an approved Direct order with no way forward. BRD 1.2 note and
+        // BR-PO-22: once approved it goes straight to its invoice.
+        alpinos_po_render_direct_invoice(frm, info);
+        return;
+    }
 
     var status = info.status;
     var group = __('Purchase Inward');
@@ -585,6 +615,35 @@ function alpinos_po_render_inward_actions(frm, info) {
             frappe.set_route('List', 'Purchase Inward', { purchase_order: frm.doc.name });
         }, group);
     }
+}
+
+function alpinos_po_render_direct_invoice(frm, info) {
+    var group = __('Purchase Invoice');
+    if (info.direct_invoice) {
+        frm.add_custom_button(__('View Purchase Invoice'), function () {
+            frappe.set_route('Form', 'Purchase Invoice', info.direct_invoice);
+        }, group);
+        return;
+    }
+    if (info.status !== 'Approved' && info.status !== 'Sent to Supplier') return;
+    frm.add_custom_button(__('Create Purchase Invoice'), function () {
+        frappe.confirm(
+            __('Create the Purchase Invoice for {0}? Purchase Inward, QC and GRN are skipped for a Direct Purchase Invoice order.', [frm.doc.name]),
+            function () {
+                frappe.call({
+                    method: 'alpinos.purchase.purchase_invoice.create_direct_from_po',
+                    args: { purchase_order: frm.doc.name },
+                    freeze: true,
+                    freeze_message: __('Creating the Purchase Invoice...'),
+                    callback: function (r) {
+                        // callback also fires when the server refused (already invoiced)
+                        if (r.exc || !r.message) return;
+                        frappe.set_route('Form', 'Purchase Invoice', r.message.name);
+                    },
+                });
+            }
+        );
+    }, group);
 }
 
 function alpinos_po_call(frm, action, remarks) {
