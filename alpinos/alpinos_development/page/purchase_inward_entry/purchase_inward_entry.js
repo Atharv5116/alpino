@@ -58,6 +58,28 @@ var PurchaseInwardEntry = class {
 		this.make_totals();
 		this.bind_events();
 		this.apply_context();
+		this.stamp_inward_datetime();
+	}
+
+	/**
+	 * BRD 2.1.1: Inward Date & Time is auto-captured when the inward is created.
+	 *
+	 * The field is already handed now() when it is built and again in reset(), yet a new
+	 * inward could still open with the box empty. A Frappe Datetime control writes its value
+	 * asynchronously and interacts with its air-datepicker, whose clear()/selectDate()
+	 * callbacks fire "change" events of their own, so the value can be lost in the timing
+	 * between them. Rather than depend on that exact sequence, this runs once everything the
+	 * page queued has settled and fills the box if it is still empty.
+	 *
+	 * Only on an unsaved inward, and only when empty: a loaded document keeps its stored time
+	 * and a time the user typed is never replaced.
+	 */
+	stamp_inward_datetime() {
+		setTimeout(() => {
+			const c = this.fields.inward_datetime;
+			if (!c || this.docname) return;
+			if (!c.get_value()) c.set_value(frappe.datetime.now_datetime());
+		}, 0);
 	}
 
 	// ------------------------------------------------------------- helpers
@@ -71,8 +93,15 @@ var PurchaseInwardEntry = class {
 			parent: parent,
 			render_input: true,
 		});
-		control.set_value(value === undefined ? '' : ALP_TRIM_MICROSECONDS(value));
+		// refresh() BEFORE set_value(). set_value is asynchronous (frappe.run_serially) and
+		// refresh is not, so refreshing afterwards redrew the still-empty field first. For a
+		// Date / Datetime that calls datepicker.clear(); air-datepicker's clear() fires
+		// onSelect, Frappe's onSelect triggers "change", and that change wrote '' AFTER the
+		// value -- which is why Inward Date & Time came up blank although it was given
+		// now(). set_input (controls/data.js) repaints the read-only display as well, so no
+		// field needs the refresh to come last.
 		control.refresh();
+		control.set_value(value === undefined ? '' : ALP_TRIM_MICROSECONDS(value));
 		this.fields[df.fieldname] = control;
 		return control;
 	}
@@ -85,8 +114,10 @@ var PurchaseInwardEntry = class {
 	_set(fieldname, value) {
 		const c = this.fields[fieldname];
 		if (c) {
-			c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
+			// Refresh first, then set: the other order let a Date / Datetime clear itself after
+			// the value landed (see _ctl).
 			c.refresh();
+			c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 		}
 	}
 
@@ -182,10 +213,21 @@ var PurchaseInwardEntry = class {
 	on_purchase_order_change() {
 		const po = this._val('purchase_order');
 		if (!po) return;
+		// load() fills this field from the saved document, and a Frappe control fires its
+		// `change` for a programmatic set_value too -- a moment AFTER load() has drawn the
+		// saved rows. Rebuilding then replaced every saved line with a blank one straight
+		// from the Purchase Order: Received 0, no batch, no manufacturing date. The pending
+		// figures looked wrong as well, because this inward's own receipt was being counted
+		// as "previously received". A save from that screen would have written the zeros
+		// back. Only a Purchase Order the user actually changed to may rebuild the grid.
+		if (po === this.loaded_po) return;
+		this.loaded_po = po;
 		const me = this;
 		frappe.call({
 			method: 'alpinos.purchase.inward_api.get_purchase_order_items',
-			args: { purchase_order: po },
+			// Exclude this inward from "previously received", so a saved document is never
+			// measured against its own quantities.
+			args: { purchase_order: po, purchase_inward: me.docname || null },
 			callback(r) {
 				if (!r.message) return;
 				const d = r.message;
@@ -439,17 +481,30 @@ var PurchaseInwardEntry = class {
 			$body.append($tr);
 
 			const mk = (sel, df, value, onchange) => {
+				// Same rule as purchase_qc_entry._mk_cell: run the handler from Frappe's own
+				// df.change, which fires for a Link pick. The input's native 'change' event
+				// this used to listen for does not, so a Target Location chosen from the
+				// dropdown was never written to the row. `ready` skips the change Frappe
+				// fires for the programmatic set_value that draws the saved value.
+				let ready = false;
 				const c = frappe.ui.form.make_control({
-					df: Object.assign({ fieldname: `${df.fieldname}_${idx}` }, df),
+					df: Object.assign({ fieldname: `${df.fieldname}_${idx}` }, df, {
+						change: () => {
+							if (!ready || !onchange) return;
+							// the PARSED value -- for a Date control the raw input text is the
+							// user format (dd-mm-yyyy), an invalid DATE (MariaDB 1292)
+							onchange.call(c.$input ? c.$input.get(0) : null, c.get_value());
+						},
+					}),
 					parent: $tr.find(sel),
 					render_input: true,
 				});
-				c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
+				Promise.resolve(
+					c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value))
+				).then(() => {
+					ready = true;
+				});
 				me.fields[`${df.fieldname}_${idx}`] = c;
-				// Hand the handler the control's PARSED value. $(this).val() is the raw
-				// input text, which for a Date control is the user format (dd-mm-yyyy)
-				// and reaches the DATE column as an invalid date (MariaDB 1292).
-				if (onchange && c.$input) c.$input.on('change', () => onchange(c.get_value()));
 				return c;
 			};
 
@@ -691,8 +746,12 @@ var PurchaseInwardEntry = class {
 		this._set('inward_datetime', frappe.datetime.now_datetime());
 		this._set('dispute_kind', 'Photo');
 		this.ctx = { status: 'Draft', docstatus: 0, actions: [], sections: {} };
+		// A fresh inward has no PO yet, so picking the same PO the previous document used
+		// must still load its lines.
+		this.loaded_po = null;
 		this.page.set_title(__('Purchase Inward Entry'));
 		this.apply_context();
+		this.stamp_inward_datetime();
 	}
 
 	load(name) {
@@ -706,6 +765,9 @@ var PurchaseInwardEntry = class {
 				const doc = r.message;
 				me.docname = doc.name;
 				me.company = doc.company;
+				// Before the fields are filled: the purchase_order change that filling it
+				// fires must see this as the document's own PO and leave the rows alone.
+				me.loaded_po = doc.purchase_order;
 
 				[
 					'purchase_order', 'inward_type', 'supplier', 'supplier_order_no',
@@ -772,6 +834,8 @@ var PurchaseInwardEntry = class {
 		// server reports edit=false with "closed while the document is QC In Progress".
 		const receiving_open = receiving ? receiving.edit !== false : cint(ctx.docstatus) === 1;
 		this._lock_section(this.wrapper.find('.piw-receiving'), !receiving_open);
+		// make_actions reads this, so the Save Receipt button and the lock share one decision.
+		this.receiving_open = receiving_open;
 
 		this.make_actions();
 	}
@@ -779,11 +843,11 @@ var PurchaseInwardEntry = class {
 	/**
 	 * Close a card for editing, for real.
 	 *
-	 * This used to only add .piw-locked -- and no rule for that class existed anywhere in
-	 * alpinos_pages.css, so a section the server had closed stayed fully typeable. A Store
-	 * user could still edit received quantities after the handover to QC, and the save was
-	 * then refused by assert_can_edit_section with a permission error, which reads as a bug
-	 * rather than as a closed section.
+	 * This used to only add .piw-locked. The page's own <style> gives that class
+	 * `opacity:.55; pointer-events:none`, which stops the mouse but not the keyboard: Tab
+	 * still reached every input in a closed section and typing still changed it, and the
+	 * save was then refused by assert_can_edit_section with a permission error, which reads
+	 * as a bug rather than as a closed section. So the controls are disabled as well.
 	 *
 	 * The disabled state of each control is remembered before locking, so unlocking can
 	 * never enable a field that was already read-only for another reason (an Expiry cell
@@ -856,7 +920,11 @@ var PurchaseInwardEntry = class {
 					});
 				});
 			}
-		} else {
+		} else if (this.receiving_open) {
+			// Only while the server keeps Store Receiving open. This used to show on every
+			// submitted inward, so after the handover to QC a locked form still offered a
+			// Save Receipt that could only be refused; BRD 1.4 gives Pending QC and QC In
+			// Progress just View / View QC.
 			btn(__('Save Receipt'), 'btn-primary', () => me.save(false));
 		}
 
@@ -904,6 +972,14 @@ var PurchaseInwardEntry = class {
 	// ----------------------------------------------------------------- save
 
 	collect_doc() {
+		// Store Receiving belongs to the Store team and opens only once Purchase has
+		// submitted the inward (BRD 2.2.1 / 2.3), so a DRAFT never sends those fields. The
+		// page used to send its pre-filled values with every draft save -- the PO's vehicle
+		// and driver, each line's target location, zero quantities -- and the section guard
+		// counts that as editing Store Receiving. It refused the save for the Purchase team,
+		// and it is why the section could not be closed on a draft without also refusing
+		// the admin's. What a draft already stores is kept by the save path's row merge.
+		const receiving = cint((this.ctx || {}).docstatus) === 1;
 		const doc = {
 			doctype: 'Purchase Inward',
 			purchase_order: this._val('purchase_order'),
@@ -914,13 +990,15 @@ var PurchaseInwardEntry = class {
 			inward_datetime: this._val('inward_datetime'),
 			attachment: this._val('attachment'),
 			remarks: this._val('remarks'),
-			actual_vehicle_no: this._val('actual_vehicle_no'),
-			actual_driver_contact_no: this._val('actual_driver_contact_no'),
-			actual_arrival_datetime: this._val('actual_arrival_datetime'),
-			vehicle_details_verified: cint(this._val('vehicle_details_verified')),
-			allow_excess_qty: cint(this._val('allow_excess_qty')),
-			target_warehouse: this._val('target_warehouse'),
-			receiving_remarks: this._val('receiving_remarks'),
+			...(receiving ? {
+				actual_vehicle_no: this._val('actual_vehicle_no'),
+				actual_driver_contact_no: this._val('actual_driver_contact_no'),
+				actual_arrival_datetime: this._val('actual_arrival_datetime'),
+				vehicle_details_verified: cint(this._val('vehicle_details_verified')),
+				allow_excess_qty: cint(this._val('allow_excess_qty')),
+				target_warehouse: this._val('target_warehouse'),
+				receiving_remarks: this._val('receiving_remarks'),
+			} : {}),
 			items: this.items.map((row) => ({
 				// The row's OWN name, whenever it already has one.
 				//
@@ -936,19 +1014,23 @@ var PurchaseInwardEntry = class {
 				...(row.name ? { name: row.name } : {}),
 				item_code: row.item_code,
 				po_detail: row.po_detail,
-				received_qty: flt(row.received_qty),
-				target_warehouse: row.target_warehouse,
-				batch_no: row.batch_no,
-				manufacturing_date: row.manufacturing_date || null,
-				mrp: flt(row.mrp),
-				usp: row.usp,
 				item_remarks: row.item_remarks,
+				...(receiving ? {
+					received_qty: flt(row.received_qty),
+					target_warehouse: row.target_warehouse,
+					batch_no: row.batch_no,
+					manufacturing_date: row.manufacturing_date || null,
+					mrp: flt(row.mrp),
+					usp: row.usp,
+				} : {}),
 			})),
-			dispute_attachments: this.attachments.map((a) => ({
-				// Same rule as the item rows above: keep the row identity across a save.
-				...(a.name ? { name: a.name } : {}),
-				file: a.file, kind: a.kind, description: a.description,
-			})),
+			...(receiving ? {
+				dispute_attachments: this.attachments.map((a) => ({
+					// Same rule as the item rows above: keep the row identity across a save.
+					...(a.name ? { name: a.name } : {}),
+					file: a.file, kind: a.kind, description: a.description,
+				})),
+			} : {}),
 		};
 		if (this.docname) doc.name = this.docname;
 		if (this.company) doc.company = this.company;
@@ -1003,14 +1085,27 @@ var PurchaseInwardEntry = class {
 				// which then throws "Purchase Inward Item <hash> not found" and blocks the
 				// save entirely. po_detail is the stable key: _validate_unique_po_detail
 				// already guarantees one row per Purchase Order line.
-				const server_row_name = {};
+				//
+				// Each row is also laid OVER the server's copy instead of replacing it. This
+				// page only sends the fields it manages, so a wholesale replace wrote every
+				// other column of the row back as empty -- quarantine flags set by
+				// quarantine.mark, for one -- and, on a draft, the Store Receiving values it
+				// deliberately no longer sends. idx is dropped so Frappe renumbers the rows in
+				// the order they are sent, which is the order on screen.
+				const server_rows = {};
 				(g.message.items || []).forEach((row) => {
-					if (row.po_detail) server_row_name[row.po_detail] = row.name;
+					if (row.po_detail) server_rows[row.po_detail] = row;
 				});
-				(payload.items || []).forEach((row) => {
-					const known = server_row_name[row.po_detail];
-					if (known) row.name = known;
-					else delete row.name;
+				payload.items = (payload.items || []).map((row) => {
+					const server = server_rows[row.po_detail];
+					if (!server) {
+						const fresh = Object.assign({}, row);
+						delete fresh.name;
+						return fresh;
+					}
+					const merged = Object.assign({}, server, row, { name: server.name });
+					delete merged.idx;
+					return merged;
 				});
 				const doc = Object.assign({}, g.message, payload);
 				frappe.call({

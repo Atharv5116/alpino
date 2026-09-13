@@ -526,6 +526,10 @@ SECTIONS = {
 				"view_roles": (),
 				"edit_roles": _STORE,
 				"open_statuses": C.PI_RECEIVING_OPEN,
+				# Closed to EVERY person once handed to QC, admins included: the draft QC
+				# re-copies received_qty from these rows, so an edit would move the
+				# quantity under an inspection in progress. See can_edit_section.
+				"status_gate_binds_admin": True,
 				"docstatus": (1,),
 				# BR-PI-13: receiving more than the pending quantity is a Store Manager call.
 				"field_roles": {"allow_excess_qty": C.EXCESS_OVERRIDE_ROLES},
@@ -627,13 +631,23 @@ def _has_any(required, held):
 	return bool(set(required) & held) if required else True
 
 
-def _bypasses_gates(doc, user=None):
-	"""Setup code, the Administrator and the module Admin are never section-gated."""
+def _is_system_write(doc):
+	"""Setup code and internal writes, as opposed to a person editing the document.
+
+	quarantine.hold / quarantine.release save the inward with ignore_permissions, and
+	migrate / patch / import run with their flags set; none of them is a user decision, so
+	no section gate -- not even a lifecycle gate -- applies to them.
+	"""
 	if frappe.flags.in_migrate or frappe.flags.in_install or frappe.flags.in_patch:
 		return True
 	if frappe.flags.in_import:
 		return True
-	if getattr(doc, "flags", None) is not None and doc.flags.get("ignore_permissions"):
+	return bool(getattr(doc, "flags", None) is not None and doc.flags.get("ignore_permissions"))
+
+
+def _bypasses_gates(doc, user=None):
+	"""Setup code, the Administrator and the module Admin are never section-gated."""
+	if _is_system_write(doc):
 		return True
 	user = user or frappe.session.user
 	if user == "Administrator":
@@ -647,10 +661,31 @@ def can_edit_section(doc, section, user=None):
 
 	`reason` is a translated message when not allowed, None otherwise.
 	"""
+	sec = _section(doc.doctype, section)
+
 	if _bypasses_gates(doc, user):
+		# "Admin: Full Access" lifts the ROLE gates, not a LIFECYCLE gate. Where a section
+		# says its status gate binds admins too, a person -- Administrator included -- is
+		# still refused once the section has closed; setup code and internal writes
+		# (_is_system_write) are not, so quarantine hold/release keep working.
+		#
+		# Store Receiving is the case: once the inward is handed to QC, the draft Purchase
+		# QC re-copies received_qty from these rows on every save
+		# (purchase_qc._sync_items_from_inward), so an edit here silently changes the
+		# quantity underneath an inspection that is already in progress.
+		#
+		# This applies to a draft as well: Store Receiving opens only once Purchase submits
+		# the inward (BRD 2.2.1 / 2.3). It used to be limited to submitted documents because
+		# the entry page sent its pre-filled Store Receiving values with every draft save,
+		# which changed_fields counts as edits, so binding the gate on a draft refused the
+		# admin's draft saves. The page no longer sends those fields on a draft
+		# (purchase_inward_entry.collect_doc), so the section can close for everyone.
+		if sec.get("status_gate_binds_admin") and not _is_system_write(doc):
+			closed = _status_gate_reason(doc, sec)
+			if closed:
+				return False, closed
 		return True, None
 
-	sec = _section(doc.doctype, section)
 	held = _roles(user)
 
 	if sec["view_roles"] and not _has_any(sec["view_roles"], held):
@@ -666,14 +701,22 @@ def can_edit_section(doc, section, user=None):
 			_(sec["label"])
 		)
 
+	closed = _status_gate_reason(doc, sec)
+	if closed:
+		return False, closed
+
+	return True, None
+
+
+def _status_gate_reason(doc, sec):
+	"""The refusal message when `sec` is closed at the document's current status, else None."""
 	spec = _spec(doc.doctype)
 	status = doc.get(spec.get("status_field")) or spec.get("default_status")
 	if sec["open_statuses"] and status not in sec["open_statuses"]:
-		return False, _("The {0} section is closed while the document is {1}.").format(
+		return _("The {0} section is closed while the document is {1}.").format(
 			_(sec["label"]), status
 		)
-
-	return True, None
+	return None
 
 
 def assert_can_edit_section(doc, section, user=None):
@@ -857,13 +900,21 @@ def assert_section_edits_allowed(doc, user=None):
 	Call this from `validate()` and `on_update_after_submit()`; it is a no-op for a
 	document whose owned fields did not change.
 	"""
-	if _bypasses_gates(doc, user):
+	if _is_system_write(doc):
 		return
+	# An admin used to return here outright, so a lifecycle gate that binds admins was
+	# honoured by get_section_access (the page showed the section closed) but never by the
+	# save itself -- Administrator could still move received_qty under an inspection in
+	# progress. Admins now walk only the sections whose status gate binds them, and only
+	# that gate applies: role gates and per-field role overrides still do not.
+	admin = _bypasses_gates(doc, user)
 
 	parent_changed, child_changed = changed_fields(doc)
 	held = _roles(user)
 
 	for sec in _spec(doc.doctype).get("sections") or ():
+		if admin and not sec.get("status_gate_binds_admin"):
+			continue
 		table = sec["child_table"]
 		touched = set(sec["fields"]) & parent_changed
 		if table:
@@ -873,6 +924,8 @@ def assert_section_edits_allowed(doc, user=None):
 
 		assert_can_edit_section(doc, sec["key"], user)
 
+		if admin:
+			continue
 		for fieldname, roles in (sec["field_roles"] or {}).items():
 			if fieldname in touched and not _has_any(roles, held):
 				frappe.throw(

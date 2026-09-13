@@ -178,18 +178,85 @@ var PurchaseQCEntry = class {
 	_mk_cell($tr, sel, key, idx, df, value, onchange) {
 		const me = this;
 		const name = `${key}_${df.fieldname}_${idx}`;
+		// The handler runs from Frappe's own df.change, which base_control calls for every
+		// value it accepts: a typed value on blur, a tick, and a pick from a Link dropdown.
+		// This used to listen for the input's native 'change' event instead, and a Link pick
+		// never fires one -- link.js sets the value through parse_validate_and_set_in_model
+		// -- so a chosen item was never written to the row and the save failed with
+		// "MandatoryError: item_code".
+		//
+		// df.change also fires for the programmatic set_value below; `ready` ignores that
+		// one, so loading a row does not replay its own handlers.
+		let ready = false;
 		const c = frappe.ui.form.make_control({
-			df: Object.assign({ fieldname: name }, df),
+			df: Object.assign({ fieldname: name }, df, {
+				change: () => {
+					if (!ready || !onchange) return;
+					// The PARSED value, never the raw input text: for a Date control that is
+					// the user format (dd-mm-yyyy), which reaches the DATE column as an
+					// invalid date (MariaDB 1292). `this` is the input, because several
+					// handlers still read $(this).prop('checked'); called unbound inside
+					// this class, `this` was undefined and every Damage / Control Sample
+					// Taken tick was recorded as 0.
+					onchange.call(c.$input ? c.$input.get(0) : null, c.get_value());
+				},
+			}),
 			parent: $tr.find(sel),
 			render_input: true,
 		});
-		c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
+		Promise.resolve(
+			c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value))
+		).then(() => {
+			ready = true;
+		});
 		me.fields[name] = c;
-		// Hand the handler the control's PARSED value. $(this).val() is the raw input
-		// text, which for a Date control is the user format (dd-mm-yyyy) and reaches
-		// the DATE column as an invalid date (MariaDB 1292).
-		if (onchange && c.$input) c.$input.on('change', () => onchange(c.get_value()));
+		if (df.fieldtype === 'Link') me._float_dropdown(c);
 		return c;
+	}
+
+	/**
+	 * Let a Link cell's suggestion list escape the grid it sits in.
+	 *
+	 * Every inspection grid lives in .alp-scroll, which is overflow-x:auto so a wide table
+	 * can scroll sideways. CSS will not keep the other axis visible in that case -- it
+	 * computes overflow-y to auto as well -- so the awesomplete list, which hangs below
+	 * the row, was clipped to the table's height and showed one squashed option behind a
+	 * scrollbar. Making the wrapper overflow:visible would fix the list but push the whole
+	 * page sideways on a narrow screen, so the list is taken out of the flow instead:
+	 * position:fixed against the input's own rectangle, kept in place while anything
+	 * scrolls, and flipped above the input when there is no room below it.
+	 */
+	_float_dropdown(c) {
+		if (!c || !c.$input || !c.awesomplete || !c.awesomplete.ul) return;
+		const input = c.$input.get(0);
+		const ul = c.awesomplete.ul;
+		const GAP = 2;
+
+		const place = () => {
+			const r = input.getBoundingClientRect();
+			ul.style.position = 'fixed';
+			ul.style.left = `${r.left}px`;
+			ul.style.width = `${Math.max(r.width, 260)}px`;
+			ul.style.minWidth = '0';
+			ul.style.zIndex = '1060';
+			const below = window.innerHeight - r.bottom;
+			const needed = ul.offsetHeight || 0;
+			ul.style.top = needed > below && r.top > below
+				? `${Math.max(r.top - needed - GAP, 4)}px`
+				: `${r.bottom + GAP}px`;
+		};
+
+		c.$input.on('awesomplete-open', () => {
+			place();
+			// The list is filled after it opens, so measure again once it has a height.
+			requestAnimationFrame(place);
+			window.addEventListener('scroll', place, true);
+			window.addEventListener('resize', place);
+		});
+		c.$input.on('awesomplete-close', () => {
+			window.removeEventListener('scroll', place, true);
+			window.removeEventListener('resize', place);
+		});
 	}
 
 	/**
@@ -215,6 +282,7 @@ var PurchaseQCEntry = class {
 	 * unreadable next to a decision table that prints the code with its name underneath.
 	 */
 	_mk_item_cell($tr, key, idx, data) {
+		const me = this;
 		const names = this._inward_item_names();
 		const codes = Object.keys(names);
 		const $name = $('<div class="text-muted" style="font-size:11px;line-height:1.3;margin-top:2px;"></div>');
@@ -237,6 +305,9 @@ var PurchaseQCEntry = class {
 			function (val) {
 				data.item_code = val;
 				paint(val);
+				// Changing the item moves its quantities to a different decision line.
+				if (key === 'material') me.recalc_damage_rollup();
+				else if (key === 'sample' || key === 'control') me.recalc_sample_rollup();
 			}
 		);
 		$tr.find('.c-item').append($name);
@@ -286,15 +357,19 @@ var PurchaseQCEntry = class {
 				<td class="c-rem"></td>${del}</tr>`);
 			$body.append($tr);
 			this._mk_item_cell($tr, key, idx, data);
+			// Material damage feeds the QC Decision's Rejected quantity (packaging does not).
+			const damage_changed = () => {
+				if (key === 'material') me.recalc_damage_rollup();
+			};
 			this._mk_cell($tr, '.c-cond', key, idx,
 				{ fieldtype: 'Select', fieldname: cond_field, options: PQC_CONDITION.join('\n') },
-				data[cond_field] || 'Good', function (val) { data[cond_field] = val; });
+				data[cond_field] || 'Good', function (val) { data[cond_field] = val; damage_changed(); });
 			this._mk_cell($tr, '.c-dmg', key, idx, { fieldtype: 'Check', fieldname: dmg_field },
-				data[dmg_field], function () { data[dmg_field] = cint($(this).prop('checked')); });
+				data[dmg_field], function () { data[dmg_field] = cint($(this).prop('checked')); damage_changed(); });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'damaged_qty' },
-				data.damaged_qty, function (val) { data.damaged_qty = flt(val); });
+				data.damaged_qty, function (val) { data.damaged_qty = flt(val); damage_changed(); });
 			this._mk_cell($tr, '.c-reason', key, idx, { fieldtype: 'Data', fieldname: 'damage_reason' },
-				data.damage_reason, function (val) { data.damage_reason = val; });
+				data.damage_reason, function (val) { data.damage_reason = val; damage_changed(); });
 			this._mk_cell($tr, '.c-att', key, idx, { fieldtype: 'Attach', fieldname: 'attachment' },
 				data.attachment, function (val) { data.attachment = val; });
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'inspector_remarks' },
@@ -369,6 +444,81 @@ var PurchaseQCEntry = class {
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'remarks' },
 				data.remarks, function (val) { data.remarks = val; });
 		}
+	}
+
+	/**
+	 * {decision row: {qty, reasons}} for the damaged material recorded in Material Inspection.
+	 *
+	 * "Damaged" is the server's own definition (purchase_qc._validate_material_inspection):
+	 * the Damage tick OR Condition = Damaged, with a damaged quantity. A row binds to its
+	 * decision line exactly as samples do -- the stored line (qc_item_idx) when there is
+	 * one, otherwise the first line carrying that item.
+	 */
+	_damaged_by_line() {
+		const decision = this.tables.decision || [];
+		const by_idx = {};
+		const first_by_item = {};
+		decision.forEach((row, i) => {
+			by_idx[i + 1] = row;
+			if (row.item_code && first_by_item[row.item_code] === undefined) {
+				first_by_item[row.item_code] = row;
+			}
+		});
+		const out = new Map();
+		(this.tables.material || []).forEach((r) => {
+			const damaged = cint(r.material_damage) || r.material_condition === 'Damaged';
+			if (!damaged || flt(r.damaged_qty) <= 0) return;
+			const line = by_idx[cint(r.qc_item_idx)] || first_by_item[r.item_code];
+			if (!line) return;
+			const cur = out.get(line) || { qty: 0, reasons: [] };
+			cur.qty += flt(r.damaged_qty);
+			if ((r.damage_reason || '').trim()) cur.reasons.push(r.damage_reason.trim());
+			out.set(line, cur);
+		});
+		return out;
+	}
+
+	/** What the damage roll-up has already put into each line's Rejected, as of load. */
+	seed_damage_baseline() {
+		const damaged = this._damaged_by_line();
+		this._damage_applied = new WeakMap();
+		(this.tables.decision || []).forEach((row) => {
+			this._damage_applied.set(row, (damaged.get(row) || { qty: 0 }).qty);
+		});
+	}
+
+	/**
+	 * Damaged material is rejected material: carry it into the QC Decision as it is entered.
+	 *
+	 * Applied as a DELTA against what this put there last, never an overwrite, so a QC user
+	 * can still reject more on the same line for another reason (a failed sample, say) and
+	 * that extra survives when the damage is edited or un-ticked. The baseline is seeded on
+	 * load, so reopening a saved QC does not count its damage twice. A blank line-level
+	 * Rejection Reason takes the damage reason, which also satisfies VAL-QC-04; one the user
+	 * typed is never replaced.
+	 *
+	 * Packaging damage is left out on purpose: a crushed carton is not necessarily rejected
+	 * product.
+	 */
+	recalc_damage_rollup() {
+		const decision = this.tables.decision || [];
+		if (!decision.length) return;
+		if (!this._damage_applied) this._damage_applied = new WeakMap();
+
+		const damaged = this._damaged_by_line();
+		decision.forEach((row) => {
+			const now = damaged.get(row) || { qty: 0, reasons: [] };
+			const before = this._damage_applied.get(row) || 0;
+			if (now.qty !== before) {
+				row.rejected_qty = Math.max(flt(row.rejected_qty) + (now.qty - before), 0);
+				this._damage_applied.set(row, now.qty);
+			}
+			if (now.qty > 0 && now.reasons.length && !(row.rejection_reason || '').trim()) {
+				row.rejection_reason = __('Damaged: {0}', [now.reasons.join('; ')]);
+			}
+		});
+
+		this.render_decision();
 	}
 
 	/**
@@ -467,6 +617,9 @@ var PurchaseQCEntry = class {
 			const idx = cint($(this).closest('tr').attr('data-idx'));
 			me.tables[key].splice(idx, 1);
 			me.redraw(key);
+			// A removed row takes its quantities with it.
+			if (key === 'material') me.recalc_damage_rollup();
+			else if (key === 'sample' || key === 'control') me.recalc_sample_rollup();
 		});
 		this.wrapper.on('click', '.btn-print-sticker', () => {
 			if (!me.docname) {
@@ -552,6 +705,9 @@ var PurchaseQCEntry = class {
 					me.wrapper.find(`.${key}-table tbody`).empty();
 					(doc[field] || []).forEach((row) => me.add_row(key, Object.assign({}, row)));
 				});
+				// The saved Rejected already includes this damage; record that, so the next
+				// edit applies only the difference.
+				me.seed_damage_baseline();
 
 				me.apply_state();
 				me.page.set_title(`${doc.name} — Purchase QC`);
@@ -607,7 +763,12 @@ var PurchaseQCEntry = class {
 		if (cint(doc.docstatus) === 0) {
 			btn(__('Save'), 'btn-primary', () => me.save());
 			btn(__('Complete QC'), 'btn-primary', () => {
-				frappe.confirm(__('Submit this inspection? The GRN is drafted from it.'), () => {
+				// Save first. complete_qc works on the STORED document and receives only its
+				// name, so ticks and inspection rows still on screen were never seen: the
+				// footer read "All four inspections marked complete" while the server
+				// answered VAL-QC-02 with every inspection pending. A save the server refuses
+				// shows its own error and stops here, so nothing is submitted half-recorded.
+				frappe.confirm(__('Submit this inspection? The GRN is drafted from it.'), () => me.save(() => {
 					frappe.call({
 						method: 'alpinos.alpinos_development.doctype.purchase_qc.purchase_qc.complete_qc',
 						args: { purchase_qc: me.docname },
@@ -619,12 +780,16 @@ var PurchaseQCEntry = class {
 							// inspection under BR-QC-06 -- still popped a green "QC
 							// completed" and reloaded unchanged, which reads as the button
 							// doing nothing while claiming it worked.
-							if (r.exc) return;
+							if (r.exc) {
+								// the save above did land, so show what is now stored
+								me.load(me.docname);
+								return;
+							}
 							me._toast(__('QC completed'), 'green');
 							me.load(me.docname);
 						},
 					});
-				});
+				}));
 			});
 		}
 		btn(__('Print Report'), 'btn-default', () => {
@@ -639,7 +804,8 @@ var PurchaseQCEntry = class {
 
 	// ----------------------------------------------------------------- save
 
-	save() {
+	/** Save the QC. `then` runs only after the server has stored it. */
+	save(then) {
 		const me = this;
 		if (!this.docname) return;
 		frappe.call({
@@ -675,6 +841,10 @@ var PurchaseQCEntry = class {
 					freeze_message: __('Saving...'),
 					callback(r) {
 						if (!r.message) return;
+						if (then) {
+							then();
+							return;
+						}
 						me._toast(__('Saved'), 'green');
 						me.load(r.message.name);
 					},

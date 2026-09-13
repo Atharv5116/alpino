@@ -46,7 +46,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname, set_new_name
-from frappe.utils import add_to_date, cint, flt, get_link_to_form, getdate, now_datetime
+from frappe.utils import add_to_date, cint, flt, get_datetime, get_link_to_form, getdate, now_datetime
 
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
@@ -1280,6 +1280,16 @@ class PurchaseQC(Document):
 		) or inward.get("modified")
 		if not start:
 			return
+		# A document saved from the Purchase QC entry page arrives as JSON, so sla_start is a
+		# string ("2026-09-13 21:35:57.930493"), not a datetime. frappe.utils.add_to_date
+		# returns a STRING whenever it is handed one -- as_datetime only picks the format --
+		# so sla_due became a string too and the comparison below raised
+		# "'>' not supported between 'datetime.datetime' and 'str'". Every save from that
+		# page failed, which is why no inspection, sample or decision it recorded was ever
+		# stored. A document loaded on the server already carries datetimes, which is why
+		# the e2e suites never saw it. The value is the server's own ISO serialisation,
+		# never a user-format date, so parsing it is unambiguous.
+		start = get_datetime(start)
 		self.sla_start = start
 		self.sla_due = add_to_date(start, hours=sla_hours(self.company), as_datetime=True)
 		if self.docstatus == 0 and self.qc_status in _OPEN_QC_STATUSES:

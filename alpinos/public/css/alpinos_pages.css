@@ -1041,13 +1041,10 @@
 
 /* ------------------------------------------------------------------ piw-locked
    A card the server has closed for editing (roles.get_section_access -> edit=false).
-   purchase_inward_entry.js also disables the controls inside it, so this is the visual
-   half of a lock that is actually enforced; the class on its own had no rule at all and
-   a "closed" Store Receiving section stayed fully typeable. */
-.piw-locked {
-	opacity: 0.75;
-}
-
+   The dimming and pointer block live in purchase_inward_entry.html's own <style>
+   (.purchase-inward-entry .piw-locked), which is more specific than anything here; this
+   only marks the disabled controls, which purchase_inward_entry.js switches off so the
+   keyboard cannot get into a closed section either. */
 .piw-locked input,
 .piw-locked select,
 .piw-locked textarea,

@@ -65,7 +65,30 @@ class PurchaseInward(Document):
 		# Kept as a submit-time twin of the save guard: a row can be emptied by a
 		# script or a merge between the last save and the submit.
 		self._validate_has_items()
+		self._default_item_target_warehouses()
 		self.inward_status = C.PI_PENDING_RECEIPT
+
+	def _default_item_target_warehouses(self):
+		"""Seed each line's Target Location from its Purchase Order line as receiving opens.
+
+		The entry page no longer sends Store Receiving values while the inward is a draft,
+		so the default its grid used to pre-fill -- the PO line's warehouse -- is written here
+		instead, once, at submit. The Store team can still change it. A line that already has
+		a location keeps it, and the inward's own Default Target Location wins over the PO.
+		"""
+		missing = [line for line in self.get("items") if not line.target_warehouse and line.po_detail]
+		if not missing:
+			return
+		po_warehouse = dict(
+			frappe.get_all(
+				"Purchase Order Item",
+				filters={"name": ("in", [line.po_detail for line in missing])},
+				fields=["name", "warehouse"],
+				as_list=True,
+			)
+		)
+		for line in missing:
+			line.target_warehouse = self.target_warehouse or po_warehouse.get(line.po_detail)
 
 	def on_submit(self):
 		self.db_set("inward_status", C.PI_PENDING_RECEIPT, update_modified=False)
