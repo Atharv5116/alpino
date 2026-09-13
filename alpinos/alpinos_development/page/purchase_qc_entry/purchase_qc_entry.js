@@ -192,6 +192,57 @@ var PurchaseQCEntry = class {
 		return c;
 	}
 
+	/**
+	 * {item_code: item_name} for the lines this inward actually delivered.
+	 *
+	 * The decision table is seeded from the inward's received rows, so it is the page's
+	 * own copy of "what arrived" and needs no extra round trip.
+	 */
+	_inward_item_names() {
+		const out = {};
+		(this.tables.decision || []).forEach((row) => {
+			if (row.item_code) out[row.item_code] = row.item_name || '';
+		});
+		return out;
+	}
+
+	/**
+	 * The Item cell shared by the material, packaging, sample and control grids.
+	 *
+	 * Two things a bare Link to Item got wrong. It offered EVERY item in the system, so an
+	 * inspection row could name something the consignment never contained and nothing
+	 * downstream could reconcile it. And it showed the bare code in a narrow box, which is
+	 * unreadable next to a decision table that prints the code with its name underneath.
+	 */
+	_mk_item_cell($tr, key, idx, data) {
+		const names = this._inward_item_names();
+		const codes = Object.keys(names);
+		const $name = $('<div class="text-muted" style="font-size:11px;line-height:1.3;margin-top:2px;"></div>');
+		const paint = (code) => $name.text(names[code] || '');
+
+		this._mk_cell(
+			$tr,
+			'.c-item',
+			key,
+			idx,
+			{
+				fieldtype: 'Link',
+				fieldname: 'item_code',
+				options: 'Item',
+				// An empty allow-list must match nothing, not everything: ['in', []] is
+				// ignored by the query builder and would quietly reopen the full Item list.
+				get_query: () => ({ filters: { name: ['in', codes.length ? codes : ['__none__']] } }),
+			},
+			data.item_code,
+			function (val) {
+				data.item_code = val;
+				paint(val);
+			}
+		);
+		$tr.find('.c-item').append($name);
+		paint(data.item_code);
+	}
+
 	_item_options() {
 		// Sample / control rows must be able to name WHICH decision line they came from
 		// (qc_item_idx), because one item code can legitimately occupy several lines.
@@ -234,9 +285,7 @@ var PurchaseQCEntry = class {
 				<td class="c-qty"></td><td class="c-reason"></td><td class="c-att"></td>
 				<td class="c-rem"></td>${del}</tr>`);
 			$body.append($tr);
-			this._mk_cell($tr, '.c-item', key, idx,
-				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function (val) { data.item_code = val; });
+			this._mk_item_cell($tr, key, idx, data);
 			this._mk_cell($tr, '.c-cond', key, idx,
 				{ fieldtype: 'Select', fieldname: cond_field, options: PQC_CONDITION.join('\n') },
 				data[cond_field] || 'Good', function (val) { data[cond_field] = val; });
@@ -257,18 +306,16 @@ var PurchaseQCEntry = class {
 				<td class="c-ibatch"></td><td class="c-qty"></td><td class="c-id"></td>
 				<td class="c-rem"></td>${del}</tr>`);
 			$body.append($tr);
-			this._mk_cell($tr, '.c-item', key, idx,
-				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function (val) { data.item_code = val; });
+			this._mk_item_cell($tr, key, idx, data);
 			this._mk_cell($tr, '.c-line', key, idx,
 				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: '\n' + this._item_options() },
-				data.qc_item_idx, function (val) { data.qc_item_idx = val; });
+				data.qc_item_idx, function (val) { data.qc_item_idx = val; me.recalc_sample_rollup(); });
 			this._mk_cell($tr, '.c-sbatch', key, idx, { fieldtype: 'Data', fieldname: 'supplier_batch_no' },
 				data.supplier_batch_no, function (val) { data.supplier_batch_no = val; });
 			this._mk_cell($tr, '.c-ibatch', key, idx,
 				{ fieldtype: 'Data', fieldname: 'internal_batch_no', read_only: 1 }, data.internal_batch_no);
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'sample_qty' },
-				data.sample_qty, function (val) { data.sample_qty = flt(val); });
+				data.sample_qty, function (val) { data.sample_qty = flt(val); me.recalc_sample_rollup(); });
 			this._mk_cell($tr, '.c-id', key, idx,
 				{ fieldtype: 'Data', fieldname: 'sample_id', read_only: 1 }, data.sample_id);
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'remarks' },
@@ -292,9 +339,7 @@ var PurchaseQCEntry = class {
 			this._mk_cell($tr, '.c-kind', key, idx,
 				{ fieldtype: 'Select', fieldname: 'kind', options: 'Photo\nVideo\nDocument' },
 				data.kind || 'Photo', function (val) { data.kind = val; });
-			this._mk_cell($tr, '.c-item', key, idx,
-				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function (val) { data.item_code = val; });
+			this._mk_item_cell($tr, key, idx, data);
 			this._mk_cell($tr, '.c-desc', key, idx, { fieldtype: 'Data', fieldname: 'description' },
 				data.description, function (val) { data.description = val; });
 
@@ -307,17 +352,15 @@ var PurchaseQCEntry = class {
 			this._mk_cell($tr, '.c-taken', key, idx,
 				{ fieldtype: 'Check', fieldname: 'control_sample_taken' },
 				data.control_sample_taken === undefined ? 1 : data.control_sample_taken,
-				function () { data.control_sample_taken = cint($(this).prop('checked')); });
-			this._mk_cell($tr, '.c-item', key, idx,
-				{ fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
-				data.item_code, function (val) { data.item_code = val; });
+				function () { data.control_sample_taken = cint($(this).prop('checked')); me.recalc_sample_rollup(); });
+			this._mk_item_cell($tr, key, idx, data);
 			this._mk_cell($tr, '.c-line', key, idx,
 				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: '\n' + this._item_options() },
-				data.qc_item_idx, function (val) { data.qc_item_idx = val; });
+				data.qc_item_idx, function (val) { data.qc_item_idx = val; me.recalc_sample_rollup(); });
 			this._mk_cell($tr, '.c-batch', key, idx, { fieldtype: 'Data', fieldname: 'batch_no' },
 				data.batch_no, function (val) { data.batch_no = val; });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'control_sample_qty' },
-				data.control_sample_qty, function (val) { data.control_sample_qty = flt(val); });
+				data.control_sample_qty, function (val) { data.control_sample_qty = flt(val); me.recalc_sample_rollup(); });
 			this._mk_cell($tr, '.c-loc', key, idx,
 				{ fieldtype: 'Link', fieldname: 'storage_location', options: 'Warehouse' },
 				data.storage_location, function (val) { data.storage_location = val; });
@@ -326,6 +369,49 @@ var PurchaseQCEntry = class {
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'remarks' },
 				data.remarks, function (val) { data.remarks = val; });
 		}
+	}
+
+	/**
+	 * Mirror purchase_qc._roll_up_sample_qty on the client.
+	 *
+	 * sample_qty and control_sample_qty on a decision line are a ROLL-UP of the Sample
+	 * Testing and Control Sample tables -- the server recomputes them on every save and
+	 * never trusts the stored value. The decision grid printed them as static text taken
+	 * from the last load, so a quantity typed into Sample Testing only appeared after a
+	 * save AND a reload, which reads as the number simply not updating.
+	 *
+	 * Binding matches the server: the Line select (qc_item_idx, 1-based position in the
+	 * decision table) when it is set, otherwise the first decision line carrying that
+	 * item -- so a row whose Line is still blank is counted here exactly as it will be
+	 * counted on save, rather than silently showing nothing.
+	 */
+	recalc_sample_rollup() {
+		const decision = this.tables.decision || [];
+		if (!decision.length) return;
+
+		const by_idx = {};
+		const first_by_item = {};
+		decision.forEach((row, i) => {
+			row.sample_qty = 0;
+			row.control_sample_qty = 0;
+			by_idx[i + 1] = row;
+			if (row.item_code && first_by_item[row.item_code] === undefined) {
+				first_by_item[row.item_code] = row;
+			}
+		});
+		const target = (r) => by_idx[cint(r.qc_item_idx)] || first_by_item[r.item_code];
+
+		(this.tables.sample || []).forEach((r) => {
+			const line = target(r);
+			if (line) line.sample_qty = flt(line.sample_qty) + flt(r.sample_qty);
+		});
+		(this.tables.control || []).forEach((r) => {
+			if (!cint(r.control_sample_taken)) return;
+			const line = target(r);
+			if (line) line.control_sample_qty = flt(line.control_sample_qty) + flt(r.control_sample_qty);
+		});
+
+		this.render_decision();
 	}
 
 	render_decision() {

@@ -741,7 +741,7 @@ var PurchaseInwardEntry = class {
 		const me = this;
 		frappe.call({
 			method: 'alpinos.purchase.inward_api.get_form_context',
-			args: { name: this.docname },
+			args: { purchase_inward: this.docname },
 			callback(r) {
 				if (r.message) me.ctx = r.message;
 				me.apply_context();
@@ -762,14 +762,49 @@ var PurchaseInwardEntry = class {
 
 		// The server owns the decision; this only reflects it.
 		const header_open = ctx.header_editable !== false && cint(ctx.docstatus) === 0;
-		this.wrapper.find('.piw-header').toggleClass('piw-locked', !header_open);
-		this.wrapper.find('.items-table').closest('.eso-card').toggleClass('piw-locked', !header_open);
+		this._lock_section(this.wrapper.find('.piw-header'), !header_open);
+		this._lock_section(this.wrapper.find('.items-table').closest('.eso-card'), !header_open);
 
 		const receiving = (ctx.sections || {}).receiving;
-		const receiving_open = receiving ? receiving.editable !== false : cint(ctx.docstatus) === 1;
-		this.wrapper.find('.piw-receiving').toggleClass('piw-locked', !receiving_open);
+		// roles.get_section_access returns `edit`, not `editable`. Reading the wrong key
+		// gave undefined, and `undefined !== false` is true, so the Store Receiving grid
+		// stayed editable in EVERY status -- including after the handover to QC, where the
+		// server reports edit=false with "closed while the document is QC In Progress".
+		const receiving_open = receiving ? receiving.edit !== false : cint(ctx.docstatus) === 1;
+		this._lock_section(this.wrapper.find('.piw-receiving'), !receiving_open);
 
 		this.make_actions();
+	}
+
+	/**
+	 * Close a card for editing, for real.
+	 *
+	 * This used to only add .piw-locked -- and no rule for that class existed anywhere in
+	 * alpinos_pages.css, so a section the server had closed stayed fully typeable. A Store
+	 * user could still edit received quantities after the handover to QC, and the save was
+	 * then refused by assert_can_edit_section with a permission error, which reads as a bug
+	 * rather than as a closed section.
+	 *
+	 * The disabled state of each control is remembered before locking, so unlocking can
+	 * never enable a field that was already read-only for another reason (an Expiry cell
+	 * derived server-side, say). The page's action bar sits outside these cards, so the
+	 * workflow buttons are unaffected.
+	 */
+	_lock_section($card, locked) {
+		if (!$card || !$card.length) return;
+		$card.toggleClass('piw-locked', !!locked);
+		$card.find('input, select, textarea, button').each(function () {
+			const $i = $(this);
+			if (locked) {
+				if ($i.attr('data-piw-prev') === undefined) {
+					$i.attr('data-piw-prev', $i.prop('disabled') ? '1' : '0');
+				}
+				$i.prop('disabled', true);
+			} else if ($i.attr('data-piw-prev') !== undefined) {
+				$i.prop('disabled', $i.attr('data-piw-prev') === '1');
+				$i.removeAttr('data-piw-prev');
+			}
+		});
 	}
 
 	make_actions() {
@@ -959,7 +994,25 @@ var PurchaseInwardEntry = class {
 			args: { doctype: 'Purchase Inward', name: this.docname },
 			callback(g) {
 				if (!g.message) return;
-				const doc = Object.assign({}, g.message, me.collect_doc());
+				const payload = me.collect_doc();
+				// Row identity comes from the SERVER copy, matched on po_detail -- never
+				// from whatever name this page happens to be holding. A save replaces the
+				// child rows, so a name picked up before an earlier save no longer exists,
+				// and on a SUBMITTED document frappe loads every non-new child row through
+				// BaseDocument._validate_update_after_submit -> frappe.get_doc(child, name),
+				// which then throws "Purchase Inward Item <hash> not found" and blocks the
+				// save entirely. po_detail is the stable key: _validate_unique_po_detail
+				// already guarantees one row per Purchase Order line.
+				const server_row_name = {};
+				(g.message.items || []).forEach((row) => {
+					if (row.po_detail) server_row_name[row.po_detail] = row.name;
+				});
+				(payload.items || []).forEach((row) => {
+					const known = server_row_name[row.po_detail];
+					if (known) row.name = known;
+					else delete row.name;
+				});
+				const doc = Object.assign({}, g.message, payload);
 				frappe.call({
 					method: 'frappe.client.save',
 					args: { doc: doc },

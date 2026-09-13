@@ -1020,3 +1020,20 @@
 ) .page-body {
   padding-top: var(--navbar-height, 48px);
 }
+
+/* ------------------------------------------------------------------ piw-locked
+   A card the server has closed for editing (roles.get_section_access -> edit=false).
+   purchase_inward_entry.js also disables the controls inside it, so this is the visual
+   half of a lock that is actually enforced; the class on its own had no rule at all and
+   a "closed" Store Receiving section stayed fully typeable. */
+.piw-locked {
+	opacity: 0.75;
+}
+
+.piw-locked input,
+.piw-locked select,
+.piw-locked textarea,
+.piw-locked button {
+	background-color: var(--gray-100, #f4f5f6) !important;
+	cursor: not-allowed !important;
+}
