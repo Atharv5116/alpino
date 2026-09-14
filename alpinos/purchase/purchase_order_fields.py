@@ -378,3 +378,74 @@ def refresh_inward_progress(purchase_order):
 	}
 	frappe.db.set_value(PO, name, values, update_modified=False)
 	return values
+
+
+@frappe.whitelist()
+def get_supplier_info(supplier, company=None):
+	"""Vendor name, contact and addresses for the Purchase Order entry page (BRD 2.2.2).
+
+	ERPNext's own lookup comes first -- erpnext.accounts.party.get_party_details, the call
+	the standard Purchase Order form makes -- but it only returns Addresses and Contacts
+	that are LINKED to the supplier through a Dynamic Link. Suppliers on this site often
+	carry a Primary Address / Primary Contact that is not linked, so those fields are the
+	fallback. The page used to read supplier_primary_address alone and showed the address
+	record's NAME ("Billing Address-Billing") as the billing address, with no contact at all.
+
+	Shipping / Delivery is the COMPANY's shipping address: a purchase order is delivered to
+	the buyer, so it is not the vendor's address.
+	"""
+	if not supplier:
+		return {}
+	frappe.has_permission("Supplier", "read", supplier, throw=True)
+
+	from erpnext.accounts.party import get_party_details
+	from frappe.contacts.doctype.address.address import get_address_display
+
+	try:
+		details = get_party_details(
+			party=supplier, party_type="Supplier", company=company, doctype="Purchase Order"
+		) or {}
+	except frappe.PermissionError:
+		raise
+	except Exception:
+		# A missing default price list or account must not blank the whole block.
+		details = {}
+
+	master = frappe.db.get_value(
+		"Supplier",
+		supplier,
+		["supplier_name", "supplier_primary_address", "supplier_primary_contact", "mobile_no"],
+		as_dict=True,
+	) or {}
+
+	supplier_address = details.get("supplier_address") or master.get("supplier_primary_address")
+	address_display = details.get("address_display") or (
+		get_address_display(supplier_address)
+		if supplier_address and frappe.db.exists("Address", supplier_address)
+		else None
+	)
+
+	contact = details.get("contact_person") or master.get("supplier_primary_contact")
+	contact_row = (
+		frappe.db.get_value("Contact", contact, ["full_name", "mobile_no", "phone"], as_dict=True)
+		if contact and frappe.db.exists("Contact", contact)
+		else None
+	) or {}
+	contact_mobile = (
+		details.get("contact_mobile")
+		or details.get("contact_phone")
+		or contact_row.get("mobile_no")
+		or contact_row.get("phone")
+		or master.get("mobile_no")
+	)
+
+	return {
+		"supplier_name": master.get("supplier_name") or supplier,
+		"contact_person": contact,
+		"contact_display": details.get("contact_display") or contact_row.get("full_name") or contact,
+		"contact_mobile": contact_mobile,
+		"supplier_address": supplier_address,
+		"address_display": address_display,
+		"shipping_address": details.get("shipping_address"),
+		"shipping_address_display": details.get("shipping_address_display"),
+	}

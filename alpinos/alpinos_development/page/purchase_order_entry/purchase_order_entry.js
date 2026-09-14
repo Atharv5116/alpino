@@ -108,7 +108,14 @@ var PurchaseOrderEntry = class {
 			fieldname: 'supplier', label: 'Vendor Name', fieldtype: 'Link',
 			options: 'Supplier', reqd: 1,
 		});
-		if (sup && sup.$input) sup.$input.on('change', () => me.fetch_supplier());
+		if (sup && sup.$input) {
+			sup.$input.on('change', () => me.fetch_supplier());
+			// A pick from the dropdown fires no native 'change' (link.js sets the value through
+			// parse_validate_and_set_in_model), so choosing a vendor never fetched its name or
+			// address. Listening here rather than on df.change keeps the lookup to a real
+			// pick: loading a saved PO must not overwrite its address with the vendor's primary.
+			sup.$input.on('awesomplete-selectcomplete', () => setTimeout(() => me.fetch_supplier(), 0));
+		}
 
 		this._ctl('.field-transaction-date', {
 			fieldname: 'transaction_date', label: 'PO Date', fieldtype: 'Date', reqd: 1,
@@ -155,22 +162,41 @@ var PurchaseOrderEntry = class {
 				fieldname, label, fieldtype: fieldtype || 'Data', options, read_only: 1,
 			});
 		ro('.field-supplier-name', 'supplier_name', 'Vendor Name');
-		ro('.field-contact-person', 'contact_person', 'Contact Person');
+		// Display fields, not links: Billing Address used to be bound to supplier_address,
+		// the Address record's NAME ("Billing Address-Billing"), and Shipping / Delivery to
+		// address_display, which is the VENDOR's address. A purchase order is delivered to
+		// the company, so that block now shows the company's shipping address.
+		ro('.field-contact-person', 'contact_display', 'Contact Person');
 		ro('.field-contact-number', 'contact_mobile', 'Contact Number');
-		ro('.field-billing-address', 'supplier_address', 'Billing Address');
-		ro('.field-shipping-address', 'address_display', 'Shipping / Delivery Address', 'Small Text');
+		ro('.field-billing-address', 'address_display', 'Billing Address', 'Small Text');
+		ro('.field-shipping-address', 'shipping_address_display', 'Shipping / Delivery Address', 'Small Text');
 	}
 
-	fetch_supplier() {
-		const supplier = this._val('supplier');
+	/**
+	 * Fill Supplier Information (BRD 2.2.2) from alpinos.purchase.purchase_order_fields.
+	 * get_supplier_info, which runs ERPNext's party lookup and falls back to the supplier's
+	 * own Primary Address / Primary Contact when they are not linked -- this used to read
+	 * two Supplier columns and never fetched a contact at all.
+	 *
+	 * `supplier` is passed in by load(): reading the Link control straight after load()
+	 * set it returns the previous value, because set_value lands asynchronously.
+	 */
+	fetch_supplier(supplier) {
+		supplier = supplier || this._val('supplier');
 		if (!supplier) return;
 		const me = this;
-		frappe.db.get_value('Supplier', supplier, ['supplier_name', 'supplier_primary_address'])
-			.then((r) => {
+		frappe.call({
+			method: 'alpinos.purchase.purchase_order_fields.get_supplier_info',
+			args: { supplier: supplier, company: frappe.defaults.get_default('company') || null },
+			callback(r) {
 				const d = (r && r.message) || {};
 				me._set('supplier_name', d.supplier_name);
-				me._set('supplier_address', d.supplier_primary_address);
-			});
+				me._set('contact_display', d.contact_display);
+				me._set('contact_mobile', d.contact_mobile);
+				me._set('address_display', d.address_display);
+				me._set('shipping_address_display', d.shipping_address_display);
+			},
+		});
 	}
 
 	// --------------------------------------------- planned shipment block
@@ -227,6 +253,7 @@ var PurchaseOrderEntry = class {
 		this.wrapper.on('click', '.btn-remove-row', function () {
 			const idx = cint($(this).closest('tr').attr('data-idx'));
 			me.items.splice(idx, 1);
+			me._summary_from_doc = false;
 			me.redraw_items();
 		});
 	}
@@ -239,6 +266,7 @@ var PurchaseOrderEntry = class {
 			warehouse: this._val('set_warehouse') || '',
 			custom_item_remarks: '',
 		}, row || {}));
+		this._summary_from_doc = false;
 		this.redraw_items();
 	}
 
@@ -271,17 +299,36 @@ var PurchaseOrderEntry = class {
 			$body.append($tr);
 
 			const mk = (sel, df, value, onchange) => {
+				// The handler runs from Frappe's own df.change, which base_control calls for
+				// every value it accepts, a pick from a Link dropdown included. This used to
+				// listen for the input's native 'change' event, which a Link pick never fires
+				// (link.js sets the value through parse_validate_and_set_in_model). So a
+				// chosen SKU was never written to the row: Item Name and UOM were never
+				// fetched, and the next Add Row / Remove, which redraws every row from
+				// this.items, drew that row with a blank Item Code.
+				//
+				// `ready` skips the change Frappe fires for the programmatic set_value below.
+				// Without it every redraw would re-fire the Item Code handler, fetch_item
+				// would redraw again, and the grid would redraw forever.
+				let ready = false;
 				const c = frappe.ui.form.make_control({
-					df: Object.assign({ fieldname: `${df.fieldname}_${idx}` }, df),
+					df: Object.assign({ fieldname: `${df.fieldname}_${idx}` }, df, {
+						change: () => {
+							if (!ready || !onchange) return;
+							// the PARSED value: a Date control's raw text is the user format
+							// (dd-mm-yyyy), an invalid DATE (MariaDB 1292)
+							onchange(c.get_value());
+						},
+					}),
 					parent: $tr.find(sel),
 					render_input: true,
 				});
-				c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
+				Promise.resolve(
+					c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value))
+				).then(() => {
+					ready = true;
+				});
 				me.fields[`${df.fieldname}_${idx}`] = c;
-				// Hand the handler the control PARSED value. The raw input text of a Date
-				// control is the user format (dd-mm-yyyy) and reaches a DATE column as an
-				// invalid date (MariaDB 1292).
-				if (onchange && c.$input) c.$input.on('change', () => onchange(c.get_value()));
 				return c;
 			};
 
@@ -321,15 +368,30 @@ var PurchaseOrderEntry = class {
 			mk('.cell-remarks', { fieldtype: 'Data', fieldname: 'custom_item_remarks' },
 				row.custom_item_remarks, (val) => { me.items[idx].custom_item_remarks = val; });
 		});
+		// Every add, remove and load redraws the grid, so the summary follows it here.
+		this.recalc_summary();
 	}
 
 	fetch_item(idx, item_code) {
-		if (!item_code) return;
 		const me = this;
+		// Hold the ROW, not its index: a row added or removed while the lookup is in flight
+		// shifts every index, and writing to me.items[idx] then fills the wrong line.
+		const row = this.items[idx];
+		if (!row) return;
+		if (!item_code) {
+			// A cleared Item Code must not keep the previous item's name and unit.
+			if (row.item_name || row.uom) {
+				row.item_name = '';
+				row.uom = '';
+				me.redraw_items();
+			}
+			return;
+		}
 		frappe.db.get_value('Item', item_code, ['item_name', 'stock_uom']).then((r) => {
+			if (me.items.indexOf(row) === -1 || row.item_code !== item_code) return;
 			const d = (r && r.message) || {};
-			me.items[idx].item_name = d.item_name || '';
-			me.items[idx].uom = d.stock_uom || '';
+			row.item_name = d.item_name || '';
+			row.uom = d.stock_uom || '';
 			me.redraw_items();
 		});
 	}
@@ -344,6 +406,52 @@ var PurchaseOrderEntry = class {
 		const am = this.fields[`amount_${idx}`];
 		if (nr) nr.set_value(ALP_TRIM_MICROSECONDS(row.rate));
 		if (am) am.set_value(ALP_TRIM_MICROSECONDS(row.amount));
+		this._summary_from_doc = false;
+		this.recalc_summary();
+	}
+
+	/**
+	 * BRD 2.3.2 PO Summary, kept live while the lines change.
+	 *
+	 * It used to be filled only from the saved document, so a new or edited order showed
+	 * "—" in all five boxes. Quantity, value and discount now follow the lines the way the
+	 * grid previews them (BRD Rate = price_list_rate, Net Rate = rate). Total Discount is
+	 * the line discounts plus any document-level discount; it was bound to discount_amount
+	 * alone, ERPNext's document-level discount, so a Discount % typed on a line never
+	 * showed there. With that, Item Value - Discount + Tax = Grand Total.
+	 *
+	 * Tax is the ERP's figure from the last save, because only the server knows which tax
+	 * applies. Straight after load, the net and grand totals are the ERP's own saved
+	 * values too, so rounding never makes a reopened order disagree with its document.
+	 */
+	recalc_summary() {
+		const keys = ['total_qty', 'total', 'discount_amount', 'total_taxes_and_charges', 'grand_total'];
+		const lines = (this.items || []).filter((r) => r.item_code || flt(r.qty));
+		if (!lines.length) {
+			keys.forEach((k) => this._set(k, ''));
+			return;
+		}
+		let qty = 0;
+		let gross = 0;
+		let net = 0;
+		lines.forEach((r) => {
+			const q = flt(r.qty);
+			const list = flt(r.price_list_rate);
+			const rate = list ? list * (1 - flt(r.discount_percentage) / 100) : flt(r.rate);
+			qty += q;
+			gross += q * (list || rate);
+			net += q * rate;
+		});
+		const saved = !!(this._summary_from_doc && this.docname && this.doc);
+		const doc = (this.docname && this.doc) || {};
+		const doc_discount = flt(doc.discount_amount);
+		const tax = flt(doc.total_taxes_and_charges);
+		if (saved) net = flt(doc.total);
+		this._set('total_qty', qty);
+		this._set('total', flt(gross, 2));
+		this._set('discount_amount', flt(gross - net + doc_discount, 2));
+		this._set('total_taxes_and_charges', tax);
+		this._set('grand_total', saved ? flt(doc.grand_total) : flt(net - doc_discount + tax, 2));
 	}
 
 	// ------------------------------------------------------ approval log
@@ -389,7 +497,7 @@ var PurchaseOrderEntry = class {
 			'custom_inward_type', 'supplier', 'schedule_date', 'set_warehouse', 'currency',
 			'payment_terms_template', 'custom_supplier_order_no', 'custom_inward_attachment',
 			'custom_direct_purchase_invoice', 'custom_inward_remarks', 'supplier_name',
-			'contact_person', 'contact_mobile', 'supplier_address', 'address_display',
+			'contact_display', 'contact_mobile', 'address_display', 'shipping_address_display',
 			'custom_vehicle_no', 'custom_driver_contact_no', 'custom_estimated_arrival',
 			'total_qty', 'total', 'discount_amount', 'total_taxes_and_charges', 'grand_total',
 			'custom_approval_status', 'custom_approval_action_by', 'custom_approval_datetime',
@@ -417,14 +525,21 @@ var PurchaseOrderEntry = class {
 					'set_warehouse', 'currency', 'payment_terms_template',
 					'custom_supplier_order_no', 'owner', 'custom_inward_attachment',
 					'custom_direct_purchase_invoice', 'custom_inward_remarks',
-					'supplier_name', 'contact_person', 'contact_mobile', 'supplier_address',
-					'address_display', 'custom_vehicle_no', 'custom_driver_contact_no',
+					'supplier_name', 'contact_display', 'contact_mobile', 'address_display',
+					'shipping_address_display', 'custom_vehicle_no', 'custom_driver_contact_no',
 					'custom_estimated_arrival', 'total_qty', 'total', 'discount_amount',
 					'total_taxes_and_charges', 'grand_total', 'custom_approval_status',
 					'custom_approval_action_by', 'custom_approval_datetime',
 					'custom_approval_remarks',
 				].forEach((f) => me._set(f, doc[f]));
 
+				// The page does not store the vendor's contact and addresses on the order, so a
+				// reopened PO reads them from the Supplier again instead of showing blanks.
+				if (doc.supplier && !doc.contact_display && !doc.address_display) {
+					me.fetch_supplier(doc.supplier);
+				}
+				// Until a line is edited the summary shows the ERP's saved figures.
+				me._summary_from_doc = true;
 				me.items = (doc.items || []).map((row) => Object.assign({}, row));
 				me.redraw_items();
 				me.render_approval_log();
@@ -461,6 +576,11 @@ var PurchaseOrderEntry = class {
 	make_actions() {
 		const me = this;
 		const $bar = this.wrapper.find('.po-actionbar').empty();
+		// The approval buttons arrive asynchronously. When two renders run close together,
+		// both empty the bar before either reply lands and both replies then append, giving
+		// "Save | Submit for Approval | Print | Submit for Approval | Print". Each render takes
+		// a token, and only the latest one may add its buttons.
+		const token = (this._actions_token = (this._actions_token || 0) + 1);
 		const doc = this.doc || {};
 		const status = doc.custom_approval_status || '';
 		const editable = cint(doc.docstatus) === 0 && status !== 'Pending Approval';
@@ -479,6 +599,7 @@ var PurchaseOrderEntry = class {
 				method: 'alpinos.purchase.purchase_order_approval.get_available_actions',
 				args: { purchase_order: this.docname },
 				callback(r) {
+					if (token !== me._actions_token) return;
 					const actions = (r.message && r.message.actions) || [];
 					actions.forEach((a) => {
 						btn(__(a.action), 'btn-primary', () => me.run_action(a.action));
@@ -610,6 +731,11 @@ var PurchaseOrderEntry = class {
 			callback(r) {
 				if (!r.message) return;
 				me._toast(__('Purchase Order {0} created', [r.message.name]), 'green');
+				// Claim the name BEFORE changing the route. set_route re-enters
+				// handle_route_entry, which loads any name that is not already this.docname,
+				// so a new order was loaded twice -- and the two renders of the action bar
+				// each added "Submit for Approval | Print".
+				me.docname = r.message.name;
 				frappe.set_route('purchase_order_entry', r.message.name);
 				me.load(r.message.name);
 			},
