@@ -394,7 +394,8 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-au-damage-filter'),
 			render_input: true,
 		});
-		// reveals Dispatched / Cancelled / Rejected (warehouse view) and all channels; default off
+		// reveals finished (Dispatched / Forced Dispatched / Completed / Forced Completed),
+		// Cancelled and Rejected orders (warehouse view) and all channels; default off
 		this._filter_fields.show_all = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Check',

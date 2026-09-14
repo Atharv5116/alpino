@@ -1997,8 +1997,9 @@ def get_sales_order_entry_list(
 		filters["transaction_date"] = ["<=", td]
 
 	# Warehouse Manager / Admin (without a sales/admin role) see every stage except Draft;
-	# Dispatched/Cancelled/Rejected are hidden unless "Show All". An explicit UI status
-	# filter is respected.
+	# finished orders (Dispatched, Forced Dispatched, Completed, Forced Completed) and
+	# Cancelled / Rejected ones are hidden unless "Show All" (Changes(HP) #17, #37). An
+	# explicit UI status filter is respected.
 	_roles = set(frappe.get_roles())
 	_warehouse_roles = {"Warehouse Manager", "Warehouse Admin"}
 	_override_roles = {
@@ -2012,7 +2013,10 @@ def get_sales_order_entry_list(
 		if "custom_workflow_status" not in filters:  # respect an explicit UI status filter
 			_hidden = ["Draft"]  # Draft is never shown to the warehouse
 			if not show_all:
-				_hidden += ["Dispatched", "Cancelled", "Rejected"]
+				_hidden += [
+					"Dispatched", "Forced Dispatched", "Completed", "Forced Completed",
+					"Cancelled", "Rejected",
+				]
 			filters["custom_workflow_status"] = ["not in", _hidden]
 
 	or_filters = None

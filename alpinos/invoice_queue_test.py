@@ -203,9 +203,14 @@ def _names(rows):
 def run():
 	R.clear()
 	frappe.set_user("Administrator")
+	# Some code under test commits (the invoice ZIP marks orders downloaded). A commit in
+	# the middle would make the fixtures permanent, so commits are ignored while it runs.
+	real_commit = frappe.db.commit
+	frappe.db.commit = lambda *args, **kwargs: None
 	try:
 		_run()
 	finally:
+		frappe.db.commit = real_commit
 		# Nothing this suite wrote survives it, including the role changes.
 		frappe.db.rollback()
 		for email in list(_TOUCHED_USERS):

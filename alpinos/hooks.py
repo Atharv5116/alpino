@@ -455,7 +455,10 @@ doc_events = {
 			"alpinos.workflow_engine.pick_list_after_insert",
 			"alpinos.stock_reservation.reserve_for_pick_list",
 		],
-		"on_update": "alpinos.workflow_engine.pick_list_on_update",
+		"on_update": [
+			"alpinos.workflow_engine.pick_list_on_update",
+			"alpinos.dispatch_date_sync.pick_list_on_update",
+		],
 		"on_submit": [
 			"alpinos.workflow_engine.pick_list_on_submit",
 			# An order with no Delivery Note yet is valued from its pick, so the figure
@@ -464,6 +467,7 @@ doc_events = {
 		],
 		"on_update_after_submit": [
 			"alpinos.after_submit_sync.pick_list_on_update_after_submit",
+			"alpinos.dispatch_date_sync.pick_list_on_update_after_submit",
 			"alpinos.so_invoice_value.refresh_from_pick_list",
 		],
 		"on_cancel": [
@@ -486,9 +490,13 @@ doc_events = {
 			"alpinos.stock_reservation.release_leftover_after_delivery_note",
 			"alpinos.so_invoice_value.refresh_from_delivery_note",
 		],
-		"on_update": "alpinos.after_submit_sync.delivery_note_on_update_draft",
+		"on_update": [
+			"alpinos.after_submit_sync.delivery_note_on_update_draft",
+			"alpinos.dispatch_date_sync.delivery_note_on_update",
+		],
 		"on_update_after_submit": [
 			"alpinos.after_submit_sync.delivery_note_on_update_after_submit",
+			"alpinos.dispatch_date_sync.delivery_note_on_update_after_submit",
 			"alpinos.so_invoice_value.refresh_from_delivery_note",
 		],
 		"on_cancel": [
