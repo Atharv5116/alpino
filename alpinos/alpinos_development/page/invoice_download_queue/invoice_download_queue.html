@@ -29,6 +29,12 @@
 .invoice-download-queue .idq-check-col { width: 30px; text-align: center; }
 
 .invoice-download-queue .idq-num { text-align: right; }
+/* Undispatched Items / Qty: kept narrow, the full list opens in a pop-up. */
+.invoice-download-queue .idq-table td.idq-und { max-width: 170px; width: 170px; }
+.invoice-download-queue .idq-table th[data-key="undispatched"] { white-space: normal; min-width: 110px; max-width: 170px; }
+.invoice-download-queue .idq-und-link { display: inline-flex; align-items: center; gap: 4px; max-width: 160px; color: var(--text-color); }
+.invoice-download-queue .idq-und-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.invoice-download-queue .idq-und-more { flex: 0 0 auto; font-size: 11px; padding: 0 5px; border-radius: 8px; background: var(--bg-gray, #eceff1); color: var(--text-muted); }
 .invoice-download-queue .idq-empty { padding: 26px 12px; text-align: center; color: var(--text-muted); }
 
 /* Column picker: what is shown (ordered) on the left, what can be added on the right. */
@@ -67,6 +73,7 @@
 		<div class="idq-f fld-customer-po-no"></div>
 		<div class="idq-f fld-po-date"></div>
 		<div class="idq-f wide fld-customer"></div>
+		<div class="idq-f fld-created-by"></div>
 		<div class="idq-f fld-invoice-id"></div>
 		<div class="idq-f fld-lr-number"></div>
 		<div class="idq-f fld-state"></div>

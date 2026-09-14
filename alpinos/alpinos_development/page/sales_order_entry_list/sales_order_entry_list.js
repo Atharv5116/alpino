@@ -173,7 +173,7 @@ var SalesOrderEntryListPage = class {
 		}
 		// Only for someone the queue will let in, or the button leads to "Not permitted".
 		if ((frappe.boot.page_info || {})['invoice-download-queue']) {
-			this.page.add_inner_button(__('Pending Invoices'), () =>
+			this.page.add_inner_button(__('Order Fulfilment Report'), () =>
 				frappe.set_route('invoice-download-queue')
 			);
 		}

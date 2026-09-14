@@ -1,5 +1,5 @@
 /**
- * Invoice Download Queue.
+ * Order Fulfilment Report (route invoice-download-queue; renamed in Changes(HP) #41).
  *
  * THE FILES A DOWNLOAD PRODUCES ARE UNCHANGED. The per-row SO / PL / INV links and the
  * Club Downloads still call alpinos.sales_order_api.download_order_bundle, and Download
@@ -29,7 +29,7 @@ var IDQ_GROUP_ORDER = ['Report', 'Sales Order', 'Pick List', 'Delivery Note', 'P
 frappe.pages['invoice-download-queue'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __('Invoice Download Queue'),
+		title: __('Order Fulfilment Report'),
 		single_column: true,
 	});
 	page.main.html(frappe.render_template('invoice_download_queue'));
@@ -184,6 +184,18 @@ var InvoiceDownloadQueue = class {
 		});
 		this._customer_ctl = cust;
 
+		// Changes(HP) #41: who created the Sales Order. Offers only users who created
+		// orders this user may see, in the chosen channel.
+		mk('.fld-created-by', {
+			fieldtype: 'Link', fieldname: 'created_by', label: __('Created By'), options: 'User',
+			get_query() {
+				return {
+					query: 'alpinos.invoice_queue_api.creator_link_query',
+					filters: { channel: me._filters.channel ? me._filters.channel.get_value() || '' : '' },
+				};
+			},
+		});
+
 		await this.refresh_filter_options();
 	}
 
@@ -287,6 +299,8 @@ var InvoiceDownloadQueue = class {
 				if (seq !== me._load_seq) return;
 				if (r.exc || !r.message) return;
 				me._rows = r.message.rows || [];
+				me._rows_by_so = {};
+				me._rows.forEach((row) => { me._rows_by_so[row.sales_order] = row; });
 				me._total = cint(r.message.total);
 				// The server may have dropped a column this user may not see.
 				if (Array.isArray(r.message.columns) && r.message.columns.length) {
@@ -509,7 +523,8 @@ var InvoiceDownloadQueue = class {
 			const cells = this._columns.map((key) => {
 				const meta = this._catalogue[key] || {};
 				const num = ['Currency', 'Float', 'Int'].indexOf(meta.type) !== -1;
-				return `<td class="${num ? 'idq-num' : ''}">${this.cell(key, d)}</td>`;
+				const cls = key === 'undispatched' ? 'idq-und' : num ? 'idq-num' : '';
+				return `<td class="${cls}">${this.cell(key, d)}</td>`;
 			}).join('');
 			const ticked = this._picked.has(d.sales_order) ? 'checked' : '';
 			tb.append(
@@ -530,6 +545,7 @@ var InvoiceDownloadQueue = class {
 		if (key === 'sales_order') {
 			return `<a href="/app/sales-order-entry-view/${encodeURIComponent(d.sales_order)}"><strong>${esc(d.sales_order)}</strong></a>`;
 		}
+		if (key === 'undispatched') return this.undispatched_cell(d);
 		if (key === 'pick_list' && v) {
 			return `<a href="/app/pick_list_entry/${encodeURIComponent(v)}">${esc(v)}</a>`;
 		}
@@ -542,6 +558,40 @@ var InvoiceDownloadQueue = class {
 			return `<span class="indicator-pill ${v === 'Yes' ? 'green' : 'gray'}">${esc(v)}</span>`;
 		}
 		return esc(v);
+	}
+
+	/**
+	 * Changes(HP) #41: a narrow column. One item shows as it is (ellipsed if long); several
+	 * show the first and a count. Clicking opens every item and quantity for the order.
+	 */
+	undispatched_cell(d) {
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const items = d.undispatched_items || [];
+		if (!items.length) return '<span class="text-muted">&mdash;</span>';
+		const first = `${items[0].item_code} (${items[0].qty})`;
+		const more = items.length > 1 ? ` <span class="idq-und-more">+${items.length - 1}</span>` : '';
+		return `<a href="#" class="idq-und-link" data-so="${esc(d.sales_order)}" title="${esc(__('Show all undispatched items'))}">` +
+			`<span class="idq-und-text">${esc(first)}</span>${more}</a>`;
+	}
+
+	show_undispatched(so) {
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const d = (this._rows_by_so || {})[so];
+		const items = (d && d.undispatched_items) || [];
+		const total = items.reduce((sum, i) => sum + flt(i.qty), 0);
+		const rows = items.map((i, idx) => `<tr><td>${idx + 1}</td><td>${esc(i.item_code)}</td><td>${esc(i.item_name)}</td>` +
+			`<td class="text-right">${esc(format_number(i.qty, null, flt(i.qty) % 1 ? 2 : 0))}</td></tr>`).join('');
+		const dialog = new frappe.ui.Dialog({
+			title: __('Undispatched Items: {0}', [so]),
+			fields: [{ fieldname: 'body', fieldtype: 'HTML' }],
+		});
+		dialog.fields_dict.body.$wrapper.html(
+			`<table class="table table-bordered idq-und-table"><thead><tr><th>#</th><th>${__('Item Code')}</th>` +
+			`<th>${__('Item Name')}</th><th class="text-right">${__('Undispatched Qty')}</th></tr></thead>` +
+			`<tbody>${rows}</tbody><tfoot><tr><td colspan="3" class="text-right"><strong>${__('Total')}</strong></td>` +
+			`<td class="text-right"><strong>${esc(format_number(total, null, total % 1 ? 2 : 0))}</strong></td></tr></tfoot></table>`
+		);
+		dialog.show();
 	}
 
 	// ============================ DOWNLOAD COLUMN ============================
@@ -628,6 +678,10 @@ var InvoiceDownloadQueue = class {
 			this._picked.clear();
 			w.find('.idq-row-select').prop('checked', false);
 			this.update_selection();
+		});
+		w.on('click', '.idq-und-link', (e) => {
+			e.preventDefault();
+			this.show_undispatched($(e.currentTarget).data('so'));
 		});
 		w.on('click', '.idq-dl', (e) => {
 			e.preventDefault();
@@ -732,7 +786,7 @@ var InvoiceDownloadQueue = class {
 				const data = [r.message.header].concat(r.message.rows);
 				// The Download column is not in the payload at all: the server never
 				// offers it as data, so it cannot reach a file.
-				frappe.tools.downloadify(data, null, 'Invoice Download Queue');
+				frappe.tools.downloadify(data, null, 'Order Fulfilment Report');
 				frappe.show_alert({
 					message: __('Exported {0} row(s)', [r.message.rows.length]),
 					indicator: 'green',
