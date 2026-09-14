@@ -928,6 +928,12 @@ def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
 	if not names:
 		frappe.throw(_("Please select at least one Sales Order."))
 
+	# Only the Invoice Download Queue calls this, so its channel rule applies to a
+	# hand-typed URL too. The files produced are unchanged.
+	from alpinos.invoice_queue_api import assert_orders_in_channel
+
+	assert_orders_in_channel(names)
+
 	wanted = [p.strip().lower() for p in str(parts or "").split(",") if p.strip()]
 	wanted = [p for p in wanted if p in BUNDLE_PARTS]
 	if not wanted:

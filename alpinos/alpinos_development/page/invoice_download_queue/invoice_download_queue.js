@@ -1,22 +1,30 @@
 /**
  * Invoice Download Queue.
  *
- * THE DOWNLOAD LOGIC IN THIS FILE IS UNCHANGED. `_download`, `download_bundle`,
- * `download_selected`, `download_all`, the per-row SO / PL / INV links and the
- * Club Download buttons behave exactly as they did; everything new is built around
- * them. The Download column is pinned first and is neither sortable nor movable,
- * because it is an action rather than data.
+ * THE FILES A DOWNLOAD PRODUCES ARE UNCHANGED. The per-row SO / PL / INV links and the
+ * Club Downloads still call alpinos.sales_order_api.download_order_bundle, and Download
+ * Selected / Download All still produce alpinos.sales_order_api's invoice ZIP. The only
+ * difference is that both now pass a channel check first, so a hand-edited download
+ * URL cannot fetch an order from a channel the user may not see.
  *
  * Rows, columns, filters, sorting and export all come from
  * alpinos.invoice_queue_api, which enforces the channel rules on the DATA. Nothing
  * here decides who may see what: the page only draws what the server returns, so a
  * saved view or a hand-edited URL cannot widen access.
+ *
+ * Filter controls update their input a tick AFTER set_value() is called, and the list
+ * reads the inputs. Every path that sets filters and then reloads therefore waits for
+ * the set to finish, or the list loads with the previous values.
  */
 
 // var, not const: desk pages are re-evaluated on navigation and a re-declared const
 // blanks the page.
 var IDQ_ROUTE = 'invoice-download-queue';
 var IDQ_PAGE_LENGTH = 50;
+// Same user-settings key the page used before the rewrite, so a user last-used filters
+// carry over.
+var IDQ_SETTINGS_KEY = 'invoice_download_queue';
+var IDQ_GROUP_ORDER = ['Report', 'Sales Order', 'Pick List', 'Delivery Note', 'Post Dispatch'];
 
 frappe.pages['invoice-download-queue'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
@@ -29,7 +37,7 @@ frappe.pages['invoice-download-queue'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['invoice-download-queue'].on_page_show = function (wrapper) {
-	if (wrapper.idq) wrapper.idq.load_list();
+	if (wrapper.idq && wrapper.idq._ready) wrapper.idq.load_list();
 };
 
 var InvoiceDownloadQueue = class {
@@ -45,6 +53,12 @@ var InvoiceDownloadQueue = class {
 		this._start = 0;
 		this._total = 0;
 		this._access = { locked: false, selectable: [] };
+		this._settings = {};
+		// Ticked orders, by name. Kept across pages and sorts, because the queue is paged
+		// and a selection used to span every row; cleared when the filters change.
+		this._picked = new Set();
+		this._load_seq = 0;
+		this._ready = false;
 
 		this.page.add_inner_button(__('Refresh'), () => this.load_list());
 		this.page.add_inner_button(__('Columns'), () => this.open_column_picker());
@@ -52,7 +66,7 @@ var InvoiceDownloadQueue = class {
 		this.page.add_inner_button(__('Save View'), () => this.save_view(), __('Views'));
 		this.page.add_inner_button(__('Manage Views'), () => this.open_view_manager(), __('Views'));
 
-		// ---- unchanged download entry points ----
+		// ---- download entry points ----
 		this.btn_dl_selected = this.page.add_inner_button(__('Download Selected'), () => this.download_selected());
 		this.page.add_inner_button(__('Download All'), () => this.download_all());
 		this.page.add_inner_button(__('SO + Invoice'), () => this.download_bundle('so,invoice'), __('Club Download'));
@@ -64,43 +78,55 @@ var InvoiceDownloadQueue = class {
 
 	// ------------------------------------------------------------ bootstrap
 
-	bootstrap() {
-		const me = this;
-		frappe.call({
-			method: 'alpinos.invoice_queue_api.get_columns',
-			callback(r) {
-				if (!r.message) return;
-				(r.message.available || []).forEach((c) => { me._catalogue[c.key] = c; });
-				me._columns = r.message.default.slice();
-				frappe.call({
-					method: 'alpinos.invoice_queue_api.get_access',
-					callback(a) {
-						if (!a.message) return;
-						me._access = a.message;
-						me.setup_filters();
-						me.apply_default_view();
-					},
-				});
-			},
-		});
+	async bootstrap() {
+		try {
+			const [cols, access, settings, views] = await Promise.all([
+				frappe.call({ method: 'alpinos.invoice_queue_api.get_columns' }),
+				frappe.call({ method: 'alpinos.invoice_queue_api.get_access' }),
+				frappe.model.user_settings.get(IDQ_SETTINGS_KEY).catch(() => ({})),
+				frappe.call({ method: 'alpinos.invoice_queue_api.list_views' }),
+			]);
+			if (!cols.message || !access.message) return;
+			(cols.message.available || []).forEach((c) => { this._catalogue[c.key] = c; });
+			this._default_columns = cols.message.default.slice();
+			this._columns = this._default_columns.slice();
+			this._access = access.message;
+			this._settings = settings || {};
+			frappe.model.user_settings[IDQ_SETTINGS_KEY] = this._settings;
+			this._views = views.message || [];
+
+			await this.setup_filters();
+
+			// A default saved view wins; otherwise pick up where the user left off.
+			const def = this._views.find((v) => cint(v.is_default));
+			this._ready = true;
+			if (def) {
+				await this._apply_view(def);
+			} else if (this._settings.last_state) {
+				await this._apply_state(this._settings.last_state);
+			} else if (this._settings.last_filters) {
+				await this._apply_state({ filters: this._legacy_filters(this._settings.last_filters) });
+			} else {
+				this.load_list();
+			}
+		} catch (e) {
+			console.error(e);
+		}
 	}
 
-	apply_default_view() {
-		const me = this;
-		frappe.call({
-			method: 'alpinos.invoice_queue_api.list_views',
-			callback(r) {
-				me._views = r.message || [];
-				const def = me._views.find((v) => cint(v.is_default));
-				if (def) me._apply_view(def);
-				else me.load_list();
-			},
-		});
+	/** Filters saved by the page before the rewrite used single dates. */
+	_legacy_filters(old) {
+		const f = Object.assign({}, old || {});
+		if (f.order_date) { f.order_date_from = f.order_date; f.order_date_to = f.order_date; }
+		if (f.dispatch_date) { f.dispatch_date_from = f.dispatch_date; f.dispatch_date_to = f.dispatch_date; }
+		delete f.order_date;
+		delete f.dispatch_date;
+		return f;
 	}
 
 	// -------------------------------------------------------------- filters
 
-	setup_filters() {
+	async setup_filters() {
 		const w = this.wrapper;
 		const mk = (sel, df) => {
 			const c = frappe.ui.form.make_control({
@@ -115,15 +141,17 @@ var InvoiceDownloadQueue = class {
 		// Channel first: the role decides whether it is the user to change.
 		const chan = mk('.fld-channel', {
 			fieldtype: 'Select', fieldname: 'channel', label: __('Channel'),
-			options: [''].concat(this._access.selectable || []).join('\n'),
+			options: (this._access.locked ? [] : ['']).concat(this._access.selectable || []).join('\n'),
 		});
-		if (this._access.default_channel) chan.set_value(this._access.default_channel);
+		if (this._access.default_channel) await chan.set_value(this._access.default_channel);
 		if (this._access.locked) {
 			chan.df.read_only = 1;
 			chan.refresh();
 			chan.$wrapper.attr(
 				'title',
-				__('Your role fixes this page to the {0} channel.', [this._access.default_channel])
+				this._access.default_channel === 'Offline'
+					? __('Your role fixes this page to the Offline channel, General Trade included.')
+					: __('Your role fixes this page to the {0} channel.', [this._access.default_channel])
 			);
 		} else {
 			// Changing the channel narrows the customer list, and a customer from the
@@ -138,6 +166,7 @@ var InvoiceDownloadQueue = class {
 		mk('.fld-customer-type', { fieldtype: 'Select', fieldname: 'customer_type', label: __('Customer Type'), options: '' });
 		mk('.fld-sales-order', { fieldtype: 'Data', fieldname: 'sales_order', label: __('Sales Order ID') });
 		mk('.fld-customer-po-no', { fieldtype: 'Data', fieldname: 'customer_po_no', label: __('Customer PO No.') });
+		mk('.fld-po-date', { fieldtype: 'Date', fieldname: 'po_date', label: __('PO Date') });
 		mk('.fld-invoice-id', { fieldtype: 'Data', fieldname: 'invoice_id', label: __('Invoice Number') });
 		mk('.fld-lr-number', { fieldtype: 'Data', fieldname: 'lr_number', label: __('LR No.') });
 		mk('.fld-state', { fieldtype: 'Select', fieldname: 'state', label: __('State'), options: '' });
@@ -149,57 +178,56 @@ var InvoiceDownloadQueue = class {
 			get_query() {
 				return {
 					query: 'alpinos.invoice_queue_api.customer_link_query',
-					filters: { channel: me._filters.channel ? me._filters.channel.get_value() : '' },
+					filters: { channel: me._filters.channel ? me._filters.channel.get_value() || '' : '' },
 				};
 			},
 		});
 		this._customer_ctl = cust;
 
-		this.refresh_filter_options();
+		await this.refresh_filter_options();
 	}
 
-	refresh_filter_options() {
-		const me = this;
-		frappe.call({
+	async refresh_filter_options() {
+		const r = await frappe.call({
 			method: 'alpinos.invoice_queue_api.get_filter_options',
-			args: { channel: this._filters.channel ? this._filters.channel.get_value() : '' },
-			callback(r) {
-				if (!r.message) return;
-				const set = (key, values) => {
-					const c = me._filters[key];
-					if (!c) return;
-					const keep = c.get_value();
-					c.df.options = [''].concat(values).join('\n');
-					c.refresh();
-					if (keep && values.indexOf(keep) !== -1) c.set_value(keep);
-				};
-				set('customer_type', r.message.customer_types || []);
-				set('state', r.message.states || []);
-			},
+			args: { channel: this._filters.channel ? this._filters.channel.get_value() || '' : '' },
 		});
+		if (!r || !r.message) return;
+		const set = async (key, values) => {
+			const c = this._filters[key];
+			if (!c) return;
+			const keep = c.get_value();
+			c.df.options = [''].concat(values).join('\n');
+			c.refresh();
+			if (keep && values.indexOf(keep) !== -1) await c.set_value(keep);
+		};
+		await set('customer_type', r.message.customer_types || []);
+		await set('state', r.message.states || []);
 	}
 
-	on_channel_change() {
-		const me = this;
+	async on_channel_change() {
+		const channel = this._filters.channel.get_value() || '';
 		const chosen = this._customer_ctl && this._customer_ctl.get_value();
+		this._picked.clear();
 		this.refresh_filter_options();
-		if (!chosen) { this.load_list(); return; }
-		// A customer that does not belong to the newly chosen channel is cleared
-		// rather than left filtering the list down to nothing.
-		frappe.call({
-			method: 'alpinos.invoice_queue_api.customer_in_channel',
-			args: { customer: chosen, channel: this._filters.channel.get_value() },
-			callback(r) {
-				if (r.message === false) {
-					me._customer_ctl.set_value('');
-					frappe.show_alert({
-						message: __('Customer cleared: not in the selected Channel'),
-						indicator: 'orange',
-					});
-				}
-				me.load_list();
-			},
-		});
+		if (chosen) {
+			// A customer that does not belong to the newly chosen channel is cleared
+			// rather than left filtering the list down to nothing. Wait for the clear to
+			// land before reloading, or the reload still sends the old customer.
+			const r = await frappe.call({
+				method: 'alpinos.invoice_queue_api.customer_in_channel',
+				args: { customer: chosen, channel: channel },
+			});
+			if (r && r.message === false) {
+				await this._customer_ctl.set_value('');
+				frappe.show_alert({
+					message: __('Customer cleared: not in the selected Channel'),
+					indicator: 'orange',
+				});
+			}
+		}
+		this._start = 0;
+		this.load_list();
 	}
 
 	_args() {
@@ -211,11 +239,37 @@ var InvoiceDownloadQueue = class {
 		return a;
 	}
 
+	/** Set every filter to `values` (blank where absent) and wait until they have landed. */
+	_set_filters(values) {
+		const f = values || {};
+		return Promise.all(
+			Object.keys(this._filters).map((k) => {
+				// A locked Channel is the role talking, not a view or a remembered state.
+				if (k === 'channel' && this._access.locked) return Promise.resolve();
+				const c = this._filters[k];
+				return c ? this._set_control(c, f[k] || '') : Promise.resolve();
+			})
+		);
+	}
+
+	/**
+	 * set_value() resolves before a Customer box shows anything: a Link fetches the
+	 * customer's title and only then writes the input, and the list reads the input.
+	 * Waiting for the title too means the next load sends the customer.
+	 */
+	async _set_control(c, value) {
+		await c.set_value(value);
+		if (value && c.df.fieldtype === 'Link' && typeof c.set_link_title === 'function') {
+			await c.set_link_title(value);
+		}
+	}
+
 	// ----------------------------------------------------------------- load
 
 	load_list() {
 		const me = this;
 		if (!this._columns.length) return;
+		const seq = ++this._load_seq;
 		frappe.call({
 			method: 'alpinos.invoice_queue_api.get_rows',
 			args: {
@@ -229,13 +283,20 @@ var InvoiceDownloadQueue = class {
 			freeze: true,
 			freeze_message: __('Loading...'),
 			callback(r) {
+				// A slower earlier request must not overwrite a newer one.
+				if (seq !== me._load_seq) return;
 				if (r.exc || !r.message) return;
 				me._rows = r.message.rows || [];
 				me._total = cint(r.message.total);
+				// The server may have dropped a column this user may not see.
+				if (Array.isArray(r.message.columns) && r.message.columns.length) {
+					me._columns = r.message.columns;
+				}
 				me.render_header();
 				me.render_rows(me._rows);
 				me.update_selection();
 				me.render_pager();
+				me._remember_state();
 			},
 		});
 	}
@@ -245,26 +306,58 @@ var InvoiceDownloadQueue = class {
 		this.wrapper.find('.idq-range').text(
 			this._total ? __('Showing {0} to {1} of {2}', [this._start + 1, to, this._total]) : ''
 		);
+		this.wrapper.find('.btn-idq-prev').prop('disabled', this._start <= 0);
+		this.wrapper.find('.btn-idq-next').prop('disabled', this._start + IDQ_PAGE_LENGTH >= this._total);
+	}
+
+	/** Last-used filters, columns and sort, restored next time when no default view exists. */
+	_remember_state() {
+		const state = {
+			filters: this._args(),
+			columns: this._columns,
+			sort_field: this._sort_field,
+			sort_dir: this._sort_dir,
+		};
+		if (this._access.locked) delete state.filters.channel;
+		if (JSON.stringify(this._settings.last_state || {}) === JSON.stringify(state)) return;
+		// update(), not save(): save() MERGES object values, so a filter the user has
+		// since cleared would survive in the stored state.
+		this._settings = Object.assign({}, this._settings, { last_state: state });
+		delete this._settings.last_filters;
+		frappe.model.user_settings.update(IDQ_SETTINGS_KEY, this._settings);
+	}
+
+	async _apply_state(state) {
+		const s = state || {};
+		const cols = (s.columns || []).filter((k) => this._catalogue[k]);
+		if (cols.length) this._columns = cols;
+		if (s.sort_field && this._catalogue[s.sort_field]) this._sort_field = s.sort_field;
+		if (s.sort_dir) this._sort_dir = s.sort_dir === 'asc' ? 'asc' : 'desc';
+		await this._set_filters(s.filters || {});
+		this._picked.clear();
+		this._start = 0;
+		this.load_list();
 	}
 
 	// -------------------------------------------------------------- columns
 
 	render_header() {
 		const tr = this.wrapper.find('.idq-table thead tr').empty();
-		tr.append('<th class="idq-check-col"><input type="checkbox" class="idq-select-all"></th>');
+		tr.append('<th class="idq-check-col"><input type="checkbox" class="idq-select-all" title="' +
+			frappe.utils.escape_html(__('Select every invoice matching the filters')) + '"></th>');
 		// Download is pinned first and carries no sort: there is nothing in it to order by.
 		tr.append(`<th class="idq-dl-col">${__('Download')}</th>`);
 		this._columns.forEach((key) => {
 			const meta = this._catalogue[key] || { label: key, sortable: true };
+			const sortable = meta.sortable !== false;
 			const sorted = this._sort_field === key;
-			const arrow = sorted ? (this._sort_dir === 'asc' ? '&#9650;' : '&#9660;') : '&#9660;';
-			const cls = [
-				meta.sortable === false ? '' : 'idq-sortable',
-				sorted ? 'idq-sorted' : '',
-			].join(' ');
+			const arrow = sorted ? (this._sort_dir === 'asc' ? '&uarr;' : '&darr;') : '&#8645;';
+			const cls = [sortable ? 'idq-sortable' : '', sorted ? 'idq-sorted' : ''].join(' ');
 			tr.append(
-				`<th class="${cls}" data-key="${frappe.utils.escape_html(key)}">${frappe.utils.escape_html(meta.label)}` +
-				(meta.sortable === false ? '' : `<span class="idq-sort-arrow">${arrow}</span>`) +
+				`<th class="${cls}" data-key="${frappe.utils.escape_html(key)}"` +
+				(sortable ? ` title="${frappe.utils.escape_html(__('Click to sort'))}"` : '') + '>' +
+				frappe.utils.escape_html(meta.label) +
+				(sortable ? `<span class="idq-sort-arrow">${arrow}</span>` : '') +
 				'</th>'
 			);
 		});
@@ -272,68 +365,128 @@ var InvoiceDownloadQueue = class {
 
 	open_column_picker() {
 		const me = this;
+		let shown = this._columns.slice();
 		const d = new frappe.ui.Dialog({
 			title: __('Columns'),
-			size: 'large',
+			size: 'extra-large',
 			fields: [{ fieldname: 'holder', fieldtype: 'HTML' }],
 			primary_action_label: __('Apply'),
 			primary_action() {
 				const chosen = [];
-				d.$wrapper.find('.idq-col-item:not(.idq-locked)').each(function () {
-					if ($(this).find('input').prop('checked')) chosen.push($(this).data('key'));
+				d.$wrapper.find('.idq-shown-list .idq-col-item').each(function () {
+					chosen.push($(this).data('key'));
 				});
+				if (!chosen.length) {
+					frappe.msgprint(__('Keep at least one column.'));
+					return;
+				}
 				d.hide();
-				me._columns = chosen.length ? chosen : me._columns;
+				me._columns = chosen;
 				me._start = 0;
 				me.load_list();
 			},
+			secondary_action_label: __('Reset to default'),
+			secondary_action() {
+				shown = me._default_columns.slice();
+				draw();
+			},
 		});
 
-		const $box = $('<div></div>');
-		$box.append(
-			`<p class="text-muted" style="font-size:12px;">${__(
-				'Tick to show, drag to reorder. Download is an action, so it always stays first.'
-			)}</p>`
-		);
-		$box.append(
-			'<div class="idq-col-item idq-locked" data-key="download">' +
-			'<span class="idq-col-handle">&#8942;&#8942;</span>' +
-			`<span class="idq-col-label">${__('Download')}</span>` +
-			`<span class="text-muted" style="font-size:11px;">${__('pinned')}</span></div>`
-		);
+		const esc = frappe.utils.escape_html;
+		const $box = $(`
+			<div class="idq-picker">
+				<div class="idq-picker-col">
+					<div class="idq-picker-title">${__('Shown, in order')}</div>
+					<p class="text-muted idq-picker-hint">${__('Drag to reorder. Download is an action, so it always stays first.')}</p>
+					<div class="idq-col-item idq-locked"><span class="idq-col-handle">&#8942;&#8942;</span>
+						<span class="idq-col-label">${__('Download')}</span>
+						<span class="text-muted" style="font-size:11px;">${__('pinned')}</span></div>
+					<div class="idq-shown-list"></div>
+				</div>
+				<div class="idq-picker-col">
+					<div class="idq-picker-title">${__('Add a column')}</div>
+					<p class="text-muted idq-picker-hint">${__(
+						'Fields from the Sales Order, Pick List, Delivery Note and Post Dispatch. An order with several Pick Lists, Delivery Notes or Post Dispatch records shows amounts and quantities added up, the latest date, and each distinct text value.'
+					)}</p>
+					<input type="text" class="form-control input-sm idq-picker-search" placeholder="${esc(__('Search columns'))}">
+					<div class="idq-available"></div>
+				</div>
+			</div>`);
 
-		const $list = $('<div class="idq-col-list"></div>').appendTo($box);
-		const ordered = this._columns.concat(
-			Object.keys(this._catalogue).filter((k) => this._columns.indexOf(k) === -1)
-		);
-		ordered.forEach((key) => {
-			const meta = this._catalogue[key];
-			if (!meta) return;
-			const on = this._columns.indexOf(key) !== -1 ? 'checked' : '';
-			$list.append(
-				`<div class="idq-col-item" draggable="true" data-key="${frappe.utils.escape_html(key)}">
-					<span class="idq-col-handle">&#8942;&#8942;</span>
-					<input type="checkbox" ${on}>
-					<span class="idq-col-label">${frappe.utils.escape_html(meta.label)}</span>
-				</div>`
-			);
+		const draw = () => {
+			const $shown = $box.find('.idq-shown-list').empty();
+			shown.forEach((key) => {
+				const meta = this._catalogue[key];
+				if (!meta) return;
+				$shown.append(
+					`<div class="idq-col-item" draggable="true" data-key="${esc(key)}">
+						<span class="idq-col-handle">&#8942;&#8942;</span>
+						<span class="idq-col-label">${esc(meta.label)}</span>
+						<a href="#" class="idq-col-remove" title="${esc(__('Remove'))}">&times;</a>
+					</div>`
+				);
+			});
+			drawAvailable();
+		};
+
+		const drawAvailable = () => {
+			const term = ($box.find('.idq-picker-search').val() || '').toLowerCase().trim();
+			const $avail = $box.find('.idq-available').empty();
+			const groups = {};
+			Object.keys(this._catalogue).forEach((key) => {
+				if (shown.indexOf(key) !== -1) return;
+				const meta = this._catalogue[key];
+				if (term && meta.label.toLowerCase().indexOf(term) === -1) return;
+				(groups[meta.group || 'Report'] = groups[meta.group || 'Report'] || []).push(key);
+			});
+			const order = IDQ_GROUP_ORDER.concat(Object.keys(groups).filter((g) => IDQ_GROUP_ORDER.indexOf(g) === -1));
+			let any = false;
+			order.forEach((g) => {
+				const keys = groups[g];
+				if (!keys || !keys.length) return;
+				any = true;
+				$avail.append(`<div class="idq-group-title">${esc(__(g))} <span class="text-muted">(${keys.length})</span></div>`);
+				keys.forEach((key) => {
+					$avail.append(
+						`<div class="idq-add-item" data-key="${esc(key)}"><span class="idq-add-plus">+</span>${esc(this._catalogue[key].label)}</div>`
+					);
+				});
+			});
+			if (!any) $avail.append(`<p class="text-muted" style="font-size:12px;">${__('No matching columns.')}</p>`);
+		};
+
+		$box.on('input', '.idq-picker-search', drawAvailable);
+		$box.on('click', '.idq-add-item', function () {
+			shown.push($(this).data('key'));
+			draw();
+		});
+		$box.on('click', '.idq-col-remove', function (e) {
+			e.preventDefault();
+			const key = $(this).closest('.idq-col-item').data('key');
+			shown = shown.filter((k) => k !== key);
+			draw();
 		});
 
 		// Plain HTML5 drag and drop: no library, and the row order IS the column order.
 		let dragged = null;
-		$list.on('dragstart', '.idq-col-item', function (e) {
+		$box.on('dragstart', '.idq-shown-list .idq-col-item', function (e) {
 			dragged = this;
 			e.originalEvent.dataTransfer.effectAllowed = 'move';
 		});
-		$list.on('dragover', '.idq-col-item', function (e) {
+		$box.on('dragover', '.idq-shown-list .idq-col-item', function (e) {
 			e.preventDefault();
 			if (!dragged || dragged === this) return;
 			const rect = this.getBoundingClientRect();
 			const after = (e.originalEvent.clientY - rect.top) > rect.height / 2;
 			this.parentNode.insertBefore(dragged, after ? this.nextSibling : this);
 		});
-		$list.on('dragend', () => { dragged = null; });
+		$box.on('dragend', () => {
+			dragged = null;
+			shown = [];
+			$box.find('.idq-shown-list .idq-col-item').each(function () { shown.push($(this).data('key')); });
+		});
 
+		draw();
 		d.fields_dict.holder.$wrapper.append($box);
 		d.show();
 	}
@@ -355,10 +508,12 @@ var InvoiceDownloadQueue = class {
 		rows.forEach((d) => {
 			const cells = this._columns.map((key) => {
 				const meta = this._catalogue[key] || {};
-				return `<td class="${meta.type === 'Currency' || meta.type === 'Float' ? 'idq-num' : ''}">${this.cell(key, d)}</td>`;
+				const num = ['Currency', 'Float', 'Int'].indexOf(meta.type) !== -1;
+				return `<td class="${num ? 'idq-num' : ''}">${this.cell(key, d)}</td>`;
 			}).join('');
+			const ticked = this._picked.has(d.sales_order) ? 'checked' : '';
 			tb.append(
-				`<tr><td class="idq-check-col"><input type="checkbox" class="idq-row-select" data-so="${esc(d.sales_order)}"></td>` +
+				`<tr><td class="idq-check-col"><input type="checkbox" class="idq-row-select" data-so="${esc(d.sales_order)}" ${ticked}></td>` +
 				`<td class="idq-dl-col">${this.download_cell(d)}</td>${cells}</tr>`
 			);
 		});
@@ -379,16 +534,17 @@ var InvoiceDownloadQueue = class {
 			return `<a href="/app/pick_list_entry/${encodeURIComponent(v)}">${esc(v)}</a>`;
 		}
 		if (v === null || v === undefined || v === '') return '<span class="text-muted">&mdash;</span>';
-		if (meta.type === 'Date') return esc(frappe.datetime.str_to_user(String(v)));
+		if (meta.type === 'Date' || meta.type === 'Datetime') return esc(frappe.datetime.str_to_user(String(v)));
 		if (meta.type === 'Currency') return format_currency(v);
 		if (meta.type === 'Float') return format_number(v, null, 2);
+		if (meta.type === 'Int') return format_number(v, null, 0);
 		if (key === 'pdf_ready' || key === 'downloaded') {
 			return `<span class="indicator-pill ${v === 'Yes' ? 'green' : 'gray'}">${esc(v)}</span>`;
 		}
 		return esc(v);
 	}
 
-	// ===================== DOWNLOAD COLUMN - UNCHANGED =====================
+	// ============================ DOWNLOAD COLUMN ============================
 	// Changes(HP) #30 "Individual Downloadable files + button": each document on its
 	// own. PL is offered only when a pick list exists and Invoice only once the PDF is
 	// fetched, so a button is never shown for a file that cannot be produced.
@@ -409,13 +565,16 @@ var InvoiceDownloadQueue = class {
 
 	bind_events() {
 		const w = this.wrapper;
-		w.on('click', '.btn-idq-apply', () => { this._start = 0; this.load_list(); });
-		w.on('click', '.btn-idq-clear', () => {
-			Object.keys(this._filters).forEach((k) => {
-				if (k === 'channel' && this._access.locked) return;
-				this._filters[k] && this._filters[k].set_value('');
-			});
+		w.on('click', '.btn-idq-apply', () => {
+			this._picked.clear();
 			this._start = 0;
+			this.load_list();
+		});
+		w.on('click', '.btn-idq-clear', async () => {
+			await this._set_filters({});
+			this._picked.clear();
+			this._start = 0;
+			this.refresh_filter_options();
 			this.load_list();
 		});
 		w.on('click', '.btn-idq-prev', () => {
@@ -436,18 +595,40 @@ var InvoiceDownloadQueue = class {
 				this._sort_dir = this._sort_dir === 'asc' ? 'desc' : 'asc';
 			} else {
 				this._sort_field = key;
-				this._sort_dir = 'desc';
+				this._sort_dir = 'asc';
 			}
 			this._start = 0;
 			this.load_list();
 		});
 
-		// ---- unchanged selection + download wiring ----
+		// ---- selection ----
+		// The header box selects every invoice the filters match, on every page, which is
+		// what it meant when every row was loaded at once.
 		w.on('change', '.idq-select-all', (e) => {
-			w.find('.idq-row-select').prop('checked', $(e.target).prop('checked'));
+			if (!$(e.target).prop('checked')) {
+				this._picked.clear();
+				w.find('.idq-row-select').prop('checked', false);
+				this.update_selection();
+				return;
+			}
+			this._all_filtered((all) => {
+				this._picked = new Set(all);
+				w.find('.idq-row-select').prop('checked', true);
+				this.update_selection();
+			});
+		});
+		w.on('change', '.idq-row-select', (e) => {
+			const so = $(e.target).data('so');
+			if ($(e.target).prop('checked')) this._picked.add(so);
+			else this._picked.delete(so);
 			this.update_selection();
 		});
-		w.on('change', '.idq-row-select', () => this.update_selection());
+		w.on('click', '.btn-idq-clear-selection', (e) => {
+			e.preventDefault();
+			this._picked.clear();
+			w.find('.idq-row-select').prop('checked', false);
+			this.update_selection();
+		});
 		w.on('click', '.idq-dl', (e) => {
 			e.preventDefault();
 			const $a = $(e.currentTarget);
@@ -456,36 +637,37 @@ var InvoiceDownloadQueue = class {
 	}
 
 	_selected() {
-		const names = [];
-		this.wrapper.find('.idq-row-select:checked').each((i, el) => names.push($(el).data('so')));
-		return names;
+		return Array.from(this._picked);
 	}
 
 	update_selection() {
-		const all = this.wrapper.find('.idq-row-select');
-		const checked = this.wrapper.find('.idq-row-select:checked');
-		this.wrapper.find('.idq-select-all').prop('checked', all.length > 0 && checked.length === all.length);
-		const n = checked.length;
-		this.wrapper.find('.idq-count').text(
+		const n = this._picked.size;
+		this.wrapper.find('.idq-select-all').prop('checked', this._total > 0 && n >= this._total);
+		this.wrapper.find('.idq-count').html(
 			// Not "pending": a downloaded row stays in the list now (Changes(HP) #30 MAIN
 			// NOTE), so the count describes what is listed, not what is outstanding.
-			n ? __('{0} selected of {1}', [n, all.length]) : __('{0} invoice(s)', [this._total])
+			n
+				? frappe.utils.escape_html(__('{0} selected of {1}', [n, this._total])) +
+					` <a href="#" class="btn-idq-clear-selection">${__('Clear selection')}</a>`
+				: frappe.utils.escape_html(__('{0} invoice(s)', [this._total]))
 		);
 	}
 
-	// ===================== DOWNLOAD LOGIC - UNCHANGED ======================
+	// ============================== DOWNLOADS ===============================
 
 	_download(names, parts) {
 		if (!names.length) {
 			frappe.msgprint(__('No invoices to download.'));
 			return;
 		}
+		// Same two server functions as before; the ZIP now goes through the queue
+		// door, which checks the channel before handing over to the shared function.
 		const url = parts
 			? '/api/method/alpinos.sales_order_api.download_order_bundle?parts=' +
 				encodeURIComponent(parts) +
 				'&names=' +
 				encodeURIComponent(JSON.stringify(names))
-			: '/api/method/alpinos.sales_order_api.download_sales_invoices_zip?names=' +
+			: '/api/method/alpinos.invoice_queue_api.download_invoices_zip?names=' +
 				encodeURIComponent(JSON.stringify(names));
 		const win = window.open(frappe.urllib.get_full_url(url), '_blank');
 		if (!win) {
@@ -501,8 +683,7 @@ var InvoiceDownloadQueue = class {
 		const names = this._selected();
 		if (names.length) { this._download(names, parts); return; }
 		// "no selection" has always meant EVERYTHING in the current filter. The queue
-		// is paged now, so that set has to be fetched rather than read off the screen,
-		// or the button would quietly have become "download this page".
+		// is paged, so that set is fetched rather than read off the screen.
 		this._all_filtered((all) => this._download(all, parts));
 	}
 
@@ -521,7 +702,6 @@ var InvoiceDownloadQueue = class {
 
 	/** Every Sales Order the current filters match, across all pages. */
 	_all_filtered(then) {
-		const me = this;
 		frappe.call({
 			method: 'alpinos.invoice_queue_api.get_all_sales_orders',
 			args: { filters: this._args() },
@@ -534,12 +714,9 @@ var InvoiceDownloadQueue = class {
 		});
 	}
 
-	// ==================== END UNCHANGED DOWNLOAD LOGIC =====================
-
 	// -------------------------------------------------------------- export
 
 	export_view() {
-		const me = this;
 		frappe.call({
 			method: 'alpinos.invoice_queue_api.export_rows',
 			args: {
@@ -557,7 +734,7 @@ var InvoiceDownloadQueue = class {
 				// offers it as data, so it cannot reach a file.
 				frappe.tools.downloadify(data, null, 'Invoice Download Queue');
 				frappe.show_alert({
-					message: __('Exported {0} row(s)', [r.message.total]),
+					message: __('Exported {0} row(s)', [r.message.rows.length]),
 					indicator: 'green',
 				});
 			},
@@ -651,18 +828,13 @@ var InvoiceDownloadQueue = class {
 	}
 
 	_apply_view(v) {
-		if (Array.isArray(v.columns) && v.columns.length) this._columns = v.columns.slice();
-		if (v.sort_field) this._sort_field = v.sort_field;
-		if (v.sort_dir) this._sort_dir = v.sort_dir;
-		const f = v.filters || {};
-		Object.keys(this._filters).forEach((k) => {
-			// A locked Channel is the role talking, not the view: a saved view must not
-			// be able to put a user onto a channel they may not see. The server would
-			// refuse it anyway; this stops the pointless round trip.
-			if (k === 'channel' && this._access.locked) return;
-			this._filters[k] && this._filters[k].set_value(f[k] || '');
+		// A locked Channel is the role talking, not the view: _set_filters skips it, and
+		// the server would refuse another channel anyway.
+		return this._apply_state({
+			columns: v.columns,
+			filters: v.filters,
+			sort_field: v.sort_field,
+			sort_dir: v.sort_dir,
 		});
-		this._start = 0;
-		this.load_list();
 	}
 };

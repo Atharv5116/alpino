@@ -3,8 +3,12 @@
 """One saved screen layout: which columns, in what order, with which filters and sort.
 
 Server-side and per user, so a view survives a different browser or machine — the
-localStorage the other list screens use does not. `if_owner` on the All role is what
-keeps one person's views out of everyone else's list.
+localStorage the other list screens use does not.
+
+Only alpinos.invoice_queue_api writes these, always for the session user. The doctype
+grants nothing to ordinary roles, so the REST API cannot create one either; validate()
+still refuses a view written for somebody else, so one user cannot plant a view (or a
+default view) in another user's list.
 """
 
 import json
@@ -21,6 +25,8 @@ class AlpinoSavedView(Document):
 			frappe.throw(_("Please name the view."))
 		if not self.user:
 			self.user = frappe.session.user
+		if self.user != frappe.session.user and "System Manager" not in frappe.get_roles():
+			frappe.throw(_("A saved view can only be saved for yourself."), frappe.PermissionError)
 		self._validate_json("columns_json", list)
 		self._validate_json("filters_json", dict)
 		self.sort_dir = "asc" if (self.sort_dir or "").lower() == "asc" else "desc"

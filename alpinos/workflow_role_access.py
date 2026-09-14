@@ -195,6 +195,19 @@ PAGE_ACCESS = {
 		"E-Commerce Coordinator",
 	],
 	"ecom-sales-order-entry-list": ["Warehouse Admin"],
+	# Every role the Invoice Download Queue spec names; which ROWS each may see is decided
+	# by alpinos.invoice_queue_api, not by page access.
+	"invoice-download-queue": [
+		"E-Commerce Admin",
+		"E-Commerce Coordinator",
+		"E-Commerce Manager",
+		"Sales Manager",
+		"Sales Admin",
+		"Sales User",
+		"Warehouse Admin",
+		"Warehouse Manager",
+		"Accounts User",
+	],
 }
 
 

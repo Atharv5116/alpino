@@ -171,9 +171,12 @@ var SalesOrderEntryListPage = class {
 			);
 			if (this.btn_resync_invoices) this.btn_resync_invoices.hide();
 		}
-		this.page.add_inner_button(__('Pending Invoices'), () =>
-			frappe.set_route('invoice-download-queue')
-		);
+		// Only for someone the queue will let in, or the button leads to "Not permitted".
+		if ((frappe.boot.page_info || {})['invoice-download-queue']) {
+			this.page.add_inner_button(__('Pending Invoices'), () =>
+				frappe.set_route('invoice-download-queue')
+			);
+		}
 	}
 
 	resync_selected_invoices() {

@@ -1,30 +1,35 @@
 """Server side of the Invoice Download Queue: access, columns, filters, sorting, export.
 
-The DOWNLOAD logic is not here and is not touched by this module. Downloading still
-goes through alpinos.sales_order_api, and membership of the queue still comes from
-alpinos.pending_invoice_api. This file only decides WHICH ROWS a user may see, WHICH
-COLUMNS they may ask for, and how those rows are filtered, ordered and exported.
+The DOWNLOAD logic is not here. Downloading still goes through alpinos.sales_order_api,
+and membership of the queue still comes from alpinos.pending_invoice_api. This file
+decides WHICH ROWS a user may see, WHICH COLUMNS they may ask for, how those rows are
+filtered, ordered and exported, and that nobody downloads an order outside their channel.
 
 CHANNEL ACCESS
 --------------
 Three role groups, enforced here rather than in the page, so a crafted API call, a
-saved view, a sort or an export cannot reach rows the screen would have hidden:
+saved view, a sort, an export or a download URL cannot reach rows the screen would
+have hidden:
 
   * E-Commerce Admin / Coordinator / Manager -> E-com only, locked.
-  * Sales Manager / Admin / User            -> the offline channels, locked.
+  * Sales Manager / Admin / User            -> Offline only, locked.
   * Warehouse Admin / Manager, Accounts User -> every channel, free to choose.
 
-"Offline" means both `Offline` and `General Trade`: General Trade is an offline
-channel, so locking Sales to the literal string would hide its own orders from the
-team that owns them.
+"Offline" is the offline FAMILY, `Offline` and `General Trade` together (the user's
+call: General Trade is an offline channel). That holds wherever the word is used: a
+Sales user locked to Offline sees General Trade orders, and anyone choosing Offline in
+the filter gets both. Choosing General Trade on its own narrows to just that.
 
-Unrestricted wins when a user holds roles from more than one group — holding a
-warehouse or accounts role is what makes someone cross-channel, and the narrow
-roles are there to scope a specialist, not to cage a generalist.
+A user holding roles from BOTH restricted groups (E-Commerce and Sales) sees both
+channel families and may choose between them; nothing is locked, because no single
+channel describes them. Holding a Warehouse or Accounts role makes a user
+unrestricted whatever else they hold.
 
 A user holding NONE of the nine named roles is left unrestricted, which is what the
-page did before this change; their ordinary Sales Order permissions still apply.
+page did before; their ordinary Sales Order permissions still apply.
 """
+
+import json
 
 import frappe
 from frappe import _
@@ -33,15 +38,19 @@ from frappe.utils import cint, flt
 DOCTYPE = "Sales Order"
 
 CHANNEL_ECOM = "E-com"
-# The user's call: General Trade is an offline channel.
+CHANNEL_OFFLINE = "Offline"
 OFFLINE_CHANNELS = ("Offline", "General Trade")
 
 ECOM_ROLES = ("E-Commerce Admin", "E-Commerce Coordinator", "E-Commerce Manager")
 OFFLINE_ROLES = ("Sales Manager", "Sales Admin", "Sales User")
 UNRESTRICTED_ROLES = ("Warehouse Admin", "Warehouse Manager", "Accounts User")
 
+# Every role the spec names may open the page; alpinos.workflow_role_access applies it.
+PAGE_ROLES = ECOM_ROLES + OFFLINE_ROLES + UNRESTRICTED_ROLES
+
 DEFAULT_PAGE_LENGTH = 50
 MAX_PAGE_LENGTH = 2000
+_CHUNK = 500
 
 
 # --------------------------------------------------------------------- access
@@ -57,18 +66,31 @@ def resolve_access(user=None):
 
 	if roles.intersection(UNRESTRICTED_ROLES) or "System Manager" in roles:
 		return {"channels": None, "locked": False, "default": None, "group": "unrestricted"}
-	if roles.intersection(ECOM_ROLES):
+
+	ecom = bool(roles.intersection(ECOM_ROLES))
+	offline = bool(roles.intersection(OFFLINE_ROLES))
+	if ecom and offline:
+		return {
+			"channels": [CHANNEL_ECOM, *OFFLINE_CHANNELS], "locked": False,
+			"default": None, "group": "ecom+offline",
+		}
+	if ecom:
 		return {
 			"channels": [CHANNEL_ECOM], "locked": True,
 			"default": CHANNEL_ECOM, "group": "ecom",
 		}
-	if roles.intersection(OFFLINE_ROLES):
+	if offline:
 		return {
 			"channels": list(OFFLINE_CHANNELS), "locked": True,
-			"default": OFFLINE_CHANNELS[0], "group": "offline",
+			"default": CHANNEL_OFFLINE, "group": "offline",
 		}
 	# None of the nine named roles: unchanged from before, doc permissions still apply.
 	return {"channels": None, "locked": False, "default": None, "group": "unnamed"}
+
+
+def expand_channel(channel):
+	"""The stored channel values a filter value stands for. Offline is the family."""
+	return list(OFFLINE_CHANNELS) if channel == CHANNEL_OFFLINE else [channel]
 
 
 @frappe.whitelist()
@@ -76,11 +98,17 @@ def get_access():
 	"""What the page needs to draw and lock its Channel filter."""
 	_assert_can_read()
 	access = resolve_access()
+	if access["locked"]:
+		# One option: the role's channel. For Sales that is "Offline", which already
+		# covers General Trade, so there is nothing left to choose.
+		selectable = [access["default"]]
+	else:
+		selectable = access["channels"] or _all_channels()
 	return {
 		"channels": access["channels"],
 		"locked": access["locked"],
 		"default_channel": access["default"],
-		"selectable": access["channels"] or _all_channels(),
+		"selectable": selectable,
 	}
 
 
@@ -100,38 +128,62 @@ def _channel_condition(requested):
 	asking for another channel is refused outright rather than silently ignored,
 	because silently returning someone else's channel would be the worse failure.
 	"""
-	access = resolve_access()
-	allowed = access["channels"]
+	allowed = resolve_access()["channels"]
 
 	if requested:
-		if allowed is not None and requested not in allowed:
+		wanted = expand_channel(requested)
+		if allowed is not None and not set(wanted).issubset(allowed):
 			frappe.throw(
 				_("You do not have access to the {0} channel.").format(requested),
 				frappe.PermissionError,
 			)
-		return "so.custom_channel = %(channel)s", {"channel": requested}
+		return "so.custom_channel IN %(channels)s", {"channels": tuple(wanted)}
 
 	if allowed is None:
 		return "1 = 1", {}
-	return (
-		"so.custom_channel IN %(allowed_channels)s",
-		{"allowed_channels": tuple(allowed)},
-	)
+	return "so.custom_channel IN %(channels)s", {"channels": tuple(allowed)}
+
+
+def assert_orders_in_channel(names):
+	"""Refuse a download that includes an order outside this user's channels.
+
+	The queue only ever offers orders the user may see, so this is for the request
+	that did not come from the queue's own rows: a hand-edited download URL.
+	"""
+	allowed = resolve_access()["channels"]
+	if allowed is None or not names:
+		return
+	outside = [
+		r.name
+		for r in frappe.get_all(
+			DOCTYPE, filters={"name": ("in", list(names))}, fields=["name", "custom_channel"]
+		)
+		if r.custom_channel not in allowed
+	]
+	if outside:
+		frappe.throw(
+			_("You do not have access to the channel of {0}, so it cannot be downloaded.").format(
+				", ".join(outside[:5]) + (" ..." if len(outside) > 5 else "")
+			),
+			frappe.PermissionError,
+		)
 
 
 # -------------------------------------------------------------------- columns
 
-# The catalogue every other part of this module reads: the page draws from it, the
-# sort validates against it, and the export renders it. A column that is not here
-# cannot be selected, sorted or exported, which is what keeps a crafted request from
+# The report columns from the attached sheet. The page draws from the catalogue, the
+# sort validates against it, and the export renders it. A column that is not in the
+# catalogue cannot be selected, sorted or exported, which keeps a crafted request from
 # reaching a field nobody meant to expose.
 #
 # `select` is the SQL expression; `sortable` False marks a column computed in Python
 # after the page is fetched, which cannot participate in an ORDER BY.
+REPORT_GROUP = "Report"
 COLUMNS = {
 	"channel":        {"label": "Channel",        "select": "so.custom_channel",       "type": "Data"},
 	"order_date":     {"label": "Order Date",     "select": "so.transaction_date",     "type": "Date"},
-	"dispatch_date":  {"label": "Dispatch Date",  "select": "so.custom_dispatch_date", "type": "Date"},
+	# The sheet sources Dispatch Date from the Pick List, not the order's own field.
+	"dispatch_date":  {"label": "Dispatch Date",  "select": "pl.dispatch_date",        "type": "Date"},
 	"customer_type":  {"label": "Customer Type",  "select": "so.order_type",           "type": "Data"},
 	"sales_order":    {"label": "Sales Order ID", "select": "so.name",                 "type": "Link"},
 	"customer_po_no": {"label": "Customer PO No.",
@@ -144,7 +196,8 @@ COLUMNS = {
 	"transporter":    {"label": "Transporter",    "select": "pl.transporter",          "type": "Data"},
 	"lr_number":      {"label": "LR No.",         "select": "dn.lr_no",                "type": "Data"},
 	"so_amount":      {"label": "Sales Order Amount", "select": "so.grand_total",      "type": "Currency"},
-	# Already maintained on the order by alpinos.so_invoice_value; read, never
+	# Already maintained on the order by alpinos.so_invoice_value (dispatched value, or
+	# the picked share of the order's selling price before dispatch); read, never
 	# recomputed, or the queue and the order would answer differently.
 	"invoice_amount": {"label": "Invoice Amount",
 	                   "select": "IFNULL(so.custom_total_invoice_value, 0)", "type": "Currency"},
@@ -153,8 +206,9 @@ COLUMNS = {
 	                   "type": "Currency"},
 	"total_box":      {"label": "Total Box",      "select": "pl.total_box",            "type": "Float"},
 	"weight":         {"label": "Weight",         "select": "pl.weight",               "type": "Float"},
+	# The name, not the login, so sorting orders what the user actually reads.
 	"owner_name":     {"label": "Owner (Sales Order Created By)",
-	                   "select": "so.owner",      "type": "Data"},
+	                   "select": "COALESCE(NULLIF(own.full_name, ''), so.owner)", "type": "Data"},
 	# Extras the page already showed, kept selectable so nothing regresses.
 	"po_date":        {"label": "PO Date",        "select": "so.custom_po_date",       "type": "Date"},
 	"pick_list":      {"label": "Pick List",      "select": "pl.pick_list",            "type": "Link"},
@@ -170,14 +224,118 @@ COLUMNS = {
 }
 
 # The order the screen opens with, per the attached column sheet. `download` is not
-# in COLUMNS at all: it is an action, not data, so it can never be reordered away,
-# exported, or sorted on.
+# in the catalogue at all: it is an action, not data, so it can never be reordered
+# away, exported, or sorted on.
 DEFAULT_COLUMNS = [
 	"channel", "order_date", "dispatch_date", "customer_type", "sales_order",
 	"customer_po_no", "customer_name", "pl_po_no", "state", "invoice_id",
 	"transporter", "lr_number", "so_amount", "invoice_amount", "amount_diff",
 	"undispatched", "total_box", "weight", "owner_name",
 ]
+
+# Dynamic columns: any plain field of these documents, per the spec's "fields available
+# from Sales Order, Pick List, Delivery Note, and Post Dispatch". Keys are
+# "<prefix>:<fieldname>" and are only ever built from the doctype's own meta, so a
+# fieldname reaching SQL is always a real column.
+#
+# An order can have several Pick Lists, Delivery Notes or Post Dispatch records, so
+# their fields are rolled up to one value per order: amounts and quantities are
+# added, dates show the latest, and text lists each distinct value.
+SOURCES = (
+	# prefix, doctype, field on that doctype pointing at the Sales Order
+	("so", "Sales Order", None),
+	("pl", "Pick List", "custom_sales_order_id"),
+	("dn", "Delivery Note", "custom_sales_order_id"),
+	("pd", "Post Dispatch", "sales_order"),
+)
+_DYNAMIC_TYPES = {
+	"Data", "Link", "Dynamic Link", "Select", "Autocomplete", "Phone", "Small Text",
+	"Date", "Datetime", "Time", "Currency", "Float", "Int", "Percent", "Check",
+}
+_SUMMED = {"Currency", "Float", "Int"}
+_LATEST = {"Date", "Datetime", "Time", "Percent"}
+
+
+def _dynamic_expression(prefix, doctype, link, df):
+	f = df.fieldname
+	if prefix == "so":
+		if df.fieldtype == "Check":
+			return f"CASE WHEN so.`{f}` = 1 THEN 'Yes' ELSE 'No' END"
+		return f"so.`{f}`"
+
+	col = f"x.`{f}`"
+	where = f"x.`{link}` = so.name AND x.docstatus < 2"
+	if doctype == "Delivery Note":
+		where += " AND IFNULL(x.is_return, 0) = 0"
+	if df.fieldtype in _SUMMED:
+		agg = f"SUM({col})"
+	elif df.fieldtype in _LATEST:
+		agg = f"MAX({col})"
+	elif df.fieldtype == "Check":
+		agg = f"CASE WHEN MAX({col}) IS NULL THEN NULL WHEN MAX({col}) = 1 THEN 'Yes' ELSE 'No' END"
+	else:
+		agg = f"GROUP_CONCAT(DISTINCT NULLIF({col}, '') ORDER BY {col} SEPARATOR ', ')"
+	return f"(SELECT {agg} FROM `tab{doctype}` x WHERE {where})"
+
+
+def _display_type(fieldtype):
+	if fieldtype == "Currency":
+		return "Currency"
+	if fieldtype in ("Float", "Percent"):
+		return "Float"
+	if fieldtype == "Int":
+		return "Int"
+	if fieldtype in ("Date", "Datetime"):
+		return fieldtype
+	return "Data"
+
+
+def catalogue():
+	"""Every column THIS user may ask for, report columns first.
+
+	Built per request: the dynamic part depends on the user's read access (a Pick List
+	field is offered only to someone who may read Pick Lists, a Sales Order field only
+	at a permission level they hold).
+	"""
+	cache = getattr(frappe.local, "idq_catalogue", None)
+	if cache and cache[0] == frappe.session.user:
+		return cache[1]
+
+	out = {}
+	for key, spec in COLUMNS.items():
+		out[key] = dict(spec, group=REPORT_GROUP)
+	# A plain field the report already shows under its own name is not offered twice.
+	already = {spec["select"].replace("`", "") for spec in COLUMNS.values() if spec["select"]}
+
+	for prefix, doctype, link in SOURCES:
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		if not frappe.has_permission(doctype, "read"):
+			continue
+		if link and not frappe.get_meta(doctype).has_field(link):
+			continue
+		meta = frappe.get_meta(doctype)
+		levels = set(meta.get_permlevel_access("read")) or {0}
+		seen_labels = {}
+		for df in meta.fields:
+			if df.fieldtype not in _DYNAMIC_TYPES or df.hidden or cint(df.permlevel) not in levels:
+				continue
+			expr = _dynamic_expression(prefix, doctype, link, df)
+			if expr.replace("`", "") in already:
+				continue
+			label = _(df.label or df.fieldname)
+			if label in seen_labels:
+				label = f"{label} ({df.fieldname})"
+			seen_labels[label] = True
+			out[f"{prefix}:{df.fieldname}"] = {
+				"label": f"{_(doctype)}: {label}",
+				"select": expr,
+				"type": _display_type(df.fieldtype),
+				"group": doctype,
+			}
+
+	frappe.local.idq_catalogue = (frappe.session.user, out)
+	return out
 
 
 @frappe.whitelist()
@@ -190,21 +348,26 @@ def get_columns():
 				"key": k,
 				"label": _(v["label"]),
 				"type": v["type"],
+				"group": v["group"],
 				"sortable": v.get("sortable", True),
 			}
-			for k, v in COLUMNS.items()
+			for k, v in catalogue().items()
 		],
 		"default": list(DEFAULT_COLUMNS),
 	}
 
 
 def _clean_columns(columns):
-	"""Whatever the client asked for, narrowed to what the catalogue actually allows."""
+	"""Whatever the client asked for, narrowed to what this user's catalogue allows."""
 	if isinstance(columns, str):
 		columns = frappe.parse_json(columns)
 	if not columns:
 		return list(DEFAULT_COLUMNS)
-	out = [c for c in columns if c in COLUMNS]
+	cat = catalogue()
+	out = []
+	for c in columns:
+		if isinstance(c, str) and c in cat and c not in out:
+			out.append(c)
 	return out or list(DEFAULT_COLUMNS)
 
 
@@ -216,6 +379,7 @@ _JOINS = """
 		       MIN(name)                       AS pick_list,
 		       MAX(custom_po_no)               AS pl_po_no,
 		       MAX(custom_transporter)         AS transporter,
+		       MAX(custom_dispatch_date)       AS dispatch_date,
 		       SUM(IFNULL(custom_total_box, 0))     AS total_box,
 		       SUM(IFNULL(custom_gross_weight, 0))  AS weight
 		FROM `tabPick List`
@@ -231,6 +395,7 @@ _JOINS = """
 		GROUP BY custom_sales_order_id
 	) dn ON dn.so_id = so.name
 	LEFT JOIN `tabAddress` addr ON addr.name = so.shipping_address_name
+	LEFT JOIN `tabUser` own ON own.name = so.owner
 """
 
 # Filter key -> (SQL, how the value is bound)
@@ -245,9 +410,11 @@ _FILTERS = {
 	"state":          ("addr.state = %(state)s", "eq"),
 	"order_date_from":    ("so.transaction_date >= %(order_date_from)s", "eq"),
 	"order_date_to":      ("so.transaction_date <= %(order_date_to)s", "eq"),
-	"dispatch_date_from": ("so.custom_dispatch_date >= %(dispatch_date_from)s", "eq"),
-	"dispatch_date_to":   ("so.custom_dispatch_date <= %(dispatch_date_to)s", "eq"),
+	"dispatch_date_from": ("pl.dispatch_date >= %(dispatch_date_from)s", "eq"),
+	"dispatch_date_to":   ("pl.dispatch_date <= %(dispatch_date_to)s", "eq"),
+	"po_date":        ("so.custom_po_date = %(po_date)s", "eq"),
 }
+FILTER_KEYS = tuple(_FILTERS)
 
 
 def _escape_like(term):
@@ -255,8 +422,14 @@ def _escape_like(term):
 	return (term or "").replace("\\", "\\\\").replace("%", "").replace("_", "\\_")
 
 
+def _parse(value, default):
+	if isinstance(value, str):
+		value = frappe.parse_json(value) if value else None
+	return value if value is not None else default
+
+
 def _build(filters, columns, sort_field, sort_dir):
-	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+	filters = _parse(filters, {}) or {}
 
 	# Membership of the queue is unchanged: an order with an invoice number, not
 	# cancelled. This mirrors the Pending Invoice Downloads report deliberately.
@@ -277,10 +450,11 @@ def _build(filters, columns, sort_field, sort_dir):
 		conditions.append(sql)
 		params[key] = f"%{_escape_like(value)}%" if mode == "like" else value
 
+	cat = catalogue()
 	select_keys = _clean_columns(columns)
 	selects = ["so.name AS sales_order"]
 	for key in select_keys:
-		spec = COLUMNS[key]
+		spec = cat[key]
 		if spec["select"] and key != "sales_order":
 			selects.append(f"{spec['select']} AS `{key}`")
 	# The page always needs these, whether or not they are on screen: the download
@@ -289,13 +463,36 @@ def _build(filters, columns, sort_field, sort_dir):
 		if key not in select_keys:
 			selects.append(f"{COLUMNS[key]['select']} AS `{key}`")
 
-	sort_key = sort_field if sort_field in COLUMNS else "order_date"
-	if not COLUMNS[sort_key].get("sortable", True) or not COLUMNS[sort_key]["select"]:
+	sort_key = sort_field if sort_field in cat else "order_date"
+	if not cat[sort_key].get("sortable", True) or not cat[sort_key]["select"]:
 		sort_key = "order_date"
 	direction = "ASC" if str(sort_dir or "desc").lower() == "asc" else "DESC"
-	order_by = f"{COLUMNS[sort_key]['select']} {direction}, so.name {direction}"
+	order_by = f"{cat[sort_key]['select']} {direction}, so.name {direction}"
 
 	return " AND ".join(conditions), params, selects, order_by, select_keys
+
+
+def _fetch(filters, columns, sort_field, sort_dir, start=0, limit=None):
+	where, params, selects, order_by, select_keys = _build(filters, columns, sort_field, sort_dir)
+	paging = f"LIMIT {cint(limit)} OFFSET {max(cint(start), 0)}" if limit else ""
+	rows = frappe.db.sql(
+		f"""
+		SELECT {", ".join(selects)}
+		FROM `tabSales Order` so
+		{_JOINS}
+		WHERE {where}
+		ORDER BY {order_by}
+		{paging}
+		""",
+		params,
+		as_dict=True,
+	)
+	total = frappe.db.sql(
+		f"SELECT COUNT(*) FROM `tabSales Order` so {_JOINS} WHERE {where}", params
+	)[0][0]
+	if "undispatched" in select_keys:
+		attach_undispatched(rows)
+	return rows, cint(total), select_keys
 
 
 @frappe.whitelist()
@@ -305,55 +502,16 @@ def get_rows(
 ):
 	"""One page of the queue, respecting role access, filters, sorting and columns."""
 	_assert_can_read()
-	where, params, selects, order_by, select_keys = _build(filters, columns, sort_field, sort_dir)
-
 	start = max(cint(start), 0)
 	page_length = min(max(cint(page_length) or DEFAULT_PAGE_LENGTH, 1), MAX_PAGE_LENGTH)
-
-	rows = frappe.db.sql(
-		f"""
-		SELECT {", ".join(selects)}
-		FROM `tabSales Order` so
-		{_JOINS}
-		WHERE {where}
-		ORDER BY {order_by}
-		LIMIT {page_length} OFFSET {start}
-		""",
-		params,
-		as_dict=True,
-	)
-
-	total = frappe.db.sql(
-		f"SELECT COUNT(*) FROM `tabSales Order` so {_JOINS} WHERE {where}", params
-	)[0][0]
-
-	if "owner_name" in select_keys:
-		_attach_owner_names(rows)
-	if "undispatched" in select_keys:
-		attach_undispatched(rows)
-
+	rows, total, select_keys = _fetch(filters, columns, sort_field, sort_dir, start, page_length)
 	return {
 		"rows": rows,
-		"total": cint(total),
+		"total": total,
 		"start": start,
 		"page_length": page_length,
 		"columns": select_keys,
 	}
-
-
-def _attach_owner_names(rows):
-	"""Show the person, not their login."""
-	users = {r.get("owner_name") for r in rows if r.get("owner_name")}
-	if not users:
-		return
-	full = {
-		u.name: (u.full_name or u.name)
-		for u in frappe.get_all(
-			"User", filters={"name": ("in", list(users))}, fields=["name", "full_name"]
-		)
-	}
-	for r in rows:
-		r["owner_name"] = full.get(r.get("owner_name"), r.get("owner_name"))
 
 
 # --------------------------------------------------- customers for the dropdown
@@ -411,30 +569,84 @@ def get_filter_options(channel=None):
 # ------------------------------------------------------------ undispatched qty
 
 
-def attach_undispatched(rows):
-	"""Ordered less dispatched, per item, expressed in INDIVIDUAL units.
+def _bundle_units(item_codes):
+	"""item_code -> individual units in ONE combo, for the codes that are bundles.
 
-	A Product Bundle is ordered as combos but picked and shipped as its components,
-	so comparing the order line to the delivery line compares two different units.
-	The sheet spells the rule out: a combo of 2 units ordered 20 times is 40 units;
-	20 units dispatched is 10 combos, so 10 combos remain. Everything below is
-	therefore done in component units and converted back only for the label.
+	The native Product Bundle is the stock engine's source (alpinos.product_bundle_sync
+	keeps it in step with the Item's own mapping); the Item mapping is the fallback for a
+	bundle whose native record is missing.
+	"""
+	if not item_codes:
+		return {}
+	units = {}
+	for r in frappe.db.sql(
+		"""
+		SELECT pb.new_item_code AS item, SUM(pbi.qty) AS units
+		FROM `tabProduct Bundle` pb
+		JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+		WHERE pb.new_item_code IN %(codes)s
+		GROUP BY pb.new_item_code
+		""",
+		{"codes": tuple(item_codes)},
+		as_dict=True,
+	):
+		if flt(r.units) > 0:
+			units[r.item] = flt(r.units)
+
+	missing = [c for c in item_codes if c not in units]
+	if missing and frappe.db.table_exists("Product Bundle Mapping"):
+		for r in frappe.db.sql(
+			"""
+			SELECT parent AS item, SUM(base_qty) AS units
+			FROM `tabProduct Bundle Mapping`
+			WHERE parenttype = 'Item' AND parent IN %(codes)s
+			GROUP BY parent
+			""",
+			{"codes": tuple(missing)},
+			as_dict=True,
+		):
+			if flt(r.units) > 0:
+				units[r.item] = flt(r.units)
+	return units
+
+
+def attach_undispatched(rows):
+	"""Ordered less dispatched, per item. Combos are counted in INDIVIDUAL units.
+
+	A combo is ordered as the combo but leaves the warehouse as its components: the
+	Delivery Note keeps the combo line and records the components as packed items. The
+	sheet's rule: a combo of 2 units ordered 20 times is 40 units; 20 units dispatched
+	is 10 combos, so "Combo 1 (10)" remains. So the dispatched COMPONENT units are
+	totalled and divided by the units in one combo -- never the combo line's own qty,
+	and never the scarcest component, both of which disagree with the sheet when the
+	components go out unevenly.
 	"""
 	names = [r["sales_order"] for r in rows if r.get("sales_order")]
-	if not names:
-		return
+	pending = {}
+	for i in range(0, len(names), _CHUNK):
+		pending.update(_undispatched_for(names[i : i + _CHUNK]))
+	for r in rows:
+		r["undispatched"] = ", ".join(pending.get(r.get("sales_order"), []))
 
+
+def _undispatched_for(names):
+	if not names:
+		return {}
+	params = {"names": tuple(names)}
 	ordered = frappe.db.sql(
 		"""
-		SELECT soi.parent AS so, soi.item_code, soi.item_name, SUM(soi.qty) AS qty
+		SELECT soi.parent AS so, soi.item_code, SUM(soi.qty) AS qty, MIN(soi.idx) AS idx
 		FROM `tabSales Order Item` soi
 		WHERE soi.parent IN %(names)s
-		GROUP BY soi.parent, soi.item_code, soi.item_name
+		GROUP BY soi.parent, soi.item_code
+		ORDER BY soi.parent, idx
 		""",
-		{"names": names},
+		params,
 		as_dict=True,
 	)
-	delivered = frappe.db.sql(
+	# Delivery Note lines as written: a plain item's own quantity, or a combo line's.
+	delivered = {}
+	for d in frappe.db.sql(
 		"""
 		SELECT dn.custom_sales_order_id AS so, dni.item_code, SUM(dni.qty) AS qty
 		FROM `tabDelivery Note Item` dni
@@ -443,41 +655,44 @@ def attach_undispatched(rows):
 		  AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
 		GROUP BY dn.custom_sales_order_id, dni.item_code
 		""",
-		{"names": names},
+		params,
 		as_dict=True,
-	)
-
-	# item -> [(component, qty per combo)]. Only bundles appear here.
-	bundles = {}
-	for row in frappe.get_all(
-		"Product Bundle Item",
-		filters={"parent": ("in", list({o.item_code for o in ordered}))},
-		fields=["parent", "item_code", "qty"],
 	):
-		bundles.setdefault(row.parent, []).append((row.item_code, flt(row.qty)))
+		delivered[(d.so, d.item_code)] = flt(d.qty)
+	# The components that actually left, per combo.
+	packed = {}
+	for p in frappe.db.sql(
+		"""
+		SELECT dn.custom_sales_order_id AS so, pi.parent_item, SUM(pi.qty) AS qty
+		FROM `tabPacked Item` pi
+		JOIN `tabDelivery Note` dn ON dn.name = pi.parent AND pi.parenttype = 'Delivery Note'
+		WHERE dn.custom_sales_order_id IN %(names)s
+		  AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
+		GROUP BY dn.custom_sales_order_id, pi.parent_item
+		""",
+		params,
+		as_dict=True,
+	):
+		packed[(p.so, p.parent_item)] = flt(p.qty)
 
-	shipped = {}
-	for d in delivered:
-		shipped.setdefault(d.so, {})[d.item_code] = flt(d.qty)
+	units = _bundle_units(list({o.item_code for o in ordered}))
 
 	pending = {}
 	for o in ordered:
-		got = shipped.get(o.so, {})
-		components = bundles.get(o.item_code)
-		if components:
-			# Fewest whole combos the dispatched components can account for.
-			per_combo = min(
-				(flt(got.get(c, 0)) / q) for c, q in components if q
-			) if components else 0
-			short = flt(o.qty) - per_combo
+		per_combo = units.get(o.item_code)
+		if per_combo:
+			key = (o.so, o.item_code)
+			if key in packed:
+				shipped = packed[key] / per_combo
+			else:
+				# No packed rows recorded: the combo line is all there is to go on.
+				shipped = delivered.get(key, 0)
 		else:
-			short = flt(o.qty) - flt(got.get(o.item_code, 0))
+			shipped = delivered.get((o.so, o.item_code), 0)
+		short = flt(o.qty) - flt(shipped)
 		if short > 0.0001:
-			label = o.item_code
-			pending.setdefault(o.so, []).append(f"{label} ({_trim(short)})")
-
-	for r in rows:
-		r["undispatched"] = ", ".join(pending.get(r["sales_order"], []))
+			pending.setdefault(o.so, []).append(f"{o.item_code} ({_trim(short)})")
+	return pending
 
 
 def _trim(value):
@@ -491,28 +706,54 @@ def _trim(value):
 
 @frappe.whitelist()
 def export_rows(filters=None, columns=None, sort_field=None, sort_dir=None):
-	"""The current view as rows for a spreadsheet — same access, filters and order.
+	"""The current view as rows for a spreadsheet: same access, filters and order.
 
-	The Download column is an action and is not in COLUMNS, so it cannot reach an
-	export: what comes out is exactly the data columns that are on screen.
+	EVERY filtered row, not a page of them. The Download column is an action and is not
+	in the catalogue, so it cannot reach an export: what comes out is exactly the data
+	columns that are on screen, in their on-screen order.
 	"""
 	_assert_can_read()
-	out = get_rows(
-		filters=filters, columns=columns, sort_field=sort_field, sort_dir=sort_dir,
-		start=0, page_length=MAX_PAGE_LENGTH,
-	)
-	keys = out["columns"]
-	header = [_(COLUMNS[k]["label"]) for k in keys]
-	body = []
-	for row in out["rows"]:
-		body.append([_cell(row.get(k)) for k in keys])
-	return {"header": header, "rows": body, "total": out["total"]}
+	rows, total, keys = _fetch(filters, columns, sort_field, sort_dir)
+	cat = catalogue()
+	header = [_(cat[k]["label"]) for k in keys]
+	body = [[_cell(row.get(k)) for k in keys] for row in rows]
+	return {"header": header, "rows": body, "total": total}
 
 
 def _cell(value):
 	if value is None:
 		return ""
 	return value
+
+
+# ----------------------------------------------------------------- downloads
+
+
+def _names(names):
+	if isinstance(names, str):
+		names = json.loads(names) if names else []
+	return [n for n in (names or []) if n]
+
+
+@frappe.whitelist()
+def download_invoices_zip(names):
+	"""The queue's Download Selected / Download All: the channel check, then the SAME
+	alpinos.sales_order_api.download_sales_invoices_zip every other screen uses.
+
+	The shared endpoint is not changed. It also serves the Sales Order lists, and a Sales
+	user legitimately downloads E-com invoices from the E-com order list they are given,
+	so the channel rule belongs to the queue's own door rather than to that one.
+	"""
+	from alpinos.sales_order_api import download_sales_invoices_zip
+
+	names = _names(names)
+	assert_orders_in_channel(names)
+	return download_sales_invoices_zip(names)
+
+
+# The per-row SO / PL / INV links and the Club Downloads go straight to
+# alpinos.sales_order_api.download_order_bundle, which only this queue calls, so the
+# channel check sits inside it.
 
 
 # ---------------------------------------------------------------- saved views
@@ -523,7 +764,7 @@ PAGE_ROUTE = "invoice-download-queue"
 
 @frappe.whitelist()
 def list_views():
-	"""This user's saved views for this page, newest default first."""
+	"""This user's saved views for this page, the default first."""
 	_assert_can_read()
 	rows = frappe.get_all(
 		VIEW_DOCTYPE,
@@ -533,9 +774,18 @@ def list_views():
 		order_by="is_default desc, view_name asc",
 	)
 	for r in rows:
-		r["columns"] = frappe.parse_json(r.pop("columns_json") or "[]")
-		r["filters"] = frappe.parse_json(r.pop("filters_json") or "{}")
+		# Re-checked on the way OUT as well as in: a column the user has since lost
+		# access to (a Pick List field after losing Pick List read) is dropped here.
+		r["columns"] = _clean_columns(frappe.parse_json(r.pop("columns_json") or "[]"))
+		r["filters"] = _clean_filters(frappe.parse_json(r.pop("filters_json") or "{}"))
 	return rows
+
+
+def _clean_filters(filters):
+	filters = _parse(filters, {}) or {}
+	if not isinstance(filters, dict):
+		return {}
+	return {k: v for k, v in filters.items() if k in FILTER_KEYS and v not in (None, "")}
 
 
 @frappe.whitelist()
@@ -550,7 +800,9 @@ def save_view(view_name, columns=None, filters=None, sort_field=None, sort_dir=N
 	# Never store a column the catalogue does not allow, or a saved view becomes a
 	# way to smuggle one back in later.
 	columns = _clean_columns(columns)
-	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+	filters = _clean_filters(filters)
+	if sort_field and sort_field not in catalogue():
+		sort_field = None
 
 	existing = frappe.db.exists(
 		VIEW_DOCTYPE,
@@ -636,10 +888,9 @@ def customer_in_channel(customer, channel=None):
 def get_all_sales_orders(filters=None):
 	"""Every Sales Order in the CURRENT FILTER, not just the page on screen.
 
-	The queue is paged now. Download All and the Club Download buttons used to work
-	from every row because every row was loaded; without this they would quietly have
-	become "download this page", which is a change to the download behaviour rather
-	than to the presentation around it.
+	The queue is paged. Download All, the Club Download buttons and a header "select
+	all" used to work from every row because every row was loaded; this keeps them
+	meaning every filtered row rather than "this page".
 	"""
 	_assert_can_read()
 	where, params, _sel, _ob, _keys = _build(filters, None, None, None)

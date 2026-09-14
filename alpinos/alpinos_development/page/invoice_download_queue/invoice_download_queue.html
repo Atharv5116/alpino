@@ -17,7 +17,7 @@
 /* Sorting: the header is the control, so it has to look like one and show state. */
 .invoice-download-queue .idq-table th.idq-sortable { cursor: pointer; user-select: none; }
 .invoice-download-queue .idq-table th.idq-sortable:hover { color: var(--text-color); }
-.invoice-download-queue .idq-sort-arrow { margin-left: 4px; opacity: .3; font-size: 10px; }
+.invoice-download-queue .idq-sort-arrow { margin-left: 4px; opacity: .35; font-size: 11px; }
 .invoice-download-queue .idq-table th.idq-sorted .idq-sort-arrow { opacity: 1; color: var(--primary); }
 .invoice-download-queue .idq-table th.idq-sorted { color: var(--text-color); }
 
@@ -31,7 +31,20 @@
 .invoice-download-queue .idq-num { text-align: right; }
 .invoice-download-queue .idq-empty { padding: 26px 12px; text-align: center; color: var(--text-muted); }
 
-/* Column picker */
+/* Column picker: what is shown (ordered) on the left, what can be added on the right. */
+.idq-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 767px) { .idq-picker { grid-template-columns: 1fr; } }
+.idq-picker-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.idq-picker-hint { font-size: 12px; margin-bottom: 8px; }
+.idq-shown-list { max-height: 55vh; overflow-y: auto; }
+.idq-available { max-height: 50vh; overflow-y: auto; margin-top: 8px; }
+.idq-group-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+	color: var(--text-muted); margin: 10px 0 4px; }
+.idq-add-item { padding: 4px 8px; font-size: 13px; border-radius: 4px; cursor: pointer; }
+.idq-add-item:hover { background: var(--bg-light-gray, var(--bg-color)); }
+.idq-add-plus { display: inline-block; width: 16px; color: var(--text-muted); font-weight: 600; }
+.idq-col-remove { color: var(--text-muted); font-size: 16px; line-height: 1; padding: 0 4px; }
+.idq-col-remove:hover { color: var(--red-500, #e03636); text-decoration: none; }
 .idq-col-item {
 	display: flex; align-items: center; gap: 8px; padding: 5px 8px;
 	border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 5px;
@@ -52,6 +65,7 @@
 		<div class="idq-f fld-customer-type"></div>
 		<div class="idq-f fld-sales-order"></div>
 		<div class="idq-f fld-customer-po-no"></div>
+		<div class="idq-f fld-po-date"></div>
 		<div class="idq-f wide fld-customer"></div>
 		<div class="idq-f fld-invoice-id"></div>
 		<div class="idq-f fld-lr-number"></div>
