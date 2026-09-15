@@ -67,8 +67,9 @@ var InvoiceDownloadQueue = class {
 		this.page.add_inner_button(__('Manage Views'), () => this.open_view_manager(), __('Views'));
 
 		// ---- download entry points ----
-		this.btn_dl_selected = this.page.add_inner_button(__('Download Selected'), () => this.download_selected());
-		this.page.add_inner_button(__('Download All'), () => this.download_all());
+		// Changes(HP) #44: the labels say what is downloaded.
+		this.btn_dl_selected = this.page.add_inner_button(__('Download Selected Invoice'), () => this.download_selected());
+		this.page.add_inner_button(__('Download All Invoices'), () => this.download_all());
 		this.page.add_inner_button(__('SO + Invoice'), () => this.download_bundle('so,invoice'), __('Club Download'));
 		this.page.add_inner_button(__('SO + PL + Invoice'), () => this.download_bundle('so,pl,invoice'), __('Club Download'));
 
@@ -744,7 +745,7 @@ var InvoiceDownloadQueue = class {
 	download_selected() {
 		const names = this._selected();
 		if (!names.length) {
-			frappe.msgprint(__('Tick one or more rows first, or use Download All.'));
+			frappe.msgprint(__('Tick one or more rows first, or use Download All Invoices.'));
 			return;
 		}
 		this._download(names);
