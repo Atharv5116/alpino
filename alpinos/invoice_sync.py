@@ -140,7 +140,9 @@ def process_invoice_excel(file_url):
 		# Only the last 4 characters are the actual Invoice ID (e.g. "abcd4567" -> "4567");
 		# that's what the SO stores and what the Drive PDF is named by.
 		if invoice:
-			invoice = invoice[-4:]
+			# A cell holding the PDF's file name ("6057.pdf") would otherwise keep ".pdf" as
+			# the number (Changes(HP) #42.3).
+			invoice = re.sub(r"[.]pdf$", "", invoice, flags=re.I).strip()[-4:]
 		if so_id and invoice:
 			mapping[so_id] = invoice
 

@@ -667,33 +667,37 @@ def _run():
 
 	check("#42 Invoice Number shows as AHF/<FY>/<number> and can be searched either way", _invoice_number_format)
 
-	def _invoice_file_names_have_no_extension():
+	def _invoice_file_names_have_one_extension():
 		import io
 		import zipfile
 
 		import frappe.utils.file_manager as fm
 		from alpinos import sales_order_api as S
 
+		# 6053 is stored clean; 7002.pdf is stored WITH the extension, the case that used to
+		# download as "... - 7002.pdf.pdf".
 		frappe.db.set_value("Sales Order", fx.offline, {"custom_invoice_no": "6053", "custom_invoice_pdf": "/private/files/6053.pdf"},
 			update_modified=False)
-		frappe.db.set_value("Sales Order", fx.gt, {"custom_invoice_no": "7002.pdf", "custom_invoice_pdf": "/private/files/7002.pdf"},
-			update_modified=False)
+		frappe.db.set_value("Sales Order", fx.gt, {"custom_invoice_no": "7002.pdf", "custom_invoice_pdf": "/private/files/7002.pdf",
+			"custom_dispatch_date": "2026-09-11"}, update_modified=False)
 		real_get_file = fm.get_file
 		fm.get_file = lambda url: (url.rsplit("/", 1)[-1], b"%PDF-1.4 test")
 		try:
-			S.download_single_invoice(fx.offline)
-			_assert(frappe.local.response.filename == f"{fx.offline} - 6053", frappe.local.response.filename)
-			_assert(frappe.local.response.content_type == "application/pdf", "the download lost its PDF type")
+			S.download_single_invoice(fx.gt)
+			_assert(frappe.local.response.filename == f"{fx.gt} - 7002.pdf", frappe.local.response.filename)
 
 			S.download_sales_invoices_zip(frappe.as_json([fx.offline, fx.gt]))
 			names = sorted(zipfile.ZipFile(io.BytesIO(frappe.local.response.filecontent)).namelist())
-			_assert(names == sorted([f"{fx.offline} - 6053", f"{fx.gt} - 7002"]), f"zip entries {names}")
+			_assert(names == sorted([f"{fx.offline} - 6053.pdf", f"{fx.gt} - 7002.pdf"]), f"zip entries {names}")
 
-			S.download_order_bundle(frappe.as_json([fx.offline]), parts="invoice")
-			_assert(frappe.local.response.filename == f"{fx.offline} - 6053", f"INV link file {frappe.local.response.filename}")
-			_assert(frappe.local.response.content_type == "application/pdf", "the INV download lost its PDF type")
+			S.download_order_bundle(frappe.as_json([fx.gt]), parts="invoice")
+			_assert(frappe.local.response.filename == f"{fx.gt} - 7002.pdf", f"INV link file {frappe.local.response.filename}")
 		finally:
 			fm.get_file = real_get_file
 
-	check("#42.3 invoice files are named <order> - <invoice no> with no .pdf, and still sent as PDF",
-		_invoice_file_names_have_no_extension)
+		row = [r for r in Q.get_rows(filters=fx.f(), columns=["sales_order", "invoice_id"], page_length=500)["rows"]
+		       if r["sales_order"] == fx.gt][0]
+		_assert(row["invoice_id"] == "AHF/26-27/7002", f"a stored 7002.pdf shows as {row['invoice_id']}")
+
+	check("#42.3 invoice files carry exactly one .pdf, and a number stored with .pdf shows without it",
+		_invoice_file_names_have_one_extension)

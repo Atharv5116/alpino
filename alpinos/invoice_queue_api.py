@@ -209,12 +209,14 @@ _INVOICE_AMOUNT = (
 )
 _FY_DATE = "COALESCE(so.custom_dispatch_date, so.transaction_date)"
 _FY_START = f"(YEAR({_FY_DATE}) - IF(MONTH({_FY_DATE}) < 4, 1, 0))"
+# The stored number without a file extension some orders carry ("6057.pdf"), Changes(HP) #42.3.
+_INVOICE_NO = "REGEXP_REPLACE(TRIM(so.custom_invoice_no), '[.][pP][dD][fF]$', '')"
 _INVOICE_DISPLAY = (
 	"CASE WHEN IFNULL(so.custom_invoice_no, '') = '' THEN so.custom_invoice_no"
-	" WHEN so.custom_invoice_no LIKE 'AHF/%%' THEN so.custom_invoice_no"
-	f" WHEN {_FY_DATE} IS NULL THEN so.custom_invoice_no"
+	f" WHEN so.custom_invoice_no LIKE 'AHF/%%' THEN {_INVOICE_NO}"
+	f" WHEN {_FY_DATE} IS NULL THEN {_INVOICE_NO}"
 	f" ELSE CONCAT('AHF/', LPAD(MOD({_FY_START}, 100), 2, '0'), '-',"
-	f" LPAD(MOD({_FY_START} + 1, 100), 2, '0'), '/', so.custom_invoice_no) END"
+	f" LPAD(MOD({_FY_START} + 1, 100), 2, '0'), '/', {_INVOICE_NO}) END"
 )
 for _spec in COLUMNS.values():
 	if _spec["select"]:
