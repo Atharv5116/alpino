@@ -58,6 +58,11 @@
 	background: var(--bg-color); margin-left: 8px; vertical-align: middle;
 }
 .purchase-inward-entry .piw-hint { font-size: 12px; margin-bottom: 12px; }
+/* The Quarantine column and its fields only exist once "Quarantine Items" is ticked. */
+.purchase-inward-entry .receiving-table .col-quarantine { display: none; }
+.purchase-inward-entry.piw-quarantining .receiving-table .col-quarantine { display: table-cell; }
+.purchase-inward-entry .piw-quarantine-fields { display: none; }
+.purchase-inward-entry.piw-quarantining .piw-quarantine-fields { display: flex; }
 .purchase-inward-entry .piw-num { text-align: right; }
 /* Same rule as the QC screen: apply_context fills these spans, and until it does
    an empty pill beside the heading reads as a broken render. */
@@ -161,6 +166,10 @@
 			<button class="btn btn-sm btn-light btn-add-row">
 				<i class="fa fa-plus"></i> Add Row
 			</button>
+			<label class="piw-include-other" style="display:none; margin: 0 0 0 12px; font-weight: 500; cursor: pointer;">
+				<input type="checkbox" class="piw-include-other-check" style="margin-right: 6px; vertical-align: middle;">
+				Include Other Inward Types
+			</label>
 		</div>
 	</div>
 
@@ -199,10 +208,23 @@
 						<th style="width: 90px;">Expiry</th>
 						<th style="width: 74px;">MRP</th>
 						<th style="min-width: 80px;">USP</th>
+						<th style="width: 90px;" class="col-quarantine">Quarantine</th>
 					</tr>
 				</thead>
 				<tbody></tbody>
 			</table>
+		</div>
+
+		<!-- ======================= Quarantine (held out of QC and stock) ======================= -->
+		<h6 class="eso-subtitle">Quarantine</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-items"></div>
+		</div>
+		<div class="row piw-quarantine-fields">
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-entire"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-reminder"></div>
+			<div class="col-md-6 col-sm-12 eso-fld field-quarantine-reason"></div>
+			<div class="col-md-12 text-muted piw-quarantine-hint" style="font-size:12px; margin-bottom:8px;"></div>
 		</div>
 
 		<h6 class="eso-subtitle">Discrepancy Evidence</h6>

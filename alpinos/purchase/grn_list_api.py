@@ -19,11 +19,17 @@ PAGE_ROLES = tuple(C.ALL_PURCHASE_ROLES) + ("System Manager",)
 
 DEFAULT_PAGE_LENGTH = 20
 PAGE_LENGTHS = (20, 100, 500, 2500)
+# What the list screen offers; PAGE_LENGTHS stays the ceiling a caller may ask for.
+SCREEN_PAGE_LENGTHS = (20, 50, 100)
 
+# Sort keys the screen sends (its column fields) plus the older aliases.
 SORTABLE = {
 	"name": "name",
 	"posting_date": "posting_date",
+	"custom_purchase_inward": "custom_purchase_inward",
+	"supplier_name": "supplier_name",
 	"supplier": "supplier_name",
+	"custom_grn_status": "custom_grn_status",
 	"grn_status": "custom_grn_status",
 	"modified": "modified",
 }
@@ -35,10 +41,11 @@ def _module_filters():
 	make_purchase_return copies custom_purchase_inward off the receipt it returns, so
 	filtering on that link alone would list every return alongside its own GRN.
 	"""
+	# Cancelled GRNs stay listed (GRN Status reads Cancelled): the list is where a cancelled
+	# GRN is found again to be amended.
 	return [
 		[DOCTYPE, "custom_purchase_inward", "is", "set"],
 		[DOCTYPE, "is_return", "=", 0],
-		[DOCTYPE, "docstatus", "<", 2],
 	]
 
 
@@ -58,6 +65,7 @@ def get_grn_list(
 	has_rejection=None,
 	sort_field=None,
 	sort_dir=None,
+	with_actions=0,
 ):
 	"""One page of GRN rows for the list screen.
 
@@ -118,14 +126,34 @@ def get_grn_list(
 	if cint(has_rejection):
 		rows = [r for r in rows if flt(r.get("rejected_qty")) > 0]
 
+	if cint(with_actions):
+		_attach_actions(rows)
+
+	total = len(frappe.get_list(DOCTYPE, filters=filters, fields=["name"], limit_page_length=0))
 	return {
 		"rows": rows,
-		"total": len(
-			frappe.get_list(DOCTYPE, filters=filters, fields=["name"], limit_page_length=0)
-		),
+		# `data` / `has_more` are the shape the inward, QC and invoice list screens read.
+		"data": rows,
+		"total": total,
+		"has_more": 1 if start + page_length < total else 0,
 		"start": start,
 		"page_length": page_length,
 	}
+
+
+def _attach_actions(rows):
+	"""The row buttons: View on every GRN, Edit on a Draft for whoever may change it.
+
+	Both open the GRN screen, which re-checks every edit server-side
+	(grn_edit.get_grn_context), so a button here never grants anything by itself.
+	"""
+	from alpinos.purchase.grn_edit import EDIT_ROLES
+
+	may_edit = bool(set(frappe.get_roles()) & set(EDIT_ROLES))
+	for row in rows:
+		row["actions"] = [{"action": "view", "label": _("View"), "kind": "view"}]
+		if cint(row.get("docstatus")) == 0 and may_edit:
+			row["actions"].append({"action": "edit", "label": _("Edit"), "kind": "transition"})
 
 
 def _receipts_for_purchase_order(purchase_order):
@@ -206,7 +234,7 @@ def get_filter_options():
 	statuses = frappe.get_meta(DOCTYPE).get_field("custom_grn_status")
 	return {
 		"grn_statuses": [s for s in ((statuses.options or "").split("\n") if statuses else []) if s],
-		"page_lengths": list(PAGE_LENGTHS),
+		"page_lengths": list(SCREEN_PAGE_LENGTHS),
 	}
 
 

@@ -61,6 +61,13 @@
   "receiving_datetime",
   "receiving_remarks_section",
   "receiving_remarks",
+  "quarantine_header_section",
+  "quarantine_items",
+  "quarantine_entire_inward",
+  "col_quarantine",
+  "quarantine_reminder_days",
+  "quarantine_reason",
+  "purchase_quarantine",
   "dispute_section",
   "dispute_attachments",
   "links_section",
@@ -212,7 +219,7 @@
    "in_standard_filter": 1,
    "label": "Status",
    "no_copy": 1,
-   "options": "Draft\nPending Material Receipt\nPending QC\nQC In Progress\nQC Completed\nGRN Generated\nPayment Pending\nCompleted\nCancelled",
+   "options": "Draft\nPending Material Receipt\nQuarantined\nPending QC\nQC In Progress\nQC Completed\nGRN Generated\nPayment Pending\nCompleted\nCancelled",
    "read_only": 1,
    "search_index": 1
   },
@@ -468,6 +475,56 @@
    "label": "Receiving Remarks"
   },
   {
+   "fieldname": "quarantine_header_section",
+   "fieldtype": "Section Break",
+   "label": "Quarantine"
+  },
+  {
+   "fieldname": "quarantine_items",
+   "fieldtype": "Check",
+   "label": "Quarantine Items",
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "Hold items out of QC and usable stock until they are released from the Quarantine document."
+  },
+  {
+   "fieldname": "quarantine_entire_inward",
+   "fieldtype": "Check",
+   "label": "Quarantine Entire Inward",
+   "allow_on_submit": 1,
+   "default": "0",
+   "depends_on": "quarantine_items",
+   "description": "Every received item is quarantined. Leave unticked to pick the items individually."
+  },
+  {
+   "fieldname": "col_quarantine",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "quarantine_reminder_days",
+   "fieldtype": "Int",
+   "label": "Remind After (Days)",
+   "allow_on_submit": 1,
+   "depends_on": "quarantine_items",
+   "description": "One reminder for the whole Quarantine document to review and release the items."
+  },
+  {
+   "fieldname": "quarantine_reason",
+   "fieldtype": "Small Text",
+   "label": "Quarantine Reason",
+   "allow_on_submit": 1,
+   "depends_on": "quarantine_items"
+  },
+  {
+   "fieldname": "purchase_quarantine",
+   "fieldtype": "Link",
+   "label": "Purchase Quarantine",
+   "options": "Purchase Quarantine",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
    "collapsible": 1,
    "depends_on": "eval:doc.docstatus==1",
    "fieldname": "dispute_section",
@@ -587,7 +644,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-03 14:00:00.000000",
+ "modified": "2026-09-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase Inward",

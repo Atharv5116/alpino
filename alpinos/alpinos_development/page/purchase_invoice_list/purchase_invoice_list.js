@@ -6,8 +6,8 @@
 // the server would refuse. Only invoices this module raised are listed -- a GRN's debit
 // note and ordinary Accounts invoices stay out.
 //
-// BRD 6.1.1 names "Payment Status" and "Status" separately; for now they are one Status
-// filter over the invoice's own status.
+// Status is the invoice's one payment status (Pending Payment / Partially Paid / Paid); the
+// document state (Draft / Submitted / Cancelled) has its own column and filter.
 
 frappe.pages['purchase_invoice_list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
@@ -33,7 +33,8 @@ var PINV_DIRECT = 'Direct Purchase Invoice';
 
 // Used only when get_filter_options() is unavailable; the server copy wins.
 var PINV_FALLBACK_OPTIONS = {
-	statuses: '\nDraft\nPending Payment\nPartially Paid\nCompleted\nCancelled',
+	statuses: '\nPending Payment\nPartially Paid\nPaid',
+	doc_states: '\nDraft\nSubmitted\nCancelled',
 	invoice_types: [
 		{ value: '', label: '' },
 		{ value: 'Normal', label: 'Normal Invoice' },
@@ -44,10 +45,14 @@ var PINV_FALLBACK_OPTIONS = {
 };
 
 var PINV_STATUS_COLORS = {
-	Draft: 'gray',
 	'Pending Payment': 'orange',
 	'Partially Paid': 'yellow',
-	Completed: 'green',
+	Paid: 'green',
+};
+
+var PINV_DOC_STATE_COLORS = {
+	Draft: 'gray',
+	Submitted: 'blue',
 	Cancelled: 'red',
 };
 
@@ -135,6 +140,7 @@ var PINV_COLUMNS = [
 		render: (d, h) => (cint(d.docstatus) === 1 ? h.money(d.pending_amount, d.currency) : '—'),
 	},
 	{ label: 'Status', sort: 'custom_unified_status', width: '8%', render: (d, h) => h.status(d) },
+	{ label: 'Document', width: '6%', render: (d, h) => h.doc_state(d) },
 	{ label: 'Actions', cls: 'pinv-col-actions', width: '10%', render: (d, h) => h.actions(d) },
 ];
 
@@ -213,6 +219,7 @@ function pinv_body_html() {
 			<div class="fld-due-to"></div>
 			<div class="fld-invoice-type"></div>
 			<div class="fld-status"></div>
+			<div class="fld-doc-state"></div>
 		</div>
 		<div class="alp-actions" style="margin-top: 14px;">
 			<button class="btn btn-primary btn-sm btn-pinv-apply">${__('Apply')}</button>
@@ -319,6 +326,15 @@ var PurchaseInvoiceListPage = class {
 			'.fld-invoice-type'
 		);
 		mk('status', { fieldtype: 'Select', label: __('Status'), options: this.options.statuses }, '.fld-status');
+		mk(
+			'doc_state',
+			{
+				fieldtype: 'Select',
+				label: __('Document'),
+				options: this.options.doc_states || PINV_FALLBACK_OPTIONS.doc_states,
+			},
+			'.fld-doc-state'
+		);
 	}
 
 	bind_events() {
@@ -482,6 +498,7 @@ var PurchaseInvoiceListPage = class {
 			due_to: val('due_to'),
 			invoice_type: val('invoice_type'),
 			status: val('status'),
+			doc_state: val('doc_state'),
 			sort_field: this._sort.field || '',
 			sort_dir: this._sort.dir || 'desc',
 			with_actions: 1,
@@ -562,6 +579,11 @@ var PurchaseInvoiceListPage = class {
 							target
 					  )}" data-value="${esc(value)}" title="${esc(title)}">${esc(value)}</button>`
 					: '—',
+			doc_state: (d) => {
+				const s = d.doc_state || '';
+				if (!s) return '—';
+				return `<span class="indicator-pill ${PINV_DOC_STATE_COLORS[s] || 'gray'}">${esc(__(s))}</span>`;
+			},
 			status: (d) => {
 				const s = d.status || '';
 				if (!s) return '—';

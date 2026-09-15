@@ -111,8 +111,8 @@ def run():
 		),
 	)
 	check(
-		"BRD 6.2 a new invoice starts in Draft",
-		lambda: _assert(invoice.get(STATUS_FIELD) == C.UNF_DRAFT, invoice.get(STATUS_FIELD)),
+		"BRD 6.2 a new invoice starts as Pending Payment",
+		lambda: _assert(invoice.get(STATUS_FIELD) == C.UNF_PENDING_PAYMENT, invoice.get(STATUS_FIELD)),
 	)
 
 	expect_throw(
@@ -252,7 +252,7 @@ def run():
 	check(
 		"BR-UNF-06 the balance settles the invoice to Completed",
 		lambda: _assert(
-			inv.get(STATUS_FIELD) == C.UNF_COMPLETED
+			inv.get(STATUS_FIELD) == C.UNF_PAID
 			and flt(inv.custom_supplier_pending_amount) == 0.0,
 			f"{inv.get(STATUS_FIELD)} pending={inv.custom_supplier_pending_amount}",
 		),
@@ -288,7 +288,7 @@ def run():
 	check(
 		"BR-UNF-06 Completed only once BOTH pending amounts reach zero",
 		lambda: _assert(
-			inv_l.get(STATUS_FIELD) == C.UNF_COMPLETED,
+			inv_l.get(STATUS_FIELD) == C.UNF_PAID,
 			f"{inv_l.get(STATUS_FIELD)} logistics={inv_l.custom_logistics_pending_amount}",
 		),
 	)

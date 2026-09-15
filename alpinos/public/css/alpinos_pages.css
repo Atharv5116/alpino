@@ -10,7 +10,8 @@
      post-delivery-queue,
      purchase_inward_list, purchase_qc_list,
      purchase_inward_entry, purchase_qc_entry,
-     purchase_invoice_list, purchase_invoice_entry
+     purchase_invoice_list, purchase_invoice_entry,
+     purchase_quarantine_list, purchase_quarantine_view
 
    The only globally-defined class names are the opt-in .alp-* utilities,
    which no existing page uses, so they cannot affect other pages.
@@ -41,6 +42,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(.page-head, .page-body) .container {
   max-width: 100% !important;
@@ -100,6 +103,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .eso-card,
@@ -159,6 +164,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .eso-card-title,
@@ -198,6 +205,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .eso-card-title,
@@ -250,6 +259,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .so-table,
@@ -295,6 +306,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .so-table,
@@ -344,6 +357,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .so-table,
@@ -388,6 +403,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .so-table,
@@ -425,6 +442,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) :is(
   .so-list-row,
@@ -473,6 +492,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) .layout-main-section :is(.form-control, .btn) {
   border-radius: 6px;
@@ -499,6 +520,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) .page-head .page-actions {
   flex-wrap: wrap;
@@ -609,6 +632,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
   ) :is(
     .eso-card,
@@ -650,6 +675,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
   ) :is(.page-head, .page-body) .container {
     padding-left: 12px;
@@ -696,6 +723,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
   ) :is(
     .so-table,
@@ -739,6 +768,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
   ) .layout-main-section :is(
     .form-control:not(.input-xs),
@@ -820,6 +851,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) .indicator-pill {
   height: auto !important;
@@ -1040,6 +1073,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"]
 ) .page-head .indicator-pill:empty {
   display: none !important;
@@ -1070,6 +1105,8 @@
   [data-page-route="purchase_grn_view"],
   [data-page-route="purchase_invoice_list"],
   [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
   [data-page-route="purchase_order_list"],
   [data-page-route="invoice-download-queue"]
 ) .page-body {

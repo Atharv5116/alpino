@@ -415,6 +415,109 @@ def validate_grn_fields(doc, method=None):
 				title=_("Rejection Reason Required"),
 			)
 
+	log_draft_grn_edits(doc)
+
+
+#: What a person may change on a Draft GRN, and therefore what the change log records.
+#: posting_date is logged only when "Edit Posting Date and Time" is on; otherwise ERPNext
+#: resets it to now on every save and each save would log a change nobody made.
+LOGGED_HEADER_FIELDS = (
+	"posting_date",
+	"posting_time",
+	"supplier_delivery_note",
+	"lr_no",
+	"lr_date",
+	"set_warehouse",
+	"rejected_warehouse",
+	"custom_receiving_remarks",
+)
+LOGGED_ITEM_FIELDS = (
+	"qty",
+	"rejected_qty",
+	"warehouse",
+	"rejected_warehouse",
+	"batch_no",
+	"rate",
+	"custom_rejection_reason",
+	"custom_usp",
+	"custom_mrp",
+)
+_NUMERIC_LOGGED = {"qty", "rejected_qty", "rate", "custom_mrp"}
+
+
+def _log_text(fieldname, value):
+	if fieldname in _NUMERIC_LOGGED:
+		return "{0:g}".format(flt(value))
+	if value in (None, ""):
+		return ""
+	return str(value)
+
+
+def log_draft_grn_edits(doc):
+	"""VAL-GRN-06 / BR-GRN-05 — record every edit a person makes to a Draft GRN.
+
+	The Purchase GRN Change Log table existed and the GRN screen displayed it, but nothing
+	ever wrote to it. That had a second cost: sync_from_inward protects exactly the fields
+	this log names, so with an empty log a hand edit was silently overwritten the next time
+	the Store Team corrected the inward.
+
+	Runs on validate, so edits from the GRN screen and from the desk form are logged alike.
+	A brand-new receipt (the system minting it) and the system's own re-sync
+	(flags.grn_system_sync) are not edits by a person and are not logged.
+	"""
+	if cint(doc.docstatus) != 0 or doc.is_new() or doc.flags.get("grn_system_sync"):
+		return
+	before = doc.get_doc_before_save()
+	if not before:
+		return
+
+	meta = frappe.get_meta(DOCTYPE)
+	item_meta = frappe.get_meta(ITEM_DOCTYPE)
+	entries = []
+
+	for fieldname in LOGGED_HEADER_FIELDS:
+		if fieldname in ("posting_date", "posting_time") and not cint(doc.get("set_posting_time")):
+			continue
+		if not meta.has_field(fieldname):
+			continue
+		old, new = _log_text(fieldname, before.get(fieldname)), _log_text(fieldname, doc.get(fieldname))
+		if old != new:
+			entries.append((meta.get_label(fieldname), old, new))
+
+	previous_rows = {row.name: row for row in (before.get("items") or [])}
+	kept = set()
+	for row in doc.get("items") or []:
+		prev = previous_rows.get(row.name)
+		if not prev:
+			entries.append((_("Row {0}: Item").format(row.idx), "", row.item_code or ""))
+			continue
+		kept.add(row.name)
+		for fieldname in LOGGED_ITEM_FIELDS:
+			if not item_meta.has_field(fieldname):
+				continue
+			old, new = _log_text(fieldname, prev.get(fieldname)), _log_text(fieldname, row.get(fieldname))
+			if old != new:
+				entries.append(
+					(_("Row {0}: {1}").format(row.idx, item_meta.get_label(fieldname)), old, new)
+				)
+	for name, prev in previous_rows.items():
+		if name not in kept:
+			entries.append((_("Row {0}: Item").format(prev.idx), prev.item_code or "", _("(removed)")))
+
+	now = frappe.utils.now_datetime()
+	for label, old, new in entries:
+		doc.append(
+			"custom_grn_change_log",
+			{
+				"field_label": label,
+				"old_value": old[:140],
+				"new_value": new[:140],
+				"reason": doc.flags.get("grn_edit_reason"),
+				"changed_by": frappe.session.user,
+				"changed_on": now,
+			},
+		)
+
 
 def validate_grn_completeness(doc, method=None):
 	"""VAL-GRN-03 / VAL-QC-20 - block a final submit that is missing information, and SAY WHAT.

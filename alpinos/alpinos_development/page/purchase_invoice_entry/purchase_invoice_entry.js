@@ -367,6 +367,9 @@ var PurchaseInvoiceEntry = class {
 				<td>${esc(row.payment_date ? frappe.datetime.str_to_user(row.payment_date) : '')}</td>
 				<td>${esc(row.payment_mode)}</td>
 				<td>${esc(row.reference_number)}</td>
+				<td>${row.payment_entry
+					? `<a href="/app/payment-entry/${encodeURIComponent(row.payment_entry)}" target="_blank" rel="noopener">${esc(row.payment_entry)}</a>`
+					: '<span class="text-muted">—</span>'}</td>
 				<td>${file}</td>
 				<td>${esc(row.payment_status)}</td>
 				<td>${esc(row.remarks)}</td>
@@ -385,16 +388,22 @@ var PurchaseInvoiceEntry = class {
 		$root.toggleClass('pinv-blank', !this.docname);
 		$root.toggleClass('pinv-direct', this._is_direct());
 
+		// One payment status (Pending Payment / Partially Paid / Paid); Draft and Cancelled
+		// are the document's state and get their own badge.
 		const status = ctx.status || '';
+		const docstatus = cint(doc.docstatus);
 		this.wrapper.find('.field-stage-badge')
 			.text(status ? __(status) : '')
 			.removeClass('pinv-done pinv-open pinv-cancelled')
-			.addClass(status === 'Completed' ? 'pinv-done' : status === 'Cancelled' ? 'pinv-cancelled' : 'pinv-open');
+			.addClass(status === 'Paid' ? 'pinv-done' : 'pinv-open');
+		this.wrapper.find('.field-doc-state-badge')
+			.text(this.docname && docstatus !== 1 ? __(ctx.doc_state || '') : '')
+			.removeClass('pinv-cancelled')
+			.toggleClass('pinv-cancelled', docstatus === 2);
 		this.wrapper.find('.field-type-badge').text(
 			this.docname ? (this._is_direct() ? __('Direct Invoice') : __('Normal Invoice')) : ''
 		);
 
-		const docstatus = cint(doc.docstatus);
 		let lock_note = '';
 		if (docstatus === 1) lock_note = __('Submitted — the supplier bill, items and logistics bill are read-only (BR-UNF-03).');
 		else if (docstatus === 2) lock_note = __('This invoice is cancelled.');
@@ -403,7 +412,7 @@ var PurchaseInvoiceEntry = class {
 
 		let pay_note = '';
 		if (docstatus === 0) pay_note = __('Payments are recorded by the Accounts Team once the invoice is submitted.');
-		else if (status === 'Completed') pay_note = __('The supplier and logistics amounts are fully paid.');
+		else if (status === 'Paid') pay_note = __('The supplier and logistics amounts are fully paid.');
 		else if (docstatus === 1 && !cint(ctx.can_add_payment)) pay_note = __('Payments are recorded by the Accounts Team.');
 		this.wrapper.find('.field-payment-note').text(pay_note);
 
@@ -582,7 +591,12 @@ var PurchaseInvoiceEntry = class {
 						// VAL-UNF-04..07 refusals keep the dialog open with what was typed
 						if (r.exc || !r.message) return;
 						d.hide();
-						me._toast(__('Payment recorded — invoice is now {0}', [__(r.message.status)]), 'green');
+						me._toast(
+							r.message.payment_entry
+								? __('Payment Entry {0} posted — invoice is now {1}', [r.message.payment_entry, __(r.message.status)])
+								: __('Payment recorded — invoice is now {0}', [__(r.message.status)]),
+							'green'
+						);
 						me.load(me.docname);
 					},
 				});

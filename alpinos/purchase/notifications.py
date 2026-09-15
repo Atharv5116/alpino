@@ -74,6 +74,15 @@ def submit_for_qc(purchase_inward):
 		update_modified=False,
 	)
 
+	# Quarantined items leave here into their own Quarantine document; only the rest go to
+	# QC. (An inward with every item quarantined never reaches this: it offers Create
+	# Quarantine instead.)
+	from alpinos.purchase import quarantine
+
+	held = quarantine.held_lines(inward)
+	if held and not inward.get("purchase_quarantine"):
+		quarantine.create_quarantine_document(inward, held)
+
 	qc, created = _ensure_purchase_qc(inward)
 
 	inward.db_set(
@@ -99,10 +108,17 @@ def _ensure_purchase_qc(inward):
 	The row lock serialises two concurrent handoffs on the inward; without it both read
 	"no QC yet" and both insert, and BR-QC-01's one-QC-per-inward quietly stops holding.
 	"""
+	from alpinos.purchase import quarantine
+
 	frappe.db.get_value("Purchase Inward", inward.name, "name", for_update=True)
+	# The hand-over QC only: a QC raised for items released from quarantine is not it.
 	found = frappe.get_all(
 		QC_DOCTYPE,
-		filters={"purchase_inward": inward.name, "docstatus": ("<", 2)},
+		filters={
+			"purchase_inward": inward.name,
+			"docstatus": ("<", 2),
+			"purchase_quarantine": ("is", "not set"),
+		},
 		pluck="name",
 		order_by="creation asc",
 		limit=1,
@@ -110,19 +126,35 @@ def _ensure_purchase_qc(inward):
 	if found:
 		return frappe.get_doc(QC_DOCTYPE, found[0]), False
 
+	lines = [
+		line
+		for line in inward.get("items") or []
+		if flt(line.received_qty) > 0 and not quarantine._held(line)
+	]
+	return build_purchase_qc(inward, lines), True
+
+
+def build_purchase_qc(inward, lines, sla_start=None, purchase_quarantine=None):
+	"""Raise a Draft Purchase QC for exactly `lines` of the inward.
+
+	The hand-over QC is built from the lines that are not quarantined; a release from
+	quarantine builds one from the released lines, with its SLA clock starting at the
+	release rather than at the original receipt.
+	"""
 	# BR-QC-03: the clock starts at the handoff, not when a QC user opens the document.
-	start = get_datetime(inward.receiving_datetime or now_datetime())
+	start = get_datetime(sla_start or inward.receiving_datetime or now_datetime())
 	minutes = int(round(flt(sla_hours(inward.company)) * 60))
 
 	qc = frappe.new_doc(QC_DOCTYPE)
 	qc.purchase_inward = inward.name
+	qc.purchase_quarantine = purchase_quarantine
 	qc.supplier = inward.supplier
 	qc.supplier_name = inward.supplier_name
 	qc.supplier_order_no = inward.supplier_order_no
 	qc.invoice_number = inward.invoice_number
 	qc.inward_type = inward.inward_type
 	qc.company = inward.company
-	qc.received_qty = flt(inward.total_received_qty)
+	qc.received_qty = sum(flt(line.received_qty) for line in lines)
 	qc.qc_status = C.QC_PENDING
 	qc.qc_result = C.QC_RESULT_PENDING
 	qc.sla_start = start
@@ -136,7 +168,7 @@ def _ensure_purchase_qc(inward):
 	qc.inspector = None
 	qc.inspection_date = None
 
-	for line in inward.get("items") or []:
+	for line in lines:
 		if flt(line.received_qty) <= 0:
 			continue
 		qc.append(
@@ -149,7 +181,8 @@ def _ensure_purchase_qc(inward):
 				"manufacturing_date": line.manufacturing_date,
 				"expiry_date": line.expiry_date,
 				"target_warehouse": line.target_warehouse or inward.target_warehouse,
-				"quarantine": cint(line.quarantine),
+				# Every line that reaches a QC is out of quarantine (never held, or released).
+				"quarantine": 0,
 				"qc_result": C.QC_RESULT_PENDING,
 				"po_detail": line.po_detail,
 				# Purchase Inward Item autonames by hash, so the row name is the only
@@ -161,13 +194,13 @@ def _ensure_purchase_qc(inward):
 	if not qc.get("items"):
 		frappe.throw(_("No received quantity to hand over to QC."))
 
-	qc.total_received_qty = flt(inward.total_received_qty)
+	qc.total_received_qty = sum(flt(row.received_qty) for row in qc.get("items"))
 
 	# The system raises the QC, not the Store user: the DocPerm matrix gives Store read-only
 	# access to Purchase QC on purpose (BRD "User Roles"), and who may trigger this handoff
 	# was already decided by assert_transition above.
 	qc.insert(ignore_permissions=True)
-	return qc, True
+	return qc
 
 
 # ------------------------------------------------- BR-QC-02 notification ---

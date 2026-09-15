@@ -257,6 +257,8 @@ def get_available_actions(purchase_order):
 		# Purchase Invoice order.
 		"direct_purchase_invoice": cint(doc.get("custom_direct_purchase_invoice")),
 		"inward_count": len(inwards),
+		# The Purchase Order screen opens a single inward directly rather than a one-row list.
+		"inwards": inwards,
 		# BRD 1.2 note / BR-PO-22: what the form needs to offer Create or View Invoice on a
 		# Direct Purchase Invoice order, from the same lookup the invoice guard uses.
 		"direct_invoice": _direct_invoice(doc),

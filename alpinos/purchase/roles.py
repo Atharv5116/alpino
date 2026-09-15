@@ -199,6 +199,19 @@ PERMISSION_MATRIX = {
 		C.ROLE_ACCOUNTS: "EDIT_AFTER_SUBMIT",
 		C.ROLE_ADMIN: "FULL",
 	},
+	# Raised by the system at the Store hand-over and changed only through
+	# quarantine.release_items / update_reminder, which check the Store / QC / Admin roles
+	# themselves -- so every module role just reads it. Not submittable, so no FULL.
+	"Purchase Quarantine": {
+		C.ROLE_PURCHASE_USER: "VIEW",
+		C.ROLE_PURCHASE_MANAGER: "VIEW",
+		C.ROLE_STORE_USER: "VIEW",
+		C.ROLE_STORE_MANAGER: "VIEW",
+		C.ROLE_QC_USER: "VIEW",
+		C.ROLE_QC_MANAGER: "VIEW",
+		C.ROLE_ACCOUNTS: "VIEW",
+		C.ROLE_ADMIN: "CREATE_EDIT",
+	},
 	# BRD User Roles gives Accounts the payment, and workflow.complete_payment is an
 	# ACCOUNTS transition — without a row here the role that owns the transition cannot
 	# open or raise the document the transition is about.
@@ -283,6 +296,11 @@ SUPPORTING_READ_DOCTYPES = (
 	# link fields on the Payment Entry the Accounts role raises
 	"Mode of Payment",
 	"Bank Account",
+	# ERPNext's Payment Entry lists the paid-from Account under the Payment Entry's own
+	# permission (get_account_details) and posts against a Cost Center; without read on
+	# both, recording a supplier payment died with a bare PermissionError.
+	"Account",
+	"Cost Center",
 )
 
 # Masters that are NOT open to the whole module. The BRD User Roles table gives Store only
@@ -293,6 +311,8 @@ RESTRICTED_READ_DOCTYPES = {
 	"Price List": C.PURCHASE_ROLES + C.ACCOUNTS_ROLES + (C.ROLE_ADMIN,),
 	"Mode of Payment": C.ACCOUNTS_ROLES + (C.ROLE_ADMIN,),
 	"Bank Account": C.ACCOUNTS_ROLES + (C.ROLE_ADMIN,),
+	"Account": C.ACCOUNTS_ROLES + (C.ROLE_ADMIN,),
+	"Cost Center": C.ACCOUNTS_ROLES + (C.ROLE_ADMIN,),
 }
 
 # Reading a master is not a licence to bulk-download it: list views, link searches and the
@@ -509,6 +529,10 @@ SECTIONS = {
 					"target_warehouse",
 					"receiving_remarks",
 					"dispute_attachments",
+					"quarantine_items",
+					"quarantine_entire_inward",
+					"quarantine_reminder_days",
+					"quarantine_reason",
 				),
 				"display_fields": ("received_by", "receiving_datetime"),
 				"child_table": "items",

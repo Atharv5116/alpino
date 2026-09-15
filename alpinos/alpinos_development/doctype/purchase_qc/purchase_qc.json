@@ -67,6 +67,7 @@
   "override_reason",
   "links_section",
   "purchase_receipt",
+  "purchase_quarantine",
   "links_col",
   "debit_note"
  ],
@@ -503,6 +504,15 @@
    "search_index": 1
   },
   {
+   "fieldname": "purchase_quarantine",
+   "fieldtype": "Link",
+   "label": "Purchase Quarantine",
+   "options": "Purchase Quarantine",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Set when this QC inspects items released from quarantine."
+  },
+  {
    "fieldname": "links_col",
    "fieldtype": "Column Break"
   },
@@ -520,7 +530,7 @@
  "is_submittable": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-09-04 15:00:00.000000",
+ "modified": "2026-09-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase QC",

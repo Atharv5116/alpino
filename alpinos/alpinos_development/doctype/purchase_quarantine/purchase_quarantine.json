@@ -1,0 +1,232 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-09-15 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "quarantine_section",
+  "naming_series",
+  "purchase_inward",
+  "purchase_order",
+  "supplier",
+  "supplier_name",
+  "company",
+  "col_1",
+  "status",
+  "quarantine_date",
+  "quarantined_by",
+  "entire_inward",
+  "reason",
+  "reminder_section",
+  "reminder_days",
+  "col_2",
+  "next_reminder_on",
+  "last_reminder_on",
+  "items_section",
+  "items",
+  "totals_section",
+  "total_qty",
+  "col_3",
+  "held_qty",
+  "col_4",
+  "released_qty"
+ ],
+ "fields": [
+  {
+   "fieldname": "quarantine_section",
+   "fieldtype": "Section Break",
+   "label": "Quarantine"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "QRN-.YYYY.-",
+   "default": "QRN-.YYYY.-",
+   "hidden": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "purchase_inward",
+   "fieldtype": "Link",
+   "label": "Purchase Inward",
+   "options": "Purchase Inward",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "purchase_order",
+   "fieldtype": "Link",
+   "label": "Purchase Order",
+   "options": "Purchase Order",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "label": "Supplier Name",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Quarantined\nPartially Released\nReleased",
+   "default": "Quarantined",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "bold": 1
+  },
+  {
+   "fieldname": "quarantine_date",
+   "fieldtype": "Datetime",
+   "label": "Quarantine Date",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "quarantined_by",
+   "fieldtype": "Link",
+   "label": "Quarantined By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "entire_inward",
+   "fieldtype": "Check",
+   "label": "Entire Inward Quarantined",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "reminder_section",
+   "fieldtype": "Section Break",
+   "label": "Reminder"
+  },
+  {
+   "fieldname": "reminder_days",
+   "fieldtype": "Int",
+   "label": "Remind After (Days)",
+   "description": "Remind the Store and QC teams to review and release the held items every this many days until everything is released."
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "next_reminder_on",
+   "fieldtype": "Date",
+   "label": "Next Reminder On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_reminder_on",
+   "fieldtype": "Datetime",
+   "label": "Last Reminder On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Quarantined Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Purchase Quarantine Item"
+  },
+  {
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Quarantined Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "held_qty",
+   "fieldtype": "Float",
+   "label": "Still Held",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "released_qty",
+   "fieldtype": "Float",
+   "label": "Released Qty",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-09-15 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase Quarantine",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "purchase_inward,supplier_name,status",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "supplier_name",
+ "track_changes": 1
+}

@@ -107,10 +107,20 @@ def _payable_logistics(doc):
 	return flt(doc.get("custom_freight_amount"))
 
 
+def _active_rows(doc):
+	"""Payment rows that still count. A row whose Payment Entry was cancelled stays in the
+	history but no longer pays anything."""
+	return [
+		row
+		for row in (doc.get("custom_payment_references") or [])
+		if (row.get("payment_status") or "") != C.UNF_ROW_CANCELLED
+	]
+
+
 def _paid(doc, payment_type):
 	return sum(
 		flt(row.payment_amount)
-		for row in (doc.get("custom_payment_references") or [])
+		for row in _active_rows(doc)
 		if (row.payment_type or "") == payment_type
 	)
 
@@ -220,7 +230,7 @@ def _validate_payment_rows(doc):
 	less the stored pending amount: the stored figure is a derived cache, and validating a
 	row against a number this same save is about to recompute is circular.
 	"""
-	rows = doc.get("custom_payment_references") or []
+	rows = _active_rows(doc)
 	if not rows:
 		return
 
@@ -286,8 +296,10 @@ def _validate_payment_rows(doc):
 def recompute_payment_state(doc):
 	"""BR-UNF-04 and BR-UNF-06 — the two pending amounts and the status they imply.
 
-	The single writer of the status. Completed is reached only when BOTH pending amounts
-	are zero, which is BR-UNF-06 stated as code rather than trusted to a caller.
+	The single writer of the status, which is purely a PAYMENT status: Pending Payment,
+	Partially Paid or Paid. Draft / Submitted / Cancelled is the document's own state and
+	is shown beside it (document_state). Paid is reached only when BOTH pending amounts are
+	zero, which is BR-UNF-06 stated as code rather than trusted to a caller.
 	"""
 	supplier_paid = _paid(doc, C.UNF_PAYMENT_SUPPLIER)
 	logistics_paid = _paid(doc, C.UNF_PAYMENT_LOGISTICS)
@@ -299,16 +311,14 @@ def recompute_payment_state(doc):
 	doc.custom_logistics_pending_amount = logistics_pending
 	doc.custom_total_paid_amount = supplier_paid + logistics_paid
 
-	if cint(doc.docstatus) == 2:
-		doc.set(STATUS_FIELD, C.UNF_CANCELLED)
-		return
 	if cint(doc.docstatus) == 0:
-		doc.set(STATUS_FIELD, C.UNF_DRAFT)
+		# A draft holds no payments; it is simply not paid yet.
+		doc.set(STATUS_FIELD, C.UNF_PENDING_PAYMENT)
 		return
 
 	settled = supplier_pending <= _EPSILON and logistics_pending <= _EPSILON
 	if settled:
-		doc.set(STATUS_FIELD, C.UNF_COMPLETED)
+		doc.set(STATUS_FIELD, C.UNF_PAID)
 	elif (supplier_paid + logistics_paid) > _EPSILON:
 		doc.set(STATUS_FIELD, C.UNF_PARTIALLY_PAID)
 	else:
@@ -355,6 +365,8 @@ _PAYMENT_ROW_FIELDS = (
 	"reference_number",
 	"payment_attachment",
 	"remarks",
+	"payment_entry",
+	"payment_status",
 )
 
 
@@ -386,11 +398,20 @@ def _guard_payment_rows(doc):
 		if row.name and row.name in old:
 			kept.add(row.name)
 			previous = old[row.name]
-			if not is_admin and any(
+			# A row that posted a Payment Entry is locked for the Admin too: the ledger
+			# already holds that payment, so the row may only change by cancelling the entry.
+			locked_for_all = bool(previous.get("payment_entry"))
+			if (not is_admin or locked_for_all) and any(
 				_row_value(row, f) != _row_value(previous, f) for f in _PAYMENT_ROW_FIELDS
 			):
 				frappe.throw(
-					_("Row {0}: a recorded payment cannot be changed.").format(row.idx),
+					_("Row {0}: a recorded payment cannot be changed.").format(row.idx)
+					+ (
+						" "
+						+ _("Cancel Payment Entry {0} instead.").format(previous.payment_entry)
+						if locked_for_all
+						else ""
+					),
 					frappe.PermissionError,
 					title=_("Payment Locked"),
 				)
@@ -406,7 +427,8 @@ def _guard_payment_rows(doc):
 		if not row.get("recorded_on"):
 			row.recorded_on = now_datetime()
 
-	if not is_admin and set(old) - kept:
+	removed = set(old) - kept
+	if removed and (not is_admin or any(old[name].get("payment_entry") for name in removed)):
 		frappe.throw(
 			_("A recorded payment cannot be removed."),
 			frappe.PermissionError,
@@ -432,6 +454,10 @@ def _sync_inward(doc, detached=False):
 	inward = frappe.get_doc(INWARD, name)
 	if cint(inward.docstatus) != 1:
 		return
+	# An invoice for items released from quarantine is billed against their own GRN; the
+	# inward's links and status follow its first GRN's invoice only.
+	if doc.get("custom_grn") and inward.get("purchase_receipt") and doc.custom_grn != inward.purchase_receipt:
+		return
 	chain = (C.PI_GRN_GENERATED, C.PI_PAYMENT_PENDING, C.PI_COMPLETED)
 
 	if detached:
@@ -445,7 +471,7 @@ def _sync_inward(doc, detached=False):
 		inward.db_set("purchase_invoice", doc.name, update_modified=False)
 	target = (
 		C.PI_COMPLETED
-		if cint(doc.docstatus) == 1 and doc.get(STATUS_FIELD) == C.UNF_COMPLETED
+		if cint(doc.docstatus) == 1 and doc.get(STATUS_FIELD) == C.UNF_PAID
 		else C.PI_PAYMENT_PENDING
 	)
 	if inward.inward_status in chain:
@@ -502,12 +528,29 @@ def on_update_after_submit(doc, method=None):
 		_sync_inward(doc)
 
 
+def is_module_debit_note(doc):
+	"""A GRN's debit note (grn.make_debit_note): a return whose lines point at a module GRN."""
+	if not cint(doc.get("is_return")):
+		return False
+	grns = {row.get("purchase_receipt") for row in doc.get("items") or [] if row.get("purchase_receipt")}
+	return any(frappe.db.get_value("Purchase Receipt", grn, "custom_purchase_inward") for grn in grns)
+
+
 def on_cancel(doc, method=None):
+	if is_module_debit_note(doc):
+		# The debit note is mirrored on its GRN, the Purchase QC and the main inward
+		# (custom_debit_note / debit_note). Those links are history, not a dependency, but the
+		# back-link check counted them and refused every cancel of a submitted debit note.
+		doc.ignore_linked_doctypes = tuple(doc.get("ignore_linked_doctypes") or ()) + (
+			INWARD,
+			"Purchase QC",
+			"Purchase Receipt",
+		)
+		return
 	if not is_module_invoice(doc):
 		return
-	# on_cancel runs after the row is written, so a plain assignment never reached the
-	# database and a cancelled invoice kept reading Pending Payment in every list.
-	doc.db_set(STATUS_FIELD, C.UNF_CANCELLED, update_modified=False)
+	# The payment status is left as it stands: Cancelled is the document state (docstatus),
+	# which every screen shows beside it.
 	_sync_inward(doc, detached=True)
 	# The inward's purchase_invoice link would otherwise block the cancel for good
 	# ("Cannot delete or cancel because Purchase Invoice ... is linked with Purchase
@@ -741,10 +784,8 @@ def add_payment(
 			_("Payments can only be recorded against a submitted invoice."),
 			title=_("Not Submitted"),
 		)
-	if invoice.get(STATUS_FIELD) == C.UNF_CANCELLED:
-		frappe.throw(_("This invoice has been cancelled."), title=_("Cancelled"))
 
-	invoice.append(
+	row = invoice.append(
 		"custom_payment_references",
 		{
 			"payment_type": payment_type,
@@ -754,28 +795,155 @@ def add_payment(
 			"reference_number": reference_number,
 			"payment_attachment": payment_attachment,
 			"remarks": remarks,
-			"payment_status": "Done",
+			"payment_status": C.UNF_ROW_DONE,
 		},
 	)
 	invoice.save()
+
+	# The payment reaches ERPNext's books in the same request, so a refused Payment Entry
+	# (no account on the Mode of Payment, say) records nothing at all rather than a row
+	# that claims a payment the ledger never saw.
+	payment_entry = None
+	if payment_type == C.UNF_PAYMENT_SUPPLIER:
+		payment_entry = make_supplier_payment_entry(invoice, row)
+		row.db_set("payment_entry", payment_entry.name, update_modified=False)
+
 	invoice.reload()
 	return {
 		"status": invoice.get(STATUS_FIELD),
 		"supplier_pending": flt(invoice.get("custom_supplier_pending_amount")),
 		"logistics_pending": flt(invoice.get("custom_logistics_pending_amount")),
 		"total_paid": flt(invoice.get("custom_total_paid_amount")),
+		"payment_entry": payment_entry.name if payment_entry else None,
 	}
 
 
+def make_supplier_payment_entry(invoice, row):
+	"""Post one Supplier Payment to ERPNext as a submitted Payment Entry against the invoice.
+
+	Until now a payment was only a row on the invoice: the invoice's outstanding amount, its
+	ERPNext status and the supplier's ledger balance never moved, so the books showed every
+	paid invoice as still owed. The entry is built by ERPNext's own get_payment_entry, the
+	same mapper the invoice form's "Create > Payment" button uses, so the party account, the
+	invoice reference and the allocation stay standard.
+
+	The bank / cash account comes from the Mode of Payment's default account for the
+	company (Accounts > Mode of Payment), which is where ERPNext itself keeps it. A mode
+	with no account is refused by name.
+	"""
+	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+	from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
+
+	amount = flt(row.payment_amount)
+	mode = row.payment_mode
+	if not frappe.db.exists("Mode of Payment", mode):
+		frappe.throw(
+			_("Mode of Payment {0} does not exist. Create it under Accounts > Mode of Payment.").format(
+				frappe.bold(mode)
+			),
+			title=_("Missing Mode of Payment"),
+		)
+	account = get_bank_cash_account(mode, invoice.company)["account"]
+
+	# ERPNext reads the bank account's balance while mapping and validating the entry, and
+	# that lookup demands read permission on the Account itself -- which the Purchase
+	# Accounts User role does not carry, so every payment it recorded died with a bare
+	# PermissionError. add_payment has already checked the role; this is ERPNext's own flag
+	# for exactly this internal lookup, restored afterwards.
+	previous_flag = frappe.flags.ignore_account_permission
+	frappe.flags.ignore_account_permission = True
+	try:
+		return _post_payment_entry(invoice, row, amount, mode, account, get_payment_entry)
+	finally:
+		frappe.flags.ignore_account_permission = previous_flag
+
+
+def _post_payment_entry(invoice, row, amount, mode, account, get_payment_entry):
+	pe = get_payment_entry(
+		PI,
+		invoice.name,
+		party_amount=amount,
+		bank_account=account,
+		reference_date=row.payment_date,
+	)
+	pe.posting_date = row.payment_date
+	pe.mode_of_payment = mode
+	pe.paid_amount = amount
+	pe.received_amount = amount
+	for ref in pe.get("references") or []:
+		if ref.reference_doctype == PI and ref.reference_name == invoice.name:
+			ref.allocated_amount = amount
+	# ERPNext demands a reference for a bank account; VAL-UNF-05 has already made sure a
+	# non-cash payment carries one, and a cash one falls back to the invoice number.
+	pe.reference_no = (row.reference_number or "").strip() or invoice.name
+	pe.reference_date = row.payment_date
+	pe.remarks = _("{0} against Purchase Invoice {1} ({2}).").format(
+		C.UNF_PAYMENT_SUPPLIER, invoice.name, invoice.get("bill_no") or "-"
+	) + (f" {row.remarks}" if row.get("remarks") else "")
+	# add_payment has already checked the Accounts role and write access on the invoice.
+	pe.flags.ignore_permissions = True
+	pe.insert()
+	pe.submit()
+	return pe
+
+
+def payment_entry_on_cancel(doc, method=None):
+	"""A cancelled Payment Entry un-pays its invoice row.
+
+	The row stays in the payment history, marked Cancelled, and stops counting: the pending
+	amounts, the invoice status and the Purchase Inward are recomputed from what is left.
+	The row keeps the entry's number as plain text (not a Link), so the cancelled entry
+	neither blocks this cancel nor refuses the next save of the invoice.
+	"""
+	rows = frappe.get_all(
+		"Purchase Payment Reference",
+		filters={"payment_entry": doc.name, "parenttype": PI},
+		fields=["name", "parent"],
+	)
+	if not rows:
+		return
+	for parent in {r.parent for r in rows}:
+		for r in rows:
+			if r.parent == parent:
+				frappe.db.set_value(
+					"Purchase Payment Reference", r.name, "payment_status", C.UNF_ROW_CANCELLED,
+					update_modified=False,
+				)
+		invoice = frappe.get_doc(PI, parent)
+		if cint(invoice.docstatus) != 1:
+			continue
+		recompute_payment_state(invoice)
+		invoice.db_set(
+			{
+				"custom_supplier_pending_amount": invoice.custom_supplier_pending_amount,
+				"custom_logistics_pending_amount": invoice.custom_logistics_pending_amount,
+				"custom_total_paid_amount": invoice.custom_total_paid_amount,
+				STATUS_FIELD: invoice.get(STATUS_FIELD),
+			},
+			update_modified=False,
+		)
+		_sync_inward(invoice)
+
+
 def invoice_status(invoice):
-	"""The status to show. docstatus wins, so a cancelled or draft invoice never reads
-	as whatever an older build left in the status field."""
-	docstatus = cint(invoice.get("docstatus"))
-	if docstatus == 2:
-		return C.UNF_CANCELLED
-	if docstatus == 0:
-		return C.UNF_DRAFT
-	return invoice.get(STATUS_FIELD) or C.UNF_PENDING_PAYMENT
+	"""The payment status to show: Pending Payment, Partially Paid or Paid.
+
+	A draft is always Pending Payment, and a value an older build stored ("Draft",
+	"Completed", "Cancelled") is read as its payment meaning rather than shown raw.
+	"""
+	if cint(invoice.get("docstatus")) == 0:
+		return C.UNF_PENDING_PAYMENT
+	stored = invoice.get(STATUS_FIELD)
+	if stored in C.UNF_STATUSES:
+		return stored
+	return C.UNF_PAID if stored == "Completed" else C.UNF_PENDING_PAYMENT
+
+
+def document_state(invoice):
+	"""Draft / Submitted / Cancelled — the document's own state, shown beside the status."""
+	return {0: C.UNF_DOC_DRAFT, 1: C.UNF_DOC_SUBMITTED, 2: C.UNF_DOC_CANCELLED}.get(
+		cint(invoice.get("docstatus")), C.UNF_DOC_DRAFT
+	)
 
 
 @frappe.whitelist()
@@ -794,6 +962,7 @@ def get_invoice_context(purchase_invoice):
 	return {
 		"name": invoice.name,
 		"status": status,
+		"doc_state": document_state(invoice),
 		"invoice_type": invoice.get(TYPE_FIELD) or C.UNF_TYPE_NORMAL,
 		"docstatus": docstatus,
 		"purchase_orders": orders,

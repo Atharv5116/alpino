@@ -185,7 +185,8 @@ def fill_qc(qc_name, rejected=0, reason="Damaged in transit", sample=1, approved
 		row.rejected_qty = rejected
 		row.rejection_reason = reason if rejected else None
 	qc.set("vehicle_inspection", [])
-	qc.append("vehicle_inspection", dict({"vehicle_condition": C.CONDITION_GOOD}, **(vehicle or {})))
+	qc.append("vehicle_inspection", dict(
+		{"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD}, **(vehicle or {})))
 	qc.vehicle_inspection_done = 1
 	qc.set("material_inspection", [])
 	qc.append("material_inspection", dict(
@@ -311,8 +312,19 @@ def run():
 	from alpinos.purchase import purchase_invoice as INV
 	from alpinos.purchase import quarantine as Q
 
+	import alpinos.raven_notifications as RN
+	from alpinos.purchase.test_cleanup import purge
+
 	R.clear()
 	frappe.set_user("Administrator")
+	# The suite commits, so every alert it raises is real: QC hand-over, SLA escalation and
+	# quarantine reminders went to every real QC / Store user as bell, Raven DM and email.
+	# Every recipient lookup resolves roles through this one function at call time, so
+	# narrowing it to the suite's own tft- users keeps real inboxes out of the run.
+	real_role_users = RN._role_users
+	RN._role_users = lambda role: [
+		u for u in (real_role_users(role) or []) if str(u).startswith("tft-")
+	]
 	H.SEQ = H._seq()
 	H.COMPANY = H._company()
 	T["supplier"] = H.ensure_supplier()
@@ -341,6 +353,17 @@ def run():
 			frappe.db.set_single_value("Purchase Inward Settings", key,
 			                           settings_before.get(key, _DEFAULTS.get(key)))
 		frappe.db.commit()
+		RN._role_users = real_role_users
+		# Everything the run committed -- documents, ledgers, TFT- items, tft- users and
+		# their alerts -- is removed, so the site's lists show real work only.
+		try:
+			cleaned = purge(dry_run=False)
+			R.append((0, "INFO", "test data removed after the run",
+			          f"{cleaned['documents']} errors={cleaned['errors']}"))
+		except Exception as e:
+			frappe.db.rollback()
+			R.append((0, "ERROR", "test data cleanup failed -- run test_cleanup.purge()",
+			          f"{type(e).__name__}: {_msg(e)}"))
 
 	return _report()
 
@@ -487,8 +510,11 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 			frappe.get_doc({"doctype": "Item Group", "item_group_name": "Packaging Material",
 			                "parent_item_group": "All Item Groups", "is_group": 0}).insert(ignore_permissions=True)
 		pm_item = H.ensure_item(uniq("TFT-PMITEM"))
-		frappe.db.set_value("Item", pm_item, "item_group", "Packaging Material")
+		# Ordered while unclassified, reclassified as PM afterwards: an order typed RM cannot
+		# be saved with a PM item on it any more (validate_items_match_po_type), but an item
+		# moved to another group after ordering is exactly what the filter still has to catch.
 		po = H.make_po(T["supplier"], [(pm_item, 10, 5)], inward_type=C.INWARD_RM)
+		frappe.db.set_value("Item", pm_item, "item_group", "Packaging Material")
 		off = IA.get_purchase_order_items(po.name, include_unmatched=0)
 		on = IA.get_purchase_order_items(po.name, include_unmatched=1)
 		assert not off["items"] and off["skipped"]["type_mismatch"] == 1, f"filter off: {off['skipped']}"
@@ -853,8 +879,8 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 					      lambda: INV.add_payment(inv.name, C.UNF_PAYMENT_SUPPLIER, billed, today(), "NEFT", reference_number="UTR-TFT"),
 					      as_user=A)
 					frappe.db.commit()
-					check(36, "invoice closes as Completed",
-					      frappe.db.get_value("Purchase Invoice", inv.name, "custom_unified_status") == C.UNF_COMPLETED,
+					check(36, "invoice closes as Paid",
+					      frappe.db.get_value("Purchase Invoice", inv.name, "custom_unified_status") == C.UNF_PAID,
 					      str(frappe.db.get_value("Purchase Invoice", inv.name, "custom_unified_status")))
 
 
@@ -945,17 +971,41 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 	q_sel = _quar_ready()
 	frappe.db.commit()
 
-	probe(41, "Store marks the whole inward as quarantine",
-	      lambda: Q.mark(q_whole, "Suspected contamination"), as_user=SM)
-	probe(41, "Submit for QC is refused while the whole inward is quarantined",
-	      lambda: notif.submit_for_qc(q_whole), expect="", as_user=SM)
-	probe(41, "QC releases the quarantine", lambda: Q.release(q_whole, remarks="Cleared"), as_user=QM)
-	probe(41, "after release, Submit for QC goes through", lambda: notif.submit_for_qc(q_whole), as_user=SM)
+	def _mark(name, rows=None, entire=0, reason="Suspected contamination"):
+		d = frappe.get_doc("Purchase Inward", name)
+		d.quarantine_items = 1
+		d.quarantine_entire_inward = entire
+		d.quarantine_reminder_days = 2
+		d.quarantine_reason = reason
+		for line in d.items:
+			line.quarantine = 1 if (rows and line.idx in rows) else 0
+		d.save()
 
-	probe(41, "Store quarantines one of two items", lambda: Q.mark(q_sel, "One line suspect", rows=[2]), as_user=SM)
-	probe(41, "VAL-QC-5 the other item still goes to QC", lambda: notif.submit_for_qc(q_sel), as_user=SM,
-	      diff="Submit for QC is refused while ANY line is quarantined")
-	info(41, "quarantine in the UI", "no screen calls quarantine.mark / release / status, and there is no Quarantine Stock view")
+	probe(41, "Store marks the whole inward as quarantine", lambda: _mark(q_whole, entire=1), as_user=SM)
+	probe(41, "Submit for QC is refused while every item is quarantined",
+	      lambda: notif.submit_for_qc(q_whole), expect="Create Quarantine", as_user=SM)
+	probe(41, "Store creates the Quarantine document", lambda: Q.create_quarantine(q_whole), as_user=SM)
+	qrn = frappe.db.get_value("Purchase Inward", q_whole, "purchase_quarantine")
+	check(41, "whole inward sits at Quarantined with its Quarantine document",
+	      bool(qrn) and frappe.db.get_value("Purchase Inward", q_whole, "inward_status") == C.PI_QUARANTINED,
+	      f"qrn={qrn} status={frappe.db.get_value('Purchase Inward', q_whole, 'inward_status')}")
+	if qrn:
+		rows = frappe.get_all("Purchase Quarantine Item", filters={"parent": qrn}, pluck="name")
+		probe(41, "QC releases the quarantined items", lambda: Q.release_items(qrn, rows, "Cleared"), as_user=QM)
+		check(41, "after release the items have a QC and the inward is Pending QC",
+		      frappe.db.get_value("Purchase Inward", q_whole, "inward_status") == C.PI_PENDING_QC
+		      and bool(frappe.db.get_value("Purchase Inward", q_whole, "purchase_qc")),
+		      str(frappe.db.get_value("Purchase Inward", q_whole, ["inward_status", "purchase_qc"])))
+
+	probe(41, "Store quarantines one of two items", lambda: _mark(q_sel, rows=[2], reason="One line suspect"), as_user=SM)
+	probe(41, "VAL-QC-5 the other item still goes to QC", lambda: notif.submit_for_qc(q_sel), as_user=SM)
+	sel = frappe.get_doc("Purchase Inward", q_sel)
+	if sel.purchase_quarantine and sel.purchase_qc:
+		qc_lines = frappe.get_all("Purchase QC Item", filters={"parent": sel.purchase_qc}, pluck="purchase_inward_item")
+		q_lines = frappe.get_all("Purchase Quarantine Item", filters={"parent": sel.purchase_quarantine}, pluck="purchase_inward_item")
+		check(41, "held item is in the Quarantine document, the other in the QC",
+		      q_lines == [sel.items[1].name] and qc_lines == [sel.items[0].name], f"quarantine={q_lines} qc={qc_lines}")
+	check(41, "Quarantine Stock view exists", bool(frappe.db.exists("Page", "purchase_quarantine_list")), "page missing", "GAP")
 
 	# ---------------------------------------------------------------- 42
 	def t_reject_no_remarks():

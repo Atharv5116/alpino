@@ -270,6 +270,56 @@ def execute():
 # ------------------------------------------------------------ server-side guards
 
 
+def validate_items_match_po_type(doc, method=None):
+	"""The PO Type must be the type of the goods on the order.
+
+	A Purchase Inward takes its Inward Type from the order and only offers the lines of that
+	type (inward_api.get_purchase_order_items), so an order typed PM carrying Finished Goods
+	opened an inward with no lines and "N Purchase Order line(s) were not offered". The FG
+	batch rule and the FG internal-batch format also key off the type, so receiving them as PM
+	was never right either. An item whose group maps to no type is allowed on any order.
+
+	A Direct Purchase Invoice order never reaches an inward, so its type decides nothing.
+	"""
+	if cint(doc.get("custom_direct_purchase_invoice")) or not doc.get("custom_inward_type"):
+		return
+	from alpinos.purchase.inward_api import item_inward_type
+
+	wanted = doc.custom_inward_type
+	cache = {}
+	wrong = {}
+	matching = False
+	for row in doc.get("items") or []:
+		if not row.item_code:
+			continue
+		found = item_inward_type(row.item_code, cache)
+		if found == wanted:
+			matching = True
+		elif found:
+			wrong.setdefault(found, [])
+			if row.item_code not in wrong[found]:
+				wrong[found].append(row.item_code)
+	if not wrong:
+		return
+
+	lines = "".join(
+		"<li>{0}: {1}</li>".format(frappe.bold(C.label_for_inward_type(code)), ", ".join(items))
+		for code, items in wrong.items()
+	)
+	# One other type and nothing of the chosen one: the PO Type was simply picked wrong.
+	hint = (
+		frappe._("Set PO Type to {0}.").format(frappe.bold(next(iter(wrong))))
+		if len(wrong) == 1 and not matching
+		else frappe._("Raise a separate Purchase Order for each type.")
+	)
+	frappe.throw(
+		frappe._("PO Type is {0}, but these items belong to another type:<ul>{1}</ul>{2}").format(
+			frappe.bold(C.label_for_inward_type(wanted)), lines, hint
+		),
+		title=frappe._("PO Type Does Not Match the Items"),
+	)
+
+
 def normalize_estimated_arrival(doc, method=None):
 	"""BRD 2.1.1 — a date-only Estimated Arrival defaults to 9:00 AM.
 

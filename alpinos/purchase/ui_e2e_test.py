@@ -427,7 +427,7 @@ def run():
 			"material_inspection_done": 1,
 			"packaging_inspection_done": 1,
 			"sample_testing_done": 1,
-			"vehicle_inspection": [{"vehicle_condition": C.CONDITION_GOOD}],
+			"vehicle_inspection": [{"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD}],
 			"material_inspection": [
 				{"item_code": item, "material_condition": C.CONDITION_GOOD}
 			],
@@ -577,9 +577,9 @@ def run():
 			),
 		)
 		check(
-			"BR-UNF-06 the invoice closes as Completed",
+			"BR-UNF-06 the invoice closes as Paid",
 			frappe.db.get_value("Purchase Invoice", inv_name, "custom_unified_status")
-			== C.UNF_COMPLETED,
+			== C.UNF_PAID,
 			str(frappe.db.get_value("Purchase Invoice", inv_name, "custom_unified_status")),
 		)
 

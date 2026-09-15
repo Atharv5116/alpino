@@ -29,6 +29,7 @@ SHORTCUTS = (
 	("Purchase Orders", "Page", "purchase_order_list", ""),
 	("GRN", "Page", "purchase_grn_list", ""),
 	("Purchase Invoices", "Page", "purchase_invoice_list", ""),
+	("Quarantine Stock", "Page", "purchase_quarantine_list", ""),
 	("Pending Receipts", "Report", "Purchase Pending Receipts", ""),
 	("QC Pending", "Report", "Purchase QC Pending", ""),
 	("GRN Register", "Report", "Purchase GRN Register", ""),
@@ -38,6 +39,7 @@ SHORTCUTS = (
 LINKS = (
 	("Purchase Inward", "Purchase Inward", "DocType"),
 	("Purchase QC", "Purchase QC", "DocType"),
+	("Purchase Quarantine", "Purchase Quarantine", "DocType"),
 	("Purchase Inward Settings", "Purchase Inward Settings", "DocType"),
 )
 

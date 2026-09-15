@@ -54,6 +54,8 @@ doctype_js = {
 	"User": "public/js/user_override.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
+	"Purchase Receipt": "public/js/purchase_receipt_grn.js",
+	"Purchase Invoice": "public/js/purchase_invoice_debit_note.js",
 }
 doctype_list_js = {
 	"Pick List": "public/js/pick_list_list.js",
@@ -229,6 +231,7 @@ after_migrate = [
 	"alpinos.purchase.qc_list_api.setup_qc_list_page_access",
 	"alpinos.purchase.grn_list_api.setup_grn_list_page_access",
 	"alpinos.purchase.invoice_list_api.setup_invoice_page_access",
+	"alpinos.purchase.quarantine_list_api.setup_quarantine_page_access",
 	"alpinos.purchase.print_formats.execute",
 ]
 
@@ -356,9 +359,16 @@ doc_events = {
 		"on_cancel": ["alpinos.purchase.purchase_invoice.on_cancel"],
 		"on_trash": ["alpinos.purchase.purchase_invoice.on_trash"],
 	},
+	# A Supplier Payment recorded on a module invoice posts a Payment Entry; cancelling that
+	# entry marks the payment row Cancelled and recomputes what is still owed.
+	"Payment Entry": {
+		"on_cancel": ["alpinos.purchase.purchase_invoice.payment_entry_on_cancel"],
+	},
 	"Purchase Order": {
 		"validate": [
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
+			# The PO Type is what every inward against the order is raised as.
+			"alpinos.purchase.purchase_order_fields.validate_items_match_po_type",
 			# Before the edit guard: stamping the GSTIN and deriving the tax category is
 			# part of building the order, not an edit of one awaiting approval.
 			"alpinos.purchase.purchase_gst.set_gst_tax_category",
@@ -636,7 +646,9 @@ scheduler_events = {
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
 		"alpinos.approval_access.sync_reporting_manager_roles",
 		"alpinos.workflow_engine.refresh_todays_dispatch",
-		"alpinos.so_notifications.run_daily_so_notifications"
+		"alpinos.so_notifications.run_daily_so_notifications",
+		# Quarantine documents remind the Store / QC teams on their own interval.
+		"alpinos.purchase.quarantine.send_quarantine_reminders"
 	],
 	"cron": {
 		"*/5 * * * *": [

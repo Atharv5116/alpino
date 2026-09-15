@@ -57,6 +57,7 @@ var PIW_FALLBACK_OPTIONS = {
 var PIW_STATUS_COLORS = {
 	Draft: 'gray',
 	'Pending Material Receipt': 'orange',
+	Quarantined: 'red',
 	'Pending QC': 'yellow',
 	'QC In Progress': 'blue',
 	'QC Completed': 'blue',
@@ -153,6 +154,7 @@ var PIW_LINKED_ROUTES = {
 	view_qc_report: ['Purchase QC', 'purchase_qc'],
 	view_grn: ['Purchase Receipt', 'purchase_receipt'],
 	view_invoice: ['Purchase Invoice', 'purchase_invoice'],
+	view_quarantine: ['Purchase Quarantine', 'purchase_quarantine'],
 	// BRD 5.2.3 "View Debit Note". The engine offers this action to the list as well as
 	// the form, so without a route here the row button would open the wrong document.
 	view_debit_note: ['Purchase Invoice', 'debit_note'],
@@ -309,8 +311,23 @@ var PurchaseInwardListPage = class {
 		this.render_header();
 		// restore BEFORE the first load and before events bind, so nothing fires mid-restore
 		this._restore_view_prefs();
+		this._apply_route_filter();
 		this.bind_events();
 		this.load_list();
+	}
+
+	// "View Purchase Inward" on a Purchase Order arrives with that order as the filter. It
+	// wins over the saved view, and is consumed so a later visit shows the saved view again.
+	_apply_route_filter() {
+		const opts = frappe.route_options || {};
+		const field = this._filter_fields.purchase_order;
+		if (!opts.purchase_order || !field) return;
+		this._suspend_auto = true;
+		Object.values(this._filter_fields).forEach((f) => f && f.set_input && f.set_input(''));
+		field.set_input(opts.purchase_order);
+		this._suspend_auto = false;
+		this.start = 0;
+		delete frappe.route_options.purchase_order;
 	}
 
 	setup_toolbar() {
@@ -718,6 +735,7 @@ var PurchaseInwardListPage = class {
 			// (BRD 2 / BRD 4); anything else falls back to the desk form.
 			if (linked[0] === 'Purchase QC') frappe.set_route('purchase_qc_entry', String(target));
 			else if (action === 'view_invoice') frappe.set_route('purchase_invoice_entry', String(target));
+			else if (action === 'view_quarantine') frappe.set_route('purchase_quarantine_view', String(target));
 			else if (linked[0] === 'Purchase Receipt') frappe.set_route('purchase_grn_view', String(target));
 			else frappe.set_route('Form', linked[0], String(target));
 			return;

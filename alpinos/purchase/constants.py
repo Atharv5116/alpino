@@ -53,10 +53,12 @@ PI_GRN_GENERATED = "GRN Generated"
 PI_PAYMENT_PENDING = "Payment Pending"
 PI_COMPLETED = "Completed"
 PI_CANCELLED = "Cancelled"
+PI_QUARANTINED = "Quarantined"
 
 PI_STATUSES = (
 	PI_DRAFT,
 	PI_PENDING_RECEIPT,
+	PI_QUARANTINED,
 	PI_PENDING_QC,
 	PI_QC_IN_PROGRESS,
 	PI_QC_COMPLETED,
@@ -69,6 +71,7 @@ PI_STATUSES = (
 PI_STATUS_DESCRIPTIONS = {
 	PI_DRAFT: "Created by the Purchase Team but not yet submitted.",
 	PI_PENDING_RECEIPT: "Waiting for the Store Team to record the actual received quantity.",
+	PI_QUARANTINED: "Every item was quarantined; items go to QC as they are released.",
 	PI_PENDING_QC: "Store Team has completed the material receipt and handed it to QC.",
 	PI_QC_IN_PROGRESS: "QC inspection is being performed.",
 	PI_QC_COMPLETED: "QC inspection is complete and the decision is recorded.",
@@ -149,6 +152,12 @@ QUARANTINE_NONE = ""
 QUARANTINE_HELD = "Quarantined"
 QUARANTINE_RELEASED = "Released"
 QUARANTINE_STATUSES = (QUARANTINE_NONE, QUARANTINE_HELD, QUARANTINE_RELEASED)
+
+#: The Purchase Quarantine document's own status, derived from its item rows.
+QRN_QUARANTINED = "Quarantined"
+QRN_PARTIALLY_RELEASED = "Partially Released"
+QRN_RELEASED = "Released"
+QRN_STATUSES = (QRN_QUARANTINED, QRN_PARTIALLY_RELEASED, QRN_RELEASED)
 
 
 # --- Roles (BRD "User Roles") ----------------------------------------------
@@ -238,20 +247,22 @@ PO_SUBMITTER_ROLES = ("Purchase User", "Purchase Manager") + PURCHASE_ROLES + AD
 
 # --- Purchase Invoice / Payment (BRD 6) -------------------------------------
 
-UNF_DRAFT = "Draft"
 UNF_PENDING_PAYMENT = "Pending Payment"
 UNF_PARTIALLY_PAID = "Partially Paid"
-UNF_COMPLETED = "Completed"
-UNF_CANCELLED = "Cancelled"
+UNF_PAID = "Paid"
 
-#: BRD 6.2 "Workflow Actions & Status Definition", in order.
+#: The invoice's payment status -- one field, three values. Whether the invoice is a
+#: Draft, Submitted or Cancelled is the DOCUMENT state, shown beside it, not a status.
 UNF_STATUSES = (
-	UNF_DRAFT,
 	UNF_PENDING_PAYMENT,
 	UNF_PARTIALLY_PAID,
-	UNF_COMPLETED,
-	UNF_CANCELLED,
+	UNF_PAID,
 )
+
+UNF_DOC_DRAFT = "Draft"
+UNF_DOC_SUBMITTED = "Submitted"
+UNF_DOC_CANCELLED = "Cancelled"
+UNF_DOC_STATES = (UNF_DOC_DRAFT, UNF_DOC_SUBMITTED, UNF_DOC_CANCELLED)
 
 #: BRD 6.0 "Invoice Generation Trigger" -- the two creation paths. A Direct invoice
 #: carries no GRN and no Purchase Inward, because those stages are skipped by design.
@@ -266,6 +277,11 @@ UNF_MODES_REQUIRING_REFERENCE = tuple(m for m in UNF_PAYMENT_MODES if m != "Cash
 
 UNF_PAYMENT_SUPPLIER = "Supplier Payment"
 UNF_PAYMENT_LOGISTICS = "Logistics Payment"
+
+#: Per-payment row status. A row whose Payment Entry was cancelled stays in the history
+#: as Cancelled and no longer counts towards what has been paid.
+UNF_ROW_DONE = "Done"
+UNF_ROW_CANCELLED = "Cancelled"
 
 #: BRD 6.2.1 "Performed By": the Purchase Team raises and submits the invoice, the
 #: Accounts Team records payment against it.

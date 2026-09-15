@@ -86,7 +86,15 @@ def _post_deferred_sample_stock(doc, qc):
 	if frappe.db.get_value("Purchase QC", qc, "purchase_receipt") != doc.name:
 		frappe.db.set_value("Purchase QC", qc, "purchase_receipt", doc.name, update_modified=False)
 	inward = doc.get("custom_purchase_inward")
-	if inward and frappe.db.get_value("Purchase Inward", inward, "purchase_receipt") != doc.name:
+	from alpinos.purchase.grn import is_main_grn
+
+	# Only the inward's own GRN is its purchase_receipt; a GRN for items released from
+	# quarantine belongs to its QC alone.
+	if (
+		inward
+		and is_main_grn(doc)
+		and frappe.db.get_value("Purchase Inward", inward, "purchase_receipt") != doc.name
+	):
 		frappe.db.set_value(
 			"Purchase Inward", inward, "purchase_receipt", doc.name, update_modified=False
 		)

@@ -255,7 +255,7 @@ def _chain(supplier, item_code, order_qty, recv_qty, *, allow_excess=0,
 	for row in qc.items:
 		row.approved_qty = flt(row.received_qty)
 		row.rejected_qty = 0
-	qc.append("vehicle_inspection", {"vehicle_condition": C.CONDITION_GOOD})
+	qc.append("vehicle_inspection", {"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD})
 	qc.vehicle_inspection_done = 1
 	qc.append("material_inspection", {"item_code": item_code, "material_condition": C.CONDITION_GOOD})
 	qc.material_inspection_done = 1
@@ -1485,7 +1485,7 @@ def _chain_with_rejection(supplier, item_code, order_qty, recv_qty, rejected):
 	qc.items[0].rejected_qty = flt(rejected)
 	if rejected:
 		qc.items[0].rejection_reason = "Moisture above spec"
-	qc.append("vehicle_inspection", {"vehicle_condition": C.CONDITION_GOOD})
+	qc.append("vehicle_inspection", {"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD})
 	qc.vehicle_inspection_done = 1
 	qc.append("material_inspection", {"item_code": item_code, "material_condition": C.CONDITION_GOOD})
 	qc.material_inspection_done = 1
@@ -1639,7 +1639,7 @@ def run_wave_c(_report_now=True):
 			for row in qc.items:
 				row.approved_qty = flt(row.received_qty)
 				row.rejected_qty = 0
-			qc.append("vehicle_inspection", {"vehicle_condition": C.CONDITION_GOOD})
+			qc.append("vehicle_inspection", {"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD})
 			qc.vehicle_inspection_done = 1
 			qc.append("material_inspection", {"item_code": item, "material_condition": C.CONDITION_GOOD})
 			qc.material_inspection_done = 1

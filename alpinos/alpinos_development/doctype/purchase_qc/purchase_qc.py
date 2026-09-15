@@ -65,6 +65,16 @@ MANDATORY_INSPECTIONS = (
 	("sample_testing_done", "Sample Testing", C.BATCH_FROM_INVOICE_TYPES),
 )
 
+# The table each "…_done" tick vouches for. A tick over an empty or half-filled table
+# asserted an inspection nobody recorded, so _validate_completed_sections refuses it.
+# purchase_qc_entry.js (section_problem) mirrors these rules for the tick itself.
+INSPECTION_TABLES = {
+	"vehicle_inspection_done": "vehicle_inspection",
+	"material_inspection_done": "material_inspection",
+	"packaging_inspection_done": "packaging_inspection",
+	"sample_testing_done": "sample_testing",
+}
+
 # QC statuses from which the decision may still be recorded.
 _OPEN_QC_STATUSES = (
 	C.QC_PENDING,
@@ -190,6 +200,7 @@ class PurchaseQC(Document):
 		self._validate_vehicle_inspection()
 		self._validate_material_inspection()
 		self._validate_packaging_inspection()
+		self._validate_completed_sections()
 		self._stamp_inspection_evidence()
 		self._roll_up_sample_qty()
 		self._apply_control_sample_retention()
@@ -305,6 +316,9 @@ class PurchaseQC(Document):
 		if not self.get("items"):
 			for row in self._inward().get("items") or []:
 				if flt(row.received_qty) <= 0:
+					continue
+				# A quarantined line is not QC's until it is released.
+				if cint(row.quarantine) and row.get("quarantine_status") != C.QUARANTINE_RELEASED:
 					continue
 				self.append(
 					"items",
@@ -488,6 +502,49 @@ class PurchaseQC(Document):
 						row.idx, row.item_code
 					)
 				)
+
+	# --------------------------------------------------- section completion
+
+	def _validate_completed_sections(self):
+		"""VAL-QC-02 — a section may only be ticked Complete once it holds its inspection.
+
+		Runs after the per-section validators, which have already refused a damaged row
+		without its quantity or reason, so this only has to demand that something was
+		recorded and that each row names what it inspected.
+		"""
+		for field, label, _types in MANDATORY_INSPECTIONS:
+			if not cint(self.get(field)):
+				continue
+			table = INSPECTION_TABLES[field]
+			rows = self.get(table) or []
+			if not rows:
+				frappe.throw(
+					_("{0} is marked Complete but has no rows. Add at least one row, or untick Complete.").format(
+						_(label)
+					),
+					title=_("VAL-QC-02"),
+				)
+			for row in rows:
+				missing = self._completion_gap(table, row)
+				if missing:
+					frappe.throw(
+						_("{0} row {1}: please enter the {2} before marking the section Complete.").format(
+							_(label), row.idx, missing
+						),
+						title=_("VAL-QC-02"),
+					)
+
+	@staticmethod
+	def _completion_gap(table, row):
+		"""The label of the first thing a row still lacks, or None when it is filled."""
+		if table == "vehicle_inspection":
+			if not (row.vehicle_no or "").strip():
+				return _("Vehicle No.")
+		elif not row.item_code:
+			return _("SKU") if table == "sample_testing" else _("Item")
+		if table == "sample_testing" and flt(row.sample_qty) <= 0:
+			return _("Sample Qty")
+		return None
 
 	# ------------------------------------- 308 / 309 sample + control sample
 
@@ -720,6 +777,10 @@ class PurchaseQC(Document):
 	def _roll_up_totals(self):
 		"""Posted totals are never trusted — they are recomputed from the rows."""
 		self.total_received_qty = sum(flt(l.received_qty) for l in self.get("items"))
+		# The header shows what THIS QC inspects: with quarantine, a QC may cover only part
+		# of the inward, so the inward's total is not its received quantity.
+		if self.get("items"):
+			self.received_qty = self.total_received_qty
 		self.total_approved_qty = sum(flt(l.approved_qty) for l in self.get("items"))
 		self.total_rejected_qty = sum(flt(l.rejected_qty) for l in self.get("items"))
 		self.total_sample_qty = sum(flt(l.sample_qty) for l in self.get("items"))
@@ -1191,9 +1252,24 @@ class PurchaseQC(Document):
 
 	# --------------------------------------------------- submit / cancel side
 
+	def is_side_qc(self, inward=None):
+		"""A QC for items released from quarantine while the inward already has its own QC.
+
+		It runs on its own -- its own GRN and invoice -- and never moves the inward's status
+		or links, which belong to the inward's first QC.
+		"""
+		if not self.get("purchase_quarantine"):
+			return False
+		main = (inward or {}).get("purchase_qc") if inward else frappe.db.get_value(
+			"Purchase Inward", self.purchase_inward, "purchase_qc"
+		)
+		return bool(main) and main != self.name
+
 	def _push_to_inward(self):
 		"""BRD 4.11 "Update Purchase Inward Status"."""
 		inward = frappe.get_doc("Purchase Inward", self.purchase_inward)
+		if self.is_side_qc(inward):
+			return
 		inward.db_set("purchase_qc", self.name, update_modified=False)
 		inward.db_set("qc_status", C.QC_COMPLETED, update_modified=False)
 		# Purchase Inward does not carry qc_result today; mirror it the moment it does,
@@ -1215,7 +1291,12 @@ class PurchaseQC(Document):
 			return
 
 		inward = frappe.get_doc("Purchase Inward", self.purchase_inward)
-		if inward.purchase_receipt:
+		side = self.is_side_qc(inward)
+		if self.purchase_receipt and frappe.db.get_value(
+			"Purchase Receipt", self.purchase_receipt, "docstatus"
+		) != 2:
+			return
+		if not side and inward.purchase_receipt:
 			return
 
 		try:
@@ -1231,18 +1312,21 @@ class PurchaseQC(Document):
 			)
 			return
 
-		receipt = make_purchase_receipt(inward)
+		receipt = make_purchase_receipt(inward, qc=self)
 		name = receipt if isinstance(receipt, str) else receipt.name
 		self.db_set("purchase_receipt", name, update_modified=False)
+		if side:
+			# Released-from-quarantine items get their own GRN; the inward keeps its first one.
+			return
 		inward.db_set("purchase_receipt", name, update_modified=False)
 		inward.db_set("grn_status", C.GRN_DRAFT, update_modified=False)
 		workflow.set_status(inward, C.PI_GRN_GENERATED)
 
 	def _block_cancel_with_downstream(self):
 		"""BRD 5.3 — cancellation is strictly reverse-chronological."""
-		receipt = self.purchase_receipt or frappe.db.get_value(
-			"Purchase Inward", self.purchase_inward, "purchase_receipt"
-		)
+		receipt = self.purchase_receipt
+		if not receipt and not self.is_side_qc():
+			receipt = frappe.db.get_value("Purchase Inward", self.purchase_inward, "purchase_receipt")
 		if receipt and frappe.db.get_value("Purchase Receipt", receipt, "docstatus") != 2:
 			frappe.throw(
 				_("Cancel GRN {0} before cancelling this Purchase QC.").format(
@@ -1251,12 +1335,32 @@ class PurchaseQC(Document):
 			)
 
 	def _walk_inward_back(self):
-		"""Return the inward to Pending QC so a fresh inspection can be raised."""
+		"""Return the inward to Pending QC so a fresh inspection can be raised.
+
+		A QC for released quarantine items puts those items back under quarantine instead, so
+		they can be released again; if that QC was the inward's only one (everything had been
+		quarantined), the inward goes back to Quarantined.
+		"""
 		if not self.purchase_inward:
 			return
 		inward = frappe.get_doc("Purchase Inward", self.purchase_inward)
+		side = self.is_side_qc(inward)
+		if self.get("purchase_quarantine"):
+			from alpinos.purchase import quarantine
+
+			quarantine.revert_release(self)
+		if side:
+			return
 		if inward.docstatus != 1 or inward.inward_status in C.PI_TERMINAL:
 			return
+		if self.get("purchase_quarantine") and inward.purchase_qc == self.name:
+			inward.reload()
+			if quarantine.all_received_held(inward):
+				inward.db_set(
+					{"purchase_qc": None, "qc_status": "", "grn_status": ""}, update_modified=False
+				)
+				workflow.set_status(inward, C.PI_QUARANTINED)
+				return
 		if inward.purchase_qc == self.name:
 			inward.db_set("purchase_qc", None, update_modified=False)
 		inward.db_set("qc_status", "", update_modified=False)
@@ -1316,6 +1420,12 @@ def _render(fmt, context):
 # ------------------------------------------------------------- whitelisted API
 
 
+def _assert_qc_role():
+	"""The QC workflow's own role rule, for a QC that does not run on the inward's workflow."""
+	if not set(frappe.get_roles()).intersection(workflow.QC):
+		frappe.throw(_("You do not have permission to perform this action."), frappe.PermissionError)
+
+
 @frappe.whitelist()
 def make_purchase_qc(purchase_inward):
 	"""Raise the Purchase QC for a submitted inward, or return the existing one."""
@@ -1341,9 +1451,16 @@ def start_qc(purchase_qc):
 		inward.db_set("purchase_qc", qc.name, update_modified=False)
 		inward.reload()
 
-	workflow.assert_transition(inward, "start_qc")
-	workflow.set_status(inward, C.PI_QC_IN_PROGRESS)
-	inward.db_set("qc_status", C.QC_IN_PROGRESS, update_modified=False)
+	if qc.is_side_qc(inward):
+		# Items released from quarantine: the inward's workflow belongs to its first QC, so
+		# only the role and the QC's own state are checked here.
+		_assert_qc_role()
+		if cint(qc.docstatus) != 0:
+			frappe.throw(_("Purchase QC {0} is not open.").format(qc.name))
+	else:
+		workflow.assert_transition(inward, "start_qc")
+		workflow.set_status(inward, C.PI_QC_IN_PROGRESS)
+		inward.db_set("qc_status", C.QC_IN_PROGRESS, update_modified=False)
 
 	qc.db_set("qc_status", C.QC_IN_PROGRESS, update_modified=False)
 	# M09 — BRD 4.1.1: the QC user who picks the job up is the Inspector. _sync_header no
@@ -1363,7 +1480,10 @@ def complete_qc(purchase_qc):
 	qc.check_permission("submit")
 
 	inward = frappe.get_doc("Purchase Inward", qc.purchase_inward)
-	workflow.assert_transition(inward, "complete_qc")
+	if qc.is_side_qc(inward):
+		_assert_qc_role()
+	else:
+		workflow.assert_transition(inward, "complete_qc")
 
 	if qc.docstatus == 0:
 		qc.submit()

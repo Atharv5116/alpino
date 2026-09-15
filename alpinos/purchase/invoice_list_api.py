@@ -19,7 +19,7 @@ from frappe import _
 from frappe.utils import cint, flt, getdate
 
 from alpinos.purchase import constants as C
-from alpinos.purchase.purchase_invoice import invoice_status
+from alpinos.purchase.purchase_invoice import document_state, invoice_status
 
 DOCTYPE = "Purchase Invoice"
 ITEM_DOCTYPE = "Purchase Invoice Item"
@@ -116,17 +116,29 @@ def _module_filters():
 
 
 def _status_filter(filters, status):
-	"""The status shown is derived from docstatus first (invoice_status), so filter the same way."""
+	"""The payment status: Pending Payment / Partially Paid / Paid.
+
+	A draft counts as Pending Payment even when an older build stored "Draft" on it, which
+	is how invoice_status reads it too.
+	"""
 	status = str(status or "").strip()
 	if status not in C.UNF_STATUSES:
 		return
-	if status == C.UNF_CANCELLED:
-		filters.append(["docstatus", "=", 2])
-	elif status == C.UNF_DRAFT:
-		filters.append(["docstatus", "=", 0])
+	if status == C.UNF_PENDING_PAYMENT:
+		filters.append(["custom_unified_status", "in", [status, "Draft", "Cancelled", ""]])
+	elif status == C.UNF_PAID:
+		filters.append(["custom_unified_status", "in", [status, "Completed"]])
 	else:
-		filters.append(["docstatus", "=", 1])
 		filters.append(["custom_unified_status", "=", status])
+
+
+def _doc_state_filter(filters, doc_state):
+	"""Draft / Submitted / Cancelled — the document state, filtered on docstatus."""
+	docstatus = {C.UNF_DOC_DRAFT: 0, C.UNF_DOC_SUBMITTED: 1, C.UNF_DOC_CANCELLED: 2}.get(
+		str(doc_state or "").strip()
+	)
+	if docstatus is not None:
+		filters.append(["docstatus", "=", docstatus])
 
 
 # ------------------------------------------------------------------ list endpoint
@@ -146,6 +158,7 @@ def get_invoice_list(
 	due_to=None,
 	invoice_type=None,
 	status=None,
+	doc_state=None,
 	sort_field=None,
 	sort_dir=None,
 	with_actions=1,
@@ -180,6 +193,7 @@ def get_invoice_list(
 		filters.append(["custom_grn", "is", "set"])
 
 	_status_filter(filters, status)
+	_doc_state_filter(filters, doc_state)
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
@@ -240,6 +254,7 @@ def _attach_row_extras(rows, with_actions=1):
 	for row in rows:
 		row["purchase_orders"] = orders.get(row.name, [])
 		row["status"] = invoice_status(row)
+		row["doc_state"] = document_state(row)
 		row["invoice_type"] = row.get("custom_invoice_type") or C.UNF_TYPE_NORMAL
 		row["invoice_amount"] = flt(row.get("rounded_total") or row.get("grand_total"))
 		row["pending_amount"] = flt(row.get("custom_supplier_pending_amount")) + flt(

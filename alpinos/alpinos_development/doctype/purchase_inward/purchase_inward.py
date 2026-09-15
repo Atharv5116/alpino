@@ -109,6 +109,11 @@ class PurchaseInward(Document):
 		self._assert_section_access()
 		self._guard_engine_owned_fields()
 		self._validate_unique_po_detail()
+		# Quarantine picks: "Quarantine Entire Inward" ticks every received line, and
+		# unticking "Quarantine Items" clears them (alpinos.purchase.quarantine).
+		from alpinos.purchase import quarantine
+
+		quarantine.apply_selection(self)
 		# Re-derive order_qty and the rest of the provenance from the Purchase Order, the
 		# same as validate() does before submit. Without this an after-submit save kept
 		# whatever the caller sent, and a caller that sends only the receiving fields --
@@ -162,6 +167,7 @@ class PurchaseInward(Document):
 		"purchase_qc",
 		"purchase_receipt",
 		"purchase_invoice",
+		"purchase_quarantine",
 		"merged_into",
 		"original_invoice_number",
 	)

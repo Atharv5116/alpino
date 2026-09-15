@@ -62,6 +62,9 @@ LIST_FIELDS = (
 	"purchase_qc",
 	"purchase_receipt",
 	"purchase_invoice",
+	"purchase_quarantine",
+	"quarantine_items",
+	"quarantine_reminder_days",
 	# BRD 5.2.3's "View Debit Note" row button routes on this, so the list has to select it
 	"debit_note",
 	"owner",
@@ -88,6 +91,9 @@ _GUARD_FIELDS = (
 	"purchase_receipt",
 	"purchase_invoice",
 	"debit_note",
+	"purchase_quarantine",
+	"quarantine_items",
+	"quarantine_reminder_days",
 )
 
 # Sort columns arrive from the client as raw strings and are interpolated into
@@ -361,7 +367,7 @@ def _attach_row_extras(rows, with_actions=1):
 	for line in frappe.get_all(
 		ITEM_DOCTYPE,
 		filters={"parenttype": DOCTYPE, "parent": ["in", names]},
-		fields=["parent", "idx", "item_code", "uom", "received_qty", "target_warehouse"],
+		fields=["parent", "idx", "item_code", "uom", "received_qty", "target_warehouse", "quarantine", "quarantine_status"],
 		order_by="parent asc, idx asc",
 	):
 		lines_by_parent.setdefault(line.parent, []).append(line)

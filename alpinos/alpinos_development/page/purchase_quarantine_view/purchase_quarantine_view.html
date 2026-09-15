@@ -1,0 +1,120 @@
+<style>
+/* Cards, titles and scroll wrappers come from public/css/alpinos_pages.css. */
+.purchase-quarantine-view .eso-fld { margin-bottom: 8px; }
+.purchase-quarantine-view .pqv-table { font-size: 12px; margin-bottom: 0; }
+.purchase-quarantine-view .pqv-table th { white-space: nowrap; }
+.purchase-quarantine-view .pqv-table th,
+.purchase-quarantine-view .pqv-table td { padding: 5px 6px; vertical-align: middle; }
+.purchase-quarantine-view .pqv-num { text-align: right; }
+.purchase-quarantine-view .eso-fld .control-value.like-disabled-input {
+	background: transparent; border: none; border-bottom: 1px solid var(--border-color);
+	border-radius: 0; padding: 4px 2px 3px 0; min-height: var(--input-height, 28px);
+	line-height: 20px; color: var(--text-color); font-weight: 500;
+}
+.purchase-quarantine-view .eso-fld .control-value.like-disabled-input:empty::after {
+	content: "—"; color: var(--text-muted); font-weight: 400;
+}
+.purchase-quarantine-view .eso-fld textarea.form-control { height: 72px !important; min-height: 72px; resize: vertical; }
+.purchase-quarantine-view .pqv-stage {
+	display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600;
+	border: 1px solid var(--border-color); background: var(--bg-color); margin-left: 8px; vertical-align: middle;
+}
+.purchase-quarantine-view .pqv-stage:empty { display: none; }
+.purchase-quarantine-view .pqv-stage.pqv-held {
+	background: var(--alert-bg-danger); border-color: var(--alert-bg-danger); color: var(--alert-text-danger);
+}
+.purchase-quarantine-view .pqv-stage.pqv-partial {
+	background: var(--alert-bg-warning); border-color: var(--alert-bg-warning); color: var(--alert-text-warning);
+}
+.purchase-quarantine-view .pqv-stage.pqv-released {
+	background: var(--alert-bg-success); border-color: var(--alert-bg-success); color: var(--alert-text-success);
+}
+.purchase-quarantine-view .pqv-note { font-size: 12px; margin-bottom: 12px; }
+.purchase-quarantine-view .pqv-note:empty { display: none; }
+.purchase-quarantine-view .pqv-empty { display: none; }
+.purchase-quarantine-view.pqv-blank .pqv-empty { display: block; }
+.purchase-quarantine-view.pqv-blank .pqv-body { display: none; }
+.purchase-quarantine-view .eso-card.pqv-empty-card {
+	max-width: 520px; text-align: center; margin: 40px auto 0 !important; padding: 40px 28px !important;
+}
+.purchase-quarantine-view .pqv-empty .alp-actions { justify-content: center; }
+</style>
+<div class="purchase-quarantine-view pqv-blank" style="padding: 12px;">
+
+	<div class="pqv-empty">
+		<div class="eso-card pqv-empty-card">
+			<div style="font-size:24px; opacity:.55; margin-bottom:12px;"><i class="fa fa-lock"></i></div>
+			<div style="font-size:15px; font-weight:600; margin-bottom:6px;">No quarantine open</div>
+			<p class="text-muted" style="font-size:12.5px; margin: 0 auto 18px;">
+				Pick a Quarantine document from the Quarantine Stock list to review and release its items.
+			</p>
+			<div class="alp-actions">
+				<a class="btn btn-sm btn-primary" href="/app/purchase_quarantine_list">Open Quarantine Stock</a>
+			</div>
+		</div>
+	</div>
+
+	<div class="pqv-body">
+	<p class="text-muted pqv-note field-note"></p>
+
+	<div class="eso-card">
+		<h6 class="eso-card-title">
+			Quarantine
+			<span class="pqv-stage field-stage-badge"></span>
+		</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-name"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-purchase-inward"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-purchase-order"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantined-by"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-entire-inward"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-inward-status"></div>
+			<div class="col-md-6 col-sm-12 eso-fld field-reason"></div>
+		</div>
+	</div>
+
+	<div class="eso-card">
+		<h6 class="eso-card-title">Reminder</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-reminder-days"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-next-reminder"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-last-reminder"></div>
+			<div class="col-md-3 col-sm-6 eso-fld pqv-reminder-actions" style="padding-top:26px;"></div>
+		</div>
+	</div>
+
+	<div class="eso-card">
+		<h6 class="eso-card-title">Quarantined Items</h6>
+		<div class="alp-scroll alp-scroll--wide">
+			<table class="table table-bordered items-table pqv-table">
+				<thead><tr>
+					<th style="width:34px;"><input type="checkbox" class="pqv-select-all" title="Select all held items"></th>
+					<th style="width:28px;">#</th>
+					<th style="min-width:180px;">Item</th>
+					<th style="width:90px;" class="pqv-num">Qty</th>
+					<th style="width:60px;">UOM</th>
+					<th style="min-width:110px;">Batch</th>
+					<th style="min-width:150px;">Target Location</th>
+					<th style="width:100px;">Status</th>
+					<th style="min-width:140px;">Released</th>
+					<th style="min-width:130px;">QC</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<div class="row" style="margin-top:12px;">
+			<div class="col-md-6 eso-fld field-release-remarks"></div>
+		</div>
+		<div class="eso-subtitle" style="margin-top:6px;">Totals</div>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-total-qty"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-held-qty"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-released-qty"></div>
+		</div>
+	</div>
+
+	<div class="alp-actions alp-actions--end pqv-actionbar" style="margin: 14px 0 24px;"></div>
+	</div>
+</div>

@@ -37,16 +37,43 @@ def _guard_receiving_complete(doc):
 	return None
 
 
-def _guard_no_open_quarantine(doc):
-	"""Quarantine holds material OUT of the flow, so it cannot be handed to QC."""
+def _guard_receiving_and_quarantine(doc):
+	"""Submit for QC: the receipt is recorded, and any quarantine picks are complete.
+
+	Held lines no longer block the hand-over -- they go into a Quarantine document and the
+	rest go to QC. Only an inward with EVERY item held cannot go to QC; it offers Create
+	Quarantine instead (and this button is hidden, see _all_held).
+	"""
 	from alpinos.purchase import quarantine
 
-	return quarantine.assert_none_open(doc)
+	reason = _guard_receiving_complete(doc) or quarantine.setup_error(doc)
+	if reason:
+		return reason
+	if quarantine.all_received_held(doc):
+		return _("Every received item is quarantined. Use Create Quarantine instead.")
+	return None
 
 
-def _guard_receiving_and_quarantine(doc):
-	"""Both conditions on the same transition, first failure wins."""
-	return _guard_receiving_complete(doc) or _guard_no_open_quarantine(doc)
+def _guard_create_quarantine(doc):
+	"""Create Quarantine: the receipt is recorded and every received item is held."""
+	from alpinos.purchase import quarantine
+
+	reason = _guard_receiving_complete(doc) or quarantine.setup_error(doc)
+	if reason:
+		return reason
+	if not quarantine.all_received_held(doc):
+		return _("Create Quarantine is for an inward whose every item is quarantined; use Submit for QC.")
+	return None
+
+
+def _all_held(doc):
+	from alpinos.purchase import quarantine
+
+	return quarantine.all_received_held(doc)
+
+
+def _not_all_held(doc):
+	return not _all_held(doc)
 
 
 def _guard_qc_exists(doc):
@@ -72,13 +99,16 @@ def _guard_grn_submitted(doc):
 
 # ---------------------------------------------------------------- transitions
 
-# action -> (label, next_status, allowed_roles, guard)
-_T = lambda action, label, nxt, roles, guard=None: {
+# action -> (label, next_status, allowed_roles, guard, hide)
+# `hide(doc)` removes the button altogether (rather than greying it out) when the other
+# action of a pair is the one that applies -- Submit for QC vs Create Quarantine.
+_T = lambda action, label, nxt, roles, guard=None, hide=None: {
 	"action": action,
 	"label": label,
 	"next_status": nxt,
 	"roles": tuple(roles),
 	"guard": guard,
+	"hide": hide,
 }
 
 PURCHASE = C.PURCHASE_ROLES + C.ADMIN_ROLES
@@ -93,8 +123,13 @@ INWARD_TRANSITIONS = {
 	],
 	C.PI_PENDING_RECEIPT: [
 		_T("submit_for_qc", _("Submit for QC"), C.PI_PENDING_QC, STORE,
-		   _guard_receiving_and_quarantine),
+		   _guard_receiving_and_quarantine, hide=_all_held),
+		# Every item quarantined: there is nothing for QC, so the inward is handed to
+		# quarantine instead. Released items move it on to Pending QC.
+		_T("create_quarantine", _("Create Quarantine"), C.PI_QUARANTINED, STORE,
+		   _guard_create_quarantine, hide=_not_all_held),
 	],
+	C.PI_QUARANTINED: [],
 	C.PI_PENDING_QC: [
 		_T("start_qc", _("Start QC"), C.PI_QC_IN_PROGRESS, QC, _guard_qc_exists),
 	],
@@ -120,15 +155,17 @@ INWARD_TRANSITIONS = {
 INWARD_VIEW_ACTIONS = {
 	C.PI_DRAFT: ("edit", "delete", "print"),
 	C.PI_PENDING_RECEIPT: ("view", "continue_receiving", "print"),
-	C.PI_PENDING_QC: ("view", "view_qc", "print"),
-	C.PI_QC_IN_PROGRESS: ("view", "view_qc", "print"),
-	C.PI_QC_COMPLETED: ("view", "view_qc_report", "print"),
+	# view_quarantine is offered only when the inward has a Quarantine document.
+	C.PI_QUARANTINED: ("view", "view_quarantine", "print"),
+	C.PI_PENDING_QC: ("view", "view_qc", "view_quarantine", "print"),
+	C.PI_QC_IN_PROGRESS: ("view", "view_qc", "view_quarantine", "print"),
+	C.PI_QC_COMPLETED: ("view", "view_qc_report", "view_quarantine", "print"),
 	# BRD 5.2.3 offers "View Debit Note" only "If Rejected Qty > 0 and Debit Note
 	# generated"; the button is routed off doc.debit_note, so it stays hidden until
 	# BR-GRN-09 has actually raised one.
-	C.PI_GRN_GENERATED: ("view", "view_qc_report", "view_grn", "view_debit_note", "print"),
-	C.PI_PAYMENT_PENDING: ("view", "view_grn", "view_debit_note", "view_invoice", "print"),
-	C.PI_COMPLETED: ("view", "view_grn", "view_debit_note", "view_invoice", "print"),
+	C.PI_GRN_GENERATED: ("view", "view_qc_report", "view_grn", "view_debit_note", "view_quarantine", "print"),
+	C.PI_PAYMENT_PENDING: ("view", "view_grn", "view_debit_note", "view_invoice", "view_quarantine", "print"),
+	C.PI_COMPLETED: ("view", "view_grn", "view_debit_note", "view_invoice", "view_quarantine", "print"),
 	C.PI_CANCELLED: ("view", "print"),
 }
 
@@ -143,6 +180,7 @@ VIEW_ACTION_LABELS = {
 	"view_grn": _("View GRN"),
 	"view_debit_note": _("View Debit Note"),
 	"view_invoice": _("View Purchase Invoice"),
+	"view_quarantine": _("View Quarantine"),
 }
 
 # Roles that may see each read-only action; anything unlisted is open to all
@@ -255,6 +293,8 @@ def available_actions(doc, user=None):
 	for t in INWARD_TRANSITIONS.get(status, []):
 		if not _may(t["roles"], roles):
 			continue
+		if t.get("hide") and t["hide"](doc):
+			continue
 		reason = t["guard"](doc) if t["guard"] else None
 		if reason is None:
 			reason = ACTION_UNAVAILABLE.get(t["action"])
@@ -271,6 +311,8 @@ def available_actions(doc, user=None):
 
 	for action in INWARD_VIEW_ACTIONS.get(status, ()):
 		if not _may(VIEW_ACTION_ROLES.get(action, ()), roles):
+			continue
+		if action == "view_quarantine" and not doc.get("purchase_quarantine"):
 			continue
 		out.append(
 			{

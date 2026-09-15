@@ -56,21 +56,37 @@ _ROW_LABEL = re.compile(r"^\s*row\s*#?\s*(\d+)\s*[:\-–—]\s*(.+)$", re.IGNORE
 # --------------------------------------------------------------- public API
 
 
-def existing_grn(purchase_inward):
-	"""The live GRN for an inward, or None. A cancelled one does not count (BR-GRN-02)."""
+def existing_grn(purchase_inward, purchase_qc=None):
+	"""The live GRN for an inward -- or for one of its QCs -- or None (BR-GRN-02).
+
+	With quarantine an inward can have more than one QC (items released later get their
+	own), and each QC yields its own GRN, so the question is asked per QC when one is given.
+	A cancelled receipt and a Purchase Return do not count.
+	"""
 	_assert_grn_fields()
-	rows = frappe.get_all(
-		DOCTYPE,
-		filters={"custom_purchase_inward": purchase_inward, "docstatus": ("<", 2)},
-		pluck="name",
-		order_by="creation asc",
-		limit=1,
-	)
+	filters = {"custom_purchase_inward": purchase_inward, "docstatus": ("<", 2), "is_return": 0}
+	if purchase_qc:
+		filters["custom_purchase_qc"] = purchase_qc
+	rows = frappe.get_all(DOCTYPE, filters=filters, pluck="name", order_by="creation asc", limit=1)
 	return rows[0] if rows else None
 
 
-def make_purchase_receipt(purchase_inward):
-	"""Mint (or return) the one Draft Purchase Receipt for `purchase_inward`.
+def is_main_grn(pr, inward=None):
+	"""True for the GRN of the inward's own QC; False for a released-from-quarantine one.
+
+	Only the main GRN may write the inward's GRN links and status.
+	"""
+	qc = pr.get("custom_purchase_qc")
+	if not qc:
+		return True
+	main_qc = (inward or {}).get("purchase_qc") if inward else frappe.db.get_value(
+		"Purchase Inward", pr.get("custom_purchase_inward"), "purchase_qc"
+	)
+	return not main_qc or main_qc == qc
+
+
+def make_purchase_receipt(purchase_inward, qc=None):
+	"""Mint (or return) the one Draft Purchase Receipt for `purchase_inward` (and its QC).
 
 	Not whitelisted: `generate_grn` is the guarded entry point. This is the mapper, called
 	by that action and by anything else that legitimately needs the GRN to exist.
@@ -87,11 +103,13 @@ def make_purchase_receipt(purchase_inward):
 	# The row lock serialises two concurrent generators on the inward; without it both read
 	# "no GRN yet" and both insert, and nothing downstream would catch the duplicate.
 	frappe.db.get_value("Purchase Inward", inward.name, "name", for_update=True)
-	found = existing_grn(inward.name)
+	if isinstance(qc, str):
+		qc = frappe.get_doc("Purchase QC", qc)
+	qc = _assert_qc_complete(inward, qc)
+	found = existing_grn(inward.name, qc.name)
 	if found:
 		return frappe.get_doc(DOCTYPE, found)
 
-	qc = _assert_qc_complete(inward)
 	rows = _grn_rows(inward, qc)
 	if not rows:
 		frappe.throw(
@@ -170,9 +188,11 @@ def _stamp_grn_status(pr, status, stamp_submitter=False):
 	pr.db_set(values, update_modified=False)
 
 	if frappe.db.exists("Purchase Inward", inward_name):
-		frappe.get_doc("Purchase Inward", inward_name).db_set(
-			"grn_status", status, update_modified=False
-		)
+		inward = frappe.get_doc("Purchase Inward", inward_name)
+		# A released-from-quarantine GRN carries its own status; the inward's grn_status is
+		# its first GRN's.
+		if is_main_grn(pr, inward):
+			inward.db_set("grn_status", status, update_modified=False)
 
 
 def resync_draft_grn(inward):
@@ -193,22 +213,22 @@ def resync_draft_grn(inward):
 	if not name:
 		return None
 
-	receipt = frappe.db.get_value(
+	# Every draft GRN of the inward: with quarantine, released items have GRNs of their own.
+	receipts = frappe.get_all(
 		DOCTYPE,
-		{"custom_purchase_inward": name, "docstatus": 0},
-		"name",
+		filters={"custom_purchase_inward": name, "docstatus": 0, "is_return": 0},
+		pluck="name",
 	)
-	if not receipt:
-		return None
-
-	try:
-		return _sync_from_inward(frappe.get_doc(DOCTYPE, receipt))
-	except Exception:
-		frappe.log_error(
-			title="Purchase Inward: draft GRN re-sync failed",
-			message=f"{name} -> {receipt}\n{frappe.get_traceback()}",
-		)
-		return None
+	result = None
+	for receipt in receipts:
+		try:
+			result = _sync_from_inward(frappe.get_doc(DOCTYPE, receipt))
+		except Exception:
+			frappe.log_error(
+				title="Purchase Inward: draft GRN re-sync failed",
+				message=f"{name} -> {receipt}\n{frappe.get_traceback()}",
+			)
+	return result
 
 
 @frappe.whitelist()
@@ -240,7 +260,9 @@ def _sync_from_inward(pr):
 		return None
 
 	inward = _inward(pr.custom_purchase_inward)
-	qc = _qc(inward)
+	# The GRN's own QC decides its lines; the inward's first QC only for an older GRN that
+	# never recorded one.
+	qc = frappe.get_doc("Purchase QC", pr.custom_purchase_qc) if pr.get("custom_purchase_qc") else _qc(inward)
 	protected_parent, protected_rows = _protected_fields(pr)
 	changed = []
 
@@ -279,6 +301,9 @@ def _sync_from_inward(pr):
 	if not (changed or added):
 		return {"changed": [], "added_rows": 0}
 
+	# The system re-pulling from the inward is not a person editing the draft, so it is kept
+	# out of the change log -- which is also what protects a person's edits from this sync.
+	pr.flags.grn_system_sync = True
 	pr.save()
 	return {"changed": changed, "added_rows": added}
 
@@ -409,7 +434,7 @@ def make_debit_note(purchase_receipt):
 	# link on a submitted document, and PurchaseInward._guard_engine_owned_fields refuses
 	# anything that arrives through the save path.
 	pr.db_set("custom_debit_note", note.name, update_modified=False)
-	if inward:
+	if inward and is_main_grn(pr, inward):
 		inward.db_set("debit_note", note.name, update_modified=False)
 	if pr.get("custom_purchase_qc"):
 		frappe.db.set_value(
@@ -472,9 +497,11 @@ def _qc(inward):
 	return frappe.get_doc("Purchase QC", inward.purchase_qc) if inward.purchase_qc else None
 
 
-def _assert_qc_complete(inward):
+def _assert_qc_complete(inward, qc=None):
 	"""VAL-GRN-01 / VAL-GRN-02 — QC must have finished and approved something."""
-	qc = _qc(inward)
+	qc = qc or _qc(inward)
+	if qc and qc.purchase_inward != inward.name:
+		frappe.throw(_("Purchase QC {0} does not belong to {1}.").format(qc.name, inward.name))
 	if not qc or qc.docstatus == 2 or qc.qc_status != C.QC_COMPLETED:
 		frappe.throw(
 			_("Cannot generate GRN. Quality Control process is not completed."),

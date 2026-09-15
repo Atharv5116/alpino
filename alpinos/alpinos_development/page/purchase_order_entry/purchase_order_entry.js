@@ -600,10 +600,12 @@ var PurchaseOrderEntry = class {
 				args: { purchase_order: this.docname },
 				callback(r) {
 					if (token !== me._actions_token) return;
-					const actions = (r.message && r.message.actions) || [];
+					const info = r.message || {};
+					const actions = info.actions || [];
 					actions.forEach((a) => {
 						btn(__(a.action), 'btn-primary', () => me.run_action(a.action));
 					});
+					me.make_next_step_actions(info, btn);
 					btn(__('Print'), 'btn-light', () => {
 						frappe.set_route('print', 'Purchase Order', me.docname);
 					});
@@ -614,6 +616,75 @@ var PurchaseOrderEntry = class {
 				`<span class="text-muted">${__('Fill the header and at least one item line, then Save.')}</span>`
 			);
 		}
+	}
+
+	/**
+	 * BRD 1.3 / 1.4: what comes after the order, the same as the Purchase Order desk form
+	 * (purchase_order_approval._CLIENT_SCRIPT). Create Purchase Inward belongs to a Sent to
+	 * Supplier order; a Direct Purchase Invoice order skips Inward, QC and GRN and goes to
+	 * its invoice instead. The inward screen re-checks the order when it is saved.
+	 */
+	make_next_step_actions(info, btn) {
+		const me = this;
+		const status = info.status || '';
+
+		if (cint(info.direct_purchase_invoice)) {
+			if (info.direct_invoice) {
+				btn(__('View Purchase Invoice'), 'btn-default', () =>
+					frappe.set_route('purchase_invoice_entry', info.direct_invoice)
+				);
+			} else if (status === 'Approved' || status === 'Sent to Supplier') {
+				btn(__('Create Purchase Invoice'), 'btn-primary', () => me.create_direct_invoice());
+			}
+			return;
+		}
+
+		if (status === 'Sent to Supplier') {
+			btn(__('Create Purchase Inward'), 'btn-primary', () => {
+				frappe.route_options = { purchase_order: me.docname };
+				frappe.set_route('purchase_inward_entry');
+			});
+		} else if (status === 'Approved') {
+			// Shown, and it says why: an absent button reads as a missing feature.
+			btn(__('Create Purchase Inward'), 'btn-default', () =>
+				frappe.msgprint({
+					title: __('Create Purchase Inward Is Not Available Yet'),
+					indicator: 'orange',
+					message: __('Send this Purchase Order to the supplier first (BRD 1.4).'),
+				})
+			);
+		}
+
+		const inwards = info.inwards || [];
+		if (inwards.length) {
+			btn(__('View Purchase Inward ({0})', [inwards.length]), 'btn-default', () => {
+				if (inwards.length === 1) {
+					frappe.set_route('purchase_inward_entry', inwards[0]);
+					return;
+				}
+				frappe.route_options = { purchase_order: me.docname };
+				frappe.set_route('purchase_inward_list');
+			});
+		}
+	}
+
+	create_direct_invoice() {
+		const me = this;
+		frappe.confirm(
+			__('Create the Purchase Invoice for {0}? Purchase Inward, QC and GRN are skipped for a Direct Purchase Invoice order.', [me.docname]),
+			() =>
+				frappe.call({
+					method: 'alpinos.purchase.purchase_invoice.create_direct_from_po',
+					args: { purchase_order: me.docname },
+					freeze: true,
+					freeze_message: __('Creating the Purchase Invoice...'),
+					callback(r) {
+						// also fires when the server refused (already invoiced)
+						if (r.exc || !r.message) return;
+						frappe.set_route('purchase_invoice_entry', r.message.name);
+					},
+				})
+		);
 	}
 
 	run_action(action) {

@@ -13,6 +13,7 @@
   "payment_mode",
   "reference_number",
   "col_break_1",
+  "payment_entry",
   "payment_status",
   "payment_attachment",
   "remarks",
@@ -67,10 +68,18 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "The ERPNext Payment Entry posted for this payment. Cancelling it marks this row Cancelled. Plain text on purpose: a Link to a cancelled entry would refuse every later save of the invoice.",
+   "fieldname": "payment_entry",
+   "fieldtype": "Data",
+   "label": "Payment Entry",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "payment_status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Payment Requested\nOverdue\nDone\nPartial Payment\nAdvance",
+   "options": "Payment Requested\nOverdue\nDone\nPartial Payment\nAdvance\nCancelled",
    "default": "Done"
   },
   {
@@ -102,7 +111,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-09-12 10:00:00.000000",
+ "modified": "2026-09-15 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase Payment Reference",

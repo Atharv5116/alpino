@@ -20,10 +20,11 @@ So the BRD's sections map on as:
 WHY A SEPARATE STATUS FIELD
 ---------------------------
 ERPNext's own `status` on Purchase Invoice is Draft / Unpaid / Overdue / Paid / Return /
-Cancelled, derived from `outstanding_amount` on the ledger. BRD 6.2 wants Draft / Pending
-Payment / Partially Paid / Completed / Cancelled, derived from what Accounts has recorded
-in Tally -- which is a different fact from what the ledger says, and deliberately so: the
-BRD's flow records payments made OUTSIDE this system. Overloading the standard field
+Cancelled, derived from `outstanding_amount` on the ledger. This module's status is a pure
+PAYMENT status -- Pending Payment / Partially Paid / Paid -- derived from the supplier AND
+logistics payments recorded, while Draft / Cancelled stay the document's own state. It
+differs from ERPNext's on purpose: freight counts here, and ERPNext's only follows the
+Payment Entries against the supplier bill. Overloading the standard field
 would put two incompatible meanings on one column, exactly the collision the Purchase
 Order approval block avoided by keeping `custom_approval_status` separate.
 """
@@ -102,7 +103,7 @@ def _custom_fields():
 				label="Invoice & Payment Status",
 				fieldtype="Select",
 				options=_STATUS_OPTIONS,
-				default=C.UNF_DRAFT,
+				default=C.UNF_PENDING_PAYMENT,
 				insert_after="custom_chain_col_1",
 				read_only=1,
 				allow_on_submit=1,
@@ -110,8 +111,9 @@ def _custom_fields():
 				in_list_view=1,
 				in_standard_filter=1,
 				description=(
-					"BRD 6.2. Derived from the payments Accounts has recorded, which is a "
-					"different fact from the ledger status ERPNext maintains alongside it."
+					"Payment status: Pending Payment, Partially Paid or Paid, derived from the "
+					"supplier and logistics payments recorded. Draft / Cancelled is the "
+					"document's own state."
 				),
 			),
 			dict(
@@ -277,9 +279,60 @@ def apply_purchase_invoice_form_layout():
 	)
 
 
+def ensure_payment_modes():
+	"""Make every BRD 6.2.4 Payment Mode exist as an ERPNext Mode of Payment.
+
+	A Supplier Payment posts a Payment Entry, and ERPNext looks its bank / cash account up
+	on the Mode of Payment. A fresh site ships Cash, Cheque, Wire Transfer and friends, but
+	not UPI, Bank Transfer, NEFT or RTGS, so those payments could not post at all. Only the
+	records are created here: WHICH bank account each one pays from is the company's own
+	decision and is set under Accounts > Mode of Payment.
+	"""
+	for mode in C.UNF_PAYMENT_MODES:
+		if frappe.db.exists("Mode of Payment", mode):
+			continue
+		frappe.get_doc(
+			{
+				"doctype": "Mode of Payment",
+				"mode_of_payment": mode,
+				"type": "Cash" if mode == "Cash" else "Bank",
+				"enabled": 1,
+			}
+		).insert(ignore_permissions=True)
+
+
+def migrate_legacy_statuses():
+	"""Rewrite the old five-value status onto the three payment statuses. Idempotent.
+
+	Completed -> Paid, Draft -> Pending Payment. A Cancelled invoice gets the payment status
+	its recorded payments imply, because Cancelled is now the document state, not a status.
+	"""
+	frappe.db.sql(
+		"""UPDATE `tabPurchase Invoice` SET custom_unified_status = %s
+		WHERE custom_unified_status = 'Completed'""",
+		C.UNF_PAID,
+	)
+	frappe.db.sql(
+		"""UPDATE `tabPurchase Invoice` SET custom_unified_status = %s
+		WHERE custom_unified_status = 'Draft'""",
+		C.UNF_PENDING_PAYMENT,
+	)
+	frappe.db.sql(
+		"""UPDATE `tabPurchase Invoice` SET custom_unified_status = CASE
+			WHEN IFNULL(custom_total_paid_amount, 0) <= 0 THEN %(pending)s
+			WHEN IFNULL(custom_supplier_pending_amount, 0) + IFNULL(custom_logistics_pending_amount, 0) <= 0.005
+				THEN %(paid)s
+			ELSE %(partial)s END
+		WHERE custom_unified_status = 'Cancelled'""",
+		{"pending": C.UNF_PENDING_PAYMENT, "paid": C.UNF_PAID, "partial": C.UNF_PARTIALLY_PAID},
+	)
+
+
 def setup_purchase_invoice_fields():
 	create_custom_fields(_custom_fields(), ignore_validate=True, update=True)
 	apply_purchase_invoice_form_layout()
+	ensure_payment_modes()
+	migrate_legacy_statuses()
 	frappe.db.commit()
 
 

@@ -80,6 +80,22 @@ def ensure_supplier():
 	return name
 
 
+def _untyped_leaf_group():
+	"""A leaf Item Group that maps to no inward type, so a test item fits an order of any type.
+
+	Any leaf used to do, and on a site whose leaves sit under "Finished Goods" every test item
+	was FG -- which purchase_order_fields.validate_items_match_po_type refuses on an RM order.
+	"""
+	from alpinos.purchase.inward_api import _group_chain, _type_from_group_name
+
+	cache = {}
+	leaves = frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name", order_by="lft")
+	for group in leaves:
+		if not any(_type_from_group_name(g) for g in _group_chain(group, cache)):
+			return group
+	return leaves[0] if leaves else None
+
+
 def ensure_item(code, shelf_life_days=0):
 	if not frappe.db.exists("Item", code):
 		frappe.get_doc(
@@ -87,7 +103,7 @@ def ensure_item(code, shelf_life_days=0):
 				"doctype": "Item",
 				"item_code": code,
 				"item_name": code,
-				"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
+				"item_group": _untyped_leaf_group(),
 				"stock_uom": "Nos",
 				"is_stock_item": 1,
 				"shelf_life_in_days": shelf_life_days,
@@ -424,7 +440,7 @@ def run():
 		# BRD 4.1.2 - 4.1.5: the four inspections run in parallel, each with its own
 		# completion flag (BR-QC-05 / BR-QC-06).
 		qc.vehicle_inspection = []
-		qc.append("vehicle_inspection", {"vehicle_condition": C.CONDITION_GOOD})
+		qc.append("vehicle_inspection", {"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD})
 		qc.vehicle_inspection_done = 1
 
 		qc.material_inspection = []

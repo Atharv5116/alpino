@@ -39,13 +39,13 @@ frappe.pages['purchase_qc_entry'].on_page_show = function (wrapper) {
 var PQC_CONDITION = ['Good', 'Damaged'];
 
 // BR-QC-05: the four parallel inspections, as [section key, done fieldname, short
-// title]. Declared with var, not const: desk pages are re-evaluated on navigation
-// and a re-declared const blanks the page.
+// title, full label]. Declared with var, not const: desk pages are re-evaluated on
+// navigation and a re-declared const blanks the page.
 var PQC_SECTIONS = [
-	['vehicle', 'vehicle_inspection_done', 'Vehicle'],
-	['material', 'material_inspection_done', 'Material'],
-	['packaging', 'packaging_inspection_done', 'Packaging'],
-	['sample', 'sample_testing_done', 'Sample Testing'],
+	['vehicle', 'vehicle_inspection_done', 'Vehicle', 'Vehicle Inspection'],
+	['material', 'material_inspection_done', 'Material', 'Material Inspection'],
+	['packaging', 'packaging_inspection_done', 'Packaging', 'Packaging / Box Inspection'],
+	['sample', 'sample_testing_done', 'Sample Testing', 'Sample Testing'],
 ];
 
 var PurchaseQCEntry = class {
@@ -124,9 +124,77 @@ var PurchaseQCEntry = class {
 			const c = me._ctl(`.field-${key}-done`, {
 				fieldname, label: __('Complete'), fieldtype: 'Check',
 			});
-			if (c && c.$input) c.$input.on('change', () => me.sync_done_flags());
+			if (c && c.$input) c.$input.on('change', () => me.on_done_toggle(key, fieldname));
 		});
 		this.sync_done_flags();
+	}
+
+	// VAL-QC-02 on the tick itself: a section cannot be marked Complete before it holds
+	// its inspection. The server refuses the same save
+	// (purchase_qc._validate_completed_sections); this stops the tick claiming it meanwhile.
+	on_done_toggle(key, fieldname) {
+		if (cint(this._val(fieldname))) {
+			const problem = this.section_problem(key);
+			if (problem) {
+				this._untick(fieldname);
+				frappe.msgprint({ title: __('Cannot mark Complete'), message: problem, indicator: 'orange' });
+			}
+		}
+		this.sync_done_flags();
+	}
+
+	/** Why a section may not be ticked Complete yet, or null when it may. */
+	section_problem(key) {
+		const spec = PQC_SECTIONS.find((s) => s[0] === key);
+		const label = __(spec ? spec[3] : key);
+		const rows = this.tables[key] || [];
+		if (!rows.length) {
+			return __('{0} has no rows yet. Add at least one row before marking it Complete.', [label]);
+		}
+		const blank = (v) => !cstr(v).trim();
+		for (let i = 0; i < rows.length; i++) {
+			const r = rows[i];
+			let missing = null;
+			if (key === 'vehicle') {
+				const damaged = cint(r.vehicle_damage) || r.vehicle_condition === 'Damaged';
+				if (blank(r.vehicle_no)) missing = __('Vehicle No.');
+				else if (damaged && blank(r.damage_reason)) missing = __('Damage Reason');
+			} else if (!r.item_code) {
+				missing = key === 'sample' ? __('SKU') : __('Item');
+			} else if (key === 'sample') {
+				if (flt(r.sample_qty) <= 0) missing = __('Sample Qty');
+			} else {
+				const cond = key === 'material' ? r.material_condition : r.packaging_condition;
+				const flag = key === 'material' ? r.material_damage : r.packaging_damage;
+				const damaged = cint(flag) || cond === 'Damaged';
+				if (damaged && flt(r.damaged_qty) <= 0) {
+					missing = key === 'material' ? __('Damaged Qty') : __('Damaged Pkgs');
+				} else if ((damaged || flt(r.damaged_qty) > 0) && blank(r.damage_reason)) {
+					missing = __('Damage Reason');
+				}
+			}
+			if (missing) {
+				return __('{0} row {1}: enter the {2} before marking it Complete.', [label, i + 1, missing]);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Clear a Complete tick the section no longer supports -- its last row removed, or a
+	 * draft saved before this rule existed. Returns the section label when it cleared one.
+	 */
+	drop_invalid_tick(key) {
+		const spec = PQC_SECTIONS.find((s) => s[0] === key);
+		if (!spec || !cint(this._val(spec[1])) || !this.section_problem(key)) return null;
+		this._untick(spec[1]);
+		return __(spec[3]);
+	}
+
+	_untick(fieldname) {
+		this._set(fieldname, 0);
+		const c = this.fields[fieldname];
+		if (c && c.$input) c.$input.prop('checked', false);
 	}
 
 	// BR-QC-05/06: each inspection is ticked on its own and every tick gates the
@@ -620,6 +688,11 @@ var PurchaseQCEntry = class {
 			// A removed row takes its quantities with it.
 			if (key === 'material') me.recalc_damage_rollup();
 			else if (key === 'sample' || key === 'control') me.recalc_sample_rollup();
+			const cleared = me.drop_invalid_tick(key);
+			if (cleared) {
+				me._toast(__('{0} is no longer marked Complete: {1}', [cleared, me.section_problem(key)]), 'orange');
+				me.sync_done_flags();
+			}
 		});
 		this.wrapper.on('click', '.btn-print-sticker', () => {
 			if (!me.docname) {
@@ -708,6 +781,15 @@ var PurchaseQCEntry = class {
 				// The saved Rejected already includes this damage; record that, so the next
 				// edit applies only the difference.
 				me.seed_damage_baseline();
+
+				// A draft saved before VAL-QC-02 covered the tick can still carry Complete over
+				// an empty section. Show it unticked; the next save stores that.
+				if (cint(doc.docstatus) === 0) {
+					const cleared = PQC_SECTIONS.map(([key]) => me.drop_invalid_tick(key)).filter(Boolean);
+					if (cleared.length) {
+						me._toast(__('Unticked Complete on {0}: nothing is recorded there yet.', [cleared.join(', ')]), 'orange');
+					}
+				}
 
 				me.apply_state();
 				me.page.set_title(`${doc.name} — Purchase QC`);

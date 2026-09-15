@@ -1010,7 +1010,7 @@ _INVOICE_HTML_RAW = r"""
 {%- macro money(v) -%}{{ frappe.utils.fmt_money(frappe.utils.flt(v), currency=doc.currency) }}{%- endmacro -%}
 {%- set direct = (doc.custom_invoice_type or "") == "Direct Purchase Invoice" -%}
 {%- set ds = frappe.utils.cint(doc.docstatus) -%}
-{%- set status = "Cancelled" if ds == 2 else ("Draft" if ds == 0 else (doc.custom_unified_status or "Pending Payment")) -%}
+{%- set status = "Pending Payment" if ds == 0 else ({"Completed": "Paid"}.get(doc.custom_unified_status, doc.custom_unified_status) if doc.custom_unified_status in ("Pending Payment", "Partially Paid", "Paid", "Completed") else "Pending Payment") -%}
 {%- set orders = [] -%}
 {%- for row in doc.items -%}{%- if row.purchase_order and row.purchase_order not in orders -%}{%- set _ = orders.append(row.purchase_order) -%}{%- endif -%}{%- endfor -%}
 {%- set supplier_payable = frappe.utils.flt(doc.rounded_total or doc.grand_total) -%}
@@ -1218,7 +1218,7 @@ _INVOICE_HTML_RAW = r"""
         <td>{{ txt(p.payment_type) }}</td>
         <td class="c">{{ dte(p.payment_date) }}</td>
         <td>{{ txt(p.payment_mode) }}</td>
-        <td>{{ txt(p.reference_number) }}</td>
+        <td>{{ txt(p.reference_number) }}{% if p.payment_entry %}<div class="sub">{{ p.payment_entry }}</div>{% endif %}</td>
         <td class="r">{{ money(p.payment_amount) }}</td>
         <td class="c">{{ txt(p.payment_status) }}</td>
         <td>{{ who(p.recorded_by) }}{% if p.recorded_on %}<div class="sub">{{ dtm(p.recorded_on) }}</div>{% endif %}</td>

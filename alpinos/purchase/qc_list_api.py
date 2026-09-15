@@ -63,6 +63,7 @@ LIST_FIELDS = (
 	"total_approved_qty",
 	"total_rejected_qty",
 	"purchase_receipt",
+	"purchase_quarantine",
 	"debit_note",
 	"owner",
 	"docstatus",
@@ -444,6 +445,24 @@ def _row_actions(row, inward, perms):
 
 	if not inward:
 		return []
+
+	if row.get("purchase_quarantine") and inward.get("purchase_qc") not in (None, "", row.get("name")):
+		# Items released from quarantine, inspected on a QC of their own: the inward's workflow
+		# belongs to its first QC, so this QC's own state decides (purchase_qc.start_qc does
+		# the same).
+		if not (workflow.user_roles() & set(workflow.QC)):
+			return []
+		if not row.get("inspector"):
+			actions = [
+				{"action": "start_qc", "label": _("Start QC"), "kind": "transition", "enabled": True, "reason": None}
+			]
+		else:
+			actions = [_view_action("continue_qc", _("Continue QC"))]
+		return [
+			a
+			for a in actions
+			if not _ACTION_PTYPE.get(a["action"]) or perms.get(_ACTION_PTYPE[a["action"]])
+		]
 
 	stub = frappe._dict(dict(inward))
 	stub["doctype"] = INWARD_DOCTYPE
