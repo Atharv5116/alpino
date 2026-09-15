@@ -173,7 +173,7 @@ var SalesOrderEntryListPage = class {
 		}
 		// Only for someone the queue will let in, or the button leads to "Not permitted".
 		if ((frappe.boot.page_info || {})['invoice-download-queue']) {
-			this.page.add_inner_button(__('Pending Invoices'), () =>
+			this.page.add_inner_button(__('Order Fulfilment Report'), () =>
 				frappe.set_route('invoice-download-queue')
 			);
 		}
@@ -394,7 +394,8 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-au-damage-filter'),
 			render_input: true,
 		});
-		// reveals Dispatched / Cancelled / Rejected (warehouse view) and all channels; default off
+		// reveals finished (Dispatched / Forced Dispatched / Completed / Forced Completed),
+		// Cancelled and Rejected orders (warehouse view) and all channels; default off
 		this._filter_fields.show_all = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Check',

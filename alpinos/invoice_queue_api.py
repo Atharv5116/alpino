@@ -1,4 +1,5 @@
-"""Server side of the Invoice Download Queue: access, columns, filters, sorting, export.
+"""Server side of the Order Fulfilment Report (formerly the Invoice Download Queue):
+access, columns, filters, sorting, export.
 
 The DOWNLOAD logic is not here. Downloading still goes through alpinos.sales_order_api,
 and membership of the queue still comes from alpinos.pending_invoice_api. This file
@@ -192,17 +193,21 @@ COLUMNS = {
 	"customer_name":  {"label": "Customer",       "select": "so.customer_name",        "type": "Data"},
 	"pl_po_no":       {"label": "PL PO No.",      "select": "pl.pl_po_no",             "type": "Data"},
 	"state":          {"label": "State",          "select": "addr.state",              "type": "Data"},
-	"invoice_id":     {"label": "Invoice Number", "select": "so.custom_invoice_no",    "type": "Data"},
+	# Shown as AHF/<financial year>/<number> (Changes(HP) #42). The year is the order's
+	# Dispatch Date's (the invoice is raised on dispatch), else its Order Date; a number
+	# already stored with the prefix is shown as it is. Sorted by the number itself.
+	"invoice_id":     {"label": "Invoice Number", "select": "__INVOICE_DISPLAY__",
+	                   "sort": "LPAD(so.custom_invoice_no, 20, '0')", "type": "Data"},
 	"transporter":    {"label": "Transporter",    "select": "pl.transporter",          "type": "Data"},
 	"lr_number":      {"label": "LR No.",         "select": "dn.lr_no",                "type": "Data"},
 	"so_amount":      {"label": "Sales Order Amount", "select": "so.grand_total",      "type": "Currency"},
-	# Already maintained on the order by alpinos.so_invoice_value (dispatched value, or
-	# the picked share of the order's selling price before dispatch); read, never
-	# recomputed, or the queue and the order would answer differently.
-	"invoice_amount": {"label": "Invoice Amount",
-	                   "select": "IFNULL(so.custom_total_invoice_value, 0)", "type": "Currency"},
+	# What the submitted Delivery Notes invoiced, read live; before anything is
+	# dispatched, the value alpinos.so_invoice_value keeps on the order (the picked share
+	# of its selling price). Reading only the stored value showed 0 on every order whose
+	# notes went out before that value was maintained (Changes(HP) #42).
+	"invoice_amount": {"label": "Invoice Amount", "select": "__INVOICE_AMOUNT__", "type": "Currency"},
 	"amount_diff":    {"label": "Sales vs Invoice Difference Amount",
-	                   "select": "(IFNULL(so.grand_total,0) - IFNULL(so.custom_total_invoice_value,0))",
+	                   "select": "(IFNULL(so.grand_total, 0) - __INVOICE_AMOUNT__)",
 	                   "type": "Currency"},
 	"total_box":      {"label": "Total Box",      "select": "pl.total_box",            "type": "Float"},
 	"weight":         {"label": "Weight",         "select": "pl.weight",               "type": "Float"},
@@ -222,6 +227,26 @@ COLUMNS = {
 	"undispatched":   {"label": "Undispatched Items / Qty", "select": None,
 	                   "type": "Data", "sortable": False},
 }
+
+_INVOICE_AMOUNT = (
+	"COALESCE(NULLIF(dn.dispatched_value, 0), NULLIF(so.custom_total_invoice_value, 0), 0)"
+)
+_FY_DATE = "COALESCE(so.custom_dispatch_date, so.transaction_date)"
+_FY_START = f"(YEAR({_FY_DATE}) - IF(MONTH({_FY_DATE}) < 4, 1, 0))"
+_INVOICE_DISPLAY = (
+	"CASE WHEN IFNULL(so.custom_invoice_no, '') = '' THEN so.custom_invoice_no"
+	" WHEN so.custom_invoice_no LIKE 'AHF/%%' THEN so.custom_invoice_no"
+	f" WHEN {_FY_DATE} IS NULL THEN so.custom_invoice_no"
+	f" ELSE CONCAT('AHF/', LPAD(MOD({_FY_START}, 100), 2, '0'), '-',"
+	f" LPAD(MOD({_FY_START} + 1, 100), 2, '0'), '/', so.custom_invoice_no) END"
+)
+for _spec in COLUMNS.values():
+	if _spec["select"]:
+		_spec["select"] = (
+			_spec["select"]
+			.replace("__INVOICE_AMOUNT__", _INVOICE_AMOUNT)
+			.replace("__INVOICE_DISPLAY__", _INVOICE_DISPLAY)
+		)
 
 # The order the screen opens with, per the attached column sheet. `download` is not
 # in the catalogue at all: it is an action, not data, so it can never be reordered
@@ -388,7 +413,9 @@ _JOINS = """
 	) pl ON pl.so_id = so.name
 	LEFT JOIN (
 		SELECT custom_sales_order_id AS so_id,
-		       GROUP_CONCAT(DISTINCT NULLIF(custom_lr_gr_no, '') SEPARATOR ', ') AS lr_no
+		       GROUP_CONCAT(DISTINCT NULLIF(custom_lr_gr_no, '') SEPARATOR ', ') AS lr_no,
+		       SUM(CASE WHEN docstatus = 1
+		                THEN COALESCE(NULLIF(grand_total, 0), base_grand_total, 0) ELSE 0 END) AS dispatched_value
 		FROM `tabDelivery Note`
 		WHERE docstatus < 2 AND IFNULL(is_return, 0) = 0
 		  AND IFNULL(custom_sales_order_id, '') <> ''
@@ -413,8 +440,16 @@ _FILTERS = {
 	"dispatch_date_from": ("pl.dispatch_date >= %(dispatch_date_from)s", "eq"),
 	"dispatch_date_to":   ("pl.dispatch_date <= %(dispatch_date_to)s", "eq"),
 	"po_date":        ("so.custom_po_date = %(po_date)s", "eq"),
+	# Changes(HP) #41: the user who created the Sales Order.
+	"created_by":     ("so.owner = %(created_by)s", "eq"),
 }
 FILTER_KEYS = tuple(_FILTERS)
+
+
+def _strip_invoice_prefix(value):
+	import re
+
+	return re.sub(r"^\s*AHF/\d{2}-\d{2}/", "", str(value or ""), flags=re.I).strip()
 
 
 def _escape_like(term):
@@ -447,6 +482,9 @@ def _build(filters, columns, sort_field, sort_dir):
 		if value in (None, ""):
 			continue
 		sql, mode = spec
+		if key == "invoice_id":
+			# The column shows AHF/26-27/6055 but the order stores 6055: accept either.
+			value = _strip_invoice_prefix(value)
 		conditions.append(sql)
 		params[key] = f"%{_escape_like(value)}%" if mode == "like" else value
 
@@ -467,7 +505,8 @@ def _build(filters, columns, sort_field, sort_dir):
 	if not cat[sort_key].get("sortable", True) or not cat[sort_key]["select"]:
 		sort_key = "order_date"
 	direction = "ASC" if str(sort_dir or "desc").lower() == "asc" else "DESC"
-	order_by = f"{cat[sort_key]['select']} {direction}, so.name {direction}"
+	sort_expr = cat[sort_key].get("sort") or cat[sort_key]["select"]
+	order_by = f"{sort_expr} {direction}, so.name {direction}"
 
 	return " AND ".join(conditions), params, selects, order_by, select_keys
 
@@ -626,7 +665,10 @@ def attach_undispatched(rows):
 	for i in range(0, len(names), _CHUNK):
 		pending.update(_undispatched_for(names[i : i + _CHUNK]))
 	for r in rows:
-		r["undispatched"] = ", ".join(pending.get(r.get("sales_order"), []))
+		items = pending.get(r.get("sales_order"), [])
+		r["undispatched"] = ", ".join(f"{i['item_code']} ({i['qty']})" for i in items)
+		# The full list behind the compact cell (Changes(HP) #41); not an export column.
+		r["undispatched_items"] = items
 
 
 def _undispatched_for(names):
@@ -635,7 +677,8 @@ def _undispatched_for(names):
 	params = {"names": tuple(names)}
 	ordered = frappe.db.sql(
 		"""
-		SELECT soi.parent AS so, soi.item_code, SUM(soi.qty) AS qty, MIN(soi.idx) AS idx
+		SELECT soi.parent AS so, soi.item_code, MAX(soi.item_name) AS item_name,
+		       SUM(soi.qty) AS qty, MIN(soi.idx) AS idx
 		FROM `tabSales Order Item` soi
 		WHERE soi.parent IN %(names)s
 		GROUP BY soi.parent, soi.item_code
@@ -691,7 +734,9 @@ def _undispatched_for(names):
 			shipped = delivered.get((o.so, o.item_code), 0)
 		short = flt(o.qty) - flt(shipped)
 		if short > 0.0001:
-			pending.setdefault(o.so, []).append(f"{o.item_code} ({_trim(short)})")
+			pending.setdefault(o.so, []).append(
+				{"item_code": o.item_code, "item_name": o.item_name or o.item_code, "qty": _trim(short)}
+			)
 	return pending
 
 
@@ -858,6 +903,30 @@ def customer_link_query(doctype, txt, searchfield, start, page_len, filters):
 		FROM `tabSales Order` so {_JOINS}
 		WHERE {where} AND (so.customer LIKE %(txt)s OR so.customer_name LIKE %(txt)s)
 		ORDER BY so.customer_name
+		LIMIT {cint(page_len) or 20} OFFSET {cint(start) or 0}
+		""",
+		params,
+	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def creator_link_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link query for Created By: the users who created orders this user may see.
+
+	Driven off the orders, like the customer list, so it never offers a user from a
+	channel the role does not cover.
+	"""
+	_assert_can_read()
+	channel = (filters or {}).get("channel") or None
+	where, params, _sel, _ob, _keys = _build({"channel": channel}, None, None, None)
+	params["txt"] = f"%{_escape_like(txt)}%"
+	return frappe.db.sql(
+		f"""
+		SELECT DISTINCT so.owner, COALESCE(NULLIF(own.full_name, ''), so.owner)
+		FROM `tabSales Order` so {_JOINS}
+		WHERE {where} AND (so.owner LIKE %(txt)s OR own.full_name LIKE %(txt)s)
+		ORDER BY 2
 		LIMIT {cint(page_len) or 20} OFFSET {cint(start) or 0}
 		""",
 		params,

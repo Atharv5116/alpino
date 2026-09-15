@@ -688,9 +688,15 @@ def download_sales_orders_zip(names, no_letterhead=0):
 
 
 def _invoice_file_base(name, invoice_no):
-	"""File name for a downloaded invoice: the order, then its invoice no, else its pick list."""
+	"""File name for a downloaded invoice: the order, then its invoice no, else its pick list.
+
+	Changes(HP) #42.3: the invoice file is named exactly this, with no ".pdf" on the end
+	(SOR-2627-00205 - 6053). An invoice number that itself ends in .pdf is trimmed too.
+	"""
+	import re
+
 	so = str(name).strip().replace("/", "-")
-	tag = str(invoice_no or "").strip().replace("/", "-")
+	tag = re.sub(r"\.pdf\s*$", "", str(invoice_no or "").strip(), flags=re.I).strip().replace("/", "-")
 	if not tag:
 		pick_list = frappe.db.get_value(
 			"Pick List",
@@ -700,6 +706,14 @@ def _invoice_file_base(name, invoice_no):
 		)
 		tag = str(pick_list or "").strip().replace("/", "-")
 	return "{0} - {1}".format(so, tag) if tag else so
+
+
+def _invoice_content_type(file_url):
+	"""The invoice's real type, sent with the download: the name no longer carries an
+	extension for the browser to guess it from."""
+	import mimetypes
+
+	return mimetypes.guess_type(str(file_url or ""))[0] or "application/pdf"
 
 
 @frappe.whitelist()
@@ -739,11 +753,11 @@ def download_sales_invoices_zip(names):
 				frappe.log_error(title="Bulk invoice export: cannot read {0} ({1})".format(file_url, name))
 				continue
 			base = _invoice_file_base(name, row.get("custom_invoice_no"))
-			fname = base + ".pdf"
+			fname = base
 			# two orders can share an invoice no; keep both files rather than overwrite
 			if fname in used:
 				used[fname] += 1
-				fname = "{0} ({1}).pdf".format(base, used[fname])
+				fname = "{0} ({1})".format(base, used[fname])
 			else:
 				used[fname] = 0
 			zf.writestr(fname, content)
@@ -955,7 +969,11 @@ def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
 			continue
 		base = _invoice_file_base(name, invoice_no)
 		for label, ext, content in produced:
-			built.append(("{0} - {1}.{2}".format(base, label, ext), content))
+			if label == BUNDLE_LABELS["invoice"]:
+				# Changes(HP) #42.3: the invoice is named "<order> - <invoice no>", no extension.
+				built.append((base, content, _invoice_content_type("x." + ext)))
+			else:
+				built.append(("{0} - {1}.{2}".format(base, label, ext), content, None))
 		if missing:
 			incomplete.append("{0} (no {1})".format(name, ", ".join(missing)))
 
@@ -973,15 +991,17 @@ def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
 		)
 
 	if len(built) == 1:
-		filename, content = built[0]
+		filename, content, content_type = built[0]
 		frappe.local.response.filename = filename
+		if content_type:
+			frappe.local.response.content_type = content_type
 		frappe.local.response.filecontent = content
 		frappe.local.response.type = "download"
 		return
 
 	buf = BytesIO()
 	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-		for filename, content in built:
+		for filename, content, _type in built:
 			zf.writestr(filename, content)
 	frappe.local.response.filename = "{0}-{1}.zip".format("-".join(wanted), len(names))
 	frappe.local.response.filecontent = buf.getvalue()
@@ -1032,7 +1052,8 @@ def download_single_invoice(name):
 	if not frappe.db.get_value("Sales Order", name, "custom_invoice_downloaded"):
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
 		frappe.db.commit()
-	frappe.local.response.filename = base + ".pdf"
+	frappe.local.response.filename = base
+	frappe.local.response.content_type = _invoice_content_type(file_url)
 	frappe.local.response.filecontent = content
 	frappe.local.response.type = "download"
 
@@ -1997,8 +2018,9 @@ def get_sales_order_entry_list(
 		filters["transaction_date"] = ["<=", td]
 
 	# Warehouse Manager / Admin (without a sales/admin role) see every stage except Draft;
-	# Dispatched/Cancelled/Rejected are hidden unless "Show All". An explicit UI status
-	# filter is respected.
+	# finished orders (Dispatched, Forced Dispatched, Completed, Forced Completed) and
+	# Cancelled / Rejected ones are hidden unless "Show All" (Changes(HP) #17, #37). An
+	# explicit UI status filter is respected.
 	_roles = set(frappe.get_roles())
 	_warehouse_roles = {"Warehouse Manager", "Warehouse Admin"}
 	_override_roles = {
@@ -2012,7 +2034,10 @@ def get_sales_order_entry_list(
 		if "custom_workflow_status" not in filters:  # respect an explicit UI status filter
 			_hidden = ["Draft"]  # Draft is never shown to the warehouse
 			if not show_all:
-				_hidden += ["Dispatched", "Cancelled", "Rejected"]
+				_hidden += [
+					"Dispatched", "Forced Dispatched", "Completed", "Forced Completed",
+					"Cancelled", "Rejected",
+				]
 			filters["custom_workflow_status"] = ["not in", _hidden]
 
 	or_filters = None

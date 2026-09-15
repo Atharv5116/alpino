@@ -203,9 +203,14 @@ def _names(rows):
 def run():
 	R.clear()
 	frappe.set_user("Administrator")
+	# Some code under test commits (the invoice ZIP marks orders downloaded). A commit in
+	# the middle would make the fixtures permanent, so commits are ignored while it runs.
+	real_commit = frappe.db.commit
+	frappe.db.commit = lambda *args, **kwargs: None
 	try:
 		_run()
 	finally:
+		frappe.db.commit = real_commit
 		# Nothing this suite wrote survives it, including the role changes.
 		frappe.db.rollback()
 		for email in list(_TOUCHED_USERS):
@@ -597,3 +602,98 @@ def _run():
 		_assert(got(order_date_from=add_days(fx.day, 1)) == set(), "Order Date From filter")
 
 	check("LR No., State, Invoice Number, Customer and Order Date filters", _remaining_filters)
+
+	# ------------------------------------------------- Changes(HP) #41 / #42
+	def _page_is_renamed():
+		import json, os
+
+		path = os.path.join(frappe.get_app_path("alpinos"), "alpinos_development", "page",
+			"invoice_download_queue", "invoice_download_queue.json")
+		_assert(json.load(open(path))["title"] == "Order Fulfilment Report", "page title not renamed")
+		_assert(frappe.db.get_value("Page", Q.PAGE_ROUTE, "title") == "Order Fulfilment Report",
+			"site page title not renamed (migrate)")
+
+	check("#41 the page is called Order Fulfilment Report", _page_is_renamed)
+
+	def _created_by_filter():
+		got = _names(Q.get_rows(filters=fx.f(created_by=fx.owner_a), page_length=500)["rows"])
+		_assert(got == {fx.ecom}, f"Created By filter got {sorted(got)}")
+		_assert("created_by" in Q.FILTER_KEYS, "a saved view would drop the Created By filter")
+		offered = [r[0] for r in _as(sales_user, lambda: Q.creator_link_query("User", "", "name", 0, 500, {}))]
+		_assert(fx.owner_z in offered, "the creator of an Offline order is not offered to a Sales user")
+		_assert(fx.owner_a not in offered, "the creator of an E-com-only order is offered to a Sales user")
+
+	check("#41 Created By filters by the order's creator, and offers only creators in the user's channels",
+		_created_by_filter)
+
+	def _undispatched_detail_for_the_popup():
+		row = [r for r in Q.get_rows(filters=fx.f(), columns=["sales_order", "undispatched"], page_length=500)["rows"]
+		       if r["sales_order"] == fx.combo_partial][0]
+		items = [(i["item_code"], i["qty"]) for i in row["undispatched_items"]]
+		_assert(items == [(fx.bundle, 10), (fx.plain, 6)], f"pop-up items {items}")
+		out = Q.export_rows(filters={"sales_order": fx.combo_partial}, columns=["sales_order", "undispatched"])
+		_assert(out["rows"][0][1] == f"{fx.bundle} (10), {fx.plain} (6)", f"export cell {out['rows'][0]}")
+
+	check("#41 Undispatched carries every item for the pop-up; the export keeps the full text",
+		_undispatched_detail_for_the_popup)
+
+	def _invoice_amount_from_the_notes():
+		rows = {r["sales_order"]: r for r in Q.get_rows(filters=fx.f(), page_length=500)["rows"]}
+		_assert(flt(rows[fx.ecom]["invoice_amount"]) == 150,
+			f"invoice amount {rows[fx.ecom]['invoice_amount']}, expected the two notes' 150")
+		_assert(flt(rows[fx.ecom]["amount_diff"]) == 850, f"difference {rows[fx.ecom]['amount_diff']}")
+		frappe.db.set_value("Sales Order", fx.offline, "custom_total_invoice_value", 0, update_modified=False)
+		rows = {r["sales_order"]: r for r in Q.get_rows(filters=fx.f(), page_length=500)["rows"]}
+		_assert(flt(rows[fx.offline]["invoice_amount"]) == 0, "an order with nothing dispatched invented an amount")
+		_assert(flt(rows[fx.gt]["invoice_amount"]) == 900, "the stored value is not used before dispatch")
+
+	check("#42 Invoice Amount comes from the submitted notes, else the order's stored value",
+		_invoice_amount_from_the_notes)
+
+	def _invoice_number_format():
+		frappe.db.set_value("Sales Order", fx.gt, {"custom_invoice_no": "6055", "custom_dispatch_date": "2026-09-11"},
+			update_modified=False)
+		frappe.db.set_value("Sales Order", fx.offline, {"custom_invoice_no": "7001", "custom_dispatch_date": "2027-03-31"},
+			update_modified=False)
+		frappe.db.set_value("Sales Order", fx.shared_o, "custom_invoice_no", "AHF/25-26/99", update_modified=False)
+		rows = {r["sales_order"]: r for r in Q.get_rows(filters=fx.f(), page_length=500)["rows"]}
+		_assert(rows[fx.gt]["invoice_id"] == "AHF/26-27/6055", rows[fx.gt]["invoice_id"])
+		_assert(rows[fx.offline]["invoice_id"] == "AHF/26-27/7001", f"31 March is still 26-27: {rows[fx.offline]['invoice_id']}")
+		_assert(rows[fx.shared_o]["invoice_id"] == "AHF/25-26/99", "an already-prefixed number was changed")
+		hit = _names(Q.get_rows(filters=fx.f(invoice_id="AHF/26-27/6055"), page_length=500)["rows"])
+		_assert(hit == {fx.gt}, f"searching the displayed number found {sorted(hit)}")
+		_assert(_names(Q.get_rows(filters=fx.f(invoice_id="6055"), page_length=500)["rows"]) == {fx.gt},
+			"searching the bare number no longer works")
+
+	check("#42 Invoice Number shows as AHF/<FY>/<number> and can be searched either way", _invoice_number_format)
+
+	def _invoice_file_names_have_no_extension():
+		import io
+		import zipfile
+
+		import frappe.utils.file_manager as fm
+		from alpinos import sales_order_api as S
+
+		frappe.db.set_value("Sales Order", fx.offline, {"custom_invoice_no": "6053", "custom_invoice_pdf": "/private/files/6053.pdf"},
+			update_modified=False)
+		frappe.db.set_value("Sales Order", fx.gt, {"custom_invoice_no": "7002.pdf", "custom_invoice_pdf": "/private/files/7002.pdf"},
+			update_modified=False)
+		real_get_file = fm.get_file
+		fm.get_file = lambda url: (url.rsplit("/", 1)[-1], b"%PDF-1.4 test")
+		try:
+			S.download_single_invoice(fx.offline)
+			_assert(frappe.local.response.filename == f"{fx.offline} - 6053", frappe.local.response.filename)
+			_assert(frappe.local.response.content_type == "application/pdf", "the download lost its PDF type")
+
+			S.download_sales_invoices_zip(frappe.as_json([fx.offline, fx.gt]))
+			names = sorted(zipfile.ZipFile(io.BytesIO(frappe.local.response.filecontent)).namelist())
+			_assert(names == sorted([f"{fx.offline} - 6053", f"{fx.gt} - 7002"]), f"zip entries {names}")
+
+			S.download_order_bundle(frappe.as_json([fx.offline]), parts="invoice")
+			_assert(frappe.local.response.filename == f"{fx.offline} - 6053", f"INV link file {frappe.local.response.filename}")
+			_assert(frappe.local.response.content_type == "application/pdf", "the INV download lost its PDF type")
+		finally:
+			fm.get_file = real_get_file
+
+	check("#42.3 invoice files are named <order> - <invoice no> with no .pdf, and still sent as PDF",
+		_invoice_file_names_have_no_extension)

@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import flt, now_datetime
+from frappe.utils import flt, getdate, now_datetime
 from math import ceil
 
 from alpinos.sales_order_api import get_box_conversion_factor
@@ -43,7 +43,17 @@ def _sync_order_information(doc):
 	if first_so:
 		doc.custom_sales_order_id = first_so
 		doc.custom_customer_name = frappe.db.get_value("Sales Order", first_so, "customer_name") or ""
-		# Dispatch Date always mirrors the Sales Order.
+		# Dispatch Date follows the Sales Order, EXCEPT when the user has just changed it
+		# on this Pick List: then the order follows the Pick List (Changes(HP) #35), which
+		# dispatch_date_sync.pick_list_on_update does once the save has gone through.
+		before = doc.get_doc_before_save()
+		if (
+			before
+			and doc.custom_dispatch_date
+			and getdate(before.custom_dispatch_date or "1900-01-01") != getdate(doc.custom_dispatch_date)
+		):
+			doc.flags.dispatch_date_changed = True
+			return
 		so_dispatch = frappe.db.get_value("Sales Order", first_so, "custom_dispatch_date")
 		if so_dispatch:
 			doc.custom_dispatch_date = so_dispatch
