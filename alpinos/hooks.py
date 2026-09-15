@@ -28,7 +28,9 @@ app_license = "mit"
 app_include_css = "/assets/alpinos/css/alpinos_pages.css"
 app_include_js = [
 	"/assets/alpinos/js/sales_order_hub_desk_v3.js",
-	"/assets/alpinos/js/item_row_colors.js",
+	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
+	# the hard-coded item_row_colors.js; its reports became a default configuration).
+	"/assets/alpinos/js/item_display.js",
 	"/assets/alpinos/js/alpinos_list_prefs.js",
 ]
 
@@ -262,15 +264,32 @@ after_migrate = [
 # -----------
 # Permissions evaluated in scripted ways
 
+# Changes(HP) #22: channel by role (alpinos.channel_access) on top of the assigned-only rule.
+# Query conditions are ANDed; the channel has_permission hooks only ever deny, so the
+# assigned-visibility hooks listed before them still decide everything else.
 permission_query_conditions = {
-	"Pick List": "alpinos.assigned_visibility.pick_list_query_conditions",
-	"Delivery Note": "alpinos.assigned_visibility.delivery_note_query_conditions",
+	"Sales Order": "alpinos.channel_access.sales_order_query_conditions",
+	"Pick List": [
+		"alpinos.assigned_visibility.pick_list_query_conditions",
+		"alpinos.channel_access.pick_list_query_conditions",
+	],
+	"Delivery Note": [
+		"alpinos.assigned_visibility.delivery_note_query_conditions",
+		"alpinos.channel_access.delivery_note_query_conditions",
+	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_query_conditions",
 }
 
 has_permission = {
-	"Pick List": "alpinos.assigned_visibility.pick_list_has_permission",
-	"Delivery Note": "alpinos.assigned_visibility.delivery_note_has_permission",
+	"Sales Order": "alpinos.channel_access.sales_order_has_permission",
+	"Pick List": [
+		"alpinos.assigned_visibility.pick_list_has_permission",
+		"alpinos.channel_access.pick_list_has_permission",
+	],
+	"Delivery Note": [
+		"alpinos.assigned_visibility.delivery_note_has_permission",
+		"alpinos.channel_access.delivery_note_has_permission",
+	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_has_permission",
 }
 
@@ -642,7 +661,8 @@ scheduler_events = {
 # --------------------
 
 extend_bootinfo = [
-	"alpinos.customize_expense_claim.extend_bootinfo"
+	"alpinos.customize_expense_claim.extend_bootinfo",
+	"alpinos.item_display_config.extend_bootinfo",
 ]
 
 # Testing

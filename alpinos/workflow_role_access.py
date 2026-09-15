@@ -376,6 +376,35 @@ def _setup_status_fields():
 				allow_on_submit=1,
 				description="Auto-set to today when Sales marks the order Completed (delivery confirmed).",
 			),
+			# Changes(HP) #21: why the warehouse rejected the order, and who did it.
+			dict(
+				fieldname="custom_rejection_reason",
+				label="Reason for Rejection",
+				fieldtype="Small Text",
+				insert_after="custom_delivered_on",
+				read_only=1,
+				allow_on_submit=1,
+				depends_on="eval:doc.custom_workflow_status=='Rejected'",
+			),
+			dict(
+				fieldname="custom_rejected_by",
+				label="Rejected By",
+				fieldtype="Link",
+				options="User",
+				insert_after="custom_rejection_reason",
+				read_only=1,
+				allow_on_submit=1,
+				depends_on="eval:doc.custom_workflow_status=='Rejected'",
+			),
+			dict(
+				fieldname="custom_rejected_on",
+				label="Rejected On",
+				fieldtype="Datetime",
+				insert_after="custom_rejected_by",
+				read_only=1,
+				allow_on_submit=1,
+				depends_on="eval:doc.custom_workflow_status=='Rejected'",
+			),
 		],
 		"Pick List": [
 			dict(

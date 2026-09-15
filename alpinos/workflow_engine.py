@@ -1,7 +1,7 @@
 """Workflow engine: keeps custom_workflow_status accurate across the Sales Order -> Pick List -> Delivery Note lifecycle."""
 
 import frappe
-from frappe.utils import flt, getdate, today
+from frappe.utils import flt, getdate, now_datetime, today
 
 
 # --- SO / PL status vocab ---------------------------------------------------
@@ -479,15 +479,35 @@ def approve_sales_order(sales_order):
 
 
 @frappe.whitelist()
-def reject_sales_order(sales_order):
-	"""Warehouse rejects an order (terminal). Allowed only before a Pick List is submitted."""
+def reject_sales_order(sales_order, reason=None):
+	"""Warehouse rejects an order (terminal). Allowed only before a Pick List is submitted.
+
+	Changes(HP) #21: the reason is mandatory and is kept on the order (with who rejected it
+	and when) for future reference. Refused without one, whatever the caller sends.
+	"""
 	_require_roles(WAREHOUSE_ROLES)
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(frappe._("Enter the reason for rejection."), title=frappe._("Reason Required"))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
 	if cur not in SO_REJECTABLE:
 		frappe.throw(frappe._("This order can't be rejected at its current stage ({0}).").format(cur or "—"))
 	if frappe.db.exists("Pick List", {"custom_sales_order_id": sales_order, "docstatus": 1}):
 		frappe.throw(frappe._("Cancel the submitted Pick List before rejecting this order."))
 	_set_status("Sales Order", sales_order, SO_REJECTED)
+	frappe.db.set_value(
+		"Sales Order",
+		sales_order,
+		{
+			"custom_rejection_reason": reason,
+			"custom_rejected_by": frappe.session.user,
+			"custom_rejected_on": now_datetime(),
+		},
+		update_modified=False,
+	)
+	frappe.get_doc("Sales Order", sales_order).add_comment(
+		"Comment", frappe._("Rejected. Reason: {0}").format(frappe.utils.escape_html(reason))
+	)
 	frappe.db.commit()
 	return {"status": SO_REJECTED}
 

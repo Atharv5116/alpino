@@ -38,13 +38,17 @@ from frappe.utils import cint, flt
 
 DOCTYPE = "Sales Order"
 
-CHANNEL_ECOM = "E-com"
-CHANNEL_OFFLINE = "Offline"
-OFFLINE_CHANNELS = ("Offline", "General Trade")
-
-ECOM_ROLES = ("E-Commerce Admin", "E-Commerce Coordinator", "E-Commerce Manager")
-OFFLINE_ROLES = ("Sales Manager", "Sales Admin", "Sales User")
-UNRESTRICTED_ROLES = ("Warehouse Admin", "Warehouse Manager", "Accounts User")
+# The role -> channel rule is shared with the Sales Order / Pick List / Delivery Note
+# permission hooks (Changes(HP) #22), so it lives in one place.
+from alpinos.channel_access import (  # noqa: E402
+	CHANNEL_ECOM,
+	CHANNEL_OFFLINE,
+	ECOM_ROLES,
+	OFFLINE_CHANNELS,
+	OFFLINE_ROLES,
+	UNRESTRICTED_ROLES,
+	resolve_access,
+)
 
 # Every role the spec names may open the page; alpinos.workflow_role_access applies it.
 PAGE_ROLES = ECOM_ROLES + OFFLINE_ROLES + UNRESTRICTED_ROLES
@@ -59,34 +63,6 @@ _CHUNK = 500
 
 def _roles(user=None):
 	return set(frappe.get_roles(user or frappe.session.user))
-
-
-def resolve_access(user=None):
-	"""What channels this user may see, and whether the filter is theirs to change."""
-	roles = _roles(user)
-
-	if roles.intersection(UNRESTRICTED_ROLES) or "System Manager" in roles:
-		return {"channels": None, "locked": False, "default": None, "group": "unrestricted"}
-
-	ecom = bool(roles.intersection(ECOM_ROLES))
-	offline = bool(roles.intersection(OFFLINE_ROLES))
-	if ecom and offline:
-		return {
-			"channels": [CHANNEL_ECOM, *OFFLINE_CHANNELS], "locked": False,
-			"default": None, "group": "ecom+offline",
-		}
-	if ecom:
-		return {
-			"channels": [CHANNEL_ECOM], "locked": True,
-			"default": CHANNEL_ECOM, "group": "ecom",
-		}
-	if offline:
-		return {
-			"channels": list(OFFLINE_CHANNELS), "locked": True,
-			"default": CHANNEL_OFFLINE, "group": "offline",
-		}
-	# None of the nine named roles: unchanged from before, doc permissions still apply.
-	return {"channels": None, "locked": False, "default": None, "group": "unnamed"}
 
 
 def expand_channel(channel):

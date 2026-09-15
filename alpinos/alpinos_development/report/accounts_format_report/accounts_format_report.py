@@ -347,6 +347,17 @@ def _buyer_master_scope_customers(filters):
 	return {r.customer for r in rows}
 
 
+def _channel_scoped(so_names):
+	"""Changes(HP) #22: the report, and so its export, keeps only the user's channels."""
+	from alpinos.channel_access import allowed_sales_orders
+
+	allowed = allowed_sales_orders()
+	if allowed is None:
+		return so_names
+	allowed = set(allowed)
+	return [s for s in so_names if s in allowed]
+
+
 def _get_data(filters):
 	so_filters = {"docstatus": 1}
 	# Dispatch Date is the primary date filter (Order Date From/To removed).
@@ -369,6 +380,8 @@ def _get_data(filters):
 			so_filters["customer"] = ["in", list(allowed_customers)]
 
 	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="custom_dispatch_date asc, name asc")
+
+	so_names = _channel_scoped(so_names)
 
 	# Only report orders whose Pick List is submitted (docstatus=1).
 	if so_names:

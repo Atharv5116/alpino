@@ -285,6 +285,19 @@ def get_pick_list_entry_list(
 	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "DN Manager"}
 	if "PL User" in _roles and not (_roles & _override):
 		filters["custom_assigned_to"] = frappe.session.user
+
+	# Changes(HP) #22: only Pick Lists of orders in the user's channels. frappe.get_all skips
+	# the permission hooks that do this for the desk list, so it is applied here.
+	from alpinos.channel_access import allowed_sales_orders
+
+	_allowed_sos = allowed_sales_orders()
+	if _allowed_sos is not None:
+		if sales_order:
+			if sales_order not in _allowed_sos:
+				_allowed_sos = []
+			else:
+				_allowed_sos = [sales_order]
+		filters["custom_sales_order_id"] = ["in", _allowed_sos or ["__no_match__"]]
 		
 	or_filters = []
 	if search:

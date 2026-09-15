@@ -116,21 +116,39 @@ var SalesOrderEntryView = class {
 		}, __('Order'));
 		if (this.btn_cancel_so) this.btn_cancel_so.hide();
 		// Warehouse Admin/Manager only, early stages before a Pick List is submitted
+		// Changes(HP) #21: a rejection needs a reason, which is kept on the order.
 		this.btn_reject_so = this.page.add_inner_button(__('Reject Order'), () => {
 			const me = this;
-			frappe.confirm(__('Reject Sales Order {0}? It will be marked Rejected.', [me._so_name]), () => {
-				frappe.call({
-					method: 'alpinos.workflow_engine.reject_sales_order',
-					args: { sales_order: me._so_name },
-					freeze: true,
-					freeze_message: __('Rejecting...'),
-					callback: (r) => {
-						if (r.exc) return;
-						frappe.show_alert({ message: __('Sales Order rejected'), indicator: 'red' });
-						me.load_order(me._so_name);
+			const d = new frappe.ui.Dialog({
+				title: __('Reject Sales Order {0}', [me._so_name]),
+				fields: [
+					{
+						fieldname: 'reason', fieldtype: 'Small Text', label: __('Reason for Rejection'), reqd: 1,
+						description: __('Saved on the Sales Order. The order is marked Rejected and cannot be reopened.'),
+					},
+				],
+				primary_action_label: __('Reject'),
+				primary_action(v) {
+					const reason = (v.reason || '').trim();
+					if (!reason) {
+						frappe.msgprint(__('Enter the reason for rejection.'));
+						return;
 					}
-				});
+					frappe.call({
+						method: 'alpinos.workflow_engine.reject_sales_order',
+						args: { sales_order: me._so_name, reason: reason },
+						freeze: true,
+						freeze_message: __('Rejecting...'),
+						callback: (r) => {
+							if (r.exc) return;
+							d.hide();
+							frappe.show_alert({ message: __('Sales Order rejected'), indicator: 'red' });
+							me.load_order(me._so_name);
+						},
+					});
+				},
 			});
+			d.show();
 		}, __('Order'));
 		if (this.btn_reject_so) this.btn_reject_so.hide();
 		this.btn_future_dispatch = this.page.add_inner_button(
@@ -589,6 +607,21 @@ var SalesOrderEntryView = class {
 		);
 	}
 
+	/** Changes(HP) #21: a rejected order shows why, who rejected it and when. */
+	render_rejection_note(p) {
+		const w = this.wrapper;
+		w.find('.alp-reject-note').remove();
+		if (p.custom_workflow_status !== 'Rejected') return;
+		const by = p.custom_rejected_by ? frappe.user.full_name(p.custom_rejected_by) : '';
+		const on = p.custom_rejected_on ? frappe.datetime.str_to_user(p.custom_rejected_on) : '';
+		const who = [by, on].filter(Boolean).join(', ');
+		const reason = p.custom_rejection_reason ? this._esc(p.custom_rejection_reason) : __('No reason was recorded.');
+		$(`<div class="alp-reject-note alert alert-danger" style="margin:0 0 12px;">
+			<strong>${__('Rejected')}</strong>${who ? ` <span class="text-muted">(${this._esc(who)})</span>` : ''}<br>
+			${__('Reason')}: ${reason}
+		</div>`).prependTo(w);
+	}
+
 	load_order(name, opts = {}) {
 		this._so_name = name;
 		frappe.call({
@@ -682,6 +715,7 @@ var SalesOrderEntryView = class {
 		const currency = p.currency || frappe.boot?.sysdefaults?.currency || '';
 
 		this.update_actions();
+		this.render_rejection_note(p);
 
 		w.find('.v-customer-name').text(
 			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'
