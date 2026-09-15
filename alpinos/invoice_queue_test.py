@@ -666,3 +666,34 @@ def _run():
 			"searching the bare number no longer works")
 
 	check("#42 Invoice Number shows as AHF/<FY>/<number> and can be searched either way", _invoice_number_format)
+
+	def _invoice_file_names_have_no_extension():
+		import io
+		import zipfile
+
+		import frappe.utils.file_manager as fm
+		from alpinos import sales_order_api as S
+
+		frappe.db.set_value("Sales Order", fx.offline, {"custom_invoice_no": "6053", "custom_invoice_pdf": "/private/files/6053.pdf"},
+			update_modified=False)
+		frappe.db.set_value("Sales Order", fx.gt, {"custom_invoice_no": "7002.pdf", "custom_invoice_pdf": "/private/files/7002.pdf"},
+			update_modified=False)
+		real_get_file = fm.get_file
+		fm.get_file = lambda url: (url.rsplit("/", 1)[-1], b"%PDF-1.4 test")
+		try:
+			S.download_single_invoice(fx.offline)
+			_assert(frappe.local.response.filename == f"{fx.offline} - 6053", frappe.local.response.filename)
+			_assert(frappe.local.response.content_type == "application/pdf", "the download lost its PDF type")
+
+			S.download_sales_invoices_zip(frappe.as_json([fx.offline, fx.gt]))
+			names = sorted(zipfile.ZipFile(io.BytesIO(frappe.local.response.filecontent)).namelist())
+			_assert(names == sorted([f"{fx.offline} - 6053", f"{fx.gt} - 7002"]), f"zip entries {names}")
+
+			S.download_order_bundle(frappe.as_json([fx.offline]), parts="invoice")
+			_assert(frappe.local.response.filename == f"{fx.offline} - 6053", f"INV link file {frappe.local.response.filename}")
+			_assert(frappe.local.response.content_type == "application/pdf", "the INV download lost its PDF type")
+		finally:
+			fm.get_file = real_get_file
+
+	check("#42.3 invoice files are named <order> - <invoice no> with no .pdf, and still sent as PDF",
+		_invoice_file_names_have_no_extension)
