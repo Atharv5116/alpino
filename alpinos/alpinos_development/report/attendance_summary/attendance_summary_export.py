@@ -191,7 +191,10 @@ def _attendance_rich(text):
 			parts.append(TextBlock(value_font, nl + line))
 			continue
 		label, value = line[: idx + 1], line[idx + 1:]
-		parts.append(TextBlock(label_font, nl + label))
+		# A short-hours day keeps its real times, so flag just the WHS label rather than
+		# reddening the whole cell the way a true absence is.
+		is_whs = label.strip().upper().startswith("WHS")
+		parts.append(TextBlock(red_font if is_whs else label_font, nl + label))
 		lbl = label.strip().lower()
 		if value.strip() and (lbl.startswith("late time") or lbl.startswith("early out")) and not absent:
 			parts.append(TextBlock(red_font, value))

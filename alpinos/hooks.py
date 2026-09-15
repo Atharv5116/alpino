@@ -457,10 +457,12 @@ doc_events = {
 		"validate": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
+			"alpinos.work_from_home_request_automation.block_saturday_half_day",
 		],
 		"before_save": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
+			"alpinos.work_from_home_request_automation.block_saturday_half_day",
 		],
 		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},
@@ -494,7 +496,6 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"alpinos.default_present.run_daily",
 		"alpinos.employee_onboarding_automation.send_scheduled_pre_onboarding_emails",
 		"alpinos.approval_access.sync_reporting_manager_roles",
 		"alpinos.workflow_engine.refresh_todays_dispatch",
@@ -509,6 +510,11 @@ scheduler_events = {
 		],
 		"30 11 * * *": [
 			"alpinos.attendance_alerts.notify_missing_checkins"
+		],
+		# Pre-mark Default-Present employees early (before the IST workday) so the punch-based
+		# auto-attendance finds an Attendance already there and skips it.
+		"15 1 * * *": [
+			"alpinos.default_present.run_daily"
 		]
 	}
 }

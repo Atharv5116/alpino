@@ -4,6 +4,8 @@
 import frappe
 from frappe.utils import date_diff, flt, getdate
 
+SUNDAY = 6
+
 
 def get_location_details(location):
 	if not location:
@@ -60,8 +62,8 @@ def _required_hours(shift_name, is_saturday, cache):
 def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, from_date, to_date, employee):
 	"""Monthly attendance statistics for the Final Format layout.
 
-	Public Holiday vs Weekend come from the Holiday List's weekly_off flag, not a hard-coded
-	Sat/Sun (Alpino works Saturdays).
+	Weekend counts Sundays only (Alpino works Saturdays); every other Holiday List entry
+	counts as a public holiday.
 	"""
 	stats = frappe._dict({
 		"clock_in_days": 0,
@@ -77,9 +79,9 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		"avg_working_hours": 0,
 	})
 
-	# Public Holiday vs Weekend from the Holiday List's weekly_off flag.
-	for info in holiday_map.values():
-		if info.get("weekly_off"):
+	# Sundays are the weekend; anything else on the Holiday List is a public holiday.
+	for holiday_date in holiday_map:
+		if getdate(holiday_date).weekday() == SUNDAY:
 			stats.weekend += 1
 		else:
 			stats.public_holiday += 1
@@ -134,6 +136,11 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		on_holiday = date_str in holiday_map
 
 		if status == "On Leave":
+			# Changes(HP) #9: a leave range swallows the Sundays and Public Holidays inside
+			# it, but those days were never working days -- charging them as Paid Leave
+			# would bill the employee twice for a day nobody was expected to work.
+			if on_holiday:
+				continue
 			# Full-day leave, paid or unpaid.
 			if leave_type:
 				_leave_amount(leave_type, 1)
@@ -149,14 +156,23 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			continue
 
 		if status == "Half Day":
-			# 0.5 worked half (Present) + 0.5 other half.
-			stats.clock_in_days += 1
-			if wh:
-				total_working_hours += wh
-				working_days_count += 1
+			# 0.5 worked half + 0.5 other half.
+			#
+			# Changes(HP) #8: the worked half is only credited when there is a real
+			# clock-in. Approving a half-day leave writes the Attendance up front, so a
+			# FUTURE half day used to hand out a Clock-In Day for a shift nobody had
+			# worked yet. No punch means the half was not worked -- 0.5 Absent.
+			if has_in:
+				stats.clock_in_days += 1
+				if wh:
+					total_working_hours += wh
+					working_days_count += 1
+			elif not on_holiday:
+				stats.absent_days += 0.5
 			if leave_type:
-				# Other half is leave.
-				_leave_amount(leave_type, 0.5)
+				# Other half is leave -- unless the day was never a working day (#9).
+				if not on_holiday:
+					_leave_amount(leave_type, 0.5)
 			elif not on_holiday:
 				# Other half is a 0.5 working-hours shortage.
 				stats.working_hours_shortage += 0.5
@@ -172,11 +188,20 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			stats.working_hours_shortage += _whs(att, date_str)
 			continue
 
-		# A day already marked Absent stays Absent, even when both punches are present:
-		# the hours were short enough for the marking rules to reject the day, so it costs a
-		# full day rather than a shortage tier.
+		# A day marked Absent still costs a full day, but how it is reported depends on
+		# whether the employee actually worked. With both punches the day was rejected for
+		# short hours, so it counts as a full working-hours shortage rather than an
+		# absence; with no punches it is a genuine absence. Either way the deduction is
+		# 1.0, so paid days are the same.
 		if status == "Absent":
-			if not on_holiday:
+			if on_holiday:
+				continue
+			if has_in and has_out and wh > 0:
+				stats.clock_in_days += 1
+				total_working_hours += wh
+				working_days_count += 1
+				stats.working_hours_shortage += 1.0
+			else:
 				stats.absent_days += 1
 			continue
 
@@ -193,9 +218,14 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 
 	# Leaves not already covered by an attendance row.
 	for date_str, leave_info in leave_map.items():
-		if date_str not in attendance_map:
-			amt = 0.5 if leave_info.get("half_day", False) else 1
-			_leave_amount(leave_info.get("leave_type"), amt)
+		if date_str in attendance_map:
+			continue
+		# Changes(HP) #9: get_leave_map walks every date from -> to, so a Sunday or a
+		# Public Holiday inside the range lands here too. Only working days are Paid Leave.
+		if date_str in holiday_map:
+			continue
+		amt = 0.5 if leave_info.get("half_day", False) else 1
+		_leave_amount(leave_info.get("leave_type"), amt)
 
 	# WFH requests not already captured as attendance.
 	for date_str, wfh_info in wfh_map.items():

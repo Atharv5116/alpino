@@ -49,7 +49,18 @@ frappe.query_reports["Attendance Summary"] = {
 	formatter: function(value, row, column, data, default_formatter) {
 		if (column.fieldname.startsWith("day_")) {
 			var raw = (value == null) ? "" : String(value);
-			if (raw === "" || raw === "-") return raw;
+			// A day whose punches were corrected through an Attendance Request is
+			// highlighted, whatever else the cell says. Wrapped rather than recoloured so
+			// it composes with the red late/absent and blue holiday fonts below instead of
+			// fighting them.
+			var _day = column.fieldname.slice(4);
+			var _fixed = String((data && data.corrected_days) || "").split(",").indexOf(_day) !== -1;
+			var _mark = function (html) {
+				if (!_fixed) return html;
+				return '<div title="' + __("Attendance corrected") + '" style="background:#ede7f6;'
+					+ 'border-left:3px solid #7b1fa2;margin:-4px -8px;padding:4px 5px;">' + html + '</div>';
+			};
+			if (raw === "" || raw === "-") return _mark(raw);
 			var esc = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 			if (esc.indexOf("In:") !== -1) {
 				var isAbsent = /(^|\n)ABSENT\b/.test(raw);
@@ -62,15 +73,16 @@ frappe.query_reports["Attendance Summary"] = {
 						return p2.trim() ? p1 + '<span style="color:#C00000;font-weight:bold">' + p2 + '</span>' : m;
 					})
 					.replace(/\n/g, "<br>");
-				return isAbsent ? '<span style="color:#C00000;font-weight:bold">' + html + '</span>' : html;
+				return _mark(isAbsent ? '<span style="color:#C00000;font-weight:bold">' + html + '</span>' : html);
 			}
 			if (raw.indexOf("WEEKEND") !== -1) {
-				return '<span style="color:#607d8b;font-weight:bold">' + esc + '</span>';
+				return _mark('<span style="color:#607d8b;font-weight:bold">' + esc + '</span>');
 			}
 			if (raw.indexOf("HOLIDAY") !== -1) {
-				return '<span style="color:#1976d2">' + esc.replace(/\n/g, "<br>") + '</span>';
+				return _mark('<span style="color:#1976d2">' + esc.replace(/\n/g, "<br>") + '</span>');
 			}
 			// leave day (leave type / "HALF DAY - ...") -> shaded cell
+			if (_fixed) return _mark(esc.replace(/\n/g, "<br>"));
 			return '<div style="background:#fff3cd;margin:-4px -8px;padding:4px 8px;">' + esc.replace(/\n/g, "<br>") + '</div>';
 		}
 
@@ -82,6 +94,11 @@ frappe.query_reports["Attendance Summary"] = {
 		}
 
 		return value;
+	},
+
+	// HRMS #8 needs to select employees, and a query report has no row checkboxes by default.
+	get_datatable_options: function(options) {
+		return Object.assign({}, options, { checkboxColumn: true });
 	},
 
 	onload: function(report) {
@@ -100,6 +117,66 @@ frappe.query_reports["Attendance Summary"] = {
 				+ $.param(p);
 			window.open(url, "_blank");
 		}).addClass("btn-primary");
+
+		// HRMS #8 - bulk "this was a full day" override, with a mandatory reason.
+		report.page.add_inner_button(__("Mark as Full Day"), function() {
+			var picked = (report.datatable && report.datatable.rowmanager)
+				? report.datatable.rowmanager.getCheckedRows() : [];
+			var employees = [];
+			(picked || []).forEach(function(i) {
+				var d = report.data && report.data[i];
+				if (d && d.employee && employees.indexOf(d.employee) === -1) employees.push(d.employee);
+			});
+			if (!employees.length) {
+				frappe.msgprint(__("Tick the employees to mark first."));
+				return;
+			}
+
+			var f = frappe.query_report.get_filter_values() || {};
+			// Default the date inside the month on screen, so a stray click cannot write
+			// into a month the operator is not even looking at.
+			var default_date = f.month ? f.month + "-01" : frappe.datetime.now_date();
+			var today = frappe.datetime.now_date();
+			if (f.month && today.slice(0, 7) === f.month) default_date = today;
+
+			var d = new frappe.ui.Dialog({
+				title: __("Mark as Full Day ({0} employee(s))", [employees.length]),
+				fields: [
+					{ fieldname: "date", label: __("Date"), fieldtype: "Date", reqd: 1, default: default_date },
+					{ fieldname: "reason", label: __("Reason"), fieldtype: "Small Text", reqd: 1,
+					  description: __("Stored on each Attendance so the override can be explained later.") },
+				],
+				primary_action_label: __("Mark Present"),
+				primary_action: function(values) {
+					d.hide();
+					frappe.call({
+						method: "alpinos.attendance_full_day.mark_full_day",
+						args: { employees: JSON.stringify(employees), date: values.date, reason: values.reason },
+						freeze: true,
+						freeze_message: __("Marking full day..."),
+						callback: function(r) {
+							var res = r.message || {};
+							var n = (res.marked || []).length, skipped = res.skipped || [];
+							frappe.show_alert({
+								message: __("{0} day(s) marked as full day", [n]),
+								indicator: n ? "green" : "orange",
+							});
+							if (skipped.length) {
+								frappe.msgprint({
+									title: __("Some employees were skipped"),
+									indicator: "orange",
+									message: skipped.map(function(x) {
+										return frappe.utils.escape_html(x.employee) + " — " + frappe.utils.escape_html(x.why);
+									}).join("<br>"),
+								});
+							}
+							frappe.query_report.refresh();
+						},
+					});
+				},
+			});
+			d.show();
+		});
 
 		report.page.add_inner_button(__("This Month"), function() {
 			frappe.query_report.set_filter_value("month", frappe.datetime.now_date().slice(0, 7));

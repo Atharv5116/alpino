@@ -2,6 +2,9 @@
 
 import frappe
 from frappe import _
+from frappe.utils import getdate
+
+SATURDAY = 5
 
 
 @frappe.whitelist()
@@ -51,6 +54,24 @@ def enforce_single_day(doc, method=None):
 		frappe.throw(
 			_("Please select the Half Day Period (First Half / Second Half) for a half-day request."),
 			title=_("Half Day Period Required"),
+		)
+
+
+def block_saturday_half_day(doc, method=None):
+	"""Saturday counts as a full working day, so it cannot be taken as a half day."""
+	if doc.doctype != "Work From Home Request":
+		return
+
+	if not doc.get("half_day"):
+		return
+
+	date = doc.get("date") or doc.get("from_date")
+	if date and getdate(date).weekday() == SATURDAY:
+		frappe.throw(
+			_("Saturday is a full working day, so {0} cannot be applied as a half day.").format(
+				frappe.format(getdate(date), {"fieldtype": "Date"})
+			),
+			title=_("Half Day Not Allowed on Saturday"),
 		)
 
 

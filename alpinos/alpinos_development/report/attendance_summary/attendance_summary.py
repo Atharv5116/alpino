@@ -7,7 +7,8 @@ from frappe.utils import getdate, date_diff, add_days, get_first_day, get_last_d
 from datetime import datetime, timedelta
 import calendar
 from alpinos.alpinos_development.report.attendance_summary.attendance_summary_helpers import (
-	calculate_attendance_stats
+	SUNDAY,
+	calculate_attendance_stats,
 )
 
 
@@ -115,7 +116,11 @@ def get_data(filters, from_date, to_date):
 
 
 def get_employees(filters, from_date, to_date):
-	"""Employees active within the report date range (joined on/before end, not relieved before start)."""
+	"""Employees active within the report date range.
+
+	Someone who left or was suspended during the month still appears for that month; they
+	drop off from the next month onward.
+	"""
 	conditions = []
 
 	if filters.get("employee"):
@@ -126,16 +131,20 @@ def get_employees(filters, from_date, to_date):
 
 	conditions.append(f"date_of_joining IS NOT NULL AND date_of_joining <= '{getdate(to_date)}'")
 	conditions.append(f"(relieving_date IS NULL OR relieving_date >= '{getdate(from_date)}')")
+	conditions.append(
+		f"(custom_suspension_date IS NULL OR custom_suspension_date >= '{getdate(from_date)}')"
+	)
 
 	where_clause = " AND ".join(conditions) if conditions else "1=1"
-	
+
 	query = f"""
-		SELECT 
+		SELECT
 			name as employee,
 			employee_name,
 			status,
 			date_of_joining,
 			relieving_date,
+			custom_suspension_date,
 			department,
 			company
 		FROM `tabEmployee`
@@ -164,12 +173,14 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 		if period_start < doj <= getdate(to_date):
 			period_start = doj
 
-	# Cap the calculation at the relieving date for anyone relieved mid-month.
+	# Cap the calculation at the exit date for anyone relieved or suspended mid-month.
 	period_end = getdate(to_date)
-	if emp.get("relieving_date"):
-		rel = getdate(emp.relieving_date)
-		if period_start <= rel < period_end:
-			period_end = rel
+	for exit_date in (emp.get("relieving_date"), emp.get("custom_suspension_date")):
+		if not exit_date:
+			continue
+		exit_date = getdate(exit_date)
+		if period_start <= exit_date < period_end:
+			period_end = exit_date
 
 	if emp.date_of_joining:
 		row.aging = date_diff(period_end, emp.date_of_joining)
@@ -180,6 +191,7 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	holiday_map = get_holiday_map(emp.employee, period_start, period_end)
 	leave_map = get_leave_map(emp.employee, period_start, period_end)
 	wfh_map = get_wfh_map(emp.employee, period_start, period_end)
+	correction_map = get_correction_map(emp.employee, period_start, period_end)
 
 	stats = calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, period_start, period_end, emp.employee)
 	
@@ -219,6 +231,13 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	row.final_paid_days = flt(flt(row.final_payable_days) - flt(late_info["deduction"]), 2)
 	row.verify = ""
 
+	# Days whose punches were corrected through an Attendance Request. Carried as a plain
+	# comma list of day numbers so the client formatter and the Excel export can both
+	# highlight the same cells without re-querying.
+	row.corrected_days = ",".join(
+		str(getdate(d).day) for d in sorted(correction_map)
+	)
+
 	current_date = getdate(from_date)
 	end_date = _display_end_date(from_date, to_date)
 
@@ -227,10 +246,11 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 		date_str = current_date.strftime("%Y-%m-%d")
 		field_name = f"day_{day_num}"
 		
-		# Weekly-off days show as WEEKEND, other Holiday List entries as the holiday name.
+		# Sundays show as WEEKEND, other Holiday List entries as the holiday name.
 		if date_str in holiday_map:
 			hinfo = holiday_map[date_str]
-			row[field_name] = "WEEKEND" if hinfo.get("weekly_off") else f"HOLIDAY - {hinfo.get('description')}"
+			is_sunday = current_date.weekday() == SUNDAY
+			row[field_name] = "WEEKEND" if is_sunday else f"HOLIDAY - {hinfo.get('description')}"
 		elif date_str in leave_map:
 			leave_info = leave_map[date_str]
 			row[field_name] = format_leave_info(leave_info)
@@ -422,6 +442,34 @@ def get_holiday_map(employee, from_date, to_date):
 		return {}
 
 
+def get_correction_map(employee, from_date, to_date):
+	"""Dates whose punches were CORRECTED through a submitted Attendance Request.
+
+	A correction means a punch already existed and was changed, which is why the log row
+	must carry an old check-in or check-out. A missing-punch request (both NULL) is an
+	addition, not a correction, and is deliberately not highlighted -- same test the
+	Attendance Request Punch Edits report uses.
+	"""
+	try:
+		rows = frappe.db.sql(
+			"""
+			SELECT DISTINCT log.attendance_date
+			FROM `tabAttendance Request Log` log
+			INNER JOIN `tabAttendance Request` ar ON ar.name = log.parent
+			WHERE log.parenttype = 'Attendance Request'
+			  AND ar.docstatus = 1
+			  AND ar.employee = %(employee)s
+			  AND log.attendance_date BETWEEN %(from_date)s AND %(to_date)s
+			  AND (log.check_in IS NOT NULL OR log.check_out IS NOT NULL)
+			""",
+			{"employee": employee, "from_date": getdate(from_date), "to_date": getdate(to_date)},
+			as_dict=True,
+		)
+		return {r.attendance_date.strftime("%Y-%m-%d") for r in rows if r.attendance_date}
+	except Exception:
+		return set()
+
+
 def get_leave_map(employee, from_date, to_date):
 	try:
 		leave_applications = frappe.get_all(
@@ -509,7 +557,10 @@ def format_attendance_info(att_info):
 	late_entry = att_info.get("late_entry", 0)
 	early_exit = att_info.get("early_exit", 0)
 
-	if status == "Absent":
+	# An Absent day that still has both punches was rejected for short hours, not missed:
+	# keep its real times and label it WHS. A true absence shows blank times as before.
+	worked_short = status == "Absent" and in_time and out_time and flt(working_hours) > 0
+	if status == "Absent" and not worked_short:
 		in_time = None
 		out_time = None
 		working_hours = 0
@@ -544,7 +595,14 @@ def format_attendance_info(att_info):
 	early_str = f"{shift_start_str} To {out_str}" if early_exit else ""
 
 	tag = "WFH" if status == "Work From Home" else ("OD" if status == "On Duty" else "")
-	head = "HALF DAY" if status == "Half Day" else ("ABSENT" if status == "Absent" else "Present")
+	if status == "Half Day":
+		head = "HALF DAY"
+	elif worked_short:
+		head = "WHS"
+	elif status == "Absent":
+		head = "ABSENT"
+	else:
+		head = "Present"
 
 	lines = []
 	if tag:
