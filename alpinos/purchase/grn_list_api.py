@@ -13,6 +13,7 @@ from frappe.utils import cint, flt
 from alpinos.purchase import constants as C
 
 DOCTYPE = "Purchase Receipt"
+ITEM_DOCTYPE = "Purchase Receipt Item"
 PAGE_NAME = "purchase_grn_list"
 PAGE_ROLES = tuple(C.ALL_PURCHASE_ROLES) + ("System Manager",)
 
@@ -48,7 +49,9 @@ def get_grn_list(
 	grn_id=None,
 	purchase_inward=None,
 	purchase_qc=None,
+	purchase_order=None,
 	supplier=None,
+	target_location=None,
 	grn_status=None,
 	from_date=None,
 	to_date=None,
@@ -82,6 +85,13 @@ def get_grn_list(
 		filters.append([DOCTYPE, "posting_date", ">=", from_date])
 	if to_date:
 		filters.append([DOCTYPE, "posting_date", "<=", to_date])
+	# PO and target location live on the receipt lines. They are resolved to receipt
+	# names first: a child-table filter on get_list joins the lines and returns a
+	# receipt once per matching line, which breaks both the page and the total.
+	if purchase_order:
+		filters.append([DOCTYPE, "name", "in", _receipts_for_purchase_order(purchase_order)])
+	if target_location:
+		filters.append([DOCTYPE, "name", "in", _receipts_for_location(target_location)])
 
 	order_by = "{0} {1}".format(
 		SORTABLE.get(sort_field or "modified", "modified"),
@@ -92,7 +102,7 @@ def get_grn_list(
 		DOCTYPE,
 		filters=filters,
 		fields=[
-			"name", "posting_date", "supplier", "supplier_name", "docstatus",
+			"name", "posting_date", "supplier", "supplier_name", "docstatus", "set_warehouse",
 			"custom_grn_status", "custom_purchase_inward", "custom_purchase_qc",
 			"custom_debit_note", "custom_final_submitted_by", "custom_final_submission_datetime",
 		],
@@ -118,28 +128,69 @@ def get_grn_list(
 	}
 
 
+def _receipts_for_purchase_order(purchase_order):
+	return _receipts_with_line({"purchase_order": purchase_order}) or [""]
+
+
+def _receipts_for_location(warehouse):
+	"""Receipts with a line going to the warehouse, or whose target location it is.
+
+	The header's set_warehouse is the inward's Target Location; a line can still land
+	somewhere else (a QC decision or a quarantine store), so both are matched.
+	"""
+	names = set(_receipts_with_line({"warehouse": warehouse}))
+	names.update(
+		frappe.get_all(
+			DOCTYPE, filters={"set_warehouse": warehouse, "is_return": 0}, pluck="name"
+		)
+	)
+	return list(names) or [""]
+
+
+def _receipts_with_line(line_filters):
+	return frappe.get_all(
+		ITEM_DOCTYPE,
+		filters=dict(line_filters, parenttype=DOCTYPE),
+		pluck="parent",
+		distinct=True,
+	)
+
+
 def _attach_quantities(rows):
-	"""Accepted and rejected totals per receipt, in one query rather than per row."""
+	"""Per receipt: quantities, PO numbers and target locations, from one line query.
+
+	Received is accepted + rejected, the same total the GRN Detail screen shows:
+	BuyingController forces received_qty to exactly that sum.
+	"""
 	if not rows:
 		return
-	names = [r["name"] for r in rows]
-	agg = frappe.db.sql(
-		"""
-		SELECT parent,
-		       IFNULL(SUM(qty), 0)          AS accepted_qty,
-		       IFNULL(SUM(rejected_qty), 0) AS rejected_qty
-		FROM `tabPurchase Receipt Item`
-		WHERE parent IN %(names)s
-		GROUP BY parent
-		""",
-		{"names": names},
-		as_dict=True,
+	lines = frappe.get_all(
+		ITEM_DOCTYPE,
+		filters={"parent": ["in", [r["name"] for r in rows]], "parenttype": DOCTYPE},
+		fields=["parent", "qty", "rejected_qty", "purchase_order", "warehouse"],
+		order_by="parent, idx",
 	)
-	by_name = {a.parent: a for a in agg}
+	by_name = {}
+	for line in lines:
+		agg = by_name.setdefault(
+			line.parent, {"accepted": 0.0, "rejected": 0.0, "pos": [], "locations": []}
+		)
+		agg["accepted"] += flt(line.qty)
+		agg["rejected"] += flt(line.rejected_qty)
+		if line.purchase_order and line.purchase_order not in agg["pos"]:
+			agg["pos"].append(line.purchase_order)
+		if line.warehouse and line.warehouse not in agg["locations"]:
+			agg["locations"].append(line.warehouse)
+
 	for row in rows:
-		a = by_name.get(row["name"])
-		row["accepted_qty"] = flt(a.accepted_qty) if a else 0
-		row["rejected_qty"] = flt(a.rejected_qty) if a else 0
+		agg = by_name.get(row["name"]) or {}
+		row["accepted_qty"] = agg.get("accepted", 0.0)
+		row["rejected_qty"] = agg.get("rejected", 0.0)
+		row["received_qty"] = row["accepted_qty"] + row["rejected_qty"]
+		row["purchase_orders"] = agg.get("pos") or []
+		row["target_locations"] = agg.get("locations") or (
+			[row["set_warehouse"]] if row.get("set_warehouse") else []
+		)
 
 
 def _escape(term):

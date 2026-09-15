@@ -172,11 +172,10 @@ def _may(roles, user_role_set):
 # outcome is a traceback. start_qc / complete_qc are deliberately NOT listed: they are
 # implemented on the Purchase QC document and the QC list page reads `enabled` off them.
 ACTION_UNAVAILABLE = {
-	"create_purchase_invoice": _(
-		"Purchase Invoice creation is not part of this phase (BRD section 6)."
-	),
+	# Not a button: the inward reaches Completed on its own once the Purchase Invoice's
+	# supplier and logistics payments are fully recorded (purchase_invoice._sync_inward).
 	"complete_payment": _(
-		"Payment recording is not part of this phase (BRD section 6)."
+		"Completes automatically once the Purchase Invoice's payments are fully recorded."
 	),
 }
 

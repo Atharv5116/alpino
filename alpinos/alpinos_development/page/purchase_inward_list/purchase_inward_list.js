@@ -717,6 +717,8 @@ var PurchaseInwardListPage = class {
 			// The module's own documents open on their purpose-built entry screens
 			// (BRD 2 / BRD 4); anything else falls back to the desk form.
 			if (linked[0] === 'Purchase QC') frappe.set_route('purchase_qc_entry', String(target));
+			else if (action === 'view_invoice') frappe.set_route('purchase_invoice_entry', String(target));
+			else if (linked[0] === 'Purchase Receipt') frappe.set_route('purchase_grn_view', String(target));
 			else frappe.set_route('Form', linked[0], String(target));
 			return;
 		}

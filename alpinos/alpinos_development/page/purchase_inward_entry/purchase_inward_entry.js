@@ -179,6 +179,9 @@ var PurchaseInwardEntry = class {
 			fieldname: 'invoice_date',
 			label: 'Invoice Date',
 			fieldtype: 'Date',
+			// Greys out future days in the picker. A typed date bypasses the picker, so the
+			// server refuses a future Invoice Date on save as well.
+			max_date: frappe.datetime.str_to_obj(frappe.datetime.get_today()),
 		});
 		this._ctl('.field-challan-no', {
 			fieldname: 'challan_no',
@@ -960,6 +963,11 @@ var PurchaseInwardEntry = class {
 					// recorded -- comes back through this same callback.
 					if (r.exc) return;
 					me._toast(__('{0} done', [label]), 'green');
+					// The new invoice is where the Purchase Team works next (BRD 6.2.1).
+					if (action === 'create_purchase_invoice' && r.message && r.message.purchase_invoice) {
+						frappe.set_route('purchase_invoice_entry', r.message.purchase_invoice);
+						return;
+					}
 					me.load(me.docname);
 					if (r.message && r.message.inward_status) {
 						me.ctx.status = r.message.inward_status;

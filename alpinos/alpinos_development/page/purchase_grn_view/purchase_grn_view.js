@@ -240,11 +240,46 @@ var GRNView = class {
 			});
 		}
 
+		// BRD 6.0 path A: the invoice becomes available once the Admin has finally submitted
+		// the GRN (BR-UNF-01), one per GRN (BR-UNF-02). create_from_grn re-checks both.
+		if (cint(doc.docstatus) === 1 && !cint(doc.is_return)) {
+			frappe.db
+				.get_value('Purchase Invoice', { custom_grn: me.docname, docstatus: ['<', 2] }, 'name')
+				.then((r) => {
+					const invoice = r && r.message && r.message.name;
+					if (me.doc !== doc) return; // another GRN loaded meanwhile
+					if (invoice) {
+						btn(__('View Invoice'), 'btn-default', () =>
+							frappe.set_route('purchase_invoice_entry', invoice)
+						);
+					} else if (frappe.model.can_create('Purchase Invoice')) {
+						btn(__('Create Invoice'), 'btn-primary', () => me.create_invoice());
+					}
+				});
+		}
+
 		btn(__('Print'), 'btn-light', () => {
 			frappe.set_route('print', 'Purchase Receipt', me.docname);
 		});
 		btn(__('Open Full Record'), 'btn-light', () => {
 			frappe.set_route('Form', 'Purchase Receipt', me.docname);
 		});
+	}
+
+	create_invoice() {
+		const me = this;
+		frappe.confirm(__('Create the Purchase Invoice for {0}?', [me.docname]), () =>
+			frappe.call({
+				method: 'alpinos.purchase.invoice_list_api.create_invoice',
+				args: { source_type: 'grn', source: me.docname },
+				freeze: true,
+				freeze_message: __('Creating the Purchase Invoice...'),
+				callback(r) {
+					// a refusal (already invoiced, not permitted) also reaches here
+					if (r.exc || !r.message) return;
+					frappe.set_route('purchase_invoice_entry', r.message.name);
+				},
+			})
+		);
 	}
 };

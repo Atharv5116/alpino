@@ -61,15 +61,17 @@ def _final_grn(supplier, qty=20):
 
 
 def _ready_to_submit(invoice, freight=0.0, vendor=None):
-	"""Fill what VAL-UNF-01/02/03 demand, so a test can get past them deliberately."""
+	"""Fill what the submit rules demand, so a test can get past them deliberately."""
 	invoice.bill_no = f"SUPP-INV-{frappe.generate_hash(length=6)}"
 	invoice.bill_date = today()
+	invoice.custom_payment_due_date = add_days(today(), 30)
 	invoice.custom_invoice_attachment = "/files/supplier-invoice.pdf"
 	if freight:
 		invoice.custom_include_logistics = 1
 		invoice.custom_logistics_vendor = vendor
 		invoice.custom_transport_invoice_no = "LR-0001"
 		invoice.custom_freight_amount = freight
+		invoice.custom_transport_attachment = "/files/transport-bill.pdf"
 	invoice.flags.ignore_permissions = True
 	return invoice
 

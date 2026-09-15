@@ -226,6 +226,7 @@ after_migrate = [
 	"alpinos.purchase.purchase_order_approval.create_purchase_order_approval_client_script",
 	"alpinos.purchase.qc_list_api.setup_qc_list_page_access",
 	"alpinos.purchase.grn_list_api.setup_grn_list_page_access",
+	"alpinos.purchase.invoice_list_api.setup_invoice_page_access",
 	"alpinos.purchase.print_formats.execute",
 ]
 
@@ -320,6 +321,8 @@ doc_events = {
 	# lives in its own field and recompute_payment_state is its only writer.
 	"Purchase Invoice": {
 		"validate": ["alpinos.purchase.purchase_invoice.validate"],
+		# Links the Purchase Inward and moves it to Payment Pending.
+		"after_insert": ["alpinos.purchase.purchase_invoice.after_insert"],
 		"before_submit": ["alpinos.purchase.purchase_invoice.before_submit"],
 		# BEFORE, not on_: Frappe runs before_update_after_submit from
 		# run_before_save_methods, so the BR-UNF-03 lock and the recomputed pending
@@ -327,7 +330,12 @@ doc_events = {
 		"before_update_after_submit": [
 			"alpinos.purchase.purchase_invoice.before_update_after_submit"
 		],
+		# AFTER the row is written: rolls a Completed invoice onto its Purchase Inward.
+		"on_update_after_submit": [
+			"alpinos.purchase.purchase_invoice.on_update_after_submit"
+		],
 		"on_cancel": ["alpinos.purchase.purchase_invoice.on_cancel"],
+		"on_trash": ["alpinos.purchase.purchase_invoice.on_trash"],
 	},
 	"Purchase Order": {
 		"validate": [

@@ -214,6 +214,9 @@ def _custom_fields():
 				options="Purchase Payment Reference",
 				insert_after="custom_payment_section",
 				allow_on_submit=1,
+				# An amended invoice is a new bill: it must not arrive already carrying the
+				# cancelled one's payments (a draft may not hold payments at all).
+				no_copy=1,
 			),
 			dict(
 				fieldname="custom_supplier_pending_amount",

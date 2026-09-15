@@ -838,6 +838,7 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 						d = frappe.get_doc("Purchase Invoice", inv.name)
 						d.bill_no = uniq("SUPP")
 						d.bill_date = today()
+						d.custom_payment_due_date = add_days(today(), 30)
 						d.custom_invoice_attachment = "/files/tft-invoice.pdf"
 						d.save()
 						d.submit()

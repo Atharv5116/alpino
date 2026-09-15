@@ -12,7 +12,10 @@
 
 // var, not const: desk pages are re-evaluated on navigation and a re-declared const
 // blanks the page.
-var GRN_LIST_FILTERS = ['grn_id', 'purchase_inward', 'supplier', 'grn_status', 'from_date', 'to_date'];
+var GRN_LIST_FILTERS = [
+	'grn_id', 'purchase_order', 'purchase_inward', 'supplier',
+	'target_location', 'grn_status', 'from_date', 'to_date',
+];
 
 frappe.pages['purchase_grn_list'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
@@ -52,12 +55,14 @@ var GRNList = class {
 				<div class="eso-card grn-filters">
 					<h6 class="eso-card-title">Filters</h6>
 					<div class="row">
-						<div class="col-md-2 col-sm-6 eso-fld f-grn-id"></div>
-						<div class="col-md-2 col-sm-6 eso-fld f-purchase-inward"></div>
-						<div class="col-md-2 col-sm-6 eso-fld f-supplier"></div>
-						<div class="col-md-2 col-sm-6 eso-fld f-grn-status"></div>
-						<div class="col-md-2 col-sm-6 eso-fld f-from-date"></div>
-						<div class="col-md-2 col-sm-6 eso-fld f-to-date"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-grn-id"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-purchase-order"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-purchase-inward"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-supplier"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-target-location"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-grn-status"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-from-date"></div>
+						<div class="col-md-3 col-sm-6 eso-fld f-to-date"></div>
 					</div>
 					<div class="alp-actions" style="margin-top:6px;">
 						<button class="btn btn-sm btn-primary btn-apply">Apply</button>
@@ -69,14 +74,17 @@ var GRNList = class {
 					<h6 class="eso-card-title">Goods Receipts</h6>
 					<div class="alp-scroll alp-scroll--xwide"
 						data-empty="No GRN matches these filters. A GRN appears here once a Purchase QC is completed.">
-						<table class="table table-bordered grn-table">
+						<table class="table table-bordered grn-table" style="min-width:1500px;">
 							<thead><tr>
 								<th style="min-width:130px;">GRN</th>
 								<th style="width:100px;">Posting Date</th>
-								<th style="min-width:170px;">Vendor</th>
+								<th style="min-width:130px;">PO No.</th>
 								<th style="min-width:130px;">Purchase Inward</th>
 								<th style="min-width:130px;">Purchase QC</th>
+								<th style="min-width:170px;">Vendor</th>
+								<th style="min-width:160px;">Target Location</th>
 								<th style="width:120px;">GRN Status</th>
+								<th style="width:95px;" class="text-right">Received</th>
 								<th style="width:95px;" class="text-right">Accepted</th>
 								<th style="width:95px;" class="text-right">Rejected</th>
 								<th style="min-width:130px;">Debit Note</th>
@@ -95,12 +103,21 @@ var GRNList = class {
 
 		const me = this;
 		this._ctl('.f-grn-id', { fieldname: 'grn_id', label: 'GRN', fieldtype: 'Data' });
+		this._ctl('.f-purchase-order', {
+			fieldname: 'purchase_order', label: 'PO No.',
+			fieldtype: 'Link', options: 'Purchase Order',
+		});
 		this._ctl('.f-purchase-inward', {
 			fieldname: 'purchase_inward', label: 'Purchase Inward',
 			fieldtype: 'Link', options: 'Purchase Inward',
 		});
 		this._ctl('.f-supplier', {
 			fieldname: 'supplier', label: 'Vendor', fieldtype: 'Link', options: 'Supplier',
+		});
+		this._ctl('.f-target-location', {
+			fieldname: 'target_location', label: 'Target Location',
+			fieldtype: 'Link', options: 'Warehouse',
+			get_query: () => ({ filters: { is_group: 0 } }),
 		});
 		this._ctl('.f-grn-status', {
 			fieldname: 'grn_status', label: 'GRN Status', fieldtype: 'Select', options: '',
@@ -192,14 +209,20 @@ var GRNList = class {
 		const $body = this.wrapper.find('.grn-table tbody').empty();
 		rows.forEach((row) => {
 			const rejected = flt(row.rejected_qty);
+			// A merged inward can carry lines from more than one PO, and a line can land
+			// outside the inward's target location, so both columns may list several.
+			const list = (values) => frappe.utils.escape_html((values || []).join(', '));
 			$body.append($(`
 				<tr>
 					<td><a href="#" class="grn-open" data-name="${frappe.utils.escape_html(row.name)}">${frappe.utils.escape_html(row.name)}</a></td>
 					<td>${frappe.utils.escape_html(frappe.datetime.str_to_user(row.posting_date) || '')}</td>
-					<td>${frappe.utils.escape_html(row.supplier_name || row.supplier || '')}</td>
+					<td>${list(row.purchase_orders)}</td>
 					<td>${frappe.utils.escape_html(row.custom_purchase_inward || '')}</td>
 					<td>${frappe.utils.escape_html(row.custom_purchase_qc || '')}</td>
+					<td>${frappe.utils.escape_html(row.supplier_name || row.supplier || '')}</td>
+					<td>${list(row.target_locations)}</td>
 					<td>${frappe.utils.escape_html(row.custom_grn_status || '')}</td>
+					<td class="text-right">${format_number(row.received_qty, null, 3)}</td>
 					<td class="text-right">${format_number(row.accepted_qty, null, 3)}</td>
 					<td class="text-right ${rejected ? 'text-danger' : ''}">${format_number(rejected, null, 3)}</td>
 					<td>${frappe.utils.escape_html(row.custom_debit_note || '')}</td>

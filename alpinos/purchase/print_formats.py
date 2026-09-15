@@ -993,6 +993,260 @@ def setup_grn_print_format():
 	"""The 'GRN' print format on Purchase Receipt (BRD 5.2 in printed form)."""
 	_upsert_print_format(GRN_PF_NAME, GRN_DOC_TYPE, _GRN_HTML)
 
+
+# ---------------------------------------------------------------- Purchase Invoice
+
+INVOICE_PF_NAME = "Purchase Invoice"
+INVOICE_DOC_TYPE = "Purchase Invoice"
+
+# BRD 6.2 in printed form, in the screen's order: the supplier bill, the approved lines,
+# totals and taxes, the transport bill, and what Accounts has paid against both. Same .piw
+# stylesheet as the GRN so the module's documents print as one family.
+#
+# Deliberately NOT made the Purchase Invoice default: the doctype also carries debit notes
+# and invoices Accounts keys in outside this module. The invoice entry screen opens this
+# format by name.
+_INVOICE_HTML_RAW = r"""
+{%- macro money(v) -%}{{ frappe.utils.fmt_money(frappe.utils.flt(v), currency=doc.currency) }}{%- endmacro -%}
+{%- set direct = (doc.custom_invoice_type or "") == "Direct Purchase Invoice" -%}
+{%- set ds = frappe.utils.cint(doc.docstatus) -%}
+{%- set status = "Cancelled" if ds == 2 else ("Draft" if ds == 0 else (doc.custom_unified_status or "Pending Payment")) -%}
+{%- set orders = [] -%}
+{%- for row in doc.items -%}{%- if row.purchase_order and row.purchase_order not in orders -%}{%- set _ = orders.append(row.purchase_order) -%}{%- endif -%}{%- endfor -%}
+{%- set supplier_payable = frappe.utils.flt(doc.rounded_total or doc.grand_total) -%}
+{%- set logistics_payable = frappe.utils.flt(doc.custom_freight_amount) if frappe.utils.cint(doc.custom_include_logistics) else 0 -%}
+{%- set pay = namespace(supplier=0, logistics=0) -%}
+{%- for p in doc.custom_payment_references or [] -%}
+  {%- if p.payment_type == "Logistics Payment" -%}{%- set pay.logistics = pay.logistics + frappe.utils.flt(p.payment_amount) -%}
+  {%- else -%}{%- set pay.supplier = pay.supplier + frappe.utils.flt(p.payment_amount) -%}{%- endif -%}
+{%- endfor -%}
+{%- set debit_note = frappe.db.get_value("Purchase Receipt", doc.custom_grn, "custom_debit_note") if doc.custom_grn else None -%}
+<style>
+  .piw { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+  .piw table { border-collapse: collapse; width: 100%; table-layout: fixed;
+      margin-bottom: 9px; font-size: 10px; }
+  .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important;
+      word-wrap: break-word; overflow: hidden; }
+  .piw table.g td { padding: 3px 4px !important; font-size: 9px; }
+  .piw table.g th { padding: 3px 4px !important; font-size: 8px; }
+  .piw th { background: #ececec; font-size: 9px; text-transform: uppercase; text-align: center;
+      font-weight: bold; }
+  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px;
+      letter-spacing: 0.6px; }
+  .piw .lbl { background: #f6f6f6; font-weight: bold; }
+  .piw .c { text-align: center; }
+  .piw .r { text-align: right; }
+  .piw .b { font-weight: bold; }
+  .piw .sub { font-size: 9px; color: #555; font-weight: normal; }
+  .piw .warn { color: #a30000; font-weight: bold; }
+  .piw .ok { color: #0b6b2f; font-weight: bold; }
+  .piw .tot td { background: #f0f0f0; font-weight: bold; }
+  .piw .grand td { background: #e2e2e2; font-weight: bold; font-size: 11px; }
+  .piw .title { font-size: 17px; font-weight: bold; text-align: center; letter-spacing: 1.5px; }
+  .piw .subtitle { text-align: center; font-size: 10px; color: #555; margin: 2px 0 8px; }
+  .piw .stamp { text-align: center; font-size: 11px; font-weight: bold; letter-spacing: 2px;
+      border: 1px solid #a30000; color: #a30000; padding: 2px 0; margin-bottom: 8px; }
+  .piw .avoid { page-break-inside: avoid; }
+  .piw .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }
+</style>
+<div class="piw">
+
+  <div class="title">PURCHASE INVOICE</div>
+  <div class="subtitle">{{ doc.name or "" }}{% if doc.company %} &middot; {{ doc.company }}{% endif %}
+    &middot; {{ "Direct Purchase Invoice" if direct else "Normal Invoice" }}</div>
+  {% if ds == 0 %}<div class="stamp">DRAFT &mdash; NOT SUBMITTED</div>{% endif %}
+  {% if ds == 2 %}<div class="stamp">CANCELLED</div>{% endif %}
+
+  <!-- ===== BRD 6.2.1 supplier bill ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
+    <tr><td class="sec" colspan="4">Supplier Bill</td></tr>
+    <tr>
+      <td class="lbl">Purchase Invoice ID</td><td class="b">{{ txt(doc.name) }}</td>
+      <td class="lbl">Status</td><td class="b">{{ status }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Supplier</td><td class="b">{{ txt(doc.supplier_name or doc.supplier) }}</td>
+      <td class="lbl">Supplier Invoice No.</td><td class="b">{{ txt(doc.bill_no) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Supplier Invoice Date</td><td>{{ dte(doc.bill_date) }}</td>
+      <td class="lbl">Payment Due Date</td><td class="b">{{ dte(doc.custom_payment_due_date) }}</td>
+    </tr>
+    {% if direct %}
+    <tr>
+      <td class="lbl">Purchase Order</td><td>{{ txt(orders | join(", ")) }}</td>
+      <td class="lbl">Posting Date</td><td>{{ dte(doc.posting_date) }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td class="lbl">GRN</td><td>{{ txt(doc.custom_grn) }}</td>
+      <td class="lbl">Purchase Inward</td><td>{{ txt(doc.custom_purchase_inward) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Purchase Order</td><td>{{ txt(orders | join(", ")) }}</td>
+      <td class="lbl">Posting Date</td><td>{{ dte(doc.posting_date) }}</td>
+    </tr>
+    {% endif %}
+    <tr>
+      <td class="lbl">Invoice Attachment</td><td>{{ "Attached" if doc.custom_invoice_attachment else "-" }}</td>
+      <td class="lbl">Invoice Remarks</td><td>{{ txt(doc.custom_invoice_remarks) }}</td>
+    </tr>
+  </table>
+
+  <!-- ===== BRD 6.2.2 item details ===== -->
+  <table class="g">
+    <colgroup>
+      <col style="width:4%"><col style="width:30%"><col style="width:7%">
+      <col style="width:12%"><col style="width:14%"><col style="width:15%"><col style="width:18%">
+    </colgroup>
+    <tr><td class="sec" colspan="7">Item Details</td></tr>
+    <tr>
+      <th>#</th><th>Item</th><th>UOM</th><th>Approved Qty</th>
+      <th>Unit Price</th><th>Line Amount</th><th>Purchase Order</th>
+    </tr>
+    {% set ns = namespace(qty=0) %}
+    {% for row in doc.items %}
+      {% set ns.qty = ns.qty + frappe.utils.flt(row.qty) %}
+      <tr>
+        <td class="c">{{ row.idx }}</td>
+        <td>{{ txt(row.item_code) }}<div class="sub">{{ txt(row.item_name) }}</div></td>
+        <td class="c">{{ txt(row.uom) }}</td>
+        <td class="r">{{ num3(row.qty) }}</td>
+        <td class="r">{{ money(row.rate) }}</td>
+        <td class="r">{{ money(row.amount) }}</td>
+        <td>{{ txt(row.purchase_order) }}</td>
+      </tr>
+    {% endfor %}
+    <tr class="tot">
+      <td class="c" colspan="3">Total</td>
+      <td class="r">{{ num3(ns.qty) }}</td>
+      <td></td>
+      <td class="r">{{ money(doc.net_total) }}</td>
+      <td></td>
+    </tr>
+  </table>
+
+  <!-- ===== totals and taxes ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:55%"><col style="width:20%"><col style="width:25%"></colgroup>
+    <tr><td class="sec" colspan="3">Invoice Total</td></tr>
+    <tr><td class="lbl" colspan="2">Net Total</td><td class="r">{{ money(doc.net_total) }}</td></tr>
+    {% for tax in doc.taxes or [] %}
+      {% if frappe.utils.flt(tax.tax_amount) %}
+      <tr>
+        <td colspan="2">{{ txt(tax.description or tax.account_head) }}
+          {% if frappe.utils.flt(tax.rate) %}<span class="sub">@ {{ frappe.utils.flt(tax.rate) }}%</span>{% endif %}</td>
+        <td class="r">{{ money(tax.tax_amount) }}</td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    {% if frappe.utils.flt(doc.discount_amount) %}
+    <tr><td class="lbl" colspan="2">Discount</td><td class="r">- {{ money(doc.discount_amount) }}</td></tr>
+    {% endif %}
+    {% if frappe.utils.flt(doc.rounding_adjustment) %}
+    <tr><td class="lbl" colspan="2">Rounding Adjustment</td><td class="r">{{ money(doc.rounding_adjustment) }}</td></tr>
+    {% endif %}
+    <tr class="grand"><td colspan="2">Total Invoice Amount</td><td class="r">{{ money(supplier_payable) }}</td></tr>
+    <tr><td colspan="3"><span class="lbl">In Words:</span> {{ txt(doc.in_words or doc.base_in_words) }}</td></tr>
+  </table>
+
+  <!-- ===== BRD 6.2.3 logistics / transport bill ===== -->
+  {% if frappe.utils.cint(doc.custom_include_logistics) %}
+  <table class="avoid">
+    <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
+    <tr><td class="sec" colspan="4">Logistics / Transport Bill</td></tr>
+    <tr>
+      <td class="lbl">Logistics Vendor</td><td class="b">{{ txt(doc.custom_logistics_vendor) }}</td>
+      <td class="lbl">Transport Invoice No.</td><td>{{ txt(doc.custom_transport_invoice_no) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Freight Amount</td><td class="b">{{ money(doc.custom_freight_amount) }}</td>
+      <td class="lbl">Transport Attachment</td><td>{{ "Attached" if doc.custom_transport_attachment else "-" }}</td>
+    </tr>
+  </table>
+  {% endif %}
+
+  <!-- ===== BRD 6.2.4 / BR-UNF-04: payable and paid, supplier and logistics apart ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>
+    <tr><td class="sec" colspan="4">Payment Summary</td></tr>
+    <tr><th></th><th>Payable</th><th>Paid</th><th>Pending</th></tr>
+    <tr>
+      <td class="lbl">Supplier</td>
+      <td class="r">{{ money(supplier_payable) }}</td>
+      <td class="r">{{ money(pay.supplier) }}</td>
+      <td class="r {{ 'warn' if (supplier_payable - pay.supplier) > 0.005 else 'ok' }}">{{ money([supplier_payable - pay.supplier, 0] | max) }}</td>
+    </tr>
+    {% if logistics_payable %}
+    <tr>
+      <td class="lbl">Logistics</td>
+      <td class="r">{{ money(logistics_payable) }}</td>
+      <td class="r">{{ money(pay.logistics) }}</td>
+      <td class="r {{ 'warn' if (logistics_payable - pay.logistics) > 0.005 else 'ok' }}">{{ money([logistics_payable - pay.logistics, 0] | max) }}</td>
+    </tr>
+    {% endif %}
+    <tr class="tot">
+      <td>Total</td>
+      <td class="r">{{ money(supplier_payable + logistics_payable) }}</td>
+      <td class="r">{{ money(pay.supplier + pay.logistics) }}</td>
+      <td class="r">{{ money([supplier_payable - pay.supplier, 0] | max + [logistics_payable - pay.logistics, 0] | max) }}</td>
+    </tr>
+    {% if debit_note %}
+    <tr>
+      <td class="lbl">Debit Note</td>
+      <td colspan="3"><span class="b warn">{{ debit_note }}</span>
+        <span class="sub">raised against GRN {{ doc.custom_grn }} for the rejected quantity (BR-GRN-09)</span></td>
+    </tr>
+    {% endif %}
+  </table>
+
+  <!-- ===== BR-UNF-05 payment history ===== -->
+  <table class="g">
+    <colgroup>
+      <col style="width:4%"><col style="width:14%"><col style="width:10%"><col style="width:11%">
+      <col style="width:16%"><col style="width:14%"><col style="width:12%"><col style="width:19%">
+    </colgroup>
+    <tr><td class="sec" colspan="8">Payment History</td></tr>
+    <tr>
+      <th>#</th><th>Type</th><th>Date</th><th>Mode</th><th>Reference No.</th>
+      <th>Amount</th><th>Status</th><th>Recorded By</th>
+    </tr>
+    {% for p in doc.custom_payment_references or [] %}
+      <tr>
+        <td class="c">{{ loop.index }}</td>
+        <td>{{ txt(p.payment_type) }}</td>
+        <td class="c">{{ dte(p.payment_date) }}</td>
+        <td>{{ txt(p.payment_mode) }}</td>
+        <td>{{ txt(p.reference_number) }}</td>
+        <td class="r">{{ money(p.payment_amount) }}</td>
+        <td class="c">{{ txt(p.payment_status) }}</td>
+        <td>{{ who(p.recorded_by) }}{% if p.recorded_on %}<div class="sub">{{ dtm(p.recorded_on) }}</div>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td class="c sub" colspan="8">No payment recorded yet.</td></tr>
+    {% endfor %}
+  </table>
+
+  <table class="avoid">
+    <colgroup><col style="width:33%"><col style="width:34%"><col style="width:33%"></colgroup>
+    <tr>
+      <td><div class="sign"></div><div class="c sub">Prepared By (Purchase)</div></td>
+      <td><div class="sign"></div><div class="c sub">Accounts</div></td>
+      <td><div class="sign"></div><div class="c sub">Authorised Signatory</div></td>
+    </tr>
+  </table>
+
+</div>
+"""
+
+_INVOICE_HTML = _MACROS + _INVOICE_HTML_RAW
+
+
+def setup_purchase_invoice_print_format():
+	"""The 'Purchase Invoice' print format on Purchase Invoice (BRD 6.2 in printed form)."""
+	_upsert_print_format(INVOICE_PF_NAME, INVOICE_DOC_TYPE, _INVOICE_HTML)
+
 def _set_default_print_format(doc_type, print_format):
 	"""Make `print_format` the default the Print button opens for `doc_type`.
 
@@ -1023,6 +1277,7 @@ def execute():
 	setup_qc_inspection_print_format()
 	setup_qc_sample_sticker_print_format()
 	setup_grn_print_format()
+	setup_purchase_invoice_print_format()
 	# Task 296 / 312: the Print button must open the module format, not Standard.
 	_set_default_print_format(INWARD_DOC_TYPE, INWARD_PF_NAME)
 	_set_default_print_format(QC_DOC_TYPE, QC_PF_NAME)

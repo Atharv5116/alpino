@@ -664,6 +664,8 @@ def run_action(purchase_inward, action):
 		"name": doc.name,
 		"docstatus": cint(doc.docstatus),
 		"inward_status": doc.inward_status,
+		# Create Purchase Invoice opens the new invoice rather than reloading the inward.
+		"purchase_invoice": doc.get("purchase_invoice"),
 	}
 
 

@@ -35,6 +35,7 @@ class PurchaseInward(Document):
 		self._validate_unique_po_detail()
 		self._compute_previously_received()
 		self._validate_invoice_number()
+		self._validate_invoice_date()
 		self._validate_challan_no()
 		self._apply_default_target_warehouse()
 		self._set_expiry_dates()
@@ -418,6 +419,21 @@ class PurchaseInward(Document):
 			).format(links),
 			title=_("VAL-PI-15"),
 		)
+
+	def _validate_invoice_date(self):
+		"""A vendor invoice cannot be dated after the day it is recorded.
+
+		Only reached on draft saves and submit: the header is frozen once submitted, and
+		after-submit saves run before_update_after_submit, not validate, so an inward
+		submitted before this rule existed is never blocked by it.
+		"""
+		if self.invoice_date and getdate(self.invoice_date) > getdate():
+			frappe.throw(
+				_("Invoice Date {0} cannot be a future date.").format(
+					frappe.format(self.invoice_date, {"fieldtype": "Date"})
+				),
+				title=_("Invalid Invoice Date"),
+			)
 
 	def _validate_challan_no(self):
 		"""VAL-PI-22 — challan number is unique per vendor."""

@@ -1,0 +1,229 @@
+<style>
+/* Cards, titles and scroll wrappers come from public/css/alpinos_pages.css. */
+.purchase-invoice-entry .eso-subtitle {
+	margin-top: 8px; margin-bottom: 10px;
+	border-top: 1px solid var(--border-color); padding-top: 12px;
+}
+.purchase-invoice-entry .eso-fld { margin-bottom: 8px; }
+.purchase-invoice-entry .pinv-table { font-size: 12px; margin-bottom: 0; }
+.purchase-invoice-entry .pinv-table thead th { white-space: nowrap; }
+.purchase-invoice-entry .pinv-table th,
+.purchase-invoice-entry .pinv-table td { padding: 4px 5px; vertical-align: middle; }
+.purchase-invoice-entry .pinv-table input,
+.purchase-invoice-entry .pinv-table .control-value { font-size: 12px; }
+.purchase-invoice-entry .pinv-table .form-group { margin-bottom: 0; }
+.purchase-invoice-entry .pinv-num { text-align: right; }
+
+/* Read-only values are DATA, not an input nobody filled in (same treatment as the
+   Purchase Inward and QC screens). */
+.purchase-invoice-entry .eso-fld .control-value.like-disabled-input {
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--border-color);
+	border-radius: 0;
+	padding: 4px 2px 3px 0;
+	min-height: var(--input-height, 28px);
+	line-height: 20px;
+	color: var(--text-color);
+	font-weight: 500;
+}
+.purchase-invoice-entry .eso-fld .control-value.like-disabled-input:empty::after {
+	content: "—";
+	color: var(--text-muted);
+	font-weight: 400;
+}
+.purchase-invoice-entry .eso-fld textarea.form-control {
+	height: 72px !important;
+	min-height: 72px;
+	resize: vertical;
+}
+
+.purchase-invoice-entry .pinv-stage {
+	display: inline-block; padding: 2px 10px; border-radius: 10px;
+	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
+	background: var(--bg-color); margin-left: 8px; vertical-align: middle;
+}
+.purchase-invoice-entry .pinv-stage:empty { display: none; }
+.purchase-invoice-entry .pinv-stage.pinv-done {
+	background: var(--alert-bg-success); border-color: var(--alert-bg-success);
+	color: var(--alert-text-success);
+}
+.purchase-invoice-entry .pinv-stage.pinv-open {
+	background: var(--alert-bg-warning); border-color: var(--alert-bg-warning);
+	color: var(--alert-text-warning);
+}
+.purchase-invoice-entry .pinv-stage.pinv-cancelled {
+	background: var(--alert-bg-danger); border-color: var(--alert-bg-danger);
+	color: var(--alert-text-danger);
+}
+.purchase-invoice-entry .pinv-lock-note { font-size: 11.5px; margin: -4px 0 10px; }
+.purchase-invoice-entry .pinv-lock-note:empty { display: none; }
+
+/* Normal and Direct invoices carry different header links (BRD 6.2.1). */
+.purchase-invoice-entry .pinv-direct-only { display: none; }
+.purchase-invoice-entry.pinv-direct .pinv-direct-only { display: block; }
+.purchase-invoice-entry.pinv-direct .pinv-normal-only { display: none; }
+
+.purchase-invoice-entry .alp-scroll[data-empty]:has(tbody:empty)::after {
+	content: attr(data-empty);
+	display: block;
+	position: sticky;
+	left: 0;
+	padding: 18px 12px;
+	text-align: center;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-muted);
+	background: var(--card-bg);
+}
+
+/* Resting state: this screen only ever describes ONE invoice. */
+.purchase-invoice-entry .pinv-empty { display: none; }
+.purchase-invoice-entry.pinv-blank .pinv-empty { display: block; }
+.purchase-invoice-entry.pinv-blank .pinv-body { display: none; }
+.purchase-invoice-entry .eso-card.pinv-empty-card {
+	max-width: 520px; text-align: center;
+	margin: 40px auto 0 !important; padding: 40px 28px !important;
+}
+.purchase-invoice-entry .pinv-empty-icon {
+	font-size: 24px; color: var(--text-muted); opacity: .55; margin-bottom: 12px;
+}
+.purchase-invoice-entry .pinv-empty-title {
+	font-size: 15px; font-weight: 600; color: var(--heading-color); margin-bottom: 6px;
+}
+.purchase-invoice-entry .pinv-empty-text {
+	font-size: 12.5px; color: var(--text-muted); margin: 0 auto 18px; max-width: 40em;
+}
+.purchase-invoice-entry .pinv-empty .alp-actions { justify-content: center; }
+</style>
+<div class="purchase-invoice-entry pinv-blank" style="padding: 12px;">
+
+	<div class="pinv-empty">
+		<div class="eso-card pinv-empty-card">
+			<div class="pinv-empty-icon"><i class="fa fa-file-text-o"></i></div>
+			<div class="pinv-empty-title">No invoice open</div>
+			<p class="pinv-empty-text">
+				This screen records one Purchase Invoice at a time. Create one from a finally
+				submitted GRN or a Direct Purchase Invoice order on the invoice list, or pick an
+				existing invoice there.
+			</p>
+			<div class="alp-actions">
+				<a class="btn btn-sm btn-primary" href="/app/purchase_invoice_list">Open Invoice List</a>
+			</div>
+		</div>
+	</div>
+
+	<div class="pinv-body">
+	<p class="text-muted" style="font-size:12px; margin-bottom:12px;">
+		BRD 6 — the Purchase Team fills the supplier bill, items and any transport bill, then
+		submits; those sections lock (BR-UNF-03) and the invoice moves to the Accounts Team,
+		who record each payment made in Tally. The invoice completes on its own once both the
+		supplier and the logistics amounts are paid (BR-UNF-06).
+	</p>
+
+	<!-- ==================== BRD 6.2.1 supplier bill ==================== -->
+	<div class="eso-card pinv-bill">
+		<h6 class="eso-card-title">
+			Supplier Bill
+			<span class="pinv-stage field-stage-badge"></span>
+			<span class="pinv-stage field-type-badge"></span>
+		</h6>
+		<p class="text-muted pinv-lock-note field-lock-note"></p>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-name"></div>
+			<div class="col-md-3 col-sm-6 eso-fld pinv-normal-only field-grn"></div>
+			<div class="col-md-3 col-sm-6 eso-fld pinv-normal-only field-purchase-inward"></div>
+			<div class="col-md-3 col-sm-6 eso-fld pinv-direct-only field-purchase-order"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-supplier"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-bill-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-bill-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-due-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-grand-total"></div>
+			<div class="col-md-6 col-sm-12 eso-fld field-invoice-attachment"></div>
+			<div class="col-md-6 col-sm-12 eso-fld field-invoice-remarks"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 6.2.2 item details ==================== -->
+	<div class="eso-card pinv-items">
+		<h6 class="eso-card-title">Item Details</h6>
+		<p class="text-muted pinv-lock-note field-rate-note"></p>
+		<div class="alp-scroll alp-scroll--wide" data-empty="This invoice carries no item lines.">
+			<table class="table table-bordered items-table pinv-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:200px;">Item</th>
+					<th style="width:70px;">UOM</th>
+					<th style="width:110px;" class="pinv-num">Approved Qty</th>
+					<th style="width:140px;" class="pinv-num">Unit Price</th>
+					<th style="width:130px;" class="pinv-num">Line Amount</th>
+					<th style="min-width:130px;">PO</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<h6 class="eso-subtitle">Totals</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-net-total"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-taxes"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-total-amount"></div>
+		</div>
+		<p class="text-muted" style="font-size:11.5px; margin:0;">
+			Line Amount is Approved Qty × Unit Price. Taxes and the invoice total are recalculated
+			when the draft is saved.
+		</p>
+	</div>
+
+	<!-- ==================== BRD 6.2.3 logistics / transport bill ==================== -->
+	<div class="eso-card pinv-logistics">
+		<h6 class="eso-card-title">Logistics / Transport Bill</h6>
+		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
+			Optional — fill this only when a separate transporter bill has to be paid.
+		</p>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-include-logistics"></div>
+		</div>
+		<div class="row pinv-logistics-fields">
+			<div class="col-md-3 col-sm-6 eso-fld field-logistics-vendor"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-transport-invoice-no"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-freight-amount"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-transport-attachment"></div>
+		</div>
+	</div>
+
+	<!-- ==================== BRD 6.2.4 payment & logistics reference ==================== -->
+	<div class="eso-card pinv-payments">
+		<h6 class="eso-card-title">Payment &amp; Logistics Reference</h6>
+		<p class="text-muted pinv-lock-note field-payment-note"></p>
+		<div class="row">
+			<div class="col-md-2 col-sm-6 eso-fld field-supplier-payable"></div>
+			<div class="col-md-2 col-sm-6 eso-fld field-supplier-pending"></div>
+			<div class="col-md-2 col-sm-6 eso-fld field-logistics-payable"></div>
+			<div class="col-md-2 col-sm-6 eso-fld field-logistics-pending"></div>
+			<div class="col-md-2 col-sm-6 eso-fld field-total-paid"></div>
+		</div>
+		<h6 class="eso-subtitle">Payment History</h6>
+		<div class="alp-scroll alp-scroll--xwide" data-empty="No payment recorded yet.">
+			<table class="table table-bordered payments-table pinv-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:130px;">Payment Type</th>
+					<th style="width:110px;" class="pinv-num">Amount</th>
+					<th style="width:95px;">Date</th>
+					<th style="width:110px;">Mode</th>
+					<th style="min-width:140px;">Reference No.</th>
+					<th style="min-width:120px;">Attachment</th>
+					<th style="width:110px;">Status</th>
+					<th style="min-width:140px;">Remarks</th>
+					<th style="min-width:140px;">Recorded By</th>
+					<th style="min-width:130px;">Recorded On</th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<div class="alp-actions pinv-payment-actions" style="margin-top:8px;"></div>
+	</div>
+
+	<div class="alp-actions alp-actions--end pinv-actionbar" style="margin: 14px 0 24px;"></div>
+	</div>
+</div>

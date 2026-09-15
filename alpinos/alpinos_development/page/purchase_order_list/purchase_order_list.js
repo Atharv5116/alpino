@@ -639,7 +639,7 @@ var PurchaseOrderListPage = class {
 			return;
 		}
 		if (action === 'view_invoice') {
-			if (d.direct_invoice) frappe.set_route('Form', 'Purchase Invoice', d.direct_invoice);
+			if (d.direct_invoice) frappe.set_route('purchase_invoice_entry', d.direct_invoice);
 			return;
 		}
 		if (action === 'create_invoice') {
@@ -667,7 +667,7 @@ var PurchaseOrderListPage = class {
 							me.load_list();
 							return;
 						}
-						frappe.set_route('Form', 'Purchase Invoice', r.message.name);
+						frappe.set_route('purchase_invoice_entry', r.message.name);
 					},
 				})
 		);
