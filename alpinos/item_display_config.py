@@ -13,6 +13,9 @@ CACHE_KEY = "alpinos_item_display_rules"
 
 def clear_cache():
 	frappe.cache.delete_value(CACHE_KEY)
+	# The rules ride in the boot payload, which frappe caches per user: without this a
+	# configuration change reaches nobody until their session is rebuilt.
+	frappe.clear_cache()
 
 
 def get_rules():

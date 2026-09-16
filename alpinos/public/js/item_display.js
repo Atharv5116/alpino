@@ -29,6 +29,28 @@
 		return (frappe.boot && frappe.boot.alpinos_item_display) || null;
 	}
 
+	/**
+	 * The boot carries the rules, but a session that started before a configuration was
+	 * added or changed has none (or stale ones). Ask the server once per page load, and
+	 * redraw if that brings something the screen has not applied yet.
+	 */
+	function refresh_config(on_change) {
+		if (refresh_config.__busy) return;
+		refresh_config.__busy = true;
+		frappe.call({ method: 'alpinos.item_display_config.get_item_display_payload', type: 'GET' })
+			.then((r) => {
+				refresh_config.__busy = false;
+				const next = (r && r.message) || null;
+				const before = JSON.stringify(config() || null);
+				if (JSON.stringify(next) === before) return;
+				frappe.boot.alpinos_item_display = next;
+				if (on_change) on_change();
+			})
+			.catch(() => {
+				refresh_config.__busy = false;
+			});
+	}
+
 	function rule_for(kind, name) {
 		const c = config();
 		return (c && name && c.rules && c.rules[kind] && c.rules[kind][name]) || null;
@@ -259,6 +281,14 @@
 		observer.observe(el, { childList: true, subtree: true });
 	}
 
+	function redraw() {
+		watch_page();
+		const qr = frappe.query_report;
+		if (qr && qr.refresh && rule_for('reports', qr.report_name)) qr.refresh();
+		const rv = typeof cur_list !== 'undefined' && cur_list && cur_list.report_name ? cur_list : null;
+		if (rv && rv.refresh && rule_for('reports', rv.report_name)) rv.refresh();
+	}
+
 	function attach() {
 		if (!frappe.views) return;
 		patch_query_report();
@@ -266,6 +296,8 @@
 		if (!attach.__pages) {
 			attach.__pages = true;
 			$(document).on('page-change', () => setTimeout(watch_page, 0));
+			// Once per page load: pick up a configuration saved after this session started.
+			refresh_config(redraw);
 		}
 		watch_page();
 	}
