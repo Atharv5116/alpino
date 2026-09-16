@@ -13,13 +13,16 @@
   "qty",
   "batch_no",
   "target_warehouse",
+  "quarantine_warehouse",
   "col_1",
   "status",
   "released_on",
   "released_by",
   "release_remarks",
   "purchase_qc",
-  "purchase_inward_item"
+  "purchase_inward_item",
+  "purchase_qc_item",
+  "release_stock_entry"
  ],
  "fields": [
   {
@@ -63,7 +66,14 @@
   {
    "fieldname": "target_warehouse",
    "fieldtype": "Link",
-   "label": "Target Location",
+   "label": "Release To",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "quarantine_warehouse",
+   "fieldtype": "Link",
+   "label": "Quarantine Warehouse",
    "options": "Warehouse",
    "read_only": 1
   },
@@ -103,10 +113,10 @@
   {
    "fieldname": "purchase_qc",
    "fieldtype": "Link",
-   "label": "Purchase QC",
+   "label": "Purchase QC (older flow)",
    "options": "Purchase QC",
    "read_only": 1,
-   "in_list_view": 1,
+   "in_list_view": 0,
    "columns": 2
   },
   {
@@ -115,6 +125,20 @@
    "label": "Purchase Inward Item",
    "read_only": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "purchase_qc_item",
+   "fieldtype": "Data",
+   "label": "Purchase QC Item",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "release_stock_entry",
+   "fieldtype": "Data",
+   "label": "Release Stock Entry",
+   "read_only": 1,
+   "description": "The transfer that moved the stock out of the Quarantine warehouse."
   }
  ],
  "index_web_pages_for_search": 0,

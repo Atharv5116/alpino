@@ -1,5 +1,10 @@
 <style>
 /* Cards, titles and scroll wrappers come from public/css/alpinos_pages.css. */
+/* The Quarantine column and its fields only show once "Quarantine Items" is ticked. */
+.purchase-qc-entry .pqc-col-quarantine { display: none; }
+.purchase-qc-entry.pqc-quarantining .pqc-col-quarantine { display: table-cell; }
+.purchase-qc-entry .pqc-quarantine-fields { display: none; }
+.purchase-qc-entry.pqc-quarantining .pqc-quarantine-fields { display: flex; }
 .purchase-qc-entry .eso-subtitle {
 	margin-top: 8px; margin-bottom: 10px;
 	border-top: 1px solid var(--border-color); padding-top: 12px;
@@ -374,6 +379,7 @@
 					<th style="width:90px;">Approved</th>
 					<th style="width:90px;">Rejected</th>
 					<th style="min-width:160px;">Rejection Reason</th>
+					<th style="width:110px;" class="pqc-col-quarantine">Quarantine</th>
 					<th style="width:120px;">Result</th>
 				</tr></thead>
 				<tbody></tbody>
@@ -389,6 +395,18 @@
 			<div class="col-md-6 eso-fld field-rejection-reason"></div>
 			<div class="col-md-6 eso-fld field-final-remarks"></div>
 		</div>
+
+		<!-- Quarantine: hold approved stock in the Quarantine warehouse until it is released -->
+		<h6 class="eso-subtitle">Quarantine</h6>
+		<div class="row">
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-items"></div>
+		</div>
+		<div class="row pqc-quarantine-fields">
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-all"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-reminder"></div>
+			<div class="col-md-6 col-sm-12 eso-fld field-quarantine-reason"></div>
+		</div>
+		<div class="text-muted pqc-quarantine-hint" style="font-size:12px; margin-bottom:8px;"></div>
 	</div>
 
 	<div class="alp-actions alp-actions--end pqc-actionbar" style="margin: 14px 0 24px;"></div>

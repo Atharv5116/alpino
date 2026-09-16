@@ -10,6 +10,7 @@
   "quarantine_section",
   "naming_series",
   "purchase_inward",
+  "purchase_qc",
   "purchase_order",
   "supplier",
   "supplier_name",
@@ -59,6 +60,14 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "purchase_qc",
+   "fieldtype": "Link",
+   "label": "Purchase QC",
+   "options": "Purchase QC",
+   "read_only": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "purchase_order",
@@ -122,7 +131,7 @@
   {
    "fieldname": "entire_inward",
    "fieldtype": "Check",
-   "label": "Entire Inward Quarantined",
+   "label": "All Items",
    "read_only": 1
   },
   {

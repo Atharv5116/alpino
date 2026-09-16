@@ -16,28 +16,23 @@ decision: approved and rejected quantity per line.
 
 Quantity model — the one thing to get right
 -------------------------------------------
-Sample quantity is carved OUT OF the approved quantity, it is not a third bucket.
 The reconciliation the BRD demands (4.6.2.1, VAL-QC-08) is
 
         approved + rejected == received          (per line and in total)
 
-with `sample + control_sample <= approved` layered on top. Treating samples as a
-separate bucket would make every sampled line fail reconciliation.
+with `sample + control_sample <= approved` layered on top: a sample is inspected out of
+the approved quantity, it is not a third bucket.
 
-Stock movement (4.1.5 / 4.1.6)
-------------------------------
-Drawing a sample is a real stock movement: a submitted Material Transfer Stock
-Entry out of the line's target location into the QC Sample warehouse (samples) or
-the control-sample storage location. Its name is stored on the row so a cancel can
-reverse exactly what it posted, and a row that already carries a submitted entry is
-never re-posted.
+Samples do not move stock
+-------------------------
+The sample and control-sample quantities, their IDs, stickers, storage location and
+retention date are recorded here and nowhere else. The GRN receives the whole approved
+quantity into the line's warehouse (or the Quarantine warehouse), and nothing is moved
+out to a QC Sample or Control Sample warehouse (decided 2026-09-16: "all the approved
+quantity in the warehouse").
 
-The GRN posts the receipt stock, and the BRD parks that GRN in Draft until an Admin
-final-submits it (BR-QC-17 / BR-QC-20) — so at QC-submit time the source warehouse
-usually holds nothing yet. Rather than block the whole inspection on that, a
-transfer that cannot post is DEFERRED: the row is left without a stock entry and
-the reason is reported. `post_pending_stock_entries()` mints the missing entries
-later, and is the function the GRN submit hook should call.
+QCs completed before that still carry the Material Transfer they posted in each row's
+stock_entry; _reverse_stock_entries unwinds those when their GRN or QC is cancelled.
 """
 
 import re
@@ -207,6 +202,7 @@ class PurchaseQC(Document):
 		self._validate_decision_quantities()
 		self._roll_up_totals()
 		self._derive_qc_result()
+		self._apply_quarantine_selection()
 		self._apply_sla()
 		self._sync_qc_status()
 
@@ -225,6 +221,7 @@ class PurchaseQC(Document):
 
 	def before_submit(self):
 		self._validate_mandatory_inspections()
+		self._validate_quarantine()
 		self._generate_internal_batches()
 		self._generate_sample_ids()
 		self._finalise_control_samples()
@@ -237,12 +234,14 @@ class PurchaseQC(Document):
 			self.inspection_date = now_datetime()
 
 	def on_submit(self):
-		self._post_stock_entries()
 		self._push_to_inward()
 		self._generate_grn()
+		# After the GRN: the Quarantine document links the GRN whose lines it holds.
+		self._raise_quarantine()
 
 	def on_cancel(self):
 		self._block_cancel_with_downstream()
+		self._drop_quarantine()
 		self._reverse_stock_entries()
 		self.db_set("qc_status", C.QC_CANCELLED, update_modified=False)
 		self._walk_inward_back()
@@ -317,8 +316,9 @@ class PurchaseQC(Document):
 			for row in self._inward().get("items") or []:
 				if flt(row.received_qty) <= 0:
 					continue
-				# A quarantined line is not QC's until it is released.
-				if cint(row.quarantine) and row.get("quarantine_status") != C.QUARANTINE_RELEASED:
+				# Quarantine is QC's decision now. Only a line still held by an older-flow
+				# Quarantine document (marked on the inward) stays out until it is released.
+				if cint(row.quarantine) and row.get("quarantine_status") == C.QUARANTINE_HELD:
 					continue
 				self.append(
 					"items",
@@ -330,7 +330,6 @@ class PurchaseQC(Document):
 						"target_warehouse": row.target_warehouse,
 						"manufacturing_date": row.manufacturing_date,
 						"expiry_date": row.expiry_date,
-						"quarantine": cint(row.quarantine),
 						"po_detail": row.po_detail,
 						"purchase_inward_item": row.name,
 					},
@@ -378,11 +377,18 @@ class PurchaseQC(Document):
 		Item Decision table); it is stamped back so an existing row shows which line it
 		is bound to and can be corrected.
 		"""
-		by_idx, first_by_item = {}, {}
+		by_idx, first_by_item, lines_by_item = {}, {}, {}
 		for line in self.get("items"):
 			by_idx[cint(line.idx)] = line
 			first_by_item.setdefault(line.item_code, line)
+			lines_by_item.setdefault(line.item_code, []).append(line)
 		by_name = self._items_by_name()
+		titles = {
+			"material_inspection": _("Material Inspection"),
+			"packaging_inspection": _("Packaging / Box Inspection"),
+			"sample_testing": _("Sample Testing"),
+			"control_sample": _("Control Sample"),
+		}
 
 		for field in ("material_inspection", "packaging_inspection", "sample_testing", "control_sample"):
 			for row in self.get(field) or []:
@@ -390,12 +396,27 @@ class PurchaseQC(Document):
 				if cint(row.get("qc_item_idx")):
 					line = by_idx.get(cint(row.qc_item_idx))
 					if not line or line.item_code != row.item_code:
-						frappe.throw(
-							_(
-								"Row {0}: Item Decision row {1} does not carry {2}."
-							).format(row.idx, cint(row.qc_item_idx), row.item_code),
-							title=_("VAL-QC-09"),
-						)
+						carrying = lines_by_item.get(row.item_code) or []
+						if len(carrying) == 1:
+							# The item names its line unambiguously; a Line picked for another
+							# item is a slip, not a decision, so the item wins.
+							line = carrying[0]
+						elif carrying:
+							frappe.throw(
+								_(
+									"{0} row {1}: Line {2} is not {3}. {3} is on Item Decision lines {4}; "
+									"choose one of them."
+								).format(
+									titles[field],
+									row.idx,
+									cint(row.qc_item_idx),
+									row.item_code,
+									", ".join(str(cint(c.idx)) for c in carrying),
+								),
+								title=_("VAL-QC-09"),
+							)
+						else:
+							line = None
 				# A row saved before qc_item_idx existed carries only qc_item; keep the
 				# line it was bound to so a migrated document never silently re-points a
 				# sample that has already moved stock.
@@ -847,11 +868,40 @@ class PurchaseQC(Document):
 				target = C.QC_PENDING if not self._any_inspection_started() else C.QC_IN_PROGRESS
 			if target in (C.QC_IN_PROGRESS, C.QC_READY_FOR_DECISION) and not self._missing_inspections():
 				target = C.QC_READY_FOR_DECISION
+			if target in (C.QC_IN_PROGRESS, C.QC_READY_FOR_DECISION):
+				self._start_if_not_started()
+				# Recording every inspection in the very save that starts the QC is a real
+				# Pending -> In Progress -> Ready for Decision, not a skipped step.
+				if previous == C.QC_PENDING and target == C.QC_READY_FOR_DECISION:
+					assert_qc_transition(previous, C.QC_IN_PROGRESS)
+					previous = C.QC_IN_PROGRESS
 
 		# On a brand-new document there is nothing to move FROM.
 		if previous:
 			assert_qc_transition(previous, target)
 		self.qc_status = target
+
+	def _start_if_not_started(self):
+		"""Inspection work saved on a QC nobody pressed Start QC on starts it.
+
+		Does what start_qc does: the inward moves Pending QC -> QC In Progress and the person
+		recording the inspection becomes the Inspector. Without it the save was refused
+		("cannot move from Pending QC to QC Ready for Decision"), and had it passed, Complete
+		QC would have been refused next because the inward was still Pending QC.
+		"""
+		if not self.purchase_inward or self.is_new():
+			return
+		inward = frappe.get_doc("Purchase Inward", self.purchase_inward)
+		if not self.is_side_qc(inward) and inward.inward_status == C.PI_PENDING_QC:
+			workflow.assert_transition(inward, "start_qc")
+			if not inward.purchase_qc:
+				inward.db_set("purchase_qc", self.name, update_modified=False)
+			workflow.set_status(inward, C.PI_QC_IN_PROGRESS)
+			inward.db_set("qc_status", C.QC_IN_PROGRESS, update_modified=False)
+		if not self.inspector:
+			self.inspector = frappe.session.user
+		if not self.inspection_date:
+			self.inspection_date = now_datetime()
 
 	def _any_inspection_started(self):
 		return any(
@@ -1049,190 +1099,33 @@ class PurchaseQC(Document):
 
 	# ---------------------------------------------- 308 / 309 stock movement
 
-	def _post_stock_entries(self):
-		"""Move sample and control-sample quantity out of the receiving location.
+	# ------------------------------------------------------------- quarantine
 
-		Returns the rows that could not be posted yet, as (doctype, row name, reason).
-		"""
-		settings = get_settings(self.company)
-		sample_wh = settings.get("qc_sample_warehouse")
-		control_wh = settings.get("control_sample_warehouse") or sample_wh
-		hold_wh = settings.get("qc_hold_warehouse")
-		deferred = []
+	def _apply_quarantine_selection(self):
+		from alpinos.purchase import quarantine
 
-		for row in self.get("sample_testing") or []:
-			deferred += self._transfer_row(
-				row,
-				flt(row.sample_qty),
-				sample_wh,
-				hold_wh,
-				_("Purchase QC {0}: sample {1}").format(self.name, row.sample_id or row.item_code),
-			)
+		quarantine.apply_qc_selection(self)
 
-		for row in self.get("control_sample") or []:
-			if not cint(row.control_sample_taken):
-				continue
-			deferred += self._transfer_row(
-				row,
-				flt(row.control_sample_qty),
-				row.storage_location or control_wh,
-				hold_wh,
-				_("Purchase QC {0}: control sample {1}").format(self.name, row.item_code),
-			)
+	def _validate_quarantine(self):
+		from alpinos.purchase import quarantine
 
-		if deferred:
-			frappe.msgprint(
-				_(
-					"The sample stock movement has been deferred and will be posted once the "
-					"stock is available in the receiving location.<br><br>{0}"
-				).format(
-					"<br>".join(
-						_("Row {0}: {1}").format(name, reason) for _dt, name, reason in deferred
-					)
-				),
-				title=_("Sample stock pending"),
-				indicator="orange",
-			)
-		return deferred
+		quarantine.assert_qc_ready(self)
 
-	def _transfer_row(self, row, qty, target, hold_warehouse, remarks):
-		"""Post one Material Transfer for `row`, or report why it cannot post yet."""
-		if qty <= 0:
-			return []
-		if row.stock_entry and frappe.db.get_value("Stock Entry", row.stock_entry, "docstatus") == 1:
-			# Already moved. One row never posts twice.
-			return []
+	def _raise_quarantine(self):
+		from alpinos.purchase import quarantine
 
-		line = self._items_by_name().get(row.qc_item)
-		source = (line.target_warehouse if line else None) or hold_warehouse
+		quarantine.create_from_qc(self)
 
-		src_item = self._inward_items().get(line.purchase_inward_item) if line else None
-		factor = flt(getattr(src_item, "conversion_factor", 0)) or 1.0
-		# Posted in the stock UOM so no UOM conversion has to exist on the item for a
-		# sample to be drawn.
-		stock_uom = frappe.get_cached_value("Item", row.item_code, "stock_uom")
-		stock_qty = flt(qty) * factor
-		batch_no = self._receipt_batch(line, row.item_code, source)
+	def _drop_quarantine(self):
+		from alpinos.purchase import quarantine
 
-		reason = self._blocked_reason(row.item_code, stock_qty, source, target, batch_no)
-		if reason:
-			return [(row.doctype, row.name, reason)]
-
-		entry = frappe.new_doc("Stock Entry")
-		entry.stock_entry_type = "Material Transfer"
-		entry.purpose = "Material Transfer"
-		entry.company = self.company
-		entry.remarks = remarks
-		entry.append(
-			"items",
-			{
-				"item_code": row.item_code,
-				"uom": stock_uom,
-				"stock_uom": stock_uom,
-				"conversion_factor": 1.0,
-				"qty": stock_qty,
-				"s_warehouse": source,
-				"t_warehouse": target,
-				"allow_zero_valuation_rate": 1,
-				# A batch-tracked item has no stock outside a batch, so the sample must name
-				# the batch the GRN received into `source`. use_serial_batch_fields is what
-				# makes ERPNext read batch_no instead of demanding a Serial and Batch Bundle;
-				# both are inert for an untracked item, where batch_no stays None.
-				"use_serial_batch_fields": 1 if batch_no else 0,
-				"batch_no": batch_no,
-			},
-		)
-		entry.flags.ignore_permissions = True
-		entry.insert()
-		entry.submit()
-
-		# stock_entry is read_only and not allow_on_submit, so db_set is the only way to
-		# stamp it from on_submit.
-		frappe.db.set_value(row.doctype, row.name, "stock_entry", entry.name, update_modified=False)
-		row.stock_entry = entry.name
-		return []
-
-	def _receipt_batch(self, line, item_code, warehouse):
-		"""The Batch the submitted GRN put into `warehouse`, or None while there is none.
-
-		Purchase QC mints only the batch *code* (internal_batch_no) — no Batch document
-		ever carries it, so grn._batch_no drops it and ERPNext auto-mints its own Batch
-		when the receipt is submitted. Reading that batch back off the receipt is the only
-		way the sample transfer can name what it draws from; without it every batch-tracked
-		sample was deferred forever and the receiving warehouse kept holding stock that is
-		physically in the QC lab (BRD 4.1.5 / 4.1.6, BR-QC-14).
-		"""
-		if not cint(frappe.get_cached_value("Item", item_code, "has_batch_no")):
-			return None
-		internal = ((line.internal_batch_no or "").strip() if line else "")
-		if internal and frappe.db.exists("Batch", internal):
-			return internal
-		receipt = self.purchase_receipt or frappe.db.get_value(
-			"Purchase Inward", self.purchase_inward, "purchase_receipt"
-		)
-		if not receipt or frappe.db.get_value("Purchase Receipt", receipt, "docstatus") != 1:
-			return None
-		filters = {"parent": receipt, "item_code": item_code, "warehouse": warehouse}
-		if line and line.purchase_inward_item:
-			filters["custom_purchase_inward_item"] = line.purchase_inward_item
-		for pr_row in frappe.get_all(
-			"Purchase Receipt Item",
-			filters=filters,
-			fields=["batch_no", "serial_and_batch_bundle"],
-			order_by="idx asc",
-		):
-			# batch_no is only filled when the GRN linked a Batch that already existed; an
-			# auto-minted one is reachable only through the receipt's bundle.
-			if pr_row.batch_no:
-				return pr_row.batch_no
-			if pr_row.serial_and_batch_bundle:
-				batch = frappe.db.get_value(
-					"Serial and Batch Entry",
-					{"parent": pr_row.serial_and_batch_bundle},
-					"batch_no",
-					order_by="idx asc",
-				)
-				if batch:
-					return batch
-		return None
-
-	def _blocked_reason(self, item_code, stock_qty, source, target, batch_no=None):
-		"""Why this transfer cannot post yet, or None when it can."""
-		if not source:
-			return _("no receiving location on the QC line and no QC Hold warehouse configured")
-		if not target:
-			return _("the destination warehouse has not been configured in Purchase Inward Settings")
-		if source == target:
-			return _("the source and destination warehouse are the same")
-		if cint(frappe.get_cached_value("Item", item_code, "has_batch_no")) and not batch_no:
-			# A deferral, never a permanent block: the Batch exists from the moment the GRN
-			# submits, and post_pending_stock_entries posts this row then. Blocking on
-			# has_batch_no alone left the sample stock in the receiving warehouse forever.
-			return _("{0} is batch tracked and the GRN has not created its batch yet").format(
-				item_code
-			)
-		if batch_no:
-			# Bin is not batch aware. The internal Batch exists from QC submit but is only
-			# filled when the GRN posts, so the warehouse can hold plenty of the item and
-			# nothing at all of THIS batch — posting that transfer fails outright instead of
-			# deferring until the GRN has run.
-			from erpnext.stock.doctype.batch.batch import get_batch_qty
-
-			available = flt(get_batch_qty(batch_no=batch_no, warehouse=source))
-			if _gt(stock_qty, available):
-				return _("only {0} of batch {1} is available in {2}").format(
-					available, batch_no, source
-				)
-			return None
-		available = flt(
-			frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": source}, "actual_qty")
-		)
-		if _gt(stock_qty, available):
-			return _("only {0} is available in {1}").format(available, source)
-		return None
+		quarantine.on_qc_cancel(self)
 
 	def _reverse_stock_entries(self):
-		"""BRD 5.3 — a cancel must undo exactly what the submit posted."""
+		"""BRD 5.3 — undo the sample transfers an older QC posted, on its GRN or QC cancel.
+
+		Samples no longer move stock, so only QCs completed before that change have any.
+		"""
 		for field in ("sample_testing", "control_sample"):
 			for row in self.get(field) or []:
 				if not row.stock_entry:
@@ -1552,23 +1445,9 @@ def override_qc_result(purchase_qc, result, reason=None):
 
 @frappe.whitelist()
 def post_pending_stock_entries(purchase_qc):
-	"""Mint the sample / control-sample transfers that were deferred at QC submit.
-
-	Call this once the GRN has posted the receipt stock; rows that already carry a
-	submitted Stock Entry are skipped, so it is safe to re-run.
-	"""
-	qc = frappe.get_doc("Purchase QC", purchase_qc)
-	qc.check_permission("write")
-	deferred = qc._post_stock_entries()
-	return {
-		"posted": [
-			row.name
-			for field in ("sample_testing", "control_sample")
-			for row in qc.get(field) or []
-			if row.stock_entry
-		],
-		"deferred": [{"row": name, "reason": reason} for _dt, name, reason in deferred],
-	}
+	"""Kept for callers of the old API: samples no longer move stock, so there is nothing to post."""
+	frappe.get_doc("Purchase QC", purchase_qc).check_permission("read")
+	return {"posted": [], "deferred": []}
 
 
 def reverse_pending_stock_entries(purchase_qc):

@@ -136,11 +136,6 @@ function add_qc_actions(frm) {
             prompt_override(frm);
         }, __('QC'));
 
-        if (has_pending_sample_movement(frm)) {
-            frm.add_custom_button(__('Post Pending Sample Stock'), function() {
-                call_qc_action(frm, 'post_pending_stock_entries', __('Posting sample stock...'));
-            }, __('QC'));
-        }
     }
 
     if (frm.doc.purchase_inward) {

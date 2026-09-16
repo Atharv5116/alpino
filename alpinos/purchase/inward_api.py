@@ -60,7 +60,6 @@ ACTION_ENDPOINTS = {
 	"submit_for_qc": "alpinos.purchase.notifications.submit_for_qc",
 	"generate_grn": "alpinos.purchase.grn.generate_grn",
 	"create_purchase_invoice": "alpinos.purchase.purchase_invoice.create_purchase_invoice",
-	"create_quarantine": "alpinos.purchase.quarantine.create_quarantine",
 }
 
 # Transitions whose implementation lives on the linked Purchase QC. These need their own

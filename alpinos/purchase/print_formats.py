@@ -944,7 +944,7 @@ _GRN_HTML_RAW = r"""
         <td class="c">{{ txt(row.uom) }}</td>
         <td class="r">{{ num3(row.qty) }}</td>
         <td class="r {% if frappe.utils.flt(row.rejected_qty) %}warn{% endif %}">{{ num3(row.rejected_qty) }}</td>
-        <td>{{ txt(row.warehouse) }}</td>
+        <td>{{ txt(row.warehouse) }}{% if row.custom_quarantine_status %}<div class="sub">{% if row.custom_quarantine_status == "Quarantined" %}In quarantine &middot; releases to {{ txt(row.custom_release_warehouse) }}{% else %}Released from quarantine to {{ txt(row.custom_release_warehouse) }}{% endif %}</div>{% endif %}</td>
         <td>{{ txt(row.rejected_warehouse) }}</td>
         <td>{{ txt(row.batch_no) }}</td>
       </tr>

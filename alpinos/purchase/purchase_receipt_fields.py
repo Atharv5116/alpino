@@ -179,10 +179,21 @@ def _custom_fields():
 				description="Raised only when the rejected quantity is greater than zero (BR-GRN-09 / BR-GRN-10).",
 			),
 			dict(
+				fieldname="custom_purchase_quarantine",
+				label="Quarantine Document",
+				fieldtype="Link",
+				options="Purchase Quarantine",
+				insert_after="custom_debit_note",
+				read_only=1,
+				allow_on_submit=1,
+				depends_on="eval:doc.custom_purchase_quarantine",
+				description="QC quarantined items on this GRN: they are received into the Quarantine warehouse and move to their warehouse when released.",
+			),
+			dict(
 				fieldname="custom_grn_attachment",
 				label="GRN Attachment",
 				fieldtype="Attach",
-				insert_after="custom_debit_note",
+				insert_after="custom_purchase_quarantine",
 			),
 			dict(
 				fieldname="custom_receiving_remarks",
@@ -246,6 +257,29 @@ def _custom_fields():
 				read_only=1,
 				no_copy=1,
 				search_index=1,
+			),
+			# QC quarantine (quarantine.create_from_qc): the line's approved quantity is
+			# received into the Quarantine warehouse and moved to the release warehouse when
+			# the Quarantine document releases it. Not no_copy: an amended GRN keeps the hold.
+			dict(
+				fieldname="custom_quarantine_status",
+				label="Quarantine",
+				fieldtype="Select",
+				options="\nQuarantined\nReleased",
+				insert_after="warehouse",
+				read_only=1,
+				allow_on_submit=1,
+				depends_on="eval:doc.custom_quarantine_status",
+			),
+			dict(
+				fieldname="custom_release_warehouse",
+				label="Release To Warehouse",
+				fieldtype="Link",
+				options="Warehouse",
+				insert_after="custom_quarantine_status",
+				read_only=1,
+				allow_on_submit=1,
+				depends_on="eval:doc.custom_quarantine_status",
 			),
 		],
 	}
@@ -415,7 +449,40 @@ def validate_grn_fields(doc, method=None):
 				title=_("Rejection Reason Required"),
 			)
 
+	_validate_quarantined_lines(doc)
 	log_draft_grn_edits(doc)
+
+
+def _validate_quarantined_lines(doc):
+	"""A line QC quarantined is received into the Quarantine warehouse and nowhere else.
+
+	Moving it to its real warehouse on the draft would put held stock into use without a
+	release; the Quarantine document's Release is the only way out (it re-points the draft
+	line itself, with grn_system_sync set).
+	"""
+	if doc.flags.get("grn_system_sync") or cint(doc.get("is_return")):
+		return
+	held = [r for r in doc.get("items") or [] if r.get("custom_quarantine_status") == "Quarantined"]
+	if not held:
+		return
+	from alpinos.purchase.quarantine import warehouse_name
+
+	store = warehouse_name(doc.get("company"))
+	for row in held:
+		if store and row.warehouse != store:
+			frappe.throw(
+				_(
+					"Row #{0}: {1} is quarantined, so it is received into {2}. Release it from "
+					"Quarantine Document {3} to move it to {4}."
+				).format(
+					row.idx,
+					frappe.bold(row.item_code),
+					frappe.bold(store),
+					frappe.bold(doc.get("custom_purchase_quarantine") or ""),
+					frappe.bold(row.get("custom_release_warehouse") or _("its warehouse")),
+				),
+				title=_("Quarantined Item"),
+			)
 
 
 #: What a person may change on a Draft GRN, and therefore what the change log records.

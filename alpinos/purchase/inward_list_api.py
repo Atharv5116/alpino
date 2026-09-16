@@ -410,6 +410,9 @@ def _row_actions(row, lines, perms):
 
 	actions = []
 	for action in workflow.available_actions(stub):
+		# Start / Complete QC happen on the QC screen; the row offers Go to QC (view_qc).
+		if action.get("action") in workflow.QC_SCREEN_ACTIONS:
+			continue
 		ptype = _ACTION_PTYPE.get(action.get("action"))
 		if ptype and not perms.get(ptype):
 			continue

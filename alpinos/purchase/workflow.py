@@ -37,43 +37,6 @@ def _guard_receiving_complete(doc):
 	return None
 
 
-def _guard_receiving_and_quarantine(doc):
-	"""Submit for QC: the receipt is recorded, and any quarantine picks are complete.
-
-	Held lines no longer block the hand-over -- they go into a Quarantine document and the
-	rest go to QC. Only an inward with EVERY item held cannot go to QC; it offers Create
-	Quarantine instead (and this button is hidden, see _all_held).
-	"""
-	from alpinos.purchase import quarantine
-
-	reason = _guard_receiving_complete(doc) or quarantine.setup_error(doc)
-	if reason:
-		return reason
-	if quarantine.all_received_held(doc):
-		return _("Every received item is quarantined. Use Create Quarantine instead.")
-	return None
-
-
-def _guard_create_quarantine(doc):
-	"""Create Quarantine: the receipt is recorded and every received item is held."""
-	from alpinos.purchase import quarantine
-
-	reason = _guard_receiving_complete(doc) or quarantine.setup_error(doc)
-	if reason:
-		return reason
-	if not quarantine.all_received_held(doc):
-		return _("Create Quarantine is for an inward whose every item is quarantined; use Submit for QC.")
-	return None
-
-
-def _all_held(doc):
-	from alpinos.purchase import quarantine
-
-	return quarantine.all_received_held(doc)
-
-
-def _not_all_held(doc):
-	return not _all_held(doc)
 
 
 def _guard_qc_exists(doc):
@@ -122,13 +85,11 @@ INWARD_TRANSITIONS = {
 		_T("submit", _("Submit"), C.PI_PENDING_RECEIPT, PURCHASE),
 	],
 	C.PI_PENDING_RECEIPT: [
-		_T("submit_for_qc", _("Submit for QC"), C.PI_PENDING_QC, STORE,
-		   _guard_receiving_and_quarantine, hide=_all_held),
-		# Every item quarantined: there is nothing for QC, so the inward is handed to
-		# quarantine instead. Released items move it on to Pending QC.
-		_T("create_quarantine", _("Create Quarantine"), C.PI_QUARANTINED, STORE,
-		   _guard_create_quarantine, hide=_not_all_held),
+		# Every received item goes to QC; quarantine is decided on the Purchase QC.
+		_T("submit_for_qc", _("Submit for QC"), C.PI_PENDING_QC, STORE, _guard_receiving_complete),
 	],
+	# Older flow only: an inward whose every item was quarantined before QC. Releasing
+	# them from its Quarantine document moves it on to Pending QC.
 	C.PI_QUARANTINED: [],
 	C.PI_PENDING_QC: [
 		_T("start_qc", _("Start QC"), C.PI_QC_IN_PROGRESS, QC, _guard_qc_exists),
@@ -169,13 +130,18 @@ INWARD_VIEW_ACTIONS = {
 	C.PI_CANCELLED: ("view", "print"),
 }
 
+# Transitions QC performs on its own screen (Purchase QC Entry / the QC list). The engine
+# still owns them -- purchase_qc.start_qc / complete_qc assert them against the inward -- but
+# the inward screens offer "Go to QC" instead of running them against a QC nobody is looking at.
+QC_SCREEN_ACTIONS = ("start_qc", "complete_qc")
+
 VIEW_ACTION_LABELS = {
 	"edit": _("Edit"),
 	"delete": _("Delete"),
 	"view": _("View"),
 	"print": _("Print"),
 	"continue_receiving": _("Continue Receiving"),
-	"view_qc": _("View QC"),
+	"view_qc": _("Go to QC"),
 	"view_qc_report": _("View QC Report"),
 	"view_grn": _("View GRN"),
 	"view_debit_note": _("View Debit Note"),

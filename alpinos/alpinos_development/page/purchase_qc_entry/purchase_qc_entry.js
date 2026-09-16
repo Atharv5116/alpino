@@ -63,6 +63,7 @@ var PurchaseQCEntry = class {
 		this.make_header_fields();
 		this.make_done_flags();
 		this.make_summary_fields();
+		this.make_quarantine_fields();
 		this.bind_events();
 		this.make_actions();
 	}
@@ -241,6 +242,63 @@ var PurchaseQCEntry = class {
 		});
 	}
 
+	// ------------------------------------------------------------- quarantine
+
+	// QC decides quarantine (alpinos.purchase.quarantine): the approved quantity of the
+	// ticked lines is received into the Quarantine warehouse and moves to its warehouse only
+	// when it is released from the Quarantine document.
+	make_quarantine_fields() {
+		const me = this;
+		const on_change = (c) => { if (c && c.$input) c.$input.on('change', () => me.apply_quarantine_ui()); };
+		on_change(this._ctl('.field-quarantine-items', {
+			fieldname: 'quarantine_items', label: 'Quarantine Items', fieldtype: 'Check',
+		}));
+		on_change(this._ctl('.field-quarantine-all', {
+			fieldname: 'quarantine_all_items', label: 'Quarantine All Items', fieldtype: 'Check',
+			description: 'Every item with an approved quantity. Leave unticked to pick items in the Quarantine column.',
+		}));
+		this._ctl('.field-quarantine-reminder', {
+			fieldname: 'quarantine_reminder_days', label: 'Remind After (Days)', fieldtype: 'Int',
+			description: 'One reminder for the whole Quarantine document.',
+		});
+		this._ctl('.field-quarantine-reason', {
+			fieldname: 'quarantine_reason', label: 'Quarantine Reason', fieldtype: 'Small Text',
+		});
+	}
+
+	/**
+	 * Show the Quarantine column and fields only when "Quarantine Items" is ticked, and tick
+	 * (and lock) every approved line when "Quarantine All Items" is. The server applies the
+	 * same rule on save (quarantine.apply_qc_selection).
+	 */
+	apply_quarantine_ui() {
+		const doc = this.doc || {};
+		const draft = cint(doc.docstatus) === 0;
+		const on = !!cint(this._val('quarantine_items'));
+		const all = on && !!cint(this._val('quarantine_all_items'));
+		this.wrapper.find('.purchase-qc-entry').toggleClass('pqc-quarantining', on);
+		if (draft) {
+			(this.tables.decision || []).forEach((row, idx) => {
+				const c = this.fields[`decision_quarantine_${idx}`];
+				if (all) {
+					row.quarantine = flt(row.approved_qty) > 0 ? 1 : 0;
+					if (c) c.set_value(row.quarantine);
+				}
+				if (c && c.$input) c.$input.prop('disabled', all);
+			});
+		}
+		const esc = frappe.utils.escape_html;
+		let hint = '';
+		if (doc.quarantine_document) {
+			hint = __('Quarantine Document {0} holds these items. They were received into the Quarantine warehouse and move to their warehouse when released there.', [
+				`<a href="/app/purchase_quarantine_view/${encodeURIComponent(doc.quarantine_document)}">${esc(doc.quarantine_document)}</a>`,
+			]);
+		} else if (on && draft) {
+			hint = __('When QC is completed, the approved quantity of the ticked items is received into the Quarantine warehouse on the GRN, and moves to its warehouse when it is released from the Quarantine document. Rejected quantity still goes to the debit note.');
+		}
+		this.wrapper.find('.pqc-quarantine-hint').html(hint);
+	}
+
 	// ------------------------------------------------------------- grids
 
 	_mk_cell($tr, sel, key, idx, df, value, onchange) {
@@ -375,7 +433,10 @@ var PurchaseQCEntry = class {
 				paint(val);
 				// Changing the item moves its quantities to a different decision line.
 				if (key === 'material') me.recalc_damage_rollup();
-				else if (key === 'sample' || key === 'control') me.recalc_sample_rollup();
+				else if (key === 'sample' || key === 'control') {
+					me._match_line(key, idx, data);
+					me.recalc_sample_rollup();
+				}
 			}
 		);
 		$tr.find('.c-item').append($name);
@@ -384,8 +445,39 @@ var PurchaseQCEntry = class {
 
 	_item_options() {
 		// Sample / control rows must be able to name WHICH decision line they came from
-		// (qc_item_idx), because one item code can legitimately occupy several lines.
-		return (this.tables.decision || []).map((r, i) => `${i + 1}`).join('\n');
+		// (qc_item_idx), because one item code can legitimately occupy several lines. The
+		// item code rides along in the label: a bare "1" / "2" was picked the wrong way round.
+		return [{ value: '', label: '' }].concat(
+			(this.tables.decision || []).map((r, i) => ({
+				value: String(i + 1),
+				label: `${i + 1} · ${r.item_code || ''}`,
+			}))
+		);
+	}
+
+	/**
+	 * Keep a sample / control row's Line on a decision line that carries its SKU.
+	 *
+	 * An item on exactly one line decides the line by itself, so it is filled in (and a
+	 * line picked for another item is corrected); only an item on several lines is left for
+	 * the QC user to choose. The server applies the same rule (_bind_child_rows).
+	 */
+	_match_line(key, idx, data) {
+		const lines = [];
+		(this.tables.decision || []).forEach((r, i) => {
+			if (data.item_code && r.item_code === data.item_code) lines.push(String(i + 1));
+		});
+		const current = data.qc_item_idx ? String(cint(data.qc_item_idx)) : '';
+		let next = current;
+		if (lines.length === 1) next = lines[0];
+		else if (current && !lines.includes(current)) next = '';
+		if (next === current) return;
+		if (current && next) {
+			this._toast(__('Line {0} is not {1}; set to line {2}.', [current, data.item_code, next]), 'orange');
+		}
+		data.qc_item_idx = next;
+		const c = this.fields[`${key}_qc_item_idx_${idx}`];
+		if (c) c.set_value(next);
 	}
 
 	add_row(key, data) {
@@ -451,8 +543,12 @@ var PurchaseQCEntry = class {
 			$body.append($tr);
 			this._mk_item_cell($tr, key, idx, data);
 			this._mk_cell($tr, '.c-line', key, idx,
-				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: '\n' + this._item_options() },
-				data.qc_item_idx, function (val) { data.qc_item_idx = val; me.recalc_sample_rollup(); });
+				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: this._item_options() },
+				data.qc_item_idx, function (val) {
+					data.qc_item_idx = val;
+					me._match_line(key, idx, data);
+					me.recalc_sample_rollup();
+				});
 			this._mk_cell($tr, '.c-sbatch', key, idx, { fieldtype: 'Data', fieldname: 'supplier_batch_no' },
 				data.supplier_batch_no, function (val) { data.supplier_batch_no = val; });
 			this._mk_cell($tr, '.c-ibatch', key, idx,
@@ -498,8 +594,12 @@ var PurchaseQCEntry = class {
 				function () { data.control_sample_taken = cint($(this).prop('checked')); me.recalc_sample_rollup(); });
 			this._mk_item_cell($tr, key, idx, data);
 			this._mk_cell($tr, '.c-line', key, idx,
-				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: '\n' + this._item_options() },
-				data.qc_item_idx, function (val) { data.qc_item_idx = val; me.recalc_sample_rollup(); });
+				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: this._item_options() },
+				data.qc_item_idx, function (val) {
+					data.qc_item_idx = val;
+					me._match_line(key, idx, data);
+					me.recalc_sample_rollup();
+				});
 			this._mk_cell($tr, '.c-batch', key, idx, { fieldtype: 'Data', fieldname: 'batch_no' },
 				data.batch_no, function (val) { data.batch_no = val; });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'control_sample_qty' },
@@ -644,21 +744,34 @@ var PurchaseQCEntry = class {
 				<td class="pqc-num">${format_number(row.received_qty, null, 2)}</td>
 				<td class="pqc-num">${format_number(row.sample_qty, null, 2)}</td>
 				<td class="c-appr"></td><td class="c-rej"></td><td class="c-reason"></td>
+				<td class="c-quar pqc-col-quarantine text-center"></td>
 				<td class="c-result text-muted">${frappe.utils.escape_html(row.qc_result || '')}</td>
 			</tr>`);
 			$body.append($tr);
 
 			me._mk_cell($tr, '.c-appr', 'decision', idx,
 				{ fieldtype: 'Float', fieldname: 'approved_qty' }, row.approved_qty,
-				function (val) { row.approved_qty = flt(val); me.recalc_totals(); });
+				function (val) { row.approved_qty = flt(val); me.recalc_totals(); me.apply_quarantine_ui(); });
 			me._mk_cell($tr, '.c-rej', 'decision', idx,
 				{ fieldtype: 'Float', fieldname: 'rejected_qty' }, row.rejected_qty,
 				function (val) { row.rejected_qty = flt(val); me.recalc_totals(); });
 			me._mk_cell($tr, '.c-reason', 'decision', idx,
 				{ fieldtype: 'Data', fieldname: 'rejection_reason' }, row.rejection_reason,
 				function (val) { row.rejection_reason = val; });
+			if (cint((me.doc || {}).docstatus) === 0) {
+				me._mk_cell($tr, '.c-quar', 'decision', idx,
+					{ fieldtype: 'Check', fieldname: 'quarantine' }, row.quarantine,
+					function (val) { row.quarantine = cint(val); });
+			} else if (cint(row.quarantine)) {
+				// Completed QC: where the held quantity stands on the Quarantine document.
+				const state = (me.quarantine_states || {})[row.name] || 'Quarantined';
+				$tr.find('.c-quar').html(
+					`<span class="indicator-pill ${state === 'Released' ? 'green' : 'red'}" style="font-size:10px;">${frappe.utils.escape_html(__(state))}</span>`
+				);
+			}
 		});
 		this.recalc_totals();
+		this.apply_quarantine_ui();
 	}
 
 	recalc_totals() {
@@ -761,10 +874,27 @@ var PurchaseQCEntry = class {
 					'overall_remarks', 'rejection_reason', 'final_qc_remarks', 'qc_result',
 					'vehicle_inspection_done', 'material_inspection_done',
 					'packaging_inspection_done', 'sample_testing_done',
+					'quarantine_items', 'quarantine_all_items', 'quarantine_reminder_days',
+					'quarantine_reason',
 				].forEach((f) => me._set(f, doc[f]));
 
+				me.quarantine_states = {};
 				me.tables.decision = (doc.items || []).slice();
 				me.render_decision();
+				// set_value lands asynchronously, so the Quarantine Items tick read inside
+				// render_decision can still be the previous document's; apply it once settled.
+				setTimeout(() => { if (me.doc === doc) me.apply_quarantine_ui(); }, 0);
+				if (doc.quarantine_document) {
+					frappe.call({
+						method: 'alpinos.purchase.quarantine.get_quarantine_context',
+						args: { purchase_quarantine: doc.quarantine_document },
+						callback(c) {
+							if (me.doc !== doc || !c.message) return;
+							me.quarantine_states = c.message.line_states || {};
+							me.render_decision();
+						},
+					});
+				}
 
 				[
 					['vehicle', 'vehicle_inspection'],
@@ -874,6 +1004,17 @@ var PurchaseQCEntry = class {
 				}));
 			});
 		}
+		// Completing QC raises the GRN; reviewing and submitting it is the next step.
+		if (doc.purchase_receipt) {
+			btn(__('View GRN'), 'btn-primary', () => {
+				frappe.set_route('purchase_grn_view', doc.purchase_receipt);
+			});
+		}
+		if (doc.quarantine_document) {
+			btn(__('Open Quarantine'), 'btn-default', () => {
+				frappe.set_route('purchase_quarantine_view', doc.quarantine_document);
+			});
+		}
 		btn(__('Print Report'), 'btn-default', () => {
 			frappe.set_route('print', 'Purchase QC', me.docname);
 		});
@@ -899,6 +1040,10 @@ var PurchaseQCEntry = class {
 				doc.overall_remarks = me._val('overall_remarks');
 				doc.rejection_reason = me._val('rejection_reason');
 				doc.final_qc_remarks = me._val('final_qc_remarks');
+				doc.quarantine_items = cint(me._val('quarantine_items'));
+				doc.quarantine_all_items = cint(me._val('quarantine_all_items'));
+				doc.quarantine_reminder_days = cint(me._val('quarantine_reminder_days'));
+				doc.quarantine_reason = me._val('quarantine_reason');
 				['vehicle_inspection_done', 'material_inspection_done',
 					'packaging_inspection_done', 'sample_testing_done'].forEach((f) => {
 					doc[f] = cint(me._val(f));
@@ -915,6 +1060,7 @@ var PurchaseQCEntry = class {
 					row.approved_qty = flt(edited.approved_qty);
 					row.rejected_qty = flt(edited.rejected_qty);
 					row.rejection_reason = edited.rejection_reason;
+					row.quarantine = cint(edited.quarantine);
 				});
 				frappe.call({
 					method: 'frappe.client.save',

@@ -174,6 +174,7 @@ var GRNView = class {
 		ro('.field-debit-note', 'custom_debit_note',
 			note_state ? __('Debit Note ({0})', [__(note_state)]) : __('Debit Note'), 'Link', 'Purchase Invoice');
 		ro('.field-amended-from', 'amended_from', 'Amended From', 'Link', 'Purchase Receipt');
+		ro('.field-quarantine', 'custom_purchase_quarantine', 'Quarantine Document', 'Link', 'Purchase Quarantine');
 		ed('.field-supplier-delivery-note', {
 			fieldname: 'supplier_delivery_note', label: 'Supplier Delivery Note', fieldtype: 'Data',
 		});
@@ -267,7 +268,18 @@ var GRNView = class {
 
 			cell('.c-qty', { fieldtype: 'Float' }, 'qty', qty_changed);
 			cell('.c-rej', { fieldtype: 'Float' }, 'rejected_qty', qty_changed);
-			cell('.c-wh', { fieldtype: 'Link', options: 'Warehouse', get_query: wh_query }, 'warehouse');
+			// QC quarantined the line: it is received into the Quarantine warehouse, and only a
+			// release from the Quarantine document moves it (quarantine.release_items).
+			const held = row.custom_quarantine_status === 'Quarantined';
+			cell('.c-wh', { fieldtype: 'Link', options: 'Warehouse', get_query: wh_query }, 'warehouse', null, !held);
+			if (row.custom_quarantine_status) {
+				$tr.find('.c-wh').append(
+					held
+						? `<div><span class="indicator-pill red" style="font-size:10px;">${esc(__('In Quarantine'))}</span></div>
+							<div class="text-muted" style="font-size:11px;">${esc(__('Releases to {0}', [row.custom_release_warehouse || '']))}</div>`
+						: `<div><span class="indicator-pill green" style="font-size:10px;">${esc(__('Released from Quarantine'))}</span></div>`
+				);
+			}
 			cell('.c-rwh', { fieldtype: 'Link', options: 'Warehouse', get_query: wh_query }, 'rejected_warehouse');
 			cell('.c-batch', { fieldtype: 'Data' }, 'batch_no');
 			cell('.c-rate', { fieldtype: 'Currency' }, 'rate', null, !!cint(me.ctx.rate_editable));
@@ -403,6 +415,11 @@ var GRNView = class {
 				});
 		}
 
+		if (doc.custom_purchase_quarantine) {
+			btn(__('Open Quarantine'), 'btn-default', () =>
+				frappe.set_route('purchase_quarantine_view', doc.custom_purchase_quarantine)
+			);
+		}
 		btn(__('Print'), 'btn-light', () => frappe.set_route('print', 'Purchase Receipt', me.docname));
 		btn(__('Open Full Record'), 'btn-light', () => frappe.set_route('Form', 'Purchase Receipt', me.docname));
 	}

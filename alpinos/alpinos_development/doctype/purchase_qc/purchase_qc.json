@@ -54,6 +54,13 @@
   "totals_col_break",
   "total_approved_qty",
   "total_rejected_qty",
+  "quarantine_section",
+  "quarantine_items",
+  "quarantine_all_items",
+  "quarantine_col",
+  "quarantine_reminder_days",
+  "quarantine_reason",
+  "quarantine_document",
   "remarks_section",
   "rejection_reason",
   "final_qc_remarks",
@@ -414,6 +421,52 @@
    "read_only": 1
   },
   {
+   "fieldname": "quarantine_section",
+   "fieldtype": "Section Break",
+   "label": "Quarantine"
+  },
+  {
+   "fieldname": "quarantine_items",
+   "fieldtype": "Check",
+   "label": "Quarantine Items",
+   "default": "0",
+   "description": "Hold the approved quantity of the selected items in the Quarantine warehouse until it is released."
+  },
+  {
+   "fieldname": "quarantine_all_items",
+   "fieldtype": "Check",
+   "label": "Quarantine All Items",
+   "default": "0",
+   "depends_on": "eval:doc.quarantine_items",
+   "description": "Every item with an approved quantity is quarantined. Leave unticked to pick items in the QC Decision table."
+  },
+  {
+   "fieldname": "quarantine_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "quarantine_reminder_days",
+   "fieldtype": "Int",
+   "label": "Remind After (Days)",
+   "depends_on": "eval:doc.quarantine_items",
+   "mandatory_depends_on": "eval:doc.quarantine_items"
+  },
+  {
+   "fieldname": "quarantine_reason",
+   "fieldtype": "Small Text",
+   "label": "Quarantine Reason",
+   "depends_on": "eval:doc.quarantine_items"
+  },
+  {
+   "fieldname": "quarantine_document",
+   "fieldtype": "Link",
+   "label": "Quarantine Document",
+   "options": "Purchase Quarantine",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.quarantine_document"
+  },
+  {
    "fieldname": "remarks_section",
    "fieldtype": "Section Break",
    "label": "Remarks"
@@ -448,7 +501,7 @@
   },
   {
    "allow_on_submit": 1,
-   "description": "BRD 4.6.2 \u2014 what the approved / rejected split produced, before any human override.",
+   "description": "BRD 4.6.2 — what the approved / rejected split produced, before any human override.",
    "fieldname": "system_qc_result",
    "fieldtype": "Select",
    "label": "System QC Result",
@@ -458,7 +511,7 @@
   },
   {
    "allow_on_submit": 1,
-   "description": "BRD 4.6 \u2014 written only by the Override QC Result action. Blank means the system result stands. Without this field the override was recomputed away on the next save.",
+   "description": "BRD 4.6 — written only by the Override QC Result action. Blank means the system result stands. Without this field the override was recomputed away on the next save.",
    "fieldname": "manual_qc_result",
    "fieldtype": "Select",
    "label": "Manual QC Result",
@@ -506,11 +559,11 @@
   {
    "fieldname": "purchase_quarantine",
    "fieldtype": "Link",
-   "label": "Purchase Quarantine",
+   "label": "Raised From Quarantine",
    "options": "Purchase Quarantine",
    "read_only": 1,
    "no_copy": 1,
-   "description": "Set when this QC inspects items released from quarantine."
+   "description": "Older flow only: a QC raised when items quarantined at the inward were released."
   },
   {
    "fieldname": "links_col",

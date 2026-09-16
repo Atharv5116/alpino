@@ -402,9 +402,8 @@ def run_fixes(_report_now=True):
 	check("H2 an approved over-receipt can be GRN-submitted by the Admin role", h2_over_receipt_grn_submits)
 
 	# ------------------------------------------------------------- H1/H9
-	# _blocked_reason treated has_batch_no=1 as a permanent block, so the sample and
-	# control-sample transfer was deferred forever and the receiving warehouse
-	# permanently overstated the stock that is physically in the QC lab.
+	# Samples move no stock any more (2026-09-16): a batch-tracked item is received whole,
+	# in its batch, and the sample stays a record on the QC.
 	def h1_batch_sample_posts():
 		code = f"PITEST-FIX-BATCH-{H.SEQ}"
 		if not frappe.db.exists("Item", code):
@@ -421,16 +420,12 @@ def run_fixes(_report_now=True):
 		frappe.db.commit()
 
 		qc = frappe.get_doc("Purchase QC", chain["qc"])
-		se = qc.sample_testing[0].stock_entry
-		assert se, "batch-tracked sample stock entry was never posted (deferred forever)"
-		row = frappe.get_doc("Stock Entry", se).items[0]
-		assert row.batch_no, "sample Stock Entry does not name the batch the GRN received"
-
+		assert not qc.sample_testing[0].stock_entry, "a sample moved stock"
 		wh = frappe.db.get_single_value("Purchase Inward Settings", "qc_sample_warehouse")
 		qty = flt(frappe.db.get_value("Bin", {"item_code": code, "warehouse": wh}, "actual_qty"))
-		assert qty > 0, f"QC Sample warehouse {wh} still holds {qty}"
+		assert qty == 0, f"QC Sample warehouse {wh} received {qty}"
 
-	check("H1/H9 a batch-tracked sample actually moves to the QC Sample warehouse", h1_batch_sample_posts)
+	check("H1/H9 a batch-tracked sample moves no stock; the GRN receives the whole approved quantity", h1_batch_sample_posts)
 
 	return _report() if _report_now else R
 
@@ -1358,8 +1353,6 @@ def run_wave_a(_report_now=True):
 		pr = frappe.get_doc("Purchase Receipt", ch["pr"])
 		pr.submit()
 		frappe.db.commit()
-		qc = frappe.get_doc("Purchase QC", ch["qc"])
-		assert any(r.stock_entry for r in qc.sample_testing), "no sample Stock Entry was posted"
 		pr.reload()
 		pr.cancel()
 		frappe.db.commit()

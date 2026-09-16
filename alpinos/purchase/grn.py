@@ -551,9 +551,20 @@ def _grn_rows(inward, qc):
 			or line.target_warehouse
 			or inward.target_warehouse
 		)
-		# A line still under quarantine must not reach usable stock, whichever store
-		# it was destined for. The submit-for-QC guard should have stopped it long
-		# before here; this is the backstop on every other path into a receipt.
+		# QC quarantined the line: its approved quantity is received into the Quarantine
+		# warehouse and moves to `warehouse` only when the Quarantine document releases it.
+		hold = quarantine.qc_line_state(qc, decision) if decision else None
+		release_warehouse = warehouse if hold else None
+		if hold == C.QUARANTINE_HELD and approved > 0:
+			store = quarantine.warehouse_name(inward.company)
+			if not store:
+				frappe.throw(
+					_("Row {0}: {1} is quarantined, but no Quarantine warehouse is set in Purchase Inward Settings.").format(
+						line.idx, line.item_code
+					)
+				)
+			warehouse = store
+		# Older flow: a line still held on the inward never reaches usable stock.
 		warehouse = quarantine.target_for_line(line, warehouse)
 		if rejected > 0:
 			if not rejected_warehouse:
@@ -591,6 +602,8 @@ def _grn_rows(inward, qc):
 				or (qc.rejection_reason if qc and rejected > 0 else None),
 				"usp": line.usp,
 				"mrp": flt(line.mrp),
+				"quarantine_status": hold,
+				"release_warehouse": release_warehouse,
 				"batch_no": _batch_no(
 					line.item_code,
 					(decision.internal_batch_no if decision else None) or line.batch_no,
@@ -671,6 +684,8 @@ def _row_values(source):
 		("custom_rejection_reason", source["rejection_reason"], _("Rejection Reason")),
 		("custom_usp", source["usp"], _("USP")),
 		("custom_mrp", source["mrp"], _("MRP")),
+		("custom_quarantine_status", source["quarantine_status"], _("Quarantine")),
+		("custom_release_warehouse", source["release_warehouse"], _("Release To Warehouse")),
 	]
 
 
@@ -694,6 +709,8 @@ def _apply_row(row, source):
 	row.set("custom_rejection_reason", source["rejection_reason"])
 	row.set("custom_usp", source["usp"])
 	row.set("custom_mrp", source["mrp"])
+	row.set("custom_quarantine_status", source["quarantine_status"])
+	row.set("custom_release_warehouse", source["release_warehouse"])
 	if source["batch_no"]:
 		row.use_serial_batch_fields = 1
 		row.batch_no = source["batch_no"]

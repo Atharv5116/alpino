@@ -289,7 +289,7 @@ TASKS = {
 	38: "Pending receipts, QC pending and GRN register reports",
 	39: "Notifications",
 	40: "Master data readiness",
-	41: "Quarantine: whole inward or selected items",
+	41: "Quarantine: QC holds approved items until released",
 	42: "PO creation and approval before inward",
 	43: "QC SLA 2-hour timer",
 	44: "SLA escalation every 30 minutes",
@@ -846,12 +846,15 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 				      "custom_debit_note blank", "GAP")
 				qcd.reload()
 				srow = qcd.sample_testing[0] if qcd.sample_testing else None
-				check(24, "sample stock entry posted after the GRN", bool(srow and srow.stock_entry),
-				      f"stock_entry={srow.stock_entry if srow else None!r}", "GAP")
-				if srow and srow.stock_entry:
-					se_wh = frappe.db.get_value("Stock Entry Detail", {"parent": srow.stock_entry}, "t_warehouse")
-					check(24, "sample moved into the QC Sample warehouse",
-					      bool(se_wh) and "sample" in se_wh.lower(), f"t_warehouse={se_wh!r}")
+				# Samples are recorded on the QC and move no stock: the whole approved
+				# quantity stays in the warehouse (decided 2026-09-16).
+				check(24, "sample recorded without a stock movement", bool(srow) and not srow.stock_entry,
+				      f"stock_entry={srow.stock_entry if srow else None!r}")
+				acc_wh = g.items[0].warehouse
+				acc_in = frappe.db.sql("""SELECT SUM(actual_qty) FROM `tabStock Ledger Entry`
+				    WHERE voucher_no=%s AND warehouse=%s AND is_cancelled=0""", (pr_r, acc_wh))[0][0]
+				check(24, "the whole approved quantity is received into the warehouse",
+				      flt(acc_in) == flt(g.items[0].qty), f"received {acc_in} of approved {g.items[0].qty}")
 				probe(32, "GRN print renders", lambda: _assert_contains(frappe.get_print("Purchase Receipt", pr_r, print_format="GRN"), pr_r))
 				probe(31, "GRN detail loads through frappe.client.get", lambda: frappe.client.get("Purchase Receipt", pr_r), as_user=P)
 
@@ -944,7 +947,7 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 		assert (row.sample_id or "").upper().startswith("PMID"), f"sample_id={row.sample_id!r}"
 	probe(46, "PM sample row gets a PMID", t_pm_pmid)
 
-	# ---------------------------------------------------------------- 25 control sample posts
+	# ---------------------------------------------------------------- 25 control sample recorded
 	ctrl_wh = frappe.db.get_single_value("Purchase Inward Settings", "control_sample_warehouse")
 
 	def t_control_sample(storage):
@@ -953,58 +956,65 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 		                                  "storage_location": storage})
 		frappe.get_doc("Purchase Receipt", pr).submit()
 		row = frappe.get_doc("Purchase QC", qc).control_sample[0]
-		assert row.stock_entry, "no control-sample stock entry after the GRN"
-	probe(25, "control sample stored in the Control Sample warehouse posts after the GRN",
+		# Recorded with its storage location and retention; no stock leaves the warehouse.
+		assert not row.stock_entry, f"control sample moved stock: {row.stock_entry}"
+		assert row.storage_location == storage, f"storage location {row.storage_location!r}"
+		wh = frappe.db.get_value("Purchase Receipt Item", {"parent": pr}, "warehouse")
+		assert flt(frappe.db.sql("""SELECT SUM(actual_qty) FROM `tabStock Ledger Entry`
+		    WHERE item_code=%s AND warehouse=%s AND is_cancelled=0""", (row.item_code, wh))[0][0]) == 20, \
+			"the approved 20 are not all in the warehouse"
+	probe(25, "control sample is recorded without moving stock; all 20 approved stay in the warehouse",
 	      lambda: t_control_sample(ctrl_wh))
-	probe(25, "control sample whose Storage Location is the receiving warehouse", lambda: t_control_sample(T["wh"]),
-	      diff="the transfer is silently deferred ('source and destination warehouse are the same') and "
-	           "nothing tells the user; the retained sample stays in usable stock")
 
-	# ---------------------------------------------------------------- 41 quarantine
-	def _quar_ready():
+	# ---------------------------------------------------------------- 41 quarantine (decided at QC)
+	from alpinos.purchase import grn_edit as GE
+
+	def _quar_qc():
 		pi = mk_inward(mk_po(qty=20, lines=2))
 		pi.submit()
 		receive(pi, 20)
-		return pi.name
+		qcn = to_qc(pi)
+		qc_mod.start_qc(qcn)
+		# 15 approved / 5 rejected on both lines; the one sample is drawn from line 1.
+		fill_qc(qcn, rejected=5, sample=1)
+		return pi.name, qcn
 
-	q_whole = _quar_ready()
-	q_sel = _quar_ready()
+	q_pi, q_qc = _quar_qc()
 	frappe.db.commit()
+	check(41, "the inward no longer offers a quarantine of its own (QC decides it)",
+	      "create_quarantine" not in [a["action"] for a in IA.get_form_context(q_pi)["actions"]], "Create Quarantine still offered")
 
-	def _mark(name, rows=None, entire=0, reason="Suspected contamination"):
-		d = frappe.get_doc("Purchase Inward", name)
+	def _mark_qc(name, rows=None, all_items=0, reason="Suspected contamination"):
+		d = frappe.get_doc("Purchase QC", name)
 		d.quarantine_items = 1
-		d.quarantine_entire_inward = entire
+		d.quarantine_all_items = all_items
 		d.quarantine_reminder_days = 2
 		d.quarantine_reason = reason
 		for line in d.items:
 			line.quarantine = 1 if (rows and line.idx in rows) else 0
 		d.save()
 
-	probe(41, "Store marks the whole inward as quarantine", lambda: _mark(q_whole, entire=1), as_user=SM)
-	probe(41, "Submit for QC is refused while every item is quarantined",
-	      lambda: notif.submit_for_qc(q_whole), expect="Create Quarantine", as_user=SM)
-	probe(41, "Store creates the Quarantine document", lambda: Q.create_quarantine(q_whole), as_user=SM)
-	qrn = frappe.db.get_value("Purchase Inward", q_whole, "purchase_quarantine")
-	check(41, "whole inward sits at Quarantined with its Quarantine document",
-	      bool(qrn) and frappe.db.get_value("Purchase Inward", q_whole, "inward_status") == C.PI_QUARANTINED,
-	      f"qrn={qrn} status={frappe.db.get_value('Purchase Inward', q_whole, 'inward_status')}")
-	if qrn:
-		rows = frappe.get_all("Purchase Quarantine Item", filters={"parent": qrn}, pluck="name")
-		probe(41, "QC releases the quarantined items", lambda: Q.release_items(qrn, rows, "Cleared"), as_user=QM)
-		check(41, "after release the items have a QC and the inward is Pending QC",
-		      frappe.db.get_value("Purchase Inward", q_whole, "inward_status") == C.PI_PENDING_QC
-		      and bool(frappe.db.get_value("Purchase Inward", q_whole, "purchase_qc")),
-		      str(frappe.db.get_value("Purchase Inward", q_whole, ["inward_status", "purchase_qc"])))
-
-	probe(41, "Store quarantines one of two items", lambda: _mark(q_sel, rows=[2], reason="One line suspect"), as_user=SM)
-	probe(41, "VAL-QC-5 the other item still goes to QC", lambda: notif.submit_for_qc(q_sel), as_user=SM)
-	sel = frappe.get_doc("Purchase Inward", q_sel)
-	if sel.purchase_quarantine and sel.purchase_qc:
-		qc_lines = frappe.get_all("Purchase QC Item", filters={"parent": sel.purchase_qc}, pluck="purchase_inward_item")
-		q_lines = frappe.get_all("Purchase Quarantine Item", filters={"parent": sel.purchase_quarantine}, pluck="purchase_inward_item")
-		check(41, "held item is in the Quarantine document, the other in the QC",
-		      q_lines == [sel.items[1].name] and qc_lines == [sel.items[0].name], f"quarantine={q_lines} qc={qc_lines}")
+	probe(41, "QC quarantines one of two items", lambda: _mark_qc(q_qc, rows=[2]), as_user=QM)
+	probe(41, "QC completes the inspection with the item quarantined", lambda: qc_mod.complete_qc(q_qc), as_user=QM)
+	qdoc = frappe.db.get_value("Purchase QC", q_qc, "quarantine_document")
+	grn = frappe.db.get_value("Purchase QC", q_qc, "purchase_receipt")
+	store = Q.warehouse_name(frappe.db.get_value("Purchase QC", q_qc, "company"))
+	held = frappe.get_all("Purchase Quarantine Item", filters={"parent": qdoc}, fields=["name", "qty", "target_warehouse"]) if qdoc else []
+	check(41, "the Quarantine document holds the quarantined item's approved quantity",
+	      [flt(r.qty) for r in held] == [15.0], f"qrn={qdoc} rows={held}")
+	if qdoc and grn:
+		lines = frappe.get_all("Purchase Receipt Item", filters={"parent": grn},
+		                       fields=["idx", "warehouse", "custom_quarantine_status"], order_by="idx")
+		check(41, "the GRN receives the quarantined item into the Quarantine warehouse, the other into its own",
+		      len(lines) == 2 and lines[1].warehouse == store and lines[1].custom_quarantine_status == "Quarantined"
+		      and lines[0].warehouse != store, str(lines))
+		probe(41, "Admin submits the GRN", lambda: GE.submit_grn(grn), as_user=AD)
+		probe(41, "Store releases the quarantined item", lambda: Q.release_items(qdoc, [held[0].name], "Cleared"), as_user=SM)
+		entry = frappe.db.get_value("Purchase Quarantine Item", held[0].name, "release_stock_entry")
+		moved = frappe.db.get_value("Stock Entry Detail", {"parent": entry}, ["s_warehouse", "t_warehouse", "qty"], as_dict=True) if entry else None
+		check(41, "release moves the stock from the Quarantine warehouse into its warehouse",
+		      bool(moved) and moved.s_warehouse == store and moved.t_warehouse == held[0].target_warehouse and flt(moved.qty) == 15,
+		      f"entry={entry} moved={moved}")
 	check(41, "Quarantine Stock view exists", bool(frappe.db.exists("Page", "purchase_quarantine_list")), "page missing", "GAP")
 
 	# ---------------------------------------------------------------- 42

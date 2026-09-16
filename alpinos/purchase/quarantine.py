@@ -1,26 +1,33 @@
-"""Quarantine — hold received items out of QC and usable stock until they are released.
+"""Quarantine — hold QC-approved stock in the Quarantine warehouse until it is released.
 
-On the Purchase Inward, Store ticks "Quarantine Items" and then either "Quarantine Entire
-Inward" or the individual lines, with one reason and one reminder interval for the lot.
+QC decides it. On the Purchase QC, QC ticks "Quarantine Items" and then either "Quarantine
+All Items" or the individual lines in the QC Decision table, with one reason and one
+reminder interval for the lot. What is held is the line's approved quantity; the rejected
+quantity goes to the Rejected warehouse and the debit note exactly as without quarantine.
 
-At the hand-over the held lines go into a separate Purchase Quarantine document:
+When the QC is completed:
 
-    some items held   Submit for QC -> Purchase Quarantine (held lines) + Purchase QC (the rest)
-    every item held   Create Quarantine (replaces Submit for QC) -> Purchase Quarantine only;
-                      the inward sits at Quarantined
+    * the Draft GRN receives a quarantined line into the Quarantine warehouse, marks it
+      Quarantined and records the warehouse it belongs in (custom_release_warehouse);
+      every other line is received into its warehouse as usual;
+    * one Purchase Quarantine document holds the quarantined lines and the reminder.
 
-While held, a line cannot reach QC and never reaches a receipt, so it is never in usable
-stock. Store, QC or an Admin releases lines from the Quarantine document whenever they
-choose, or when the reminder prompts them. A release raises a Purchase QC for exactly the
-released lines, and from there they follow the normal QC -> GRN -> Purchase Invoice path:
+So submitting the GRN puts the quarantined quantity into stock, but only in the Quarantine
+warehouse, out of use. The Purchase Invoice bills the GRN as usual.
 
-    * the inward has no live QC yet (everything was quarantined) -> it becomes the inward's
-      QC, and the inward moves on to Pending QC as usual;
-    * otherwise it is a QC of its own, with its own GRN and invoice, and leaves the inward's
-      first QC / GRN untouched.
+Release (Store, QC or Admin, from the Quarantine document) moves a line to its warehouse:
 
-Releasing marks the line Released rather than clearing the tick, so the hold stays visible
-on the inward after it is lifted.
+    GRN still Draft   the draft line is re-pointed at its warehouse, so the GRN receives it
+                      there directly when it is submitted;
+    GRN submitted     a Material Transfer moves the whole quantity from the Quarantine
+                      warehouse into its warehouse.
+
+Release is the only way out; there is no reject from quarantine.
+
+Older flow (before quarantine moved to QC): Store marked items on the Purchase Inward, those
+lines were kept out of QC, and releasing one raised a Purchase QC of its own. Documents
+raised that way have no purchase_qc; release_items still releases them the old way so they
+can be finished, and nothing creates new ones.
 """
 
 import json
@@ -34,61 +41,14 @@ from alpinos.purchase import constants as C
 INWARD = "Purchase Inward"
 INWARD_ITEM = "Purchase Inward Item"
 QUARANTINE = "Purchase Quarantine"
+QUARANTINE_ITEM = "Purchase Quarantine Item"
 QC = "Purchase QC"
+GRN = "Purchase Receipt"
+GRN_ITEM = "Purchase Receipt Item"
 
-#: Store quarantines at receipt; Store, QC or an Admin may release.
-MARK_ROLES = C.STORE_ROLES + C.ADMIN_ROLES
+#: QC quarantines while deciding; Store, QC or an Admin may release.
+MARK_ROLES = C.QC_ROLES + C.ADMIN_ROLES
 RELEASE_ROLES = C.STORE_ROLES + C.QC_ROLES + C.ADMIN_ROLES
-
-
-# ------------------------------------------------------------------ line state
-
-
-def _held(line):
-	"""A line under an OPEN hold: ticked and not yet released."""
-	return bool(cint(line.get("quarantine"))) and line.get("quarantine_status") != C.QUARANTINE_RELEASED
-
-
-def held_lines(doc):
-	"""Received lines currently held."""
-	return [
-		line for line in (doc.get("items") or []) if flt(line.get("received_qty")) > 0 and _held(line)
-	]
-
-
-def open_lines(doc):
-	"""Row numbers of every line still held, in order."""
-	return [line.idx for line in held_lines(doc)]
-
-
-def all_received_held(doc):
-	"""True when there is something received and every received line is held."""
-	received = [line for line in (doc.get("items") or []) if flt(line.get("received_qty")) > 0]
-	return bool(received) and all(_held(line) for line in received)
-
-
-def setup_error(doc):
-	"""What is still missing before a quarantine can be raised, or None."""
-	if doc.get("purchase_quarantine"):
-		return None
-	if not cint(doc.get("quarantine_items")):
-		return None
-	if not held_lines(doc):
-		return _("Select the items to quarantine, or tick Quarantine Entire Inward.")
-	if cint(doc.get("quarantine_reminder_days")) <= 0:
-		return _("Enter after how many days you want to be reminded about the quarantined items.")
-	return None
-
-
-def target_for_line(line, fallback):
-	"""Where a line's quantity belongs: the Quarantine warehouse while it is held.
-
-	A held line is kept off every receipt, so this is a backstop for any path that still
-	reaches the GRN builder with one.
-	"""
-	if not _held(line):
-		return fallback
-	return warehouse_name() or fallback
 
 
 def warehouse_name(company=None):
@@ -101,117 +61,304 @@ def warehouse_name(company=None):
 		return None
 
 
-def apply_selection(doc):
-	"""Normalise the quarantine picks on a Store Receiving save. Runs on the inward.
+# ============================================================ QC quarantine (current)
 
-	Untick "Quarantine Items" and every pick is cleared; tick "Quarantine Entire Inward"
-	and every received line is picked. The header reason is copied onto picked lines that
-	have none. Once the Quarantine document exists the picks are history and are left alone.
+
+def held_qty(line):
+	"""What a quarantined QC line holds: its whole approved quantity (samples move no stock)."""
+	return flt(line.get("approved_qty"))
+
+
+def apply_qc_selection(qc):
+	"""Normalise the picks while the QC is a draft. Runs in PurchaseQC.validate.
+
+	Untick "Quarantine Items" and every line is cleared; tick "Quarantine All Items" and
+	every line with an approved quantity is picked (recomputed on each save, so a line that
+	gains or loses its approved quantity follows).
 	"""
-	if doc.get("purchase_quarantine") or cint(doc.get("docstatus")) != 1:
+	if cint(qc.get("docstatus")) != 0:
 		return
-	if doc.get("inward_status") not in C.PI_RECEIVING_OPEN:
+	lines = qc.get("items") or []
+	if not cint(qc.get("quarantine_items")):
+		qc.quarantine_all_items = 0
+		for line in lines:
+			line.quarantine = 0
 		return
-	items = doc.get("items") or []
-	if not cint(doc.get("quarantine_items")):
-		doc.quarantine_entire_inward = 0
-		for line in items:
-			if not line.get("quarantine_status"):
-				line.quarantine = 0
+	if cint(qc.get("quarantine_all_items")):
+		for line in lines:
+			line.quarantine = 1 if flt(line.approved_qty) > 0 else 0
+
+
+def assert_qc_ready(qc):
+	"""Before the QC is submitted: a quarantine that is asked for must be complete."""
+	if not cint(qc.get("quarantine_items")):
 		return
-	if cint(doc.get("quarantine_entire_inward")):
-		for line in items:
-			line.quarantine = 1 if flt(line.received_qty) > 0 else 0
-	reason = (doc.get("quarantine_reason") or "").strip()
-	for line in items:
-		if cint(line.quarantine) and reason and not (line.get("quarantine_reason") or "").strip():
-			line.quarantine_reason = reason
+	picked = [line for line in qc.get("items") or [] if cint(line.quarantine)]
+	if not picked:
+		frappe.throw(
+			_("Select the items to quarantine in the QC Decision table, or tick Quarantine All Items."),
+			title=_("Quarantine"),
+		)
+	if cint(qc.get("quarantine_reminder_days")) <= 0:
+		frappe.throw(
+			_("Enter after how many days you want to be reminded about the quarantined items."),
+			title=_("Quarantine"),
+		)
+	if not warehouse_name(qc.get("company")):
+		frappe.throw(
+			_("The Quarantine warehouse is not set in Purchase Inward Settings, so nothing can be quarantined."),
+			title=_("Quarantine"),
+		)
+	for line in picked:
+		if held_qty(line) <= 0:
+			frappe.throw(
+				_("Row {0} ({1}): nothing is approved, so there is nothing to quarantine. Untick it.").format(
+					line.idx, line.item_code
+				),
+				title=_("Quarantine"),
+			)
 
 
-# ------------------------------------------------------------------ the document
+def qc_line_state(qc, line):
+	"""Quarantined / Released / None for one QC decision line, for the GRN builder.
+
+	A ticked line on a completed QC is Quarantined until its Quarantine row says otherwise;
+	the Quarantine document itself is raised a moment after the GRN, in the same submit.
+	"""
+	if not qc or cint(qc.get("docstatus")) != 1 or not cint(line.get("quarantine")):
+		return None
+	if not cint(qc.get("quarantine_items")):
+		return None
+	status = frappe.db.get_value(QUARANTINE_ITEM, {"purchase_qc_item": line.name}, "status")
+	return status or C.QUARANTINE_HELD
 
 
-def create_quarantine_document(inward, lines):
-	"""Raise the Purchase Quarantine for `lines` and mark them held on the inward."""
-	if inward.get("purchase_quarantine") and frappe.db.exists(QUARANTINE, inward.purchase_quarantine):
-		return frappe.get_doc(QUARANTINE, inward.purchase_quarantine)
+def create_from_qc(qc):
+	"""Raise the Purchase Quarantine for a just-submitted QC. Runs in PurchaseQC.on_submit."""
+	if not cint(qc.get("quarantine_items")):
+		return None
+	lines = [line for line in qc.get("items") or [] if cint(line.quarantine)]
 	if not lines:
-		frappe.throw(_("No received item is marked for quarantine."))
+		return None
+	if qc.get("quarantine_document") and frappe.db.exists(QUARANTINE, qc.quarantine_document):
+		return frappe.get_doc(QUARANTINE, qc.quarantine_document)
 
-	now = now_datetime()
+	inward = frappe.get_doc(INWARD, qc.purchase_inward)
+	inward_lines = {line.name: line for line in inward.get("items") or []}
+	store = warehouse_name(qc.company)
+	approved = [line for line in qc.get("items") or [] if flt(line.approved_qty) > 0]
+
 	q = frappe.new_doc(QUARANTINE)
 	q.purchase_inward = inward.name
+	q.purchase_qc = qc.name
 	q.purchase_order = inward.get("purchase_order")
 	q.supplier = inward.get("supplier")
 	q.supplier_name = inward.get("supplier_name")
-	q.company = inward.get("company")
-	q.quarantine_date = now
+	q.company = qc.company
+	q.quarantine_date = now_datetime()
 	q.quarantined_by = frappe.session.user
-	q.entire_inward = 1 if all_received_held(inward) else 0
-	q.reason = inward.get("quarantine_reason")
-	q.reminder_days = cint(inward.get("quarantine_reminder_days"))
+	q.entire_inward = 1 if len(lines) == len(approved) else 0
+	q.reason = qc.get("quarantine_reason")
+	q.reminder_days = cint(qc.get("quarantine_reminder_days"))
 	for line in lines:
+		src = inward_lines.get(line.purchase_inward_item)
 		q.append(
 			"items",
 			{
-				"purchase_inward_item": line.name,
+				"purchase_inward_item": line.purchase_inward_item,
+				"purchase_qc_item": line.name,
 				"item_code": line.item_code,
 				"item_name": line.item_name,
 				"uom": line.uom,
-				"qty": flt(line.received_qty),
-				"batch_no": line.get("batch_no"),
-				"target_warehouse": line.get("target_warehouse") or inward.get("target_warehouse"),
+				"qty": held_qty(line),
+				"batch_no": line.get("internal_batch_no") or (src.get("batch_no") if src else None),
+				"target_warehouse": line.get("target_warehouse")
+				or (src.get("target_warehouse") if src else None)
+				or inward.get("target_warehouse"),
+				"quarantine_warehouse": store,
 				"status": C.QUARANTINE_HELD,
 			},
 		)
-	# The system raises it on the Store user's hand-over; who may do that was decided by
-	# the workflow transition that called this.
+	# The system raises it as part of completing the QC; who may complete a QC was decided
+	# by the workflow transition that submitted it.
 	q.insert(ignore_permissions=True)
 
-	for line in lines:
-		values = {
-			"quarantine": 1,
-			"quarantine_status": C.QUARANTINE_HELD,
-			"quarantine_date": now,
-			"quarantine_reason": line.get("quarantine_reason") or inward.get("quarantine_reason"),
-		}
-		frappe.db.set_value(INWARD_ITEM, line.name, values, update_modified=False)
-		for key, value in values.items():
-			line.set(key, value)
-	inward.db_set("purchase_quarantine", q.name, update_modified=False)
+	qc.db_set("quarantine_document", q.name, update_modified=False)
+	receipt = qc.get("purchase_receipt")
+	if receipt and frappe.db.exists(GRN, receipt):
+		frappe.db.set_value(GRN, receipt, "custom_purchase_quarantine", q.name, update_modified=False)
+	if not inward.get("purchase_quarantine"):
+		inward.db_set("purchase_quarantine", q.name, update_modified=False)
 	return q
 
 
-def _stamp_receipt(inward):
-	now = now_datetime()
-	inward.db_set(
-		{
-			"received_by": inward.get("received_by") or frappe.session.user,
-			"receiving_datetime": inward.get("receiving_datetime") or now,
-		},
-		update_modified=False,
+def assert_grn_cancellable(pr):
+	"""A GRN whose quarantined stock was already moved out cannot be cancelled first.
+
+	Cancelling it would take that quantity back out of the Quarantine warehouse, where it no
+	longer is. Say which transfers to cancel instead of failing with a negative-stock error.
+	"""
+	name = pr.get("custom_purchase_quarantine")
+	if not name or not frappe.db.exists(QUARANTINE, name):
+		return
+	moved = [
+		row.release_stock_entry
+		for row in frappe.get_doc(QUARANTINE, name).get("items") or []
+		if row.get("release_stock_entry")
+		and frappe.db.get_value("Stock Entry", row.release_stock_entry, "docstatus") == 1
+	]
+	if moved:
+		frappe.throw(
+			_(
+				"Quarantined items on this GRN were already released into their warehouse by {0}. "
+				"Cancel those Stock Entries first."
+			).format(", ".join(frappe.bold(m) for m in moved)),
+			title=_("Released From Quarantine"),
+		)
+
+
+def on_qc_cancel(qc):
+	"""A cancelled QC takes its quarantine with it; a fresh QC decides again."""
+	name = qc.get("quarantine_document")
+	if not name or not frappe.db.exists(QUARANTINE, name):
+		return
+	q = frappe.get_doc(QUARANTINE, name)
+	moved = [
+		row.release_stock_entry
+		for row in q.get("items") or []
+		if row.get("release_stock_entry")
+		and frappe.db.get_value("Stock Entry", row.release_stock_entry, "docstatus") == 1
+	]
+	if moved:
+		frappe.throw(
+			_("Items of Quarantine Document {0} were released by {1}. Cancel those Stock Entries first.").format(
+				name, ", ".join(moved)
+			)
+		)
+	if frappe.db.get_value(INWARD, q.purchase_inward, "purchase_quarantine") == name:
+		frappe.db.set_value(INWARD, q.purchase_inward, "purchase_quarantine", None, update_modified=False)
+	for receipt in frappe.get_all(GRN, filters={"custom_purchase_quarantine": name}, pluck="name"):
+		frappe.db.set_value(GRN, receipt, "custom_purchase_quarantine", None, update_modified=False)
+	qc.db_set("quarantine_document", None, update_modified=False)
+	frappe.delete_doc(QUARANTINE, name, force=True, ignore_permissions=True)
+
+
+def _release_from_qc(q, targets, remarks):
+	"""Move released lines into their warehouse: re-point the draft GRN, or transfer the stock."""
+	qc = frappe.get_doc(QC, q.purchase_qc)
+	receipt = qc.get("purchase_receipt")
+	if not receipt or frappe.db.get_value(GRN, receipt, "docstatus") in (None, 2):
+		frappe.throw(
+			_("Purchase QC {0} has no live GRN, so there is no stock to release. Generate or amend its GRN first.").format(
+				qc.name
+			),
+			title=_("No GRN"),
+		)
+	pr = frappe.get_doc(GRN, receipt)
+	by_inward_item = {r.get("custom_purchase_inward_item"): r for r in pr.get("items") or []}
+	pairs = []
+	for row in targets:
+		pr_row = by_inward_item.get(row.purchase_inward_item)
+		if not pr_row:
+			frappe.throw(_("Row {0}: {1} is not on GRN {2}.").format(row.idx, row.item_code, pr.name))
+		pairs.append((row, pr_row))
+
+	entries = {}
+	if cint(pr.docstatus) == 0:
+		for row, pr_row in pairs:
+			pr_row.warehouse = pr_row.get("custom_release_warehouse") or row.target_warehouse
+			pr_row.custom_quarantine_status = C.QUARANTINE_RELEASED
+		# The Quarantine document moving its own lines, not a person editing the draft: kept
+		# out of the Draft Edit Log and past the quarantined-line guard.
+		pr.flags.grn_system_sync = True
+		pr.flags.ignore_permissions = True
+		pr.save()
+	else:
+		for row, pr_row in pairs:
+			entries[row.name] = _transfer_out_of_quarantine(q, qc, pr, pr_row, row, remarks)
+			frappe.db.set_value(
+				GRN_ITEM, pr_row.name, "custom_quarantine_status", C.QUARANTINE_RELEASED, update_modified=False
+			)
+	return entries
+
+
+def _grn_row_batch(pr_row):
+	if pr_row.get("batch_no"):
+		return pr_row.batch_no
+	if pr_row.get("serial_and_batch_bundle"):
+		return frappe.db.get_value(
+			"Serial and Batch Entry", {"parent": pr_row.serial_and_batch_bundle}, "batch_no", order_by="idx asc"
+		)
+	return None
+
+
+def _transfer_out_of_quarantine(q, qc, pr, pr_row, row, remarks):
+	"""Post the Material Transfer that releases one submitted GRN line."""
+	store = pr_row.warehouse
+	target = pr_row.get("custom_release_warehouse") or row.target_warehouse
+	if not target or target == store:
+		frappe.throw(_("Row {0}: {1} has no warehouse to be released into.").format(row.idx, row.item_code))
+
+	factor = flt(pr_row.conversion_factor) or 1.0
+	# The whole quantity the GRN received into the Quarantine warehouse.
+	stock_qty = flt(pr_row.stock_qty) or flt(pr_row.qty) * factor
+	if stock_qty <= 0:
+		frappe.throw(_("Row {0}: nothing of {1} is left in quarantine to release.").format(row.idx, row.item_code))
+
+	stock_uom = frappe.get_cached_value("Item", row.item_code, "stock_uom")
+	batch_no = _grn_row_batch(pr_row)
+	if batch_no:
+		from erpnext.stock.doctype.batch.batch import get_batch_qty
+
+		available = flt(get_batch_qty(batch_no=batch_no, warehouse=store))
+	else:
+		# The ledger, not Bin: Bin can trail the sample transfer the GRN submit just posted.
+		from erpnext.stock.utils import get_stock_balance
+
+		available = flt(get_stock_balance(row.item_code, store))
+	if available + 1e-6 < stock_qty:
+		frappe.throw(
+			_("Row {0}: only {1} {2} of {3} is in {4}, so {5} cannot be released.").format(
+				row.idx, flt(available), stock_uom, row.item_code, store, flt(stock_qty)
+			),
+			title=_("Not In Quarantine"),
+		)
+
+	entry = frappe.new_doc("Stock Entry")
+	entry.stock_entry_type = "Material Transfer"
+	entry.purpose = "Material Transfer"
+	entry.company = pr.company
+	entry.remarks = _("Released from Quarantine Document {0} (GRN {1}).{2}").format(
+		q.name, pr.name, (" " + remarks) if remarks else ""
 	)
+	entry.append(
+		"items",
+		{
+			"item_code": row.item_code,
+			"uom": stock_uom,
+			"stock_uom": stock_uom,
+			"conversion_factor": 1.0,
+			"qty": stock_qty,
+			"s_warehouse": store,
+			"t_warehouse": target,
+			"use_serial_batch_fields": 1 if batch_no else 0,
+			"batch_no": batch_no,
+		},
+	)
+	# The release role is the gate (release_items); Store and QC hold no Stock Entry or
+	# Account permission of their own, and the ledger lookups check Account read.
+	entry.flags.ignore_permissions = True
+	previous = frappe.flags.ignore_account_permission
+	frappe.flags.ignore_account_permission = True
+	try:
+		entry.insert()
+		entry.submit()
+	finally:
+		frappe.flags.ignore_account_permission = previous
+	return entry.name
 
 
-@frappe.whitelist()
-def create_quarantine(purchase_inward):
-	"""Every item is quarantined: hand the inward over to quarantine instead of QC."""
-	from alpinos.purchase import workflow
-
-	inward = frappe.get_doc(INWARD, purchase_inward)
-	inward.check_permission("write")
-	workflow.assert_transition(inward, "create_quarantine", frappe.session.user)
-	if cint(inward.docstatus) != 1:
-		frappe.throw(_("Submit the Purchase Inward first."))
-
-	frappe.db.get_value(INWARD, inward.name, "name", for_update=True)
-	_stamp_receipt(inward)
-	q = create_quarantine_document(inward, held_lines(inward))
-	workflow.set_status(inward, C.PI_QUARANTINED)
-	return {"purchase_quarantine": q.name, "inward_status": C.PI_QUARANTINED}
-
-
-# ---------------------------------------------------------------------- release
+# ================================================================ release (both)
 
 
 def _assert_role(roles, what):
@@ -232,10 +379,7 @@ def _parse_rows(rows):
 
 @frappe.whitelist()
 def release_items(purchase_quarantine, rows=None, remarks=None):
-	"""Release the selected quarantined lines and raise their Purchase QC."""
-	from alpinos.purchase import notifications, workflow
-	from alpinos.purchase.settings import get_settings
-
+	"""Release the selected quarantined lines into their warehouse."""
 	_assert_role(RELEASE_ROLES, _("release quarantined items"))
 	q = frappe.get_doc(QUARANTINE, purchase_quarantine)
 	q.check_permission("read")
@@ -244,31 +388,81 @@ def release_items(purchase_quarantine, rows=None, remarks=None):
 	if not wanted:
 		frappe.throw(_("Select the items to release."))
 
-	inward = frappe.get_doc(INWARD, q.purchase_inward)
-	if cint(inward.docstatus) != 1:
-		frappe.throw(_("Purchase Inward {0} is not submitted.").format(inward.name))
-
 	frappe.db.get_value(QUARANTINE, q.name, "name", for_update=True)
 	targets = [r for r in q.get("items") or [] if r.name in wanted and r.status == C.QUARANTINE_HELD]
 	if not targets:
 		frappe.throw(_("None of the selected items is still quarantined."))
+
+	remarks = (remarks or "").strip() or None
+	if not q.get("purchase_qc"):
+		return _release_older_flow(q, targets, remarks)
+
+	entries = _release_from_qc(q, targets, remarks)
+	now = now_datetime()
+	for row in targets:
+		row.status = C.QUARANTINE_RELEASED
+		row.released_on = now
+		row.released_by = frappe.session.user
+		row.release_remarks = remarks
+		row.release_stock_entry = entries.get(row.name)
+	q.flags.ignore_permissions = True
+	q.save()
+	return {
+		"released": [row.name for row in targets],
+		"stock_entries": [e for e in entries.values() if e],
+		"purchase_receipt": frappe.db.get_value(QC, q.purchase_qc, "purchase_receipt"),
+		"status": q.status,
+	}
+
+
+# ============================================================== older flow (inward)
+
+
+def _held(line):
+	"""An inward line under an older-flow hold: ticked and not yet released."""
+	return bool(cint(line.get("quarantine"))) and line.get("quarantine_status") == C.QUARANTINE_HELD
+
+
+def held_lines(doc):
+	"""Received inward lines still held by an older-flow Quarantine document."""
+	return [
+		line for line in (doc.get("items") or []) if flt(line.get("received_qty")) > 0 and _held(line)
+	]
+
+
+def all_received_held(doc):
+	received = [line for line in (doc.get("items") or []) if flt(line.get("received_qty")) > 0]
+	return bool(received) and all(_held(line) for line in received)
+
+
+def target_for_line(line, fallback):
+	"""Backstop for the older flow: an inward line still held never reaches usable stock."""
+	if not _held(line):
+		return fallback
+	return warehouse_name() or fallback
+
+
+def _release_older_flow(q, targets, remarks):
+	"""Release lines quarantined on the inward: they get a Purchase QC of their own."""
+	from alpinos.purchase import notifications, workflow
+	from alpinos.purchase.settings import get_settings
+
+	inward = frappe.get_doc(INWARD, q.purchase_inward)
+	if cint(inward.docstatus) != 1:
+		frappe.throw(_("Purchase Inward {0} is not submitted.").format(inward.name))
 
 	inward_lines = {line.name: line for line in inward.get("items") or []}
 	lines = []
 	for row in targets:
 		line = inward_lines.get(row.purchase_inward_item)
 		if not line:
-			frappe.throw(
-				_("Row {0}: its Purchase Inward line no longer exists.").format(row.idx)
-			)
+			frappe.throw(_("Row {0}: its Purchase Inward line no longer exists.").format(row.idx))
 		lines.append(line)
 
 	main_qc = inward.get("purchase_qc")
 	main_live = bool(main_qc) and frappe.db.get_value(QC, main_qc, "docstatus") != 2
 
 	now = now_datetime()
-	# Release the lines on the inward before the QC is built, so the QC sees them as
-	# ordinary lines rather than held ones.
 	for line in lines:
 		frappe.db.set_value(
 			INWARD_ITEM,
@@ -278,11 +472,8 @@ def release_items(purchase_quarantine, rows=None, remarks=None):
 		)
 		line.quarantine_status = C.QUARANTINE_RELEASED
 
-	qc = notifications.build_purchase_qc(
-		inward, lines, sla_start=now, purchase_quarantine=q.name
-	)
+	qc = notifications.build_purchase_qc(inward, lines, sla_start=now, purchase_quarantine=q.name)
 
-	remarks = (remarks or "").strip() or None
 	for row in targets:
 		row.status = C.QUARANTINE_RELEASED
 		row.released_on = now
@@ -293,8 +484,6 @@ def release_items(purchase_quarantine, rows=None, remarks=None):
 	q.save()
 
 	if not main_live:
-		# Everything had been quarantined, so this QC is the inward's own: the inward picks up
-		# the ordinary QC -> GRN -> Invoice path from here.
 		inward.db_set({"purchase_qc": qc.name, "qc_status": C.QC_PENDING}, update_modified=False)
 		if inward.inward_status in (C.PI_QUARANTINED, C.PI_PENDING_RECEIPT):
 			workflow.set_status(inward, C.PI_PENDING_QC)
@@ -311,7 +500,7 @@ def release_items(purchase_quarantine, rows=None, remarks=None):
 
 
 def revert_release(qc):
-	"""A cancelled release-QC puts its lines back under quarantine, so they can be released again."""
+	"""Older flow: a cancelled release-QC puts its lines back under quarantine."""
 	if not qc.get("purchase_quarantine") or not frappe.db.exists(QUARANTINE, qc.purchase_quarantine):
 		return
 	q = frappe.get_doc(QUARANTINE, qc.purchase_quarantine)
@@ -357,24 +546,33 @@ def update_reminder(purchase_quarantine, reminder_days):
 
 @frappe.whitelist()
 def get_quarantine_context(purchase_quarantine):
-	"""What the Quarantine screen may offer."""
+	"""What the Quarantine, QC and GRN screens may offer for one Quarantine document."""
 	q = frappe.get_doc(QUARANTINE, purchase_quarantine)
 	q.check_permission("read")
 	may = bool(set(frappe.get_roles()).intersection(RELEASE_ROLES))
 	held = [r.name for r in q.get("items") or [] if r.status == C.QUARANTINE_HELD]
-	# "Go to QC" offers every QC these goods touch: the QC each release raised, and the
-	# inward's own QC that took the items which were never quarantined.
-	qcs = {}
-	for row in q.get("items") or []:
-		if row.purchase_qc and row.purchase_qc not in qcs:
-			qcs[row.purchase_qc] = "released"
-	main_qc = frappe.db.get_value(INWARD, q.purchase_inward, "purchase_qc")
-	if main_qc and main_qc not in qcs:
-		qcs[main_qc] = "inward"
+	receipt = frappe.db.get_value(QC, q.purchase_qc, "purchase_receipt") if q.get("purchase_qc") else None
+
+	if q.get("purchase_qc"):
+		qcs = {q.purchase_qc: "quarantined"}
+	else:
+		# Older flow: the QC each release raised, and the inward's own QC.
+		qcs = {}
+		for row in q.get("items") or []:
+			if row.purchase_qc and row.purchase_qc not in qcs:
+				qcs[row.purchase_qc] = "released"
+		main_qc = frappe.db.get_value(INWARD, q.purchase_inward, "purchase_qc")
+		if main_qc and main_qc not in qcs:
+			qcs[main_qc] = "inward"
 	return {
+		"flow": "qc" if q.get("purchase_qc") else "inward",
 		"can_release": may and bool(held),
 		"can_edit_reminder": may and q.status != C.QRN_RELEASED,
 		"held_rows": held,
+		"purchase_qc": q.get("purchase_qc"),
+		"purchase_receipt": receipt,
+		"receipt_docstatus": cint(frappe.db.get_value(GRN, receipt, "docstatus")) if receipt else None,
+		"line_states": {r.purchase_qc_item: r.status for r in q.get("items") or [] if r.get("purchase_qc_item")},
 		"purchase_qcs": [
 			{
 				"name": name,
@@ -395,11 +593,7 @@ def status(purchase_inward):
 	doc = frappe.get_doc(INWARD, purchase_inward)
 	doc.check_permission("read")
 	roles = set(frappe.get_roles(frappe.session.user))
-	held = open_lines(doc)
 	return {
-		"held_rows": held,
-		"any_held": bool(held),
-		"all_held": all_received_held(doc),
 		"purchase_quarantine": doc.get("purchase_quarantine"),
 		"may_mark": bool(roles.intersection(MARK_ROLES)),
 		"may_release": bool(roles.intersection(RELEASE_ROLES)),

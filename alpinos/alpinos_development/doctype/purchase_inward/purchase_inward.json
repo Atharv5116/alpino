@@ -477,7 +477,8 @@
   {
    "fieldname": "quarantine_header_section",
    "fieldtype": "Section Break",
-   "label": "Quarantine"
+   "label": "Quarantine",
+   "hidden": 1
   },
   {
    "fieldname": "quarantine_items",
@@ -485,7 +486,8 @@
    "label": "Quarantine Items",
    "allow_on_submit": 1,
    "default": "0",
-   "description": "Hold items out of QC and usable stock until they are released from the Quarantine document."
+   "description": "Hold items out of QC and usable stock until they are released from the Quarantine document.",
+   "hidden": 1
   },
   {
    "fieldname": "quarantine_entire_inward",
@@ -494,11 +496,13 @@
    "allow_on_submit": 1,
    "default": "0",
    "depends_on": "quarantine_items",
-   "description": "Every received item is quarantined. Leave unticked to pick the items individually."
+   "description": "Every received item is quarantined. Leave unticked to pick the items individually.",
+   "hidden": 1
   },
   {
    "fieldname": "col_quarantine",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "quarantine_reminder_days",
@@ -506,14 +510,16 @@
    "label": "Remind After (Days)",
    "allow_on_submit": 1,
    "depends_on": "quarantine_items",
-   "description": "One reminder for the whole Quarantine document to review and release the items."
+   "description": "One reminder for the whole Quarantine document to review and release the items.",
+   "hidden": 1
   },
   {
    "fieldname": "quarantine_reason",
    "fieldtype": "Small Text",
    "label": "Quarantine Reason",
    "allow_on_submit": 1,
-   "depends_on": "quarantine_items"
+   "depends_on": "quarantine_items",
+   "hidden": 1
   },
   {
    "fieldname": "purchase_quarantine",

@@ -144,10 +144,11 @@
   },
   {
    "default": "0",
-   "description": "Row-level quarantine flag (BR-QC-10). Flag only in this phase - no hold, quarantine view or release is built.",
+   "description": "Hold this line's approved quantity in the Quarantine warehouse.",
    "fieldname": "quarantine",
    "fieldtype": "Check",
-   "label": "Quarantine"
+   "label": "Quarantine",
+   "read_only": 0
   },
   {
    "description": "Purchase Order Item row name, mirroring Purchase Receipt Item.purchase_order_item.",

@@ -40,8 +40,11 @@ frappe.pages['purchase_inward_entry'].on_page_show = function (wrapper) {
 
 var PIW_INWARD_TYPES = ['RM', 'PM', 'FG', 'MM'];
 
-// The Store hand-overs. Both read the stored receipt, so the page saves before running them.
-var PIW_SAVE_FIRST_ACTIONS = ['submit_for_qc', 'create_quarantine'];
+// The Store hand-over reads the stored receipt, so the page saves before running it.
+var PIW_SAVE_FIRST_ACTIONS = ['submit_for_qc'];
+
+// Performed on the QC screen (workflow.QC_SCREEN_ACTIONS); the inward offers Go to QC instead.
+var PIW_QC_SCREEN_ACTIONS = ['start_qc', 'complete_qc'];
 
 var PurchaseInwardEntry = class {
 	constructor(page) {
@@ -455,25 +458,6 @@ var PurchaseInwardEntry = class {
 			fieldname: 'receiving_remarks', label: 'Receiving Remarks', fieldtype: 'Small Text',
 		});
 
-		// Quarantine: hold items out of QC and usable stock until they are released from the
-		// Quarantine document raised at the hand-over (alpinos.purchase.quarantine).
-		this._ctl('.field-quarantine-items', {
-			fieldname: 'quarantine_items', label: 'Quarantine Items', fieldtype: 'Check',
-			change: () => me.apply_quarantine_ui(),
-		});
-		this._ctl('.field-quarantine-entire', {
-			fieldname: 'quarantine_entire_inward', label: 'Quarantine Entire Inward', fieldtype: 'Check',
-			description: 'Every received item is quarantined. Leave unticked to pick items in the Quarantine column.',
-			change: () => me.apply_quarantine_ui(),
-		});
-		this._ctl('.field-quarantine-reminder', {
-			fieldname: 'quarantine_reminder_days', label: 'Remind After (Days)', fieldtype: 'Int',
-			description: 'One reminder for the whole Quarantine document.',
-		});
-		this._ctl('.field-quarantine-reason', {
-			fieldname: 'quarantine_reason', label: 'Quarantine Reason', fieldtype: 'Small Text',
-		});
-
 		// dispute evidence (task 301)
 		this._ctl('.field-dispute-file', {
 			fieldname: 'dispute_file', label: 'File', fieldtype: 'Attach',
@@ -519,7 +503,6 @@ var PurchaseInwardEntry = class {
 					<td class="cell-expiry"></td>
 					<td class="cell-mrp"></td>
 					<td class="cell-usp"></td>
-					<td class="cell-quarantine col-quarantine text-center"></td>
 				</tr>
 			`);
 			$body.append($tr);
@@ -576,47 +559,7 @@ var PurchaseInwardEntry = class {
 				row.mrp, function (val) { me.items[idx].mrp = flt(val); });
 			mk('.cell-usp', { fieldtype: 'Data', fieldname: 'usp' },
 				row.usp, function (val) { me.items[idx].usp = val; });
-			if (row.quarantine_status) {
-				// Already in a Quarantine document: show where it stands, never a tick to undo.
-				$tr.find('.cell-quarantine').html(
-					`<span class="indicator-pill ${row.quarantine_status === 'Released' ? 'green' : 'red'}" style="font-size:10px;">${frappe.utils.escape_html(__(row.quarantine_status))}</span>`
-				);
-			} else {
-				mk('.cell-quarantine', { fieldtype: 'Check', fieldname: 'quarantine' },
-					row.quarantine, function (val) { me.items[idx].quarantine = cint(val); });
-			}
 		});
-		this.apply_quarantine_ui();
-	}
-
-	/**
-	 * Show the Quarantine column and fields only when "Quarantine Items" is ticked, and tick
-	 * every received line (locked) when "Quarantine Entire Inward" is. The server applies the
-	 * same rule on save (quarantine.apply_selection).
-	 */
-	apply_quarantine_ui() {
-		const on = !!cint(this._val('quarantine_items'));
-		const entire = on && !!cint(this._val('quarantine_entire_inward'));
-		this.wrapper.find('.purchase-inward-entry').toggleClass('piw-quarantining', on);
-		this.items.forEach((row, idx) => {
-			if (row.quarantine_status) return;
-			const c = this.fields[`quarantine_${idx}`];
-			if (entire) {
-				row.quarantine = flt(row.received_qty) > 0 ? 1 : 0;
-				if (c) c.set_value(row.quarantine);
-			}
-			if (c && c.$input) c.$input.prop('disabled', entire || !!c.$input.closest('.piw-locked').length);
-		});
-		const doc_name = this.quarantine_doc;
-		this.wrapper.find('.piw-quarantine-hint').html(
-			doc_name
-				? __('Quarantine document {0} holds the quarantined items.', [
-					`<a href="/app/purchase_quarantine_view/${encodeURIComponent(doc_name)}">${frappe.utils.escape_html(doc_name)}</a>`,
-				])
-				: on
-					? __('At Submit for QC the quarantined items go into a Quarantine document and the rest go to QC. If every item is quarantined, use Create Quarantine instead.')
-					: ''
-		);
 	}
 
 	recalc_row(idx) {
@@ -822,7 +765,6 @@ var PurchaseInwardEntry = class {
 			'receiving_remarks', 'dispute_file', 'dispute_kind', 'dispute_description',
 			'total_order_qty', 'total_received_qty', 'total_pending_qty', 'total_excess_qty',
 			'total_balance_qty',
-			'quarantine_items', 'quarantine_entire_inward', 'quarantine_reminder_days', 'quarantine_reason',
 		];
 	}
 
@@ -838,6 +780,7 @@ var PurchaseInwardEntry = class {
 		this.docname = null;
 		this.company = null;
 		this.quarantine_doc = null;
+		this.purchase_qc = null;
 		this.items = [];
 		this.attachments = [];
 		this.wrapper.find('.items-table tbody, .receiving-table tbody, .attachments-table tbody').empty();
@@ -883,9 +826,9 @@ var PurchaseInwardEntry = class {
 					'po_driver_contact_no', 'actual_vehicle_no', 'actual_driver_contact_no',
 					'actual_arrival_datetime', 'vehicle_details_verified', 'allow_excess_qty',
 					'target_warehouse', 'receiving_remarks',
-					'quarantine_items', 'quarantine_entire_inward', 'quarantine_reminder_days', 'quarantine_reason',
 				].forEach((f) => me._set(f, doc[f]));
 				me.quarantine_doc = doc.purchase_quarantine || null;
+				me.purchase_qc = doc.purchase_qc || null;
 
 				me.items = [];
 				me.wrapper.find('.items-table tbody').empty();
@@ -1040,6 +983,7 @@ var PurchaseInwardEntry = class {
 		// Workflow transitions, exactly as the engine reports them (task 295 / BRD 1.4).
 		(this.ctx.actions || []).forEach((action) => {
 			if (action.kind !== 'transition' || action.action === 'submit') return;
+			if (PIW_QC_SCREEN_ACTIONS.includes(action.action)) return;
 			btn(
 				action.label,
 				'btn-default',
@@ -1049,6 +993,12 @@ var PurchaseInwardEntry = class {
 			);
 		});
 
+		// The inspection itself is done on the QC screen, from Start QC to Complete QC.
+		if (this.purchase_qc && cint(this.ctx.docstatus) === 1) {
+			btn(__('Go to QC'), 'btn-primary', () => {
+				frappe.set_route('purchase_qc_entry', me.purchase_qc);
+			});
+		}
 		if (this.quarantine_doc) {
 			btn(__('Open Quarantine'), 'btn-default', () => {
 				frappe.set_route('purchase_quarantine_view', me.quarantine_doc);
@@ -1126,11 +1076,6 @@ var PurchaseInwardEntry = class {
 					frappe.set_route('purchase_invoice_entry', r.message.purchase_invoice);
 					return;
 				}
-				// Everything quarantined: the Quarantine document is where the goods now wait.
-				if (action === 'create_quarantine' && r.message && r.message.purchase_quarantine) {
-					frappe.set_route('purchase_quarantine_view', r.message.purchase_quarantine);
-					return;
-				}
 				me.load(me.docname);
 				if (r.message && r.message.inward_status) {
 					me.ctx.status = r.message.inward_status;
@@ -1168,10 +1113,6 @@ var PurchaseInwardEntry = class {
 				allow_excess_qty: cint(this._val('allow_excess_qty')),
 				target_warehouse: this._val('target_warehouse'),
 				receiving_remarks: this._val('receiving_remarks'),
-				quarantine_items: cint(this._val('quarantine_items')),
-				quarantine_entire_inward: cint(this._val('quarantine_entire_inward')),
-				quarantine_reminder_days: cint(this._val('quarantine_reminder_days')),
-				quarantine_reason: this._val('quarantine_reason'),
 			} : {}),
 			items: this.items.map((row) => ({
 				// The row's OWN name, whenever it already has one.
@@ -1196,8 +1137,6 @@ var PurchaseInwardEntry = class {
 					manufacturing_date: row.manufacturing_date || null,
 					mrp: flt(row.mrp),
 					usp: row.usp,
-					// A line already in a Quarantine document keeps its tick; that is history.
-					...(row.quarantine_status ? {} : { quarantine: cint(row.quarantine) }),
 				} : {}),
 			})),
 			...(receiving ? {

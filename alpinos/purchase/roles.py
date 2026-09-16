@@ -615,8 +615,17 @@ SECTIONS = {
 			{
 				"key": SECTION_QC_DECISION,
 				"label": "QC Decision",
-				"section_breaks": ("decision_section", "remarks_section"),
-				"fields": ("rejection_reason", "final_qc_remarks", "overall_remarks"),
+				"section_breaks": ("decision_section", "quarantine_section", "remarks_section"),
+				"fields": (
+					"rejection_reason",
+					"final_qc_remarks",
+					"overall_remarks",
+					# QC quarantines approved stock as part of its decision (quarantine.py).
+					"quarantine_items",
+					"quarantine_all_items",
+					"quarantine_reminder_days",
+					"quarantine_reason",
+				),
 				"display_fields": (
 					"total_received_qty",
 					"total_sample_qty",

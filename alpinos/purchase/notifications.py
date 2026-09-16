@@ -74,15 +74,7 @@ def submit_for_qc(purchase_inward):
 		update_modified=False,
 	)
 
-	# Quarantined items leave here into their own Quarantine document; only the rest go to
-	# QC. (An inward with every item quarantined never reaches this: it offers Create
-	# Quarantine instead.)
-	from alpinos.purchase import quarantine
-
-	held = quarantine.held_lines(inward)
-	if held and not inward.get("purchase_quarantine"):
-		quarantine.create_quarantine_document(inward, held)
-
+	# Every received item goes to QC; QC decides what to quarantine (alpinos.purchase.quarantine).
 	qc, created = _ensure_purchase_qc(inward)
 
 	inward.db_set(

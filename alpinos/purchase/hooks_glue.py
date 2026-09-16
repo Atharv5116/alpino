@@ -41,7 +41,7 @@ def purchase_receipt_on_submit(doc, method=None):
 
 	qc = doc.get("custom_purchase_qc")
 	if qc:
-		_post_deferred_sample_stock(doc, qc)
+		_relink_qc_and_inward(doc, qc)
 
 	if not doc.get("custom_purchase_inward"):
 		# An ordinary alpinos stock receipt is none of this module's business.
@@ -72,17 +72,12 @@ def purchase_receipt_on_submit(doc, method=None):
 		)
 
 
-def _post_deferred_sample_stock(doc, qc):
-	"""Post the QC sample transfers that had to wait for the GRN to exist."""
-	from alpinos.alpinos_development.doctype.purchase_qc.purchase_qc import (
-		post_pending_stock_entries,
-	)
-
-	# An amended GRN is a NEW receipt (GRN-x-1) while the QC and the inward still name
-	# the cancelled one, and purchase_qc._receipt_batch only reads a batch off a
-	# *submitted* receipt — without re-pointing them, every batch-tracked sample stayed
-	# deferred forever after the BRD 5.3 cancel + amend. Written with db writes because
-	# purchase_receipt is engine-owned (PurchaseInward._guard_engine_owned_fields).
+def _relink_qc_and_inward(doc, qc):
+	"""Point the QC and the inward at the GRN that was actually submitted (an amendment)."""
+	# An amended GRN is a NEW receipt (GRN-x-1) while the QC and the inward still name the
+	# cancelled one; the QC's GRN is what quarantine release and the screens read. Written
+	# with db writes because purchase_receipt is engine-owned
+	# (PurchaseInward._guard_engine_owned_fields).
 	if frappe.db.get_value("Purchase QC", qc, "purchase_receipt") != doc.name:
 		frappe.db.set_value("Purchase QC", qc, "purchase_receipt", doc.name, update_modified=False)
 	inward = doc.get("custom_purchase_inward")
@@ -97,17 +92,6 @@ def _post_deferred_sample_stock(doc, qc):
 	):
 		frappe.db.set_value(
 			"Purchase Inward", inward, "purchase_receipt", doc.name, update_modified=False
-		)
-
-	try:
-		post_pending_stock_entries(qc)
-	except Exception:
-		# A failed sample transfer must not roll back a legitimate goods receipt;
-		# the QC row keeps its blank stock_entry and post_pending_stock_entries is
-		# safe to re-run from the QC form.
-		frappe.log_error(
-			title="Purchase QC: deferred stock entries failed",
-			message=frappe.get_traceback(),
 		)
 
 
@@ -132,6 +116,12 @@ def purchase_receipt_before_cancel(doc, method=None):
 	# and silently moving sample stock out of the lab back into Stores.
 	if cint(doc.get("is_return")):
 		return
+
+	from alpinos.purchase import quarantine
+
+	# Quarantined stock already moved to its warehouse would leave the Quarantine warehouse
+	# negative; name the release transfers to cancel first.
+	quarantine.assert_grn_cancellable(doc)
 
 	qc = doc.get("custom_purchase_qc")
 	if not qc or not frappe.db.exists("Purchase QC", qc):
