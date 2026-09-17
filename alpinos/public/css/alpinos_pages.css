@@ -845,3 +845,9 @@
   margin-left: auto !important;
   margin-right: auto !important;
 }
+
+/* The sticky page head (position: sticky; top: var(--navbar-height)) does not reflow
+   the body below it, so the first row of the Order Fulfilment Report hid under it. */
+[data-page-route="invoice-download-queue"] .page-body {
+  padding-top: var(--navbar-height, 48px);
+}

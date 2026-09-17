@@ -122,7 +122,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('[data-fieldname="custom_dn_so_customer_name"]').val(data.custom_dn_so_customer_name || '');
 		$main.find('[data-fieldname="custom_transporter_name"]').val(data.custom_transporter_name || '');
 		$main.find('[data-fieldname="vehicle_no"]').val(data.vehicle_no || '');
-		$main.find('[data-fieldname="custom_dispatch_date"]').val(data.custom_dispatch_date || '');
+		$main.find('[data-fieldname="custom_dispatch_date"]').val(data.custom_dispatch_date_value || '');
 		$main.find('[data-fieldname="created_by"]').val(data.owner_full_name || data.owner || '');
 		page.populate_assigned_to_select(data.custom_assigned_to || '');
 
@@ -231,10 +231,13 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		// Transporter is seeded from the Pick List on DN create but is editable in
 		// Draft; a change propagates back to the Pick List and is logged on both docs.
 		// vehicle_no (Picklist PO No.) is still read-only (synced from the Pick List).
+		// Changes(HP) #43: Dispatch Date is editable in Draft too; after submit it is changed
+		// through Edit Transporter / LR / Dispatch.
 		var editable_fields = [
 			'custom_lr_gr_no',
 			'custom_dispatch_from',
 			'custom_transporter_name',
+			'custom_dispatch_date',
 		];
 		editable_fields.forEach(function(fn) {
 			var $el = $main.find('[data-fieldname="' + fn + '"]');
@@ -311,6 +314,7 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			custom_dispatch_from: ($main.find('[data-fieldname="custom_dispatch_from"]').val() || '').trim() || null,
 			custom_assigned_to: $main.find('[data-fieldname="custom_assigned_to"]').val() || null,
 			custom_transporter_name: ($main.find('[data-fieldname="custom_transporter_name"]').val() || '').trim() || null,
+			custom_dispatch_date: $main.find('[data-fieldname="custom_dispatch_date"]').val() || null,
 		};
 	};
 

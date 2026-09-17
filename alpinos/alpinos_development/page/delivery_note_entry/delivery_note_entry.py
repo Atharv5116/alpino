@@ -1,7 +1,7 @@
 import json
 
 import frappe
-from frappe.utils import cint, formatdate
+from frappe.utils import cint, formatdate, getdate
 
 
 @frappe.whitelist()
@@ -66,6 +66,8 @@ def get_delivery_note_data(name):
 		"custom_transporter_name": dn.get("custom_transporter_name") or "",
 		"vehicle_no": dn.get("vehicle_no") or "",
 		"custom_dispatch_date": dispatch_date,
+		# yyyy-mm-dd for the page's date input (Changes(HP) #43).
+		"custom_dispatch_date_value": str(dn.custom_dispatch_date)[:10] if dn.custom_dispatch_date else "",
 		"custom_assigned_to": dn.get("custom_assigned_to") or "",
 		"custom_total_boxes": dn.get("custom_total_boxes") or 0,
 		"custom_dn_order_gross_weight": dn.get("custom_dn_order_gross_weight") or 0,
@@ -85,6 +87,9 @@ _EDITABLE_HEADER_FIELDS = {
 	"custom_transporter_name",
 	# vehicle_no (Picklist PO No.) is still synced from Pick List and rendered
 	# read-only on the entry page — intentionally omitted so the page can't overwrite it.
+	# Changes(HP) #43: Dispatch Date is editable in Draft; the save's on_update hook
+	# (alpinos.dispatch_date_sync) carries it to the Sales Order, Pick List and Post Dispatch.
+	"custom_dispatch_date",
 }
 
 
@@ -157,8 +162,17 @@ def save_delivery_note_data(name, header, items=None, dispatch_to=None):
 		frappe.throw("Submitted Delivery Note cannot be edited.")
 
 	for k, v in header.items():
-		if k in _EDITABLE_HEADER_FIELDS:
-			dn.set(k, v if v not in ("", None) else None)
+		if k not in _EDITABLE_HEADER_FIELDS:
+			continue
+		if k == "custom_dispatch_date":
+			# A Datetime on the note, a date on the page: change the day, keep the time, and
+			# never blank a mandatory date.
+			if v:
+				from alpinos.dispatch_date_sync import _stored
+
+				dn.set(k, _stored("Delivery Note", getdate(v), dn.get(k)))
+			continue
+		dn.set(k, v if v not in ("", None) else None)
 
 	_apply_items_changes(dn, items)
 	_apply_dispatch_to_changes(dn, dispatch_to)

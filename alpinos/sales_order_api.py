@@ -740,6 +740,29 @@ def download_sales_orders_zip(names, no_letterhead=0):
 	frappe.local.response.type = "download"
 
 
+def _invoice_file_base(name, invoice_no):
+	"""File name for a downloaded invoice: the order, then its invoice no, else its pick list.
+
+	Changes(HP) #42.3: an invoice number stored WITH its extension ("6057.pdf") used to give
+	"SOR-2627-00235 - 6057.pdf.pdf", which a computer that hides extensions shows as
+	"...6057.pdf". The number's own .pdf is dropped here, so the file is "<order> - <no>.pdf"
+	with exactly one extension and reads "SOR-2627-00235 - 6057".
+	"""
+	import re
+
+	so = str(name).strip().replace("/", "-")
+	tag = re.sub(r"\.pdf\s*$", "", str(invoice_no or "").strip(), flags=re.I).strip().replace("/", "-")
+	if not tag:
+		pick_list = frappe.db.get_value(
+			"Pick List",
+			{"custom_sales_order_id": name, "docstatus": ["<", 2]},
+			"name",
+			order_by="modified asc",
+		)
+		tag = str(pick_list or "").strip().replace("/", "-")
+	return "{0} - {1}".format(so, tag) if tag else so
+
+
 @frappe.whitelist()
 def download_sales_invoices_zip(names):
 	"""Bulk export the fetched Sales Invoice PDFs for the selected Sales Orders, bundled
@@ -780,9 +803,7 @@ def download_sales_invoices_zip(names):
 			except Exception:
 				frappe.log_error(title="Bulk invoice export: cannot read {0} ({1})".format(file_url, name))
 				continue
-			inv = str(row.get("custom_invoice_no") or "").strip().replace("/", "-")
-			so = str(name).strip().replace("/", "-")
-			base = "{0} - {1}".format(so, inv) if inv else so
+			base = _invoice_file_base(name, row.get("custom_invoice_no"))
 			fname = base + ".pdf"
 			# two orders can share an invoice no — keep both files rather than overwrite.
 			if fname in used:
@@ -887,6 +908,175 @@ def download_orders_with_invoices_pdf(names, no_letterhead=0):
 	frappe.local.response.type = "download"
 
 
+#: Parts a bundle may contain, in the order the paperwork is read.
+BUNDLE_PARTS = ("so", "pl", "invoice")
+
+BUNDLE_LABELS = {"so": "Sales Order", "pl": "Pick List", "invoice": "Invoice"}
+
+
+def _pick_list_for(sales_order):
+	"""The live Pick List raised against an order, oldest first (the one that shipped)."""
+	return frappe.db.get_value(
+		"Pick List",
+		{"custom_sales_order_id": sales_order, "docstatus": ["<", 2]},
+		"name",
+		order_by="modified asc",
+	)
+
+
+def _bundle_parts(name, wanted, format_name, no_letterhead):
+	"""The requested documents for `name` as SEPARATE files. Returns (parts[], missing[]).
+
+	parts is a list of (label, extension, bytes) in reading order. They are kept apart
+	rather than merged: the operator forwards the invoice to one place and the pick list
+	to another, and a merge cannot be taken apart again.
+
+	A part that cannot be produced is reported rather than failing the whole bundle: a
+	pick list that was never raised, or an invoice not yet fetched from Drive, should
+	not deny the operator the documents that DO exist.
+	"""
+	from frappe.utils.file_manager import get_file
+
+	produced, missing = [], []
+
+	for part in BUNDLE_PARTS:
+		if part not in wanted:
+			continue
+		try:
+			if part == "so":
+				produced.append((
+					BUNDLE_LABELS[part],
+					"pdf",
+					frappe.get_print(
+						"Sales Order", name, format_name, as_pdf=True, no_letterhead=no_letterhead
+					),
+				))
+			elif part == "pl":
+				pick_list = _pick_list_for(name)
+				if not pick_list:
+					missing.append(BUNDLE_LABELS[part])
+					continue
+				produced.append((
+					BUNDLE_LABELS[part],
+					"pdf",
+					frappe.get_print(
+						"Pick List", pick_list, print_format="Pick List Packing Sheet", as_pdf=True
+					),
+				))
+			else:
+				file_url = (frappe.db.get_value("Sales Order", name, "custom_invoice_pdf") or "").strip()
+				if not file_url:
+					missing.append(BUNDLE_LABELS[part])
+					continue
+				content = get_file(file_url)[1]
+				if isinstance(content, str):
+					content = content.encode("utf-8")
+				# Keep whatever the invoice actually is; it is not always a PDF.
+				ext = (file_url.rsplit(".", 1)[-1] or "pdf").lower() if "." in file_url else "pdf"
+				produced.append((BUNDLE_LABELS[part], ext, content))
+				# Still stamped, but it no longer decides the Order Fulfilment Report's rows.
+				# The per-user record keeps the Pending Invoice Downloads report right.
+				frappe.db.set_value(
+					"Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False
+				)
+				from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
+					log as log_invoice_download,
+				)
+
+				log_invoice_download(name)
+		except Exception:
+			frappe.log_error(title="Bundle: {0} failed for {1}".format(part, name))
+			missing.append(BUNDLE_LABELS[part])
+
+	return produced, missing
+
+
+@frappe.whitelist()
+def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
+	"""Changes(HP) #30 - the individual and "club" downloads on the Invoice Download Page.
+
+	`parts` is any combination of so / pl / invoice and drives every button the spec asks
+	for: one part on its own is the individual download, "so,invoice" and "so,pl,invoice"
+	are the two club bundles.
+
+	Every requested document comes down as its OWN file, named "<order> - <invoice no> -
+	<document>". One document for one order is that file on its own; anything more is a
+	ZIP holding one file per document per order, so the invoice can be forwarded on
+	without the pick list riding along with it.
+	"""
+	import json
+	import zipfile
+	from io import BytesIO
+
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		frappe.throw(_("Please select at least one Sales Order."))
+
+	# Only the Invoice Download Queue calls this, so its channel rule applies to a
+	# hand-typed URL too. The files produced are unchanged.
+	from alpinos.invoice_queue_api import assert_orders_in_channel
+
+	assert_orders_in_channel(names)
+
+	wanted = [p.strip().lower() for p in str(parts or "").split(",") if p.strip()]
+	wanted = [p for p in wanted if p in BUNDLE_PARTS]
+	if not wanted:
+		frappe.throw(_("Choose at least one of: Sales Order, Pick List, Invoice."))
+
+	meta = frappe.get_meta("Sales Order")
+	format_name = (meta.default_print_format or "").strip() or "Standard"
+	no_letterhead = cint(no_letterhead)
+
+	built, skipped, incomplete = [], [], []
+	for name in names:
+		if not frappe.has_permission("Sales Order", "read", doc=name):
+			skipped.append(name)
+			continue
+		invoice_no = frappe.db.get_value("Sales Order", name, "custom_invoice_no")
+		produced, missing = _bundle_parts(name, wanted, format_name, no_letterhead)
+		if not produced:
+			skipped.append(name)
+			continue
+		base = _invoice_file_base(name, invoice_no)
+		for label, ext, content in produced:
+			if label == BUNDLE_LABELS["invoice"]:
+				# Changes(HP) #42.3: the invoice file is "<order> - <invoice no>.<ext>".
+				built.append(("{0}.{1}".format(base, ext), content))
+			else:
+				built.append(("{0} - {1}.{2}".format(base, label, ext), content))
+		if missing:
+			incomplete.append("{0} (no {1})".format(name, ", ".join(missing)))
+
+	if not built:
+		frappe.throw(_("Nothing could be generated for the selection."))
+	frappe.db.commit()
+
+	if incomplete:
+		frappe.msgprint(
+			_("Some documents were not available and were left out:<br>{0}").format(
+				"<br>".join(incomplete[:20])
+			),
+			title=_("Partial bundle"),
+			indicator="orange",
+		)
+
+	if len(built) == 1:
+		filename, content = built[0]
+		frappe.local.response.filename = filename
+		frappe.local.response.filecontent = content
+		frappe.local.response.type = "download"
+		return
+
+	buf = BytesIO()
+	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+		for filename, content in built:
+			zf.writestr(filename, content)
+	frappe.local.response.filename = "{0}-{1}.zip".format("-".join(wanted), len(names))
+	frappe.local.response.filecontent = buf.getvalue()
+	frappe.local.response.type = "download"
+
+
 @frappe.whitelist()
 def sales_invoices_availability(names):
 	"""How many of the selected Sales Orders have a fetched invoice PDF. Lets the list
@@ -931,9 +1121,7 @@ def download_single_invoice(name):
 	content = get_file(file_url)[1]
 	if isinstance(content, str):
 		content = content.encode("utf-8")
-	inv = str(row.get("custom_invoice_no") or "").strip().replace("/", "-")
-	so = str(name).strip().replace("/", "-")
-	base = "{0} - {1}".format(so, inv) if inv else so
+	base = _invoice_file_base(name, row.get("custom_invoice_no"))
 	from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
 		log as log_invoice_download,
 	)

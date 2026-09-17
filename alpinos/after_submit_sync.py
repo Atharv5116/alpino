@@ -5,14 +5,16 @@ import frappe
 from alpinos.alpinos_development.doctype.field_change_log.field_change_log import log_field_change
 
 # Pick List field -> (label, Delivery Note field to propagate to | None)
+# Dispatch Date is only LOGGED here: alpinos.dispatch_date_sync carries it to the Sales
+# Order as well as the other document, and handles the Date/Datetime difference.
 _PL_WATCH = {
 	"custom_transporter": ("Transporter", "custom_transporter_name"),
-	"custom_dispatch_date": ("Dispatch Date", "custom_dispatch_date"),
+	"custom_dispatch_date": ("Dispatch Date", None),
 }
 # Delivery Note field -> (label, Pick List field to propagate to | None)
 _DN_WATCH = {
 	"custom_transporter_name": ("Transporter", "custom_transporter"),
-	"custom_dispatch_date": ("Dispatch Date", "custom_dispatch_date"),
+	"custom_dispatch_date": ("Dispatch Date", None),
 	"custom_lr_gr_no": ("LR No.", None),
 }
 

@@ -669,6 +669,11 @@ def bulk_edit_pick_lists(pick_lists, fieldname, value):
 		if not frappe.has_permission("Pick List", "write", doc=pl):
 			frappe.throw(frappe._("You are not permitted to edit Pick List {0}.").format(pl), frappe.PermissionError)
 		frappe.db.set_value("Pick List", pl, fieldname, value)
+		if fieldname == "custom_dispatch_date" and value:
+			# A direct DB write fires no hook: carry the date to the order and its notes.
+			from alpinos.dispatch_date_sync import from_pick_list
+
+			from_pick_list(pl, value)
 
 	frappe.db.commit()
 	return {"status": "success"}

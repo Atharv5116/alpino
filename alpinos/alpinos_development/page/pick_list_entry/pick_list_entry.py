@@ -192,18 +192,14 @@ def save_pick_list_data(name, header, items, short_pick_action=None,
 		k: v for k, v in header.items()
 	}, update_modified=False)
 
-	# Dispatch Date mirrors the Sales Order (validate resets it to the SO's on every
-	# save), so a user change on submit must be pushed to the SO or the submit below
-	# overwrites it straight back.
+	# The header was written straight to the DB above, which no hook sees, so the Dispatch
+	# Date is carried to the Sales Order and Delivery Notes here (Changes(HP) #35).
+	# Without it the submit below would also reset the date to the order's.
 	new_dispatch = header.get("custom_dispatch_date")
 	if new_dispatch:
-		so_id = doc.get("custom_sales_order_id") or next(
-			(r.sales_order for r in (doc.locations or []) if r.sales_order), None
-		)
-		if so_id:
-			cur = frappe.db.get_value("Sales Order", so_id, "custom_dispatch_date")
-			if str(cur or "").split(" ")[0] != str(new_dispatch).split(" ")[0]:
-				frappe.db.set_value("Sales Order", so_id, "custom_dispatch_date", new_dispatch, update_modified=False)
+		from alpinos.dispatch_date_sync import from_pick_list
+
+		from_pick_list(name, new_dispatch)
 
 
 	# Write all item row values directly to DB (bypass ORM/hooks re-calculation)
