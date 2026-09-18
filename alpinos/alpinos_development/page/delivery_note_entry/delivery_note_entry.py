@@ -382,13 +382,59 @@ def _so_po_invoice(so_id):
 	return (r.get("custom_po_number") or r.get("po_no") or ""), (r.get("custom_invoice_no") or "")
 
 
-@frappe.whitelist()
-def download_lr_excel():
-	"""Excel of DRAFT Delivery Notes dispatching TODAY, for bulk LR No. entry. Exactly four
-	columns: Sales Order ID, Customer PO / PO Number, Invoice No., LR No. (blank for input)."""
-	_require_lr_roles()
-	from frappe.utils.xlsxutils import make_xlsx
+# Changes(HP) #45: the bulk LR sheet carries the dispatch line as the Delivery Note list
+# shows it. Only DISPATCH DATE and LR NO. are the warehouse's to fill — they are the two
+# highlighted in yellow, and the only two read back on upload; every other column is the
+# system's own figure, so editing one in the sheet changes nothing here.
+_LR_COLUMNS = (
+	("DATE", "posting_date"),
+	("SO NO.", "custom_sales_order_id"),
+	("CUSTOMER", "custom_dn_so_customer_name"),
+	("PICKLIST PO NO.", "vehicle_no"),
+	("PICK NO.", "pick_list"),
+	("DISPATCH DATE", "custom_dispatch_date"),
+	("TRANSPORTER", "custom_transporter_name"),
+	("INVOICE ID", "invoice_id"),
+	("LR NO.", "custom_lr_gr_no"),
+	("Total Units", "custom_total_units_dn"),
+	("Total Boxes", "custom_total_boxes"),
+	("Gross Weight", "custom_dn_order_gross_weight"),
+)
+_LR_EDITABLE_COLUMNS = ("DISPATCH DATE", "LR NO.")
+_LR_DATE_COLUMNS = ("DATE", "DISPATCH DATE")
+_LR_COLUMN_WIDTHS = {
+	"DATE": 12, "SO NO.": 18, "CUSTOMER": 30, "PICKLIST PO NO.": 18, "PICK NO.": 22,
+	"DISPATCH DATE": 15, "TRANSPORTER": 20, "INVOICE ID": 18, "LR NO.": 18,
+	"Total Units": 12, "Total Boxes": 12, "Gross Weight": 14,
+}
+_LR_HIGHLIGHT = "FFFF00"
+_LR_DATE_FORMAT = "dd-mm-yyyy"
 
+
+def _lr_key(label):
+	"""A header as a comparable key: 'SO NO.' and 'So No' are the same column."""
+	return "".join(ch for ch in str(label or "").upper() if ch.isalnum())
+
+
+def _lr_pick_lists(dn_names):
+	"""Pick List per Delivery Note ('PICK NO.'), joined when a note came from more than one."""
+	if not dn_names:
+		return {}
+	rows = frappe.get_all(
+		"Delivery Note Item",
+		filters={"parent": ["in", dn_names], "against_pick_list": ["is", "set"]},
+		fields=["parent", "against_pick_list"],
+	)
+	picks = {}
+	for row in rows:
+		names = picks.setdefault(row.parent, [])
+		if row.against_pick_list not in names:
+			names.append(row.against_pick_list)
+	return {dn: ", ".join(names) for dn, names in picks.items()}
+
+
+def _lr_rows_for_today():
+	"""Draft Delivery Notes dispatching today, as the sheet's rows."""
 	today = frappe.utils.today()
 	# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
 	dns = frappe.get_all(
@@ -397,23 +443,121 @@ def download_lr_excel():
 			"docstatus": 0,
 			"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
 		},
-		fields=["name", "custom_sales_order_id"],
+		fields=[
+			"name", "posting_date", "custom_sales_order_id", "custom_dn_so_customer_name",
+			"vehicle_no", "custom_dispatch_date", "custom_transporter_name", "custom_lr_gr_no",
+			"custom_total_units_dn", "custom_total_boxes", "custom_dn_order_gross_weight",
+		],
 		order_by="name",
 	)
-	rows = [["Sales Order ID", "Customer PO / PO Number", "Invoice No.", "LR No."]]
+	picks = _lr_pick_lists([dn.name for dn in dns])
 	for dn in dns:
-		po, inv = _so_po_invoice(dn.get("custom_sales_order_id"))
-		rows.append([dn.get("custom_sales_order_id") or "", po, inv, ""])
+		dn["pick_list"] = picks.get(dn.name, "")
+		dn["invoice_id"] = _so_po_invoice(dn.get("custom_sales_order_id"))[1]
+		dn["posting_date"] = getdate(dn.get("posting_date")) if dn.get("posting_date") else None
+		dn["custom_dispatch_date"] = (
+			getdate(dn.get("custom_dispatch_date")) if dn.get("custom_dispatch_date") else None
+		)
+	return dns
 
-	xlsx = make_xlsx(rows, "LR Update")
-	frappe.response["filename"] = f"LR_Update_{today}.xlsx"
-	frappe.response["filecontent"] = xlsx.getvalue()
+
+@frappe.whitelist()
+def download_lr_excel():
+	"""Excel of DRAFT Delivery Notes dispatching TODAY, for bulk Dispatch Date / LR No. entry.
+
+	Twelve columns in the order of the agreed format; DISPATCH DATE and LR NO. are the
+	editable ones and are highlighted in yellow, the rest are filled in by the system.
+	"""
+	_require_lr_roles()
+	import io
+
+	try:
+		import openpyxl
+		from openpyxl.styles import Alignment, Font, PatternFill
+	except Exception:
+		frappe.throw(frappe._("openpyxl is required to build the LR Excel."))
+
+	highlight = PatternFill("solid", fgColor=_LR_HIGHLIGHT)
+	wb = openpyxl.Workbook()
+	ws = wb.active
+	ws.title = "LR Update"
+
+	for col, (label, _field) in enumerate(_LR_COLUMNS, start=1):
+		cell = ws.cell(row=1, column=col, value=label)
+		cell.font = Font(bold=True)
+		cell.alignment = Alignment(horizontal="center")
+		if label in _LR_EDITABLE_COLUMNS:
+			cell.fill = highlight
+		ws.column_dimensions[cell.column_letter].width = _LR_COLUMN_WIDTHS.get(label, 16)
+
+	for idx, dn in enumerate(_lr_rows_for_today(), start=2):
+		for col, (label, field) in enumerate(_LR_COLUMNS, start=1):
+			value = dn.get(field)
+			cell = ws.cell(row=idx, column=col, value=value if value not in (None, "") else None)
+			if label in _LR_DATE_COLUMNS:
+				cell.number_format = _LR_DATE_FORMAT
+			if label in _LR_EDITABLE_COLUMNS:
+				cell.fill = highlight
+
+	ws.freeze_panes = "A2"
+	stream = io.BytesIO()
+	wb.save(stream)
+
+	frappe.response["filename"] = f"LR_Update_{frappe.utils.today()}.xlsx"
+	frappe.response["filecontent"] = stream.getvalue()
 	frappe.response["type"] = "binary"
+
+
+def _lr_upload_date(value):
+	"""A date out of an uploaded cell: a real Excel date, or a date someone typed."""
+	import datetime
+
+	if isinstance(value, datetime.datetime):
+		return value.date()
+	if isinstance(value, datetime.date):
+		return value
+	text = str(value or "").strip()
+	if not text:
+		return None
+	text = text.split(" ")[0]
+	for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%y", "%d/%m/%y", "%m/%d/%Y"):
+		try:
+			return datetime.datetime.strptime(text, fmt).date()
+		except ValueError:
+			continue
+	raise ValueError(text)
+
+
+def _lr_upload_columns(header_row):
+	"""Where SO NO., DISPATCH DATE and LR NO. sit in the uploaded sheet.
+
+	Found by heading, so a sheet downloaded before #45 (Sales Order ID ... LR No.) still
+	uploads; if the headings say nothing, fall back to that older layout's positions.
+	"""
+	columns = {"sales_order": None, "dispatch_date": None, "lr_no": None}
+	for idx, label in enumerate(header_row or []):
+		key = _lr_key(label)
+		if key in ("SONO", "SALESORDERID") and columns["sales_order"] is None:
+			columns["sales_order"] = idx
+		elif key == "DISPATCHDATE" and columns["dispatch_date"] is None:
+			columns["dispatch_date"] = idx
+		elif key == "LRNO" and columns["lr_no"] is None:
+			columns["lr_no"] = idx
+	if columns["sales_order"] is None:
+		columns["sales_order"] = 0
+	if columns["lr_no"] is None:
+		columns["lr_no"] = 3
+	return columns
 
 
 @frappe.whitelist()
 def upload_lr_excel(file_url):
-	"""Read a filled LR Excel, set LR No. on the matching draft DN by Sales Order ID, then submit it. Returns a summary and per-row failures."""
+	"""Read a filled LR Excel, set Dispatch Date / LR No. on the matching draft DN by Sales
+	Order ID, then submit it. Returns a summary and per-row failures.
+
+	Only the two editable columns are read back: what the sheet says in the system's own
+	columns is ignored, so an edit there changes nothing.
+	"""
 	_require_lr_roles()
 	import io
 
@@ -428,14 +572,33 @@ def upload_lr_excel(file_url):
 	wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
 	ws = wb.active
 
+	header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+	columns = _lr_upload_columns(header)
+
+	def _cell(row, idx):
+		if idx is None or not row or len(row) <= idx or row[idx] in (None, ""):
+			return None
+		return row[idx]
+
 	updated, failed = 0, []
 	for idx, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-		so_id = (str(r[0]).strip() if r and len(r) > 0 and r[0] not in (None, "") else "")
-		lr = (str(r[3]).strip() if r and len(r) > 3 and r[3] not in (None, "") else "")
+		so_value = _cell(r, columns["sales_order"])
+		so_id = str(so_value).strip() if so_value is not None else ""
+		lr_value = _cell(r, columns["lr_no"])
+		lr = str(lr_value).strip() if lr_value is not None else ""
 		if not so_id:
 			continue
 		if not lr:
 			failed.append({"row": idx, "sales_order": so_id, "reason": "LR No. is blank"})
+			continue
+		dispatch_value = _cell(r, columns["dispatch_date"])
+		try:
+			dispatch_date = _lr_upload_date(dispatch_value)
+		except ValueError:
+			failed.append({
+				"row": idx, "sales_order": so_id,
+				"reason": f"Dispatch Date '{dispatch_value}' is not a date",
+			})
 			continue
 		dns = frappe.get_all(
 			"Delivery Note", filters={"docstatus": 0, "custom_sales_order_id": so_id}, pluck="name"
@@ -448,6 +611,11 @@ def upload_lr_excel(file_url):
 			continue
 		try:
 			dn = frappe.get_doc("Delivery Note", dns[0])
+			if dispatch_date:
+				# A Datetime on the note, a date in the sheet: change the day, keep the time.
+				from alpinos.dispatch_date_sync import _stored
+
+				dn.custom_dispatch_date = _stored("Delivery Note", dispatch_date, dn.custom_dispatch_date)
 			dn.custom_lr_gr_no = lr
 			dn.flags.ignore_permissions = True
 			dn.submit()  # runs validate (LR mandatory now satisfied) + on_submit
