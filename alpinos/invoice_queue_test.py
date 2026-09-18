@@ -97,6 +97,7 @@ class Fixture:
 		self.addr = _insert("Address", name=f"{t}-ADDR", address_title=t, address_type="Shipping",
 			address_line1="1 Test Road", city="Pune", state="Maharashtra", country="India").name
 
+		self.lines = {}  # Sales Order -> its item row names, for a note's so_detail
 		self.cust_e = f"{t}-CUST-E"
 		self.cust_o = f"{t}-CUST-O"
 		self.cust_g = f"{t}-CUST-G"
@@ -156,7 +157,22 @@ class Fixture:
 		self._packed(dn.name, self.bundle, self.comp_b, 4, 2)
 		self.all += [self.combo_partial, self.combo_full]
 
-	def _so(self, n, channel, customer, owner=None, items=None):
+		# Changes(HP) #42: an order whose dispatch is valued from ITS OWN rates. Lines are
+		# 600 + 200 = 800 net, the order's grand total 1000 (a 25% uplift standing in for
+		# GST and the order's rounding). One line goes out in full, the other half, so the
+		# value is (600 + 100) x 1.25 = 875. The note's own grand_total is nonsense on
+		# purpose, and it carries a free row of the kind a freebie becomes -- neither may
+		# reach the figure.
+		self.valued = self._so("08", "Offline", self.cust_o,
+			items=[(f"{t}-V1", 2), (f"{t}-V2", 2)], line_amounts=[600, 200], net_total=800)
+		dn = _insert("Delivery Note", name=f"{t}-DN-5", docstatus=1, is_return=0,
+			custom_sales_order_id=self.valued, grand_total=99999)
+		self._dn_item(dn.name, f"{t}-V1", 2, 1, so_detail=self.lines[self.valued][0])
+		self._dn_item(dn.name, f"{t}-V2", 1, 2, so_detail=self.lines[self.valued][1])
+		self._dn_item(dn.name, f"{t}-FREE", 5, 3)
+		self.all.append(self.valued)
+
+	def _so(self, n, channel, customer, owner=None, items=None, line_amounts=None, net_total=None):
 		name = f"{self.tag}-SO-{n}"
 		_insert("Sales Order", name=name, docstatus=1, custom_channel=channel,
 			custom_invoice_no=f"{self.tag}-INV-{n}", customer=customer, customer_name=customer,
@@ -165,14 +181,20 @@ class Fixture:
 			company=frappe.defaults.get_global_default("company"))
 		# db_insert stamps the session user as owner, so the owner is set afterwards.
 		frappe.db.set_value("Sales Order", name, "owner", owner or "Administrator", update_modified=False)
+		rows = []
 		for idx, (code, qty) in enumerate(items or [(f"{self.tag}-ITEM", 1)], start=1):
-			_insert("Sales Order Item", parent=name, parenttype="Sales Order", parentfield="items",
-				item_code=code, item_name=code, qty=qty, idx=idx)
+			amount = (line_amounts or [])[idx - 1] if line_amounts else 0
+			rows.append(_insert("Sales Order Item", parent=name, parenttype="Sales Order",
+				parentfield="items", item_code=code, item_name=code, qty=qty, stock_qty=qty,
+				amount=amount, idx=idx).name)
+		self.lines[name] = rows
+		if net_total is not None:
+			frappe.db.set_value("Sales Order", name, "net_total", net_total, update_modified=False)
 		return name
 
-	def _dn_item(self, dn, code, qty, idx):
+	def _dn_item(self, dn, code, qty, idx, so_detail=None):
 		_insert("Delivery Note Item", parent=dn, parenttype="Delivery Note", parentfield="items",
-			item_code=code, item_name=code, qty=qty, idx=idx)
+			item_code=code, item_name=code, qty=qty, stock_qty=qty, idx=idx, so_detail=so_detail or "")
 
 	def _packed(self, dn, parent_item, code, qty, idx):
 		_insert("Packed Item", parent=dn, parenttype="Delivery Note", parentfield="packed_items",
@@ -628,18 +650,29 @@ def _run():
 	check("#41 Undispatched carries every item for the pop-up; the export keeps the full text",
 		_undispatched_detail_for_the_popup)
 
-	def _invoice_amount_from_the_notes():
+	def _invoice_amount_at_the_orders_rates():
 		rows = {r["sales_order"]: r for r in Q.get_rows(filters=fx.f(), page_length=500)["rows"]}
-		_assert(flt(rows[fx.ecom]["invoice_amount"]) == 150,
-			f"invoice amount {rows[fx.ecom]['invoice_amount']}, expected the two notes' 150")
-		_assert(flt(rows[fx.ecom]["amount_diff"]) == 850, f"difference {rows[fx.ecom]['amount_diff']}")
+		got = flt(rows[fx.valued]["invoice_amount"])
+		# (600 delivered in full + 200 delivered half) x 1000/800; the note says 99999 and
+		# carries a free row, and neither shows up here.
+		_assert(got == 875, f"invoice amount {got}, expected the order's own rates: 875")
+		_assert(flt(rows[fx.valued]["amount_diff"]) == 125, f"difference {rows[fx.valued]['amount_diff']}")
 		frappe.db.set_value("Sales Order", fx.offline, "custom_total_invoice_value", 0, update_modified=False)
 		rows = {r["sales_order"]: r for r in Q.get_rows(filters=fx.f(), page_length=500)["rows"]}
 		_assert(flt(rows[fx.offline]["invoice_amount"]) == 0, "an order with nothing dispatched invented an amount")
 		_assert(flt(rows[fx.gt]["invoice_amount"]) == 900, "the stored value is not used before dispatch")
 
-	check("#42 Invoice Amount comes from the submitted notes, else the order's stored value",
-		_invoice_amount_from_the_notes)
+	check("#42 Invoice Amount prices the dispatch at the order's own rates, not the note's total",
+		_invoice_amount_at_the_orders_rates)
+
+	def _stored_value_agrees_with_the_report():
+		from alpinos import so_invoice_value as V
+
+		_assert(flt(V._dispatched_value(fx.valued)) == 875,
+			f"stored Total Invoice Value {V._dispatched_value(fx.valued)}, expected 875")
+
+	check("#42 the Sales Order's Total Invoice Value is valued the same way",
+		_stored_value_agrees_with_the_report)
 
 	def _invoice_number_format():
 		frappe.db.set_value("Sales Order", fx.gt, {"custom_invoice_no": "6055", "custom_dispatch_date": "2026-09-11"},

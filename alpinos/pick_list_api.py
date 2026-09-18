@@ -793,6 +793,15 @@ def create_delivery_note_from_pick_list(pick_list_name):
 							custom_doc.stock_uom = custom_doc.uom
 						if not getattr(custom_doc, "rate", None):
 							custom_doc.rate = 0.0
+						# These rows are free (freebies, scheme, additional units) and carry no
+						# price of their own. Left as None, ERPNext fills price_list_rate from
+						# the Item Price list and then re-prices the row from it, which invoiced
+						# every free sample at list price on the Delivery Note. Pinned to 0, both
+						# the fill and the re-pricing skip the row.
+						if not getattr(custom_doc, "price_list_rate", None):
+							custom_doc.price_list_rate = 0.0
+						if not getattr(custom_doc, "base_price_list_rate", None):
+							custom_doc.base_price_list_rate = 0.0
 						if not getattr(custom_doc, "delivered_qty", None):
 							custom_doc.delivered_qty = 0.0
 						if not getattr(custom_doc, "delivered_by_supplier", None):

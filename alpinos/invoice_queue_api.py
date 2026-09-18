@@ -204,8 +204,17 @@ COLUMNS = {
 	                   "type": "Data", "sortable": False},
 }
 
+# What was dispatched, priced by the SALES ORDER's own rates: for each delivered line,
+# the share of that order line it covers, applied to the order's grand total. The Delivery
+# Note's own grand_total is NOT used -- free rows (freebies, scheme, additional units) are
+# priced from the Item Price list on the note, which invoiced samples nobody charges for,
+# and the note carries none of the order's cash discount rules either. Scaling by
+# grand_total / net_total carries the order's GST, discounts and rounding across unchanged,
+# so a fully dispatched order reads exactly its own grand total.
 _INVOICE_AMOUNT = (
-	"COALESCE(NULLIF(dn.dispatched_value, 0), NULLIF(so.custom_total_invoice_value, 0), 0)"
+	"COALESCE("
+	"NULLIF(ROUND(dnv.ordered_value * so.grand_total / NULLIF(so.net_total, 0), 2), 0),"
+	" NULLIF(so.custom_total_invoice_value, 0), 0)"
 )
 _FY_DATE = "COALESCE(so.custom_dispatch_date, so.transaction_date)"
 _FY_START = f"(YEAR({_FY_DATE}) - IF(MONTH({_FY_DATE}) < 4, 1, 0))"
@@ -399,6 +408,20 @@ _JOINS = """
 		  AND IFNULL(custom_sales_order_id, '') <> ''
 		GROUP BY custom_sales_order_id
 	) dn ON dn.so_id = so.name
+	LEFT JOIN (
+		SELECT d.so_id, SUM(d.line_value) AS ordered_value
+		FROM (
+			SELECT dn.custom_sales_order_id AS so_id,
+			       IFNULL(soi.amount, 0) * (SUM(dni.stock_qty) / NULLIF(soi.stock_qty, 0)) AS line_value
+			FROM `tabDelivery Note Item` dni
+			JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+			     AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
+			JOIN `tabSales Order Item` soi ON soi.name = dni.so_detail
+			WHERE IFNULL(dn.custom_sales_order_id, '') <> ''
+			GROUP BY dn.custom_sales_order_id, dni.so_detail, soi.amount, soi.stock_qty
+		) d
+		GROUP BY d.so_id
+	) dnv ON dnv.so_id = so.name
 	LEFT JOIN `tabAddress` addr ON addr.name = so.shipping_address_name
 	LEFT JOIN `tabUser` own ON own.name = so.owner
 """
