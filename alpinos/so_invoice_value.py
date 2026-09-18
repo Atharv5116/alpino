@@ -1,9 +1,9 @@
 """Keep a Sales Order's Total Invoice Value in step with its Pick Lists and Delivery Notes.
 
-Dispatched value wins: once any Delivery Note is submitted the figure is the sum of those
-notes, GST included, growing with each lot. Before anything ships it falls back to what
-has been PICKED, so an order sitting on a submitted Pick List shows a number instead of
-0. Blank only while nothing is picked or dispatched.
+Dispatched value wins: once any Delivery Note is submitted the figure is what those notes
+shipped, priced at the ORDER's own rates, GST included, growing with each lot. Before
+anything ships it falls back to what has been PICKED, so an order sitting on a submitted
+Pick List shows a number instead of 0. Blank only while nothing is picked or dispatched.
 """
 
 import frappe
@@ -11,13 +11,44 @@ from frappe.utils import flt
 
 
 def _dispatched_value(sales_order):
-	"""GST-inclusive total of the submitted Delivery Notes for this order."""
-	rows = frappe.get_all(
-		"Delivery Note",
-		filters={"custom_sales_order_id": sales_order, "docstatus": 1, "is_return": 0},
-		fields=["grand_total", "base_grand_total"],
+	"""GST-inclusive value of what submitted Delivery Notes shipped, at the ORDER's rates.
+
+	Priced the same way as _picked_value: the share of each order line the notes covered,
+	applied to the order's grand_total. The notes' own grand_total is not used -- a note
+	prices free rows (freebies, scheme, additional units) from the Item Price list, so
+	summing notes charged for samples nobody bills, and the note carries none of the
+	order's cash-discount rules. Pro-rating inherits the order's GST, discounts and
+	rounding, so a fully dispatched order reads exactly its own grand total.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT dni.so_detail AS soi, SUM(dni.stock_qty) AS delivered
+		FROM `tabDelivery Note Item` dni
+		JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+		WHERE dn.custom_sales_order_id = %s AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
+		  AND IFNULL(dni.so_detail, '') <> ''
+		GROUP BY dni.so_detail
+		""",
+		sales_order,
+		as_dict=True,
 	)
-	return sum(flt(r.grand_total) or flt(r.base_grand_total) for r in rows)
+	delivered = {r.soi: flt(r.delivered) for r in rows if r.soi}
+	if not delivered:
+		return 0.0
+
+	lines = frappe.get_all(
+		"Sales Order Item", filters={"parent": sales_order}, fields=["name", "amount", "stock_qty"]
+	)
+	net = sum(flt(l.amount) for l in lines)
+	if net <= 0:
+		return 0.0
+	share = sum(
+		flt(l.amount) * (delivered.get(l.name, 0.0) / flt(l.stock_qty))
+		for l in lines
+		if flt(l.stock_qty) > 0
+	) / net
+	grand = flt(frappe.db.get_value("Sales Order", sales_order, "grand_total"))
+	return flt(grand * share, 2)
 
 
 def _picked_value(sales_order):
