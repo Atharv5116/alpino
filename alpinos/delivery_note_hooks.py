@@ -30,6 +30,7 @@ def validate_delivery_note(doc, method=None):
 
 	_sync_sales_order_header(doc)
 	_sync_items_from_pick_list(doc)
+	_align_value_with_sales_order(doc)
 	_recalc_dn_totals(doc)
 	_validate_dn_mandatory(doc)
 
@@ -109,6 +110,120 @@ def _sync_items_from_pick_list(doc):
 				row.custom_expiry_date = pli.get("custom_expiry_date")
 			elif row.batch_no:
 				row.custom_expiry_date = frappe.db.get_value("Batch", row.batch_no, "expiry_date")
+
+
+
+# A Sales Order line's rate is its amount divided by the quantity and rounded to paise,
+# so rate x qty can miss the amount by up to half a paisa per unit.
+_ROUNDING_PER_UNIT = 0.005
+
+
+def _align_value_with_sales_order(doc):
+	"""Keep the Delivery Note's value on the Sales Order's own line amounts.
+
+	A Sales Order line carries the amount the customer agreed, rounded once from the
+	GST-inclusive price (alpinos.sales_order_api._apply_clean_gst_amounts), so the line
+	amount is not always rate x qty -- the rate is that amount per unit, rounded to
+	paise. ERPNext then rebuilds every Delivery Note line as rate x qty, which brings
+	the dropped fraction back multiplied by the quantity and by GST, and a fully
+	delivered order's Delivery Note stops totalling what its Sales Order does.
+
+	So put the Sales Order's own figure back on the line -- the delivered share of it on
+	a part delivery -- and re-derive the totals from there. Only a gap the size of that
+	rounding is closed: a line someone repriced, or a Sales Order whose discount is
+	spread over the items, is left exactly as ERPNext calculated it.
+	"""
+	if doc.get("is_return") or not (doc.get("items") or []):
+		return
+
+	# A discount applied on the Net Total is distributed into the item amounts, and an
+	# inclusive tax is carried inside the rate: in both the line amount is no longer the
+	# Sales Order's figure, so leave the whole document to ERPNext.
+	if doc.get("discount_amount") and doc.get("apply_discount_on") != "Grand Total":
+		return
+	if any(t.get("included_in_print_rate") for t in (doc.get("taxes") or [])):
+		return
+
+	conversion_rate = flt(doc.get("conversion_rate")) or 1.0
+	changed = False
+
+	for row in doc.get("items") or []:
+		if not row.get("so_detail"):
+			continue
+		so_row = frappe.db.get_value(
+			"Sales Order Item", row.so_detail, ["qty", "amount"], as_dict=True
+		)
+		if not so_row or not flt(so_row.qty):
+			continue
+
+		expected = flt(flt(so_row.amount) * flt(row.qty) / flt(so_row.qty), 2)
+		gap = expected - flt(row.amount)
+		if abs(gap) < 0.005:
+			continue
+		# Anything larger than the rounding residue is a real difference, not this one.
+		if abs(gap) > _ROUNDING_PER_UNIT * flt(row.qty) + 0.02:
+			continue
+
+		was_net = abs(flt(row.net_amount) - flt(row.amount)) < 0.005
+		row.amount = expected
+		row.base_amount = flt(expected * conversion_rate, 2)
+		if was_net:
+			row.net_amount = expected
+			row.base_net_amount = row.base_amount
+		changed = True
+
+	if not changed:
+		return
+
+	total = flt(sum(flt(r.amount) for r in doc.items), 2)
+	net_total = flt(sum(flt(r.net_amount) for r in doc.items), 2)
+	doc.total = total
+	doc.base_total = flt(total * conversion_rate, 2)
+	doc.net_total = net_total
+	doc.base_net_total = flt(net_total * conversion_rate, 2)
+
+	# GST rows follow the corrected net total; any other charge keeps what ERPNext worked out.
+	running = net_total
+	total_taxes = 0.0
+	for tax in doc.get("taxes") or []:
+		if tax.charge_type == "On Net Total" and flt(tax.rate):
+			tax_amount = flt(net_total * flt(tax.rate) / 100.0, 2)
+		else:
+			tax_amount = flt(tax.tax_amount)
+		tax.tax_amount = tax_amount
+		tax.base_tax_amount = flt(tax_amount * conversion_rate, 2)
+		tax.tax_amount_after_discount_amount = tax_amount
+		tax.base_tax_amount_after_discount_amount = tax.base_tax_amount
+		running = flt(running + tax_amount, 2)
+		tax.total = running
+		tax.base_total = flt(running * conversion_rate, 2)
+		total_taxes = flt(total_taxes + tax_amount, 2)
+
+	doc.total_taxes_and_charges = total_taxes
+	doc.base_total_taxes_and_charges = flt(total_taxes * conversion_rate, 2)
+
+	grand = flt(net_total + total_taxes, 2)
+	if flt(doc.get("additional_discount_percentage")) and doc.get("apply_discount_on") == "Grand Total":
+		doc.discount_amount = flt(grand * flt(doc.additional_discount_percentage) / 100.0, 2)
+		doc.base_discount_amount = flt(flt(doc.discount_amount) * conversion_rate, 2)
+	if doc.get("apply_discount_on") == "Grand Total":
+		grand = flt(grand - flt(doc.get("discount_amount")), 2)
+
+	doc.grand_total = grand
+	doc.base_grand_total = flt(grand * conversion_rate, 2)
+
+	if doc.get("disable_rounded_total"):
+		doc.rounded_total = doc.base_rounded_total = 0
+		doc.rounding_adjustment = doc.base_rounding_adjustment = 0
+	else:
+		rounded = flt(round(grand), 2)
+		doc.rounded_total = rounded
+		doc.base_rounded_total = flt(rounded * conversion_rate, 2)
+		doc.rounding_adjustment = flt(rounded - grand, 2)
+		doc.base_rounding_adjustment = flt(doc.rounding_adjustment * conversion_rate, 2)
+
+	if hasattr(doc, "set_total_in_words"):
+		doc.set_total_in_words()
 
 
 def _recalc_dn_totals(doc):
