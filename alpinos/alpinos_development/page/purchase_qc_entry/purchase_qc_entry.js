@@ -250,13 +250,6 @@ var PurchaseQCEntry = class {
 	make_quarantine_fields() {
 		const me = this;
 		const on_change = (c) => { if (c && c.$input) c.$input.on('change', () => me.apply_quarantine_ui()); };
-		on_change(this._ctl('.field-quarantine-items', {
-			fieldname: 'quarantine_items', label: 'Quarantine Items', fieldtype: 'Check',
-		}));
-		on_change(this._ctl('.field-quarantine-all', {
-			fieldname: 'quarantine_all_items', label: 'Quarantine All Items', fieldtype: 'Check',
-			description: 'Every item with an approved quantity. Leave unticked to pick items in the Quarantine column.',
-		}));
 		this._ctl('.field-quarantine-reminder', {
 			fieldname: 'quarantine_reminder_days', label: 'Remind After (Days)', fieldtype: 'Int',
 			description: 'One reminder for the whole Quarantine document.',
@@ -266,33 +259,29 @@ var PurchaseQCEntry = class {
 		});
 	}
 
+	/** True when any item is ticked for quarantine. */
+	_quarantining() {
+		return (this.tables.decision || []).some((row) => cint(row.quarantine));
+	}
+
 	/**
-	 * Show the Quarantine column and fields only when "Quarantine Items" is ticked, and tick
-	 * (and lock) every approved line when "Quarantine All Items" is. The server applies the
-	 * same rule on save (quarantine.apply_qc_selection).
+	 * The Quarantine column is always offered. Ticking an item brings up the reminder and
+	 * reason, which belong to the Quarantine document those items go into. The server derives
+	 * the same thing on save (quarantine.apply_qc_selection).
 	 */
 	apply_quarantine_ui() {
 		const doc = this.doc || {};
 		const draft = cint(doc.docstatus) === 0;
-		const on = !!cint(this._val('quarantine_items'));
-		const all = on && !!cint(this._val('quarantine_all_items'));
+		const on = this._quarantining();
 		this.wrapper.find('.purchase-qc-entry').toggleClass('pqc-quarantining', on);
-		if (draft) {
-			(this.tables.decision || []).forEach((row, idx) => {
-				const c = this.fields[`decision_quarantine_${idx}`];
-				if (all) {
-					row.quarantine = flt(row.approved_qty) > 0 ? 1 : 0;
-					if (c) c.set_value(row.quarantine);
-				}
-				if (c && c.$input) c.$input.prop('disabled', all);
-			});
-		}
 		const esc = frappe.utils.escape_html;
 		let hint = '';
 		if (doc.quarantine_document) {
 			hint = __('Quarantine Document {0} holds these items. They were received into the Quarantine warehouse and move to their warehouse when released there.', [
 				`<a href="/app/purchase_quarantine_view/${encodeURIComponent(doc.quarantine_document)}">${esc(doc.quarantine_document)}</a>`,
 			]);
+		} else if (draft && !on) {
+			hint = __('To hold an item in the Quarantine warehouse until it is released, tick it in the Quarantine column above.');
 		} else if (on && draft) {
 			hint = __('When QC is completed, the approved quantity of the ticked items is received into the Quarantine warehouse on the GRN, and moves to its warehouse when it is released from the Quarantine document. Rejected quantity still goes to the debit note.');
 		}
@@ -761,7 +750,7 @@ var PurchaseQCEntry = class {
 			if (cint((me.doc || {}).docstatus) === 0) {
 				me._mk_cell($tr, '.c-quar', 'decision', idx,
 					{ fieldtype: 'Check', fieldname: 'quarantine' }, row.quarantine,
-					function (val) { row.quarantine = cint(val); });
+					function (val) { row.quarantine = cint(val); me.apply_quarantine_ui(); });
 			} else if (cint(row.quarantine)) {
 				// Completed QC: where the held quantity stands on the Quarantine document.
 				const state = (me.quarantine_states || {})[row.name] || 'Quarantined';
@@ -874,8 +863,7 @@ var PurchaseQCEntry = class {
 					'overall_remarks', 'rejection_reason', 'final_qc_remarks', 'qc_result',
 					'vehicle_inspection_done', 'material_inspection_done',
 					'packaging_inspection_done', 'sample_testing_done',
-					'quarantine_items', 'quarantine_all_items', 'quarantine_reminder_days',
-					'quarantine_reason',
+					'quarantine_reminder_days', 'quarantine_reason',
 				].forEach((f) => me._set(f, doc[f]));
 
 				me.quarantine_states = {};
@@ -1040,8 +1028,9 @@ var PurchaseQCEntry = class {
 				doc.overall_remarks = me._val('overall_remarks');
 				doc.rejection_reason = me._val('rejection_reason');
 				doc.final_qc_remarks = me._val('final_qc_remarks');
-				doc.quarantine_items = cint(me._val('quarantine_items'));
-				doc.quarantine_all_items = cint(me._val('quarantine_all_items'));
+				// Derived from the ticks; the server derives it again (quarantine.apply_qc_selection).
+				doc.quarantine_items = me._quarantining() ? 1 : 0;
+				doc.quarantine_all_items = 0;
 				doc.quarantine_reminder_days = cint(me._val('quarantine_reminder_days'));
 				doc.quarantine_reason = me._val('quarantine_reason');
 				['vehicle_inspection_done', 'material_inspection_done',

@@ -133,6 +133,87 @@ def _group_chain(item_group, cache):
 	return cache[item_group]
 
 
+# Purchase Inward Section 2: USP = MRP ÷ product weight, quoted per gram (or millilitre) --
+# e.g. ₹199 ÷ 400 g = ₹0.497/g. The Item's weight UOM decides the unit and the conversion.
+_USP_UNITS = {
+	"g": ("g", 1.0), "gm": ("g", 1.0), "gms": ("g", 1.0), "gram": ("g", 1.0), "grams": ("g", 1.0),
+	"kg": ("g", 1000.0), "kgs": ("g", 1000.0), "kilogram": ("g", 1000.0), "kilograms": ("g", 1000.0),
+	"mg": ("g", 0.001), "milligram": ("g", 0.001), "milligrams": ("g", 0.001),
+	"ml": ("ml", 1.0), "millilitre": ("ml", 1.0), "milliliter": ("ml", 1.0),
+	"l": ("ml", 1000.0), "ltr": ("ml", 1000.0), "litre": ("ml", 1000.0), "liter": ("ml", 1000.0),
+}
+
+
+def receiving_item_info(item_codes):
+	"""{item: {shelf_life_in_days, usp_weight, usp_unit}} for the Store Receiving grid.
+
+	usp_weight is the product weight in the USP unit (grams or millilitres); 0 when the
+	Item has no weight, or one in a unit USP cannot be quoted per (then USP stays typed).
+	"""
+	codes = sorted({code for code in (item_codes or []) if code})
+	if not codes:
+		return {}
+	out = {}
+	for row in frappe.get_all(
+		"Item",
+		filters={"name": ("in", codes)},
+		fields=["name", "shelf_life_in_days", "weight_per_unit", "weight_uom"],
+	):
+		unit, factor = _USP_UNITS.get((row.weight_uom or "").strip().lower(), (None, 0.0))
+		weight = flt(row.weight_per_unit) * factor if unit else 0.0
+		out[row.name] = {
+			"shelf_life_in_days": cint(row.shelf_life_in_days),
+			"usp_weight": weight if weight > 0 else 0.0,
+			"usp_unit": unit if weight > 0 else None,
+		}
+	return out
+
+
+def po_line_mrp(row):
+	"""Section 2: an inward line's MRP is its PO line's Rate.
+
+	The PO screen's Rate column (price_list_rate, before any discount); the line's own rate
+	when it has no list rate, as on an order raised outside that screen.
+	"""
+	return flt(row.get("price_list_rate")) or flt(row.get("rate"))
+
+
+def currency_symbol(company=None):
+	currency = frappe.get_cached_value("Company", company, "default_currency") if company else None
+	return (frappe.db.get_value("Currency", currency, "symbol") if currency else None) or ""
+
+
+def format_usp(mrp, info, symbol=""):
+	"""'₹0.497/g' for MRP 199 on a 400 g item, or None when it cannot be worked out."""
+	weight = flt((info or {}).get("usp_weight"))
+	if flt(mrp) <= 0 or weight <= 0:
+		return None
+	return "{0}{1:.3f}/{2}".format(symbol or "", flt(mrp) / weight, info["usp_unit"])
+
+
+@frappe.whitelist()
+def get_item_receiving_info(item_codes, company=None, po_details=None):
+	"""What the receiving grid needs to show Expiry, MRP and USP before anything is saved."""
+	frappe.has_permission(DOCTYPE, "read", throw=True)
+	if isinstance(item_codes, str):
+		item_codes = frappe.parse_json(item_codes)
+	if isinstance(po_details, str):
+		po_details = frappe.parse_json(po_details)
+	po_mrp = {}
+	names = [name for name in (po_details or []) if name]
+	if names:
+		# An inward saved before its MRP was defaulted still shows the PO's on screen.
+		for row in frappe.get_all(
+			PO_ITEM, filters={"name": ("in", names)}, fields=["name", "rate", "price_list_rate"]
+		):
+			po_mrp[row.name] = po_line_mrp(row)
+	return {
+		"items": receiving_item_info(item_codes),
+		"currency_symbol": currency_symbol(company),
+		"po_mrp": po_mrp,
+	}
+
+
 def item_inward_type(item_code, cache=None):
 	"""The inward type an Item belongs to, or None when it is unclassified."""
 	cache = cache if cache is not None else {}
@@ -302,6 +383,7 @@ def get_purchase_order_items(
 			"qty",
 			"rate",
 			"amount",
+			"price_list_rate",
 			"warehouse",
 			"delivered_by_supplier",
 		],
@@ -353,6 +435,8 @@ def get_purchase_order_items(
 				# Received Quantity belongs to the Store Team (BRD 2.2.1); the Purchase
 				# Team only declares which lines arrived on this invoice.
 				"received_qty": 0.0,
+				# Section 2: MRP as per the selected PO -- its Rate.
+				"mrp": po_line_mrp(row),
 				"rate": flt(row.rate),
 				"amount": flt(row.amount),
 				"target_warehouse": row.warehouse or doc.target_warehouse,

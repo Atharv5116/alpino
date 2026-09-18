@@ -21,6 +21,7 @@ try to export the format back into the repo.
 import frappe
 
 from alpinos.purchase import constants as C
+from alpinos.purchase import print_fonts
 
 INWARD_PF_NAME = "Purchase Inward"
 INWARD_DOC_TYPE = "Purchase Inward"
@@ -63,30 +64,30 @@ _MACROS = r"""
 # 12-column grid still fits A4. Top alignment is left alone on purpose.
 _INWARD_HTML_RAW = r"""
 <style>
-  .piw { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+  .piw { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
   .piw table { border-collapse: collapse; width: 100%; table-layout: fixed;
-      margin-bottom: 9px; font-size: 10px; }
+      margin-bottom: 9px; font-size: 10px; line-height: 14px; }
   .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important;
       word-wrap: break-word; overflow: hidden; }
-  .piw table.g td { padding: 3px 4px !important; font-size: 9px; }
-  .piw table.g th { padding: 3px 4px !important; font-size: 8px; }
-  .piw th { background: #ececec; font-size: 9px; text-transform: uppercase; text-align: center;
+  .piw table.g td { padding: 3px 4px !important; font-size: 9px; line-height: 13px; }
+  .piw table.g th { padding: 3px 4px !important; font-size: 8px; line-height: 11px; }
+  .piw th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: center;
       font-weight: bold; }
-  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px;
-      letter-spacing: 0.6px; }
+  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
+      letter-spacing: 1px; }
   .piw .lbl { background: #f6f6f6; font-weight: bold; }
   .piw .c { text-align: center; }
   .piw .r { text-align: right; }
   .piw .b { font-weight: bold; }
   .piw .mut { color: #666; }
-  .piw .sub { font-size: 9px; color: #555; font-weight: normal; }
+  .piw .sub { font-size: 9px; line-height: 13px; color: #555; font-weight: normal; }
   .piw .warn { color: #a30000; font-weight: bold; }
   .piw .tot td { background: #f0f0f0; font-weight: bold; }
-  .piw .title { font-size: 17px; font-weight: bold; text-align: center; letter-spacing: 1.5px; }
-  .piw .subtitle { text-align: center; font-size: 10px; color: #555; margin: 2px 0 8px; }
+  .piw .title { font-size: 17px; line-height: 24px; font-weight: bold; text-align: center; letter-spacing: 2px; }
+  .piw .subtitle { text-align: center; font-size: 10px; line-height: 14px; color: #555; margin: 2px 0 8px; }
   .piw .avoid { page-break-inside: avoid; }
   .piw .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }
-  .piw .tag { font-size: 8px; border: 1px solid #a30000; color: #a30000; padding: 0 2px;
+  .piw .tag { font-size: 8px; line-height: 11px; border: 1px solid #a30000; color: #a30000; padding: 0 2px;
       margin-left: 3px; }
 </style>
 {% set _inward_types = __INWARD_TYPES__ %}
@@ -312,6 +313,7 @@ _INWARD_HTML_RAW = r"""
   {% endif %}
 
   <!-- ===== remarks ===== -->
+  <!-- Box heights sit on a div, not the cell: the two print engines measure a cell's height differently. -->
   <table class="avoid">
     <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
     <tr><td class="sec" colspan="2">Remarks</td></tr>
@@ -320,8 +322,8 @@ _INWARD_HTML_RAW = r"""
       <th style="text-align:left;">Receiving Remarks (Store)</th>
     </tr>
     <tr>
-      <td style="height:38px;">{{ txt(doc.remarks) }}</td>
-      <td style="height:38px;">{{ txt(doc.receiving_remarks) }}</td>
+      <td><div style="min-height:29px;">{{ txt(doc.remarks) }}</div></td>
+      <td><div style="min-height:29px;">{{ txt(doc.receiving_remarks) }}</div></td>
     </tr>
   </table>
 
@@ -387,32 +389,32 @@ _INWARD_HTML = (
 # was not applicable to this inward and must not print an empty grid.
 _QC_HTML_RAW = r"""
 <style>
-  .qcr { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+  .qcr { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
   .qcr table { border-collapse: collapse; width: 100%; table-layout: fixed;
-      margin-bottom: 9px; font-size: 10px; }
+      margin-bottom: 9px; font-size: 10px; line-height: 14px; }
   .qcr table td, .qcr table th { border: 1px solid #000; padding: 4px 5px !important;
       word-wrap: break-word; overflow: hidden; }
-  .qcr table.g td { padding: 3px 4px !important; font-size: 9px; }
-  .qcr table.g th { padding: 3px 4px !important; font-size: 8px; }
-  .qcr th { background: #ececec; font-size: 9px; text-transform: uppercase; text-align: center;
+  .qcr table.g td { padding: 3px 4px !important; font-size: 9px; line-height: 13px; }
+  .qcr table.g th { padding: 3px 4px !important; font-size: 8px; line-height: 11px; }
+  .qcr th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: center;
       font-weight: bold; }
-  .qcr .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px;
-      letter-spacing: 0.6px; }
+  .qcr .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
+      letter-spacing: 1px; }
   .qcr .lbl { background: #f6f6f6; font-weight: bold; }
   .qcr .c { text-align: center; }
   .qcr .r { text-align: right; }
   .qcr .b { font-weight: bold; }
   .qcr .mut { color: #666; }
-  .qcr .sub { font-size: 9px; color: #555; font-weight: normal; }
+  .qcr .sub { font-size: 9px; line-height: 13px; color: #555; font-weight: normal; }
   .qcr .warn { color: #a30000; font-weight: bold; }
   .qcr .ok { color: #17632a; font-weight: bold; }
   .qcr .tot td { background: #f0f0f0; font-weight: bold; }
-  .qcr .title { font-size: 17px; font-weight: bold; text-align: center; letter-spacing: 1.5px; }
-  .qcr .subtitle { text-align: center; font-size: 10px; color: #555; margin: 2px 0 8px; }
+  .qcr .title { font-size: 17px; line-height: 24px; font-weight: bold; text-align: center; letter-spacing: 2px; }
+  .qcr .subtitle { text-align: center; font-size: 10px; line-height: 14px; color: #555; margin: 2px 0 8px; }
   .qcr .avoid { page-break-inside: avoid; }
   .qcr .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }
-  .qcr .note { font-size: 9px; color: #666; margin: -4px 0 9px; }
-  .qcr .tag { font-size: 8px; border: 1px solid #a30000; color: #a30000; padding: 0 2px;
+  .qcr .note { font-size: 9px; line-height: 13px; color: #666; margin: -4px 0 9px; }
+  .qcr .tag { font-size: 8px; line-height: 11px; border: 1px solid #a30000; color: #a30000; padding: 0 2px;
       margin-left: 3px; }
   /* dates carry hyphens, which are break opportunities; keep each fragment whole */
   .qcr .nb { white-space: nowrap; }
@@ -689,9 +691,9 @@ _QC_HTML_RAW = r"""
   <table class="avoid">
     <colgroup><col style="width:22%"><col style="width:78%"></colgroup>
     <tr><td class="sec" colspan="2">Remarks</td></tr>
-    <tr><td class="lbl">Rejection Reason</td><td style="height:30px;">{{ txt(doc.rejection_reason) }}</td></tr>
-    <tr><td class="lbl">Final QC Remarks</td><td style="height:30px;">{{ txt(doc.final_qc_remarks) }}</td></tr>
-    <tr><td class="lbl">Overall Remarks</td><td style="height:30px;">{{ txt(doc.overall_remarks) }}</td></tr>
+    <tr><td class="lbl">Rejection Reason</td><td><div style="min-height:21px;">{{ txt(doc.rejection_reason) }}</div></td></tr>
+    <tr><td class="lbl">Final QC Remarks</td><td><div style="min-height:21px;">{{ txt(doc.final_qc_remarks) }}</div></td></tr>
+    <tr><td class="lbl">Overall Remarks</td><td><div style="min-height:21px;">{{ txt(doc.overall_remarks) }}</div></td></tr>
   </table>
 
   <!-- ===== signatures ===== -->
@@ -736,20 +738,20 @@ _QC_HTML = (
 # sample id (a draft QC) print the reason instead of a blank page.
 _STICKER_HTML_RAW = r"""
 <style>
-  .qsk { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+  .qsk { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
   .qsk table { border-collapse: collapse; width: 100%; table-layout: fixed;
-      margin-bottom: 10px; font-size: 10px; }
+      margin-bottom: 10px; font-size: 10px; line-height: 14px; }
   .qsk table td { border: 1px solid #000; padding: 4px 5px !important;
       word-wrap: break-word; overflow: hidden; }
-  .qsk .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px;
-      letter-spacing: 0.6px; }
+  .qsk .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
+      letter-spacing: 1px; }
   .qsk .lbl { background: #f6f6f6; font-weight: bold; }
   .qsk .b { font-weight: bold; }
-  .qsk .sub { font-size: 9px; color: #555; }
-  .qsk .id { font-size: 20px; font-weight: bold; letter-spacing: 1.5px; text-align: center; }
+  .qsk .sub { font-size: 9px; line-height: 13px; color: #555; }
+  .qsk .id { font-size: 20px; line-height: 29px; font-weight: bold; letter-spacing: 2px; text-align: center; }
   .qsk .sign { height: 34px; }
   .qsk .avoid { page-break-inside: avoid; }
-  .qsk .note { font-size: 9px; color: #666; }
+  .qsk .note { font-size: 9px; line-height: 13px; color: #666; }
   /* ids, batch codes and dates carry hyphens, which are break opportunities */
   .qsk .nb { white-space: nowrap; }
 </style>
@@ -808,8 +810,11 @@ _STICKER_HTML = _MACROS + _STICKER_HTML_RAW.replace("__INWARD_TYPES__", _INWARD_
 # ------------------------------------------------------------------ upsert ---
 
 
-def _upsert_print_format(name, doc_type, html):
+def _upsert_print_format(name, doc_type, html, page_size="A4"):
 	"""Idempotently (re)create one custom Jinja print format.
+
+	Every format starts with print_fonts.page_head: the same font and page margins for the
+	browser's Print and the downloaded PDF, so the two come out the same on paper.
 
 	`custom_format` and `disabled` stay ints and `standard` stays the string "No" so
 	the diff below matches what the DB stores and the format is not re-saved on every
@@ -827,7 +832,7 @@ def _upsert_print_format(name, doc_type, html):
 		"custom_format": 1,
 		"standard": "No",
 		"disabled": 0,
-		"html": html,
+		"html": print_fonts.page_head(page_size) + html,
 	}
 	if frappe.db.exists("Print Format", name):
 		pf = frappe.get_doc("Print Format", name)
@@ -857,7 +862,7 @@ def setup_qc_inspection_print_format():
 
 def setup_qc_sample_sticker_print_format():
 	"""BRD 4.1.5 — the sample sticker printed against the RMID / PMID (BR-QC-14)."""
-	_upsert_print_format(STICKER_PF_NAME, STICKER_DOC_TYPE, _STICKER_HTML)
+	_upsert_print_format(STICKER_PF_NAME, STICKER_DOC_TYPE, _STICKER_HTML, page_size=None)
 
 
 # --------------------------------------------------------------------------- GRN
@@ -870,26 +875,26 @@ GRN_DOC_TYPE = "Purchase Receipt"
 # print as one family.
 _GRN_HTML_RAW = r"""
 <style>
-  .piw { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+  .piw { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
   .piw table { border-collapse: collapse; width: 100%; table-layout: fixed;
-      margin-bottom: 9px; font-size: 10px; }
+      margin-bottom: 9px; font-size: 10px; line-height: 14px; }
   .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important;
       word-wrap: break-word; overflow: hidden; }
-  .piw table.g td { padding: 3px 4px !important; font-size: 9px; }
-  .piw table.g th { padding: 3px 4px !important; font-size: 8px; }
-  .piw th { background: #ececec; font-size: 9px; text-transform: uppercase; text-align: center;
+  .piw table.g td { padding: 3px 4px !important; font-size: 9px; line-height: 13px; }
+  .piw table.g th { padding: 3px 4px !important; font-size: 8px; line-height: 11px; }
+  .piw th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: center;
       font-weight: bold; }
-  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px;
-      letter-spacing: 0.6px; }
+  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
+      letter-spacing: 1px; }
   .piw .lbl { background: #f6f6f6; font-weight: bold; }
   .piw .c { text-align: center; }
   .piw .r { text-align: right; }
   .piw .b { font-weight: bold; }
-  .piw .sub { font-size: 9px; color: #555; font-weight: normal; }
+  .piw .sub { font-size: 9px; line-height: 13px; color: #555; font-weight: normal; }
   .piw .warn { color: #a30000; font-weight: bold; }
   .piw .tot td { background: #f0f0f0; font-weight: bold; }
-  .piw .title { font-size: 17px; font-weight: bold; text-align: center; letter-spacing: 1.5px; }
-  .piw .subtitle { text-align: center; font-size: 10px; color: #555; margin: 2px 0 8px; }
+  .piw .title { font-size: 17px; line-height: 24px; font-weight: bold; text-align: center; letter-spacing: 2px; }
+  .piw .subtitle { text-align: center; font-size: 10px; line-height: 14px; color: #555; margin: 2px 0 8px; }
   .piw .avoid { page-break-inside: avoid; }
   .piw .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }
 </style>
@@ -1022,29 +1027,29 @@ _INVOICE_HTML_RAW = r"""
 {%- endfor -%}
 {%- set debit_note = frappe.db.get_value("Purchase Receipt", doc.custom_grn, "custom_debit_note") if doc.custom_grn else None -%}
 <style>
-  .piw { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+  .piw { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
   .piw table { border-collapse: collapse; width: 100%; table-layout: fixed;
-      margin-bottom: 9px; font-size: 10px; }
+      margin-bottom: 9px; font-size: 10px; line-height: 14px; }
   .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important;
       word-wrap: break-word; overflow: hidden; }
-  .piw table.g td { padding: 3px 4px !important; font-size: 9px; }
-  .piw table.g th { padding: 3px 4px !important; font-size: 8px; }
-  .piw th { background: #ececec; font-size: 9px; text-transform: uppercase; text-align: center;
+  .piw table.g td { padding: 3px 4px !important; font-size: 9px; line-height: 13px; }
+  .piw table.g th { padding: 3px 4px !important; font-size: 8px; line-height: 11px; }
+  .piw th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: center;
       font-weight: bold; }
-  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px;
-      letter-spacing: 0.6px; }
+  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
+      letter-spacing: 1px; }
   .piw .lbl { background: #f6f6f6; font-weight: bold; }
   .piw .c { text-align: center; }
   .piw .r { text-align: right; }
   .piw .b { font-weight: bold; }
-  .piw .sub { font-size: 9px; color: #555; font-weight: normal; }
+  .piw .sub { font-size: 9px; line-height: 13px; color: #555; font-weight: normal; }
   .piw .warn { color: #a30000; font-weight: bold; }
   .piw .ok { color: #0b6b2f; font-weight: bold; }
   .piw .tot td { background: #f0f0f0; font-weight: bold; }
-  .piw .grand td { background: #e2e2e2; font-weight: bold; font-size: 11px; }
-  .piw .title { font-size: 17px; font-weight: bold; text-align: center; letter-spacing: 1.5px; }
-  .piw .subtitle { text-align: center; font-size: 10px; color: #555; margin: 2px 0 8px; }
-  .piw .stamp { text-align: center; font-size: 11px; font-weight: bold; letter-spacing: 2px;
+  .piw .grand td { background: #e2e2e2; font-weight: bold; font-size: 11px; line-height: 16px; }
+  .piw .title { font-size: 17px; line-height: 24px; font-weight: bold; text-align: center; letter-spacing: 2px; }
+  .piw .subtitle { text-align: center; font-size: 10px; line-height: 14px; color: #555; margin: 2px 0 8px; }
+  .piw .stamp { text-align: center; font-size: 11px; line-height: 16px; font-weight: bold; letter-spacing: 2px;
       border: 1px solid #a30000; color: #a30000; padding: 2px 0; margin-bottom: 8px; }
   .piw .avoid { page-break-inside: avoid; }
   .piw .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }

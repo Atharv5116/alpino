@@ -32,6 +32,8 @@ app_include_js = [
 	# the hard-coded item_row_colors.js; its reports became a default configuration).
 	"/assets/alpinos/js/item_display.js",
 	"/assets/alpinos/js/alpinos_list_prefs.js",
+	# Desk list views of Purchase Inward / QC / Quarantine open the module's list pages.
+	"/assets/alpinos/js/purchase_list_redirects.js",
 ]
 
 # include js, css files in header of web template
@@ -58,6 +60,7 @@ doctype_js = {
 	"Purchase Invoice": "public/js/purchase_invoice_debit_note.js",
 }
 doctype_list_js = {
+	"Purchase Order": "public/js/purchase_order_list.js",
 	"Pick List": "public/js/pick_list_list.js",
 	"Item": "public/js/item_list_colors.js",
 }
@@ -365,8 +368,16 @@ doc_events = {
 		"on_cancel": ["alpinos.purchase.purchase_invoice.payment_entry_on_cancel"],
 	},
 	"Purchase Order": {
+		"before_validate": [
+			# Before the controller's own validate(), which computes Grand Total from Rate
+			# and Discount and throws its own (confusing) error first if Discount leaves a
+			# line negative.
+			"alpinos.purchase.purchase_order_fields.validate_rate_and_discount",
+		],
 		"validate": [
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
+			"alpinos.purchase.purchase_order_fields.validate_driver_contact_no",
+			"alpinos.purchase.purchase_order_fields.validate_duplicate_items",
 			# The PO Type is what every inward against the order is raised as.
 			"alpinos.purchase.purchase_order_fields.validate_items_match_po_type",
 			# Before the edit guard: stamping the GSTIN and deriving the tax category is

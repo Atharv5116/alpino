@@ -430,15 +430,17 @@
    "fieldtype": "Check",
    "label": "Quarantine Items",
    "default": "0",
-   "description": "Hold the approved quantity of the selected items in the Quarantine warehouse until it is released."
+   "description": "Set automatically when any item in the QC Decision table is ticked for quarantine.",
+   "read_only": 1
   },
   {
    "fieldname": "quarantine_all_items",
    "fieldtype": "Check",
    "label": "Quarantine All Items",
    "default": "0",
-   "depends_on": "eval:doc.quarantine_items",
-   "description": "Every item with an approved quantity is quarantined. Leave unticked to pick items in the QC Decision table."
+   "description": "No longer used: items are quarantined one by one in the QC Decision table.",
+   "hidden": 1,
+   "read_only": 1
   },
   {
    "fieldname": "quarantine_col",

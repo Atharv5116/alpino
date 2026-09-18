@@ -23,6 +23,61 @@ var ALP_TRIM_MICROSECONDS = function (v) {
 	return m ? m[1] : v;
 };
 
+/**
+ * A Datetime typed as a date alone ("16-09-2026", then Tab) kept no time. Frappe's
+ * frappe.datetime.user_to_str reads a time only when the text has a space in it, so the value
+ * became a bare date -- midnight once stored -- while picking the same day from the calendar
+ * keeps one. A date typed alone now takes the time already in the field or, when the field
+ * had none, `default_time(user_time_format)`. get_value() parses through here too, so a save
+ * made without leaving the field gets the time as well.
+ */
+var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time) {
+	// The last date and time the field held, kept here rather than read off the control.
+	// Selecting the text and deleting it to type a new date empties control.value first
+	// (air-datepicker fires a change for the empty input). And when the screen resets a field
+	// to empty, Frappe can judge the set unchanged and skip it: control.value and, for a
+	// moment, the input box still hold the previous document's time, which refresh() parses
+	// again. So this follows every set_value (loading or resetting the document), and after
+	// one takes in parsed entries only once the user has been in the field.
+	let last = null;
+	let touched = false;
+	if (control.$input) control.$input.on('focus keydown input', () => { touched = true; });
+	const set_value = control.set_value.bind(control);
+	control.set_value = function (value, ...rest) {
+		last = value || null;
+		touched = false;
+		return set_value(value, ...rest);
+	};
+	const parse = control.parse.bind(control);
+	control.parse = function (value) {
+		const typed = typeof value === 'string' ? value.trim() : '';
+		const from_input = touched && !!control.$input && value === control.$input.val();
+		const date_fmt = frappe.datetime.get_user_date_fmt().toUpperCase();
+		if (!typed || !moment(typed, [date_fmt, date_fmt.replace('YYYY', 'YY')], true).isValid()) {
+			const parsed = parse(value);
+			if (parsed && from_input) last = parsed;
+			return parsed;
+		}
+		const time_fmt = frappe.datetime.get_user_time_fmt();
+		const held = last ? frappe.datetime.convert_to_user_tz(last, false) : null;
+		// Midnight is what a date-only entry used to leave behind, not a time anyone chose.
+		const time =
+			held && held.isValid() && held.format('HH:mm:ss') !== '00:00:00'
+				? held.format(time_fmt)
+				: default_time(time_fmt);
+		const result = parse(`${typed} ${time}`);
+		if (result && from_input) last = result;
+		if (result && control.$input && (result === control.value || result === control.get_model_value())) {
+			// Frappe takes a value equal to its model as nothing to do. Without a doc that model
+			// falls back to the value from before the text was cleared, so retyping the same date
+			// neither stored the value nor redrew its time. Do both here.
+			setTimeout(() => control.set_input(result), 0);
+		}
+		return result;
+	};
+	return control;
+};
+
 frappe.pages['purchase_inward_entry'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -99,6 +154,10 @@ var PurchaseInwardEntry = class {
 			parent: parent,
 			render_input: true,
 		});
+		if (control.df.fieldtype === 'Datetime') {
+			// A date typed without a time takes the current time, as a calendar pick does.
+			ALP_DATE_ONLY_KEEPS_TIME(control, (fmt) => moment(frappe.datetime.now_time(), 'HH:mm:ss').format(fmt));
+		}
 		// refresh() BEFORE set_value(). set_value is asynchronous (frappe.run_serially) and
 		// refresh is not, so refreshing afterwards redrew the still-empty field first. For a
 		// Date / Datetime that calls datepicker.clear(); air-datepicker's clear() fires
@@ -249,11 +308,17 @@ var PurchaseInwardEntry = class {
 					'custom_supplier_order_no',
 					'custom_vehicle_no',
 					'custom_driver_contact_no',
+					'set_warehouse',
 				]).then((res) => {
 					const v = (res && res.message) || {};
 					me._set('supplier_order_no', v.custom_supplier_order_no);
 					me._set('po_vehicle_no', v.custom_vehicle_no);
 					me._set('po_driver_contact_no', v.custom_driver_contact_no);
+					// Section 2: Default Target Location as per the selected PO -- its own, or
+					// its lines' warehouse when the header has none.
+					const line = (d.items || []).find((row) => row.target_warehouse);
+					const wh = v.set_warehouse || (line && line.target_warehouse);
+					if (wh) me._set('target_warehouse', wh);
 				});
 				// Always reload against the PO that is now selected. This used to be guarded by
 				// `if (!me.items.length)`, which meant that once any row was on screen, picking a
@@ -268,6 +333,7 @@ var PurchaseInwardEntry = class {
 		this.wrapper.find('.items-table tbody').empty();
 		(rows || []).forEach((row) => this.add_item_row(row));
 		this.render_receiving_rows();
+		this.load_item_info();
 		this.recalc_totals();
 		this.explain_skipped(rows, skipped, unmatched_available);
 	}
@@ -550,16 +616,87 @@ var PurchaseInwardEntry = class {
 			mk('.cell-mfg', { fieldtype: 'Date', fieldname: 'manufacturing_date' },
 				row.manufacturing_date, function (val) {
 					me.items[idx].manufacturing_date = val;
+					me.update_expiry(idx);
 				});
-			// Expiry is derived server-side from Item.shelf_life_in_days; shown read-only
-			// so the Store user can see what will be stored.
+			// Expiry = Manufacturing Date + the Item's shelf life. Shown as soon as the date is
+			// picked (update_expiry); the server derives the same on save.
 			mk('.cell-expiry', { fieldtype: 'Date', fieldname: 'expiry_date', read_only: 1 },
 				row.expiry_date);
 			mk('.cell-mrp', { fieldtype: 'Currency', fieldname: 'mrp' },
-				row.mrp, function (val) { me.items[idx].mrp = flt(val); });
+				row.mrp, function (val) {
+					me.items[idx].mrp = flt(val);
+					me.update_usp(idx);
+				});
 			mk('.cell-usp', { fieldtype: 'Data', fieldname: 'usp' },
 				row.usp, function (val) { me.items[idx].usp = val; });
 		});
+	}
+
+	/**
+	 * Section 2 values the grid can show before saving: Expiry from the Item's shelf life, MRP
+	 * from the PO line's Rate and USP = MRP ÷ product weight. Fetched once per set of rows;
+	 * the server computes the same on save (inward_api.receiving_item_info / format_usp /
+	 * po_line_mrp).
+	 */
+	load_item_info() {
+		const me = this;
+		const codes = Array.from(new Set(this.items.map((r) => r.item_code).filter(Boolean)));
+		if (!codes.length) return;
+		const token = (this._info_token = (this._info_token || 0) + 1);
+		frappe.call({
+			method: 'alpinos.purchase.inward_api.get_item_receiving_info',
+			args: {
+				item_codes: codes,
+				company: me.company || null,
+				po_details: me.items.map((r) => r.po_detail).filter(Boolean),
+			},
+			callback(r) {
+				if (token !== me._info_token || !r.message) return;
+				me.item_info = r.message.items || {};
+				me.currency_symbol = r.message.currency_symbol || '';
+				const po_mrp = r.message.po_mrp || {};
+				me.items.forEach((row, idx) => {
+					// A line saved without an MRP shows its PO line's Rate.
+					if (!flt(row.mrp) && flt(po_mrp[row.po_detail])) {
+						row.mrp = flt(po_mrp[row.po_detail]);
+						const c = me.fields[`mrp_${idx}`];
+						if (c) c.set_value(row.mrp);
+					}
+					me.update_expiry(idx);
+					me.update_usp(idx);
+				});
+			},
+		});
+	}
+
+	update_expiry(idx) {
+		const row = this.items[idx];
+		const info = (this.item_info || {})[row && row.item_code];
+		if (!row || !info) return;
+		const shelf = cint(info.shelf_life_in_days);
+		const expiry = row.manufacturing_date && shelf ? frappe.datetime.add_days(row.manufacturing_date, shelf) : '';
+		if ((row.expiry_date || '') === expiry) return;
+		row.expiry_date = expiry;
+		const c = this.fields[`expiry_date_${idx}`];
+		if (c) c.set_value(expiry);
+	}
+
+	update_usp(idx) {
+		const row = this.items[idx];
+		const info = (this.item_info || {})[row && row.item_code];
+		if (!row || !info || !flt(info.usp_weight)) return;
+		const c = this.fields[`usp_${idx}`];
+		if (c && !cint(c.df.read_only)) {
+			// Worked out from MRP and weight, so it is not typed.
+			c.df.read_only = 1;
+			c.refresh();
+		}
+		const usp = flt(row.mrp) > 0
+			? `${this.currency_symbol || ''}${(flt(row.mrp) / flt(info.usp_weight)).toFixed(3)}/${info.usp_unit}`
+			: '';
+		if ((row.usp || '') === usp) return;
+		row.usp = usp;
+		if (c) c.set_value(usp);
 	}
 
 	recalc_row(idx) {
@@ -712,6 +849,7 @@ var PurchaseInwardEntry = class {
 		this.wrapper.find('.items-table tbody').empty();
 		rows.forEach((r) => this.add_item_row(r));
 		this.render_receiving_rows();
+		this.load_item_info();
 		this.recalc_totals();
 	}
 
@@ -834,6 +972,7 @@ var PurchaseInwardEntry = class {
 				me.wrapper.find('.items-table tbody').empty();
 				(doc.items || []).forEach((row) => me.add_item_row(row));
 				me.render_receiving_rows();
+				me.load_item_info();
 
 				me.attachments = [];
 				me.wrapper.find('.attachments-table tbody').empty();
@@ -1227,6 +1366,26 @@ var PurchaseInwardEntry = class {
 					delete merged.idx;
 					return merged;
 				});
+				// Same problem, same fix, for dispute attachments: this page never sends
+				// uploaded_by / uploaded_on (server-stamped, read-only -- _stamp_dispute_
+				// attachments), so an existing row sent as-is lost both on the round trip.
+				// _stamp_dispute_attachments then saw no uploaded_on and stamped a NEW one,
+				// which _validate_update_after_submit then refused as a change to a row that,
+				// from the user's side, was never touched: "Row #1: Not allowed to change
+				// Uploaded On after submission from <original> to <just-now>".
+				if (payload.dispute_attachments) {
+					const server_attachments = {};
+					(g.message.dispute_attachments || []).forEach((row) => {
+						if (row.name) server_attachments[row.name] = row;
+					});
+					payload.dispute_attachments = payload.dispute_attachments.map((row) => {
+						const server = row.name && server_attachments[row.name];
+						if (!server) return row;
+						const merged = Object.assign({}, server, row, { name: server.name });
+						delete merged.idx;
+						return merged;
+					});
+				}
 				const doc = Object.assign({}, g.message, payload);
 				frappe.call({
 					method: 'frappe.client.save',

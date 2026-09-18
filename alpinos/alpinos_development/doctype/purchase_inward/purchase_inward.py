@@ -39,6 +39,7 @@ class PurchaseInward(Document):
 		self._validate_challan_no()
 		self._apply_default_target_warehouse()
 		self._set_expiry_dates()
+		self._set_usp()
 		self._validate_received_quantities()
 		self._validate_receiving_details()
 		self._stamp_dispute_attachments()
@@ -121,6 +122,7 @@ class PurchaseInward(Document):
 		self._compute_previously_received()
 		self._apply_default_target_warehouse()
 		self._set_expiry_dates()
+		self._set_usp()
 		self._validate_received_quantities()
 		self._validate_receiving_details()
 		self._stamp_dispute_attachments()
@@ -285,6 +287,7 @@ class PurchaseInward(Document):
 					"conversion_factor",
 					"qty",
 					"rate",
+					"price_list_rate",
 					"amount",
 					"warehouse",
 					"description",
@@ -315,6 +318,15 @@ class PurchaseInward(Document):
 			line.amount = flt(src.amount)
 			if not line.description:
 				line.description = src.description
+			# Section 2: a new line starts at its PO line's warehouse; a saved line keeps what
+			# the Store team set, blank included.
+			if not line.target_warehouse and src.warehouse and line.is_new():
+				line.target_warehouse = src.warehouse
+			# Section 2: MRP is the PO line's Rate until someone records otherwise.
+			if not flt(line.mrp):
+				from alpinos.purchase.inward_api import po_line_mrp
+
+				line.mrp = po_line_mrp(src)
 			line.stock_qty = flt(line.received_qty) * flt(line.conversion_factor)
 
 	# ------------------------- previously received / pending (task 298) -----
@@ -463,6 +475,19 @@ class PurchaseInward(Document):
 	# ------------------------------------- receiving detail (tasks 297/300) -
 
 	def _apply_default_target_warehouse(self):
+		# Section 2: the Default Target Location starts as the selected PO's own. Only when the
+		# inward is raised or moved to another PO -- a location the Store team clears on
+		# purpose is not silently put back, so VAL-PI-09 can still refuse Submit for QC.
+		if (
+			not self.target_warehouse
+			and self.purchase_order
+			and self.has_value_changed("purchase_order")
+		):
+			self.target_warehouse = frappe.db.get_value(
+				"Purchase Order", self.purchase_order, "set_warehouse"
+			) or frappe.db.get_value(
+				"Purchase Order Item", {"parent": self.purchase_order}, "warehouse", order_by="idx asc"
+			)
 		if not self.target_warehouse:
 			return
 		for line in self.get("items"):
@@ -501,6 +526,24 @@ class PurchaseInward(Document):
 					).format(line.idx, label, frappe.bold(value)),
 					title=_("Invalid Date"),
 				)
+
+	def _set_usp(self):
+		"""Section 2: USP = MRP ÷ product weight (the Item's), e.g. ₹199 ÷ 400 g = ₹0.497/g.
+
+		Recomputed whenever the line has an MRP and the Item a usable weight; otherwise the
+		USP the Store team typed is kept.
+		"""
+		from alpinos.purchase.inward_api import currency_symbol, format_usp, receiving_item_info
+
+		lines = [line for line in self.get("items") if flt(line.mrp) > 0]
+		if not lines:
+			return
+		info = receiving_item_info([line.item_code for line in lines])
+		symbol = currency_symbol(self.company)
+		for line in lines:
+			usp = format_usp(line.mrp, info.get(line.item_code), symbol)
+			if usp:
+				line.usp = usp
 
 	def _set_expiry_dates(self):
 		"""Expiry = Manufacturing Date + the item's shelf life (task 297)."""

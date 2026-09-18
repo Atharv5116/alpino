@@ -1,8 +1,8 @@
 """Quarantine — hold QC-approved stock in the Quarantine warehouse until it is released.
 
-QC decides it. On the Purchase QC, QC ticks "Quarantine Items" and then either "Quarantine
-All Items" or the individual lines in the QC Decision table, with one reason and one
-reminder interval for the lot. What is held is the line's approved quantity; the rejected
+QC decides it. On the Purchase QC, QC ticks the lines to hold in the Quarantine column of
+the QC Decision table, with one reason and one reminder interval for the lot ("Quarantine
+Items" is derived from those ticks). What is held is the line's approved quantity; the rejected
 quantity goes to the Rejected warehouse and the debit note exactly as without quarantine.
 
 When the QC is completed:
@@ -72,21 +72,14 @@ def held_qty(line):
 def apply_qc_selection(qc):
 	"""Normalise the picks while the QC is a draft. Runs in PurchaseQC.validate.
 
-	Untick "Quarantine Items" and every line is cleared; tick "Quarantine All Items" and
-	every line with an approved quantity is picked (recomputed on each save, so a line that
-	gains or loses its approved quantity follows).
+	QC ticks the items to hold in the Quarantine column of the decision table. "Quarantine
+	Items" is derived from those ticks, never typed.
 	"""
 	if cint(qc.get("docstatus")) != 0:
 		return
 	lines = qc.get("items") or []
-	if not cint(qc.get("quarantine_items")):
-		qc.quarantine_all_items = 0
-		for line in lines:
-			line.quarantine = 0
-		return
-	if cint(qc.get("quarantine_all_items")):
-		for line in lines:
-			line.quarantine = 1 if flt(line.approved_qty) > 0 else 0
+	qc.quarantine_all_items = 0
+	qc.quarantine_items = 1 if any(cint(line.quarantine) for line in lines) else 0
 
 
 def assert_qc_ready(qc):
@@ -96,7 +89,7 @@ def assert_qc_ready(qc):
 	picked = [line for line in qc.get("items") or [] if cint(line.quarantine)]
 	if not picked:
 		frappe.throw(
-			_("Select the items to quarantine in the QC Decision table, or tick Quarantine All Items."),
+			_("Tick the items to quarantine in the Quarantine column of the QC Decision table."),
 			title=_("Quarantine"),
 		)
 	if cint(qc.get("quarantine_reminder_days")) <= 0:

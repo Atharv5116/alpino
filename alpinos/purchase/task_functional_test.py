@@ -156,6 +156,9 @@ def receive(pi, qty, mfg=None, batch=None, wh="__default__", arrival=True, verif
 		pi.actual_vehicle_no = "GJ-05-TF-0001"
 		pi.actual_driver_contact_no = "9000000031"
 	pi.allow_excess_qty = excess
+	if wh is None:
+		# No location anywhere: a Default Target Location would fill the blank lines.
+		pi.target_warehouse = None
 	for r in pi.items:
 		r.received_qty = qty
 		r.target_warehouse = T["wh"] if wh == "__default__" else wh

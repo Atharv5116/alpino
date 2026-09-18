@@ -93,9 +93,21 @@ def purge(dry_run=True, supplier=TEST_SUPPLIER):
 	_delete_where("Error Log", "reference_name", alerts["Email Queue"])
 	_delete_where("Email Queue", "name", alerts["Email Queue"])
 	_delete_where("Error Log", "name", alerts["Error Log"])
-	for file_name in frappe.get_all("File", filters={"attached_to_name": ("in", names or [""])}, pluck="name"):
-		_try(report, "File", file_name, lambda n=file_name: frappe.delete_doc(
-			"File", n, force=True, ignore_permissions=True, delete_permanently=True))
+	# Only files attached to a test voucher, matched on doctype AND name. This used to filter
+	# on attached_to_name alone, with `names or [""]` when no voucher was found -- and Frappe
+	# turns "in ('')" into ifnull(attached_to_name, '') in (''), which matched EVERY file not
+	# attached to anything: a purge that only removed a tft- user deleted 29 real uploads.
+	if names:
+		for file_name in frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": ("in", [dt for dt, _field in VOUCHERS]),
+				"attached_to_name": ("in", names),
+			},
+			pluck="name",
+		):
+			_try(report, "File", file_name, lambda n=file_name: frappe.delete_doc(
+				"File", n, force=True, ignore_permissions=True, delete_permanently=True))
 
 	for item in items:
 		_delete_where("Bin", "item_code", [item])

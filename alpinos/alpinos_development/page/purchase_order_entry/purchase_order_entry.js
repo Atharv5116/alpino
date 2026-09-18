@@ -30,6 +30,62 @@ var ALP_TRIM_MICROSECONDS = function (v) {
 // BRD 2.1.1 PO Type. Mirrors alpinos.purchase.constants.INWARD_TYPES.
 var PO_INWARD_TYPES = ['RM', 'PM', 'FG', 'MM'];
 
+/**
+ * A Datetime typed as a date alone ("16-09-2026", then Tab) kept no time. Frappe's
+ * frappe.datetime.user_to_str reads a time only when the text has a space in it, so the value
+ * became a bare date -- midnight once stored -- while picking the same day from the calendar
+ * keeps one. A date typed alone now takes the time already in the field or, when the field
+ * had none, `default_time(user_time_format)`. get_value() parses through here too, so a save
+ * made without leaving the field gets the time as well.
+ */
+var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time) {
+	// The last date and time the field held, kept here rather than read off the control.
+	// Selecting the text and deleting it to type a new date empties control.value first
+	// (air-datepicker fires a change for the empty input). And when the screen resets a field
+	// to empty, Frappe can judge the set unchanged and skip it: control.value and, for a
+	// moment, the input box still hold the previous document's time, which refresh() parses
+	// again. So this follows every set_value (loading or resetting the document), and after
+	// one takes in parsed entries only once the user has been in the field.
+	let last = null;
+	let touched = false;
+	if (control.$input) control.$input.on('focus keydown input', () => { touched = true; });
+	const set_value = control.set_value.bind(control);
+	control.set_value = function (value, ...rest) {
+		last = value || null;
+		touched = false;
+		return set_value(value, ...rest);
+	};
+	const parse = control.parse.bind(control);
+	control.parse = function (value) {
+		const typed = typeof value === 'string' ? value.trim() : '';
+		const from_input = touched && !!control.$input && value === control.$input.val();
+		const date_fmt = frappe.datetime.get_user_date_fmt().toUpperCase();
+		if (!typed || !moment(typed, [date_fmt, date_fmt.replace('YYYY', 'YY')], true).isValid()) {
+			const parsed = parse(value);
+			if (parsed && from_input) last = parsed;
+			return parsed;
+		}
+		const time_fmt = frappe.datetime.get_user_time_fmt();
+		const held = last ? frappe.datetime.convert_to_user_tz(last, false) : null;
+		// Midnight is what a date-only entry used to leave behind, not a time anyone chose.
+		const time =
+			held && held.isValid() && held.format('HH:mm:ss') !== '00:00:00'
+				? held.format(time_fmt)
+				: default_time(time_fmt);
+		const result = parse(`${typed} ${time}`);
+		if (result && from_input) last = result;
+		if (result && control.$input && (result === control.value || result === control.get_model_value())) {
+			// Frappe takes a value equal to its model as nothing to do. Without a doc that model
+			// falls back to the value from before the text was cleared, so retyping the same date
+			// neither stored the value nor redrew its time. Do both here.
+			setTimeout(() => control.set_input(result), 0);
+		}
+		return result;
+	};
+	return control;
+};
+
+
 frappe.pages['purchase_order_entry'].on_page_load = function (wrapper) {
 	var page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -76,6 +132,11 @@ var PurchaseOrderEntry = class {
 			parent: parent,
 			render_input: true,
 		});
+		if (c.df.fieldtype === 'Datetime') {
+			// A date typed without a time takes the current time, shown straight away rather
+			// than only after saving (same rule as the Purchase Inward's own date fields).
+			ALP_DATE_ONLY_KEEPS_TIME(c, (fmt) => moment(frappe.datetime.now_time(), 'HH:mm:ss').format(fmt));
+		}
 		c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 		c.refresh();
 		this.fields[df.fieldname] = c;
@@ -206,15 +267,39 @@ var PurchaseOrderEntry = class {
 			fieldname: 'custom_vehicle_no', label: 'Vehicle Number',
 			description: 'Data, not a number: vehicle references carry leading zeros and spaces.',
 		});
-		this._ctl('.field-driver-contact-no', {
+		const driver = this._ctl('.field-driver-contact-no', {
 			fieldname: 'custom_driver_contact_no', label: 'Driver Contact Number',
+			description: '10-digit number.',
 		});
+		if (driver && driver.$input) {
+			// Only digits go in, and typing stops at 10. A pasted number keeps every digit it
+			// had ("+91 98765 43210" -> 919876543210) so it is flagged instead of being cut
+			// down to a different number; the server refuses anything but 10 digits
+			// (purchase_order_fields.validate_driver_contact_no).
+			driver.$input.attr({ inputmode: 'numeric', autocomplete: 'off' });
+			const flag = () => {
+				const v = driver.$input.val();
+				// Through df.invalid: Frappe re-applies has-error from it after every change,
+				// so toggling the class directly was wiped out the moment the field was left.
+				driver.df.invalid = !!v && !/^\d{10}$/.test(v);
+				driver.set_invalid();
+			};
+			driver.$input.on('input', (e) => {
+				const el = e.target;
+				let digits = el.value.replace(/\D/g, '');
+				const pasted = e.originalEvent && /^insertFromPaste|^insertFromDrop/.test(e.originalEvent.inputType || '');
+				if (!pasted && digits.length > 10) digits = digits.slice(0, 10);
+				if (digits !== el.value) el.value = digits;
+				flag();
+			});
+			driver.$input.on('change blur', flag);
+		}
 		this._ctl('.field-estimated-arrival', {
 			fieldname: 'custom_estimated_arrival', label: 'Estimated Arrival Date & Time',
 			fieldtype: 'Datetime',
 			// Without this the control appends the site time zone as a description.
 			hide_timezone: 1,
-			description: 'A date with no time is treated as 9:00 AM (BRD 2.1.1).',
+			description: 'A date with no time takes the current time.',
 		});
 	}
 
@@ -332,7 +417,13 @@ var PurchaseOrderEntry = class {
 				return c;
 			};
 
-			mk('.cell-item-code', { fieldtype: 'Link', fieldname: 'item_code', options: 'Item' },
+			mk('.cell-item-code', {
+				fieldtype: 'Link', fieldname: 'item_code', options: 'Item',
+				// Combo/bundle SKUs are made of other items' stock (item_custom_fields.py
+				// custom_is_bundle) and have no rate/warehouse of their own to receive
+				// against, so a Purchase Order line can only be an individual SKU.
+				get_query: () => ({ filters: { custom_is_bundle: 0 } }),
+			},
 				row.item_code, (val) => {
 					me.items[idx].item_code = val;
 					me.fetch_item(idx, val);
@@ -347,14 +438,28 @@ var PurchaseOrderEntry = class {
 			// -> rate, so BRD Rate binds to price_list_rate and BRD Net Rate to rate.
 			// Binding the discount against `rate` instead does nothing at all: ERPNext
 			// applies it to price_list_rate, so the discount column would be inert.
-			mk('.cell-rate', { fieldtype: 'Currency', fieldname: 'price_list_rate' },
+			mk('.cell-rate', { fieldtype: 'Currency', fieldname: 'price_list_rate', precision: 2 },
 				row.price_list_rate, (val) => {
-					me.items[idx].price_list_rate = flt(val);
+					// At most 2 digits after the decimal.
+					me.items[idx].price_list_rate = flt(flt(val).toFixed(2));
 					me.recalc_row(idx);
 				});
 			mk('.cell-discount', { fieldtype: 'Percent', fieldname: 'discount_percentage' },
 				row.discount_percentage, (val) => {
-					me.items[idx].discount_percentage = flt(val);
+					let v = flt(val);
+					if (v > 100) {
+						v = 100;
+						frappe.msgprint({
+							title: __('Invalid Discount'),
+							message: __('Discount cannot be more than 100%.'),
+							indicator: 'red',
+						});
+						// The control still shows what was typed until told otherwise --
+						// set_value redraws it to the capped value so the two never disagree.
+						const c = me.fields[`discount_percentage_${idx}`];
+						if (c) c.set_value(v);
+					}
+					me.items[idx].discount_percentage = v;
 					me.recalc_row(idx);
 				});
 			mk('.cell-net-rate', { fieldtype: 'Currency', fieldname: 'rate', read_only: 1 },
@@ -385,6 +490,20 @@ var PurchaseOrderEntry = class {
 				row.uom = '';
 				me.redraw_items();
 			}
+			return;
+		}
+		// Same Item Code already on another row: caught here, at the moment it is picked,
+		// rather than only at save (purchase_order_fields.validate_duplicate_items).
+		if (me.items.some((r) => r !== row && r.item_code === item_code)) {
+			frappe.msgprint({
+				title: __('Duplicate Item'),
+				message: __('{0} is already on another row. Combine the quantities into a single row instead.', [frappe.utils.escape_html(item_code)]),
+				indicator: 'red',
+			});
+			row.item_code = '';
+			row.item_name = '';
+			row.uom = '';
+			me.redraw_items();
 			return;
 		}
 		frappe.db.get_value('Item', item_code, ['item_name', 'stock_uom']).then((r) => {

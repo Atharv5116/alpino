@@ -109,25 +109,38 @@ var PIW_COLUMNS = [
 		width: '11%',
 		render: (d, h) => h.po(d),
 	},
+	{
+		label: 'Inward Date',
+		sort: 'inward_datetime',
+		width: '10%',
+		render: (d, h) => h.date(d.inward_datetime),
+	},
 	{ label: 'Inward Type', sort: 'inward_type', width: '8%', render: (d, h) => h.dash(d.inward_type) },
 	{
 		label: 'Vendor Name',
 		sort: 'supplier_name',
-		width: '16%',
+		width: '12%',
 		render: (d, h) => h.dash(d.supplier_name || d.supplier),
 	},
 	{
 		label: 'Order Qty',
 		sort: 'total_order_qty',
 		cls: 'text-right',
-		width: '10%',
+		width: '9%',
 		render: (d, h) => h.qty(d.total_order_qty, d.uom),
+	},
+	{
+		label: 'Pending Qty',
+		sort: 'total_pending_qty',
+		cls: 'text-right',
+		width: '9%',
+		render: (d, h) => h.qty(d.total_pending_qty, d.uom),
 	},
 	{
 		label: 'Vehicle No.',
 		// sorts on the same COALESCE the cell renders, not on actual_vehicle_no alone
 		sort: 'vehicle_no',
-		width: '11%',
+		width: '8%',
 		render: (d, h) => h.dash(d.vehicle_no),
 	},
 	{
@@ -141,11 +154,11 @@ var PIW_COLUMNS = [
 		label: 'Received Qty',
 		sort: 'total_received_qty',
 		cls: 'text-right',
-		width: '10%',
+		width: '9%',
 		render: (d, h) => h.qty(d.total_received_qty, d.uom),
 	},
-	{ label: 'Status', sort: 'inward_status', width: '12%', render: (d, h) => h.status(d) },
-	{ label: 'Actions', cls: 'piw-col-actions', width: '14%', render: (d, h) => h.actions(d) },
+	{ label: 'Status', sort: 'inward_status', width: '10%', render: (d, h) => h.status(d) },
+	{ label: 'Actions', cls: 'piw-col-actions', width: '12%', render: (d, h) => h.actions(d) },
 ];
 
 // Row buttons that open another document rather than the inward itself.
@@ -644,6 +657,7 @@ var PurchaseInwardListPage = class {
 		const helpers = {
 			esc,
 			dash: (v) => (v == null || v === '' ? '—' : esc(v)),
+			date: (v) => (v ? esc(frappe.datetime.str_to_user(v)) : '—'),
 			qty: (v, uom) => {
 				const n = flt(v);
 				const num = format_number(n, null, n % 1 ? 2 : 0);

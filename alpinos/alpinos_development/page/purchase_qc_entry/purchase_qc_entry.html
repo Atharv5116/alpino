@@ -1,8 +1,6 @@
 <style>
 /* Cards, titles and scroll wrappers come from public/css/alpinos_pages.css. */
-/* The Quarantine column and its fields only show once "Quarantine Items" is ticked. */
-.purchase-qc-entry .pqc-col-quarantine { display: none; }
-.purchase-qc-entry.pqc-quarantining .pqc-col-quarantine { display: table-cell; }
+/* The Quarantine column is always there; the reminder and reason only once an item is ticked. */
 .purchase-qc-entry .pqc-quarantine-fields { display: none; }
 .purchase-qc-entry.pqc-quarantining .pqc-quarantine-fields { display: flex; }
 .purchase-qc-entry .eso-subtitle {
@@ -398,11 +396,7 @@
 
 		<!-- Quarantine: hold approved stock in the Quarantine warehouse until it is released -->
 		<h6 class="eso-subtitle">Quarantine</h6>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-items"></div>
-		</div>
 		<div class="row pqc-quarantine-fields">
-			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-all"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-quarantine-reminder"></div>
 			<div class="col-md-6 col-sm-12 eso-fld field-quarantine-reason"></div>
 		</div>

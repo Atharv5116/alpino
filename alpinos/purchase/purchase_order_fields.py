@@ -16,6 +16,8 @@ owns them; nothing else may write them. They are deliberately NOT ERPNext's `rec
 every receipt submit or cancel.
 """
 
+import re
+
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
@@ -25,9 +27,6 @@ from alpinos.purchase import constants as C
 
 PO = "Purchase Order"
 PO_ITEM = "Purchase Order Item"
-
-# BRD 2.1.1: "If only the date is entered, the default time shall be set to 9:00 AM."
-DEFAULT_ARRIVAL_HOUR = 9
 
 # BR-PO-20 .. BR-PO-25. Shown on the checkbox itself so the buyer sees the consequence
 # before ticking it, not after the inward is refused (VAL-PO-13).
@@ -129,6 +128,9 @@ def _custom_fields():
 				label="Driver Contact Number",
 				fieldtype="Data",
 				insert_after="custom_vehicle_no",
+				# No length=10: shrinking the column would cut older orders' values. The
+				# 10 digits are enforced by validate_driver_contact_no instead.
+				description="10-digit number.",
 			),
 			dict(
 				fieldname="custom_shipment_col_1",
@@ -270,6 +272,31 @@ def execute():
 # ------------------------------------------------------------ server-side guards
 
 
+def validate_duplicate_items(doc, method=None):
+	"""VAL-PO: the same Item Code cannot be added twice on one Purchase Order.
+
+	Two rows for the same item split its ordered quantity across lines that the rest of the
+	module treats as independent (a Purchase Inward line, its own pending-quantity, its own
+	batch) with no rule for which row a receipt belongs to. One line per item, at whatever
+	quantity is needed, is the only unambiguous encoding.
+	"""
+	seen = {}
+	dupes = []
+	for row in doc.get("items") or []:
+		if not row.item_code:
+			continue
+		if row.item_code in seen and row.item_code not in dupes:
+			dupes.append(row.item_code)
+		seen[row.item_code] = True
+	if dupes:
+		frappe.throw(
+			frappe._("These items appear more than once: {0}. Combine each into a single row.").format(
+				", ".join(frappe.bold(d) for d in dupes)
+			),
+			title=frappe._("Duplicate Items"),
+		)
+
+
 def validate_items_match_po_type(doc, method=None):
 	"""The PO Type must be the type of the goods on the order.
 
@@ -320,12 +347,51 @@ def validate_items_match_po_type(doc, method=None):
 	)
 
 
+def validate_rate_and_discount(doc, method=None):
+	"""Rate keeps at most 2 decimal digits; Discount % cannot exceed 100."""
+	for row in doc.get("items") or []:
+		rate = flt(row.get("price_list_rate"))
+		rounded = flt(rate, 2)
+		if abs(rate - rounded) > 1e-9:
+			row.price_list_rate = rounded
+		if flt(row.get("discount_percentage")) > 100:
+			frappe.throw(
+				frappe._("Row {0}: Discount cannot be more than 100%.").format(row.idx),
+				title=frappe._("Invalid Discount"),
+			)
+
+
+DRIVER_CONTACT_DIGITS = 10
+
+
+def validate_driver_contact_no(doc, method=None):
+	"""The Driver Contact Number on a Purchase Order is a 10-digit number, or blank.
+
+	Surrounding spaces are trimmed; anything else -- letters, a +91 prefix, 9 or 11 digits --
+	is refused rather than guessed at. Enforced here as well as on the entry screen so an
+	order saved from the desk form, an import or the API is held to the same rule.
+	"""
+	raw = doc.get("custom_driver_contact_no") or ""
+	value = raw.strip()
+	if value != raw:
+		doc.custom_driver_contact_no = value
+	if value and not re.fullmatch(r"\d{%d}" % DRIVER_CONTACT_DIGITS, value):
+		frappe.throw(
+			frappe._("Driver Contact Number must be a {0}-digit number (digits only). {1} is not.").format(
+				DRIVER_CONTACT_DIGITS, frappe.bold(value)
+			),
+			title=frappe._("Invalid Driver Contact Number"),
+		)
+
+
 def normalize_estimated_arrival(doc, method=None):
-	"""BRD 2.1.1 — a date-only Estimated Arrival defaults to 9:00 AM.
+	"""A date-only Estimated Arrival takes the current time (matches the entry screen).
 
 	Frappe hands a date-only entry to the server as midnight, so midnight is the only
 	signal available; a genuine midnight arrival has to be entered as 00:01. Client-side
-	defaulting alone would not survive an API or import, hence the server guard.
+	defaulting alone would not survive an API or import, hence the server guard. The
+	screen fills the time itself before this ever runs, so this only catches a document
+	built outside it.
 	"""
 	value = doc.get("custom_estimated_arrival")
 	if not value:
@@ -333,8 +399,9 @@ def normalize_estimated_arrival(doc, method=None):
 	value = get_datetime(value)
 	if value.hour or value.minute or value.second:
 		return
+	now = get_datetime()
 	doc.custom_estimated_arrival = value.replace(
-		hour=DEFAULT_ARRIVAL_HOUR, minute=0, second=0, microsecond=0
+		hour=now.hour, minute=now.minute, second=now.second, microsecond=0
 	)
 
 
