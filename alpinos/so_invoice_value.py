@@ -187,14 +187,15 @@ def refresh_from_pick_list(doc, method=None):
 
 
 @frappe.whitelist()
-def backfill(from_date=None, to_date=None, apply=0):
+def backfill(from_date=None, to_date=None, apply=0, sample=25):
 	"""Fill the value on existing orders that already have Delivery Notes.
 
-	Dry-run by default; apply=1 writes.
+	Dry-run by default; apply=1 writes. sample caps the orders listed back (0 = all).
 
 	  bench --site SITE execute alpinos.so_invoice_value.backfill --kwargs "{'apply':1}"
 	"""
 	apply = int(apply)
+	sample = int(sample)
 	conditions = ["so.docstatus < 2"]
 	params = {}
 	if from_date:
@@ -231,7 +232,7 @@ def backfill(from_date=None, to_date=None, apply=0):
 		if flt(before) == flt(value):
 			continue
 		changed += 1
-		if len(samples) < 25:
+		if not sample or len(samples) < sample:
 			samples.append({"sales_order": so, "old": before, "new": value})
 		if apply:
 			frappe.db.set_value(
