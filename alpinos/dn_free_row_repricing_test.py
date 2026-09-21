@@ -254,6 +254,48 @@ def run():
 		check("free rows are found by table (freebie, scheme, additional) and by Pick List source", found_all_four_ways)
 		check("a dry run writes nothing", dry_run_writes_nothing)
 
+		def preview_shows_order_amounts():
+			import os
+			import tempfile
+
+			from openpyxl import load_workbook
+
+			path = os.path.join(tempfile.mkdtemp(), "dry_run.xlsx")
+			summary = fix.preview(file_path=path)
+			_assert(summary["delivery_notes_to_correct"] >= 4, f"preview listed {summary['delivery_notes_to_correct']}")
+			_assert(summary["left_for_review"] >= 1, "the tampered note is not in the review count")
+			for dn in free:
+				_assert(_snapshot(dn)["grand_total"] == inflated[dn]["grand_total"], f"preview wrote {dn}")
+			_assert(not _comments(dn_full), "preview left a comment")
+			_assert(flt(frappe.db.get_value("Sales Order", so_part, "custom_total_invoice_value"), 2)
+			        == inflated[dn_part]["grand_total"], "preview restated an order")
+
+			wb = load_workbook(path)
+			notes = {r[3]: r for r in wb["Delivery Notes"].iter_rows(min_row=2, values_only=True)}
+			for dn, so in ((dn_full, so_full), (dn_part, so_part), (dn_two_a, so_two), (dn_two_b, so_two)):
+				_assert(dn in notes, f"{dn} missing from the Delivery Notes sheet")
+				r = notes[dn]
+				_assert(r[0] == so and flt(r[2], 2) == so_grand[so], f"{dn}: order {r[0]} amount {r[2]}, expected {so} {so_grand[so]}")
+				_assert(flt(r[6], 2) == inflated[dn]["grand_total"], f"{dn}: amount now {r[6]}")
+				_assert(flt(r[7], 2) == base[dn]["grand_total"], f"{dn}: amount after {r[7]} != {base[dn]['grand_total']}")
+			_assert(notes[dn_part][7] < notes[dn_part][2], "the part delivery's note is shown at the order amount")
+
+			orders = {r[0]: r for r in wb["Sales Orders"].iter_rows(min_row=2, values_only=True)}
+			p = orders.get(so_part)
+			_assert(p, f"{so_part} missing from the Sales Orders sheet")
+			_assert(str(p[3]).startswith("Part"), f"{so_part} delivery shown as {p[3]}")
+			_assert(flt(p[4], 2) == inflated[dn_part]["grand_total"] and flt(p[5], 2) == base[dn_part]["grand_total"],
+			        f"{so_part}: notes now/after {p[4]}/{p[5]}")
+			_assert(flt(p[7], 2) == flt(siv._dispatched_value(so_part), 2), f"{so_part}: value after {p[7]}")
+			t = orders.get(so_two)
+			_assert(t and t[3] == "Full" and flt(t[5], 2) == so_grand[so_two] and flt(t[7], 2) == so_grand[so_two],
+			        f"{so_two}: {t}")
+			review_notes = [r[3] for r in wb["Left for review"].iter_rows(min_row=2, values_only=True)]
+			_assert(dn_tamper in review_notes, f"{dn_tamper} missing from the review sheet")
+
+		check("the preview lists each note beside its order amount, in the terminal and a workbook, writing nothing",
+		      preview_shows_order_amounts)
+
 		out = fix.run(apply=1)
 		after = {dn: _snapshot(dn) for dn in base}
 
@@ -348,15 +390,16 @@ def run():
 		check("a note whose totals do not reproduce is left for review, not written", mismatch_left_for_review)
 		check("running it again changes nothing", second_run_is_a_no_op)
 
-		def patch_restates_every_order():
-			from alpinos.patches.v1_0.reprice_free_rows_on_old_delivery_notes import execute
+		def apply_restates_every_order():
 			row = _add_free_row(dn_two_a, "freebie", qty=3)
 			frappe.db.set_value("Sales Order", so_ctrl, "custom_total_invoice_value", 1.0, update_modified=False)
-			execute()
-			_assert(_snapshot(dn_two_a)["grand_total"] == base[dn_two_a]["grand_total"], "patch did not correct the note")
-			_assert(not any(flt(v) for v in _free_row_prices(row).values()), "patch left the free row priced")
+			out = fix.apply()
+			_assert(out["delivery_notes_corrected"] == 1, f"apply corrected {out['delivery_notes_corrected']}")
+			_assert(dn_tamper in out["left_for_review"], "apply did not report the note left for review")
+			_assert(_snapshot(dn_two_a)["grand_total"] == base[dn_two_a]["grand_total"], "apply did not correct the note")
+			_assert(not any(flt(v) for v in _free_row_prices(row).values()), "apply left the free row priced")
 			v = flt(frappe.db.get_value("Sales Order", so_ctrl, "custom_total_invoice_value"), 2)
-			_assert(v == so_grand[so_ctrl], f"patch left {so_ctrl} at {v}, order {so_grand[so_ctrl]}")
+			_assert(v == so_grand[so_ctrl], f"apply left {so_ctrl} at {v}, order {so_grand[so_ctrl]}")
 
 		def mutation_rate_only():
 			"""Zero the rate but leave the list price: ERPNext re-prices the row from it."""
@@ -390,7 +433,7 @@ def run():
 				fix._recalculate = real
 			_assert(res["status"] == "would correct", "the guard is what holds the tampered note back")
 
-		check("the migration patch corrects notes and restates every order's value", patch_restates_every_order)
+		check("apply corrects notes and restates every order's value", apply_restates_every_order)
 		check("MUTATION: zeroing only the rate leaves the row priced", mutation_rate_only)
 		check("MUTATION: without the reproduce-first guard the tampered note is rewritten", mutation_no_guard)
 		return _report()
