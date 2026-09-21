@@ -8,7 +8,7 @@ price_list_rate 0; this corrects the notes already made.
 
 Each note is corrected on its OWN lines: the free rows go to 0 and the totals are
 re-derived exactly as a save derives them (ERPNext's calculation, then the Sales Order
-alignment). A part delivery therefore keeps its own share -- nothing is set to the
+alignment where the branch has it). A part delivery therefore keeps its own share -- nothing is set to the
 order's total. A note is only rewritten when that same calculation, run with the free
 rows untouched, reproduces its stored totals, so the free rows are the only thing that
 can move; a note that does not is listed for review and left alone.
@@ -92,10 +92,14 @@ def _totals(doc):
 
 def _recalculate(doc):
 	"""The value part of a Delivery Note save, without the rest of validate."""
-	from alpinos.delivery_note_hooks import _align_value_with_sales_order
+	from alpinos import delivery_note_hooks
 
 	doc.calculate_taxes_and_totals()
-	_align_value_with_sales_order(doc)
+	# The Sales Order alignment is part of the save only on a branch that has it; where it
+	# is absent the notes were saved without it, and recomputing without it matches them.
+	align = getattr(delivery_note_hooks, "_align_value_with_sales_order", None)
+	if align:
+		align(doc)
 
 
 def _sales_orders_of(doc):
