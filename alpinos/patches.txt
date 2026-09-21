@@ -34,3 +34,4 @@ alpinos.patches.v1_0.plain_customer_names
 alpinos.patches.v1_0.plain_customer_names_v2
 alpinos.patches.v1_0.mark_legacy_invoice_downloads
 alpinos.patches.v1_0.backfill_so_invoice_value_for_queue
+alpinos.patches.v1_0.reprice_free_rows_on_old_delivery_notes
