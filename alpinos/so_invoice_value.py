@@ -51,46 +51,114 @@ def _dispatched_value(sales_order):
 	return flt(grand * share, 2)
 
 
+def bundle_units(item_codes):
+	"""item_code -> individual units in ONE combo, for the codes that are bundles.
+
+	The native Product Bundle is the stock engine's source (alpinos.product_bundle_sync
+	keeps it in step with the Item's own mapping); the Item mapping is the fallback for a
+	bundle whose native record is missing.
+	"""
+	if not item_codes:
+		return {}
+	units = {}
+	for r in frappe.db.sql(
+		"""
+		SELECT pb.new_item_code AS item, SUM(pbi.qty) AS units
+		FROM `tabProduct Bundle` pb
+		JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+		WHERE pb.new_item_code IN %(codes)s
+		GROUP BY pb.new_item_code
+		""",
+		{"codes": tuple(item_codes)},
+		as_dict=True,
+	):
+		if flt(r.units) > 0:
+			units[r.item] = flt(r.units)
+
+	missing = [c for c in item_codes if c not in units]
+	if missing and frappe.db.table_exists("Product Bundle Mapping"):
+		for r in frappe.db.sql(
+			"""
+			SELECT parent AS item, SUM(base_qty) AS units
+			FROM `tabProduct Bundle Mapping`
+			WHERE parenttype = 'Item' AND parent IN %(codes)s
+			GROUP BY parent
+			""",
+			{"codes": tuple(missing)},
+			as_dict=True,
+		):
+			if flt(r.units) > 0:
+				units[r.item] = flt(r.units)
+	return units
+
+
+def picked_by_line(sales_orders):
+	"""Sales Order Item -> what submitted Pick Lists picked for it, in the line's own stock
+	units, so it compares straight with the line's stock_qty: the quantity ORDERED.
+
+	Measured against the order, never the pick list row. The warehouse removes quantity by
+	cutting the row down (20 on the list against 30 ordered), and picked-over-row would
+	call that line complete. A Pick List explodes a Product Bundle into its components, all
+	pointing at the one bundle line; their units are totalled and divided by the units in
+	one combo (the sheet's rule), so a combo line reads in combos.
+	"""
+	if not sales_orders:
+		return {}
+	rows = frappe.db.sql(
+		"""
+		SELECT pli.sales_order_item AS soi, soi.item_code, soi.stock_qty AS ordered,
+		       SUM(CASE WHEN IFNULL(pli.picked_qty, 0) > 0 THEN pli.picked_qty ELSE pli.stock_qty END) AS picked,
+		       SUM(pli.stock_qty) AS required,
+		       MAX(IF(IFNULL(pli.product_bundle_item, '') <> '', 1, 0)) AS exploded
+		FROM `tabPick List Item` pli
+		JOIN `tabPick List` pl ON pl.name = pli.parent AND pl.docstatus = 1
+		JOIN `tabSales Order Item` soi ON soi.name = pli.sales_order_item
+		WHERE soi.parent IN %(names)s
+		GROUP BY pli.sales_order_item, soi.item_code, soi.stock_qty
+		""",
+		{"names": tuple(sales_orders)},
+		as_dict=True,
+	)
+	units = bundle_units(list({r.item_code for r in rows if r.exploded}))
+	picked = {}
+	for r in rows:
+		# A row with no picked_qty on a SUBMITTED pick list is taken as fully picked: the
+		# warehouse signed the list off, and some entry paths never write the column.
+		qty = flt(r.picked)
+		if r.exploded:
+			if units.get(r.item_code):
+				qty = qty / units[r.item_code]
+			elif flt(r.required) > 0:
+				# Combo with no known make-up: the share of its own components picked.
+				qty = flt(r.ordered) * min(1.0, qty / flt(r.required))
+		picked[r.soi] = qty
+	return picked
+
+
 def _picked_value(sales_order):
 	"""GST-inclusive value of what a submitted Pick List has picked, but nothing shipped yet.
 
-	Priced by pro-rating the order's own grand_total, NOT by summing picked lines. A Pick
-	List explodes a Product Bundle into its components, so its rows carry component codes
-	and component quantities that no Sales Order line prices -- several rows can point at
-	one bundle line. Working in "what share of each order line did the pick cover" terms
-	sidesteps that, and inherits the order's GST, discounts and rounding for free, which
-	keeps this basis comparable with the Delivery Note one.
+	Priced by pro-rating the order's own grand_total by the share of each ORDERED line the
+	pick covered (picked_by_line), NOT by summing picked lines: a Pick List's bundle rows
+	carry component codes no Sales Order line prices. Pro-rating inherits the order's GST,
+	discounts and rounding, which keeps this basis comparable with the Delivery Note one,
+	and a line the warehouse cut down counts only for what was picked.
 	"""
-	rows = frappe.db.sql(
-		"""
-		SELECT pli.sales_order_item AS soi,
-		       SUM(CASE WHEN IFNULL(pli.picked_qty, 0) > 0 THEN pli.picked_qty ELSE pli.qty END) AS picked,
-		       SUM(pli.qty) AS required
-		FROM `tabPick List Item` pli
-		JOIN `tabPick List` pl ON pl.name = pli.parent
-		WHERE pli.sales_order = %s AND pl.docstatus = 1
-		GROUP BY pli.sales_order_item
-		""",
-		sales_order,
-		as_dict=True,
-	)
-	# A row with no picked_qty on a SUBMITTED pick list is taken as fully picked: the
-	# warehouse signed the list off, and some entry paths never write the column.
-	covered = {}
-	for r in rows:
-		if not r.soi or flt(r.required) <= 0:
-			continue
-		covered[r.soi] = min(1.0, flt(r.picked) / flt(r.required))
-	if not covered:
+	picked = picked_by_line([sales_order])
+	if not picked:
 		return 0.0
 
 	lines = frappe.get_all(
-		"Sales Order Item", filters={"parent": sales_order}, fields=["name", "amount"]
+		"Sales Order Item", filters={"parent": sales_order}, fields=["name", "amount", "stock_qty"]
 	)
 	net = sum(flt(l.amount) for l in lines)
 	if net <= 0:
 		return 0.0
-	share = sum(flt(l.amount) * covered.get(l.name, 0.0) for l in lines) / net
+	share = sum(
+		flt(l.amount) * min(1.0, picked.get(l.name, 0.0) / flt(l.stock_qty))
+		for l in lines
+		if flt(l.stock_qty) > 0
+	) / net
 	grand = flt(frappe.db.get_value("Sales Order", sales_order, "grand_total"))
 	return flt(grand * share, 2)
 

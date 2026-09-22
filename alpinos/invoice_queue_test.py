@@ -172,6 +172,29 @@ class Fixture:
 		self._dn_item(dn.name, f"{t}-FREE", 5, 3)
 		self.all.append(self.valued)
 
+		# The sheet: Invoice Amount = Pick List + Sales Order selling price, Undispatched = the
+		# items and quantity removed. An order picked but not yet noted is measured by its
+		# pick against the ORDERED quantity in both columns, so they cannot disagree. Lines
+		# 600 + 200 = 800 net, grand total 1000 as above; the stored value is refreshed the
+		# way the Pick List hooks do it.
+		#   picked_full:  all of it on the list -> 1000, Difference 0, nothing undispatched.
+		#   picked_cut:   P1 cut from 30 to 20 on the list -> (400 + 200) x 1.25 = 750, P1 (10).
+		#   picked_combo: 20 combos, 15 A + 5 B picked = 10 combos -> 500, BUNDLE (10).
+		self.picked_full = self._picked_order("09", [(f"{t}-P1", 30, 600, 30), (f"{t}-P2", 10, 200, 10)])
+		self.picked_cut = self._picked_order("10", [(f"{t}-P1", 30, 600, 20), (f"{t}-P2", 10, 200, 10)])
+		self.picked_combo = self._so("11", "Offline", self.cust_o, items=[(self.bundle, 20)],
+			line_amounts=[400], net_total=400)
+		pl = _insert("Pick List", name=f"{t}-PL-11", docstatus=1, custom_sales_order_id=self.picked_combo)
+		soi = self.lines[self.picked_combo][0]
+		self._pl_item(pl.name, self.comp_a, 15, 1, self.picked_combo, soi, bundle_row=f"{t}-PK-A")
+		self._pl_item(pl.name, self.comp_b, 5, 2, self.picked_combo, soi, bundle_row=f"{t}-PK-B")
+		self.picked = [self.picked_full, self.picked_cut, self.picked_combo]
+		from alpinos.so_invoice_value import refresh_for_sales_order
+
+		for so in self.picked:
+			refresh_for_sales_order(so)
+		self.all += self.picked
+
 	def _so(self, n, channel, customer, owner=None, items=None, line_amounts=None, net_total=None):
 		name = f"{self.tag}-SO-{n}"
 		_insert("Sales Order", name=name, docstatus=1, custom_channel=channel,
@@ -191,6 +214,20 @@ class Fixture:
 		if net_total is not None:
 			frappe.db.set_value("Sales Order", name, "net_total", net_total, update_modified=False)
 		return name
+
+	def _picked_order(self, n, lines):
+		"""An order on a submitted Pick List with no note. lines: (code, ordered, amount, listed)."""
+		name = self._so(n, "Offline", self.cust_o, items=[(c, q) for c, q, _, _ in lines],
+			line_amounts=[a for _, _, a, _ in lines], net_total=sum(a for _, _, a, _ in lines))
+		pl = _insert("Pick List", name=f"{self.tag}-PL-{n}", docstatus=1, custom_sales_order_id=name)
+		for idx, ((code, _, _, listed), soi) in enumerate(zip(lines, self.lines[name]), start=1):
+			self._pl_item(pl.name, code, listed, idx, name, soi)
+		return name
+
+	def _pl_item(self, pl, code, qty, idx, so, soi, bundle_row=None):
+		_insert("Pick List Item", parent=pl, parenttype="Pick List", parentfield="locations",
+			item_code=code, item_name=code, qty=qty, stock_qty=qty, picked_qty=qty, idx=idx,
+			sales_order=so, sales_order_item=soi, product_bundle_item=bundle_row or "")
 
 	def _dn_item(self, dn, code, qty, idx, so_detail=None):
 		_insert("Delivery Note Item", parent=dn, parenttype="Delivery Note", parentfield="items",
@@ -682,6 +719,34 @@ def _run():
 
 	check("#42 the Sales Order's Total Invoice Value is valued the same way",
 		_stored_value_agrees_with_the_report)
+
+	def _picked_order_columns_agree():
+		rows = {r["sales_order"]: r for r in Q.get_rows(filters=fx.f(), page_length=500)["rows"]}
+		want = {
+			fx.picked_full: (1000, 0, ""),
+			fx.picked_cut: (750, 250, f"{fx.tag}-P1 (10)"),
+			fx.picked_combo: (500, 500, f"{fx.bundle} (10)"),
+		}
+		for so, (amount, diff, undispatched) in want.items():
+			r = rows[so]
+			got = (flt(r["invoice_amount"]), flt(r["amount_diff"]), r["undispatched"])
+			_assert(got == (amount, diff, undispatched), f"{so}: got {got}, expected {(amount, diff, undispatched)}")
+
+	check("#42 a picked, not yet noted order: Invoice Amount, Difference and Undispatched agree",
+		_picked_order_columns_agree)
+
+	def _cut_pick_list_is_measured_against_the_order():
+		from alpinos import so_invoice_value as V
+
+		picked = V.picked_by_line([fx.picked_cut, fx.picked_combo])
+		p1, p2 = fx.lines[fx.picked_cut]
+		_assert(picked.get(p1) == 20 and picked.get(p2) == 10, f"plain lines picked {picked}")
+		_assert(picked.get(fx.lines[fx.picked_combo][0]) == 10, f"combo line picked {picked}, expected 10 combos")
+		_assert(flt(V._picked_value(fx.picked_cut)) == 750,
+			f"a pick list cut to 20 of 30 is valued {V._picked_value(fx.picked_cut)}, expected 750")
+
+	check("#42 a line cut down on the Pick List counts only what was picked, in combos for a combo",
+		_cut_pick_list_is_measured_against_the_order)
 
 	def _invoice_number_format():
 		frappe.db.set_value("Sales Order", fx.gt, {"custom_invoice_no": "6055", "custom_dispatch_date": "2026-09-11"},
