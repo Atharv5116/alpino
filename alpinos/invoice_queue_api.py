@@ -49,6 +49,8 @@ from alpinos.channel_access import (  # noqa: E402
 	UNRESTRICTED_ROLES,
 	resolve_access,
 )
+# Undispatched counts a pick the same way the order's stored Invoice Amount values it.
+from alpinos.so_invoice_value import bundle_units as _bundle_units, picked_by_line  # noqa: E402
 
 # Every role the spec names may open the page; alpinos.workflow_role_access applies it.
 PAGE_ROLES = ECOM_ROLES + OFFLINE_ROLES + UNRESTRICTED_ROLES
@@ -609,47 +611,6 @@ def get_filter_options(channel=None):
 # ------------------------------------------------------------ undispatched qty
 
 
-def _bundle_units(item_codes):
-	"""item_code -> individual units in ONE combo, for the codes that are bundles.
-
-	The native Product Bundle is the stock engine's source (alpinos.product_bundle_sync
-	keeps it in step with the Item's own mapping); the Item mapping is the fallback for a
-	bundle whose native record is missing.
-	"""
-	if not item_codes:
-		return {}
-	units = {}
-	for r in frappe.db.sql(
-		"""
-		SELECT pb.new_item_code AS item, SUM(pbi.qty) AS units
-		FROM `tabProduct Bundle` pb
-		JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-		WHERE pb.new_item_code IN %(codes)s
-		GROUP BY pb.new_item_code
-		""",
-		{"codes": tuple(item_codes)},
-		as_dict=True,
-	):
-		if flt(r.units) > 0:
-			units[r.item] = flt(r.units)
-
-	missing = [c for c in item_codes if c not in units]
-	if missing and frappe.db.table_exists("Product Bundle Mapping"):
-		for r in frappe.db.sql(
-			"""
-			SELECT parent AS item, SUM(base_qty) AS units
-			FROM `tabProduct Bundle Mapping`
-			WHERE parenttype = 'Item' AND parent IN %(codes)s
-			GROUP BY parent
-			""",
-			{"codes": tuple(missing)},
-			as_dict=True,
-		):
-			if flt(r.units) > 0:
-				units[r.item] = flt(r.units)
-	return units
-
-
 def attach_undispatched(rows):
 	"""Ordered less dispatched, per item. Combos are counted in INDIVIDUAL units.
 
@@ -660,6 +621,11 @@ def attach_undispatched(rows):
 	totalled and divided by the units in one combo -- never the combo line's own qty,
 	and never the scarcest component, both of which disagree with the sheet when the
 	components go out unevenly.
+
+	Same basis as Invoice Amount, so the two columns agree: submitted Delivery Notes once
+	the order has one, and before that what submitted Pick Lists picked against the
+	ordered quantity. Counting only notes listed every item of an order that was picked
+	and invoiced but not yet noted, beside a Difference Amount of 0.
 	"""
 	names = [r["sales_order"] for r in rows if r.get("sales_order")]
 	pending = {}
@@ -721,10 +687,39 @@ def _undispatched_for(names):
 
 	units = _bundle_units(list({o.item_code for o in ordered}))
 
+	# Nothing noted yet: the order is measured by its pick, per line, in the line's units.
+	noted = set(frappe.db.sql(
+		"""
+		SELECT DISTINCT custom_sales_order_id FROM `tabDelivery Note`
+		WHERE custom_sales_order_id IN %(names)s AND docstatus = 1 AND IFNULL(is_return, 0) = 0
+		""",
+		params,
+		pluck=True,
+	))
+	unnoted = [n for n in names if n not in noted]
+	by_pick = {}
+	if unnoted:
+		picked = picked_by_line(unnoted)
+		for l in frappe.db.sql(
+			"""
+			SELECT parent AS so, name, item_code, qty, stock_qty
+			FROM `tabSales Order Item` WHERE parent IN %(names)s
+			""",
+			{"names": tuple(unnoted)},
+			as_dict=True,
+		):
+			if flt(l.stock_qty) <= 0:
+				continue
+			share = min(1.0, picked.get(l.name, 0.0) / flt(l.stock_qty))
+			key = (l.so, l.item_code)
+			by_pick[key] = by_pick.get(key, 0.0) + flt(l.qty) * share
+
 	pending = {}
 	for o in ordered:
 		per_combo = units.get(o.item_code)
-		if per_combo:
+		if o.so not in noted:
+			shipped = by_pick.get((o.so, o.item_code), 0)
+		elif per_combo:
 			key = (o.so, o.item_code)
 			if key in packed:
 				shipped = packed[key] / per_combo
