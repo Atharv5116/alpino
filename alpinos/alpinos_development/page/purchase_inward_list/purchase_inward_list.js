@@ -46,7 +46,7 @@ var PIW_FALLBACK_OPTIONS = {
 	],
 	inward_statuses:
 		'\nDraft\nPending Material Receipt\nPending QC\nQC In Progress\nQC Completed' +
-		'\nGRN Generated\nPayment Pending\nCompleted\nCancelled',
+		'\nGRN Generated\nPayment Pending\nCompleted\nForce Closed\nCancelled',
 	qc_statuses:
 		'\nPending QC\nQC In Progress\nQC SLA Breached\nQC Ready for Decision' +
 		'\nQC Completed\nCancelled',
@@ -64,6 +64,7 @@ var PIW_STATUS_COLORS = {
 	'GRN Generated': 'purple',
 	'Payment Pending': 'orange',
 	Completed: 'green',
+	'Force Closed': 'red',
 	Cancelled: 'red',
 };
 

@@ -150,14 +150,20 @@ def _custom_fields():
 				collapsible=1,
 				description=(
 					"BRD 6.1.4, optional. Fill this only when a separate transporter bill "
-					"has to be paid; door delivery means no logistics payment at all."
+					"has to be paid; Door Delivery records that the supplier delivered with "
+					"nothing separate to pay a transporter."
 				),
 			),
 			dict(
+				# Select, not Check: "no logistics" and "door delivery" are both "nothing to
+				# pay a transporter", but distinct facts worth recording -- a checkbox could
+				# only mean one of them. Existing Check data (0/1) is converted by
+				# migrate_logistics_mode(), run from execute() below.
 				fieldname="custom_include_logistics",
 				label="Include Logistics?",
-				fieldtype="Check",
-				default="0",
+				fieldtype="Select",
+				options="\nYes\nNo\nDoor Delivery",
+				default="No",
 				insert_after="custom_logistics_section",
 			),
 			dict(
@@ -166,16 +172,16 @@ def _custom_fields():
 				fieldtype="Link",
 				options="Supplier",
 				insert_after="custom_include_logistics",
-				depends_on="eval:doc.custom_include_logistics",
-				mandatory_depends_on="eval:doc.custom_include_logistics",
+				depends_on="eval:doc.custom_include_logistics=='Yes'",
+				mandatory_depends_on="eval:doc.custom_include_logistics=='Yes'",
 			),
 			dict(
 				fieldname="custom_transport_invoice_no",
 				label="Transport Invoice / LR No.",
 				fieldtype="Data",
 				insert_after="custom_logistics_vendor",
-				depends_on="eval:doc.custom_include_logistics",
-				mandatory_depends_on="eval:doc.custom_include_logistics",
+				depends_on="eval:doc.custom_include_logistics=='Yes'",
+				mandatory_depends_on="eval:doc.custom_include_logistics=='Yes'",
 			),
 			dict(
 				fieldname="custom_logistics_col_1",
@@ -187,15 +193,15 @@ def _custom_fields():
 				label="Freight Amount",
 				fieldtype="Currency",
 				insert_after="custom_logistics_col_1",
-				depends_on="eval:doc.custom_include_logistics",
-				mandatory_depends_on="eval:doc.custom_include_logistics",
+				depends_on="eval:doc.custom_include_logistics=='Yes'",
+				mandatory_depends_on="eval:doc.custom_include_logistics=='Yes'",
 			),
 			dict(
 				fieldname="custom_transport_attachment",
 				label="Transport Bill Attachment",
 				fieldtype="Attach",
 				insert_after="custom_freight_amount",
-				depends_on="eval:doc.custom_include_logistics",
+				depends_on="eval:doc.custom_include_logistics=='Yes'",
 			),
 			# --------------------------------------- 6.1.5 payments + BR-UNF-04
 			dict(
@@ -260,6 +266,27 @@ def _custom_fields():
 
 #: The Purchase-Team sections BR-UNF-03 freezes once the invoice is submitted. Held here
 #: rather than in the controller so the field list and the guard cannot drift.
+def migrate_logistics_mode():
+	"""One-time: a Check column holds "0"/"1" the instant its fieldtype becomes Select, not
+	the new options. Old checked -> "Yes"; unchecked/blank -> "No" -- never guessed forward
+	to "Door Delivery", which nothing on the old data can tell apart from a plain "No".
+	"""
+	frappe.db.sql(
+		"update `tabPurchase Invoice` set custom_include_logistics = 'Yes' "
+		"where custom_include_logistics = '1'"
+	)
+	frappe.db.sql(
+		"update `tabPurchase Invoice` set custom_include_logistics = 'No' "
+		"where ifnull(custom_include_logistics, '') in ('', '0')"
+	)
+
+
+def wants_logistics(doc):
+	"""True only for "Yes" -- a separate transporter bill to record and pay. "No" and "Door
+	Delivery" both mean there is none, for different reasons worth keeping distinct."""
+	return (doc.get("custom_include_logistics") or "") == "Yes"
+
+
 PURCHASE_OWNED_FIELDS = (
 	"custom_payment_due_date",
 	"custom_invoice_attachment",
@@ -333,6 +360,7 @@ def setup_purchase_invoice_fields():
 	apply_purchase_invoice_form_layout()
 	ensure_payment_modes()
 	migrate_legacy_statuses()
+	migrate_logistics_mode()
 	frappe.db.commit()
 
 

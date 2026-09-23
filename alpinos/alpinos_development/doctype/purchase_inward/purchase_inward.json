@@ -219,7 +219,7 @@
    "in_standard_filter": 1,
    "label": "Status",
    "no_copy": 1,
-   "options": "Draft\nPending Material Receipt\nQuarantined\nPending QC\nQC In Progress\nQC Completed\nGRN Generated\nPayment Pending\nCompleted\nCancelled",
+   "options": "Draft\nPending Material Receipt\nQuarantined\nPending QC\nQC In Progress\nQC Completed\nGRN Generated\nPayment Pending\nCompleted\nForce Closed\nCancelled",
    "read_only": 1,
    "search_index": 1
   },

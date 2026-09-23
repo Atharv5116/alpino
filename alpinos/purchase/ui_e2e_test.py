@@ -338,7 +338,7 @@ def run():
 			"actual_driver_contact_no": "9000000022",
 			"receiving_remarks": "Received in full, seal intact.",
 			# Every field the page's collect_doc sends, not a subset. Omitting one blanks
-			# it, and a blanked Purchase-owned field (item_remarks, mrp, usp) reads as the
+			# it, and a blanked Purchase-owned field (remarks, mrp, usp) reads as the
 			# Store team editing the Purchase header -- assert_section_edits_allowed is
 			# change-based, so an unfaithful payload fails for the wrong reason.
 			"items": [
@@ -352,7 +352,7 @@ def run():
 					"manufacturing_date": today(),
 					"mrp": flt(r.get("mrp")),
 					"usp": r.get("usp"),
-					"item_remarks": r.get("item_remarks"),
+					"remarks": r.get("remarks"),
 				}
 				for r in frappe.client.get("Purchase Inward", inw_name)["items"]
 			],

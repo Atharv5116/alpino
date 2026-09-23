@@ -38,7 +38,7 @@ var PO_INWARD_TYPES = ['RM', 'PM', 'FG', 'MM'];
  * had none, `default_time(user_time_format)`. get_value() parses through here too, so a save
  * made without leaving the field gets the time as well.
  */
-var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time) {
+var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time, default_hms) {
 	// The last date and time the field held, kept here rather than read off the control.
 	// Selecting the text and deleting it to type a new date empties control.value first
 	// (air-datepicker fires a change for the empty input). And when the screen resets a field
@@ -48,37 +48,100 @@ var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time) {
 	// one takes in parsed entries only once the user has been in the field.
 	let last = null;
 	let touched = false;
-	if (control.$input) control.$input.on('focus keydown input', () => { touched = true; });
+	// A day picked from the calendar on a field that holds no time yet: the picker hands
+	// over its own clock time (whatever it is right now), which is not "a date with no time".
+	// Flag it so parse() gives it the default time instead.
+	let picked_blank = false;
+	// Typing into the box also makes the picker fire a select (it follows the text), so a
+	// pick only counts when it is a click on a calendar day, not the person typing a time.
+	let typing = false;
+	if (control.$input) {
+		control.$input.on('focus keydown input', () => { touched = true; });
+		control.$input.on('keydown input', () => { typing = true; });
+	}
+	if (control.datepicker && control.datepicker.opts) {
+		if (default_hms) {
+			// The calendar's time sliders start at "now" (13:45:52 on screen). On a field with
+			// no value yet, open them at the default time, so what is shown is what a click stores.
+			const on_show = control.datepicker.opts.onShow;
+			control.datepicker.opts.onShow = function () {
+				const tp = control.datepicker.timepicker;
+				if (!last && tp) {
+					tp.hours = default_hms[0];
+					tp.minutes = default_hms[1];
+					tp.seconds = default_hms[2];
+					tp.update();
+				}
+				return on_show && on_show.apply(this, arguments);
+			};
+		}
+		// a click on the calendar itself is a pick, whatever was typed before it
+		control.datepicker.$datepicker.on('mousedown', () => { typing = false; });
+		const on_select = control.datepicker.opts.onSelect;
+		control.datepicker.opts.onSelect = function () {
+			picked_blank = !last && !typing;
+			setTimeout(() => { picked_blank = false; }, 500);
+			return on_select && on_select.apply(this, arguments);
+		};
+	}
 	const set_value = control.set_value.bind(control);
+	// Counts every set_value, so a redraw queued by parse() can tell the field was cleared or
+	// reloaded in the meantime and must not put the old text back.
+	let epoch = 0;
 	control.set_value = function (value, ...rest) {
 		last = value || null;
 		touched = false;
+		epoch += 1;
 		return set_value(value, ...rest);
 	};
 	const parse = control.parse.bind(control);
 	control.parse = function (value) {
-		const typed = typeof value === 'string' ? value.trim() : '';
+		let typed = typeof value === 'string' ? value.trim() : '';
 		const from_input = touched && !!control.$input && value === control.$input.val();
+		if (picked_blank && typed.indexOf(' ') !== -1) {
+			// keep only the date the user clicked; the time is the default, not the picker's
+			typed = typed.split(' ')[0];
+			value = typed;
+			picked_blank = false;
+		}
 		const date_fmt = frappe.datetime.get_user_date_fmt().toUpperCase();
-		if (!typed || !moment(typed, [date_fmt, date_fmt.replace('YYYY', 'YY')], true).isValid()) {
+		// A date with no time, however it was typed: 29-09-2026, 29-9-2026, 29/09/2026,
+		// 29.09.2026, 29092026, 29-09-26. It used to have to be dd-mm-yyyy exactly, so any other
+		// way of typing it either kept no time at all or stored the time without showing it.
+		const day = /^\d[\d./-]*\d$/.test(typed)
+			? moment(typed, [date_fmt, date_fmt.replace(/[-/.]/g, '/'), date_fmt.replace(/[-/.]/g, '.'),
+				date_fmt.replace(/[-/.]/g, ''), date_fmt.replace('YYYY', 'YY')])
+			: null;
+		if (!typed || !day || !day.isValid()) {
 			const parsed = parse(value);
 			if (parsed && from_input) last = parsed;
 			return parsed;
 		}
+		typed = day.format(date_fmt);
 		const time_fmt = frappe.datetime.get_user_time_fmt();
 		const held = last ? frappe.datetime.convert_to_user_tz(last, false) : null;
 		// Midnight is what a date-only entry used to leave behind, not a time anyone chose.
-		const time =
+		let time =
 			held && held.isValid() && held.format('HH:mm:ss') !== '00:00:00'
 				? held.format(time_fmt)
-				: default_time(time_fmt);
+				: default_time(time_fmt, day);
+		if (default_hms && held && day.isSame(moment(), 'day')) {
+			// Re-typing TODAY on a field that kept an earlier time (9:00, chosen for a future
+			// day) would land in the past; today falls back to the default, which is "now" by then.
+			const kept = moment(time, time_fmt);
+			const at = day.clone().set({ hour: kept.hour(), minute: kept.minute(), second: kept.second() });
+			if (at.isBefore(moment().subtract(1, 'minute'))) time = default_time(time_fmt, day);
+		}
 		const result = parse(`${typed} ${time}`);
 		if (result && from_input) last = result;
-		if (result && control.$input && (result === control.value || result === control.get_model_value())) {
-			// Frappe takes a value equal to its model as nothing to do. Without a doc that model
-			// falls back to the value from before the text was cleared, so retyping the same date
-			// neither stored the value nor redrew its time. Do both here.
-			setTimeout(() => control.set_input(result), 0);
+		if (result && control.$input) {
+			// Show the time that was just added. Frappe takes a value equal to its model as
+			// nothing to do (retyping the same date), and a date typed in another shape
+			// (29.09.2026) is stored with its time but left in the box as the bare date.
+			// Redraw the box from the stored value, either way -- unless the field was cleared
+			// or reloaded since (a refused past date is cleared right after this parse).
+			const at = epoch;
+			setTimeout(() => { if (at === epoch) control.set_input(result); }, 0);
 		}
 		return result;
 	};
@@ -98,6 +161,94 @@ frappe.pages['purchase_order_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['purchase_order_entry'].on_page_show = function (wrapper) {
 	if (wrapper.po_entry) wrapper.po_entry.handle_route_entry();
+};
+
+// BRD 2.1.1: "If only the date is entered, the default time shall be set to 9:00 AM."
+// Mirrors alpinos.purchase.purchase_order_fields.DEFAULT_ARRIVAL_HOUR, which applies it on save.
+var PO_DEFAULT_ARRIVAL_HOUR = 9;
+
+/**
+ * No past dates or times (Purchase Order: PO Date, Expected Delivery Date, Estimated Arrival).
+ * Today is fine, and so is the current time. `kind` is 'date' or 'datetime'.
+ *
+ * The calendar greys out earlier days (and, for a datetime, earlier times today); a value typed
+ * or pasted past that is refused with a message and cleared -- or put back to `reset()` -- so it
+ * never reaches the save. Only the person's own entry is checked: loading a saved PO that
+ * already holds an old date must not fire it (`user` is set by focusing/typing, and cleared by
+ * every programmatic set_value).
+ */
+var PO_NO_PAST = function (control, kind, label, reset) {
+	const datetime = kind === 'datetime';
+	const floor = () => (datetime ? moment().subtract(1, 'minute') : moment().startOf('day'));
+	// The earliest selectable day/time is applied only while the calendar is OPEN, and lifted
+	// when it closes. Left on, the picker refuses -- and locks up on -- a saved order's older
+	// date being loaded into the field. It is set on the picker's own properties: its update()
+	// also rewrites the text box from the picker's selection, which blanked a typed date.
+	const NO_MIN = new Date(-8639999913600000);
+	const set_min = (date) => {
+		const dp = control.datepicker;
+		if (!dp) return;
+		try {
+			dp.opts.minDate = date || '';
+			dp.minDate = date || NO_MIN;
+			if (dp.views && dp.views[dp.currentView]) dp.views[dp.currentView]._render();
+			if (dp.nav && !dp.opts.onlyTimepicker) dp.nav._render();
+			if (dp.opts.timepicker && dp.timepicker) {
+				dp.timepicker._handleDate(dp.lastSelectedDate);
+				dp.timepicker._updateRanges();
+			}
+		} catch (e) { /* cosmetic only: the check below is what enforces the rule */ }
+	};
+	if (control.datepicker && control.datepicker.opts) {
+		const on_show = control.datepicker.opts.onShow;
+		control.datepicker.opts.onShow = function () {
+			set_min((datetime ? moment() : moment().startOf('day')).toDate());
+			return on_show && on_show.apply(this, arguments);
+		};
+		const on_hide = control.datepicker.opts.onHide;
+		control.datepicker.opts.onHide = function () {
+			set_min(null);
+			return on_hide && on_hide.apply(this, arguments);
+		};
+	}
+	let user = false;
+	if (control.$input) control.$input.on('focus keydown input', () => { user = true; });
+	const set_value = control.set_value.bind(control);
+	control.set_value = function (...args) {
+		user = false;
+		return set_value(...args);
+	};
+	// true when the value was refused (and put back), so the caller can stop there
+	const check = () => {
+		if (!user) return false;
+		const v = control.get_value();
+		if (!v || !moment(v).isBefore(floor())) return false;
+		user = false;
+		frappe.msgprint({
+			title: __('Past Date'),
+			indicator: 'red',
+			message: datetime
+				? __('{0} cannot be in the past. Choose the current or a future date and time.', [__(label)])
+				: __('{0} cannot be in the past. Choose today or a later date.', [__(label)]),
+		});
+		// force: a Datetime compares against its previous value, finds '' equal to it, and skips
+		// the clear -- the refused value would stay in the box.
+		control.set_value(reset ? reset() : '', true);
+		// Leaving the field fires a second change from the text still in the box, which would
+		// put the refused value straight back (and, with `user` already spent, silently).
+		const refused = v;
+		setTimeout(() => {
+			if (control.get_value() === refused) control.set_value(reset ? reset() : '', true);
+		}, 400);
+		return true;
+	};
+	const previous = control.df.change;
+	control.df.change = function () {
+		// Refuse first: a field with its own handler (the line cells) must not record the
+		// past value before it is put back.
+		if (check()) return;
+		return previous && previous.apply(this, arguments);
+	};
 };
 
 var PurchaseOrderEntry = class {
@@ -133,9 +284,23 @@ var PurchaseOrderEntry = class {
 			render_input: true,
 		});
 		if (c.df.fieldtype === 'Datetime') {
-			// A date typed without a time takes the current time, shown straight away rather
-			// than only after saving (same rule as the Purchase Inward's own date fields).
-			ALP_DATE_ONLY_KEEPS_TIME(c, (fmt) => moment(frappe.datetime.now_time(), 'HH:mm:ss').format(fmt));
+			// BRD 2.1.1: any date chosen without a time is 9:00 AM -- typed or picked from the
+			// calendar, this month or a future one -- shown straight away rather than only after
+			// saving. (Briefly the current time on 2026-09-18; back to 9:00 AM by request.)
+			ALP_DATE_ONLY_KEEPS_TIME(
+				c,
+				(fmt, day) => {
+					// 9:00 AM on that day -- but 9:00 AM today may already be behind us, and a
+					// time in the past is not allowed, so today falls back to the current time.
+					const nine = moment(day || undefined).startOf('day').hour(PO_DEFAULT_ARRIVAL_HOUR);
+					const now = moment();
+					return (nine.isSame(now, 'day') && nine.isBefore(now) ? now : nine).format(fmt);
+				},
+				[PO_DEFAULT_ARRIVAL_HOUR, 0, 0]
+			);
+		}
+		if (df.no_past) {
+			PO_NO_PAST(c, df.no_past, df.label, df.no_past_reset);
 		}
 		c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 		c.refresh();
@@ -180,9 +345,11 @@ var PurchaseOrderEntry = class {
 
 		this._ctl('.field-transaction-date', {
 			fieldname: 'transaction_date', label: 'PO Date', fieldtype: 'Date', reqd: 1,
+			no_past: 'date', no_past_reset: () => frappe.datetime.get_today(),
 		}, frappe.datetime.get_today());
 		this._ctl('.field-schedule-date', {
 			fieldname: 'schedule_date', label: 'Expected Delivery Date', fieldtype: 'Date', reqd: 1,
+			no_past: 'date',
 		});
 		this._ctl('.field-set-warehouse', {
 			fieldname: 'set_warehouse', label: 'Delivery Location', fieldtype: 'Link',
@@ -299,7 +466,8 @@ var PurchaseOrderEntry = class {
 			fieldtype: 'Datetime',
 			// Without this the control appends the site time zone as a description.
 			hide_timezone: 1,
-			description: 'A date with no time takes the current time.',
+			description: 'A date with no time is treated as 9:00 AM (BRD 2.1.1).',
+			no_past: 'datetime',
 		});
 	}
 
@@ -466,8 +634,9 @@ var PurchaseOrderEntry = class {
 				row.rate);
 			mk('.cell-amount', { fieldtype: 'Currency', fieldname: 'amount', read_only: 1 },
 				row.amount);
-			mk('.cell-schedule', { fieldtype: 'Date', fieldname: 'schedule_date' },
+			const sched = mk('.cell-schedule', { fieldtype: 'Date', fieldname: 'schedule_date' },
 				row.schedule_date, (val) => { me.items[idx].schedule_date = val; });
+			PO_NO_PAST(sched, 'date', 'Required By', () => me.items[idx].schedule_date || '');
 			mk('.cell-warehouse', { fieldtype: 'Link', fieldname: 'warehouse', options: 'Warehouse' },
 				row.warehouse, (val) => { me.items[idx].warehouse = val; });
 			mk('.cell-remarks', { fieldtype: 'Data', fieldname: 'custom_item_remarks' },
@@ -506,12 +675,19 @@ var PurchaseOrderEntry = class {
 			me.redraw_items();
 			return;
 		}
-		frappe.db.get_value('Item', item_code, ['item_name', 'stock_uom']).then((r) => {
+		frappe.call({
+			method: 'alpinos.purchase.purchase_order_fields.get_item_defaults',
+			args: { item_code },
+		}).then((r) => {
 			if (me.items.indexOf(row) === -1 || row.item_code !== item_code) return;
-			const d = (r && r.message) || {};
+			const d = r.message || {};
 			row.item_name = d.item_name || '';
 			row.uom = d.stock_uom || '';
+			// A row picking a fresh item always starts at Rate 0, so this can never clobber
+			// a rate the buyer already typed.
+			if (!flt(row.price_list_rate) && flt(d.rate)) row.price_list_rate = flt(d.rate);
 			me.redraw_items();
+			me.recalc_row(idx);
 		});
 	}
 
@@ -725,6 +901,11 @@ var PurchaseOrderEntry = class {
 						btn(__(a.action), 'btn-primary', () => me.run_action(a.action));
 					});
 					me.make_next_step_actions(info, btn);
+					// A Cancelled or Closed order has nothing left to cancel; Force Close (the
+					// admin escape hatch) will not be on this screen -- that lives on the Inward.
+					if (cint(doc.docstatus) === 1 && !['Cancelled', 'Closed'].includes(doc.status || '')) {
+						btn(__('Cancel'), 'btn-danger', () => me.cancel_po());
+					}
 					btn(__('Print'), 'btn-light', () => {
 						frappe.set_route('print', 'Purchase Order', me.docname);
 					});
@@ -804,6 +985,80 @@ var PurchaseOrderEntry = class {
 					},
 				})
 		);
+	}
+
+	/**
+	 * Cancel a submitted Purchase Order. Refused, with the exact list of what is in the
+	 * way, if any of its inwards still has a live Debit Note / Invoice / GRN / QC / the
+	 * inward itself (BRD 5.3's reverse-chronological rule, one level up). An Admin is then
+	 * offered a second button that cancels the whole chain and the order in one go.
+	 */
+	cancel_po() {
+		const me = this;
+		const attempt = (reason) => frappe.call({
+			method: 'alpinos.purchase.purchase_order_approval.cancel_purchase_order',
+			args: { purchase_order: me.docname, reason: reason || null },
+			freeze: true,
+			freeze_message: __('Cancelling...'),
+			callback(r) {
+				if (r.exc || !r.message) return;
+				if (r.message.cancelled) {
+					me._toast(__('Cancelled'), 'red');
+					me.load(me.docname);
+					return;
+				}
+				me.show_cancel_blockers(r.message.blockers);
+			},
+		});
+		frappe.confirm(__('Cancel Purchase Order {0}?', [this.docname]), () => attempt(null));
+	}
+
+	show_cancel_blockers(blockers) {
+		const me = this;
+		// Cancelling the chain is Admin only (purchase_order_approval.PO_CANCEL_CHAIN_ROLES);
+		// the server is the real guard, this only stops the button inviting a click that
+		// cannot be saved -- same rule the rest of this module follows.
+		const admin_roles = ['System Manager', 'Purchase Inward Admin'];
+		const is_admin = (frappe.user_roles || []).some((r) => admin_roles.includes(r));
+		const label = (b) => `${__(b.label || b.doctype)} ${frappe.utils.escape_html(b.name)}` +
+			(cint(b.docstatus) === 0 ? ` (${__('Draft')})` : '');
+		const rows = blockers.map((b) => `<li>${label(b)}</li>`).join('');
+		const d = new frappe.ui.Dialog({
+			title: __('Cannot Cancel Yet'),
+			fields: [
+				{
+					fieldname: 'list', fieldtype: 'HTML',
+					options:
+						`<p>${__('These documents were raised from this order and must be cancelled first, in this order:')}</p>` +
+						`<ol>${rows}</ol>` +
+						(is_admin ? '' : `<p class="text-muted small">${__('Only {0} may cancel them from here.', [admin_roles.join(' / ')])}</p>`),
+				},
+				{
+					fieldname: 'reason', label: __('Reason'), fieldtype: 'Small Text', reqd: 1,
+					description: __('Required to cancel these documents. Recorded on the Purchase Order.'),
+					read_only: is_admin ? 0 : 1,
+				},
+			],
+			primary_action_label: is_admin ? __('Cancel These Documents & the Purchase Order') : null,
+			primary_action: is_admin
+				? (values) => {
+					d.hide();
+					frappe.call({
+						method: 'alpinos.purchase.purchase_order_approval.cancel_purchase_order_chain',
+						args: { purchase_order: me.docname, reason: values.reason },
+						freeze: true,
+						freeze_message: __('Cancelling the linked documents...'),
+						callback(r) {
+							if (r.exc || !r.message) return;
+							me._toast(__('{0} documents cancelled', [(r.message.cancelled_documents || []).length + 1]), 'red');
+							me.load(me.docname);
+						},
+					});
+				}
+				: null,
+		});
+		d.show();
+		if (!is_admin) d.get_primary_btn().hide();
 	}
 
 	run_action(action) {

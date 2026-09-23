@@ -1019,7 +1019,7 @@ _INVOICE_HTML_RAW = r"""
 {%- set orders = [] -%}
 {%- for row in doc.items -%}{%- if row.purchase_order and row.purchase_order not in orders -%}{%- set _ = orders.append(row.purchase_order) -%}{%- endif -%}{%- endfor -%}
 {%- set supplier_payable = frappe.utils.flt(doc.rounded_total or doc.grand_total) -%}
-{%- set logistics_payable = frappe.utils.flt(doc.custom_freight_amount) if frappe.utils.cint(doc.custom_include_logistics) else 0 -%}
+{%- set logistics_payable = frappe.utils.flt(doc.custom_freight_amount) if doc.custom_include_logistics == "Yes" else 0 -%}
 {%- set pay = namespace(supplier=0, logistics=0) -%}
 {%- for p in doc.custom_payment_references or [] -%}
   {%- if p.payment_type == "Logistics Payment" -%}{%- set pay.logistics = pay.logistics + frappe.utils.flt(p.payment_amount) -%}
@@ -1157,7 +1157,7 @@ _INVOICE_HTML_RAW = r"""
   </table>
 
   <!-- ===== BRD 6.2.3 logistics / transport bill ===== -->
-  {% if frappe.utils.cint(doc.custom_include_logistics) %}
+  {% if doc.custom_include_logistics == "Yes" %}
   <table class="avoid">
     <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
     <tr><td class="sec" colspan="4">Logistics / Transport Bill</td></tr>

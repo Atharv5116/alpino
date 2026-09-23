@@ -206,7 +206,8 @@ var PurchaseInvoiceEntry = class {
 		ed('.field-include-logistics', {
 			fieldname: 'custom_include_logistics',
 			label: 'Include Logistics?',
-			fieldtype: 'Check',
+			fieldtype: 'Select',
+			options: ['Yes', 'No', 'Door Delivery'],
 			change: () => {
 				me.toggle_logistics();
 				me.recalc_payment_summary();
@@ -258,7 +259,7 @@ var PurchaseInvoiceEntry = class {
 
 		if (this.docname && cint(doc.docstatus) === 0) {
 			supplier_payable = flt(this._live_total);
-			logistics_payable = cint(this._val('custom_include_logistics'))
+			logistics_payable = this._val('custom_include_logistics') === 'Yes'
 				? flt(this._val('custom_freight_amount'))
 				: 0;
 			supplier_pending = supplier_payable;
@@ -346,7 +347,7 @@ var PurchaseInvoiceEntry = class {
 	}
 
 	toggle_logistics() {
-		const on = !!cint(this._val('custom_include_logistics'));
+		const on = this._val('custom_include_logistics') === 'Yes';
 		this.wrapper.find('.pinv-logistics-fields').toggle(on);
 	}
 
@@ -481,7 +482,7 @@ var PurchaseInvoiceEntry = class {
 		// A computed due date is the server's to set; sending the stale screen value back
 		// would only be overwritten.
 		if (!cint(this.ctx.due_date_auto)) data.custom_payment_due_date = this._val('custom_payment_due_date');
-		data.custom_include_logistics = cint(data.custom_include_logistics);
+		data.custom_include_logistics = data.custom_include_logistics || 'No';
 		data.items = this.items.map((r) => ({ name: r.name, rate: flt(r.rate) }));
 		return data;
 	}

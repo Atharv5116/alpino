@@ -54,6 +54,7 @@ PI_PAYMENT_PENDING = "Payment Pending"
 PI_COMPLETED = "Completed"
 PI_CANCELLED = "Cancelled"
 PI_QUARANTINED = "Quarantined"
+PI_FORCE_CLOSED = "Force Closed"
 
 PI_STATUSES = (
 	PI_DRAFT,
@@ -65,6 +66,7 @@ PI_STATUSES = (
 	PI_GRN_GENERATED,
 	PI_PAYMENT_PENDING,
 	PI_COMPLETED,
+	PI_FORCE_CLOSED,
 	PI_CANCELLED,
 )
 
@@ -79,6 +81,7 @@ PI_STATUS_DESCRIPTIONS = {
 	PI_PAYMENT_PENDING: "Purchase Invoice has been created and payment is pending.",
 	PI_COMPLETED: "Vendor and logistics payments are done; the inward is closed.",
 	PI_CANCELLED: "Cancelled per the applicable cancellation rules.",
+	PI_FORCE_CLOSED: "Closed by an Admin before completing the normal flow.",
 }
 
 # Statuses at which the header is still the Purchase Team's to edit (BRD 2.1.1: the header
@@ -89,7 +92,21 @@ PI_HEADER_EDITABLE = (PI_DRAFT,)
 PI_RECEIVING_OPEN = (PI_PENDING_RECEIPT,)
 
 # Statuses past which nothing upstream may be re-opened without a cancellation (BRD 5.3).
-PI_TERMINAL = (PI_COMPLETED, PI_CANCELLED)
+PI_TERMINAL = (PI_COMPLETED, PI_CANCELLED, PI_FORCE_CLOSED)
+
+# Statuses an Admin may move a SUBMITTED inward to by hand. Draft and Cancelled are not
+# statuses to pick: those are the document's own state (docstatus 0 / 2), and Quarantined
+# belongs to the older flow only.
+PI_ADMIN_CHOICES = (
+	PI_PENDING_RECEIPT,
+	PI_PENDING_QC,
+	PI_QC_IN_PROGRESS,
+	PI_QC_COMPLETED,
+	PI_GRN_GENERATED,
+	PI_PAYMENT_PENDING,
+	PI_COMPLETED,
+	PI_FORCE_CLOSED,
+)
 
 # Statuses that mean QC owns the document.
 PI_QC_STAGES = (PI_PENDING_QC, PI_QC_IN_PROGRESS)

@@ -175,7 +175,10 @@ PERMISSION_MATRIX = {
 	# failure the module docstring above warns about.
 	"Purchase Order": {
 		C.ROLE_PURCHASE_USER: "CREATE_EDIT",
-		C.ROLE_PURCHASE_MANAGER: "CREATE_SUBMIT",
+		# CREATE_SUBMIT_CANCEL, not CREATE_SUBMIT: the Approver is who cancels a submitted
+		# order too (purchase_order_approval.PO_CANCEL_ROLES), the same DocPerm gap that
+		# used to sit on Purchase Inward before its own CANCEL suffix was added below.
+		C.ROLE_PURCHASE_MANAGER: "CREATE_SUBMIT_CANCEL",
 		C.ROLE_STORE_USER: "VIEW",
 		C.ROLE_STORE_MANAGER: "VIEW",
 		C.ROLE_QC_USER: "VIEW",
@@ -495,17 +498,29 @@ SECTIONS = {
 					"delivery_location",
 				),
 				"child_table": "items",
-				# item_code only. `description` used to be guarded here too, and it broke
-				# Store receiving outright: it is PO-DERIVED, refilled by
-				# _sync_item_provenance whenever it is blank, and the entry page's
-				# collect_doc never sends it -- so every save from that page blanked it,
-				# assert_section_edits_allowed (which is change-based) counted it as an edit
-				# to the Purchase header, and a Store user was refused with "Only Purchase
-				# Inward User ... may edit the Purchase Inward Header section." Guarding a
-				# field nobody authors protected nothing and blocked the one team the
-				# section was built for. Its value is unaffected -- provenance restores it
-				# from the Purchase Order on the same save.
-				"child_fields": ("item_code",),
+				# `description` used to be guarded here too, and it broke Store receiving
+				# outright: it is PO-DERIVED, refilled by _sync_item_provenance whenever it
+				# is blank, and the entry page's collect_doc never sends it -- so every save
+				# from that page blanked it, assert_section_edits_allowed (which is
+				# change-based) counted it as an edit to the Purchase header, and a Store
+				# user was refused with "Only Purchase Inward User ... may edit the Purchase
+				# Inward Header section." Guarding a field nobody authors protected nothing
+				# and blocked the one team the section was built for. Its value is
+				# unaffected -- provenance restores it from the Purchase Order on the same
+				# save.
+				#
+				# `remarks` (BRD 2.3.1 line-level remarks) belongs here, not under Store
+				# Receiving below: the entry page shows this column in the Item Details grid
+				# the Purchase team fills in while the document is still a Draft, before it
+				# is ever handed to Store. It used to be listed under Store Receiving --
+				# dormant only because the page wrote it under a fieldname
+				# (`item_remarks`) that did not exist on the doctype, so it never actually
+				# persisted a value to compare. Fixing that fieldname (2026-09-18) made a
+				# Purchase-typed remark register as a real change for the first time, and the
+				# gate then refused the very save that typed it -- "The Store Receiving
+				# Details section is closed while the document is Draft" on a document
+				# nobody had touched Store Receiving on at all.
+				"child_fields": ("item_code", "remarks"),
 				"view_roles": (),
 				"edit_roles": _PURCHASE,
 				"open_statuses": C.PI_HEADER_EDITABLE,
@@ -545,7 +560,6 @@ SECTIONS = {
 					"manufacturing_date",
 					"quarantine",
 					"quarantine_reason",
-					"remarks",
 				),
 				"view_roles": (),
 				"edit_roles": _STORE,

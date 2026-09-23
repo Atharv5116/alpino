@@ -413,6 +413,9 @@ def _row_actions(row, lines, perms):
 		# Start / Complete QC happen on the QC screen; the row offers Go to QC (view_qc).
 		if action.get("action") in workflow.QC_SCREEN_ACTIONS:
 			continue
+		# Admin overrides (Force Close / Change Status) need a reason prompt: form only.
+		if action.get("kind") == "admin":
+			continue
 		ptype = _ACTION_PTYPE.get(action.get("action"))
 		if ptype and not perms.get(ptype):
 			continue

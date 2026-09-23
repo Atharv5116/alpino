@@ -41,6 +41,7 @@ from alpinos.purchase.purchase_invoice_fields import (
 	PURCHASE_OWNED_FIELDS,
 	STATUS_FIELD,
 	TYPE_FIELD,
+	wants_logistics,
 )
 
 PI = "Purchase Invoice"
@@ -102,7 +103,7 @@ def _payable_supplier(doc):
 
 
 def _payable_logistics(doc):
-	if not cint(doc.get("custom_include_logistics")):
+	if not wants_logistics(doc):
 		return 0.0
 	return flt(doc.get("custom_freight_amount"))
 
@@ -209,7 +210,7 @@ def _validate_submit_requirements(doc):
 			title=_("Missing Payment Due Date"),
 		)
 
-	if cint(doc.get("custom_include_logistics")):
+	if wants_logistics(doc):
 		# BRD 6.2.3 marks all four mandatory once the box is ticked; Transport Invoice No.
 		# and the attachment were not checked.
 		if (
@@ -259,7 +260,7 @@ def _validate_payment_rows(doc):
 		ptype = row.payment_type or C.UNF_PAYMENT_SUPPLIER
 		running[ptype] = running.get(ptype, 0.0) + amount
 
-		if ptype == C.UNF_PAYMENT_LOGISTICS and not cint(doc.get("custom_include_logistics")):
+		if ptype == C.UNF_PAYMENT_LOGISTICS and not wants_logistics(doc):
 			frappe.throw(
 				_("Row {0}: there is no logistics bill on this invoice to pay against.").format(
 					row.idx
@@ -976,7 +977,7 @@ def get_invoice_context(purchase_invoice):
 		"due_date_auto": not _is_direct(invoice) and bool(_payment_terms_template(invoice)),
 		"rate_editable": rate_editable(),
 		"payment_types": [C.UNF_PAYMENT_SUPPLIER]
-		+ ([C.UNF_PAYMENT_LOGISTICS] if cint(invoice.get("custom_include_logistics")) else []),
+		+ ([C.UNF_PAYMENT_LOGISTICS] if wants_logistics(invoice) else []),
 		"payment_modes": list(C.UNF_PAYMENT_MODES),
 		"can_edit": docstatus == 0
 		and may_create
@@ -1044,7 +1045,7 @@ def _apply_draft_values(invoice, data):
 			invoice.set(field, data.get(field) or None)
 	if dates_before != (_date_str(invoice.get("bill_date")), _date_str(invoice.get("custom_payment_due_date"))):
 		_align_erpnext_schedule(invoice)
-	if not cint(invoice.get("custom_include_logistics")):
+	if not wants_logistics(invoice):
 		for field in (
 			"custom_logistics_vendor",
 			"custom_transport_invoice_no",

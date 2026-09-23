@@ -43,21 +43,33 @@ var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time) {
 	let touched = false;
 	if (control.$input) control.$input.on('focus keydown input', () => { touched = true; });
 	const set_value = control.set_value.bind(control);
+	// Counts every set_value, so a redraw queued by parse() can tell the field was cleared or
+	// reloaded in the meantime and must not put the old text back.
+	let epoch = 0;
 	control.set_value = function (value, ...rest) {
 		last = value || null;
 		touched = false;
+		epoch += 1;
 		return set_value(value, ...rest);
 	};
 	const parse = control.parse.bind(control);
 	control.parse = function (value) {
-		const typed = typeof value === 'string' ? value.trim() : '';
+		let typed = typeof value === 'string' ? value.trim() : '';
 		const from_input = touched && !!control.$input && value === control.$input.val();
 		const date_fmt = frappe.datetime.get_user_date_fmt().toUpperCase();
-		if (!typed || !moment(typed, [date_fmt, date_fmt.replace('YYYY', 'YY')], true).isValid()) {
+		// A date with no time, however it was typed: 29-09-2026, 29-9-2026, 29/09/2026,
+		// 29.09.2026, 29092026, 29-09-26. It used to have to be dd-mm-yyyy exactly, so any other
+		// way of typing it either kept no time at all or stored the time without showing it.
+		const day = /^\d[\d./-]*\d$/.test(typed)
+			? moment(typed, [date_fmt, date_fmt.replace(/[-/.]/g, '/'), date_fmt.replace(/[-/.]/g, '.'),
+				date_fmt.replace(/[-/.]/g, ''), date_fmt.replace('YYYY', 'YY')])
+			: null;
+		if (!typed || !day || !day.isValid()) {
 			const parsed = parse(value);
 			if (parsed && from_input) last = parsed;
 			return parsed;
 		}
+		typed = day.format(date_fmt);
 		const time_fmt = frappe.datetime.get_user_time_fmt();
 		const held = last ? frappe.datetime.convert_to_user_tz(last, false) : null;
 		// Midnight is what a date-only entry used to leave behind, not a time anyone chose.
@@ -67,11 +79,14 @@ var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time) {
 				: default_time(time_fmt);
 		const result = parse(`${typed} ${time}`);
 		if (result && from_input) last = result;
-		if (result && control.$input && (result === control.value || result === control.get_model_value())) {
-			// Frappe takes a value equal to its model as nothing to do. Without a doc that model
-			// falls back to the value from before the text was cleared, so retyping the same date
-			// neither stored the value nor redrew its time. Do both here.
-			setTimeout(() => control.set_input(result), 0);
+		if (result && control.$input) {
+			// Show the time that was just added. Frappe takes a value equal to its model as
+			// nothing to do (retyping the same date), and a date typed in another shape
+			// (29.09.2026) is stored with its time but left in the box as the bare date.
+			// Redraw the box from the stored value, either way -- unless the field was cleared
+			// or reloaded since (a refused past date is cleared right after this parse).
+			const at = epoch;
+			setTimeout(() => { if (at === epoch) control.set_input(result); }, 0);
 		}
 		return result;
 	};
@@ -136,11 +151,21 @@ var PurchaseInwardEntry = class {
 	 * and a time the user typed is never replaced.
 	 */
 	stamp_inward_datetime() {
-		setTimeout(() => {
+		// A NEW inward's Inward Date & Time is the moment it is raised. Setting it once did not
+		// hold: the date picker fires a clear() of its own when a field is refreshed, and that
+		// change landed after the default -- most often when arriving from a Purchase Order
+		// straight after viewing another inward -- leaving the field EMPTY, or still showing
+		// the previous document's date. So the default is asserted a few times while the screen
+		// settles, and stops the moment the person goes into the field.
+		this._inward_dt_edited = false;
+		[0, 300, 900, 2000].forEach((ms) => setTimeout(() => {
 			const c = this.fields.inward_datetime;
-			if (!c || this.docname) return;
-			if (!c.get_value()) c.set_value(frappe.datetime.now_datetime());
-		}, 0);
+			if (!c || this.docname || this._inward_dt_edited) return;
+			const now = frappe.datetime.now_datetime();
+			const held = c.get_value();
+			// keep an already-correct value (avoids a needless redraw); replace empty or stale
+			if (!held || String(held).slice(0, 10) !== now.slice(0, 10)) c.set_value(now);
+		}, ms));
 	}
 
 	// ------------------------------------------------------------- helpers
@@ -179,10 +204,17 @@ var PurchaseInwardEntry = class {
 	_set(fieldname, value) {
 		const c = this.fields[fieldname];
 		if (c) {
+			// What the screen itself wrote, so a `change` handler can tell a programmatic
+			// fill from a person's edit. A Frappe control fires `change` for set_value too,
+			// and set_value is asynchronous, so a "loading" flag cleared straight after the
+			// call is not reliably still set when the change arrives.
+			this._written = this._written || {};
+			this._written[fieldname] =
+				value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value);
 			// Refresh first, then set: the other order let a Date / Datetime clear itself after
 			// the value landed (see _ctl).
 			c.refresh();
-			c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
+			c.set_value(this._written[fieldname]);
 		}
 	}
 
@@ -239,6 +271,7 @@ var PurchaseInwardEntry = class {
 			fieldtype: 'Data',
 			reqd: 1,
 			description: 'Unique per vendor (BR-PI-15).',
+			change: () => me.check_duplicate('invoice_number'),
 		});
 		this._ctl('.field-invoice-date', {
 			fieldname: 'invoice_date',
@@ -252,13 +285,15 @@ var PurchaseInwardEntry = class {
 			fieldname: 'challan_no',
 			label: 'Challan / DC No.',
 			fieldtype: 'Data',
+			description: 'Unique per vendor (VAL-PI-22).',
+			change: () => me.check_duplicate('challan_no'),
 		});
 		this._ctl('.field-gross-weight', {
 			fieldname: 'gross_weight',
 			label: 'Gross Weight',
 			fieldtype: 'Float',
 		});
-		this._ctl('.field-inward-datetime', {
+		const inward_dt = this._ctl('.field-inward-datetime', {
 			fieldname: 'inward_datetime',
 			label: 'Inward Date & Time',
 			fieldtype: 'Datetime',
@@ -266,6 +301,10 @@ var PurchaseInwardEntry = class {
 			// renders as a loose "Asia/Kolkata" under the field.
 			hide_timezone: 1,
 		}, frappe.datetime.now_datetime());
+		// Going into the field is the person's own edit; nothing programmatic focuses it.
+		if (inward_dt && inward_dt.$input) {
+			inward_dt.$input.on('focus keydown input', () => { this._inward_dt_edited = true; });
+		}
 		this._ctl('.field-attachment', {
 			fieldname: 'attachment',
 			label: 'Attachment',
@@ -276,6 +315,223 @@ var PurchaseInwardEntry = class {
 			label: 'Remarks',
 			fieldtype: 'Small Text',
 		});
+	}
+
+	// ------------------------------------------ BR-PI-15..21 merge / correction
+
+	/**
+	 * Warn about a duplicate Invoice / Challan Number while the person is still typing,
+	 * and offer the merge instead of waiting for the save to refuse it.
+	 *
+	 * The server rules are unaffected by anything here: PurchaseInward.validate runs the
+	 * same two checks again on every save, whatever this asked or skipped.
+	 */
+	check_duplicate(field) {
+		const me = this;
+		if (cint((this.ctx || {}).docstatus) !== 0) return;
+		if (!this._val(field)) return;
+		// Filling a stored document must not interrogate the server about its own numbers.
+		if (this._val(field) === (this._written || {})[field]) return;
+		// Once the merge is recorded the duplicate is expected, so stop re-reporting it.
+		if (this.merged_into) return;
+		if (!this._val('purchase_order')) return;
+
+		frappe.call({
+			method: 'alpinos.purchase.inward_api.validate_creation',
+			args: {
+				purchase_order: this._val('purchase_order'),
+				invoice_number: this._val('invoice_number'),
+				challan_no: this._val('challan_no'),
+				inward_type: this._val('inward_type'),
+				purchase_inward: this.docname || '',
+			},
+			callback(r) {
+				const res = r.message;
+				if (!res) return;
+				const check = (res.checks || []).filter((c) => c.field === field)[0];
+				if (!check || check.ok) return;
+				if ((res.merge_candidates || []).length) {
+					me.merge_dialog(res.merge_candidates, check, field);
+					return;
+				}
+				frappe.msgprint({ title: __(check.code), message: check.message, indicator: 'red' });
+			},
+		});
+	}
+
+	/** The action-bar button: look for candidates on whichever numbers are filled in. */
+	merge_button() {
+		const me = this;
+		const invoice = this._val('invoice_number');
+		const challan = this._val('challan_no');
+		if (!(invoice || challan)) {
+			frappe.msgprint(__('Enter an Invoice Number or a Challan Number first.'));
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.purchase.inward_api.get_merge_candidates',
+			args: {
+				supplier: this._val('supplier'),
+				invoice_number: invoice,
+				challan_no: challan,
+				exclude: this.docname || '',
+			},
+			freeze: true,
+			callback(r) {
+				const rows = r.message || [];
+				if (!rows.length) {
+					frappe.msgprint(
+						__('No other Purchase Inward carries this Invoice or Challan Number for this Vendor.')
+					);
+					return;
+				}
+				me.merge_dialog(rows, null, null);
+			},
+		});
+	}
+
+	merge_dialog(candidates, check, field) {
+		const me = this;
+		const eligible = candidates.filter((row) => row.eligible).map((row) => row.name);
+
+		const d = new frappe.ui.Dialog({
+			title: __('Merge with Existing Inward'),
+			size: 'large',
+			fields: [
+				{ fieldname: 'note', fieldtype: 'HTML' },
+				{
+					fieldname: 'target',
+					fieldtype: 'Select',
+					label: __('Existing Purchase Inward'),
+					options: eligible.join('\n'),
+					reqd: 1,
+					hidden: eligible.length ? 0 : 1,
+				},
+			],
+			primary_action_label: __('Merge with Existing Inward'),
+			primary_action(values) {
+				d.hide();
+				me.apply_merge(values.target);
+			},
+			secondary_action_label: field ? __('Use a Different Number') : __('Close'),
+			secondary_action() {
+				d.hide();
+				// Clearing the field the person was warned about, not both: the other one
+				// may be perfectly valid and re-typing it is needless work.
+				if (field) me._set(field, '');
+			},
+		});
+
+		d.fields_dict.note.$wrapper.html(this.merge_html(candidates, check));
+		if (!eligible.length) d.get_primary_btn().hide();
+		d.show();
+	}
+
+	merge_html(candidates, check) {
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		let html = '';
+		if (check && check.message) {
+			html += `<div class="text-danger" style="margin-bottom:10px;">${check.message}</div>`;
+		}
+		html += '<div class="text-muted small" style="margin-bottom:8px;">';
+		html += __(
+			'Merging keeps both documents and records the relationship; it never moves quantities. An Inward that has reached QC, GRN, Invoice or Payment cannot be merged.'
+		);
+		html += '</div>';
+		html += '<table class="table table-bordered table-condensed"><thead><tr>';
+		[__('Purchase Inward'), __('Matched On'), __('Status'), __('Purchase Order'), __('Eligible')]
+			.forEach((h) => { html += `<th>${h}</th>`; });
+		html += '</tr></thead><tbody>';
+		candidates.forEach((row) => {
+			const link = `/app/purchase_inward_entry/${encodeURIComponent(row.name)}`;
+			html += '<tr>';
+			html += `<td><a href="${link}" target="_blank">${esc(row.name)}</a></td>`;
+			html += `<td>${esc((row.matched_on || []).join(', '))}</td>`;
+			html += `<td>${esc(row.inward_status || '')}</td>`;
+			html += `<td>${esc(row.purchase_order || '')}</td>`;
+			html += row.eligible
+				? `<td class="text-success">${__('Yes')}</td>`
+				: `<td class="text-muted small">${esc(row.reason || __('No'))}</td>`;
+			html += '</tr>';
+		});
+		html += '</tbody></table>';
+		return html;
+	}
+
+	apply_merge(target) {
+		if (!target) return;
+		const me = this;
+		// Nothing saved yet: the link rides along on the insert, where the server vets it.
+		// Saving from here instead would need the whole screen to be valid already.
+		if (!this.docname) {
+			this.merged_into = target;
+			this._toast(__('Merging with {0}. Save to record it.', [target]), 'blue');
+			this.make_actions();
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.purchase.inward_api.merge_with_existing_inward',
+			args: { purchase_inward: this.docname, target: target },
+			freeze: true,
+			freeze_message: __('Merging...'),
+			callback(r) {
+				if (r.exc) return;
+				me._toast(__('Merged with {0}', [target]), 'green');
+				me.load(me.docname);
+			},
+		});
+	}
+
+	/**
+	 * BR-PI-19..21 / VAL-PI-16..18, 24 — Admin correction of the Invoice Number, offered at
+	 * any status because that is the case the rule exists for: a vendor reissues an invoice
+	 * long after the material was received. The server re-checks the role and the reason.
+	 */
+	correct_invoice() {
+		const me = this;
+		frappe.prompt(
+			[
+				{
+					fieldname: 'current',
+					fieldtype: 'Data',
+					label: __('Current Invoice Number'),
+					default: this._val('invoice_number'),
+					read_only: 1,
+				},
+				{
+					fieldname: 'new_invoice_number',
+					fieldtype: 'Data',
+					label: __('New Invoice Number'),
+					reqd: 1,
+				},
+				{ fieldname: 'reason', fieldtype: 'Small Text', label: __('Reason'), reqd: 1 },
+				{
+					fieldname: 'note',
+					fieldtype: 'HTML',
+					options: `<div class="text-muted small">${__(
+						'The old number, the new one, who changed it and why are all recorded on this Purchase Inward.'
+					)}</div>`,
+				},
+			],
+			(values) => {
+				frappe.call({
+					method: 'alpinos.purchase.inward_api.correct_invoice_number',
+					args: {
+						purchase_inward: me.docname,
+						new_invoice_number: values.new_invoice_number,
+						reason: values.reason,
+					},
+					freeze: true,
+					callback(r) {
+						if (r.exc) return;
+						me._toast(__('Invoice Number updated'), 'green');
+						me.load(me.docname);
+					},
+				});
+			},
+			__('Correct Invoice Number'),
+			__('Update')
+		);
 	}
 
 	on_purchase_order_change() {
@@ -432,7 +688,7 @@ var PurchaseInwardEntry = class {
 				expiry_date: '',
 				mrp: 0,
 				usp: '',
-				item_remarks: '',
+				remarks: '',
 			},
 			data
 		);
@@ -466,15 +722,15 @@ var PurchaseInwardEntry = class {
 
 		const me = this;
 		const remarks = frappe.ui.form.make_control({
-			df: { fieldname: `item_remarks_${idx}`, fieldtype: 'Data', placeholder: 'Remarks' },
+			df: { fieldname: `remarks_${idx}`, fieldtype: 'Data', placeholder: 'Remarks' },
 			parent: $tr.find('.cell-remarks'),
 			render_input: true,
 		});
-		remarks.set_value(ALP_TRIM_MICROSECONDS(row.item_remarks || ''));
+		remarks.set_value(ALP_TRIM_MICROSECONDS(row.remarks || ''));
 		// Same rule as the grid cells below: the handler is handed the control's parsed
 		// value, never the raw input text.
 		remarks.$input && remarks.$input.on('change', () => {
-			me.items[idx].item_remarks = remarks.get_value();
+			me.items[idx].remarks = remarks.get_value();
 		});
 	}
 
@@ -915,10 +1171,12 @@ var PurchaseInwardEntry = class {
 
 	reset() {
 		this._set_include_other(false);
+		this._ctx_token = (this._ctx_token || 0) + 1;
 		this.docname = null;
 		this.company = null;
 		this.quarantine_doc = null;
 		this.purchase_qc = null;
+		this.merged_into = null;
 		this.items = [];
 		this.attachments = [];
 		this.wrapper.find('.items-table tbody, .receiving-table tbody, .attachments-table tbody').empty();
@@ -942,6 +1200,7 @@ var PurchaseInwardEntry = class {
 
 	load(name) {
 		const me = this;
+		this._ctx_token = (this._ctx_token || 0) + 1;
 		frappe.call({
 			method: 'frappe.client.get',
 			args: { doctype: 'Purchase Inward', name: name },
@@ -956,6 +1215,9 @@ var PurchaseInwardEntry = class {
 				// Before the fields are filled: the purchase_order change that filling it
 				// fires must see this as the document's own PO and leave the rows alone.
 				me.loaded_po = doc.purchase_order;
+				// Read back before the fields are filled: the Invoice / Challan duplicate
+				// probe that filling them fires must already know this document is merged.
+				me.merged_into = doc.merged_into || null;
 
 				[
 					'purchase_order', 'inward_type', 'supplier', 'supplier_order_no',
@@ -986,16 +1248,22 @@ var PurchaseInwardEntry = class {
 	}
 
 	refresh_context() {
+		const token = (this._ctx_token = (this._ctx_token || 0) + 1);
 		if (!this.docname) {
 			this.ctx = { status: 'Draft', docstatus: 0, actions: [], sections: {} };
 			this.apply_context();
 			return;
 		}
 		const me = this;
+		const docname = this.docname;
 		frappe.call({
 			method: 'alpinos.purchase.inward_api.get_form_context',
-			args: { purchase_inward: this.docname },
+			args: { purchase_inward: docname },
 			callback(r) {
+				// A reset(), a fresh load(), or a later refresh_context() call moved the
+				// screen on to something else while this reply was in flight -- applying
+				// it now would stamp a stale document's status onto the current one.
+				if (token !== me._ctx_token || docname !== me.docname) return;
 				if (r.message) me.ctx = r.message;
 				me.apply_context();
 			},
@@ -1119,6 +1387,24 @@ var PurchaseInwardEntry = class {
 			btn(__('Save Receipt'), 'btn-primary', () => me.save(false));
 		}
 
+		// BR-PI-16: offered on every draft rather than only once a number is typed --
+		// make_actions does not re-run on keystrokes, so a value-dependent button would
+		// appear only after the next save. merge_button() says what is missing instead.
+		if (cint(this.ctx.docstatus) === 0) {
+			if (this.merged_into) {
+				btn(__('Merged with {0}', [this.merged_into]), 'btn-default', () => {
+					frappe.set_route('purchase_inward_entry', me.merged_into);
+				});
+			} else {
+				btn(__('Merge with Existing Inward'), 'btn-default', () => me.merge_button());
+			}
+		}
+
+		// BR-PI-19: an Admin may correct the number at any status, including Completed.
+		if (this.docname && this.ctx.may_correct_invoice) {
+			btn(__('Correct Invoice Number'), 'btn-default', () => me.correct_invoice());
+		}
+
 		// Workflow transitions, exactly as the engine reports them (task 295 / BRD 1.4).
 		(this.ctx.actions || []).forEach((action) => {
 			if (action.kind !== 'transition' || action.action === 'submit') return;
@@ -1127,6 +1413,17 @@ var PurchaseInwardEntry = class {
 				action.label,
 				'btn-default',
 				() => me.run_action(action.action, action.label),
+				!action.enabled,
+				action.reason
+			);
+		});
+
+		// Admin overrides (server-checked): Force Close, and Change Status to any status.
+		(this.ctx.actions || []).filter((a) => a.kind === 'admin').forEach((action) => {
+			btn(
+				action.label,
+				action.action === 'force_close' ? 'btn-danger' : 'btn-default',
+				() => me.admin_status(action),
 				!action.enabled,
 				action.reason
 			);
@@ -1148,6 +1445,47 @@ var PurchaseInwardEntry = class {
 				frappe.set_route('print', 'Purchase Inward', me.docname);
 			});
 		}
+	}
+
+	/**
+	 * Force Close / Change Status (Admin). Nothing is created or reversed -- only the status
+	 * moves -- so the prompt says that, and a reason is required (it goes on the timeline).
+	 */
+	admin_status(action) {
+		const me = this;
+		const force = action.action === 'force_close';
+		const fields = [];
+		if (!force) {
+			fields.push({
+				fieldname: 'status', fieldtype: 'Select', label: __('New Status'), reqd: 1,
+				options: (action.statuses || []).join('\n'),
+			});
+		}
+		fields.push({ fieldname: 'reason', fieldtype: 'Small Text', label: __('Reason'), reqd: 1 });
+		fields.push({
+			fieldtype: 'HTML',
+			options: `<div class="text-muted small">${__('Only the status changes. The QC, GRN, invoice and stock stay exactly as they are.')}</div>`,
+		});
+		frappe.prompt(
+			fields,
+			(v) => {
+				frappe.call({
+					method: force ? 'alpinos.purchase.inward_api.force_close' : 'alpinos.purchase.inward_api.admin_set_status',
+					args: force
+						? { purchase_inward: me.docname, reason: v.reason }
+						: { purchase_inward: me.docname, status: v.status, reason: v.reason },
+					freeze: true,
+					freeze_message: __('Working...'),
+					callback(r) {
+						if (r.exc || !r.message) return;
+						me._toast(__('Status is now {0}', [r.message.inward_status]), 'green');
+						me.load(me.docname);
+					},
+				});
+			},
+			force ? __('Force Close {0}', [this.docname]) : __('Change Status of {0}', [this.docname]),
+			force ? __('Force Close') : __('Change Status')
+		);
 	}
 
 	run_action(action, label) {
@@ -1244,6 +1582,10 @@ var PurchaseInwardEntry = class {
 			inward_datetime: this._val('inward_datetime'),
 			attachment: this._val('attachment'),
 			remarks: this._val('remarks'),
+			// A merge chosen before the first save travels with it: the duplicate number is
+			// only accepted because of this link, and the server vets it on the same save
+			// (inward_api.validate_merge_link).
+			...(this.merged_into ? { merged_into: this.merged_into } : {}),
 			...(receiving ? {
 				actual_vehicle_no: this._val('actual_vehicle_no'),
 				actual_driver_contact_no: this._val('actual_driver_contact_no'),
@@ -1268,7 +1610,7 @@ var PurchaseInwardEntry = class {
 				...(row.name ? { name: row.name } : {}),
 				item_code: row.item_code,
 				po_detail: row.po_detail,
-				item_remarks: row.item_remarks,
+				remarks: row.remarks,
 				...(receiving ? {
 					received_qty: flt(row.received_qty),
 					target_warehouse: row.target_warehouse,

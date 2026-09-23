@@ -449,7 +449,7 @@ class PurchaseInward(Document):
 			)
 
 	def _validate_challan_no(self):
-		"""VAL-PI-22 — challan number is unique per vendor."""
+		"""VAL-PI-22 — challan number is unique per vendor, unless the duplicate is merged."""
 		if not (self.challan_no and self.supplier):
 			return
 		clash = frappe.get_all(
@@ -463,14 +463,21 @@ class PurchaseInward(Document):
 			pluck="name",
 			limit=5,
 		)
-		if clash:
-			links = ", ".join(get_link_to_form("Purchase Inward", n) for n in clash)
-			frappe.throw(
-				_("This Challan Number has already been recorded for this Vendor.<br><br>{0}").format(
-					links
-				),
-				title=_("VAL-PI-22"),
-			)
+		if not clash:
+			return
+		# Same escape hatch the invoice number has: a recorded merge IS the explanation for
+		# the duplicate. The link itself is vetted by inward_api.validate_merge_link on the
+		# save that sets it, so it cannot be used to walk past this rule unearned.
+		if self.merged_into:
+			return
+		links = ", ".join(get_link_to_form("Purchase Inward", n) for n in clash)
+		frappe.throw(
+			_(
+				"This Challan Number has already been recorded for this Vendor. Please merge "
+				"with the existing Purchase Inward or use a different Challan Number.<br><br>{0}"
+			).format(links),
+			title=_("VAL-PI-22"),
+		)
 
 	# ------------------------------------- receiving detail (tasks 297/300) -
 

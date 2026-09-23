@@ -32,6 +32,7 @@ SHORTCUTS = (
 	("Quarantine Stock", "Page", "purchase_quarantine_list", ""),
 	("Pending Receipts", "Report", "Purchase Pending Receipts", ""),
 	("QC Pending", "Report", "Purchase QC Pending", ""),
+	("QC Stock", "Report", "Purchase QC Stock", ""),
 	("GRN Register", "Report", "Purchase GRN Register", ""),
 	("Master Data Readiness", "Report", "Purchase Master Data Readiness", ""),
 )

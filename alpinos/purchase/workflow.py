@@ -108,6 +108,7 @@ INWARD_TRANSITIONS = {
 		_T("complete_payment", _("Complete Payment"), C.PI_COMPLETED, ACCOUNTS),
 	],
 	C.PI_COMPLETED: [],
+	C.PI_FORCE_CLOSED: [],
 	C.PI_CANCELLED: [],
 }
 
@@ -127,6 +128,7 @@ INWARD_VIEW_ACTIONS = {
 	C.PI_GRN_GENERATED: ("view", "view_qc_report", "view_grn", "view_debit_note", "view_quarantine", "print"),
 	C.PI_PAYMENT_PENDING: ("view", "view_grn", "view_debit_note", "view_invoice", "view_quarantine", "print"),
 	C.PI_COMPLETED: ("view", "view_grn", "view_debit_note", "view_invoice", "view_quarantine", "print"),
+	C.PI_FORCE_CLOSED: ("view", "view_qc_report", "view_grn", "view_debit_note", "view_invoice", "view_quarantine", "print"),
 	C.PI_CANCELLED: ("view", "print"),
 }
 
@@ -290,7 +292,81 @@ def available_actions(doc, user=None):
 				"reason": None,
 			}
 		)
+
+	# Admin overrides: a submitted inward can be Force Closed, or moved to any status, at any
+	# point. `kind` is "admin" -- neither a workflow transition nor a plain view -- so the
+	# screens draw them separately (with a reason prompt) and the list rows leave them out.
+	if cint(doc.get("docstatus")) == 1 and may_override_status(user):
+		already = status == C.PI_FORCE_CLOSED
+		out.append(
+			{
+				"action": "force_close",
+				"label": _("Force Close"),
+				"next_status": C.PI_FORCE_CLOSED,
+				"kind": "admin",
+				"enabled": not already,
+				"reason": _("This inward is already Force Closed.") if already else None,
+			}
+		)
+		out.append(
+			{
+				"action": "change_status",
+				"label": _("Change Status"),
+				"next_status": None,
+				"kind": "admin",
+				"enabled": True,
+				"reason": None,
+				"statuses": [s for s in C.PI_ADMIN_CHOICES if s != status],
+			}
+		)
 	return out
+
+
+def may_override_status(user=None):
+	"""Admin: the Purchase Inward Admin role, System Manager, or the Administrator."""
+	user = user or frappe.session.user
+	return user == "Administrator" or bool(set(C.ADMIN_ROLES) & user_roles(user))
+
+
+def override_status(doc, status, reason, user=None):
+	"""An Admin moves a submitted inward to `status`, whatever it is now.
+
+	It changes the STATUS only. No document is created, cancelled or reversed -- the QC, GRN,
+	invoice and stock stay exactly as they are -- so this is for closing an inward that will
+	not follow the normal flow, or for putting a stuck one back to the step it should be at.
+	The reason is required and is written on the inward's timeline with who and when.
+	"""
+	if isinstance(doc, str):
+		doc = frappe.get_doc("Purchase Inward", doc)
+	if not may_override_status(user):
+		frappe.throw(_("Only an Admin may change the status of a Purchase Inward."), frappe.PermissionError)
+	if cint(doc.get("docstatus")) != 1:
+		frappe.throw(
+			_(
+				"Only a submitted Purchase Inward can have its status changed. A draft is "
+				"discarded, and a cancelled one stays cancelled."
+			)
+		)
+	if status not in C.PI_ADMIN_CHOICES:
+		frappe.throw(_("{0} is not a status an Admin can set here.").format(frappe.bold(status or "")))
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(_("Please give a reason for changing the status."))
+	old = doc.get("inward_status") or C.PI_DRAFT
+	if old == status:
+		frappe.throw(_("The Purchase Inward is already {0}.").format(frappe.bold(status)))
+
+	set_status(doc, status)
+	doc.add_comment(
+		"Info",
+		_("{0} changed the status from {1} to {2}. Reason: {3}").format(
+			frappe.bold(frappe.utils.get_fullname(user or frappe.session.user)),
+			frappe.bold(old),
+			frappe.bold(status),
+			frappe.utils.escape_html(reason),
+		),
+	)
+	return old
 
 
 def assert_transition(doc, action, user=None):

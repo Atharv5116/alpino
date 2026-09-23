@@ -67,7 +67,7 @@ def _ready_to_submit(invoice, freight=0.0, vendor=None):
 	invoice.custom_payment_due_date = add_days(today(), 30)
 	invoice.custom_invoice_attachment = "/files/supplier-invoice.pdf"
 	if freight:
-		invoice.custom_include_logistics = 1
+		invoice.custom_include_logistics = "Yes"
 		invoice.custom_logistics_vendor = vendor
 		invoice.custom_transport_invoice_no = "LR-0001"
 		invoice.custom_freight_amount = freight
@@ -148,7 +148,7 @@ def run():
 	)
 
 	inv3 = _ready_to_submit(_fresh_draft())
-	inv3.custom_include_logistics = 1
+	inv3.custom_include_logistics = "Yes"
 	inv3.custom_logistics_vendor = None
 	inv3.custom_freight_amount = 0
 	expect_throw(

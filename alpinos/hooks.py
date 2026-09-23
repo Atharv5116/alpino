@@ -378,6 +378,7 @@ doc_events = {
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
 			"alpinos.purchase.purchase_order_fields.validate_driver_contact_no",
 			"alpinos.purchase.purchase_order_fields.validate_duplicate_items",
+			"alpinos.purchase.purchase_order_fields.validate_no_past_dates",
 			# The PO Type is what every inward against the order is raised as.
 			"alpinos.purchase.purchase_order_fields.validate_items_match_po_type",
 			# Before the edit guard: stamping the GSTIN and deriving the tax category is

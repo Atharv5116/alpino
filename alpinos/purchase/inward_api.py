@@ -308,11 +308,15 @@ def validate_creation(
 	checks.append(_check("VAL-PI-22", "challan_no", doc._validate_challan_no))
 
 	failed = {c["code"]: c for c in checks if not c["ok"]}
+	# Both duplicates are offered a merge, and only the number that actually clashed is
+	# used to look candidates up -- searching on the other one would list inwards the user
+	# was never warned about.
 	candidates = []
-	if "VAL-PI-13/15" in failed and doc.supplier and doc.invoice_number:
+	if doc.supplier:
 		candidates = get_merge_candidates(
 			doc.supplier,
-			doc.invoice_number,
+			invoice_number=doc.invoice_number if "VAL-PI-13/15" in failed else None,
+			challan_no=doc.challan_no if "VAL-PI-22" in failed else None,
 			exclude=doc.name if doc.name != _PROBE_NAME else None,
 		)
 
@@ -530,31 +534,46 @@ MERGE_FIELDS = (
 
 
 @frappe.whitelist()
-def get_merge_candidates(supplier, invoice_number, exclude=None):
-	"""VAL-PI-14 — the existing inwards a duplicate invoice number could merge with.
+def get_merge_candidates(supplier, invoice_number=None, challan_no=None, exclude=None):
+	"""VAL-PI-14 / VAL-PI-22 — the existing inwards a duplicate could merge with.
+
+	Matched on the invoice number OR the challan number, because both describe the same
+	thing: one physical delivery that got recorded twice. A vendor who reissues the
+	paperwork can produce a second inward that shares only the challan, so keying the
+	merge on the invoice alone left that case with nothing but a hard refusal.
 
 	`frappe.get_list` rather than `get_all`: the user is about to be shown these rows, so
 	they must pass the permission query and `has_permission` hooks.
 	"""
 	frappe.has_permission(DOCTYPE, "read", throw=True)
-	if not (supplier and invoice_number):
+	invoice_number = (invoice_number or "").strip()
+	challan_no = (challan_no or "").strip()
+	if not supplier or not (invoice_number or challan_no):
 		return []
 
-	filters = {
-		"supplier": supplier,
-		"invoice_number": invoice_number,
-		"docstatus": ("<", 2),
-	}
-	if exclude:
-		filters["name"] = ("!=", exclude)
+	# One query per key rather than an OR filter: frappe's filter dict is an AND, and the
+	# two keys are independent. Rows are merged on `name` below, so an inward that shares
+	# both numbers is listed once and reports both.
+	found = {}
+	for field, value in (("invoice_number", invoice_number), ("challan_no", challan_no)):
+		if not value:
+			continue
+		filters = {"supplier": supplier, field: value, "docstatus": ("<", 2)}
+		if exclude:
+			filters["name"] = ("!=", exclude)
+		for row in frappe.get_list(
+			DOCTYPE,
+			filters=filters,
+			fields=list(MERGE_FIELDS),
+			order_by="creation asc",
+			limit_page_length=20,
+		):
+			row = found.setdefault(row["name"], row)
+			row.setdefault("matched_on", []).append(
+				_("Invoice Number") if field == "invoice_number" else _("Challan Number")
+			)
 
-	rows = frappe.get_list(
-		DOCTYPE,
-		filters=filters,
-		fields=list(MERGE_FIELDS),
-		order_by="creation asc",
-		limit_page_length=20,
-	)
+	rows = list(found.values())
 	for row in rows:
 		reason = _merge_block_reason(row)
 		row["eligible"] = reason is None and not row.get("merged_into")
@@ -583,9 +602,20 @@ def assert_merge_allowed(doc, target, user=None):
 		frappe.throw(
 			_("Purchase Inward can only be merged for the same Vendor."), title=_("VAL-PI-19")
 		)
-	if (row.invoice_number or "") != (doc.get("invoice_number") or ""):
+
+	# VAL-PI-20, widened to the challan: the two documents must agree on at least one of
+	# the numbers that identifies the delivery. Requiring the invoice specifically left a
+	# duplicate challan (same delivery, reissued or not-yet-known invoice) unmergeable.
+	invoice_same = bool(row.invoice_number) and (row.invoice_number or "") == (
+		doc.get("invoice_number") or ""
+	)
+	challan_same = bool(row.challan_no) and (row.challan_no or "") == (doc.get("challan_no") or "")
+	if not (invoice_same or challan_same):
 		frappe.throw(
-			_("Purchase Inward can only be merged when the Invoice Number is the same."),
+			_(
+				"Purchase Inward can only be merged when the Invoice Number or the Challan "
+				"Number is the same."
+			),
 			title=_("VAL-PI-20"),
 		)
 
@@ -755,6 +785,22 @@ def run_action(purchase_inward, action):
 
 
 @frappe.whitelist()
+def admin_set_status(purchase_inward, status, reason=None):
+	"""Admin only: move a submitted Purchase Inward to `status` (see workflow.override_status)."""
+	doc = frappe.get_doc(DOCTYPE, purchase_inward)
+	doc.check_permission("read")
+	old = workflow.override_status(doc, status, reason)
+	doc.reload()
+	return {"name": doc.name, "from": old, "inward_status": doc.inward_status}
+
+
+@frappe.whitelist()
+def force_close(purchase_inward, reason=None):
+	"""Admin only: Force Close a submitted Purchase Inward, at any status."""
+	return admin_set_status(purchase_inward, C.PI_FORCE_CLOSED, reason)
+
+
+@frappe.whitelist()
 def cancel_draft(purchase_inward):
 	"""BRD 2.3.3 Cancel — "Cancel the Purchase Inward before submission".
 
@@ -806,6 +852,10 @@ def get_form_context(purchase_inward=None):
 		"actions": workflow.available_actions(doc),
 		"header_editable": bool(editable),
 		"header_reason": reason,
+		# BR-PI-19: the correction is offered at any status, so the screen needs the role
+		# answer separately from header_editable, which closes on submit.
+		"may_correct_invoice": bool(workflow.user_roles() & set(C.INVOICE_CORRECTION_ROLES)),
+		"merged_into": doc.get("merged_into"),
 	}
 
 

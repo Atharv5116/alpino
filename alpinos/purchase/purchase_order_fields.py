@@ -17,16 +17,20 @@ every receipt submit or cancel.
 """
 
 import re
+from datetime import timedelta
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
-from frappe.utils import cint, flt, get_datetime
+from frappe.utils import cint, flt, get_datetime, getdate, today
 
 from alpinos.purchase import constants as C
 
 PO = "Purchase Order"
 PO_ITEM = "Purchase Order Item"
+
+# BRD 2.1.1: "If only the date is entered, the default time shall be set to 9:00 AM."
+DEFAULT_ARRIVAL_HOUR = 9
 
 # BR-PO-20 .. BR-PO-25. Shown on the checkbox itself so the buyer sees the consequence
 # before ticking it, not after the inward is refused (VAL-PO-13).
@@ -272,6 +276,31 @@ def execute():
 # ------------------------------------------------------------ server-side guards
 
 
+@frappe.whitelist()
+def get_item_defaults(item_code):
+	"""Item Name, UOM and the buying Rate for a PO line, in one call.
+
+	The PO screen builds its own grid rather than using ERPNext's Item Code fetch, so
+	nothing populated Rate when an item was picked -- it stayed 0 until someone typed it by
+	hand. Rate is read from the Buying Settings price list, the same source the standard
+	Purchase Order form itself defaults to.
+	"""
+	frappe.has_permission("Purchase Order", "read", throw=True)
+	item = frappe.db.get_value(
+		"Item", item_code, ["item_name", "stock_uom"], as_dict=True
+	) or {}
+	price_list = frappe.db.get_single_value("Buying Settings", "buying_price_list")
+	rate = 0
+	if price_list:
+		rate = frappe.db.get_value(
+			"Item Price",
+			{"item_code": item_code, "price_list": price_list, "buying": 1},
+			"price_list_rate",
+		)
+	item["rate"] = flt(rate)
+	return item
+
+
 def validate_duplicate_items(doc, method=None):
 	"""VAL-PO: the same Item Code cannot be added twice on one Purchase Order.
 
@@ -385,7 +414,7 @@ def validate_driver_contact_no(doc, method=None):
 
 
 def normalize_estimated_arrival(doc, method=None):
-	"""A date-only Estimated Arrival takes the current time (matches the entry screen).
+	"""BRD 2.1.1 -- a date-only Estimated Arrival defaults to 9:00 AM.
 
 	Frappe hands a date-only entry to the server as midnight, so midnight is the only
 	signal available; a genuine midnight arrival has to be entered as 00:01. Client-side
@@ -399,10 +428,67 @@ def normalize_estimated_arrival(doc, method=None):
 	value = get_datetime(value)
 	if value.hour or value.minute or value.second:
 		return
+	default = value.replace(hour=DEFAULT_ARRIVAL_HOUR, minute=0, second=0, microsecond=0)
+	# 9:00 AM today may already be behind us, and a time in the past is not allowed.
 	now = get_datetime()
-	doc.custom_estimated_arrival = value.replace(
-		hour=now.hour, minute=now.minute, second=now.second, microsecond=0
-	)
+	if default.date() == now.date() and default < now:
+		default = now.replace(second=0, microsecond=0)
+	doc.custom_estimated_arrival = default
+
+
+# A person picks "now" and then spends a while finishing the order before saving, so the
+# saved time is allowed to trail the clock by this much. Anything older is a past time.
+ARRIVAL_GRACE_MINUTES = 15
+
+
+def validate_no_past_dates(doc, method=None):
+	"""PO Date, Expected Delivery Date, each line's Required By and the Estimated Arrival cannot
+	be in the past: today (or now) or later.
+
+	Only what the person is setting on THIS save is checked -- a new order, or a field whose
+	value changed. A saved draft that already holds an older date must stay editable for
+	everything else (and the approval steps re-save it), and a submitted order is never
+	re-validated here.
+	"""
+	if cint(doc.docstatus) != 0:
+		return
+	before = None if doc.is_new() else doc.get_doc_before_save()
+	today_ = getdate(today())
+	now_ = get_datetime()
+
+	def changed(fieldname, row=None, old_row=None):
+		if before is None:
+			return True
+		if row is None:
+			return str(doc.get(fieldname) or "") != str(before.get(fieldname) or "")
+		return old_row is None or str(row.get(fieldname) or "") != str(old_row.get(fieldname) or "")
+
+	problems = []
+	for fieldname, label in (("transaction_date", "PO Date"), ("schedule_date", "Expected Delivery Date")):
+		value = doc.get(fieldname)
+		if value and changed(fieldname) and getdate(value) < today_:
+			problems.append(frappe._("{0} cannot be in the past.").format(frappe.bold(frappe._(label))))
+
+	old_rows = {r.name: r for r in (before.get("items") if before else None) or []}
+	for row in doc.get("items") or []:
+		value = row.get("schedule_date")
+		if value and changed("schedule_date", row, old_rows.get(row.get("name"))) and getdate(value) < today_:
+			problems.append(
+				frappe._("Row {0}: {1} cannot be in the past.").format(row.idx, frappe.bold(frappe._("Required By")))
+			)
+
+	arrival = doc.get("custom_estimated_arrival")
+	if arrival and changed("custom_estimated_arrival"):
+		if get_datetime(arrival) < now_ - timedelta(minutes=ARRIVAL_GRACE_MINUTES):
+			problems.append(
+				frappe._("{0} cannot be in the past.").format(frappe.bold(frappe._("Estimated Arrival Date & Time")))
+			)
+
+	if problems:
+		frappe.throw(
+			"<br>".join(problems) + "<br>" + frappe._("Choose the current or a future date and time."),
+			title=frappe._("Past Date"),
+		)
 
 
 # ------------------------------------------------------------ progress rollup
@@ -421,9 +507,11 @@ def _rollup_status(purchase_order, pending_qty):
 		filters={"purchase_order": purchase_order, "docstatus": 1},
 		pluck="inward_status",
 	)
-	live = [s for s in statuses if s and s != C.PI_CANCELLED]
+	live = [s for s in statuses if s and s not in (C.PI_CANCELLED, C.PI_FORCE_CLOSED)]
 	if not live:
-		return ""
+		# Nothing still moving: every inward was closed by an Admin -- say so, rather than
+		# reading as "nothing inwarded" (an order that was cancelled outright still does).
+		return C.PI_FORCE_CLOSED if C.PI_FORCE_CLOSED in statuses else ""
 
 	rank = {status: idx for idx, status in enumerate(C.PI_STATUSES)}
 	status = min(live, key=lambda s: rank.get(s, len(rank)))

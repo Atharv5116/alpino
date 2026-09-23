@@ -273,6 +273,188 @@ def _direct_invoice(doc):
 	return direct_invoices_for([doc.name]).get(doc.name)
 
 
+# ------------------------------------------------------------------- cancel
+
+# Reverse-chronological, deepest first -- the same order BRD 5.3 already cancels a GRN's
+# own downstream in (purchase_receipt_before_cancel / quarantine.assert_grn_cancellable).
+# One Purchase Order can have several live inwards; each contributes its own chain.
+# (inward fieldname, the REAL Frappe doctype, the label this module shows for it) -- a
+# Debit Note IS a Purchase Invoice (is_return=1), so the real doctype is shared with the
+# next row; only the label tells them apart, and _cancel_one switches on that label.
+_CHAIN_FIELDS = (
+	("debit_note", "Purchase Invoice", "Debit Note"),
+	("purchase_invoice", "Purchase Invoice", "Purchase Invoice"),
+	("purchase_receipt", "Purchase Receipt", "GRN"),
+	("purchase_qc", "Purchase QC", "Purchase QC"),
+)
+
+# Cancelling the order itself is the same authority as approving/rejecting it. Cancelling
+# its whole downstream chain first is a bigger, harder-to-undo action -- QC results, a GRN,
+# an invoice, a debit note -- so that is Admin only, the same bar as Force Close.
+PO_CANCEL_ROLES = C.PO_APPROVER_ROLES
+PO_CANCEL_CHAIN_ROLES = C.ADMIN_ROLES
+
+
+def _cancel_blockers(purchase_order):
+	"""Every live downstream document across every live inward of this order, in the order
+	they would need to be cancelled -- deepest first, ending with the inward itself.
+
+	`docstatus < 2` on the inward is "live": a cancelled inward's own downstream is already
+	gone with it. A row's own docstatus (0 or 1) is carried so the client can say Draft vs
+	Submitted; a draft blocks a cancel exactly like a submitted one does (it still holds the
+	name and, for a Debit Note, real GL/stock impact once submitted).
+	"""
+	blockers = []
+	inwards = frappe.get_all(
+		"Purchase Inward",
+		filters={"purchase_order": purchase_order, "docstatus": ("<", 2)},
+		fields=["name"],
+		order_by="creation asc",
+	)
+	for inward in inwards:
+		row = frappe.db.get_value(
+			"Purchase Inward", inward.name,
+			["debit_note", "purchase_invoice", "purchase_receipt", "purchase_qc"],
+			as_dict=True,
+		)
+		for fieldname, doctype, label in _CHAIN_FIELDS:
+			name = row.get(fieldname)
+			# debit_note and purchase_invoice can be the SAME name in an edge case that has
+			# not happened here (both point at a Purchase Invoice); guard it anyway so one
+			# document is never listed, and cancelled, twice.
+			if not name or not frappe.db.exists(doctype, name):
+				continue
+			if any(b["doctype"] == doctype and b["name"] == name for b in blockers):
+				continue
+			docstatus = cint(frappe.db.get_value(doctype, name, "docstatus"))
+			if docstatus == 2:
+				continue
+			blockers.append(
+				{"doctype": doctype, "label": label, "name": name, "docstatus": docstatus, "via": inward.name}
+			)
+		blockers.append(
+			{"doctype": "Purchase Inward", "label": "Purchase Inward", "name": inward.name, "docstatus": 1, "via": inward.name}
+		)
+	return blockers
+
+
+@frappe.whitelist()
+def get_cancel_blockers(purchase_order):
+	"""Client entry point: what stands between this order and being cancelled right now."""
+	doc = frappe.get_doc(PO, purchase_order)
+	doc.check_permission("read")
+	return _cancel_blockers(purchase_order)
+
+
+def _cancel_one(row):
+	"""Cancel one blocker by its own rules -- a Debit Note has its own cancel path (a draft
+	is not a real Frappe cancel), everything else is a plain submitted-document cancel.
+
+	Switches on the LABEL, not `doctype`: a Debit Note's real doctype is Purchase Invoice
+	(is_return=1), the same as a normal one, so the doctype alone cannot tell them apart.
+	"""
+	if row["label"] == "Debit Note":
+		# grn_edit.cancel_debit_note already knows how to cancel either docstatus for one.
+		from alpinos.purchase.grn_edit import cancel_debit_note
+
+		cancel_debit_note(debit_note=row["name"], reason="Purchase Order cancelled")
+		return
+	doc = frappe.get_doc(row["doctype"], row["name"])
+	if cint(doc.docstatus) == 0:
+		doc.delete()
+		return
+	doc.flags.ignore_permissions = True
+	doc.cancel()
+
+
+@frappe.whitelist()
+def cancel_purchase_order(purchase_order, reason=None):
+	"""Cancel a submitted Purchase Order. Refused, listing what is in the way, when any of
+	its inwards still have a live downstream document -- BRD 5.3's own reverse-chronological
+	rule, one level up. Use `cancel_purchase_order_chain` to clear the chain and cancel in
+	the same action.
+	"""
+	doc = frappe.get_doc(PO, purchase_order)
+	doc.check_permission("cancel")
+	if not (set(PO_CANCEL_ROLES) & _user_roles()):
+		frappe.throw(
+			_("Only {0} may cancel a Purchase Order.").format(", ".join(PO_CANCEL_ROLES)),
+			frappe.PermissionError,
+		)
+	if cint(doc.docstatus) != 1:
+		frappe.throw(_("Only a submitted Purchase Order can be cancelled here."))
+
+	blockers = _cancel_blockers(purchase_order)
+	if blockers:
+		return {"cancelled": False, "blockers": blockers}
+
+	# stamp_on_cancel (before_cancel hook) writes the BRD 3.2 audit row itself; this flag is
+	# the only way to hand it the reason, since Frappe's own cancel() takes no such argument.
+	doc.flags.ignore_permissions = True
+	doc.flags.cancel_reason = (reason or "").strip() or None
+	doc.cancel()
+	frappe.db.commit()
+	return {"cancelled": True, "blockers": []}
+
+
+@frappe.whitelist()
+def cancel_purchase_order_chain(purchase_order, reason=None):
+	"""Admin only: cancel every live downstream document of this order, then the order
+	itself. Each document is cancelled through its own normal cancel path (the same one a
+	person clicking Cancel on that document would trigger), deepest first, so quarantine
+	release, sample reversal and the rest of BRD 5.3's per-document rules all still run.
+
+	Stops and reports exactly where it got to if one step is refused (a quarantine release
+	already moved stock, say) -- the steps before it are genuinely cancelled and stay that
+	way; this is not one atomic transaction.
+	"""
+	doc = frappe.get_doc(PO, purchase_order)
+	doc.check_permission("cancel")
+	if not (set(PO_CANCEL_CHAIN_ROLES) & _user_roles()):
+		frappe.throw(
+			_("Only {0} may cancel a Purchase Order's linked documents.").format(
+				", ".join(PO_CANCEL_CHAIN_ROLES)
+			),
+			frappe.PermissionError,
+		)
+	if cint(doc.docstatus) != 1:
+		frappe.throw(_("Only a submitted Purchase Order can be cancelled here."))
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(_("Please give a reason for cancelling these documents."))
+
+	blockers = _cancel_blockers(purchase_order)
+	done = []
+	for row in blockers:
+		try:
+			_cancel_one(row)
+			done.append(row)
+		except Exception:
+			failure = frappe.utils.strip_html(str(frappe.message_log[-1] if frappe.message_log else "")) or str(
+				frappe.get_traceback().strip().splitlines()[-1]
+			)
+			frappe.log_error(
+				title="Purchase Order cancel chain stopped",
+				message="{0}: cancelled {1}, failed on {2} {3}\n{4}".format(
+					purchase_order, [d["name"] for d in done], row["doctype"], row["name"],
+					frappe.get_traceback(),
+				),
+			)
+			frappe.throw(
+				_("Stopped while cancelling {0} {1}: {2}<br><br>Already cancelled: {3}.").format(
+					row["doctype"], frappe.bold(row["name"]), failure,
+					", ".join(f"{d['doctype']} {d['name']}" for d in done) or _("nothing yet"),
+				)
+			)
+
+	result = cancel_purchase_order(purchase_order, reason=reason)
+	if not result["cancelled"]:
+		# Should not happen (blockers were just cleared), but never claim success on a guess.
+		frappe.throw(_("The linked documents were cancelled, but the Purchase Order itself was not. Try Cancel again."))
+	result["cancelled_documents"] = done
+	return result
+
+
 # ----------------------------------------------------------------- audit trail
 
 
@@ -421,11 +603,16 @@ def stamp_on_submit(doc, method=None):
 
 
 def stamp_on_cancel(doc, method=None):
-	"""BRD 3.4: a cancelled order is a terminal state of its own."""
+	"""BRD 3.4: a cancelled order is a terminal state of its own.
+
+	`cancel_purchase_order` sets `doc.flags.cancel_reason` before calling `doc.cancel()`,
+	since Frappe's own cancel() has no argument for one; a cancel from anywhere else (the
+	desk form's own Cancel, a script) logs with no remarks, same as before this existed.
+	"""
 	previous = _current_status(doc)
 	if previous == C.PO_CANCELLED:
 		return
-	_log(doc, ACTION_CANCELLED, previous, C.PO_CANCELLED)
+	_log(doc, ACTION_CANCELLED, previous, C.PO_CANCELLED, doc.flags.get("cancel_reason"))
 	doc.set(STATUS_FIELD, C.PO_CANCELLED)
 
 

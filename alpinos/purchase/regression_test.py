@@ -149,10 +149,12 @@ def run(_report_now=True):
 
 	def h4_ordinary_edit_still_saves():
 		d = frappe.get_doc("Purchase Inward", inw.name)
-		d.items[0].item_remarks = "regression probe"
+		d.items[0].remarks = "regression probe"
 		d.flags.ignore_permissions = True
 		d.save()
 		frappe.db.commit()
+		d.reload()
+		_assert(d.items[0].remarks == "regression probe", "item remarks did not persist")
 
 	check("H4 the workflow engine can still move the status", h4_engine_still_moves)
 	check("H4 an ordinary Store edit still saves", h4_ordinary_edit_still_saves)

@@ -11,7 +11,7 @@ Four jobs, all of them cosmetic — every one is re-checked server side by
      to the items belonging to this inward type.
 295  Save / Submit / Cancel / Print plus the workflow buttons, and the BRD 2.5 creation
      validations surfaced while the user is still typing — including the Merge with
-     Existing Inward prompt for a duplicate invoice number.
+     Existing Inward prompt for a duplicate invoice OR challan number.
 
 Field-level read-only is deliberately NOT done here. `alpinos.purchase.roles` already
 ships a "Purchase Inward - Section Access" Client Script that toggles `read_only` on
@@ -363,7 +363,9 @@ function alpinos_pi_find_check(res, field) {
 function alpinos_pi_check(frm, field) {
     if (cint(frm.doc.docstatus) !== 0) return;
     if (!frm.doc[field]) return;
-    if (frm.doc.merged_into && field === 'invoice_number') return;
+    // A recorded merge is the explanation for BOTH duplicates, not just the invoice:
+    // the challan number takes the same escape hatch (VAL-PI-22).
+    if (frm.doc.merged_into) return;
 
     frappe.call({
         method: ALPINOS_PI_API + '.validate_creation',
@@ -379,8 +381,8 @@ function alpinos_pi_check(frm, field) {
             if (!res) return;
             var check = alpinos_pi_find_check(res, field);
             if (!check || check.ok) return;
-            if (field === 'invoice_number' && (res.merge_candidates || []).length) {
-                alpinos_pi_merge_dialog(frm, res.merge_candidates, check);
+            if ((res.merge_candidates || []).length) {
+                alpinos_pi_merge_dialog(frm, res.merge_candidates, check, field);
                 return;
             }
             frappe.msgprint({ title: __(check.code), message: check.message, indicator: 'red' });
@@ -391,8 +393,8 @@ function alpinos_pi_check(frm, field) {
 // --------------------------------------------------------------- 295 merging
 
 function alpinos_pi_merge_button(frm) {
-    if (!(frm.doc.supplier && frm.doc.invoice_number)) {
-        frappe.msgprint(__('Select a Purchase Order and enter an Invoice Number first.'));
+    if (!(frm.doc.supplier && (frm.doc.invoice_number || frm.doc.challan_no))) {
+        frappe.msgprint(__('Select a Purchase Order and enter an Invoice Number or a Challan Number first.'));
         return;
     }
     frappe.call({
@@ -400,21 +402,22 @@ function alpinos_pi_merge_button(frm) {
         args: {
             supplier: frm.doc.supplier,
             invoice_number: frm.doc.invoice_number,
+            challan_no: frm.doc.challan_no,
             exclude: frm.is_new() ? '' : frm.doc.name
         },
         freeze: true,
         callback: function(r) {
             var rows = r.message || [];
             if (!rows.length) {
-                frappe.msgprint(__('No other Purchase Inward carries this Invoice Number for this Vendor.'));
+                frappe.msgprint(__('No other Purchase Inward carries this Invoice or Challan Number for this Vendor.'));
                 return;
             }
-            alpinos_pi_merge_dialog(frm, rows, null);
+            alpinos_pi_merge_dialog(frm, rows, null, null);
         }
     });
 }
 
-function alpinos_pi_merge_dialog(frm, candidates, check) {
+function alpinos_pi_merge_dialog(frm, candidates, check, field) {
     var eligible = [];
     candidates.forEach(function(row) {
         if (row.eligible) eligible.push(row.name);
@@ -439,10 +442,11 @@ function alpinos_pi_merge_dialog(frm, candidates, check) {
             d.hide();
             alpinos_pi_apply_merge(frm, values.target);
         },
-        secondary_action_label: __('Use a Different Invoice Number'),
+        secondary_action_label: field ? __('Use a Different Number') : __('Close'),
         secondary_action: function() {
             d.hide();
-            frm.set_value('invoice_number', '');
+            // Clear the number that was actually refused; the other one may be fine.
+            if (field) frm.set_value(field, '');
         }
     });
 
@@ -460,11 +464,13 @@ function alpinos_pi_merge_html(candidates, check) {
     html += __('Merging keeps both documents and records the relationship; it never moves quantities. An Inward that has reached QC, GRN, Invoice or Payment cannot be merged.');
     html += '</div>';
     html += '<table class="table table-bordered table-condensed">';
-    html += '<thead><tr><th>' + __('Purchase Inward') + '</th><th>' + __('Status') + '</th>';
+    html += '<thead><tr><th>' + __('Purchase Inward') + '</th><th>' + __('Matched On') + '</th>';
+    html += '<th>' + __('Status') + '</th>';
     html += '<th>' + __('Purchase Order') + '</th><th>' + __('Eligible') + '</th></tr></thead><tbody>';
     candidates.forEach(function(row) {
         html += '<tr>';
         html += '<td>' + frappe.utils.get_form_link('Purchase Inward', row.name, true) + '</td>';
+        html += '<td>' + frappe.utils.escape_html((row.matched_on || []).join(', ')) + '</td>';
         html += '<td>' + frappe.utils.escape_html(row.inward_status || '') + '</td>';
         html += '<td>' + frappe.utils.escape_html(row.purchase_order || '') + '</td>';
         if (row.eligible) {
@@ -514,7 +520,7 @@ function alpinos_pi_build_actions(frm) {
             alpinos_pi_get_items(frm, 0);
         });
     }
-    if (draft && frm.doc.invoice_number) {
+    if (draft && (frm.doc.invoice_number || frm.doc.challan_no)) {
         frm.add_custom_button(__('Merge with Existing Inward'), function() {
             alpinos_pi_merge_button(frm);
         });
