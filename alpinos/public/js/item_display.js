@@ -13,8 +13,11 @@
  *                                    the table is built (the loaded page only, as its
  *                                    paging is server-side); each cell's format wrapped.
  *   Custom desk pages                the page's <table>s: the SKU column is found by its
- *                                    data-key / data-fieldname or its heading, and the
- *                                    rows are re-applied whenever the page redraws.
+ *                                    data-key / data-fieldname or its heading, and failing
+ *                                    that by the column whose cells are known Items, so a
+ *                                    page heading it "SKU" matches a configuration naming
+ *                                    the report field "item_code". Rows are re-applied
+ *                                    whenever the page redraws.
  *
  * Items without a sequence keep their normal order after the sequenced ones; items
  * without a colour are not coloured. A page table with inputs in it (an editable grid)
@@ -24,6 +27,8 @@
 	const ROW_ALPHA = 0.22;
 	const BOTH_ROW_ALPHA = 0.16;
 	const CELL_ALPHA = 0.4;
+
+	const norm = (s) => String(s || '').toLowerCase().replace(/[↑↓⇅▲▼]/g, '').replace(/[^a-z0-9]/g, '');
 
 	function config() {
 		return (frappe.boot && frappe.boot.alpinos_item_display) || null;
@@ -53,7 +58,14 @@
 
 	function rule_for(kind, name) {
 		const c = config();
-		return (c && name && c.rules && c.rules[kind] && c.rules[kind][name]) || null;
+		const rules = (c && c.rules && c.rules[kind]) || null;
+		if (!rules || !name) return null;
+		if (rules[name]) return rules[name];
+		// A page is named either way round (pick_list_entry, sales-order-entry-view), and
+		// the configuration is typed by hand: match on the letters and digits alone.
+		const wanted = norm(name);
+		const key = Object.keys(rules).find((k) => norm(k) === wanted);
+		return key ? rules[key] : null;
 	}
 
 	function item_meta(code) {
@@ -191,9 +203,18 @@
 
 	// -------------------------------------------------------------------- pages
 
-	const norm = (s) => String(s || '').toLowerCase().replace(/[↑↓⇅▲▼]/g, '').replace(/[^a-z0-9]/g, '');
+	function data_rows_of(table) {
+		const rows = [];
+		Array.from(table.tBodies).forEach((tbody) => rows.push(...Array.from(tbody.rows)));
+		return rows.filter((tr) => !tr.querySelector('th'));
+	}
 
-	function sku_column_index(table, sku_field) {
+	function first_line(cell) {
+		if (!cell) return '';
+		return (cell.innerText || cell.textContent || '').split('\n').map((s) => s.trim()).find(Boolean) || '';
+	}
+
+	function sku_column_by_header(table, sku_field) {
 		const head = table.tHead && table.tHead.rows.length ? table.tHead.rows[table.tHead.rows.length - 1] : null;
 		const header_row = head || Array.from(table.rows).find((r) => r.querySelector('th'));
 		if (!header_row) return -1;
@@ -207,13 +228,44 @@
 		return -1;
 	}
 
+	/**
+	 * No column carries the configured name. One configuration serves reports and pages
+	 * alike, so a field named for the report ("item_code") never matches a page that heads
+	 * the column "SKU" -- and a page table may head nothing at all. Take the column whose
+	 * cells are Items we know: a code column reads as Items down the table, a name, batch
+	 * or quantity column does not.
+	 */
+	function sku_column_by_data(table) {
+		const sample = data_rows_of(table).slice(0, 20);
+		if (!sample.length) return -1;
+		const width = Math.max(...sample.map((tr) => tr.cells.length));
+		let best = -1;
+		let best_hits = 0;
+		for (let col = 0; col < width; col++) {
+			let hits = 0;
+			sample.forEach((tr) => {
+				if (item_meta(first_line(tr.cells[col]))) hits += 1;
+			});
+			if (hits > best_hits) {
+				best_hits = hits;
+				best = col;
+			}
+		}
+		return best_hits ? best : -1;
+	}
+
+	function sku_column_index(table, sku_field) {
+		const by_header = sku_column_by_header(table, sku_field);
+		return by_header >= 0 ? by_header : sku_column_by_data(table);
+	}
+
 	function cell_code(cell) {
 		if (!cell) return '';
 		const explicit = cell.dataset.sku || cell.dataset.itemCode;
 		if (explicit) return explicit.trim();
-		const first_line = (cell.innerText || cell.textContent || '').split('\n').map((s) => s.trim()).find(Boolean) || '';
-		if (item_meta(first_line)) return first_line;
-		return first_line.split(/\s+/)[0] || '';
+		const text = first_line(cell);
+		if (item_meta(text)) return text;
+		return text.split(/\s+/)[0] || '';
 	}
 
 	function apply_to_table(table, rule) {
