@@ -1,3 +1,5 @@
+import os
+
 app_name = "alpinos"
 app_title = "Alpinos Development"
 app_publisher = "Hetvi Patel"
@@ -24,16 +26,34 @@ app_license = "mit"
 # Includes in <head>
 # ------------------
 
+
+def _asset(relative_path):
+	"""A desk asset URL stamped with the file own modification time.
+
+	nginx serves /assets with max-age=31536000 (a year) and these paths carry no content
+	hash, unlike Frappe bundles, so a browser that loaded one keeps it until the cache is
+	emptied by hand: the Item colour fix (Changes(HP) #39) reached the server and no user.
+	The stamp changes whenever the file does, which is what makes the browser fetch it
+	again. Read when hooks load, so a deploy picks it up on restart or a cache clear.
+	"""
+	url = "/assets/alpinos/" + relative_path
+	try:
+		stamp = int(os.path.getmtime(os.path.join(os.path.dirname(__file__), "public", relative_path)))
+	except OSError:
+		return url
+	return url + "?v=" + str(stamp)
+
+
 # include js, css files in header of desk.html
-app_include_css = "/assets/alpinos/css/alpinos_pages.css"
+app_include_css = _asset("css/alpinos_pages.css")
 app_include_js = [
-	"/assets/alpinos/js/sales_order_hub_desk_v3.js",
+	_asset("js/sales_order_hub_desk_v3.js"),
 	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
 	# the hard-coded item_row_colors.js; its reports became a default configuration).
-	"/assets/alpinos/js/item_display.js",
-	"/assets/alpinos/js/alpinos_list_prefs.js",
+	_asset("js/item_display.js"),
+	_asset("js/alpinos_list_prefs.js"),
 	# Desk list views of Purchase Inward / QC / Quarantine open the module's list pages.
-	"/assets/alpinos/js/purchase_list_redirects.js",
+	_asset("js/purchase_list_redirects.js"),
 ]
 
 # include js, css files in header of web template
