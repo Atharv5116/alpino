@@ -94,6 +94,18 @@ def _run():
 
 	check("a number already in use is skipped, not duplicated", _taken_number_is_skipped)
 
-	check("existing buyer IDs are untouched", lambda: _assert(
-		frappe.db.count("Buyer Master", {"name": ["like", "OBM-2026-%"]}) > 0 or not frappe.db.count("Buyer Master"),
-		"old OBM-2026 IDs are gone"))
+	# Changes(HP) #46 replaced #40's "existing IDs are left alone": they were reformatted too
+	# (alpinos.buyer_id_reformat), so every buyer now reads OBM-<financial year>-<number>.
+	def _every_id_is_in_the_financial_year_format():
+		from alpinos.buyer_id_reformat import target_name
+
+		stale = [
+			name for name in frappe.db.sql_list(
+				"SELECT name FROM `tabBuyer Master` WHERE name LIKE 'OBM-%%'"
+			)
+			if target_name(name)
+		]
+		_assert(not stale, f"{len(stale)} buyer IDs still carry a calendar year, e.g. {stale[:3]}")
+
+	check("every buyer ID reads OBM-<financial year>-<number> (#46)",
+		_every_id_is_in_the_financial_year_format)
