@@ -1,0 +1,140 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-09-23 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "machine_name",
+  "machine_type",
+  "filling_process_category",
+  "col_1",
+  "status",
+  "capacity_section",
+  "max_capacity",
+  "col_2",
+  "capacity_uom",
+  "notes_section",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "no_copy": 1,
+   "options": "MAC-.###",
+   "print_hide": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "machine_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Machine Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Every machine belongs to exactly one type (Machine Master rule 1).",
+   "fieldname": "machine_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Machine Type",
+   "options": "Machine Type",
+   "reqd": 1,
+   "link_filters": "[[\"Machine Type\",\"is_active\",\"=\",1]]"
+  },
+  {
+   "description": "The master trigger (FRD 8.2). Wherever this machine is chosen, the screen reads this category to decide which input fields to show. Only filling machines need one.",
+   "fieldname": "filling_process_category",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Filling Process Category",
+   "link_filters": "[[\"Filling Process Category\",\"is_active\",\"=\",1]]",
+   "options": "Filling Process Category"
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Active",
+   "description": "Only an Active machine may be assigned to production.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Current Status",
+   "options": "Active\nUnder Maintenance\nInactive",
+   "reqd": 1
+  },
+  {
+   "fieldname": "capacity_section",
+   "fieldtype": "Section Break",
+   "label": "Capacity"
+  },
+  {
+   "description": "Most the machine can process in one cycle.",
+   "fieldname": "max_capacity",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Max Capacity"
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "capacity_uom",
+   "fieldtype": "Select",
+   "label": "Capacity UOM",
+   "options": "\nKG\nLiters\nTrays\nPieces"
+  },
+  {
+   "fieldname": "notes_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-09-23 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Machine",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "machine_name,machine_type,status",
+ "show_title_field_in_link": 1,
+ "sort_field": "machine_name",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "machine_name",
+ "track_changes": 1
+}

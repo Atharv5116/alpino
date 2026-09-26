@@ -230,6 +230,9 @@ PO_APPROVED = "Approved"
 PO_REJECTED = "Rejected"
 PO_SENT_TO_SUPPLIER = "Sent to Supplier"
 PO_CANCELLED = "Cancelled"
+# Terminal, and reachable only through purchase_order_force_close -- the Administrator
+# pressing Force Close. Nothing else writes it.
+PO_FORCE_CLOSED = "Force Closed"
 
 PO_APPROVAL_STATUSES = (
 	PO_DRAFT,
@@ -238,6 +241,7 @@ PO_APPROVAL_STATUSES = (
 	PO_REJECTED,
 	PO_SENT_TO_SUPPLIER,
 	PO_CANCELLED,
+	PO_FORCE_CLOSED,
 )
 
 # Statuses that mean the order has cleared approval and is live.
@@ -340,3 +344,45 @@ def label_for_inward_type(inward_type):
 def select_options(values):
 	"""Render a tuple of vocabulary values as a Frappe Select `options` string."""
 	return "\n".join(values)
+
+
+# --- Multi-valued inward type ------------------------------------------------
+# A Purchase Order, and the Inward and QC that follow it, may now cover more than one
+# material type -- an order for FG and PM together. The value is stored in the SAME
+# fieldname as before, as a comma-separated list ("FG,PM"), so the 146 orders that hold a
+# single "RM" are still valid and still read back as exactly one type.
+#
+# Everything downstream asks "is X among this document's types" rather than "does it equal
+# X", which for a single-type document is the same question it asked before.
+
+
+def inward_types(value):
+	"""The types on a document, as a list. Accepts a list, a comma-separated string, or
+	None, and always returns a list of known type codes in the order given."""
+	if not value:
+		return []
+	if isinstance(value, (list, tuple, set)):
+		raw = list(value)
+	else:
+		raw = str(value).split(",")
+	seen = []
+	for item in raw:
+		code = str(item or "").strip().upper()
+		if code in INWARD_TYPES and code not in seen:
+			seen.append(code)
+	return seen
+
+
+def inward_types_str(value):
+	"""The canonical stored form: comma separated, no spaces, de-duplicated."""
+	return ",".join(inward_types(value))
+
+
+def has_inward_type(value, wanted):
+	"""Is `wanted` one of the types on this document?"""
+	return wanted in inward_types(value)
+
+
+def any_inward_type(value, wanted):
+	"""Do this document's types overlap `wanted` (a tuple of codes)?"""
+	return bool(set(inward_types(value)) & set(wanted or ()))

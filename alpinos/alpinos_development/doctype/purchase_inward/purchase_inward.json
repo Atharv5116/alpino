@@ -57,6 +57,7 @@
   "col_receiving",
   "allow_excess_qty",
   "target_warehouse",
+  "gate_no",
   "received_by",
   "receiving_datetime",
   "receiving_remarks_section",
@@ -115,12 +116,12 @@
   {
    "fetch_from": "purchase_order.custom_inward_type",
    "fetch_if_empty": 1,
+   "description": "Copied from the order. One or more of RM / PM / FG / MM.",
    "fieldname": "inward_type",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Inward Type",
-   "options": "RM\nPM\nFG\nMM",
    "reqd": 1,
    "search_index": 1
   },
@@ -160,12 +161,12 @@
   },
   {
    "description": "Supplier invoice number. Must be unique for this vendor (BR-PI-15).",
+   "description": "Optional. Unique per vendor when one is given (BR-PI-15).",
    "fieldname": "invoice_number",
    "fieldtype": "Data",
    "in_global_search": 1,
    "in_standard_filter": 1,
    "label": "Invoice Number",
-   "reqd": 1,
    "search_index": 1
   },
   {
@@ -444,6 +445,14 @@
    "fieldtype": "Link",
    "label": "Default Target Location",
    "options": "Warehouse"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Optional. The gate the vehicle was admitted through.",
+   "fieldname": "gate_no",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Gate No."
   },
   {
    "allow_on_submit": 1,

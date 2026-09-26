@@ -1,0 +1,91 @@
+<div class="item-master-entry">
+	<style>
+		.item-master-entry .im-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e2e2);
+			border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+		.item-master-entry .im-card > h5 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase;
+			letter-spacing: .4px; color: var(--text-muted); }
+		.item-master-entry .im-fld { margin-bottom: 8px; }
+		.item-master-entry .im-actionbar { display: flex; justify-content: flex-end; align-items: center;
+			margin-bottom: 14px; }
+		/* No dimmed state. A card that may not be edited is turned read-only by
+		   public/js/alpinos_readonly.js and styled by .alpinos-readonly in
+		   public/css/alpinos_pages.css, the same as the Purchase screens. */
+	</style>
+
+	<div class="im-actionbar"></div>
+
+	<div class="im-card">
+		<h5>Classification</h5>
+		<div class="row">
+			<div class="col-md-3 im-fld field-material-type"></div>
+			<div class="col-md-3 im-fld field-material-category"></div>
+		</div>
+	</div>
+
+	<div class="im-card">
+		<h5>Basic Information</h5>
+		<div class="row">
+			<div class="col-md-3 im-fld field-item-code"></div>
+			<div class="col-md-5 im-fld field-item-name"></div>
+			<div class="col-md-4 im-fld field-item-group"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-12 im-fld field-description"></div>
+		</div>
+	</div>
+
+	<div class="im-card">
+		<h5>Units of Measure</h5>
+		<div class="row">
+			<div class="col-md-4 im-fld field-stock-uom"></div>
+			<div class="col-md-4 im-fld field-purchase-uom"></div>
+			<div class="col-md-4 im-fld field-sales-uom"></div>
+		</div>
+	</div>
+
+	<div class="im-card">
+		<h5>Inventory</h5>
+		<div class="row">
+			<div class="col-md-3 im-fld field-is-stock-item"></div>
+			<div class="col-md-5 im-fld field-default-warehouse"></div>
+			<div class="col-md-4 im-fld field-preferred-supplier"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-3 im-fld field-has-batch-no"></div>
+			<div class="col-md-3 im-fld field-has-expiry-date"></div>
+			<div class="col-md-3 im-fld field-shelf-life"></div>
+			<div class="col-md-3 im-fld field-lead-time"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-3 im-fld field-qc-required"></div>
+			<div class="col-md-3 im-fld field-loss-percent"></div>
+		</div>
+	</div>
+
+	<div class="im-card">
+		<h5>Tax</h5>
+		<div class="row">
+			<div class="col-md-3 im-fld field-hsn-code"></div>
+			<div class="col-md-3 im-fld field-tax-rate"></div>
+			<div class="col-md-3 im-fld field-po-rate"></div>
+		</div>
+	</div>
+
+	<div class="im-card im-card-filling">
+		<h5>Filling</h5>
+		<div class="row">
+			<div class="col-md-4 im-fld field-target-sku-name"></div>
+			<div class="col-md-8 im-fld field-allowed-filling-categories"></div>
+		</div>
+		<div class="text-muted" style="font-size:12px;margin-top:4px;">
+			Which filling lines may run this SKU. Leave empty if it has not been decided yet.
+		</div>
+	</div>
+
+	<div class="im-card">
+		<h5>Status</h5>
+		<div class="row">
+			<div class="col-md-3 im-fld field-disabled"></div>
+		</div>
+	</div>
+</div>

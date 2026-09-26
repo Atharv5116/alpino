@@ -1,0 +1,54 @@
+<div class="process-master-entry">
+	<style>
+		.process-master-entry .pm-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e2e2);
+			border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+		.process-master-entry .pm-card > h5 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase;
+			letter-spacing: .4px; color: var(--text-muted); }
+		.process-master-entry .pm-fld { margin-bottom: 8px; }
+		.process-master-entry .pm-actionbar { display: flex; justify-content: flex-end; align-items: center;
+			margin-bottom: 14px; }
+		.process-master-entry .pm-note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+		/* No dimmed state. A card that may not be edited is turned read-only by
+		   public/js/alpinos_readonly.js and styled by .alpinos-readonly in
+		   public/css/alpinos_pages.css, the same as the Purchase screens. */
+		.process-master-entry .pm-machines { min-height: 38px; }
+	</style>
+
+	<div class="pm-actionbar"></div>
+
+	<div class="pm-card">
+		<h5>Basic Information</h5>
+		<div class="row">
+			<div class="col-md-3 pm-fld field-process-code"></div>
+			<div class="col-md-4 pm-fld field-process-name"></div>
+			<div class="col-md-2 pm-fld field-process-sequence"></div>
+			<div class="col-md-3 pm-fld field-is-active"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-12 pm-fld field-description"></div>
+		</div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Machine Configuration</h5>
+		<div class="row">
+			<div class="col-md-12 pm-fld pm-machines field-machine-types"></div>
+		</div>
+		<div class="pm-note">
+			A process is linked to machine <em>types</em>, never to individual machines. Any machine
+			later added under a linked type becomes available to this process automatically.
+		</div>
+		<div class="row" style="margin-top:12px;">
+			<div class="col-md-12 field-available-machines"></div>
+		</div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Process Configuration</h5>
+		<div class="row">
+			<div class="col-md-4 pm-fld field-qc-required"></div>
+			<div class="col-md-4 pm-fld field-allow-inward"></div>
+			<div class="col-md-4 pm-fld field-allow-machine"></div>
+		</div>
+	</div>
+</div>

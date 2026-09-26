@@ -9,6 +9,9 @@
 	padding-top: 12px;
 }
 .purchase-inward-entry .eso-fld { margin-bottom: 8px; }
+
+/* The Summary block uses the shared .alp-figures column (alpinos_pages.css),
+   the same one the QC and Quarantine totals use. */
 .purchase-inward-entry .piw-table { font-size: 12px; margin-bottom: 0; }
 .purchase-inward-entry .piw-table thead th { white-space: nowrap; }
 .purchase-inward-entry .piw-table th,
@@ -49,9 +52,9 @@
 
 .purchase-inward-entry .items-table { overflow: visible !important; }
 .purchase-inward-entry .items-table td { overflow: visible !important; position: relative; }
-/* The Store half is dimmed until it is that team turn to act, so both teams can
-   tell at a glance which half of the shared document (BR-PI-01) is theirs. */
-.purchase-inward-entry .piw-locked { opacity: .55; pointer-events: none; }
+/* The half that is not this team to act on (BR-PI-01) is read-only, not dimmed:
+   alpinos_readonly.js turns its fields read-only, and the stage badge plus the disabled
+   action buttons say whose turn it is. See public/css/alpinos_pages.css. */
 .purchase-inward-entry .piw-stage {
 	display: inline-block; padding: 2px 10px; border-radius: 10px;
 	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
@@ -81,17 +84,14 @@
 	color: var(--text-muted);
 	background: var(--card-bg);
 }
-/* Quiet the two add buttons so the solid Get Items from Purchase Order reads as
-   the primary action of the item card, which is how lines actually arrive. */
-.purchase-inward-entry .btn.btn-add-row,
+/* Quiet the add button so the solid Get Items from Purchase Order reads as the
+   primary action of the item card, which is how lines actually arrive. */
 .purchase-inward-entry .btn.btn-add-attachment {
 	border: 1px dashed var(--border-color);
 	background: transparent;
 	color: var(--text-muted);
 	font-weight: 500;
 }
-.purchase-inward-entry .btn.btn-add-row:hover,
-.purchase-inward-entry .btn.btn-add-row:focus,
 .purchase-inward-entry .btn.btn-add-attachment:hover,
 .purchase-inward-entry .btn.btn-add-attachment:focus {
 	border-style: solid;
@@ -107,6 +107,8 @@
 		physical receipt below and submits it for QC. Each half is editable only by the team
 		that owns it, and only at the right stage.
 	</p>
+
+	<div class="alp-actions alp-actions--end alp-actions--sticky piw-actionbar"></div>
 
 	<!-- ============================ BRD 2.1.1 header ============================ -->
 	<div class="piw-header eso-card">
@@ -158,9 +160,6 @@
 			<button class="btn btn-sm btn-light btn-get-items">
 				<i class="fa fa-download"></i> Get Items from Purchase Order
 			</button>
-			<button class="btn btn-sm btn-light btn-add-row">
-				<i class="fa fa-plus"></i> Add Row
-			</button>
 			<label class="piw-include-other" style="display:none; margin: 0 0 0 12px; font-weight: 500; cursor: pointer;">
 				<input type="checkbox" class="piw-include-other-check" style="margin-right: 6px; vertical-align: middle;">
 				Include Other Inward Types
@@ -176,15 +175,24 @@
 		</h6>
 
 		<h6 class="eso-subtitle">Vehicle &amp; Arrival</h6>
+		<!-- Three rows rather than one nine-wide wrap: what was planned, what actually
+		     turned up, and where it goes. Left to flow at four per row, Default Target
+		     Location ended a row and Gate No. began the next one alone, which put the
+		     two fields that belong together furthest apart. -->
 		<div class="row">
 			<div class="col-md-3 col-sm-6 eso-fld field-po-vehicle-no"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-po-driver-contact"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-actual-vehicle-no"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-actual-driver-contact"></div>
+		</div>
+		<div class="row">
 			<div class="col-md-3 col-sm-6 eso-fld field-actual-arrival"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-vehicle-verified"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-allow-excess"></div>
+		</div>
+		<div class="row">
 			<div class="col-md-3 col-sm-6 eso-fld field-target-warehouse"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-gate-no"></div>
 		</div>
 
 		<h6 class="eso-subtitle">Received Quantity</h6>
@@ -244,14 +252,16 @@
 	<!-- ============================== totals ================================== -->
 	<div class="eso-card">
 		<h6 class="eso-card-title">Summary</h6>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-total-order-qty"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-received-qty"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-pending-qty"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-excess-qty"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-balance-qty"></div>
+		<!-- One narrow column, label left and figure right, the same shape as the PO
+		     Summary. Across four columns the five figures wrapped onto a second row and
+		     the totals no longer lined up under one another. -->
+		<div class="alp-figures">
+			<div class="eso-fld field-total-order-qty"></div>
+			<div class="eso-fld field-total-received-qty"></div>
+			<div class="eso-fld field-total-pending-qty"></div>
+			<div class="eso-fld field-total-excess-qty"></div>
+			<div class="eso-fld alp-figures-total field-total-balance-qty"></div>
 		</div>
 	</div>
 
-	<div class="alp-actions alp-actions--end piw-actionbar" style="margin: 14px 0 24px;"></div>
 </div>

@@ -960,3 +960,55 @@ def correct_invoice_number(purchase_inward, new_invoice_number, reason=None):
 		"invoice_number": new_invoice_number,
 		"original_invoice_number": doc.original_invoice_number or old_invoice_number,
 	}
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def po_item_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Items a Purchase Order of these types may contain.
+
+	The PO Type is a list now ("FG,PM"), so the picker offers items of any of them. An
+	item with no type at all is still offered, exactly as validate_items_match_po_type
+	allows one: this site ships item groups that say nothing about RM / PM / FG / MM, and
+	hiding those rows would hide real items from the buyer.
+
+	Filtered in Python rather than in SQL because an item's type is not a column -- it is
+	its own custom_inward_type if set, otherwise read off its item group chain
+	(item_inward_type). Over-fetching and then filtering keeps that one definition.
+	"""
+	filters = filters or {}
+	wanted = set(C.inward_types(filters.get("po_types")))
+	page_len = cint(page_len) or 20
+	start = cint(start) or 0
+
+	rows = frappe.db.sql(
+		"""
+		select name, item_name
+		from `tabItem`
+		where ifnull(disabled, 0) = 0
+		  and ifnull(custom_is_bundle, 0) = 0
+		  and (name like %(txt)s or ifnull(item_name, '') like %(txt)s)
+		order by
+			case when name like %(head)s then 0 else 1 end,
+			name
+		limit %(limit)s
+		""",
+		{
+			"txt": "%%%s%%" % (txt or ""),
+			"head": "%s%%" % (txt or ""),
+			# Over-fetch: an unknown share of these will be filtered out below.
+			"limit": start + (page_len * 10) + 50,
+		},
+	)
+
+	if not wanted:
+		return rows[start : start + page_len]
+
+	cache = {}
+	keep = []
+	for name, item_name in rows:
+		found = item_inward_type(name, cache)
+		# None means unclassified, which is allowed on any order.
+		if found is None or found in wanted:
+			keep.append((name, item_name))
+	return keep[start : start + page_len]

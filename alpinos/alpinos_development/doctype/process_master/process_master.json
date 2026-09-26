@@ -1,0 +1,152 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:process_code",
+ "creation": "2026-09-23 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "basic_section",
+  "process_code",
+  "process_name",
+  "col_1",
+  "process_sequence",
+  "is_active",
+  "description",
+  "machine_section",
+  "machine_types",
+  "config_section",
+  "qc_required",
+  "allow_inward_entry",
+  "col_2",
+  "allow_machine_assignment"
+ ],
+ "fields": [
+  {
+   "fieldname": "basic_section",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
+  },
+  {
+   "description": "Unique short code, for example PRC-MIX. Becomes the record's ID.",
+   "fieldname": "process_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Process Code",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "process_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Process Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Order this process runs in on the floor.",
+   "fieldname": "process_sequence",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Process Sequence",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Only an Active process can be put on a Production Order.",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "machine_section",
+   "fieldtype": "Section Break",
+   "label": "Machine Configuration"
+  },
+  {
+   "description": "Machine Types allowed for this process. Any machine later added under one of these types becomes available here automatically.",
+   "fieldname": "machine_types",
+   "fieldtype": "Table MultiSelect",
+   "label": "Linked Machine Type(s)",
+   "options": "Process Machine Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "config_section",
+   "fieldtype": "Section Break",
+   "label": "Process Configuration"
+  },
+  {
+   "default": "0",
+   "description": "Ask for a Quality Check once this process finishes, before the next one starts.",
+   "fieldname": "qc_required",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "QC Required"
+  },
+  {
+   "default": "0",
+   "description": "Let the operator record the actual output quantity when the process completes.",
+   "fieldname": "allow_inward_entry",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Allow Inward Entry"
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Require a machine to be chosen before this process can start.",
+   "fieldname": "allow_machine_assignment",
+   "fieldtype": "Check",
+   "label": "Allow Machine Assignment"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-09-23 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Process Master",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "process_name,process_sequence",
+ "show_title_field_in_link": 1,
+ "sort_field": "process_sequence",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "process_name",
+ "track_changes": 1
+}

@@ -25,8 +25,28 @@ import frappe
 from frappe.utils import add_to_date, cint, get_datetime
 
 TEST_SUPPLIER = "PITEST Supplier 001"
-TEST_ITEM_PREFIX = "TFT-"
+
+#: Both suites that share TEST_SUPPLIER, and therefore share this cleanup.
+#:
+#: task_functional_test names its items TFT-; invoice_test names them PITEST-. Only TFT-
+#: was listed here, so an invoice_test run left its vouchers behind AND then blocked every
+#: later purge: the vouchers reached the scope through the supplier, and the guard below
+#: then saw a PITEST- item on them and refused the whole run. The regression suite calls
+#: this purge at the end, so one invoice_test run stopped the regression cleaning up after
+#: itself from then on.
+#:
+#: Kept deliberately narrow. Everything here is a fixture prefix no real item uses, and
+#: widening it is how a purge starts deleting real records.
+TEST_ITEM_PREFIXES = ("TFT-", "PITEST-")
+#: The original single-prefix name, kept for anything that still reads it.
+TEST_ITEM_PREFIX = TEST_ITEM_PREFIXES[0]
 TEST_USER_PREFIX = "tft-"
+
+
+def _item_prefix_clause(column="item_code"):
+	"""`(col LIKE %s OR col LIKE %s)` plus its parameters, for every test item prefix."""
+	clause = " OR ".join(f"{column} LIKE %s" for _ in TEST_ITEM_PREFIXES)
+	return f"({clause})", tuple(p + "%" for p in TEST_ITEM_PREFIXES)
 
 # Deleted in this order: every document goes before the documents it was made from.
 VOUCHERS = (
@@ -67,7 +87,10 @@ def purge(dry_run=True, supplier=TEST_SUPPLIER):
 		report["documents"][dt] = len(rows)
 
 	window = _window(scope)
-	items = frappe.get_all("Item", filters={"name": ("like", TEST_ITEM_PREFIX + "%")}, pluck="name")
+	items = []
+	for prefix in TEST_ITEM_PREFIXES:
+		items += frappe.get_all("Item", filters={"name": ("like", prefix + "%")}, pluck="name")
+	items = sorted(set(items))
 	users = frappe.get_all("User", filters={"name": ("like", TEST_USER_PREFIX + "%")}, pluck="name")
 	report["documents"]["Item"] = len(items)
 	report["documents"]["User"] = len(users)
@@ -137,10 +160,11 @@ def _voucher_scope(supplier):
 		if field:
 			scope[dt] = frappe.get_all(dt, filters={field: supplier}, pluck="name")
 		else:
+			clause, params = _item_prefix_clause()
 			scope[dt] = frappe.db.sql_list(
-				"""SELECT DISTINCT parent FROM `tabStock Entry Detail`
-				WHERE item_code LIKE %s""",
-				(TEST_ITEM_PREFIX + "%",),
+				f"""SELECT DISTINCT parent FROM `tabStock Entry Detail`
+				WHERE {clause}""",
+				params,
 			)
 	return scope
 
@@ -151,10 +175,11 @@ def _assert_only_test_items(scope):
 	for dt, child in ITEM_TABLES.items():
 		if not scope.get(dt):
 			continue
+		clause, prefixes = _item_prefix_clause()
 		rows = frappe.db.sql(
 			f"""SELECT DISTINCT parent, item_code FROM `tab{child}`
-			WHERE parent IN %(names)s AND item_code NOT LIKE %(prefix)s""",
-			{"names": scope[dt], "prefix": TEST_ITEM_PREFIX + "%"},
+			WHERE parent IN %s AND NOT {clause}""",
+			(scope[dt],) + prefixes,
 		)
 		offenders += [(dt, parent, item) for parent, item in rows]
 	if offenders:

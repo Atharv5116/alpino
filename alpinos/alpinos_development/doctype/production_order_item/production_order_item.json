@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "creation": "2026-09-24 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "material_type",
+  "process_stage",
+  "item_code",
+  "item_name",
+  "uom",
+  "standard_qty",
+  "total_required_qty"
+ ],
+ "fields": [
+  {
+   "fieldname": "material_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Material Type",
+   "options": "\nRM\nAdditive\nPM",
+   "read_only": 1
+  },
+  {
+   "description": "Carried from the BOM because the Job Card is printed by stage.",
+   "fieldname": "process_stage",
+   "fieldtype": "Data",
+   "label": "Process Stage",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "description": "Quantity for one batch, copied from the BOM at the moment the order was written.",
+   "fieldname": "standard_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Standard Qty",
+   "precision": "6",
+   "read_only": 1
+  },
+  {
+   "description": "How much this order needs in total. The batch formula that would fill it in is not agreed yet, so for now it is entered rather than calculated.",
+   "fieldname": "total_required_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total Required Qty",
+   "precision": "6"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-24 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Production Order Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 0
+}

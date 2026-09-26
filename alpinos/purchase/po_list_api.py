@@ -100,6 +100,18 @@ LIST_FIELDS = (
 	"modified",
 )
 
+#: Default order: the most recently APPROVED order first.
+#:
+#: custom_approval_datetime is stamped when an order is approved, and MariaDB sorts NULLs
+#: last on a DESC, so orders that have never been approved -- drafts, and anything still
+#: awaiting approval -- fall below every approved one and are then newest-modified first.
+#: `modified desc` alone used to put whichever order somebody last touched on top, which
+#: on a list people open to find the latest approved order is the wrong answer.
+#:
+#: Two plain columns rather than the CASE expression this would ideally be: frappe
+#: validates order_by and refuses a CASE with "Illegal SQL Query".
+DEFAULT_ORDER_BY = "custom_approval_datetime desc, modified desc"
+
 _SORTABLE = frozenset(
 	{
 		"name",
@@ -252,7 +264,10 @@ def get_purchase_order_list(
 
 	value = _one_of(po_type, C.INWARD_TYPES)
 	if value:
-		filters["custom_inward_type"] = value
+		# LIKE, not equality: the column holds a list now, so filtering on PM has to
+		# match an order whose types are "FG,PM". The commas on both sides stop PM
+		# matching a hypothetical PMX.
+		filters["custom_inward_type"] = ("like", "%" + value + "%")
 	if supplier:
 		filters["supplier"] = str(supplier).strip()
 
@@ -307,7 +322,7 @@ def get_purchase_order_list(
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
-	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else "modified desc"
+	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else DEFAULT_ORDER_BY
 
 	count_rows = frappe.get_list(
 		DOCTYPE,

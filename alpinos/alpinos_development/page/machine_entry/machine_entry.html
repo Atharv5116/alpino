@@ -1,0 +1,57 @@
+<div class="machine-entry">
+	<style>
+		.machine-entry .pm-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e2e2);
+			border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+		.machine-entry .pm-card > h5 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase;
+			letter-spacing: .4px; color: var(--text-muted); }
+		.machine-entry .pm-fld { margin-bottom: 8px; }
+		.machine-entry .pm-actionbar { display: flex; justify-content: flex-end; align-items: center;
+			margin-bottom: 14px; }
+		.machine-entry .pm-note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+		/* No dimmed state. A card that may not be edited is turned read-only by
+		   public/js/alpinos_readonly.js and styled by .alpinos-readonly in
+		   public/css/alpinos_pages.css, the same as the Purchase screens. */
+	</style>
+
+	<div class="pm-actionbar"></div>
+
+	<div class="pm-card">
+		<h5>Machine Details</h5>
+		<div class="row">
+			<div class="col-md-2 pm-fld field-machine-id"></div>
+			<div class="col-md-3 pm-fld field-machine-name"></div>
+			<div class="col-md-3 pm-fld field-machine-type"></div>
+			<div class="col-md-2 pm-fld field-status"></div>
+			<div class="col-md-2 pm-fld field-filling-category"></div>
+		</div>
+		<div class="pm-note field-status-note"></div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Capacity</h5>
+		<div class="row">
+			<div class="col-md-4 pm-fld field-max-capacity"></div>
+			<div class="col-md-4 pm-fld field-capacity-uom"></div>
+		</div>
+		<div class="pm-note">
+			Most the machine can process in one cycle. A number with no unit cannot be compared
+			against a batch size, so the two are asked for together.
+		</div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Notes</h5>
+		<div class="row">
+			<div class="col-md-12 pm-fld field-description"></div>
+		</div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Processes This Machine Can Run</h5>
+		<div class="field-processes"></div>
+		<div class="pm-note">
+			Resolved through the machine type, never stored on the machine. A process that adds
+			this type later reaches this machine automatically.
+		</div>
+	</div>
+</div>

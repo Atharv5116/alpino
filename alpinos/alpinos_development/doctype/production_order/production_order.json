@@ -1,0 +1,372 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-09-24 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "order_details_section",
+  "naming_series",
+  "po_level",
+  "creation_date",
+  "production_type",
+  "client_name",
+  "col_od_1",
+  "batch_number",
+  "delivery_date",
+  "company",
+  "status",
+  "product_section",
+  "fg_item",
+  "fg_item_name",
+  "bom_no",
+  "col_pq_1",
+  "production_qty_kg",
+  "production_qty_pcs",
+  "uom",
+  "production_start_date",
+  "requirement_section",
+  "total_batches",
+  "total_rm_requirement",
+  "col_req_1",
+  "total_additive_requirement",
+  "total_material_requirement",
+  "items_section",
+  "items",
+  "approval_section",
+  "approved_by",
+  "approved_on",
+  "col_ap_1",
+  "sent_by",
+  "sent_on",
+  "rejection_reason",
+  "log_section",
+  "approval_log",
+  "notes_section",
+  "remarks",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "order_details_section",
+   "fieldtype": "Section Break",
+   "label": "Order Details"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "no_copy": 1,
+   "options": "PO-.###",
+   "print_hide": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "Parent",
+   "description": "Kept for traceability against the FRD, which calls this the Parent Production Order. A Sub PO is a Work Order, not a row of this doctype.",
+   "fieldname": "po_level",
+   "fieldtype": "Data",
+   "label": "PO Level",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "PO-V03 measures the Start Date against this.",
+   "fieldname": "creation_date",
+   "fieldtype": "Date",
+   "label": "Creation Date",
+   "no_copy": 1,
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "Own Production",
+   "fieldname": "production_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Production Type",
+   "options": "Own Production\nExport\nWhite Label",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:['Export', 'White Label'].includes(doc.production_type)",
+   "description": "Required for Export and White Label (PO-V04).",
+   "fieldname": "client_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Client Name",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "col_od_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "How the number is generated is not decided yet, so it is typed for now rather than assigned.",
+   "fieldname": "batch_number",
+   "fieldtype": "Data",
+   "label": "Batch Number"
+  },
+  {
+   "description": "Must be on or after the Start Date (PO-V07).",
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Delivery Date"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1,
+   "remember_last_selected_value": 1,
+   "description": "The company this order is produced for. Its sub orders inherit it."
+  },
+  {
+   "default": "Draft",
+   "description": "Driven by the approval flow, not typed.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "no_copy": 1,
+   "options": "Draft\nPending Approval\nApproved\nSent To Store\nRejected\nCancelled",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "product_section",
+   "fieldtype": "Section Break",
+   "label": "Product and Quantity"
+  },
+  {
+   "description": "A Finished Good, and exactly one of them (PO-V05, Task 23).",
+   "fieldname": "fg_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "FG Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "fg_item.item_name",
+   "fieldname": "fg_item_name",
+   "fieldtype": "Data",
+   "label": "FG Item Name",
+   "read_only": 1
+  },
+  {
+   "description": "The Active default BOM for the FG, found on save (Task 4, PO-V06).",
+   "fieldname": "bom_no",
+   "fieldtype": "Link",
+   "label": "BOM No",
+   "options": "BOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_pq_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Drives every calculation. Must be more than zero (PO-V02).",
+   "fieldname": "production_qty_kg",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Production Quantity (KG)",
+   "precision": "3",
+   "reqd": 1
+  },
+  {
+   "description": "Informational. Changing it recalculates nothing (Task 6).",
+   "fieldname": "production_qty_pcs",
+   "fieldtype": "Int",
+   "label": "Production Quantity (PCS)",
+   "non_negative": 1
+  },
+  {
+   "fetch_from": "fg_item.stock_uom",
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "description": "On or after the Creation Date (PO-V03).",
+   "fieldname": "production_start_date",
+   "fieldtype": "Date",
+   "in_standard_filter": 1,
+   "label": "Production Start Date",
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "The batch formula and the rounding rule are not agreed yet, so these are recorded rather than calculated.",
+   "fieldname": "requirement_section",
+   "fieldtype": "Section Break",
+   "label": "Batch Requirement"
+  },
+  {
+   "fieldname": "total_batches",
+   "fieldtype": "Float",
+   "label": "Total Batches",
+   "precision": "3"
+  },
+  {
+   "fieldname": "total_rm_requirement",
+   "fieldtype": "Float",
+   "label": "Total RM Batch Requirement",
+   "precision": "3"
+  },
+  {
+   "fieldname": "col_req_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_additive_requirement",
+   "fieldtype": "Float",
+   "label": "Total Additive Batch Requirement",
+   "precision": "3"
+  },
+  {
+   "fieldname": "total_material_requirement",
+   "fieldtype": "Float",
+   "label": "Total Material Requirement",
+   "precision": "3"
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Material Requirement"
+  },
+  {
+   "description": "Copied from the BOM when the order is saved. Rows cannot be added or removed here (Task 5).",
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Materials",
+   "options": "Production Order Item"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "approval_section",
+   "fieldtype": "Section Break",
+   "label": "Approval"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_ap_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sent_by",
+   "fieldtype": "Link",
+   "label": "Sent By",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sent_on",
+   "fieldtype": "Datetime",
+   "label": "Sent On",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "log_section",
+   "fieldtype": "Section Break",
+   "label": "Approval Log"
+  },
+  {
+   "fieldname": "approval_log",
+   "fieldtype": "Table",
+   "label": "Approval Log",
+   "no_copy": 1,
+   "options": "Purchase Approval Log",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "notes_section",
+   "fieldtype": "Section Break",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Production Order",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-09-24 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Production Order",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "fg_item,production_type,status",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

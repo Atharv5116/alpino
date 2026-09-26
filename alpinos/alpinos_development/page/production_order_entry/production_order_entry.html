@@ -1,0 +1,112 @@
+<!-- WARNING: no apostrophe may appear anywhere in this file, comments included.
+   frappe/build.py wraps each page template in single quotes when it bundles them, so one
+   apostrophe ends the string early and breaks the whole desk bundle -- the screen renders
+   blank and the only clue is an appendChild error pointing nowhere near here. -->
+<div class="production-order-entry">
+	<style>
+		.production-order-entry .po-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e2e2);
+			border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+		.production-order-entry .po-card > h5 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase;
+			letter-spacing: .4px; color: var(--text-muted); }
+		.production-order-entry .po-fld { margin-bottom: 8px; }
+		.production-order-entry .po-actionbar { display: flex; justify-content: flex-end; align-items: center;
+			margin-bottom: 14px; }
+		.production-order-entry .po-note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+		/* No dimmed state. A card that may not be edited is turned read-only by
+		   public/js/alpinos_readonly.js and styled by .alpinos-readonly in
+		   public/css/alpinos_pages.css, the same as the Purchase and BOM screens. */
+		.production-order-entry .po-banner { margin-bottom: 14px; }
+		.production-order-entry table.po-grid { width: 100%; }
+		.production-order-entry table.po-grid th, .production-order-entry table.po-grid td {
+			font-size: 12.5px; vertical-align: middle; }
+		.production-order-entry table.po-grid .po-num { text-align: right; white-space: nowrap; }
+		.production-order-entry table.po-grid tr.po-stage-head td { background: var(--bg-light-gray, #f4f5f6);
+			font-weight: 600; text-transform: uppercase; letter-spacing: .3px; font-size: 11.5px; }
+		.production-order-entry .po-shortage .short { color: var(--red-600, #c0392b); font-weight: 600; }
+		.production-order-entry .po-shortage .unset { color: var(--text-muted); }
+	</style>
+
+	<div class="po-banner"></div>
+	<div class="po-actionbar"></div>
+
+	<div class="po-card">
+		<h5>Order Details</h5>
+		<div class="row">
+			<div class="col-md-3 po-fld field-po-id"></div>
+			<div class="col-md-3 po-fld field-creation-date"></div>
+			<div class="col-md-3 po-fld field-production-type"></div>
+			<div class="col-md-3 po-fld field-client-name"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-3 po-fld field-batch-number"></div>
+			<div class="col-md-3 po-fld field-delivery-date"></div>
+			<div class="col-md-3 po-fld field-status"></div>
+		</div>
+		<div class="po-note">
+			How the batch number is generated is not decided yet, so it is typed here for now.
+		</div>
+	</div>
+
+	<div class="po-card">
+		<h5>Product and Quantity</h5>
+		<div class="row">
+			<div class="col-md-4 po-fld field-fg-item"></div>
+			<div class="col-md-4 po-fld field-fg-item-name"></div>
+			<div class="col-md-4 po-fld field-bom-no"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-3 po-fld field-qty-kg"></div>
+			<div class="col-md-3 po-fld field-qty-pcs"></div>
+			<div class="col-md-3 po-fld field-uom"></div>
+			<div class="col-md-3 po-fld field-start-date"></div>
+		</div>
+		<div class="po-note">
+			The BOM is the Active default recipe for the finished good, found automatically. Its rows
+			are copied onto this order, so editing the recipe later does not change an order already
+			written.
+		</div>
+	</div>
+
+	<div class="po-card">
+		<h5>Material Requirement</h5>
+		<div class="field-materials"></div>
+		<div class="po-note">
+			Rows come from the BOM and cannot be added or removed. Total Required Qty is entered by
+			hand for now: the batch formula that would calculate it is not agreed yet, so the screen
+			does not invent one.
+		</div>
+	</div>
+
+	<div class="po-card">
+		<h5>Batch Requirement</h5>
+		<div class="row">
+			<div class="col-md-3 po-fld field-total-batches"></div>
+			<div class="col-md-3 po-fld field-total-rm"></div>
+			<div class="col-md-3 po-fld field-total-additive"></div>
+			<div class="col-md-3 po-fld field-total-material"></div>
+		</div>
+		<div class="po-note">
+			Recorded, not calculated, for the same reason.
+		</div>
+	</div>
+
+	<div class="po-card">
+		<h5>Stock Check</h5>
+		<div class="po-shortage field-shortage"></div>
+		<div class="po-note">
+			A warning only. It never blocks saving, approving or sending to store.
+		</div>
+	</div>
+
+	<div class="po-card">
+		<h5>Sub Production Orders</h5>
+		<div class="field-sub-orders"></div>
+	</div>
+
+	<div class="po-card">
+		<h5>Notes</h5>
+		<div class="row">
+			<div class="col-md-12 po-fld field-remarks"></div>
+		</div>
+	</div>
+</div>

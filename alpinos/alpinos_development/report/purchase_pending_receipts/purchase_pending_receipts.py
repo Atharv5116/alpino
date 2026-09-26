@@ -42,8 +42,9 @@ def _rows(filters):
 		conditions.append("po.supplier = %(supplier)s")
 		values["supplier"] = filters.supplier
 	if filters.get("inward_type"):
-		conditions.append("po.custom_inward_type = %(inward_type)s")
-		values["inward_type"] = filters.inward_type
+		# LIKE: the column holds a comma-separated list of types.
+		conditions.append("po.custom_inward_type like %(inward_type)s")
+		values["inward_type"] = "%" + filters.inward_type + "%"
 
 	rows = frappe.db.sql(
 		"""

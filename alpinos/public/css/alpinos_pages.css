@@ -584,6 +584,80 @@
   justify-content: flex-end;
 }
 
+/* ---------------------------------------------------------------- alp-figures
+   A block of derived figures read as a single column: label left, value right, one
+   per line, every value ending on the same edge.
+
+   Across four bootstrap columns the same figures wrap at arbitrary points, the last
+   row is left ragged, and nothing lines up -- which is the one thing a column of
+   numbers has to do. A frappe control draws its label ABOVE its value, so the two are
+   laid side by side here instead.
+
+   Put it on the wrapper; each child stays an ordinary .eso-fld. */
+.alp-figures {
+  max-width: 360px;
+}
+.alp-figures .eso-fld {
+  margin-bottom: 0;
+}
+.alp-figures .form-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 18px;
+  margin-bottom: 0;
+  padding: 3px 0;
+}
+.alp-figures .control-label {
+  margin: 0;
+  white-space: nowrap;
+}
+.alp-figures .control-input-wrapper {
+  flex: 0 0 auto;
+}
+.alp-figures .control-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-bottom: none;
+  min-height: 0;
+  padding: 0;
+}
+/* The closing figure is what people look for, so it is set off like a total. */
+.alp-figures .alp-figures-total .form-group {
+  border-top: 1px solid var(--border-color, #e2e2e2);
+  margin-top: 3px;
+  padding-top: 6px;
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------- alp-actions--sticky
+   The document actions stay reachable while the page scrolls. These screens run to
+   several thousand pixels -- item lines, a QC checklist, a payment history -- and
+   Save, Submit and Approve all lived at one end of that. Finding them meant scrolling
+   past everything you had just filled in.
+
+   `top` clears the desk navbar, which is fixed, so a sticky element that stopped at 0
+   would slide underneath it.
+
+   The background is NOT optional: a sticky bar is painted over whatever scrolls beneath
+   it, and without it the rows underneath show through the gaps between buttons. The
+   negative margins and matching padding let that background reach the full width of the
+   card column rather than leaving a transparent gutter either side.
+
+   Sticky is inherited-overflow sensitive: it stops working inside ANY ancestor with
+   overflow hidden/auto/scroll. If a bar ever stops sticking, look there first, not at
+   this rule. */
+.alp-actions--sticky {
+  position: sticky;
+  top: var(--navbar-height, 48px);
+  z-index: 6;
+  background: var(--fg-color, #fff);
+  margin-left: -12px;
+  margin-right: -12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color, #e2e2e2);
+}
+
 /* Section title utility (same look as section 3) for pages whose headings are
    bare h6/divs with no class hook — mirrored here so it works standalone */
 .alp-section-title {
@@ -1113,16 +1187,68 @@
   padding-top: var(--navbar-height, 48px);
 }
 
-/* ------------------------------------------------------------------ piw-locked
-   A card the server has closed for editing (roles.get_section_access -> edit=false).
-   The dimming and pointer block live in purchase_inward_entry.html's own <style>
-   (.purchase-inward-entry .piw-locked), which is more specific than anything here; this
-   only marks the disabled controls, which purchase_inward_entry.js switches off so the
-   keyboard cannot get into a closed section either. */
-.piw-locked input,
-.piw-locked select,
-.piw-locked textarea,
-.piw-locked button {
-	background-color: var(--gray-100, #f4f5f6) !important;
-	cursor: not-allowed !important;
+/* -------------------------------------------------------------- alpinos-readonly
+   A card that is no longer this user's to edit -- submitted, awaiting approval, or
+   another team's half of a shared document.
+
+   It is NOT dimmed. The old treatment (opacity:.55 on the whole card) faded the values
+   at exactly the moment the document stops being a form and becomes a record people
+   need to read. Instead public/js/alpinos_readonly.js turns each field read-only, which
+   Frappe already renders as plain text with no input box -- the way the Approval section
+   and the GRN and Invoice screens have always looked.
+
+   What is left here is the cleanup that the read-only swap cannot do by itself: controls
+   built with `only_input` inside a table cell have no display area to fall back to, so
+   they stay as disabled inputs, and a disabled input is greyed out by the browser. These
+   rules put the contrast back and take away the affordances that would invite an edit. */
+/* Same shape as a field that was ALWAYS read-only, which Frappe paints as
+   .control-value.like-disabled-input: no box, one hairline underneath. A disabled input
+   used to get border-color: transparent instead, so on a closed document the fields that
+   were born read-only kept an underline and the ones that had just been locked lost
+   theirs -- the same row of values, drawn two different ways. */
+.alpinos-readonly input,
+.alpinos-readonly select,
+.alpinos-readonly textarea {
+	background-color: transparent !important;
+	border: none !important;
+	border-bottom: 1px solid var(--border-color, #e2e2e2) !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	padding-left: 0 !important;
+	color: var(--text-color, #1f272e) !important;
+	/* WebKit fades disabled text through its own property, which `color` does not reach. */
+	-webkit-text-fill-color: var(--text-color, #1f272e) !important;
+	opacity: 1 !important;
+	cursor: default !important;
+}
+
+/* A locked Select keeps the chevron, which is the one affordance that still says
+   "pick something here". */
+.alpinos-readonly select {
+	appearance: none !important;
+	-webkit-appearance: none !important;
+	background-image: none !important;
+}
+
+/* Inside a grid the underline doubles up with the cell border and reads as a mistake. */
+.alpinos-readonly td input,
+.alpinos-readonly td select,
+.alpinos-readonly td textarea {
+	border-bottom: none !important;
+}
+
+/* Row actions are not "unavailable", they are meaningless on a closed document. */
+.alpinos-readonly .btn-add-row,
+.alpinos-readonly .btn-remove-row,
+.alpinos-readonly .btn-remove,
+.alpinos-readonly .alp-actions {
+	display: none !important;
+}
+
+/* The "Clear Link" cross that Frappe hangs on every Link field (controls/link.js).
+   It is an <a>, not an input, so `disabled` never reached it: on a submitted order the
+   cross was still live and still emptied the field. Its sibling .btn-open stays -- being
+   able to jump to the vendor is exactly what a read-only record is for. */
+.alpinos-readonly .btn-clear {
+	display: none !important;
 }

@@ -1,0 +1,56 @@
+<!-- WARNING: no apostrophe may appear anywhere in this file, comments included.
+   frappe/build.py wraps each page template in single quotes when it bundles them, so one
+   apostrophe ends the string early and breaks the whole desk bundle -- the screen renders
+   blank and the only clue is an appendChild error pointing nowhere near here. -->
+<div class="filling-category-entry">
+	<style>
+		.filling-category-entry .pm-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e2e2);
+			border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+		.filling-category-entry .pm-card > h5 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase;
+			letter-spacing: .4px; color: var(--text-muted); }
+		.filling-category-entry .pm-fld { margin-bottom: 8px; }
+		.filling-category-entry .pm-actionbar { display: flex; justify-content: flex-end; align-items: center;
+			margin-bottom: 14px; }
+		.filling-category-entry .pm-note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+		/* No dimmed state. A card that may not be edited is turned read-only by
+		   public/js/alpinos_readonly.js and styled by .alpinos-readonly in
+		   public/css/alpinos_pages.css, the same as the Purchase screens. */
+		.filling-category-entry .pm-readonly-banner { margin-bottom: 14px; }
+	</style>
+
+	<div class="pm-readonly-banner"></div>
+	<div class="pm-actionbar"></div>
+
+	<div class="pm-card">
+		<h5>Filling Process Category</h5>
+		<div class="row">
+			<div class="col-md-6 pm-fld field-category-name"></div>
+			<div class="col-md-3 pm-fld field-is-active"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-12 pm-fld field-description"></div>
+		</div>
+		<div class="pm-note">
+			The category is the master trigger for filling. A machine carries one, an SKU lists the
+			ones it may run on, and production compares the two before a line is assigned.
+		</div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Machines In This Category</h5>
+		<div class="field-machines"></div>
+		<div class="pm-note">
+			Set on the machine, not here: one machine belongs to one category, so the machine
+			screen is where it is chosen.
+		</div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Items Allowed On This Category</h5>
+		<div class="field-skus"></div>
+		<div class="pm-note">
+			Set on the item, under Filling. An SKU may list several categories, so the list lives
+			on the item rather than here.
+		</div>
+	</div>
+</div>

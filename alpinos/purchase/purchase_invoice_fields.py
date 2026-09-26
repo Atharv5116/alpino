@@ -124,8 +124,9 @@ def _custom_fields():
 				allow_on_submit=1,
 				in_standard_filter=1,
 				description=(
-					"Invoice Date + the supplier's Payment Terms where they are set; "
-					"entered by hand on a Direct Purchase Invoice (BRD 6.1.2)."
+					"Invoice Date + the Payment Terms on the Purchase Order, falling back "
+					"to the supplier's; entered by hand when neither has terms and on a "
+					"Direct Purchase Invoice (BRD 6.1.2)."
 				),
 			),
 			dict(

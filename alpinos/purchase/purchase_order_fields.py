@@ -16,14 +16,13 @@ owns them; nothing else may write them. They are deliberately NOT ERPNext's `rec
 every receipt submit or cancel.
 """
 
-import re
-from datetime import timedelta
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.utils import cint, flt, get_datetime, getdate, today
 
+from alpinos import contact_number
 from alpinos.purchase import constants as C
 
 PO = "Purchase Order"
@@ -67,13 +66,16 @@ def _custom_fields():
 			dict(
 				fieldname="custom_inward_type",
 				label="PO Type",
-				fieldtype="Select",
-				options=_TYPE_OPTIONS,
+				# Data, not Select: an order may cover more than one material type, and the
+				# value is a comma-separated list ("FG,PM"). Same fieldname and same column,
+				# so the orders holding a single "RM" are unchanged and still read as one
+				# type. C.inward_types() is the only thing that should parse it.
+				fieldtype="Data",
 				insert_after="custom_inward_section",
 				reqd=1,
 				in_list_view=1,
 				in_standard_filter=1,
-				description="RM / PM / FG / MM. Drives batch numbering and the QC checklist downstream.",
+				description="One or more of RM / PM / FG / MM. Drives which items the order may contain, and the batch numbering and QC checklist downstream.",
 			),
 			dict(
 				fieldname="custom_supplier_order_no",
@@ -282,12 +284,19 @@ def get_item_defaults(item_code):
 
 	The PO screen builds its own grid rather than using ERPNext's Item Code fetch, so
 	nothing populated Rate when an item was picked -- it stayed 0 until someone typed it by
-	hand. Rate is read from the Buying Settings price list, the same source the standard
-	Purchase Order form itself defaults to.
+	hand.
+
+	`rate` is the Purchase Order Rate (Item.last_purchase_rate) when the item has one, and
+	the Buying Settings price list otherwise. That ordering is the point: the last order is
+	what was actually agreed with a supplier, a price list is what somebody hoped to pay.
+	An item nobody has ordered yet has no last rate, so the first order starts at the price
+	list or at 0, the buyer types the real figure, and every later order opens with it.
+
+	Both figures are returned separately as well, so a caller can tell which one it got.
 	"""
 	frappe.has_permission("Purchase Order", "read", throw=True)
 	item = frappe.db.get_value(
-		"Item", item_code, ["item_name", "stock_uom"], as_dict=True
+		"Item", item_code, ["item_name", "stock_uom", "last_purchase_rate"], as_dict=True
 	) or {}
 	price_list = frappe.db.get_single_value("Buying Settings", "buying_price_list")
 	rate = 0
@@ -297,7 +306,13 @@ def get_item_defaults(item_code):
 			{"item_code": item_code, "price_list": price_list, "buying": 1},
 			"price_list_rate",
 		)
-	item["rate"] = flt(rate)
+	item["price_list_rate"] = flt(rate)
+	# What the item was last actually bought for, which is what the screen offers first:
+	# a price list is what somebody hoped to pay, the last order is what was agreed. Zero
+	# until the item has been on one submitted order, which is the "first time" case --
+	# then the buyer types the rate and every later order starts from it.
+	item["last_purchase_rate"] = flt(item.get("last_purchase_rate"))
+	item["rate"] = item["last_purchase_rate"] or flt(rate)
 	return item
 
 
@@ -341,7 +356,8 @@ def validate_items_match_po_type(doc, method=None):
 		return
 	from alpinos.purchase.inward_api import item_inward_type
 
-	wanted = doc.custom_inward_type
+	# Any of the order types will do -- an FG+PM order may hold FG items and PM items.
+	wanted = set(C.inward_types(doc.custom_inward_type))
 	cache = {}
 	wrong = {}
 	matching = False
@@ -349,7 +365,7 @@ def validate_items_match_po_type(doc, method=None):
 		if not row.item_code:
 			continue
 		found = item_inward_type(row.item_code, cache)
-		if found == wanted:
+		if found in wanted:
 			matching = True
 		elif found:
 			wrong.setdefault(found, [])
@@ -368,9 +384,14 @@ def validate_items_match_po_type(doc, method=None):
 		if len(wrong) == 1 and not matching
 		else frappe._("Raise a separate Purchase Order for each type.")
 	)
+	# `wanted` is a SET of codes now, so it has to be spelled out one label at a time --
+	# label_for_inward_type does a dict lookup and a set is not hashable. Passing it
+	# straight through raised "unhashable type: set" and took the whole save down, on the
+	# one path that was meant to explain the mistake.
+	wanted_label = ", ".join(C.label_for_inward_type(code) for code in sorted(wanted)) or "-"
 	frappe.throw(
 		frappe._("PO Type is {0}, but these items belong to another type:<ul>{1}</ul>{2}").format(
-			frappe.bold(C.label_for_inward_type(wanted)), lines, hint
+			frappe.bold(wanted_label), lines, hint
 		),
 		title=frappe._("PO Type Does Not Match the Items"),
 	)
@@ -390,27 +411,26 @@ def validate_rate_and_discount(doc, method=None):
 			)
 
 
-DRIVER_CONTACT_DIGITS = 10
+#: Kept as a name because other modules import it. The number itself now lives in one
+#: place, so every contact number in the app is held to the same length.
+DRIVER_CONTACT_DIGITS = contact_number.CONTACT_DIGITS
 
 
 def validate_driver_contact_no(doc, method=None):
 	"""The Driver Contact Number on a Purchase Order is a 10-digit number, or blank.
 
-	Surrounding spaces are trimmed; anything else -- letters, a +91 prefix, 9 or 11 digits --
-	is refused rather than guessed at. Enforced here as well as on the entry screen so an
-	order saved from the desk form, an import or the API is held to the same rule.
+	The rule itself is alpinos.contact_number, shared with the Goods Inward and Production
+	screens so all of them accept and refuse exactly the same thing.
+
+	It is forward-only, which this function was not. Seven orders on this site hold a legacy
+	value -- a name, 8 digits, 12 digits. All seven are submitted, and this hook only runs
+	on validate, so the old blanket check never actually fired on them; amending one, which
+	copies the value into a fresh draft, is where it would have. A stored value is now left
+	alone, and anything newly typed still has to be 10 digits.
 	"""
-	raw = doc.get("custom_driver_contact_no") or ""
-	value = raw.strip()
-	if value != raw:
-		doc.custom_driver_contact_no = value
-	if value and not re.fullmatch(r"\d{%d}" % DRIVER_CONTACT_DIGITS, value):
-		frappe.throw(
-			frappe._("Driver Contact Number must be a {0}-digit number (digits only). {1} is not.").format(
-				DRIVER_CONTACT_DIGITS, frappe.bold(value)
-			),
-			title=frappe._("Invalid Driver Contact Number"),
-		)
+	contact_number.validate_fields(
+		doc, {"custom_driver_contact_no": "Driver Contact Number"}, method
+	)
 
 
 def normalize_estimated_arrival(doc, method=None):
@@ -421,6 +441,9 @@ def normalize_estimated_arrival(doc, method=None):
 	defaulting alone would not survive an API or import, hence the server guard. The
 	screen fills the time itself before this ever runs, so this only catches a document
 	built outside it.
+
+	9:00 AM applies to today as well; it used to fall back to the current time there, which
+	is what the screen showed instead of 9:00 AM for anything entered after 9 in the morning.
 	"""
 	value = doc.get("custom_estimated_arrival")
 	if not value:
@@ -428,22 +451,18 @@ def normalize_estimated_arrival(doc, method=None):
 	value = get_datetime(value)
 	if value.hour or value.minute or value.second:
 		return
-	default = value.replace(hour=DEFAULT_ARRIVAL_HOUR, minute=0, second=0, microsecond=0)
-	# 9:00 AM today may already be behind us, and a time in the past is not allowed.
-	now = get_datetime()
-	if default.date() == now.date() and default < now:
-		default = now.replace(second=0, microsecond=0)
-	doc.custom_estimated_arrival = default
-
-
-# A person picks "now" and then spends a while finishing the order before saving, so the
-# saved time is allowed to trail the clock by this much. Anything older is a past time.
-ARRIVAL_GRACE_MINUTES = 15
+	# 9:00 AM on the chosen day, today included -- 9:00 AM is behind us for most of the working
+	# day, and BRD 2.1.1 states the rule with no exception for that, so validate_no_past_dates
+	# judges this field by the day rather than by the minute.
+	doc.custom_estimated_arrival = value.replace(
+		hour=DEFAULT_ARRIVAL_HOUR, minute=0, second=0, microsecond=0
+	)
 
 
 def validate_no_past_dates(doc, method=None):
 	"""PO Date, Expected Delivery Date, each line's Required By and the Estimated Arrival cannot
-	be in the past: today (or now) or later.
+	be in the past: today or later. Every one of them is judged by the day, the Estimated
+	Arrival included -- see the note on that check.
 
 	Only what the person is setting on THIS save is checked -- a new order, or a field whose
 	value changed. A saved draft that already holds an older date must stay editable for
@@ -454,7 +473,6 @@ def validate_no_past_dates(doc, method=None):
 		return
 	before = None if doc.is_new() else doc.get_doc_before_save()
 	today_ = getdate(today())
-	now_ = get_datetime()
 
 	def changed(fieldname, row=None, old_row=None):
 		if before is None:
@@ -477,16 +495,18 @@ def validate_no_past_dates(doc, method=None):
 				frappe._("Row {0}: {1} cannot be in the past.").format(row.idx, frappe.bold(frappe._("Required By")))
 			)
 
+	# By the day, not by the minute: normalize_estimated_arrival gives a date-only arrival
+	# 9:00 AM on the day chosen, today included, and 9:00 AM is behind us for most of the
+	# working day. To the minute, this would refuse the time the screen had just filled in.
 	arrival = doc.get("custom_estimated_arrival")
-	if arrival and changed("custom_estimated_arrival"):
-		if get_datetime(arrival) < now_ - timedelta(minutes=ARRIVAL_GRACE_MINUTES):
-			problems.append(
-				frappe._("{0} cannot be in the past.").format(frappe.bold(frappe._("Estimated Arrival Date & Time")))
-			)
+	if arrival and changed("custom_estimated_arrival") and getdate(arrival) < today_:
+		problems.append(
+			frappe._("{0} cannot be in the past.").format(frappe.bold(frappe._("Estimated Arrival Date & Time")))
+		)
 
 	if problems:
 		frappe.throw(
-			"<br>".join(problems) + "<br>" + frappe._("Choose the current or a future date and time."),
+			"<br>".join(problems) + "<br>" + frappe._("Choose today or a later date."),
 			title=frappe._("Past Date"),
 		)
 
@@ -654,3 +674,19 @@ def get_supplier_info(supplier, company=None):
 		"shipping_address": details.get("shipping_address"),
 		"shipping_address_display": details.get("shipping_address_display"),
 	}
+
+
+def normalize_inward_type(doc, method=None):
+	"""Store the PO Type in one canonical shape: "FG,PM".
+
+	The screen's MultiSelectPills hands back an array, a desk form or an import hands back
+	a string, and either may arrive with spaces, duplicates or lower case. Normalising at
+	before_validate means every reader downstream -- and the reqd check -- sees the same
+	thing, and nothing else has to know which caller it came from.
+	"""
+	value = doc.get("custom_inward_type")
+	if value is None:
+		return
+	canonical = C.inward_types_str(value)
+	if canonical != value:
+		doc.custom_inward_type = canonical

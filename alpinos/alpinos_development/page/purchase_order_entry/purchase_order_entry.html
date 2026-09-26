@@ -40,9 +40,9 @@
 	resize: vertical;
 }
 
-/* The whole order goes read-only once it is submitted or awaiting approval, so the
-   screen shows at a glance that it is no longer yours to edit. */
-.purchase-order-entry .po-locked { opacity: .55; pointer-events: none; }
+/* The whole order goes read-only once it is submitted or awaiting approval. The cards are
+   NOT dimmed for it: alpinos_readonly.js turns each field read-only instead, which Frappe
+   renders as plain text. See public/css/alpinos_pages.css (.alpinos-readonly). */
 
 .purchase-order-entry .po-stage {
 	display: inline-block; padding: 2px 10px; border-radius: 10px;
@@ -98,6 +98,40 @@
    stays. Only the approval card is hidden until the order exists. */
 .purchase-order-entry .po-approval-card { display: none; }
 .purchase-order-entry.po-saved .po-approval-card { display: block; }
+
+/* ---- PO Summary: one narrow column, groups stacked ------------------------
+   A single column keeps every label left and every figure right on the same
+   edge, so the numbers line up down the page and can be read at a glance. */
+.purchase-order-entry .po-sum {
+	display: block;
+	max-width: 340px;
+}
+.purchase-order-entry .po-sum-group + .po-sum-group { margin-top: 10px; }
+.purchase-order-entry .po-sum-head {
+	font-size: 12.5px; font-weight: 600;
+	color: var(--text-color); margin-bottom: 2px;
+}
+.purchase-order-entry .po-sum-row {
+	display: flex; justify-content: space-between; gap: 18px;
+	font-size: 12.5px; padding: 2px 0;
+}
+.purchase-order-entry .po-sum-row > span:last-child {
+	font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.purchase-order-entry .po-sum-row.is-total {
+	font-weight: 600; border-top: 1px solid var(--border-color, #e2e2e2);
+	margin-top: 3px; padding-top: 5px;
+}
+.purchase-order-entry .po-sum-empty { color: var(--text-muted); font-size: 12px; }
+
+/* ---- Supplier Information: one compact row --------------------------------
+   The address controls are Small Text, whose display area is sized for a
+   paragraph. Their content is one flattened line now, so cap the height. */
+.purchase-order-entry .eso-supplier-row .control-value.like-disabled-input {
+	min-height: var(--input-height, 28px);
+	white-space: normal;
+	line-height: 1.35;
+}
 </style>
 <div class="purchase-order-entry" style="padding: 12px;">
 
@@ -106,6 +140,8 @@
 		by the ERP when the order is saved, so the Summary below always agrees with the document
 		itself. BRD 3 — an authorised Approver then approves it, and approving is what submits it.
 	</p>
+
+	<div class="alp-actions alp-actions--end alp-actions--sticky po-actionbar"></div>
 
 	<!-- ==================== BRD 2.1.1 header information ==================== -->
 	<div class="eso-card">
@@ -133,15 +169,19 @@
 	<!-- ==================== BRD 2.2.2 supplier information =================== -->
 	<div class="eso-card">
 		<h6 class="eso-card-title">Supplier Information</h6>
-		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
+		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 8px;">
 			Fetched from the Vendor Master. Read-only here — correct it on the Supplier record.
 		</p>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-supplier-name"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-contact-person"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-contact-number"></div>
+		<!-- One row, not two. Both addresses used to stack their lines vertically and the
+		     shipping one sat on a row of its own, which made this read-only card the tallest
+		     thing on the screen. The addresses are flattened to a single line when they are
+		     set (see _set), so each one is a sentence rather than a paragraph. -->
+		<div class="row eso-supplier-row">
+			<div class="col-md-2 col-sm-6 eso-fld field-supplier-name"></div>
+			<div class="col-md-2 col-sm-6 eso-fld field-contact-person"></div>
+			<div class="col-md-2 col-sm-6 eso-fld field-contact-number"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-billing-address"></div>
-			<div class="col-md-6 eso-fld field-shipping-address"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-shipping-address"></div>
 		</div>
 	</div>
 
@@ -196,13 +236,10 @@
 		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
 			Calculated by the ERP on save, so these always match the order document.
 		</p>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-total-qty"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-discount"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-taxes"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-grand-total"></div>
-		</div>
+		<!-- Rendered by recalc_summary, not built from controls: these are nine derived
+		     numbers in three labelled groups, and a label-above-value control each made a
+		     block far taller than the figures deserve. -->
+		<div class="field-po-summary"></div>
 	</div>
 
 	<!-- ==================== BRD 3 approval trail ============================= -->
@@ -232,5 +269,4 @@
 		</div>
 	</div>
 
-	<div class="alp-actions alp-actions--end po-actionbar" style="margin: 14px 0 24px;"></div>
 </div>

@@ -54,6 +54,30 @@ app_include_js = [
 	_asset("js/alpinos_list_prefs.js"),
 	# Desk list views of Purchase Inward / QC / Quarantine open the module's list pages.
 	_asset("js/purchase_list_redirects.js"),
+	# Turns a closed section read-only instead of dimming it; called from the Purchase
+	# Order, Inward and QC screens, which each close different cards at different times.
+	_asset("js/alpinos_readonly.js"),
+	# Digits-only, 10-of-them behaviour for every contact number field; the rule itself is
+	# enforced server-side in alpinos/contact_number.py.
+	_asset("js/alpinos_contact_input.js"),
+	# Keeps a Date control on one side of today: a plan cannot be in the past, an
+	# observation cannot be in the future. Shared by the Purchase Order and Inward screens.
+	_asset("js/alpinos_date_bound.js"),
+	# Breadcrumb and Job Card helpers the Production master screens call; see the file
+	# for why the default module-derived breadcrumb names the wrong workspace.
+	#
+	# A ".bundle.js" name, and no "/assets/..." prefix, on purpose: bundled_asset()
+	# (frappe/utils/jinja_globals.py) only rewrites a path through assets.json when it
+	# matches BOTH of those, and that rewrite is what gives the file a content-hashed
+	# URL. A plain path is emitted verbatim and answered with Cache-Control max-age=43200,
+	# so a browser kept serving its 12-hour-old copy however many times the file was
+	# rebuilt -- a fixed breadcrumb that nobody could see. The hash changes with the
+	# content, so an ordinary reload picks up every future edit.
+	#
+	# NOT wrapped in _asset() for the same reason: that would make it
+	# "/assets/alpinos/production_desk.bundle.js?v=...", which no longer matches what
+	# bundled_asset() rewrites, and the content hash would be lost.
+	"production_desk.bundle.js",
 ]
 
 # include js, css files in header of web template
@@ -78,6 +102,11 @@ doctype_js = {
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
 	"Purchase Receipt": "public/js/purchase_receipt_grn.js",
 	"Purchase Invoice": "public/js/purchase_invoice_debit_note.js",
+	# One file for all three: the desk form is the one Production surface that neither the
+	# module screens nor frappe.re_route can correct the breadcrumb on.
+	"Machine": "public/js/production_doctype_breadcrumb.js",
+	"Machine Type": "public/js/production_doctype_breadcrumb.js",
+	"Process Master": "public/js/production_doctype_breadcrumb.js",
 }
 doctype_list_js = {
 	"Purchase Order": "public/js/purchase_order_list.js",
@@ -234,6 +263,9 @@ after_migrate = [
 	# (which name the excess-override role in Stock Settings).
 	"alpinos.purchase.purchase_order_fields.setup_purchase_order_fields",
 	"alpinos.purchase.purchase_order_approval.setup_purchase_order_approval",
+	# After the approval setup: Force Close anchors its section on custom_approval_status
+	# and adds Force Closed to that field's options.
+	"alpinos.purchase.purchase_order_force_close.setup_force_close_fields",
 	# GST on the order (not a BRD requirement -- GST appears nowhere in it). Fields
 	# only; the templates and Tax Rules are created by
 	# purchase_gst.create_purchase_gst_masters when an accountant asks for them.
@@ -256,6 +288,21 @@ after_migrate = [
 	"alpinos.purchase.invoice_list_api.setup_invoice_page_access",
 	"alpinos.purchase.quarantine_list_api.setup_quarantine_page_access",
 	"alpinos.purchase.print_formats.execute",
+	# --- Production masters (Item, BOM, Process, Machine) --------------------
+	# Same ordering rule as Purchase: custom fields first, then the roles whose
+	# permission matrix validates against doctypes that must already carry them,
+	# then the workspace, which only links what by then exists.
+	"alpinos.production.item_fields.setup_item_fields",
+	"alpinos.production.bom_fields.setup_bom_fields",
+	# The Sub PO is a real Work Order, so the only thing it needs added is the link
+	# back to its Parent (see alpinos.production.work_order_fields).
+	"alpinos.production.work_order_fields.setup_work_order_fields",
+	"alpinos.production.roles.setup_production_roles",
+	# Starter data last among the masters: it inserts real records, so the doctypes and
+	# their permissions must already be settled.
+	"alpinos.production.seed.execute",
+	"alpinos.production.workspace.execute",
+	"alpinos.production.print_formats.execute",
 ]
 
 # Uninstallation
@@ -341,6 +388,13 @@ override_whitelisted_methods = {
 }
 
 override_doctype_class = {
+	# Naming only: ERPNext names a BOM in code, so the FRD's BOM-.#### series cannot be
+	# set as a naming rule (see alpinos.production.bom_naming).
+	"BOM": "alpinos.production.bom_naming.AlpinosBOM",
+	# Naming only, and only for a Sub PO: PO-001-A reads off the Parent, which a naming
+	# series cannot do (see alpinos.production.work_order_naming). A Work Order with
+	# no Parent keeps its own MFG-WO- name, and nothing else is changed.
+	"Work Order": "alpinos.production.work_order_naming.AlpinosWorkOrder",
 	"Sales Order": "alpinos.overrides.sales_order_override.CustomSalesOrder",
 	"Pick List": "alpinos.overrides.pick_list_override.CustomPickList",
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
@@ -393,6 +447,9 @@ doc_events = {
 			# and Discount and throws its own (confusing) error first if Discount leaves a
 			# line negative.
 			"alpinos.purchase.purchase_order_fields.validate_rate_and_discount",
+			# PO Type is multi-valued now. before_validate, so the reqd check and every
+			# rule below sees the one canonical shape whatever the caller sent.
+			"alpinos.purchase.purchase_order_fields.normalize_inward_type",
 		],
 		"validate": [
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
@@ -579,8 +636,40 @@ doc_events = {
 	"Item": {
 		"before_insert": "alpinos.item_sequence.reorder_on_insert",
 		"before_save": "alpinos.item_sequence.reorder_on_save",
-		"validate": "alpinos.product_bundle_sync.force_bundle_non_stock",
+		"validate": [
+			"alpinos.product_bundle_sync.force_bundle_non_stock",
+			# IM-01..IM-10. Server-side because depends_on / mandatory_depends_on are
+			# client-only, so the API and imports would otherwise walk straight past them.
+			"alpinos.production.item_rules.apply_item_rules",
+		],
 		"on_update": "alpinos.product_bundle_sync.sync_item_product_bundle",
+	},
+	"Work Order": {
+		# SPO-02: a Sub PO is made by approving a Parent, never by hand. A Work Order with
+		# no Parent link is an ordinary ERPNext Work Order and is left alone.
+		# before_validate, NOT validate: a doc_events "validate" hook runs AFTER the
+		# controller's own validate, and ERPNext's WorkOrder.validate_qty crashes first on
+		# a value frappe handed it as a string ("'>' not supported between str and int").
+		# The guard has to speak before ERPNext looks at the document at all.
+		"before_validate": "alpinos.production.sub_order.block_manual_sub_order",
+		"on_trash": "alpinos.production.sub_order.block_manual_sub_order_delete",
+	},
+	# A master that an open sub order points at is frozen while that work is outstanding
+	# (see alpinos.production.guards).
+	"Machine": {
+		"validate": "alpinos.production.guards.guard_machine",
+	},
+	"Process Master": {
+		"validate": "alpinos.production.guards.guard_process",
+	},
+	"Machine Type": {
+		"validate": "alpinos.production.guards.guard_machine_type",
+	},
+	"BOM": {
+		# Every BOM rule lives on the doctype, not on the screen that writes it: the
+		# standard desk form, the REST API and an import all went past the versions that
+		# used to sit in bom_api.save_bom (see alpinos.production.bom_rules).
+		"validate": "alpinos.production.bom_rules.apply_bom_rules",
 	},
 	"File": {
 		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",

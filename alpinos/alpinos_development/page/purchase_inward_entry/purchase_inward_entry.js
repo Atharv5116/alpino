@@ -105,6 +105,8 @@ frappe.pages['purchase_inward_entry'].on_page_load = function (wrapper) {
 
 // Fires on every visit; the route decides whether we open blank or load a document.
 frappe.pages['purchase_inward_entry'].on_page_show = function (wrapper) {
+	// Goods Inward > this list > this record, the same shape as the Production screens.
+	alpinos_goods_inward_breadcrumb(__("Purchase Inwards"), "/app/purchase_inward_list");
 	if (wrapper.piw_entry) wrapper.piw_entry.handle_route_entry();
 };
 
@@ -265,12 +267,15 @@ var PurchaseInwardEntry = class {
 			fieldtype: 'Data',
 			read_only: 1,
 		});
+		// Optional: goods often arrive before the invoice does, and the inward has to be
+		// recordable at the moment the lorry is at the gate. BR-PI-15 still holds for a
+		// number that IS given -- _validate_invoice_number returns early on a blank and
+		// enforces uniqueness per vendor otherwise.
 		this._ctl('.field-invoice-number', {
 			fieldname: 'invoice_number',
 			label: 'Invoice Number',
 			fieldtype: 'Data',
-			reqd: 1,
-			description: 'Unique per vendor (BR-PI-15).',
+			description: 'Optional. Unique per vendor when given (BR-PI-15).',
 			change: () => me.check_duplicate('invoice_number'),
 		});
 		this._ctl('.field-invoice-date', {
@@ -749,15 +754,35 @@ var PurchaseInwardEntry = class {
 		this._ctl('.field-actual-vehicle-no', {
 			fieldname: 'actual_vehicle_no', label: 'Actual Vehicle No.', fieldtype: 'Data',
 		});
-		this._ctl('.field-actual-driver-contact', {
+		// Digits only, 10 of them, flagged live -- the same helper and the same rule as the
+		// Driver Contact Number on the Purchase Order. Only the ACTUAL number: the planned
+		// one above is read-only and fetched from the order, so it shows whatever that
+		// order holds and is not this screen to correct.
+		// Guarded: the helper ships in the desk bundle, and a browser holding a stale bundle
+		// beside this page would otherwise throw here and take the WHOLE screen down -- no
+		// header, no item grid, no Save -- over a typing convenience. The server enforces
+		// the 10 digits either way, so losing this is cosmetic.
+		const actual_driver = this._ctl('.field-actual-driver-contact', {
 			fieldname: 'actual_driver_contact_no', label: 'Actual Driver Contact',
-			fieldtype: 'Data',
+			fieldtype: 'Data', description: '10-digit number.',
 		});
+		if (window.alpinos_contact_input) alpinos_contact_input(actual_driver);
 		this._ctl('.field-actual-arrival', {
 			fieldname: 'actual_arrival_datetime', label: 'Actual Arrival Date & Time',
 			fieldtype: 'Datetime',
 			hide_timezone: 1,
+			description: 'Today or earlier. A receipt cannot be witnessed in the future.',
 		});
+		// An arrival is an OBSERVATION, so it cannot be in the future. The calendar greys
+		// out later days and a typed one is refused here; the server enforces the same
+		// rule on save (purchase_inward._validate_inward_dates), so a desk form, an import
+		// or the API is held to it too.
+		if (window.alpinos_date_bound) {
+			alpinos_date_bound(this.fields.actual_arrival_datetime, {
+				label: 'Actual Arrival Date & Time',
+				bound: 'no-future',
+			});
+		}
 		this._ctl('.field-vehicle-verified', {
 			fieldname: 'vehicle_details_verified', label: 'Vehicle Details Verified',
 			fieldtype: 'Check',
@@ -775,6 +800,12 @@ var PurchaseInwardEntry = class {
 			fieldname: 'target_warehouse', label: 'Default Target Location',
 			fieldtype: 'Link', options: 'Warehouse',
 			change: () => me.apply_default_warehouse(),
+		});
+		// Optional, and Data rather than a Link: a gate is a number or a name painted on a
+		// wall, not a record anybody wants to maintain a master for.
+		this._ctl('.field-gate-no', {
+			fieldname: 'gate_no', label: 'Gate No.', fieldtype: 'Data',
+			description: 'Optional.',
 		});
 		this._ctl('.field-receiving-remarks', {
 			fieldname: 'receiving_remarks', label: 'Receiving Remarks', fieldtype: 'Small Text',
@@ -1066,11 +1097,9 @@ var PurchaseInwardEntry = class {
 			me.wrapper.find('.btn-get-items').trigger('click');
 		});
 
-		this.wrapper.on('click', '.btn-add-row', () => {
-			me.add_item_row({});
-			me.render_receiving_rows();
-		});
-
+		// No Add Row here: the item lines only ever come from the chosen Purchase Order, through
+		// Get Items from Purchase Order. A blank row had no order line behind it, so nothing
+		// downstream (order qty, previously received, pending) could be worked out for it.
 		this.wrapper.on('click', '.btn-remove-row', function () {
 			const idx = cint($(this).closest('tr').attr('data-idx'));
 			me.items.splice(idx, 1);
@@ -1155,7 +1184,7 @@ var PurchaseInwardEntry = class {
 			'inward_datetime', 'attachment', 'remarks',
 			'po_vehicle_no', 'po_driver_contact_no', 'actual_vehicle_no',
 			'actual_driver_contact_no', 'actual_arrival_datetime',
-			'vehicle_details_verified', 'allow_excess_qty', 'target_warehouse',
+			'vehicle_details_verified', 'allow_excess_qty', 'target_warehouse', 'gate_no',
 			'receiving_remarks', 'dispute_file', 'dispute_kind', 'dispute_description',
 			'total_order_qty', 'total_received_qty', 'total_pending_qty', 'total_excess_qty',
 			'total_balance_qty',
@@ -1225,7 +1254,7 @@ var PurchaseInwardEntry = class {
 					'inward_datetime', 'attachment', 'remarks', 'po_vehicle_no',
 					'po_driver_contact_no', 'actual_vehicle_no', 'actual_driver_contact_no',
 					'actual_arrival_datetime', 'vehicle_details_verified', 'allow_excess_qty',
-					'target_warehouse', 'receiving_remarks',
+					'target_warehouse', 'gate_no', 'receiving_remarks',
 				].forEach((f) => me._set(f, doc[f]));
 				me.quarantine_doc = doc.purchase_quarantine || null;
 				me.purchase_qc = doc.purchase_qc || null;
@@ -1242,7 +1271,7 @@ var PurchaseInwardEntry = class {
 
 				me.recalc_totals();
 				me.refresh_context();
-				me.page.set_title(`${doc.name} — Purchase Inward`);
+				me.page.set_title(doc.name);
 			},
 		});
 	}
@@ -1302,32 +1331,19 @@ var PurchaseInwardEntry = class {
 	/**
 	 * Close a card for editing, for real.
 	 *
-	 * This used to only add .piw-locked. The page's own <style> gives that class
-	 * `opacity:.55; pointer-events:none`, which stops the mouse but not the keyboard: Tab
-	 * still reached every input in a closed section and typing still changed it, and the
-	 * save was then refused by assert_can_edit_section with a permission error, which reads
-	 * as a bug rather than as a closed section. So the controls are disabled as well.
+	 * This once only added .piw-locked, whose `opacity:.55; pointer-events:none` stopped
+	 * the mouse but not the keyboard: Tab still reached every input in a closed section
+	 * and typing still changed it, and the save was then refused by
+	 * assert_can_edit_section with a permission error, which reads as a bug rather than
+	 * as a closed section.
 	 *
-	 * The disabled state of each control is remembered before locking, so unlocking can
-	 * never enable a field that was already read-only for another reason (an Expiry cell
-	 * derived server-side, say). The page's action bar sits outside these cards, so the
-	 * workflow buttons are unaffected.
+	 * Both halves of that are now the shared helper's job -- and it drops the dimming
+	 * too. A Purchase Inward is one document two teams share, so the half that is not
+	 * yours is still a half you need to READ; fading it was working against that. The
+	 * stage badge and the disabled action buttons already say whose turn it is.
 	 */
 	_lock_section($card, locked) {
-		if (!$card || !$card.length) return;
-		$card.toggleClass('piw-locked', !!locked);
-		$card.find('input, select, textarea, button').each(function () {
-			const $i = $(this);
-			if (locked) {
-				if ($i.attr('data-piw-prev') === undefined) {
-					$i.attr('data-piw-prev', $i.prop('disabled') ? '1' : '0');
-				}
-				$i.prop('disabled', true);
-			} else if ($i.attr('data-piw-prev') !== undefined) {
-				$i.prop('disabled', $i.attr('data-piw-prev') === '1');
-				$i.removeAttr('data-piw-prev');
-			}
-		});
+		alpinos_set_readonly($card, locked);
 	}
 
 	make_actions() {
@@ -1418,16 +1434,11 @@ var PurchaseInwardEntry = class {
 			);
 		});
 
-		// Admin overrides (server-checked): Force Close, and Change Status to any status.
-		(this.ctx.actions || []).filter((a) => a.kind === 'admin').forEach((action) => {
-			btn(
-				action.label,
-				action.action === 'force_close' ? 'btn-danger' : 'btn-default',
-				() => me.admin_status(action),
-				!action.enabled,
-				action.reason
-			);
-		});
+		// The admin overrides -- Force Close and Change Status -- are deliberately NOT drawn
+		// here. Both still exist on the server (inward_api.force_close and
+		// admin_set_status, each role-checked), so nothing has been given away; they are
+		// simply off this screen, where they sat beside the ordinary Save and Submit and
+		// invited a status jump instead of the real transition.
 
 		// The inspection itself is done on the QC screen, from Start QC to Complete QC.
 		if (this.purchase_qc && cint(this.ctx.docstatus) === 1) {
@@ -1447,46 +1458,11 @@ var PurchaseInwardEntry = class {
 		}
 	}
 
-	/**
-	 * Force Close / Change Status (Admin). Nothing is created or reversed -- only the status
-	 * moves -- so the prompt says that, and a reason is required (it goes on the timeline).
-	 */
-	admin_status(action) {
-		const me = this;
-		const force = action.action === 'force_close';
-		const fields = [];
-		if (!force) {
-			fields.push({
-				fieldname: 'status', fieldtype: 'Select', label: __('New Status'), reqd: 1,
-				options: (action.statuses || []).join('\n'),
-			});
-		}
-		fields.push({ fieldname: 'reason', fieldtype: 'Small Text', label: __('Reason'), reqd: 1 });
-		fields.push({
-			fieldtype: 'HTML',
-			options: `<div class="text-muted small">${__('Only the status changes. The QC, GRN, invoice and stock stay exactly as they are.')}</div>`,
-		});
-		frappe.prompt(
-			fields,
-			(v) => {
-				frappe.call({
-					method: force ? 'alpinos.purchase.inward_api.force_close' : 'alpinos.purchase.inward_api.admin_set_status',
-					args: force
-						? { purchase_inward: me.docname, reason: v.reason }
-						: { purchase_inward: me.docname, status: v.status, reason: v.reason },
-					freeze: true,
-					freeze_message: __('Working...'),
-					callback(r) {
-						if (r.exc || !r.message) return;
-						me._toast(__('Status is now {0}', [r.message.inward_status]), 'green');
-						me.load(me.docname);
-					},
-				});
-			},
-			force ? __('Force Close {0}', [this.docname]) : __('Change Status of {0}', [this.docname]),
-			force ? __('Force Close') : __('Change Status')
-		);
-	}
+	// admin_status() stood here: the dialog behind the Force Close and Change Status
+	// buttons. Both buttons are off this screen now (see make_actions), so the dialog had
+	// no caller. inward_api.force_close and inward_api.admin_set_status are untouched and
+	// still role-checked, so the capability is intact -- it simply has no button here.
+
 
 	run_action(action, label) {
 		const me = this;
@@ -1593,6 +1569,7 @@ var PurchaseInwardEntry = class {
 				vehicle_details_verified: cint(this._val('vehicle_details_verified')),
 				allow_excess_qty: cint(this._val('allow_excess_qty')),
 				target_warehouse: this._val('target_warehouse'),
+				gate_no: this._val('gate_no'),
 				receiving_remarks: this._val('receiving_remarks'),
 			} : {}),
 			items: this.items.map((row) => ({

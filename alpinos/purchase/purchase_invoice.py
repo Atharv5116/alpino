@@ -126,35 +126,111 @@ def _paid(doc, payment_type):
 	)
 
 
-def _payment_terms_template(doc):
-	"""The template the due date is derived from: the invoice's own, else the supplier's.
+def _billed_purchase_orders(doc):
+	"""Every Purchase Order this invoice bills.
 
-	get_payment_terms_template also falls back to the Supplier Group, the same lookup
-	ERPNext uses for the standard due date.
+	Two routes, because either can be the only one present: the lines carry
+	`purchase_order` when the invoice was made from a GRN, and the Purchase Inward carries
+	its own `purchase_order` link.
+	"""
+	names = {
+		row.get("purchase_order")
+		for row in doc.get("items") or []
+		if row.get("purchase_order")
+	}
+	inward = doc.get("custom_purchase_inward")
+	if inward:
+		po = frappe.db.get_value("Purchase Inward", inward, "purchase_order")
+		if po:
+			names.add(po)
+	return sorted(n for n in names if n)
+
+
+def _payment_terms_templates(doc):
+	"""Every Payment Terms Template that may set this invoice's due date.
+
+	Order of preference, most specific first:
+
+	    1. the invoice's own template, when somebody set one on this invoice outright
+	    2. the PAYMENT TERMS ON THE PURCHASE ORDER -- the credit days agreed for this
+	       particular purchase, which is the number the Purchase team actually negotiated
+	    3. the supplier's default (`get_payment_terms_template` also falls back to the
+	       Supplier Group, the same lookup ERPNext uses for its own due date)
+
+	The PO comes before the supplier because it is the agreement for THIS order: a supplier
+	on 30 days generally may still have been given 45 on one purchase, and billing that
+	invoice at 30 days would show it overdue a fortnight early.
+
+	A list rather than one template, because an invoice can bill more than one PO -- a GRN
+	merged from several orders, for instance.
+	"""
+	return payment_terms_source(doc)["templates"]
+
+
+def payment_terms_source(doc):
+	"""Which templates apply, and where they came from, resolved once.
+
+	One function rather than two so the due date and the note the screen prints about it can
+	never disagree about which terms were used.
+
+	    {"kind": "invoice" | "purchase_order" | "supplier" | None,
+	     "templates": [...], "orders": [...]}
 	"""
 	if doc.get("payment_terms_template"):
-		return doc.payment_terms_template
-	if not doc.get("supplier"):
-		return None
-	from erpnext.accounts.party import get_payment_terms_template
+		return {"kind": "invoice", "templates": [doc.payment_terms_template], "orders": []}
 
-	return get_payment_terms_template(doc.supplier, "Supplier", doc.get("company"))
+	orders = _billed_purchase_orders(doc)
+	if orders:
+		rows = frappe.get_all(
+			"Purchase Order",
+			filters={"name": ("in", orders)},
+			fields=["name", "payment_terms_template"],
+		)
+		with_terms = [r for r in rows if r.payment_terms_template]
+		if with_terms:
+			return {
+				"kind": "purchase_order",
+				"templates": sorted({r.payment_terms_template for r in with_terms}),
+				"orders": sorted(r.name for r in with_terms),
+			}
+
+	if doc.get("supplier"):
+		from erpnext.accounts.party import get_payment_terms_template
+
+		template = get_payment_terms_template(doc.supplier, "Supplier", doc.get("company"))
+		if template:
+			return {"kind": "supplier", "templates": [template], "orders": []}
+
+	return {"kind": None, "templates": [], "orders": []}
+
+
+def _payment_terms_template(doc):
+	"""The single best template, for callers that only need to know which one applies."""
+	templates = _payment_terms_templates(doc)
+	return templates[0] if templates else None
 
 
 def terms_due_date(doc):
 	"""Invoice Date + Payment Terms, or None when there are no terms to apply.
 
-	The LAST instalment's date is the one returned: that is when the whole bill is due.
+	Counted from the SUPPLIER INVOICE date, not from the PO date: the credit days come from
+	the order, but the clock starts when the supplier bills (BRD 6.2.1).
+
+	The LATEST date wins, across the instalments of a template and across templates when
+	the invoice bills several POs at different terms. For instalments that is simply what
+	"when is the whole bill due" means; for conflicting POs it is the conservative reading,
+	since the alternative is marking a bill overdue while one of its orders still has credit
+	left to run.
 	"""
-	template = _payment_terms_template(doc)
-	if not (template and doc.get("bill_date")):
+	templates = _payment_terms_templates(doc)
+	if not (templates and doc.get("bill_date")):
 		return None
 	from erpnext.controllers.accounts_controller import get_due_date
 
 	dates = []
 	for term in frappe.get_all(
 		"Payment Terms Template Detail",
-		filters={"parent": template, "parenttype": "Payment Terms Template"},
+		filters={"parent": ("in", templates), "parenttype": "Payment Terms Template"},
 		fields=["due_date_based_on", "credit_days", "credit_months"],
 		order_by="idx asc",
 	):
@@ -204,8 +280,8 @@ def _validate_submit_requirements(doc):
 			_("Please enter the Payment Due Date.")
 			if _is_direct(doc)
 			else _(
-				"Please enter the Payment Due Date. It fills in automatically when the "
-				"supplier has Payment Terms."
+				"Please enter the Payment Due Date. It fills in automatically once the "
+				"Purchase Order carries Payment Terms."
 			),
 			title=_("Missing Payment Due Date"),
 		)
@@ -828,12 +904,11 @@ def make_supplier_payment_entry(invoice, row):
 	same mapper the invoice form's "Create > Payment" button uses, so the party account, the
 	invoice reference and the allocation stay standard.
 
-	The bank / cash account comes from the Mode of Payment's default account for the
-	company (Accounts > Mode of Payment), which is where ERPNext itself keeps it. A mode
-	with no account is refused by name.
+	Nobody picks the account. It is resolved by `payment_account` from whatever the company
+	already has, so recording a payment never depends on a Mode of Payment having been
+	configured first.
 	"""
 	from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
-	from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
 
 	amount = flt(row.payment_amount)
 	mode = row.payment_mode
@@ -844,7 +919,7 @@ def make_supplier_payment_entry(invoice, row):
 			),
 			title=_("Missing Mode of Payment"),
 		)
-	account = get_bank_cash_account(mode, invoice.company)["account"]
+	account = payment_account(mode, invoice.company)
 
 	# ERPNext reads the bank account's balance while mapping and validating the entry, and
 	# that lookup demands read permission on the Account itself -- which the Purchase
@@ -857,6 +932,66 @@ def make_supplier_payment_entry(invoice, row):
 		return _post_payment_entry(invoice, row, amount, mode, account, get_payment_entry)
 	finally:
 		frappe.flags.ignore_account_permission = previous_flag
+
+
+def payment_account(mode, company):
+	"""The ledger account a payment is posted from. Nobody is ever asked to choose it.
+
+	ERPNext's own `get_bank_cash_account` refuses outright when a Mode of Payment carries no
+	default account, and on this site only Cash carried one -- so every UPI, NEFT, RTGS,
+	Bank Transfer and Cheque payment failed with "Please set default Cash or Bank account in
+	Mode of Payment", on all four companies. Recording a payment is not the moment to make
+	somebody go and configure a chart of accounts.
+
+	So the account is resolved from whatever the company already has, best first:
+
+	    1. the Mode of Payment's own account for this company -- so a mode that HAS been set
+	       up properly is still honoured, and setting one up later silently takes over
+	    2. the company's Default Bank Account
+	    3. the company's Default Cash Account
+	    4. any Bank ledger account the company has
+	    5. any Cash ledger account the company has
+
+	A Payment Entry cannot post without a source account -- that is double entry, not a
+	validation to relax -- so this finds one rather than making it optional.
+
+	The trade-off, chosen deliberately: until a bank account exists, a NEFT payment posts
+	against the Cash account, so the ledger shows it as cash. The payment, the supplier
+	balance and the invoice outstanding are all correct; only the account it sits under is
+	provisional. Setting a real account on the Mode of Payment fixes later payments with no
+	code change, by rule 1.
+	"""
+	account = frappe.db.get_value(
+		"Mode of Payment Account",
+		{"parent": mode, "company": company},
+		"default_account",
+	)
+	if account:
+		return account
+
+	for field in ("default_bank_account", "default_cash_account"):
+		account = frappe.db.get_value("Company", company, field)
+		if account:
+			return account
+
+	for account_type in ("Bank", "Cash"):
+		account = frappe.db.get_value(
+			"Account",
+			{"company": company, "account_type": account_type, "is_group": 0, "disabled": 0},
+			"name",
+			order_by="name asc",
+		)
+		if account:
+			return account
+
+	# Nothing to post against at all -- a company with no bank and no cash ledger account.
+	# Named plainly, because this one genuinely cannot be worked around here.
+	frappe.throw(
+		_("{0} has no Bank or Cash account to pay from. Add one under Accounts > Chart of Accounts.").format(
+			frappe.bold(company)
+		),
+		title=_("No Payment Account"),
+	)
 
 
 def _post_payment_entry(invoice, row, amount, mode, account, get_payment_entry):
@@ -972,9 +1107,12 @@ def get_invoice_context(purchase_invoice):
 		"supplier_pending": flt(invoice.get("custom_supplier_pending_amount")),
 		"logistics_pending": flt(invoice.get("custom_logistics_pending_amount")),
 		"total_paid": flt(invoice.get("custom_total_paid_amount")),
-		# A Normal invoice whose supplier has Payment Terms gets its due date computed on
-		# save, so the screen shows it read-only rather than inviting an edit that is lost.
+		# A Normal invoice with Payment Terms behind it gets its due date computed on save,
+		# so the screen shows it read-only rather than inviting an edit that is lost.
 		"due_date_auto": not _is_direct(invoice) and bool(_payment_terms_template(invoice)),
+		# Which terms, and from where -- so the screen can name the Purchase Order the
+		# credit days were taken from instead of leaving the date looking arbitrary.
+		"due_date_source": None if _is_direct(invoice) else payment_terms_source(invoice),
 		"rate_editable": rate_editable(),
 		"payment_types": [C.UNF_PAYMENT_SUPPLIER]
 		+ ([C.UNF_PAYMENT_LOGISTICS] if wants_logistics(invoice) else []),

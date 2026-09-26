@@ -25,6 +25,9 @@ frappe.pages['purchase_order_list'].on_page_load = function (wrapper) {
 // Frappe caches custom pages, so on_page_load runs once: re-render the body on every
 // show, or coming back from an order leaves a stale list. The toolbar is built once only.
 frappe.pages['purchase_order_list'].on_page_show = function (wrapper) {
+	// Named outright rather than derived from the module, which picks whichever
+	// workspace happens to sort first.
+	alpinos_goods_inward_breadcrumb();
 	if (wrapper.__pol_list_page) wrapper.__pol_list_page.render_body();
 };
 

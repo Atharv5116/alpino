@@ -258,6 +258,26 @@ def _custom_fields():
 				no_copy=1,
 				search_index=1,
 			),
+			# The batch id QC settled on, as TEXT.
+			#
+			# Core `batch_no` is a Link to Batch, so it can only hold an id that has a Batch
+			# document behind it. Purchase QC mints one only for an Item with has_batch_no
+			# set, and on this site none has -- so the Link stayed empty on all 139 GRN
+			# lines while 137 QC rows carried an internal batch number, and the GRN simply
+			# showed nothing where the QC document showed a batch.
+			#
+			# This carries the id regardless. It does NOT replace batch_no: when a real
+			# Batch does exist, that Link is still what moves the stock.
+			dict(
+				fieldname="custom_internal_batch_no",
+				label="Batch No",
+				fieldtype="Data",
+				insert_after="custom_purchase_inward_item",
+				read_only=1,
+				no_copy=1,
+				search_index=1,
+				description="Set by Purchase QC. Shown when the item is not batch tracked, so no Batch record exists to link.",
+			),
 			# QC quarantine (quarantine.create_from_qc): the line's approved quantity is
 			# received into the Quarantine warehouse and moved to the release warehouse when
 			# the Quarantine document releases it. Not no_copy: an amended GRN keeps the hold.

@@ -542,6 +542,7 @@ SECTIONS = {
 					"actual_driver_contact_no",
 					"allow_excess_qty",
 					"target_warehouse",
+					"gate_no",
 					"receiving_remarks",
 					"dispute_attachments",
 					"quarantine_items",

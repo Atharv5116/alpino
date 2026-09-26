@@ -20,6 +20,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, flt, get_link_to_form, getdate, now_datetime
 
+from alpinos import contact_number
 from alpinos.purchase import constants as C
 from alpinos.purchase.settings import get_settings
 
@@ -41,6 +42,8 @@ class PurchaseInward(Document):
 		self._set_expiry_dates()
 		self._set_usp()
 		self._validate_received_quantities()
+		self._validate_driver_contact_no()
+		self._validate_inward_dates()
 		self._validate_receiving_details()
 		self._stamp_dispute_attachments()
 		self._roll_up_totals()
@@ -124,6 +127,8 @@ class PurchaseInward(Document):
 		self._set_expiry_dates()
 		self._set_usp()
 		self._validate_received_quantities()
+		self._validate_driver_contact_no()
+		self._validate_inward_dates()
 		self._validate_receiving_details()
 		self._stamp_dispute_attachments()
 		self._roll_up_totals()
@@ -614,6 +619,76 @@ class PurchaseInward(Document):
 				indicator="orange",
 			)
 
+	def _validate_inward_dates(self):
+		"""The two halves of the document look in opposite directions in time.
+
+		Section 1 is the Purchase team booking an arrival: the Inward Date is when the
+		goods are expected, so it is today or later. Section 2 is the Store team recording
+		what actually turned up: the Actual Arrival is an observation, so it is today or
+		earlier. A receipt cannot be witnessed tomorrow.
+
+		Compared by DATE, not by timestamp -- "today" has to mean the whole of today, or
+		an inward booked for this morning would be refused this afternoon.
+
+		Forward-only, and that matters here: 84 of the 189 inwards on this site already
+		carry an Inward Date in the past, simply because they were raised on earlier days.
+		A blanket rule would refuse to save any of them ever again, over a field nobody was
+		editing. So a stored value is left alone and only a new or changed one is checked.
+		"""
+		before = None if self.is_new() else self.get_doc_before_save()
+		today = getdate()
+
+		def changed(fieldname):
+			if before is None:
+				return True
+			return str(before.get(fieldname) or "") != str(self.get(fieldname) or "")
+
+		if self.inward_datetime and changed("inward_datetime"):
+			when = getdate(self.inward_datetime)
+			if when < today:
+				frappe.throw(
+					_("Inward Date cannot be in the past. {0} is before today ({1}).").format(
+						frappe.bold(frappe.utils.formatdate(when)),
+						frappe.utils.formatdate(today),
+					),
+					title=_("Invalid Inward Date"),
+				)
+
+		if self.actual_arrival_datetime and changed("actual_arrival_datetime"):
+			when = getdate(self.actual_arrival_datetime)
+			if when > today:
+				frappe.throw(
+					_(
+						"Actual Arrival Date & Time cannot be in the future. {0} is after "
+						"today ({1}) -- record the receipt on the day it arrives."
+					).format(
+						frappe.bold(frappe.utils.formatdate(when)),
+						frappe.utils.formatdate(today),
+					),
+					title=_("Invalid Actual Arrival"),
+				)
+
+	def _validate_driver_contact_no(self):
+		"""The Actual Driver Contact Number is 10 digits, or blank.
+
+		The rule is alpinos.contact_number, the same one the Purchase Order uses, so a
+		number refused on the order is refused here and vice versa.
+
+		Only the ACTUAL one. po_driver_contact_no is read-only and fetched from the
+		Purchase Order, so it mirrors whatever that order holds -- including the legacy
+		values on seven of them. Refusing an inward over a number that cannot be corrected
+		from this screen would be a dead end; the rule belongs on the source, and that is
+		where purchase_order_fields puts it.
+
+		Called from validate() and before_update_after_submit() rather than from
+		_validate_receiving_details(), which returns early on anything but a submitted
+		inward with receiving under way -- a bad number typed before that should be
+		refused too.
+		"""
+		contact_number.validate_fields(
+			self, {"actual_driver_contact_no": "Actual Driver Contact Number"}
+		)
+
 	def _validate_receiving_details(self):
 		"""Guards for the Store Receiving section. depends_on is client-only, so the
 		mandatory rules are re-checked here (VAL-PI-05 / 09 / 10 / 12)."""
@@ -644,7 +719,9 @@ class PurchaseInward(Document):
 					_("Row {0}: please select a Target Location.").format(line.idx),
 					title=_("VAL-PI-09"),
 				)
-			if self.inward_type == C.INWARD_FG and not (line.batch_no or "").strip():
+			# Any FG on the inward brings the FG batch rule with it, even on a mixed
+			# FG+PM receipt.
+			if C.has_inward_type(self.inward_type, C.INWARD_FG) and not (line.batch_no or "").strip():
 				frappe.throw(
 					_("Row {0}: Batch No. is mandatory for an FG inward.").format(line.idx)
 				)
@@ -658,7 +735,7 @@ class PurchaseInward(Document):
 				shelf_life = cint(
 					frappe.db.get_value("Item", line.item_code, "shelf_life_in_days")
 				)
-				if shelf_life or self.inward_type == C.INWARD_FG:
+				if shelf_life or C.has_inward_type(self.inward_type, C.INWARD_FG):
 					frappe.throw(
 						_(
 							"Row {0} ({1}): Manufacturing Date is required - the Expiry Date "

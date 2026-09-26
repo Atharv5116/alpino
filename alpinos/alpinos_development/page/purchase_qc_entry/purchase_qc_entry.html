@@ -46,7 +46,8 @@
 	resize: vertical;
 }
 
-.purchase-qc-entry .pqc-locked { opacity: .55; pointer-events: none; }
+/* A submitted inspection is read-only, not dimmed: alpinos_readonly.js turns its fields
+   read-only. See public/css/alpinos_pages.css (.alpinos-readonly). */
 .purchase-qc-entry .pqc-stage {
 	display: inline-block; padding: 2px 10px; border-radius: 10px;
 	font-size: 11px; font-weight: 600; border: 1px solid var(--border-color);
@@ -175,6 +176,8 @@
 			</div>
 		</div>
 	</div>
+
+	<div class="alp-actions alp-actions--end alp-actions--sticky pqc-actionbar"></div>
 
 	<div class="pqc-body">
 	<p class="text-muted" style="font-size:12px; margin-bottom:12px;">
@@ -385,11 +388,16 @@
 		</div>
 
 		<h6 class="eso-subtitle">Summary</h6>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-total-received"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-approved"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-rejected"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-qc-result"></div>
+		<!-- The four figures read down one column (.alp-figures in alpinos_pages.css).
+		     The two remarks stay full width below them: they are paragraphs, and squeezing
+		     a textarea into a 360px figure column would make it unusable. -->
+		<div class="alp-figures">
+			<div class="eso-fld field-total-received"></div>
+			<div class="eso-fld field-total-approved"></div>
+			<div class="eso-fld field-total-rejected"></div>
+			<div class="eso-fld alp-figures-total field-qc-result"></div>
+		</div>
+		<div class="row" style="margin-top:12px;">
 			<div class="col-md-6 eso-fld field-rejection-reason"></div>
 			<div class="col-md-6 eso-fld field-final-remarks"></div>
 		</div>
@@ -403,6 +411,5 @@
 		<div class="text-muted pqc-quarantine-hint" style="font-size:12px; margin-bottom:8px;"></div>
 	</div>
 
-	<div class="alp-actions alp-actions--end pqc-actionbar" style="margin: 14px 0 24px;"></div>
 	</div>
 </div>

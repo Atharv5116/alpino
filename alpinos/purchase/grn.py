@@ -604,6 +604,12 @@ def _grn_rows(inward, qc):
 				"mrp": flt(line.mrp),
 				"quarantine_status": hold,
 				"release_warehouse": release_warehouse,
+				# The id QC settled on, as TEXT, before _batch_no decides whether a real
+				# Batch document exists to link to. On this site none does -- no Item has
+				# has_batch_no set, so PurchaseQC never mints one -- and the GRN was left
+				# showing nothing at all for a batch the QC document names plainly.
+				"internal_batch_no": (decision.internal_batch_no if decision else None)
+				or line.batch_no,
 				"batch_no": _batch_no(
 					line.item_code,
 					(decision.internal_batch_no if decision else None) or line.batch_no,
@@ -711,6 +717,9 @@ def _apply_row(row, source):
 	row.set("custom_mrp", source["mrp"])
 	row.set("custom_quarantine_status", source["quarantine_status"])
 	row.set("custom_release_warehouse", source["release_warehouse"])
+	# Always written, whether or not a Batch document backs it, so the GRN can show the
+	# same batch id the QC document and the QC report show.
+	row.set("custom_internal_batch_no", source.get("internal_batch_no") or None)
 	if source["batch_no"]:
 		row.use_serial_batch_fields = 1
 		row.batch_no = source["batch_no"]

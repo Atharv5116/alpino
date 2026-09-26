@@ -917,7 +917,8 @@ class PurchaseQC(Document):
 
 	def _applicable_inspections(self):
 		for field, label, types in MANDATORY_INSPECTIONS:
-			if types and self.inward_type not in types:
+			# A checklist applies when it names ANY of this document's types.
+			if types and not C.any_inward_type(self.inward_type, types):
 				continue
 			yield field, label
 
@@ -935,7 +936,7 @@ class PurchaseQC(Document):
 				title=_("VAL-QC-02"),
 			)
 
-		if self.inward_type in C.BATCH_FROM_INVOICE_TYPES and not self.get("sample_testing"):
+		if C.any_inward_type(self.inward_type, C.BATCH_FROM_INVOICE_TYPES) and not self.get("sample_testing"):
 			frappe.throw(
 				_("Please record at least one Sample Testing row for an {0} inward.").format(
 					self.inward_type
@@ -979,7 +980,7 @@ class PurchaseQC(Document):
 		Manufacturing Date. MM has no rule, so it gets no internal batch and is not
 		blocked for the lack of one.
 		"""
-		if self.inward_type in C.BATCH_FROM_INVOICE_TYPES:
+		if C.any_inward_type(self.inward_type, C.BATCH_FROM_INVOICE_TYPES):
 			fmt = get_settings(self.company).get("rm_pm_batch_format")
 			required = ("invoice_number", "inward_date")
 		elif self.inward_type in C.BATCH_FROM_MFG_TYPES:

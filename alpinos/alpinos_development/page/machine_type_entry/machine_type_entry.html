@@ -1,0 +1,50 @@
+<div class="machine-type-entry">
+	<style>
+		.machine-type-entry .pm-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e2e2);
+			border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+		.machine-type-entry .pm-card > h5 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase;
+			letter-spacing: .4px; color: var(--text-muted); }
+		.machine-type-entry .pm-fld { margin-bottom: 8px; }
+		.machine-type-entry .pm-actionbar { display: flex; justify-content: flex-end; align-items: center;
+			margin-bottom: 14px; }
+		.machine-type-entry .pm-note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+		/* No dimmed state. A card that may not be edited is turned read-only by
+		   public/js/alpinos_readonly.js and styled by .alpinos-readonly in
+		   public/css/alpinos_pages.css, the same as the Purchase screens. */
+		.machine-type-entry .pm-readonly-banner { margin-bottom: 14px; }
+	</style>
+
+	<div class="pm-readonly-banner"></div>
+	<div class="pm-actionbar"></div>
+
+	<div class="pm-card">
+		<h5>Machine Type</h5>
+		<div class="row">
+			<div class="col-md-3 pm-fld field-type-code"></div>
+			<div class="col-md-6 pm-fld field-machine-type-name"></div>
+			<div class="col-md-3 pm-fld field-is-active"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-12 pm-fld field-description"></div>
+		</div>
+		<div class="pm-note">
+			A machine type is the category every other screen picks from. Renaming one renames it
+			everywhere it is shown.
+		</div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Machines Of This Type</h5>
+		<div class="field-machines"></div>
+	</div>
+
+	<div class="pm-card">
+		<h5>Processes Using This Type</h5>
+		<div class="field-processes"></div>
+		<div class="pm-note">
+			A type still used by a process cannot be deleted. Retire it instead by clearing Is
+			Active, which keeps existing machines readable while stopping new ones being filed
+			under it.
+		</div>
+	</div>
+</div>

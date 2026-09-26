@@ -33,6 +33,9 @@ frappe.pages['purchase_qc_list'].on_page_load = function (wrapper) {
 // show or navigating back leaves a stale list. The toolbar is built in the constructor
 // only; re-adding its buttons here would duplicate them on every visit.
 frappe.pages['purchase_qc_list'].on_page_show = function (wrapper) {
+	// Named outright rather than derived from the module, which picks whichever
+	// workspace happens to sort first.
+	alpinos_goods_inward_breadcrumb();
 	if (wrapper.__pqc_list_page) wrapper.__pqc_list_page.render_body();
 };
 

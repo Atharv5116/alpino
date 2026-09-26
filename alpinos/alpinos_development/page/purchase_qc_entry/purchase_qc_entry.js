@@ -33,6 +33,8 @@ frappe.pages['purchase_qc_entry'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['purchase_qc_entry'].on_page_show = function (wrapper) {
+	// Goods Inward > this list > this record, the same shape as the Production screens.
+	alpinos_goods_inward_breadcrumb(__("Purchase QC"), "/app/purchase_qc_list");
 	if (wrapper.pqc_entry) wrapper.pqc_entry.handle_route_entry();
 };
 
@@ -307,6 +309,12 @@ var PurchaseQCEntry = class {
 			df: Object.assign({ fieldname: name }, df, {
 				change: () => {
 					if (!ready || !onchange) return;
+					// A read-only cell reports no changes, whoever made them. Frappe fires
+					// df.change for a programmatic set_value too, so on a submitted document
+					// the handler still ran: it wrote the row and recalculated the Summary,
+					// leaving totals on screen that did not match the submitted record.
+					// Typing cannot reach a locked cell, but nothing else was stopping it.
+					if (cint(c.df.read_only)) return;
 					// The PARSED value, never the raw input text: for a Date control that is
 					// the user format (dd-mm-yyyy), which reaches the DATE column as an
 					// invalid date (MariaDB 1292). `this` is the input, because several
@@ -723,6 +731,14 @@ var PurchaseQCEntry = class {
 
 	render_decision() {
 		const me = this;
+		// Built read-only here rather than left to apply_state() to close afterwards.
+		// apply_state() runs at the end of the load, but this table is drawn AGAIN when the
+		// Quarantine context arrives a moment later -- so on a submitted QC that holds a
+		// Quarantine document, the second render handed back editable Approved, Rejected and
+		// Rejection Reason cells. The child rows are not allow_on_submit, so nothing typed
+		// there could ever be saved; what it did do was recalculate the Summary totals on
+		// screen, quietly showing figures that did not match the submitted record.
+		const locked = cint((this.doc || {}).docstatus) !== 0;
 		const $body = this.wrapper.find('.decision-table tbody').empty();
 		(this.tables.decision || []).forEach((row, idx) => {
 			const $tr = $(`<tr data-idx="${idx}">
@@ -739,15 +755,18 @@ var PurchaseQCEntry = class {
 			$body.append($tr);
 
 			me._mk_cell($tr, '.c-appr', 'decision', idx,
-				{ fieldtype: 'Float', fieldname: 'approved_qty' }, row.approved_qty,
+				{ fieldtype: 'Float', fieldname: 'approved_qty', read_only: locked ? 1 : 0 },
+				row.approved_qty,
 				function (val) { row.approved_qty = flt(val); me.recalc_totals(); me.apply_quarantine_ui(); });
 			me._mk_cell($tr, '.c-rej', 'decision', idx,
-				{ fieldtype: 'Float', fieldname: 'rejected_qty' }, row.rejected_qty,
+				{ fieldtype: 'Float', fieldname: 'rejected_qty', read_only: locked ? 1 : 0 },
+				row.rejected_qty,
 				function (val) { row.rejected_qty = flt(val); me.recalc_totals(); });
 			me._mk_cell($tr, '.c-reason', 'decision', idx,
-				{ fieldtype: 'Data', fieldname: 'rejection_reason' }, row.rejection_reason,
+				{ fieldtype: 'Data', fieldname: 'rejection_reason', read_only: locked ? 1 : 0 },
+				row.rejection_reason,
 				function (val) { row.rejection_reason = val; });
-			if (cint((me.doc || {}).docstatus) === 0) {
+			if (!locked) {
 				me._mk_cell($tr, '.c-quar', 'decision', idx,
 					{ fieldtype: 'Check', fieldname: 'quarantine' }, row.quarantine,
 					function (val) { row.quarantine = cint(val); me.apply_quarantine_ui(); });
@@ -910,7 +929,7 @@ var PurchaseQCEntry = class {
 				}
 
 				me.apply_state();
-				me.page.set_title(`${doc.name} — Purchase QC`);
+				me.page.set_title(doc.name);
 			},
 		});
 	}
@@ -935,8 +954,13 @@ var PurchaseQCEntry = class {
 
 		// Everything is read-only once the inspection is submitted.
 		const locked = cint(doc.docstatus) !== 0;
-		this.wrapper.find('.pqc-section').toggleClass('pqc-locked', locked);
-		this.wrapper.find('.decision-table').closest('.eso-card').toggleClass('pqc-locked', locked);
+		// Read-only, not dimmed: a submitted inspection is the evidence, and greying it
+		// out is the opposite of what it is for.
+		alpinos_set_readonly(
+			this.wrapper.find('.pqc-section')
+				.add(this.wrapper.find('.decision-table').closest('.eso-card')),
+			locked
+		);
 		this.make_actions();
 		this.sync_done_flags();
 	}

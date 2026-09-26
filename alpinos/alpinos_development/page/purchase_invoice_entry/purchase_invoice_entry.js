@@ -36,6 +36,8 @@ frappe.pages['purchase_invoice_entry'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['purchase_invoice_entry'].on_page_show = function (wrapper) {
+	// Goods Inward > this list > this record, the same shape as the Production screens.
+	alpinos_goods_inward_breadcrumb(__("Purchase Invoices"), "/app/purchase_invoice_list");
 	if (wrapper.pinv_entry) wrapper.pinv_entry.handle_route_entry();
 };
 
@@ -135,7 +137,7 @@ var PurchaseInvoiceEntry = class {
 						me.docname = doc.name;
 						me.render();
 						me.apply_state();
-						me.page.set_title(`${doc.name} — Purchase Invoice`);
+						me.page.set_title(doc.name);
 						me.maybe_open_payment();
 					},
 				});
@@ -168,10 +170,26 @@ var PurchaseInvoiceEntry = class {
 		ed('.field-bill-no', { fieldname: 'bill_no', label: 'Supplier Invoice Number', fieldtype: 'Data', reqd: 1 });
 		ed('.field-bill-date', { fieldname: 'bill_date', label: 'Supplier Invoice Date', fieldtype: 'Date', reqd: 1 });
 
+		// The note names WHERE the credit days came from. The same date can come off this
+		// invoice, off the Purchase Order it bills, or off the supplier default, and a due
+		// date with no explanation reads as arbitrary to whoever has to pay against it.
+		const src = ctx.due_date_source || {};
 		let due_note;
-		if (direct) due_note = __('Enter the date the payment is due.');
-		else if (cint(ctx.due_date_auto)) due_note = __("Invoice Date + the supplier's Payment Terms, calculated on save.");
-		else due_note = __('The supplier has no Payment Terms, so enter the date by hand.');
+		if (direct) {
+			due_note = __('Enter the date the payment is due.');
+		} else if (cint(ctx.due_date_auto)) {
+			const terms = (src.templates || []).join(', ');
+			if (src.kind === 'purchase_order') {
+				due_note = __('Invoice Date + the Payment Terms on {0} ({1}), calculated on save.',
+					[(src.orders || []).join(', '), terms]);
+			} else if (src.kind === 'invoice') {
+				due_note = __('Invoice Date + the Payment Terms on this invoice ({0}), calculated on save.', [terms]);
+			} else {
+				due_note = __("Invoice Date + the supplier's Payment Terms ({0}), calculated on save.", [terms]);
+			}
+		} else {
+			due_note = __('Neither the Purchase Order nor the supplier has Payment Terms, so enter the date by hand. Set Payment Terms on the order to have this filled in.');
+		}
 		this._ctl('.field-due-date', {
 			fieldname: 'custom_payment_due_date',
 			label: 'Payment Due Date',

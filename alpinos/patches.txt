@@ -36,3 +36,4 @@ alpinos.patches.v1_0.invoice_queue_saved_filters_to_views
 alpinos.patches.v1_0.backfill_so_invoice_value_for_queue
 alpinos.patches.v1_0.item_display_default_stock_reports
 alpinos.patches.v1_0.restate_picked_invoice_value
+alpinos.patches.v1_0.link_production_model_machine_types

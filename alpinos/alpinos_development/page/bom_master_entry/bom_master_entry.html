@@ -1,0 +1,73 @@
+<!-- No apostrophes anywhere in this file, including in comments. frappe/build.py wraps
+     the whole page template in single quotes, so a raw one ends the string early and
+     takes the desk bundle down with it. Reword, or use the &#39; entity. -->
+<div class="bom-master-entry">
+	<style>
+		.bom-master-entry .bm-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e2e2);
+			border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+		.bom-master-entry .bm-card > h5 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase;
+			letter-spacing: .4px; color: var(--text-muted); }
+		.bom-master-entry .bm-fld { margin-bottom: 8px; }
+		.bom-master-entry .bm-actionbar { display: flex; justify-content: flex-end; align-items: center;
+			margin-bottom: 14px; }
+		.bom-master-entry .bm-note { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+		/* No dimmed state here. A closed BOM is turned read-only by
+		   public/js/alpinos_readonly.js and styled by .alpinos-readonly in
+		   public/css/alpinos_pages.css, the same as the Purchase screens. */
+		.bom-master-entry .materials-table th { font-size: 11px; text-transform: uppercase;
+			letter-spacing: .3px; white-space: nowrap; }
+		.bom-master-entry .materials-table td { vertical-align: middle; padding: 4px 6px; }
+		.bom-master-entry .materials-table .control-label { display: none; }
+		.bom-master-entry .materials-table .frappe-control { margin: 0; }
+		.bom-master-entry .materials-table .form-group { margin-bottom: 0; }
+		.bom-master-entry .bm-stage-head td { background: var(--bg-light-gray, #f4f5f6);
+			font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+	</style>
+
+	<div class="bm-actionbar"></div>
+
+	<div class="bm-card">
+		<h5>BOM Header</h5>
+		<div class="row">
+			<div class="col-md-3 bm-fld field-bom-id"></div>
+			<div class="col-md-3 bm-fld field-fg-item"></div>
+			<div class="col-md-3 bm-fld field-variation-name"></div>
+			<div class="col-md-3 bm-fld field-is-default"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-3 bm-fld field-batch-size"></div>
+			<div class="col-md-3 bm-fld field-uom"></div>
+			<div class="col-md-3 bm-fld field-is-active"></div>
+		</div>
+		<div class="bm-note">
+			Base Batch Size is fixed at 1: the quantities below are the recipe for exactly one batch.
+			The UOM follows the stock UOM of the finished good.
+		</div>
+	</div>
+
+	<div class="bm-card">
+		<h5>Material Details</h5>
+		<table class="table table-bordered table-condensed materials-table">
+			<thead>
+				<tr>
+					<th style="width:36px;">#</th>
+					<th style="width:150px;">Process Stage</th>
+					<th style="width:120px;">Material Type</th>
+					<th>Raw Materials</th>
+					<th style="width:110px;">Batch</th>
+					<th style="width:110px;">UOM</th>
+					<th style="width:110px;">Time</th>
+					<th style="width:110px;">Temp</th>
+					<th style="width:110px;">Fan Speed</th>
+					<th style="width:40px;"></th>
+				</tr>
+			</thead>
+			<tbody></tbody>
+		</table>
+		<button class="btn btn-sm btn-default btn-add-row">Add Material</button>
+		<div class="bm-note">
+			Raw materials, additives and packaging all go in this one grid. The Job Card print
+			groups the printed sheet by Process Stage, and hides any group that has no rows.
+		</div>
+	</div>
+</div>

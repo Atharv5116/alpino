@@ -31,6 +31,8 @@ frappe.pages['purchase_grn_view'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['purchase_grn_view'].on_page_show = function (wrapper) {
+	// Goods Inward > this list > this record, the same shape as the Production screens.
+	alpinos_goods_inward_breadcrumb(__("GRN"), "/app/purchase_grn_list");
 	if (wrapper.grn_view) wrapper.grn_view.handle_route_entry();
 };
 
@@ -146,7 +148,7 @@ var GRNView = class {
 						me.docname = doc.name;
 						me.render();
 						me.apply_state();
-						me.page.set_title(`${doc.name} — GRN`);
+						me.page.set_title(doc.name);
 					},
 				});
 			},
@@ -281,7 +283,13 @@ var GRNView = class {
 				);
 			}
 			cell('.c-rwh', { fieldtype: 'Link', options: 'Warehouse', get_query: wh_query }, 'rejected_warehouse');
-			cell('.c-batch', { fieldtype: 'Data' }, 'batch_no');
+			// batch_no is a Link to Batch and is empty whenever the item is not batch
+			// tracked, which on this site is every item -- so the column showed nothing
+			// for a batch QC had already settled. custom_internal_batch_no carries that
+			// id as text; the Link still wins when a real Batch backs it, because that is
+			// the one that moves the stock.
+			cell('.c-batch', { fieldtype: 'Data', read_only: 1 },
+				row.batch_no ? 'batch_no' : 'custom_internal_batch_no');
 			cell('.c-rate', { fieldtype: 'Currency' }, 'rate', null, !!cint(me.ctx.rate_editable));
 			cell('.c-mrp', { fieldtype: 'Currency' }, 'custom_mrp');
 			cell('.c-usp', { fieldtype: 'Data' }, 'custom_usp');

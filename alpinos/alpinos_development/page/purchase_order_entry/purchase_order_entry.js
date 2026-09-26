@@ -31,6 +31,26 @@ var ALP_TRIM_MICROSECONDS = function (v) {
 var PO_INWARD_TYPES = ['RM', 'PM', 'FG', 'MM'];
 
 /**
+ * An address from get_address_display, on one line.
+ *
+ * It arrives as HTML with a <br> between every part, and a read-only Small Text control
+ * renders that literally -- five or six stacked lines per address, twice, which is what
+ * made the Supplier card taller than the order itself. Nothing is dropped; the line
+ * breaks become commas.
+ */
+var ALP_FLATTEN_ADDRESS = function (v) {
+	if (v === undefined || v === null) return '';
+	return String(v)
+		.replace(/<br\s*\/?>/gi, '\n')
+		.replace(/<[^>]*>/g, '')
+		.split('\n')
+		.map(function (part) { return part.replace(/\s+/g, ' ').trim(); })
+		// A trailing comma after an empty line reads as missing data, so blanks go first.
+		.filter(function (part) { return part.length > 0; })
+		.join(', ');
+};
+
+/**
  * A Datetime typed as a date alone ("16-09-2026", then Tab) kept no time. Frappe's
  * frappe.datetime.user_to_str reads a time only when the text has a space in it, so the value
  * became a bare date -- midnight once stored -- while picking the same day from the calendar
@@ -121,17 +141,10 @@ var ALP_DATE_ONLY_KEEPS_TIME = function (control, default_time, default_hms) {
 		const time_fmt = frappe.datetime.get_user_time_fmt();
 		const held = last ? frappe.datetime.convert_to_user_tz(last, false) : null;
 		// Midnight is what a date-only entry used to leave behind, not a time anyone chose.
-		let time =
+		const time =
 			held && held.isValid() && held.format('HH:mm:ss') !== '00:00:00'
 				? held.format(time_fmt)
 				: default_time(time_fmt, day);
-		if (default_hms && held && day.isSame(moment(), 'day')) {
-			// Re-typing TODAY on a field that kept an earlier time (9:00, chosen for a future
-			// day) would land in the past; today falls back to the default, which is "now" by then.
-			const kept = moment(time, time_fmt);
-			const at = day.clone().set({ hour: kept.hour(), minute: kept.minute(), second: kept.second() });
-			if (at.isBefore(moment().subtract(1, 'minute'))) time = default_time(time_fmt, day);
-		}
 		const result = parse(`${typed} ${time}`);
 		if (result && from_input) last = result;
 		if (result && control.$input) {
@@ -160,6 +173,8 @@ frappe.pages['purchase_order_entry'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['purchase_order_entry'].on_page_show = function (wrapper) {
+	// Goods Inward > this list > this record, the same shape as the Production screens.
+	alpinos_goods_inward_breadcrumb(__("Purchase Orders"), "/app/purchase_order_list");
 	if (wrapper.po_entry) wrapper.po_entry.handle_route_entry();
 };
 
@@ -168,87 +183,17 @@ frappe.pages['purchase_order_entry'].on_page_show = function (wrapper) {
 var PO_DEFAULT_ARRIVAL_HOUR = 9;
 
 /**
- * No past dates or times (Purchase Order: PO Date, Expected Delivery Date, Estimated Arrival).
- * Today is fine, and so is the current time. `kind` is 'date' or 'datetime'.
+ * No past dates (Purchase Order: PO Date, Expected Delivery Date, Estimated Arrival).
+ * Today is fine, whatever the time of day.
  *
- * The calendar greys out earlier days (and, for a datetime, earlier times today); a value typed
- * or pasted past that is refused with a message and cleared -- or put back to `reset()` -- so it
- * never reaches the save. Only the person's own entry is checked: loading a saved PO that
- * already holds an old date must not fire it (`user` is set by focusing/typing, and cleared by
- * every programmatic set_value).
+ * The rule now lives in public/js/alpinos_date_bound.js, shared with the Purchase Inward
+ * screen, which needs the mirror image of it for the Actual Arrival -- an observation
+ * cannot be in the future. Everything subtle about it (the calendar limit applied only
+ * while the picker is open, checking only the person own entry, putting a refused value
+ * back twice) is documented there.
  */
-var PO_NO_PAST = function (control, kind, label, reset) {
-	const datetime = kind === 'datetime';
-	const floor = () => (datetime ? moment().subtract(1, 'minute') : moment().startOf('day'));
-	// The earliest selectable day/time is applied only while the calendar is OPEN, and lifted
-	// when it closes. Left on, the picker refuses -- and locks up on -- a saved order's older
-	// date being loaded into the field. It is set on the picker's own properties: its update()
-	// also rewrites the text box from the picker's selection, which blanked a typed date.
-	const NO_MIN = new Date(-8639999913600000);
-	const set_min = (date) => {
-		const dp = control.datepicker;
-		if (!dp) return;
-		try {
-			dp.opts.minDate = date || '';
-			dp.minDate = date || NO_MIN;
-			if (dp.views && dp.views[dp.currentView]) dp.views[dp.currentView]._render();
-			if (dp.nav && !dp.opts.onlyTimepicker) dp.nav._render();
-			if (dp.opts.timepicker && dp.timepicker) {
-				dp.timepicker._handleDate(dp.lastSelectedDate);
-				dp.timepicker._updateRanges();
-			}
-		} catch (e) { /* cosmetic only: the check below is what enforces the rule */ }
-	};
-	if (control.datepicker && control.datepicker.opts) {
-		const on_show = control.datepicker.opts.onShow;
-		control.datepicker.opts.onShow = function () {
-			set_min((datetime ? moment() : moment().startOf('day')).toDate());
-			return on_show && on_show.apply(this, arguments);
-		};
-		const on_hide = control.datepicker.opts.onHide;
-		control.datepicker.opts.onHide = function () {
-			set_min(null);
-			return on_hide && on_hide.apply(this, arguments);
-		};
-	}
-	let user = false;
-	if (control.$input) control.$input.on('focus keydown input', () => { user = true; });
-	const set_value = control.set_value.bind(control);
-	control.set_value = function (...args) {
-		user = false;
-		return set_value(...args);
-	};
-	// true when the value was refused (and put back), so the caller can stop there
-	const check = () => {
-		if (!user) return false;
-		const v = control.get_value();
-		if (!v || !moment(v).isBefore(floor())) return false;
-		user = false;
-		frappe.msgprint({
-			title: __('Past Date'),
-			indicator: 'red',
-			message: datetime
-				? __('{0} cannot be in the past. Choose the current or a future date and time.', [__(label)])
-				: __('{0} cannot be in the past. Choose today or a later date.', [__(label)]),
-		});
-		// force: a Datetime compares against its previous value, finds '' equal to it, and skips
-		// the clear -- the refused value would stay in the box.
-		control.set_value(reset ? reset() : '', true);
-		// Leaving the field fires a second change from the text still in the box, which would
-		// put the refused value straight back (and, with `user` already spent, silently).
-		const refused = v;
-		setTimeout(() => {
-			if (control.get_value() === refused) control.set_value(reset ? reset() : '', true);
-		}, 400);
-		return true;
-	};
-	const previous = control.df.change;
-	control.df.change = function () {
-		// Refuse first: a field with its own handler (the line cells) must not record the
-		// past value before it is put back.
-		if (check()) return;
-		return previous && previous.apply(this, arguments);
-	};
+var PO_NO_PAST = function (control, label, reset) {
+	return alpinos_date_bound(control, { label: label, bound: 'no-past', reset: reset });
 };
 
 var PurchaseOrderEntry = class {
@@ -285,22 +230,19 @@ var PurchaseOrderEntry = class {
 		});
 		if (c.df.fieldtype === 'Datetime') {
 			// BRD 2.1.1: any date chosen without a time is 9:00 AM -- typed or picked from the
-			// calendar, this month or a future one -- shown straight away rather than only after
-			// saving. (Briefly the current time on 2026-09-18; back to 9:00 AM by request.)
+			// calendar, today, this month or a future one -- shown straight away rather than only
+			// after saving. Today is 9:00 AM too, even once 9:00 AM is behind us: the rule is
+			// stated without exception, so the past-date check below (and its server twin) works
+			// a whole day at a time for this field rather than to the minute.
 			ALP_DATE_ONLY_KEEPS_TIME(
 				c,
-				(fmt, day) => {
-					// 9:00 AM on that day -- but 9:00 AM today may already be behind us, and a
-					// time in the past is not allowed, so today falls back to the current time.
-					const nine = moment(day || undefined).startOf('day').hour(PO_DEFAULT_ARRIVAL_HOUR);
-					const now = moment();
-					return (nine.isSame(now, 'day') && nine.isBefore(now) ? now : nine).format(fmt);
-				},
+				(fmt, day) =>
+					moment(day || undefined).startOf('day').hour(PO_DEFAULT_ARRIVAL_HOUR).format(fmt),
 				[PO_DEFAULT_ARRIVAL_HOUR, 0, 0]
 			);
 		}
 		if (df.no_past) {
-			PO_NO_PAST(c, df.no_past, df.label, df.no_past_reset);
+			PO_NO_PAST(c, df.label, df.no_past_reset);
 		}
 		c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value));
 		c.refresh();
@@ -312,7 +254,26 @@ var PurchaseOrderEntry = class {
 
 	_set(f, v) {
 		const c = this.fields[f];
-		if (c) { c.set_value(v === undefined || v === null ? '' : ALP_TRIM_MICROSECONDS(v)); c.refresh(); }
+		if (!c) return;
+		// PO Type is stored as "FG,PM" but its control is a MultiSelectPills, which wants
+		// an array. Split on the way in; the server normalises whatever goes back.
+		// The two addresses come from get_address_display as HTML with <br> between every
+		// line, and a Small Text control renders that literally -- five stacked lines each,
+		// which is what made the Supplier card the tallest thing on the screen. One line,
+		// comma separated, says the same thing.
+		if (f === 'address_display' || f === 'shipping_address_display') {
+			c.set_value(ALP_FLATTEN_ADDRESS(v));
+			c.refresh();
+			return;
+		}
+		if (f === 'custom_inward_type') {
+			const list = Array.isArray(v) ? v : String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+			c.set_value(list);
+			c.refresh();
+			return;
+		}
+		c.set_value(v === undefined || v === null ? '' : ALP_TRIM_MICROSECONDS(v));
+		c.refresh();
 	}
 
 	_toast(m, i) { frappe.show_alert({ message: m, indicator: i || 'blue' }, 5); }
@@ -324,10 +285,14 @@ var PurchaseOrderEntry = class {
 			fieldname: 'name', label: 'Purchase Order ID', read_only: 1,
 			description: 'Generated by the system on save.',
 		});
+		// MultiSelectPills, not Select: an order may cover more than one material type.
+		// The control hands back an array; the server stores it as a comma-separated list
+		// in the same column, so the orders holding a single "RM" are unchanged.
 		this._ctl('.field-inward-type', {
-			fieldname: 'custom_inward_type', label: 'PO Type', fieldtype: 'Select',
-			options: '\n' + PO_INWARD_TYPES.join('\n'), reqd: 1,
-			description: 'Drives batch numbering and the QC checklist downstream.',
+			fieldname: 'custom_inward_type', label: 'PO Type', fieldtype: 'MultiSelectPills',
+			reqd: 1,
+			get_data: () => PO_INWARD_TYPES.map((t) => ({ value: t, description: t })),
+			description: 'One or more. Only items of the chosen types may be added below.',
 		});
 		const me = this;
 		const sup = this._ctl('.field-supplier', {
@@ -345,11 +310,11 @@ var PurchaseOrderEntry = class {
 
 		this._ctl('.field-transaction-date', {
 			fieldname: 'transaction_date', label: 'PO Date', fieldtype: 'Date', reqd: 1,
-			no_past: 'date', no_past_reset: () => frappe.datetime.get_today(),
+			no_past: 1, no_past_reset: () => frappe.datetime.get_today(),
 		}, frappe.datetime.get_today());
 		this._ctl('.field-schedule-date', {
 			fieldname: 'schedule_date', label: 'Expected Delivery Date', fieldtype: 'Date', reqd: 1,
-			no_past: 'date',
+			no_past: 1,
 		});
 		this._ctl('.field-set-warehouse', {
 			fieldname: 'set_warehouse', label: 'Delivery Location', fieldtype: 'Link',
@@ -434,54 +399,36 @@ var PurchaseOrderEntry = class {
 			fieldname: 'custom_vehicle_no', label: 'Vehicle Number',
 			description: 'Data, not a number: vehicle references carry leading zeros and spaces.',
 		});
+		// Digits only, 10 of them, flagged live. The behaviour is shared with the Goods
+		// Inward screen so both fields accept and refuse exactly the same thing; see
+		// public/js/alpinos_contact_input.js for the parts that are not obvious.
+		// Guarded for the same reason as the Inward screen: a stale desk bundle must not
+		// take the whole order screen down over a typing convenience.
 		const driver = this._ctl('.field-driver-contact-no', {
 			fieldname: 'custom_driver_contact_no', label: 'Driver Contact Number',
 			description: '10-digit number.',
 		});
-		if (driver && driver.$input) {
-			// Only digits go in, and typing stops at 10. A pasted number keeps every digit it
-			// had ("+91 98765 43210" -> 919876543210) so it is flagged instead of being cut
-			// down to a different number; the server refuses anything but 10 digits
-			// (purchase_order_fields.validate_driver_contact_no).
-			driver.$input.attr({ inputmode: 'numeric', autocomplete: 'off' });
-			const flag = () => {
-				const v = driver.$input.val();
-				// Through df.invalid: Frappe re-applies has-error from it after every change,
-				// so toggling the class directly was wiped out the moment the field was left.
-				driver.df.invalid = !!v && !/^\d{10}$/.test(v);
-				driver.set_invalid();
-			};
-			driver.$input.on('input', (e) => {
-				const el = e.target;
-				let digits = el.value.replace(/\D/g, '');
-				const pasted = e.originalEvent && /^insertFromPaste|^insertFromDrop/.test(e.originalEvent.inputType || '');
-				if (!pasted && digits.length > 10) digits = digits.slice(0, 10);
-				if (digits !== el.value) el.value = digits;
-				flag();
-			});
-			driver.$input.on('change blur', flag);
-		}
+		if (window.alpinos_contact_input) alpinos_contact_input(driver);
 		this._ctl('.field-estimated-arrival', {
 			fieldname: 'custom_estimated_arrival', label: 'Estimated Arrival Date & Time',
 			fieldtype: 'Datetime',
 			// Without this the control appends the site time zone as a description.
 			hide_timezone: 1,
 			description: 'A date with no time is treated as 9:00 AM (BRD 2.1.1).',
-			no_past: 'datetime',
+			no_past: 1,
 		});
 	}
 
 	// -------------------------------------------------- BRD 2.3.2 summary
 
-	make_summary_fields() {
-		const ro = (sel, fieldname, label, fieldtype) =>
-			this._ctl(sel, { fieldname, label, fieldtype: fieldtype || 'Currency', read_only: 1 });
-		ro('.field-total-qty', 'total_qty', 'Total Item Quantity', 'Float');
-		ro('.field-total', 'total', 'Total Item Value');
-		ro('.field-total-discount', 'discount_amount', 'Total Discount');
-		ro('.field-total-taxes', 'total_taxes_and_charges', 'Total Tax');
-		ro('.field-grand-total', 'grand_total', 'Grand Total');
-	}
+	/**
+	 * Nothing to build: the summary is nine derived figures rendered by recalc_summary.
+	 *
+	 * They used to be five read-only Currency controls in a four-column row. A control
+	 * draws its label above its value with a field margin under it, which made a block far
+	 * taller than the numbers deserve -- and the tax breakdown had nowhere to go.
+	 */
+	make_summary_fields() {}
 
 	// ---------------------------------------------------- BRD 3 approval
 
@@ -590,7 +537,16 @@ var PurchaseOrderEntry = class {
 				// Combo/bundle SKUs are made of other items' stock (item_custom_fields.py
 				// custom_is_bundle) and have no rate/warehouse of their own to receive
 				// against, so a Purchase Order line can only be an individual SKU.
-				get_query: () => ({ filters: { custom_is_bundle: 0 } }),
+				//
+				// Narrowed to the PO Types chosen above, so an FG+PM order offers FG and PM
+				// items and nothing else. A server query rather than an `in` filter list:
+				// an item with no type at all is still allowed on any order (the server
+				// rule says so too), and `in` would drop those rows because in SQL they
+				// are NULL.
+				get_query: () => ({
+					query: 'alpinos.purchase.inward_api.po_item_query',
+					filters: { po_types: (me._val('custom_inward_type') || []).join(',') },
+				}),
 			},
 				row.item_code, (val) => {
 					me.items[idx].item_code = val;
@@ -636,7 +592,11 @@ var PurchaseOrderEntry = class {
 				row.amount);
 			const sched = mk('.cell-schedule', { fieldtype: 'Date', fieldname: 'schedule_date' },
 				row.schedule_date, (val) => { me.items[idx].schedule_date = val; });
-			PO_NO_PAST(sched, 'date', 'Required By', () => me.items[idx].schedule_date || '');
+			// Three arguments, not four: this used to pass (sched, 'date', 'Required By', fn),
+			// so the label read "date" and the reset argument was the STRING "Required By",
+			// which reset() then called -- throwing, on the one path meant to put a refused
+			// date back.
+			PO_NO_PAST(sched, 'Required By', () => me.items[idx].schedule_date || '');
 			mk('.cell-warehouse', { fieldtype: 'Link', fieldname: 'warehouse', options: 'Warehouse' },
 				row.warehouse, (val) => { me.items[idx].warehouse = val; });
 			mk('.cell-remarks', { fieldtype: 'Data', fieldname: 'custom_item_remarks' },
@@ -720,12 +680,16 @@ var PurchaseOrderEntry = class {
 	 * values too, so rounding never makes a reopened order disagree with its document.
 	 */
 	recalc_summary() {
-		const keys = ['total_qty', 'total', 'discount_amount', 'total_taxes_and_charges', 'grand_total'];
+		const $out = this.wrapper.find('.field-po-summary');
+		if (!$out.length) return;
+
 		const lines = (this.items || []).filter((r) => r.item_code || flt(r.qty));
 		if (!lines.length) {
-			keys.forEach((k) => this._set(k, ''));
+			$out.html(`<div class="po-sum-empty">${
+				__('Add an item line and the totals appear here.')}</div>`);
 			return;
 		}
+
 		let qty = 0;
 		let gross = 0;
 		let net = 0;
@@ -737,16 +701,53 @@ var PurchaseOrderEntry = class {
 			gross += q * (list || rate);
 			net += q * rate;
 		});
+
+		// Once the order is saved the ERP owns every one of these, and its arithmetic is
+		// the one that matches the printed document. Only an unsaved edit is estimated.
 		const saved = !!(this._summary_from_doc && this.docname && this.doc);
 		const doc = (this.docname && this.doc) || {};
 		const doc_discount = flt(doc.discount_amount);
-		const tax = flt(doc.total_taxes_and_charges);
+		const gst = flt(doc.total_taxes_and_charges);
 		if (saved) net = flt(doc.total);
-		this._set('total_qty', qty);
-		this._set('total', flt(gross, 2));
-		this._set('discount_amount', flt(gross - net + doc_discount, 2));
-		this._set('total_taxes_and_charges', tax);
-		this._set('grand_total', saved ? flt(doc.grand_total) : flt(net - doc_discount + tax, 2));
+
+		const order_value = flt(gross, 2);
+		const discount = flt(gross - net + doc_discount, 2);
+		const grand = saved ? flt(doc.grand_total) : flt(net - doc_discount + gst, 2);
+		// net_total is ERPNext's own excl-tax figure; before the first save there is none,
+		// so fall back to what the lines say.
+		const excl_gst = saved ? flt(doc.net_total) : flt(net - doc_discount, 2);
+		const rounding = flt(doc.rounding_adjustment);
+		// rounded_total is blank when the company has rounding switched off, in which case
+		// the net total IS the grand total rather than zero.
+		const net_total = flt(doc.rounded_total) || grand;
+
+		const money = (v) => format_currency(flt(v), doc.currency || this._val('currency') || undefined);
+		const esc = frappe.utils.escape_html;
+		const row = (label, value, total) =>
+			`<div class="po-sum-row${total ? ' is-total' : ''}">`
+			+ `<span>${esc(label)}</span><span>${esc(value)}</span></div>`;
+		const group = (head, rows) =>
+			`<div class="po-sum-group">${head ? `<div class="po-sum-head">${esc(head)}</div>` : ''}${rows.join('')}</div>`;
+
+		$out.html(
+			'<div class="po-sum">'
+			+ group('', [
+				row(__('Total Item Qty'), format_number(qty, null, 2)),
+				row(__('Total Order Value'), money(order_value)),
+				row(__('Total Discount'), money(discount)),
+				row(__('Grand Total'), money(grand), true),
+			])
+			+ group(__('Taxes'), [
+				row(__('Total GST Amount'), money(gst)),
+			])
+			+ group(__('Net Total'), [
+				row(__('Total Amount (Excl. GST)'), money(excl_gst)),
+				row(__('Total GST Amount'), money(gst)),
+				row(__('Rounding Adjustment'), money(rounding)),
+				row(__('Net Total'), money(net_total), true),
+			])
+			+ '</div>'
+		);
 	}
 
 	// ------------------------------------------------------ approval log
@@ -839,7 +840,7 @@ var PurchaseOrderEntry = class {
 				me.redraw_items();
 				me.render_approval_log();
 				me.apply_state();
-				me.page.set_title(`${doc.name} — Purchase Order`);
+				me.page.set_title(doc.name);
 			},
 		});
 	}
@@ -854,14 +855,16 @@ var PurchaseOrderEntry = class {
 			.text(status)
 			.removeClass('po-approved po-rejected po-waiting');
 		if (status === 'Approved' || status === 'Sent to Supplier') $badge.addClass('po-approved');
-		else if (status === 'Rejected' || status === 'Cancelled') $badge.addClass('po-rejected');
+		else if (['Rejected', 'Cancelled', 'Force Closed'].includes(status)) $badge.addClass('po-rejected');
 		else if (status === 'Pending Approval') $badge.addClass('po-waiting');
 
 		// VAL-PO-08 / BR-PO-12: an order awaiting approval, or already submitted, is
 		// not the Purchase Team to edit any more. The server refuses it either way;
 		// this only stops the screen inviting an edit that cannot be saved.
 		const locked = cint(doc.docstatus) !== 0 || status === 'Pending Approval';
-		this.wrapper.find('.eso-card').not('.po-approval-card').toggleClass('po-locked', locked);
+		// Read-only, not dimmed -- a submitted order is a record to be read, and the
+		// Approval card beside it has always rendered its values as plain text.
+		alpinos_set_readonly(this.wrapper.find('.eso-card').not('.po-approval-card'), locked);
 
 		this.make_actions();
 	}
@@ -901,11 +904,11 @@ var PurchaseOrderEntry = class {
 						btn(__(a.action), 'btn-primary', () => me.run_action(a.action));
 					});
 					me.make_next_step_actions(info, btn);
-					// A Cancelled or Closed order has nothing left to cancel; Force Close (the
-					// admin escape hatch) will not be on this screen -- that lives on the Inward.
+					// A Cancelled or Closed order has nothing left to cancel.
 					if (cint(doc.docstatus) === 1 && !['Cancelled', 'Closed'].includes(doc.status || '')) {
 						btn(__('Cancel'), 'btn-danger', () => me.cancel_po());
 					}
+					me.maybe_add_force_close(btn, token);
 					btn(__('Print'), 'btn-light', () => {
 						frappe.set_route('print', 'Purchase Order', me.docname);
 					});
@@ -916,6 +919,56 @@ var PurchaseOrderEntry = class {
 				`<span class="text-muted">${__('Fill the header and at least one item line, then Save.')}</span>`
 			);
 		}
+	}
+
+	/**
+	 * Force Close -- the Administrator escape hatch, for an order that will never be
+	 * fulfilled and that Cancel refuses because something downstream points at it.
+	 *
+	 * The server decides both whether the button appears and whether the action is allowed.
+	 * The screen only draws what it is told: a button hidden in JS is a tidier screen, never
+	 * a permission.
+	 */
+	maybe_add_force_close(btn, token) {
+		const me = this;
+		if (!this.docname) return;
+		frappe.call({
+			method: 'alpinos.purchase.purchase_order_force_close.can_force_close',
+			args: { purchase_order: this.docname },
+			callback(r) {
+				if (token !== me._actions_token) return;
+				if (!(r.message && r.message.allowed)) return;
+				btn(__('Force Close'), 'btn-danger', () => me.force_close());
+			},
+		});
+	}
+
+	force_close() {
+		const me = this;
+		const dialog = new frappe.ui.Dialog({
+			title: __('Force Close {0}', [this.docname]),
+			fields: [
+				{
+					fieldname: 'reason', label: __('Reason'), fieldtype: 'Small Text', reqd: 1,
+					description: __('Recorded on the order, with who closed it and when. This moves the order to Force Closed and cannot be undone from this screen.'),
+				},
+			],
+			primary_action_label: __('Force Close'),
+			primary_action(values) {
+				frappe.call({
+					method: 'alpinos.purchase.purchase_order_force_close.force_close_purchase_order',
+					args: { purchase_order: me.docname, reason: values.reason },
+					freeze: true,
+					callback(r) {
+						if (r.exc) return;
+						dialog.hide();
+						frappe.show_alert({ message: __('Order force closed'), indicator: 'orange' }, 5);
+						me.load(me.docname);
+					},
+				});
+			},
+		});
+		dialog.show();
 	}
 
 	/**
