@@ -953,7 +953,8 @@ var PurchaseQCEntry = class {
 		}
 
 		// Everything is read-only once the inspection is submitted.
-		const locked = cint(doc.docstatus) !== 0;
+		// PO-42: and a user without write only views it.
+		const locked = cint(doc.docstatus) !== 0 || !alpinos_can_write('Purchase QC', doc);
 		// Read-only, not dimmed: a submitted inspection is the evidence, and greying it
 		// out is the opposite of what it is for.
 		alpinos_set_readonly(
@@ -984,7 +985,7 @@ var PurchaseQCEntry = class {
 				.appendTo($bar);
 		};
 
-		if (cint(doc.docstatus) === 0) {
+		if (cint(doc.docstatus) === 0 && alpinos_can_write('Purchase QC', doc)) {
 			btn(__('Save'), 'btn-primary', () => me.save());
 			btn(__('Complete QC'), 'btn-primary', () => {
 				// Save first. complete_qc works on the STORED document and receives only its

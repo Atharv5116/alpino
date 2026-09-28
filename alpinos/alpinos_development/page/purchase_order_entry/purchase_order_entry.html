@@ -90,9 +90,25 @@
 	background: var(--bg-color);
 	color: var(--fg-color);
 }
-/* The item grid holds Link cells whose dropdown must escape the scroll wrapper. */
-.purchase-order-entry .items-table { overflow: visible !important; }
-.purchase-order-entry .items-table td { overflow: visible !important; position: relative; }
+/* The item grid scrolls left to right inside its card. Its Link cells (Item Code,
+   Warehouse) open a dropdown, which a scrolling box would clip, so the page JS pins
+   the open list to the screen under its input (position fixed) and it floats over
+   the card exactly as it did before the grid scrolled. */
+.purchase-order-entry .items-table { overflow-x: auto; overflow-y: hidden; }
+.purchase-order-entry .items-table td { position: relative; }
+.purchase-order-entry .items-table > table.po-table { min-width: 1640px; table-layout: fixed; }
+.purchase-order-entry .po-table td { padding: 6px 6px; }
+.purchase-order-entry .po-table .form-group { margin-bottom: 0; }
+/* Figures on one line: the rupee sign was wrapping above the number. */
+.purchase-order-entry .po-table .control-value,
+.purchase-order-entry .po-table input { white-space: nowrap; font-size: 13px; }
+/* Read-only cells are values, not empty grey boxes. */
+.purchase-order-entry .po-table .control-value.like-disabled-input {
+	background: transparent; border: none; padding: 4px 2px; min-height: 0;
+	color: var(--text-color);
+}
+.purchase-order-entry .po-num .control-value { text-align: right; }
+.purchase-order-entry .po-table .cell-amount .control-value { font-weight: 600; }
 
 /* Resting state: a bare route is a NEW order, which is legitimate, so the form
    stays. Only the approval card is hidden until the order exists. */
@@ -206,19 +222,21 @@
 			data-empty="No item lines yet. Use Add Row to add the items being ordered.">
 			<table class="table table-bordered po-table">
 				<thead><tr>
-					<th style="width:28px;">#</th>
-					<th style="min-width:150px;">Item Code</th>
-					<th style="min-width:150px;">Item Name</th>
-					<th style="width:60px;">UOM</th>
-					<th style="width:90px;">Order Qty</th>
-					<th style="width:100px;">Rate</th>
-					<th style="width:90px;">Discount %</th>
-					<th style="width:110px;">Net Rate</th>
-					<th style="width:110px;">Amount</th>
-					<th style="min-width:120px;">Required By</th>
-					<th style="min-width:130px;">Warehouse</th>
-					<th style="min-width:130px;">Remarks</th>
-					<th style="width:30px;"></th>
+					<th style="width:36px;">#</th>
+					<th style="width:180px;">Item Code</th>
+					<th style="width:190px;">Item Name</th>
+					<th style="width:70px;">UOM</th>
+					<th style="width:100px;">Order Qty</th>
+					<th style="width:130px;">Rate</th>
+					<th style="width:100px;">Discount %</th>
+					<th style="width:120px;">Net Rate</th>
+					<th style="width:80px;">GST %</th>
+					<th style="width:140px;">Rate (Incl. GST)</th>
+					<th style="width:150px;">Amount (Incl. GST)</th>
+					<th style="width:140px;">Required By</th>
+					<th style="width:170px;">Warehouse</th>
+					<th style="width:170px;">Remarks</th>
+					<th style="width:44px;"></th>
 				</tr></thead>
 				<tbody></tbody>
 			</table>

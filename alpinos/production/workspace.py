@@ -31,6 +31,12 @@ SHORTCUTS = (
 	("New Production Order", "Page", "production_order_entry", ""),
 	("New Item", "Page", "item_master_entry", ""),
 	("New BOM", "Page", "bom_master_entry", ""),
+	# Store Planning / Material Management (appended).
+	("Store Planning Board", "Page", "store_planning_board", ""),
+	("Material Requests", "Page", "material_request_list", ""),
+	("Material Issues", "Page", "material_issue_list", ""),
+	("Material Returns", "Page", "material_return_list", ""),
+	("Production Settings", "DocType", "Production Settings", ""),
 )
 
 LINKS = (
@@ -43,6 +49,8 @@ LINKS = (
 	("Filling Process Category", "Filling Process Category", "DocType"),
 	("Production Order", "Production Order", "DocType"),
 	("Work Order", "Work Order", "DocType"),
+	# Appended for Store Planning / Material Management.
+	("Production Settings", "Production Settings", "DocType"),
 )
 
 
@@ -177,3 +185,36 @@ def setup_page_access():
 def execute():
 	setup_page_access()
 	setup_production_workspace()
+
+
+#: Store Planning / Material Management screens (appended). Opened by the store roles as
+#: well as the production roles, so they get their own access list rather than joining the
+#: masters' one above.
+STORE_PAGES = (
+	"store_planning_board",
+	"material_request_list",
+	"material_request_entry",
+	"material_issue_list",
+	"material_issue_entry",
+	"material_return_list",
+	"material_return_entry",
+)
+
+
+def setup_store_page_access():
+	"""Let the store and production roles open the store screens. Only ever adds roles."""
+	from alpinos.production import material_constants as M
+
+	wanted = set(M.STORE_READ_ROLES)
+	for page in STORE_PAGES:
+		if not frappe.db.exists("Page", page):
+			continue
+		doc = frappe.get_doc("Page", page)
+		have = {row.role for row in doc.roles}
+		missing = sorted(r for r in wanted - have if frappe.db.exists("Role", r))
+		if not missing:
+			continue
+		for role in missing:
+			doc.append("roles", {"role": role})
+		doc.flags.ignore_permissions = True
+		doc.save(ignore_permissions=True)

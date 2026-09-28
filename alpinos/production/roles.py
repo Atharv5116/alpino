@@ -166,3 +166,92 @@ def setup_production_roles():
 
 def execute():
 	setup_production_roles()
+
+
+# --- Store roles (Store Planning / Material Management) ------------------------------
+# Appended. The three store roles are created here, and granted on the documents the store
+# screens work with, ALONGSIDE every role that already has access -- nothing is revoked.
+
+def _store_permission_matrix():
+	from alpinos.production import material_constants as M
+
+	planner, user, manager = M.ROLE_STORE_PLANNER, M.ROLE_STORE_USER, M.ROLE_STORE_MANAGER
+	store_view = {planner: "VIEW", user: "VIEW", manager: "VIEW"}
+	store_docs = {
+		planner: "VIEW",
+		user: "CREATE_EDIT_SUBMIT",
+		manager: "FULL_SUBMIT",
+		C.ROLE_PRODUCTION_ADMIN: "FULL_SUBMIT",
+		C.ROLE_PRODUCTION_MANAGER: "FULL_SUBMIT",
+		C.ROLE_PRODUCTION_USER: "VIEW",
+	}
+	return {
+		"Material Request": dict(store_docs),
+		"Stock Entry": dict(store_docs),
+		"Work Order": dict(store_view),
+		"Production Order": dict(store_view),
+		"Item": dict(store_view),
+		"Warehouse": dict(store_view),
+		"Batch": dict(store_view),
+		# Submitting an issue / return of a batch-tracked item makes ERPNext create a
+		# Serial and Batch Bundle as the submitting user, so whoever may submit the Stock
+		# Entry needs the same rights on the bundle.
+		"Serial and Batch Bundle": dict(store_docs),
+		"Process Master": dict(store_view),
+		"Machine": dict(store_view),
+	}
+
+
+#: Production Settings is a Single, and a Single may not carry report / export / import
+#: rights, so it is granted an explicit set rather than one of the levels above.
+_SETTINGS_WRITE = {"select", "read", "write", "print", "email", "share"}
+_SETTINGS_READ = {"select", "read", "print"}
+
+
+def _grant_set(doctype, role, granted):
+	if not frappe.db.exists(
+		"Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0}
+	):
+		add_permission(doctype, role, 0)
+	for ptype in _MANAGED_PTYPES:
+		update_permission_property(
+			doctype, role, 0, ptype, 1 if ptype in granted else 0, validate=False
+		)
+
+
+def ensure_store_roles():
+	"""Create the store roles if missing. Never edits an existing one."""
+	from alpinos.production import material_constants as M
+
+	for role in M.STORE_MM_ROLES:
+		if frappe.db.exists("Role", role):
+			continue
+		doc = frappe.new_doc("Role")
+		doc.role_name = role
+		doc.desk_access = 1
+		doc.insert(ignore_permissions=True)
+
+
+def setup_store_roles():
+	ensure_store_roles()
+	for doctype, role_levels in _store_permission_matrix().items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		try:
+			for role, level in role_levels.items():
+				_grant(doctype, role, level)
+			validate_permissions_for_doctype(doctype)
+		except Exception:
+			# One awkward doctype must not stop the migrate; the rest are still granted.
+			frappe.log_error(frappe.get_traceback(), f"Store roles: permissions on {doctype}")
+		frappe.clear_cache(doctype=doctype)
+
+	if frappe.db.exists("DocType", "Production Settings"):
+		try:
+			_grant_set("Production Settings", C.ROLE_PRODUCTION_ADMIN, _SETTINGS_WRITE)
+			_grant_set("Production Settings", C.ROLE_PRODUCTION_MANAGER, _SETTINGS_READ)
+			validate_permissions_for_doctype("Production Settings")
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Store roles: Production Settings")
+		frappe.clear_cache(doctype="Production Settings")
+	frappe.db.commit()

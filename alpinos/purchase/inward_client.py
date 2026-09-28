@@ -152,14 +152,9 @@ function alpinos_pi_load_context(frm) {
 function alpinos_pi_set_queries(frm) {
     // VAL-PI-01 / VAL-PO-13 / VAL-PO-15 as a picker filter. The server repeats all
     // three in PurchaseInward._validate_purchase_order.
+    // A server query so the latest approved order comes first (PI-20).
     frm.set_query('purchase_order', function() {
-        return {
-            filters: {
-                docstatus: 1,
-                custom_direct_purchase_invoice: 0,
-                status: ['not in', ['Closed', 'On Hold']]
-            }
-        };
+        return { query: ALPINOS_PI_API + '.inward_po_query' };
     });
 
     // Manual Add Row honours the same pending-quantity and inward-type filter as the

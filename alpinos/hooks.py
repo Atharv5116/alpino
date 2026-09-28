@@ -270,6 +270,9 @@ after_migrate = [
 	# only; the templates and Tax Rules are created by
 	# purchase_gst.create_purchase_gst_masters when an accountant asks for them.
 	"alpinos.purchase.purchase_gst.setup_purchase_gst_fields",
+	# PI-47: line GST fields and the Input GST accounts the order's tax rows post to.
+	"alpinos.purchase.po_gst.setup_po_gst_fields",
+	"alpinos.purchase.po_gst.setup_input_gst_accounts",
 	"alpinos.purchase.purchase_receipt_fields.setup_purchase_receipt_fields",
 	"alpinos.purchase.purchase_invoice_fields.setup_purchase_invoice_fields",
 	"alpinos.purchase.roles.setup_purchase_roles",
@@ -303,6 +306,15 @@ after_migrate = [
 	"alpinos.production.seed.execute",
 	"alpinos.production.workspace.execute",
 	"alpinos.production.print_formats.execute",
+	# --- Store Planning / Material Management (appended) ---------------------
+	# Fields first (MR / Stock Entry custom fields, naming series), then Store Planning's
+	# Work Order / Process fields, then the store roles and their page access, then the
+	# MR / Issue / Return print formats.
+	"alpinos.production.material_fields.setup_material_fields",
+	"alpinos.production.store_planning_fields.setup_store_planning_fields",
+	"alpinos.production.roles.setup_store_roles",
+	"alpinos.production.workspace.setup_store_page_access",
+	"alpinos.production.material_print_formats.execute",
 ]
 
 # Uninstallation
@@ -455,12 +467,15 @@ doc_events = {
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
 			"alpinos.purchase.purchase_order_fields.validate_driver_contact_no",
 			"alpinos.purchase.purchase_order_fields.validate_duplicate_items",
+			"alpinos.purchase.purchase_order_fields.validate_no_item_templates",
 			"alpinos.purchase.purchase_order_fields.validate_no_past_dates",
 			# The PO Type is what every inward against the order is raised as.
 			"alpinos.purchase.purchase_order_fields.validate_items_match_po_type",
 			# Before the edit guard: stamping the GSTIN and deriving the tax category is
 			# part of building the order, not an edit of one awaiting approval.
 			"alpinos.purchase.purchase_gst.set_gst_tax_category",
+			# PI-47: GST % from the Item on each line, after the GSTINs above are stamped.
+			"alpinos.purchase.po_gst.apply_item_gst",
 			# VAL-PO-08 / BR-PO-12: an order awaiting approval is locked for editing.
 			"alpinos.purchase.purchase_order_approval.assert_editable",
 		],
@@ -567,6 +582,23 @@ doc_events = {
 	},
 	"Stock Entry": {
 		"before_insert": "alpinos.stock_entry_hooks.set_entry_by",
+		# Material Issue / Material Return (alpinos.production.material_issue). Every one of
+		# these returns at once for a Stock Entry with no custom_entry_kind, so ordinary
+		# stock entries are untouched. before_validate so the rules speak before ERPNext's
+		# own validation does.
+		"before_validate": "alpinos.production.material_issue.se_before_validate",
+		"on_submit": "alpinos.production.material_issue.se_on_submit",
+		"before_cancel": "alpinos.production.material_issue.se_before_cancel",
+		"on_cancel": "alpinos.production.material_issue.se_on_cancel",
+		"before_update_after_submit": "alpinos.production.material_issue.se_before_update_after_submit",
+	},
+	# Production Material Requests (alpinos.production.material_request). Only an MR that
+	# carries custom_sub_production_order is touched; every other MR returns at once.
+	"Material Request": {
+		"before_validate": "alpinos.production.material_request.before_validate",
+		"before_update_after_submit": "alpinos.production.material_request.before_update_after_submit",
+		"before_cancel": "alpinos.production.material_request.before_cancel",
+		"on_cancel": "alpinos.production.material_request.on_cancel",
 	},
 	"Pick List": {
 		"before_validate": "alpinos.pick_list_hooks.before_validate_pick_list",

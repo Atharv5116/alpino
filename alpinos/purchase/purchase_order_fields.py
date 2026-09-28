@@ -296,8 +296,12 @@ def get_item_defaults(item_code):
 	"""
 	frappe.has_permission("Purchase Order", "read", throw=True)
 	item = frappe.db.get_value(
-		"Item", item_code, ["item_name", "stock_uom", "last_purchase_rate"], as_dict=True
+		"Item", item_code, ["item_name", "stock_uom", "last_purchase_rate", "custom_gst_percent"],
+		as_dict=True,
 	) or {}
+	# PI-47: the Rate is typed excluding GST; the screen shows this beside it and the
+	# order's tax rows are built from it on save (po_gst.apply_item_gst).
+	item["gst_percent"] = flt(item.pop("custom_gst_percent", 0))
 	price_list = frappe.db.get_single_value("Buying Settings", "buying_price_list")
 	rate = 0
 	if price_list:
@@ -338,6 +342,27 @@ def validate_duplicate_items(doc, method=None):
 				", ".join(frappe.bold(d) for d in dupes)
 			),
 			title=frappe._("Duplicate Items"),
+		)
+
+
+def validate_no_item_templates(doc, method=None):
+	"""PI-37: an Item Template (has_variants) cannot be ordered, only its variants.
+
+	The picker already hides templates (inward_api.po_type_item_query); this is the same
+	rule for the desk form, REST and imports, which never go through the picker.
+	"""
+	codes = list({row.item_code for row in doc.get("items") or [] if row.item_code})
+	if not codes:
+		return
+	templates = frappe.get_all(
+		"Item", filters={"name": ("in", codes), "has_variants": 1}, pluck="name"
+	)
+	if templates:
+		frappe.throw(
+			frappe._("{0} is an Item Template. Pick one of its variants instead.").format(
+				", ".join(frappe.bold(t) for t in sorted(templates))
+			),
+			title=frappe._("Item Template Not Allowed"),
 		)
 
 

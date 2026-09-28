@@ -358,6 +358,11 @@ def activity_blockers(sub_name):
 	                  filters={"work_order": sub_name, "docstatus": 1}, limit=1):
 		blockers.append(("VAL-02", _(VAL_02)))
 
+	# Material Management: MRs / Material Issues linked only through
+	# custom_sub_production_order (see material_common.material_activity_blockers).
+	from alpinos.production.material_common import material_activity_blockers
+	blockers.extend(material_activity_blockers(sub_name, [code for code, _msg in blockers]))
+
 	row = frappe.db.get_value(
 		"Work Order", sub_name,
 		["produced_qty", "material_transferred_for_manufacturing", "status"], as_dict=True)

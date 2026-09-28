@@ -304,6 +304,12 @@ SUPPORTING_READ_DOCTYPES = (
 	# both, recording a supplier payment died with a bare PermissionError.
 	"Account",
 	"Cost Center",
+	# PI-015: ERPNext's own buying form scripts (transaction.js and friends) read these
+	# through frappe.client.get_single_value, which checks read permission, so a user with
+	# only a purchase role got "No permission for Accounts Settings".
+	"Accounts Settings",
+	"Buying Settings",
+	"Stock Settings",
 )
 
 # Masters that are NOT open to the whole module. The BRD User Roles table gives Store only
@@ -485,6 +491,7 @@ SECTIONS = {
 					"challan_no",
 					"gross_weight",
 					"inward_datetime",
+					"gate_no",
 					"attachment",
 					"remarks",
 				),
@@ -542,7 +549,6 @@ SECTIONS = {
 					"actual_driver_contact_no",
 					"allow_excess_qty",
 					"target_warehouse",
-					"gate_no",
 					"receiving_remarks",
 					"dispute_attachments",
 					"quarantine_items",

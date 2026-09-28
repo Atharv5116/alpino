@@ -652,10 +652,24 @@
   top: var(--navbar-height, 48px);
   z-index: 6;
   background: var(--fg-color, #fff);
-  margin-left: -12px;
-  margin-right: -12px;
-  padding: 10px 12px;
+  /* The gutter is the PAGE's own side padding, pulled back so the background reaches the
+     full width of the card column. Pages that set no padding leave it at 0; hard-coding
+     12px made the bar overhang those by 12px on each side. */
+  margin-left: calc(-1 * var(--alp-sticky-gutter, 0px));
+  margin-right: calc(-1 * var(--alp-sticky-gutter, 0px));
+  padding: 10px var(--alp-sticky-gutter, 0px);
   border-bottom: 1px solid var(--border-color, #e2e2e2);
+}
+
+/* The Purchase screens wrap their body in padding: 12px, so the bar has that much to
+   reach back over. The Production screens use no wrapper padding and keep the 0 default. */
+.purchase-order-entry,
+.purchase-inward-entry,
+.purchase-qc-entry,
+.purchase-grn-view,
+.purchase-invoice-entry,
+.purchase-quarantine-view {
+  --alp-sticky-gutter: 12px;
 }
 
 /* Section title utility (same look as section 3) for pages whose headings are
@@ -1206,7 +1220,7 @@
    used to get border-color: transparent instead, so on a closed document the fields that
    were born read-only kept an underline and the ones that had just been locked lost
    theirs -- the same row of values, drawn two different ways. */
-.alpinos-readonly input,
+.alpinos-readonly input:not([type="checkbox"]):not([type="radio"]),
 .alpinos-readonly select,
 .alpinos-readonly textarea {
 	background-color: transparent !important;
@@ -1220,6 +1234,21 @@
 	-webkit-text-fill-color: var(--text-color, #1f272e) !important;
 	opacity: 1 !important;
 	cursor: default !important;
+}
+
+/* A checkbox is the exception, and it has to be one.
+   A text field carries its value in its TEXT, so stripping the box around it loses
+   nothing. A checkbox carries its value in the BOX -- the tick is drawn from the
+   background and border -- so the rule above erased it: a ticked Is Default read as
+   unticked on every submitted BOM, which is worse than showing nothing at all.
+   Kept fully drawn and at full contrast; the disabled attribute is what stops it being
+   changed, not the styling. */
+.alpinos-readonly input[type="checkbox"],
+.alpinos-readonly input[type="radio"] {
+	opacity: 1 !important;
+	filter: none !important;
+	cursor: default !important;
+	accent-color: var(--checkbox-color, var(--primary, #171717));
 }
 
 /* A locked Select keeps the chevron, which is the one affordance that still says

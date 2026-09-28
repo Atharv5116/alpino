@@ -531,7 +531,15 @@ def material_shortage(production_order, warehouse=None):
 		return {"warehouse": warehouse, "rows": [], "short_count": 0, "unset_count": 0}
 
 	codes = sorted({row.item_code for row in rows if row.item_code})
-	available = _available_stock(codes, warehouse)
+	available = None
+	if not warehouse:
+		# Store Planning: with no warehouse chosen, count only the usable ones (never
+		# Rejected / Quarantine / QC Hold / WIP). None means that could not be worked out,
+		# and the original all-warehouse sum below is used unchanged.
+		from alpinos.production.stock_allocation import usable_stock_by_item
+		available = usable_stock_by_item(codes, doc.get("company"))
+	if available is None:
+		available = _available_stock(codes, warehouse)
 
 	out = []
 	short_count = 0

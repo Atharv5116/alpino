@@ -26,9 +26,36 @@ def _guard_receiving_complete(doc):
 		return _("Please enter the Actual Arrival Date & Time before submitting for QC.")
 	if not any(flt(l.received_qty) for l in doc.get("items") or []):
 		return _("Please enter the Received Quantity for at least one item.")
+	return receiving_incomplete_reason(doc)
+
+
+def receiving_incomplete_reason(doc):
+	"""Why the Store receipt is not complete yet, or None.
+
+	PI-018: these are hand-over rules, not save rules. Store saves partial progress while
+	the inward is Pending Material Receipt; the receipt must be complete to go to QC
+	(the guard above), and stays complete on any save after that
+	(PurchaseInward._validate_receiving_details).
+	"""
+	if not doc.get("actual_arrival_datetime"):
+		return _("Please enter the Actual Arrival Date & Time.")
+	fg = C.has_inward_type(doc.get("inward_type"), C.INWARD_FG)
 	for line in doc.get("items") or []:
-		if flt(line.received_qty) and not line.target_warehouse:
+		if flt(line.received_qty) <= 0:
+			continue
+		if not line.target_warehouse:
 			return _("Row {0}: please select a Target Location.").format(line.idx)
+		# Any FG on the inward brings the FG batch rule with it, even on a mixed FG+PM receipt.
+		if fg and not (line.batch_no or "").strip():
+			return _("Row {0}: Batch No. is mandatory for an FG inward.").format(line.idx)
+		# BRD 2.2.1: a shelf-life item cannot derive its Expiry Date without a
+		# Manufacturing Date, and the FG internal batch format uses it.
+		if not line.manufacturing_date and (
+			fg or cint(frappe.db.get_value("Item", line.item_code, "shelf_life_in_days"))
+		):
+			return _(
+				"Row {0} ({1}): Manufacturing Date is required - the Expiry Date is derived from it."
+			).format(line.idx, line.item_code)
 	if cint(doc.get("vehicle_details_verified")) and not (
 		(doc.get("actual_vehicle_no") or "").strip()
 		or (doc.get("actual_driver_contact_no") or "").strip()

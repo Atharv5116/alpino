@@ -473,6 +473,32 @@ var PurchaseOrderEntry = class {
 	redraw_items() {
 		const me = this;
 		const $body = this.wrapper.find('.items-table tbody').empty();
+		// A Link dropdown inside the scrolling grid would be clipped by it, so the open
+		// list is pinned to the screen under its input and floats over the card.
+		const $grid = this.wrapper.find('.items-table');
+		if (!$grid.data('po-float-bound')) {
+			$grid.data('po-float-bound', 1);
+			const SEL = '.cell-item-code input, .cell-warehouse input';
+			let active = null;
+			const place = () => {
+				if (!active) return;
+				const ul = $(active).closest('.awesomplete').find('ul').get(0);
+				if (!ul) return;
+				const r = active.getBoundingClientRect();
+				const set = (k, v) => ul.style.setProperty(k, v, 'important');
+				set('position', 'fixed');
+				set('top', `${r.bottom + 2}px`);
+				set('left', `${r.left}px`);
+				set('width', `${Math.max(r.width, 280)}px`);
+				set('z-index', '1050');
+			};
+			$grid.on('focusin', SEL, (e) => { active = e.target; place(); })
+				.on('input awesomplete-open', SEL, () => setTimeout(place, 0))
+				.on('focusout', SEL, () => setTimeout(() => { active = null; }, 300));
+			// The grid scrolling sideways, or the page scrolling, moves the input.
+			window.addEventListener('scroll', place, true);
+			window.addEventListener('resize', place);
+		}
 
 		this.items.forEach((row, idx) => {
 			const $tr = $(`
@@ -485,6 +511,8 @@ var PurchaseOrderEntry = class {
 					<td class="cell-rate"></td>
 					<td class="cell-discount"></td>
 					<td class="cell-net-rate po-num"></td>
+					<td class="cell-gst po-num"></td>
+					<td class="cell-rate-incl-gst po-num"></td>
 					<td class="cell-amount po-num"></td>
 					<td class="cell-schedule"></td>
 					<td class="cell-warehouse"></td>
@@ -544,7 +572,7 @@ var PurchaseOrderEntry = class {
 				// rule says so too), and `in` would drop those rows because in SQL they
 				// are NULL.
 				get_query: () => ({
-					query: 'alpinos.purchase.inward_api.po_item_query',
+					query: 'alpinos.purchase.inward_api.po_type_item_query',
 					filters: { po_types: (me._val('custom_inward_type') || []).join(',') },
 				}),
 			},
@@ -588,8 +616,16 @@ var PurchaseOrderEntry = class {
 				});
 			mk('.cell-net-rate', { fieldtype: 'Currency', fieldname: 'rate', read_only: 1 },
 				row.rate);
-			mk('.cell-amount', { fieldtype: 'Currency', fieldname: 'amount', read_only: 1 },
-				row.amount);
+			// PI-47: the Rate above is excluding GST. GST % comes from the Item Master and
+			// the final rate is Net Rate plus that GST; the server builds the tax rows.
+			mk('.cell-gst', { fieldtype: 'Percent', fieldname: 'custom_gst_percent', read_only: 1 },
+				row.custom_gst_percent);
+			mk('.cell-rate-incl-gst', { fieldtype: 'Currency', fieldname: 'custom_rate_incl_gst', read_only: 1 },
+				row.custom_rate_incl_gst);
+			// Amount is Qty x Rate (Incl. GST). ERPNext's own `amount` stays excluding GST
+			// (its tax rows add the GST on top); this column is the figure the buyer pays.
+			mk('.cell-amount', { fieldtype: 'Currency', fieldname: 'custom_amount_incl_gst', read_only: 1 },
+				row.custom_amount_incl_gst);
 			const sched = mk('.cell-schedule', { fieldtype: 'Date', fieldname: 'schedule_date' },
 				row.schedule_date, (val) => { me.items[idx].schedule_date = val; });
 			// Three arguments, not four: this used to pass (sched, 'date', 'Required By', fn),
@@ -617,6 +653,7 @@ var PurchaseOrderEntry = class {
 			if (row.item_name || row.uom) {
 				row.item_name = '';
 				row.uom = '';
+				row.custom_gst_percent = 0;
 				me.redraw_items();
 			}
 			return;
@@ -643,6 +680,7 @@ var PurchaseOrderEntry = class {
 			const d = r.message || {};
 			row.item_name = d.item_name || '';
 			row.uom = d.stock_uom || '';
+			row.custom_gst_percent = flt(d.gst_percent);
 			// A row picking a fresh item always starts at Rate 0, so this can never clobber
 			// a rate the buyer already typed.
 			if (!flt(row.price_list_rate) && flt(d.rate)) row.price_list_rate = flt(d.rate);
@@ -657,10 +695,14 @@ var PurchaseOrderEntry = class {
 		const net = flt(row.price_list_rate) * (1 - flt(row.discount_percentage) / 100);
 		row.rate = net;
 		row.amount = net * flt(row.qty);
+		row.custom_rate_incl_gst = flt(net * (1 + flt(row.custom_gst_percent) / 100), 2);
+		row.custom_amount_incl_gst = flt(row.amount * (1 + flt(row.custom_gst_percent) / 100), 2);
 		const nr = this.fields[`rate_${idx}`];
-		const am = this.fields[`amount_${idx}`];
+		const am = this.fields[`custom_amount_incl_gst_${idx}`];
+		const fr = this.fields[`custom_rate_incl_gst_${idx}`];
 		if (nr) nr.set_value(ALP_TRIM_MICROSECONDS(row.rate));
-		if (am) am.set_value(ALP_TRIM_MICROSECONDS(row.amount));
+		if (am) am.set_value(row.custom_amount_incl_gst);
+		if (fr) fr.set_value(row.custom_rate_incl_gst);
 		this._summary_from_doc = false;
 		this.recalc_summary();
 	}
@@ -693,6 +735,7 @@ var PurchaseOrderEntry = class {
 		let qty = 0;
 		let gross = 0;
 		let net = 0;
+		let line_gst = 0;
 		lines.forEach((r) => {
 			const q = flt(r.qty);
 			const list = flt(r.price_list_rate);
@@ -700,6 +743,7 @@ var PurchaseOrderEntry = class {
 			qty += q;
 			gross += q * (list || rate);
 			net += q * rate;
+			line_gst += q * rate * flt(r.custom_gst_percent) / 100;
 		});
 
 		// Once the order is saved the ERP owns every one of these, and its arithmetic is
@@ -707,7 +751,9 @@ var PurchaseOrderEntry = class {
 		const saved = !!(this._summary_from_doc && this.docname && this.doc);
 		const doc = (this.docname && this.doc) || {};
 		const doc_discount = flt(doc.discount_amount);
-		const gst = flt(doc.total_taxes_and_charges);
+		// Saved: the ERP's own tax figure. Unsaved: each line's GST % from the Item Master
+		// on its net amount, the same arithmetic po_gst.apply_item_gst hands ERPNext.
+		const gst = saved ? flt(doc.total_taxes_and_charges) : flt(line_gst, 2);
 		if (saved) net = flt(doc.total);
 
 		const order_value = flt(gross, 2);
@@ -861,7 +907,9 @@ var PurchaseOrderEntry = class {
 		// VAL-PO-08 / BR-PO-12: an order awaiting approval, or already submitted, is
 		// not the Purchase Team to edit any more. The server refuses it either way;
 		// this only stops the screen inviting an edit that cannot be saved.
-		const locked = cint(doc.docstatus) !== 0 || status === 'Pending Approval';
+		// PO-42: and a user without write (or create, on a new order) only views it.
+		const locked = cint(doc.docstatus) !== 0 || status === 'Pending Approval'
+			|| !alpinos_can_write('Purchase Order', this.docname ? doc : null);
 		// Read-only, not dimmed -- a submitted order is a record to be read, and the
 		// Approval card beside it has always rendered its values as plain text.
 		alpinos_set_readonly(this.wrapper.find('.eso-card').not('.po-approval-card'), locked);
@@ -881,7 +929,8 @@ var PurchaseOrderEntry = class {
 		const token = (this._actions_token = (this._actions_token || 0) + 1);
 		const doc = this.doc || {};
 		const status = doc.custom_approval_status || '';
-		const editable = cint(doc.docstatus) === 0 && status !== 'Pending Approval';
+		const editable = cint(doc.docstatus) === 0 && status !== 'Pending Approval'
+			&& alpinos_can_write('Purchase Order', this.docname ? doc : null);
 
 		const btn = (label, cls, handler) => {
 			$(`<button class="btn btn-sm ${cls}" style="margin-left:8px;">${frappe.utils.escape_html(label)}</button>`)

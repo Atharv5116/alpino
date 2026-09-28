@@ -29,7 +29,17 @@ PLANNED_DATE_FIELD = "custom_planned_date"
 
 #: Task 27. Where a Sub PO stands on the floor, which is not the same question as the
 #: Work Order's own docstatus.
-EXECUTION_STATUSES = ("Unassigned", "Assigned", "In Progress", "Completed")
+#:
+#: The last two are appended for Store Planning / Material Management, keeping the original
+#: order first. The lifecycle reads: Unassigned -> Assigned (planned) -> Pending Store Issue
+#: (MR generated, plan locked) -> Ready to Run (first Material Issue submitted) -> In
+#: Progress -> Completed.
+EXECUTION_STATUSES = ("Unassigned", "Assigned", "In Progress", "Completed",
+                      "Pending Store Issue", "Ready to Run")
+
+#: Material Management: set by material_request.generate_mr.
+PLAN_LOCKED_FIELD = "custom_plan_locked"
+MATERIAL_REQUEST_FIELD = "custom_material_request"
 
 
 def _custom_fields():
@@ -140,6 +150,32 @@ def _custom_fields():
 				"read_only": 1,
 				"no_copy": 1,
 				"description": "Filled only on a split (Task 28).",
+			},
+			# --- Material Management (appended) ---------------------------------
+			{
+				"fieldname": PLAN_LOCKED_FIELD,
+				"label": "Plan Locked",
+				"fieldtype": "Check",
+				"default": "0",
+				"insert_after": SPLIT_FROM_FIELD,
+				"read_only": 1,
+				"no_copy": 1,
+				"allow_on_submit": 1,
+				"description": (
+					"Set when the Material Request is generated. A locked plan cannot be "
+					"re-planned, split or have its planning cancelled until the MR is cancelled."
+				),
+			},
+			{
+				"fieldname": MATERIAL_REQUEST_FIELD,
+				"label": "Material Request",
+				"fieldtype": "Link",
+				"options": "Material Request",
+				"insert_after": PLAN_LOCKED_FIELD,
+				"read_only": 1,
+				"no_copy": 1,
+				"allow_on_submit": 1,
+				"description": "The Material Request generated for this sub order.",
 			},
 		],
 	}

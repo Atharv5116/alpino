@@ -18,7 +18,7 @@ import re
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, cint, flt, get_link_to_form, getdate, now_datetime
+from frappe.utils import add_days, cint, flt, get_datetime, get_link_to_form, getdate, now_datetime
 
 from alpinos import contact_number
 from alpinos.purchase import constants as C
@@ -235,6 +235,7 @@ class PurchaseInward(Document):
 				"company",
 				"custom_direct_purchase_invoice",
 				"custom_inward_type",
+				"custom_force_closed",
 			],
 			as_dict=True,
 		)
@@ -261,6 +262,13 @@ class PurchaseInward(Document):
 				_("Purchase Inward cannot be created against a Purchase Order that is {0}.").format(
 					po.status
 				),
+				title=_("VAL-PI-02"),
+			)
+		# PI-28: also by the flag, for an order force closed before Force Close set
+		# ERPNext's own status.
+		if cint(po.get("custom_force_closed")):
+			frappe.throw(
+				_("Purchase Inward cannot be created against a Force Closed Purchase Order."),
 				title=_("VAL-PI-02"),
 			)
 
@@ -293,6 +301,7 @@ class PurchaseInward(Document):
 					"qty",
 					"rate",
 					"price_list_rate",
+					"custom_rate_incl_gst",
 					"amount",
 					"warehouse",
 					"description",
@@ -327,7 +336,7 @@ class PurchaseInward(Document):
 			# the Store team set, blank included.
 			if not line.target_warehouse and src.warehouse and line.is_new():
 				line.target_warehouse = src.warehouse
-			# Section 2: MRP is the PO line's Rate until someone records otherwise.
+			# Section 2: MRP is the PO line's Rate (Incl. GST) until someone records otherwise.
 			if not flt(line.mrp):
 				from alpinos.purchase.inward_api import po_line_mrp
 
@@ -639,9 +648,16 @@ class PurchaseInward(Document):
 		today = getdate()
 
 		def changed(fieldname):
+			# As datetimes, to the second: the stored value comes back with microseconds
+			# (or as a datetime) while the payload is text, so comparing strings called an
+			# untouched Inward Date "changed" and re-checked it as a past date (PI-018).
 			if before is None:
 				return True
-			return str(before.get(fieldname) or "") != str(self.get(fieldname) or "")
+			old, new = before.get(fieldname), self.get(fieldname)
+			if not old or not new:
+				return bool(old) != bool(new)
+			old, new = get_datetime(old), get_datetime(new)
+			return old.replace(microsecond=0) != new.replace(microsecond=0)
 
 		if self.inward_datetime and changed("inward_datetime"):
 			when = getdate(self.inward_datetime)
@@ -690,59 +706,26 @@ class PurchaseInward(Document):
 		)
 
 	def _validate_receiving_details(self):
-		"""Guards for the Store Receiving section. depends_on is client-only, so the
-		mandatory rules are re-checked here (VAL-PI-05 / 09 / 10 / 12)."""
+		"""Store Receiving completeness (VAL-PI-05 / 09 / 10 / 12, BRD 2.2.1).
+
+		PI-018: while the inward is Pending Material Receipt, Store is still recording the
+		receipt and must be able to save half of it, so nothing is demanded on save then.
+		Completeness is checked at hand-over, by the Submit for QC guard, and from then on
+		every save keeps it complete. Both use workflow.receiving_incomplete_reason, so
+		the two can never disagree. Format checks (dates, quantities, contact number) run
+		on every save elsewhere.
+		"""
 		if self.docstatus != 1:
+			return
+		if self.inward_status == C.PI_PENDING_RECEIPT:
 			return
 		if not self._receiving_started():
 			return
+		from alpinos.purchase.workflow import receiving_incomplete_reason
 
-		if cint(self.vehicle_details_verified) and not (
-			(self.actual_vehicle_no or "").strip()
-			or (self.actual_driver_contact_no or "").strip()
-		):
-			frappe.throw(
-				_("Please enter the correct vehicle and driver details."),
-				title=_("VAL-PI-05"),
-			)
-
-		if not self.actual_arrival_datetime:
-			frappe.throw(
-				_("Please enter the Actual Arrival Date & Time."), title=_("VAL-PI-12")
-			)
-
-		for line in self.get("items"):
-			if flt(line.received_qty) <= 0:
-				continue
-			if not line.target_warehouse:
-				frappe.throw(
-					_("Row {0}: please select a Target Location.").format(line.idx),
-					title=_("VAL-PI-09"),
-				)
-			# Any FG on the inward brings the FG batch rule with it, even on a mixed
-			# FG+PM receipt.
-			if C.has_inward_type(self.inward_type, C.INWARD_FG) and not (line.batch_no or "").strip():
-				frappe.throw(
-					_("Row {0}: Batch No. is mandatory for an FG inward.").format(line.idx)
-				)
-
-			# BRD 2.2.1 marks Manufacturing Date mandatory. It is enforced where the value
-			# actually carries downstream meaning: a shelf-life item cannot derive its
-			# Expiry Date without it (the row silently stored expiry NULL), and BR-QC-12's
-			# FG internal batch format is "{batch_no}-{mfg_date}". Loose material with no
-			# shelf life is left alone rather than inventing friction the BRD does not need.
-			if not line.manufacturing_date:
-				shelf_life = cint(
-					frappe.db.get_value("Item", line.item_code, "shelf_life_in_days")
-				)
-				if shelf_life or C.has_inward_type(self.inward_type, C.INWARD_FG):
-					frappe.throw(
-						_(
-							"Row {0} ({1}): Manufacturing Date is required - the Expiry Date "
-							"is derived from it."
-						).format(line.idx, line.item_code),
-						title=_("BRD 2.2.1"),
-					)
+		reason = receiving_incomplete_reason(self)
+		if reason:
+			frappe.throw(reason, title=_("Store Receiving Incomplete"))
 
 	def _receiving_started(self):
 		return any(flt(line.received_qty) for line in self.get("items")) or bool(

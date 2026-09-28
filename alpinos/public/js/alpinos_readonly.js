@@ -50,3 +50,19 @@ window.alpinos_set_readonly = function ($cards, locked) {
 		}
 	});
 };
+
+/**
+ * May the current user edit this document at all? (PO-42)
+ *
+ * A saved document needs write on its doctype, a new one needs create. The screens used
+ * to lock only on docstatus and workflow stage, so a user with read-only access saw live
+ * fields and a Save button, and the server then refused the save. The server still
+ * decides; this only stops the screen offering an edit that cannot be saved.
+ *
+ * @param {string} doctype
+ * @param {object} [doc]   the loaded document; blank or unsaved means "new"
+ */
+window.alpinos_can_write = function (doctype, doc) {
+	const is_new = !doc || !doc.name || doc.__islocal;
+	return is_new ? frappe.model.can_create(doctype) : frappe.model.can_write(doctype);
+};

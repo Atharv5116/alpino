@@ -20,6 +20,7 @@
   "challan_no",
   "gross_weight",
   "inward_datetime",
+  "gate_no",
   "company",
   "status_section",
   "inward_status",
@@ -57,7 +58,6 @@
   "col_receiving",
   "allow_excess_qty",
   "target_warehouse",
-  "gate_no",
   "received_by",
   "receiving_datetime",
   "receiving_remarks_section",
@@ -447,8 +447,7 @@
    "options": "Warehouse"
   },
   {
-   "allow_on_submit": 1,
-   "description": "Optional. The gate the vehicle was admitted through.",
+   "description": "Optional. The gate the vehicle was admitted through, recorded with the consignment.",
    "fieldname": "gate_no",
    "fieldtype": "Data",
    "in_standard_filter": 1,

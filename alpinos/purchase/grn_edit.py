@@ -108,7 +108,10 @@ def get_grn_context(purchase_receipt):
 	rejected = any(flt(row.rejected_qty) > 0 for row in pr.get("items") or [])
 	return {
 		"docstatus": docstatus,
-		"can_edit": docstatus == 0 and may_edit,
+		# PO-42: the role AND write permission on this GRN.
+		"can_edit": docstatus == 0
+		and may_edit
+		and bool(frappe.has_permission("Purchase Receipt", "write", doc=pr)),
 		"can_submit": docstatus == 0 and may_submit,
 		"can_cancel": (docstatus == 0 and may_edit) or (docstatus == 1 and may_submit),
 		"can_amend": docstatus == 2 and may_edit and not amended_to,

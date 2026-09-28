@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-26 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "warehouse_section",
+  "main_warehouse",
+  "warehouse_col",
+  "wip_warehouse",
+  "excluded_section",
+  "excluded_warehouses",
+  "planning_section",
+  "merge_capacity_check"
+ ],
+ "fields": [
+  {
+   "fieldname": "warehouse_section",
+   "fieldtype": "Section Break",
+   "label": "Store Warehouses"
+  },
+  {
+   "description": "Default source for Material Requests and Material Issues (the RM Store).",
+   "fieldname": "main_warehouse",
+   "fieldtype": "Link",
+   "label": "Main Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "warehouse_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The shop floor. Material Issues move stock here; Material Returns move it back out.",
+   "fieldname": "wip_warehouse",
+   "fieldtype": "Link",
+   "label": "WIP Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "excluded_section",
+   "fieldtype": "Section Break",
+   "label": "Stock Availability"
+  },
+  {
+   "description": "Never counted as available stock. Rejected, Quarantine, QC Sample, Control Sample and QC Hold warehouses, and the WIP warehouse, are always left out anyway.",
+   "fieldname": "excluded_warehouses",
+   "fieldtype": "Table MultiSelect",
+   "label": "Excluded Warehouses",
+   "options": "Production Excluded Warehouse"
+  },
+  {
+   "fieldname": "planning_section",
+   "fieldtype": "Section Break",
+   "label": "Planning"
+  },
+  {
+   "default": "0",
+   "description": "When set, merging sub orders onto one machine run is refused above the machine Max Capacity.",
+   "fieldname": "merge_capacity_check",
+   "fieldtype": "Check",
+   "label": "Block merges above machine Max Capacity"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-09-26 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Production Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

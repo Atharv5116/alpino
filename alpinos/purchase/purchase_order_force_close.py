@@ -4,9 +4,13 @@ An order that will never be fulfilled, and that the normal Cancel path refuses b
 something downstream already points at it, has to be able to stop being live. Force Close
 moves it to a terminal status and records who did it, when, and why.
 
-Deliberately Administrator only, checked on the server. The button is hidden from everyone
-else, but a hidden button is not a permission -- `frappe.session.user` is the gate, and
-the whitelisted method refuses anybody else whatever the screen shows.
+Administrator plus the FORCE_CLOSE_ROLES, checked on the server. The button is hidden from
+everyone else, but a hidden button is not a permission -- the whitelisted method refuses
+anybody else whatever the screen shows.
+
+A submitted order is also moved to ERPNext's own "Closed" status (PI-28), so every
+standard guard -- ordered qty in Bin, new receipts, the Inward check on po.status --
+treats it as closed, not only the screens that read custom_force_closed.
 
 Modelled on alpinos.forced_close, which does the same job for a Sales Order: same field
 names (custom_force_closed / _reason / _by / _on), so the two read the same way in a
@@ -28,8 +32,10 @@ REASON_FIELD = "custom_force_close_reason"
 BY_FIELD = "custom_force_closed_by"
 ON_FIELD = "custom_force_closed_on"
 
-#: The one account that may do this.
+#: Always allowed.
 FORCE_CLOSE_USER = "Administrator"
+#: Roles that may force close as well.
+FORCE_CLOSE_ROLES = ("System Manager", "Purchase Manager")
 
 
 def _custom_fields():
@@ -52,7 +58,7 @@ def _custom_fields():
 				read_only=1,
 				# allow_on_submit: the whole point is to close an order that is already live.
 				allow_on_submit=1,
-				description="Set only by the Administrator, through Force Close.",
+				description="Set only through Force Close.",
 			),
 			dict(
 				fieldname=REASON_FIELD,
@@ -89,9 +95,11 @@ def setup_force_close_fields():
 
 
 def may_force_close(user=None):
-	"""Only the Administrator. Not a role -- a role can be granted by anyone who can edit
-	roles, and this is meant to stay with one account."""
-	return (user or frappe.session.user) == FORCE_CLOSE_USER
+	"""The Administrator, or anyone holding one of FORCE_CLOSE_ROLES."""
+	user = user or frappe.session.user
+	if user == FORCE_CLOSE_USER:
+		return True
+	return bool(set(FORCE_CLOSE_ROLES) & set(frappe.get_roles(user)))
 
 
 def is_force_closed(purchase_order) -> bool:
@@ -104,7 +112,7 @@ def is_force_closed(purchase_order) -> bool:
 def can_force_close(purchase_order=None):
 	"""What the screen asks before drawing the button."""
 	if not may_force_close():
-		return {"allowed": False, "reason": _("Only the Administrator can force close an order.")}
+		return {"allowed": False, "reason": _("You are not allowed to force close an order.")}
 	if not purchase_order or not frappe.db.exists(DOCTYPE, purchase_order):
 		return {"allowed": False, "reason": _("Save the order first.")}
 	row = frappe.db.get_value(
@@ -128,7 +136,7 @@ def force_close_purchase_order(purchase_order, reason):
 	"""
 	if not may_force_close():
 		frappe.throw(
-			_("Only the Administrator can force close a Purchase Order."),
+			_("You are not allowed to force close a Purchase Order."),
 			title=_("Not Permitted"),
 			exc=frappe.PermissionError,
 		)
@@ -155,6 +163,10 @@ def force_close_purchase_order(purchase_order, reason):
 		},
 		update_modified=True,
 	)
+	if cint(doc.docstatus) == 1 and doc.status != "Closed":
+		# ERPNext's own close: status, ordered qty in Bin, notifications.
+		doc.reload()
+		doc.update_status("Closed")
 	frappe.db.commit()
 	return {
 		"name": doc.name,

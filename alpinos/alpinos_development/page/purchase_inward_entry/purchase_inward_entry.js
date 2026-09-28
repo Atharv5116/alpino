@@ -236,13 +236,8 @@ var PurchaseInwardEntry = class {
 			options: 'Purchase Order',
 			reqd: 1,
 			// VAL-PO-15 / VAL-PO-13: only an approved, non-direct-invoice PO can be inwarded.
-			get_query: () => ({
-				filters: {
-					docstatus: 1,
-					custom_direct_purchase_invoice: 0,
-					status: ['not in', ['Closed', 'On Hold']],
-				},
-			}),
+			// A server query so the latest approved order comes first (PI-20).
+			get_query: () => ({ query: 'alpinos.purchase.inward_api.inward_po_query' }),
 			change: () => me.on_purchase_order_change(),
 		});
 
@@ -310,6 +305,13 @@ var PurchaseInwardEntry = class {
 		if (inward_dt && inward_dt.$input) {
 			inward_dt.$input.on('focus keydown input', () => { this._inward_dt_edited = true; });
 		}
+		// Purchase records it with the consignment, beside the inward date -- it used to sit
+		// in Store Receiving. Optional, and Data rather than a Link: a gate is a number or a
+		// name painted on a wall, not a record anybody wants to maintain a master for.
+		this._ctl('.field-gate-no', {
+			fieldname: 'gate_no', label: 'Gate No.', fieldtype: 'Data',
+			description: 'Optional.',
+		});
 		this._ctl('.field-attachment', {
 			fieldname: 'attachment',
 			label: 'Attachment',
@@ -801,12 +803,6 @@ var PurchaseInwardEntry = class {
 			fieldtype: 'Link', options: 'Warehouse',
 			change: () => me.apply_default_warehouse(),
 		});
-		// Optional, and Data rather than a Link: a gate is a number or a name painted on a
-		// wall, not a record anybody wants to maintain a master for.
-		this._ctl('.field-gate-no', {
-			fieldname: 'gate_no', label: 'Gate No.', fieldtype: 'Data',
-			description: 'Optional.',
-		});
 		this._ctl('.field-receiving-remarks', {
 			fieldname: 'receiving_remarks', label: 'Receiving Remarks', fieldtype: 'Small Text',
 		});
@@ -1181,10 +1177,10 @@ var PurchaseInwardEntry = class {
 		return [
 			'purchase_order', 'inward_type', 'supplier', 'supplier_order_no',
 			'invoice_number', 'invoice_date', 'challan_no', 'gross_weight',
-			'inward_datetime', 'attachment', 'remarks',
+			'inward_datetime', 'gate_no', 'attachment', 'remarks',
 			'po_vehicle_no', 'po_driver_contact_no', 'actual_vehicle_no',
 			'actual_driver_contact_no', 'actual_arrival_datetime',
-			'vehicle_details_verified', 'allow_excess_qty', 'target_warehouse', 'gate_no',
+			'vehicle_details_verified', 'allow_excess_qty', 'target_warehouse',
 			'receiving_remarks', 'dispute_file', 'dispute_kind', 'dispute_description',
 			'total_order_qty', 'total_received_qty', 'total_pending_qty', 'total_excess_qty',
 			'total_balance_qty',
@@ -1251,10 +1247,10 @@ var PurchaseInwardEntry = class {
 				[
 					'purchase_order', 'inward_type', 'supplier', 'supplier_order_no',
 					'invoice_number', 'invoice_date', 'challan_no', 'gross_weight',
-					'inward_datetime', 'attachment', 'remarks', 'po_vehicle_no',
+					'inward_datetime', 'gate_no', 'attachment', 'remarks', 'po_vehicle_no',
 					'po_driver_contact_no', 'actual_vehicle_no', 'actual_driver_contact_no',
 					'actual_arrival_datetime', 'vehicle_details_verified', 'allow_excess_qty',
-					'target_warehouse', 'gate_no', 'receiving_remarks',
+					'target_warehouse', 'receiving_remarks',
 				].forEach((f) => me._set(f, doc[f]));
 				me.quarantine_doc = doc.purchase_quarantine || null;
 				me.purchase_qc = doc.purchase_qc || null;
@@ -1311,7 +1307,10 @@ var PurchaseInwardEntry = class {
 		);
 
 		// The server owns the decision; this only reflects it.
-		const header_open = ctx.header_editable !== false && cint(ctx.docstatus) === 0;
+		// PO-42: no write (or create, on a new inward) means view only.
+		const can_write = alpinos_can_write('Purchase Inward', this.docname ? { name: this.docname } : null);
+		this.can_write = can_write;
+		const header_open = can_write && ctx.header_editable !== false && cint(ctx.docstatus) === 0;
 		this._lock_section(this.wrapper.find('.piw-header'), !header_open);
 		this._lock_section(this.wrapper.find('.items-table').closest('.eso-card'), !header_open);
 
@@ -1320,7 +1319,8 @@ var PurchaseInwardEntry = class {
 		// gave undefined, and `undefined !== false` is true, so the Store Receiving grid
 		// stayed editable in EVERY status -- including after the handover to QC, where the
 		// server reports edit=false with "closed while the document is QC In Progress".
-		const receiving_open = receiving ? receiving.edit !== false : cint(ctx.docstatus) === 1;
+		const receiving_open = can_write
+			&& (receiving ? receiving.edit !== false : cint(ctx.docstatus) === 1);
 		this._lock_section(this.wrapper.find('.piw-receiving'), !receiving_open);
 		// make_actions reads this, so the Save Receipt button and the lock share one decision.
 		this.receiving_open = receiving_open;
@@ -1375,7 +1375,7 @@ var PurchaseInwardEntry = class {
 			return $b;
 		};
 
-		if (cint(this.ctx.docstatus) === 0) {
+		if (cint(this.ctx.docstatus) === 0 && this.can_write !== false) {
 			btn(__('Save'), 'btn-primary', () => me.save(false));
 			if (this.docname) btn(__('Submit'), 'btn-primary', () => me.save(true));
 			if (this.docname) {
@@ -1556,6 +1556,10 @@ var PurchaseInwardEntry = class {
 			challan_no: this._val('challan_no'),
 			gross_weight: flt(this._val('gross_weight')),
 			inward_datetime: this._val('inward_datetime'),
+			// With the header, not in the receiving block below: that block is sent only
+			// once the inward is submitted, so a Purchase user saving a Draft would have had
+			// the Gate No. silently dropped every time.
+			gate_no: this._val('gate_no'),
 			attachment: this._val('attachment'),
 			remarks: this._val('remarks'),
 			// A merge chosen before the first save travels with it: the duplicate number is
@@ -1569,7 +1573,6 @@ var PurchaseInwardEntry = class {
 				vehicle_details_verified: cint(this._val('vehicle_details_verified')),
 				allow_excess_qty: cint(this._val('allow_excess_qty')),
 				target_warehouse: this._val('target_warehouse'),
-				gate_no: this._val('gate_no'),
 				receiving_remarks: this._val('receiving_remarks'),
 			} : {}),
 			items: this.items.map((row) => ({

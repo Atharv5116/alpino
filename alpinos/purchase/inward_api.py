@@ -170,12 +170,18 @@ def receiving_item_info(item_codes):
 
 
 def po_line_mrp(row):
-	"""Section 2: an inward line's MRP is its PO line's Rate.
+	"""Section 2: an inward line's MRP defaults to its PO line's Rate (Incl. GST).
 
-	The PO screen's Rate column (price_list_rate, before any discount); the line's own rate
-	when it has no list rate, as on an order raised outside that screen.
+	MRP includes all taxes, so it is the PO screen's Rate (Incl. GST) column
+	(po_gst.LINE_FINAL_RATE_FIELD). An order saved before GST was applied has none, and
+	falls back to what it used before: the Rate column (price_list_rate, before any
+	discount), else the line's own rate, as on an order raised outside that screen.
 	"""
-	return flt(row.get("price_list_rate")) or flt(row.get("rate"))
+	return (
+		flt(row.get("custom_rate_incl_gst"))
+		or flt(row.get("price_list_rate"))
+		or flt(row.get("rate"))
+	)
 
 
 def currency_symbol(company=None):
@@ -204,7 +210,9 @@ def get_item_receiving_info(item_codes, company=None, po_details=None):
 	if names:
 		# An inward saved before its MRP was defaulted still shows the PO's on screen.
 		for row in frappe.get_all(
-			PO_ITEM, filters={"name": ("in", names)}, fields=["name", "rate", "price_list_rate"]
+			PO_ITEM,
+			filters={"name": ("in", names)},
+			fields=["name", "rate", "price_list_rate", "custom_rate_incl_gst"],
 		):
 			po_mrp[row.name] = po_line_mrp(row)
 	return {
@@ -388,6 +396,7 @@ def get_purchase_order_items(
 			"rate",
 			"amount",
 			"price_list_rate",
+			"custom_rate_incl_gst",
 			"warehouse",
 			"delivered_by_supplier",
 		],
@@ -964,8 +973,11 @@ def correct_invoice_number(purchase_inward, new_invoice_number, reason=None):
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
-def po_item_query(doctype, txt, searchfield, start, page_len, filters):
+def po_type_item_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Items a Purchase Order of these types may contain.
+
+	Named po_type_item_query, not po_item_query: that name belongs to the Inward item
+	picker above, and a second definition silently replaced it for the whole module.
 
 	The PO Type is a list now ("FG,PM"), so the picker offers items of any of them. An
 	item with no type at all is still offered, exactly as validate_items_match_po_type
@@ -987,6 +999,8 @@ def po_item_query(doctype, txt, searchfield, start, page_len, filters):
 		from `tabItem`
 		where ifnull(disabled, 0) = 0
 		  and ifnull(custom_is_bundle, 0) = 0
+		  -- Item Templates (WB, SP, MN) are not stock: only their variants can be bought.
+		  and ifnull(has_variants, 0) = 0
 		  and (name like %(txt)s or ifnull(item_name, '') like %(txt)s)
 		order by
 			case when name like %(head)s then 0 else 1 end,
@@ -1012,3 +1026,32 @@ def po_item_query(doctype, txt, searchfield, start, page_len, filters):
 		if found is None or found in wanted:
 			keep.append((name, item_name))
 	return keep[start : start + page_len]
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def inward_po_query(doctype, txt, searchfield, start, page_len, filters):
+	"""PI-20: the Purchase Orders an inward may be raised against, latest approved first.
+
+	The picker used plain filters, so Frappe ordered the list by its own default and the
+	oldest order came first. Same eligibility as PurchaseInward._validate_purchase_order:
+	submitted, not a Direct Purchase Invoice, not Closed / On Hold, not force closed.
+	"""
+	from alpinos.purchase.purchase_order_force_close import FORCE_CLOSED_FIELD
+
+	txt = "%%%s%%" % (txt or "")
+	return frappe.db.sql(
+		"""
+		select name, supplier, transaction_date
+		from `tabPurchase Order`
+		where docstatus = 1
+		  and ifnull(custom_direct_purchase_invoice, 0) = 0
+		  and status not in ('Closed', 'On Hold')
+		  and ifnull(`{force}`, 0) = 0
+		  and (name like %(txt)s or ifnull(supplier, '') like %(txt)s
+		       or ifnull(supplier_name, '') like %(txt)s)
+		order by custom_approval_datetime desc, modified desc
+		limit %(start)s, %(page_len)s
+		""".format(force=FORCE_CLOSED_FIELD),
+		{"txt": txt, "start": cint(start), "page_len": cint(page_len) or 20},
+	)
