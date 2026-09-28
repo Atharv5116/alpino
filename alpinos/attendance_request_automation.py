@@ -1,7 +1,7 @@
 """Attendance Request automation: manage check-in/check-out times."""
 import frappe
 from frappe import _
-from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, getdate
+from frappe.utils import add_days, add_months, cint, date_diff, formatdate, get_datetime, getdate
 
 
 def set_reporting_person(doc, method=None):
@@ -517,10 +517,14 @@ def get_reserved_request_names(employee, month_start, next_month, exclude=None):
 			["from_date", "<", next_month],
 			["name", "!=", exclude or "new-attendance-request"],
 		],
-		fields=["name", "workflow_state", "docstatus"],
+		fields=["name", "workflow_state", "docstatus", "custom_raised_by_hr"],
 	)
 	names = []
 	for c in candidates:
+		# Changes(HP) HRMS #12: a request HR raised on the employee's behalf is not the
+		# employee's to pay for, so it reserves nothing against their four edits.
+		if cint(c.get("custom_raised_by_hr")):
+			continue
 		state = c.get("workflow_state")
 		if state:
 			if state in RESERVED_EDIT_STATES:

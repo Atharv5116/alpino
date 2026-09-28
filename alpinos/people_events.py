@@ -86,26 +86,21 @@ def _get_employee_for_user(user):
 
 @frappe.whitelist()
 def get_on_leave_and_wfh_today():
-	"""Return employees on leave today and on WFH today.
-	Visible only to HR Manager (sees all) or users who are someone's reporting manager (see only direct reports).
+	"""Return employees on leave today and on WFH today, for anybody signed in.
+
+	Changes(HP) HRMS #11: the two sections were on everybody's dashboard but only an HR
+	Manager or somebody with direct reports got rows, so most people saw empty panels. The
+	day's leave and work-from-home list is what the office needs to know to find each other,
+	so it now reads the same for everyone. The reads ignore permissions deliberately: an
+	employee cannot list other people's Leave Applications, which would otherwise filter the
+	list back to nothing. Only the day's name, leave type and half-day flag go out.
 	"""
 	today = getdate(now_datetime())
-	roles = frappe.get_roles()
-	is_hr_manager = "HR Manager" in roles
-	employee = _get_employee_for_user(frappe.session.user)
-	direct_report_ids = []
-	if employee:
-		direct_report_ids = frappe.get_all(
-			"Employee",
-			filters={"reports_to": employee, "status": "Active"},
-			pluck="name",
-		)
-	allowed = is_hr_manager or (employee and len(direct_report_ids) > 0)
-	if not allowed:
+	if frappe.session.user == "Guest":
 		return {"allowed": False, "on_leave": [], "on_wfh": []}
 
-	# Employees we are allowed to see: all if HR Manager, else only direct reports
-	allowed_employee_ids = None if is_hr_manager else set(direct_report_ids)
+	# Everybody sees the whole day's list, as HR does.
+	allowed_employee_ids = None
 
 	# On leave today: Leave Application, Approved, today between from_date and to_date
 	leave_filters = [
@@ -118,6 +113,7 @@ def get_on_leave_and_wfh_today():
 		"Leave Application",
 		filters=leave_filters,
 		fields=["employee", "employee_name", "leave_type", "from_date", "to_date", "half_day", "half_day_date"],
+		ignore_permissions=True,
 	)
 	on_leave = []
 	for la in leave_list:
@@ -143,6 +139,7 @@ def get_on_leave_and_wfh_today():
 		"Attendance",
 		filters=wfh_filters,
 		fields=["employee", "employee_name", "attendance_date"],
+		ignore_permissions=True,
 	)
 	on_wfh = []
 	for att in wfh_list:
