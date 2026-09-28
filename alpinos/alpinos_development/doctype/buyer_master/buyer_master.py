@@ -1,6 +1,47 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.model.naming import getseries
+from frappe.utils import cint, getdate, nowdate
+
+# Buyer IDs read OBM-<financial year>-<number>, e.g. OBM-2627-01027 (Changes(HP) #40), like
+# the Sales Order's SOR-2627-. The number is ONE running counter across financial years,
+# carried on from the OBM-YYYY- IDs before it; existing IDs are not renamed.
+BUYER_ID_PREFIX = "OBM"
+BUYER_SERIES_KEY = "OBM-"
+BUYER_ID_DIGITS = 5
+
+
+def financial_year_code(date=None):
+	"""'2627' for any date from 1 April 2026 to 31 March 2027."""
+	d = getdate(date or nowdate())
+	start = d.year if d.month >= 4 else d.year - 1
+	return f"{start % 100:02d}{(start + 1) % 100:02d}"
+
+
+def _seed_buyer_series():
+	"""Start the running counter after the highest existing buyer number, once."""
+	if frappe.db.sql("SELECT 1 FROM `tabSeries` WHERE name = %s", BUYER_SERIES_KEY):
+		return
+	highest = frappe.db.sql(
+		"""
+		SELECT MAX(CAST(SUBSTRING_INDEX(name, '-', -1) AS UNSIGNED))
+		FROM `tabBuyer Master` WHERE name LIKE 'OBM-%%'
+		"""
+	)[0][0]
+	frappe.db.sql(
+		"INSERT INTO `tabSeries` (`name`, `current`) VALUES (%s, %s)", (BUYER_SERIES_KEY, cint(highest))
+	)
+
+
+def next_buyer_id(date=None):
+	_seed_buyer_series()
+	fy = financial_year_code(date)
+	while True:
+		name = f"{BUYER_ID_PREFIX}-{fy}-{getseries(BUYER_SERIES_KEY, BUYER_ID_DIGITS)}"
+		# A number already taken (an imported ID, say) is skipped, never reused.
+		if not frappe.db.exists("Buyer Master", name):
+			return name
 
 
 def _selling_defaults():
@@ -131,6 +172,11 @@ def _ensure_customer_for_obm(doc):
 
 
 class BuyerMaster(Document):
+	def autoname(self):
+		# Runs before the doctype's own OBM-.YYYY.-.##### rule, which is left in place only
+		# as the fallback Frappe uses when a controller sets no name.
+		self.name = next_buyer_id()
+
 	def validate(self):
 		self._migrate_legacy_address_if_empty()
 		self._normalize_addresses()
