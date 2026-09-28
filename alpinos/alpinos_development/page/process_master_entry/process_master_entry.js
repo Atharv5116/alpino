@@ -19,7 +19,7 @@ frappe.pages['process_master_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['process_master_entry'].on_page_show = function (wrapper) {
 	// The list this record belongs to, matching the Back to List button.
-	alpinos_production_breadcrumb(__("Process Master"), "/app/process_master_list");
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__("Process Master"), "/app/process_master_list");
 	if (wrapper.process_entry) wrapper.process_entry.handle_route();
 };
 
@@ -226,7 +226,7 @@ var ProcessMasterEntry = class {
 				html += '</tr></thead><tbody>';
 				rows.forEach((m) => {
 					const cap = m.max_capacity
-						? esc(alpinos_format_capacity(m.max_capacity, m.capacity_uom))
+						? esc((window.alpinos_format_capacity || ((v) => format_number(flt(v), null, 0)))(m.max_capacity, m.capacity_uom))
 						: '<span class="text-muted">—</span>';
 					html += `<tr><td>${esc(m.machine_name)}</td><td>${esc(m.machine_type)}</td><td>${cap}</td></tr>`;
 				});

@@ -106,7 +106,7 @@ frappe.pages['purchase_inward_entry'].on_page_load = function (wrapper) {
 // Fires on every visit; the route decides whether we open blank or load a document.
 frappe.pages['purchase_inward_entry'].on_page_show = function (wrapper) {
 	// Goods Inward > this list > this record, the same shape as the Production screens.
-	alpinos_goods_inward_breadcrumb(__("Purchase Inwards"), "/app/purchase_inward_list");
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb(__("Purchase Inwards"), "/app/purchase_inward_list");
 	if (wrapper.piw_entry) wrapper.piw_entry.handle_route_entry();
 };
 

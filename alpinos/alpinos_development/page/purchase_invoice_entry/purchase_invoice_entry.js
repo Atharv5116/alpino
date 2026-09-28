@@ -37,7 +37,7 @@ frappe.pages['purchase_invoice_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['purchase_invoice_entry'].on_page_show = function (wrapper) {
 	// Goods Inward > this list > this record, the same shape as the Production screens.
-	alpinos_goods_inward_breadcrumb(__("Purchase Invoices"), "/app/purchase_invoice_list");
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb(__("Purchase Invoices"), "/app/purchase_invoice_list");
 	if (wrapper.pinv_entry) wrapper.pinv_entry.handle_route_entry();
 };
 

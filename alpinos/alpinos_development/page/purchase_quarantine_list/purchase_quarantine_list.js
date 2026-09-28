@@ -26,7 +26,7 @@ frappe.pages['purchase_quarantine_list'].on_page_load = function (wrapper) {
 frappe.pages['purchase_quarantine_list'].on_page_show = function (wrapper) {
 	// Named outright rather than derived from the module, which picks whichever
 	// workspace happens to sort first.
-	alpinos_goods_inward_breadcrumb();
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb();
 	if (wrapper.__pqrn_list) wrapper.__pqrn_list.render_body();
 };
 

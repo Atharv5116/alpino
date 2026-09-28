@@ -18,7 +18,7 @@ frappe.pages['material_issue_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['material_issue_entry'].on_page_show = function (wrapper) {
 	if (window.alpinos_production_breadcrumb) {
-		alpinos_production_breadcrumb(__('Material Issues'), '/app/material_issue_list');
+		window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__('Material Issues'), '/app/material_issue_list');
 	}
 	if (wrapper.material_issue_entry) wrapper.material_issue_entry.handle_route();
 };

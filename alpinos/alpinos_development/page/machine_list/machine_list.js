@@ -15,7 +15,7 @@ frappe.pages['machine_list'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['machine_list'].on_page_show = function (wrapper) {
-	alpinos_production_breadcrumb();
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb();
 	if (wrapper.machine_list) wrapper.machine_list.refresh();
 };
 
@@ -224,7 +224,7 @@ var MachineList = class {
 
 		this.rows.forEach((row) => {
 			const cap = row.max_capacity
-				? esc(alpinos_format_capacity(row.max_capacity, row.capacity_uom))
+				? esc((window.alpinos_format_capacity || ((v) => format_number(flt(v), null, 0)))(row.max_capacity, row.capacity_uom))
 				: '<span class="text-muted">—</span>';
 			const $tr = $(`
 				<tr>

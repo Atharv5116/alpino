@@ -23,7 +23,7 @@ frappe.pages['filling_category_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['filling_category_entry'].on_page_show = function (wrapper) {
 	// The list this record belongs to, matching the Back to List button.
-	alpinos_production_breadcrumb(__("Filling Process Category"), "/app/filling_category_list");
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__("Filling Process Category"), "/app/filling_category_list");
 	if (wrapper.filling_category_entry) wrapper.filling_category_entry.handle_route();
 };
 

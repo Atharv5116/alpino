@@ -25,7 +25,7 @@ frappe.pages['purchase_quarantine_view'].on_page_load = function (wrapper) {
 
 frappe.pages['purchase_quarantine_view'].on_page_show = function (wrapper) {
 	// Goods Inward > this list > this record, the same shape as the Production screens.
-	alpinos_goods_inward_breadcrumb(__("Quarantine Stock"), "/app/purchase_quarantine_list");
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb(__("Quarantine Stock"), "/app/purchase_quarantine_list");
 	if (wrapper.pqv) wrapper.pqv.handle_route_entry();
 };
 

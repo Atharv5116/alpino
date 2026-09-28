@@ -32,7 +32,7 @@ frappe.pages['purchase_grn_view'].on_page_load = function (wrapper) {
 
 frappe.pages['purchase_grn_view'].on_page_show = function (wrapper) {
 	// Goods Inward > this list > this record, the same shape as the Production screens.
-	alpinos_goods_inward_breadcrumb(__("GRN"), "/app/purchase_grn_list");
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb(__("GRN"), "/app/purchase_grn_list");
 	if (wrapper.grn_view) wrapper.grn_view.handle_route_entry();
 };
 

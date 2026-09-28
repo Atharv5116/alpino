@@ -20,7 +20,7 @@ frappe.pages['item_master_entry'].on_page_load = function (wrapper) {
 frappe.pages['item_master_entry'].on_page_show = function (wrapper) {
 	// The Item list, not the Production workspace: this screen is one item, and the way
 	// back from it is the other items. Same destination as the Back to List button.
-	alpinos_production_breadcrumb(__('Item Master'), '/app/item_master_list');
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__('Item Master'), '/app/item_master_list');
 	if (wrapper.item_entry) wrapper.item_entry.handle_route();
 };
 

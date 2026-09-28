@@ -15,7 +15,7 @@ frappe.pages['process_master_list'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['process_master_list'].on_page_show = function (wrapper) {
-	alpinos_production_breadcrumb();
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb();
 	if (wrapper.process_list) wrapper.process_list.refresh();
 };
 

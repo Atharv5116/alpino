@@ -24,7 +24,7 @@ frappe.pages['bom_master_entry'].on_page_show = function (wrapper) {
 	// Production > BOM, and the BOM crumb goes to the BOM list, not the workspace. Coming
 	// out of a record you almost always want the other records, and the workspace is still
 	// one crumb further left.
-	alpinos_production_breadcrumb(__('BOM'), '/app/bom_master_list');
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__('BOM'), '/app/bom_master_list');
 	if (wrapper.bom_entry) wrapper.bom_entry.handle_route();
 };
 

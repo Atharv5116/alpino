@@ -34,7 +34,7 @@ frappe.pages['purchase_qc_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['purchase_qc_entry'].on_page_show = function (wrapper) {
 	// Goods Inward > this list > this record, the same shape as the Production screens.
-	alpinos_goods_inward_breadcrumb(__("Purchase QC"), "/app/purchase_qc_list");
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb(__("Purchase QC"), "/app/purchase_qc_list");
 	if (wrapper.pqc_entry) wrapper.pqc_entry.handle_route_entry();
 };
 

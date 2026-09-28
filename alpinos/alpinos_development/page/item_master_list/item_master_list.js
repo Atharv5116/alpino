@@ -16,7 +16,7 @@ frappe.pages['item_master_list'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['item_master_list'].on_page_show = function (wrapper) {
-	alpinos_production_breadcrumb();
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb();
 	if (wrapper.item_list) wrapper.item_list.refresh();
 };
 

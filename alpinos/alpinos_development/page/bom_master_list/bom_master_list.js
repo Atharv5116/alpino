@@ -15,7 +15,7 @@ frappe.pages['bom_master_list'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['bom_master_list'].on_page_show = function (wrapper) {
-	alpinos_production_breadcrumb();
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb();
 	if (wrapper.bom_list) wrapper.bom_list.refresh();
 };
 

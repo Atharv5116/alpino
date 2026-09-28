@@ -22,7 +22,7 @@ frappe.pages['production_order_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['production_order_entry'].on_page_show = function (wrapper) {
 	// The list this record belongs to, matching the Back to List button.
-	alpinos_production_breadcrumb(__("Production Orders"), "/app/production_order_list");
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__("Production Orders"), "/app/production_order_list");
 	if (wrapper.production_order_entry) wrapper.production_order_entry.handle_route();
 };
 

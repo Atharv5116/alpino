@@ -27,7 +27,7 @@ frappe.pages['purchase_order_list'].on_page_load = function (wrapper) {
 frappe.pages['purchase_order_list'].on_page_show = function (wrapper) {
 	// Named outright rather than derived from the module, which picks whichever
 	// workspace happens to sort first.
-	alpinos_goods_inward_breadcrumb();
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb();
 	if (wrapper.__pol_list_page) wrapper.__pol_list_page.render_body();
 };
 

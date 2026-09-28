@@ -20,7 +20,7 @@ frappe.pages['machine_type_list'].on_page_load = function (wrapper) {
 };
 
 frappe.pages['machine_type_list'].on_page_show = function (wrapper) {
-	alpinos_production_breadcrumb();
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb();
 	if (wrapper.machine_type_list) wrapper.machine_type_list.refresh();
 };
 

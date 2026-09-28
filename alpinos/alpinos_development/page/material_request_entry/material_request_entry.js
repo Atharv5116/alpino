@@ -19,7 +19,7 @@ frappe.pages['material_request_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['material_request_entry'].on_page_show = function (wrapper) {
 	if (window.alpinos_production_breadcrumb) {
-		alpinos_production_breadcrumb(__('Material Requests'), '/app/material_request_list');
+		window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__('Material Requests'), '/app/material_request_list');
 	}
 	if (wrapper.material_request_entry) wrapper.material_request_entry.handle_route();
 };

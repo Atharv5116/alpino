@@ -174,7 +174,7 @@ frappe.pages['purchase_order_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['purchase_order_entry'].on_page_show = function (wrapper) {
 	// Goods Inward > this list > this record, the same shape as the Production screens.
-	alpinos_goods_inward_breadcrumb(__("Purchase Orders"), "/app/purchase_order_list");
+	window.alpinos_goods_inward_breadcrumb && alpinos_goods_inward_breadcrumb(__("Purchase Orders"), "/app/purchase_order_list");
 	if (wrapper.po_entry) wrapper.po_entry.handle_route_entry();
 };
 

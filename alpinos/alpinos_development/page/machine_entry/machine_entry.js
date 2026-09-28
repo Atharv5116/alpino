@@ -18,7 +18,7 @@ frappe.pages['machine_entry'].on_page_load = function (wrapper) {
 
 frappe.pages['machine_entry'].on_page_show = function (wrapper) {
 	// The list this record belongs to, matching the Back to List button.
-	alpinos_production_breadcrumb(__("Machine Master"), "/app/machine_list");
+	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__("Machine Master"), "/app/machine_list");
 	if (wrapper.machine_entry) wrapper.machine_entry.handle_route();
 };
 

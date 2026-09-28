@@ -63,21 +63,18 @@ app_include_js = [
 	# Keeps a Date control on one side of today: a plan cannot be in the past, an
 	# observation cannot be in the future. Shared by the Purchase Order and Inward screens.
 	_asset("js/alpinos_date_bound.js"),
-	# Breadcrumb and Job Card helpers the Production master screens call; see the file
-	# for why the default module-derived breadcrumb names the wrong workspace.
+	# Breadcrumb and Job Card helpers the Production AND Goods Inward screens call; see
+	# the file for why the default module-derived breadcrumb names the wrong workspace.
 	#
-	# A ".bundle.js" name, and no "/assets/..." prefix, on purpose: bundled_asset()
-	# (frappe/utils/jinja_globals.py) only rewrites a path through assets.json when it
-	# matches BOTH of those, and that rewrite is what gives the file a content-hashed
-	# URL. A plain path is emitted verbatim and answered with Cache-Control max-age=43200,
-	# so a browser kept serving its 12-hour-old copy however many times the file was
-	# rebuilt -- a fixed breadcrumb that nobody could see. The hash changes with the
-	# content, so an ordinary reload picks up every future edit.
-	#
-	# NOT wrapped in _asset() for the same reason: that would make it
-	# "/assets/alpinos/production_desk.bundle.js?v=...", which no longer matches what
-	# bundled_asset() rewrites, and the content hash would be lost.
-	"production_desk.bundle.js",
+	# Served as a plain file through _asset(), like everything above, NOT as the bare
+	# bundle name "production_desk.bundle.js". The bundle name only resolves through
+	# sites/assets/assets.json, i.e. after `bench build`; on a server where the build had
+	# not been run since the file was added, Frappe emitted the bare name, the browser
+	# got a 404, and every page calling alpinos_goods_inward_breadcrumb /
+	# alpinos_production_breadcrumb threw in on_page_show and loaded no data. The file
+	# has no imports, so it needs no build, and _asset()'s ?v=<mtime> stamp gives it the
+	# same cache-busting the content hash did.
+	_asset("js/production_desk.bundle.js"),
 ]
 
 # include js, css files in header of web template
