@@ -21,6 +21,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		if self.is_new():
 			# Rule 2: only last 7 days, enforced at creation only (not on approval).
 			self._enforce_request_window()
+		self._stamp_raised_by_hr()           # HRMS #12: HR's own requests don't use the balance
 		self._enforce_monthly_limit()        # Rule 1: max 4 per month
 		super().validate()
 		self._sync_tables()                  # build the Details + Existing Logs tables
@@ -99,6 +100,21 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 	def _session_is_hr_manager(self):
 		"""True when the session user (the person raising the request) is an HR Manager."""
 		return "HR Manager" in frappe.get_roles(frappe.session.user)
+
+	def _stamp_raised_by_hr(self):
+		"""Mark a request HR raised FOR somebody else (Changes(HP) HRMS #12).
+
+		HR was already exempt from being blocked by the cap, but the request still sat in
+		the employee's month and ate their four edits. Stamped once, while the request is
+		new, so a later role change cannot turn somebody's own request into HR's.
+		"""
+		if not self.is_new():
+			return
+		if not self._session_is_hr_manager():
+			return
+		employee_user = frappe.db.get_value("Employee", self.employee, "user_id") if self.employee else None
+		# HR raising their OWN request still spends their balance.
+		self.custom_raised_by_hr = 0 if employee_user and employee_user == frappe.session.user else 1
 
 	# ----- Rules 3 & 7: single-day unless the reason is On Duty -----
 	def _apply_single_day_or_range(self):
@@ -336,12 +352,19 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				# Only a ticked Edit box is a real punch; an unticked Time field may be the auto-now default.
 				in_dt = self._time_on_date(row.attendance_date, row.check_in) if row.get("edit_check_in") else None
 				out_dt = self._time_on_date(row.attendance_date, row.check_out) if row.get("edit_check_out") else None
+			# Changes(HP) HRMS #13. On Duty says where the person was, not what the clock read:
+			# it fills a punch that is MISSING and never rewrites one already recorded, which
+			# is how an approval came to replace a real 13:10 / 18:33 day with shift times.
+			# A punch EDIT is asked for, so it still overwrites -- but the punch it lands on
+			# is the one the dashboard reads (the day's first IN, its last OUT), not whichever
+			# row the database happened to return first.
 			if in_dt:
-				self._upsert_checkin(row.attendance_date, "IN", in_dt, None)
+				self._upsert_checkin(row.attendance_date, "IN", in_dt, None, fill_only=on_duty)
 			if out_dt:
-				self._upsert_checkin(row.attendance_date, "OUT", out_dt, None)
+				self._upsert_checkin(row.attendance_date, "OUT", out_dt, None, fill_only=on_duty)
 
-	def _upsert_checkin(self, date, log_type, time, checkin_name=None):
+	def _upsert_checkin(self, date, log_type, time, checkin_name=None, fill_only=False):
+		"""Write the requested punch. fill_only leaves a punch already on record alone."""
 		time = get_datetime(time)
 		name = checkin_name
 		if not name:
@@ -354,9 +377,15 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 					"time": ["between", [get_datetime(f"{day} 00:00:00"), get_datetime(f"{day} 23:59:59")]],
 				},
 				pluck="name",
+				# The day's first IN and last OUT are the two the dashboard shows, so they are
+				# the two an edit must land on (HRMS #13).
+				order_by="time asc" if log_type == "IN" else "time desc",
 				limit=1,
 			)
 			name = existing[0] if existing else None
+
+		if name and fill_only:
+			return
 
 		if name:
 			frappe.db.set_value(

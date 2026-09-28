@@ -310,10 +310,29 @@ def _get_shift_late_config(shift_name, cache):
 			for r in rows
 			if cint(r.late_by) > 0 and flt(r.deduction) > 0
 		]
+		end_time = frappe.db.get_value("Shift Type", shift_name, "end_time")
 		if start_time is not None and tiers:
-			cfg = {"start_time": start_time, "tiers": tiers}
+			cfg = {"start_time": start_time, "end_time": end_time, "tiers": tiers}
 	cache[shift_name] = cfg
 	return cfg
+
+
+def _second_half_start(shift_start, cfg, att_date):
+	"""Halfway through the shift: when the second half begins (Changes(HP) HRMS #10).
+
+	None when the shift has no end, or ends before it starts (an overnight shift), so the
+	caller keeps the shift start rather than inventing a midpoint.
+	"""
+	end = cfg.get("end_time")
+	if end is None:
+		return None
+	try:
+		shift_end = get_datetime(f"{getdate(att_date)} {end}")
+	except Exception:
+		return None
+	if shift_end <= shift_start:
+		return None
+	return shift_start + (shift_end - shift_start) / 2
 
 
 def _is_first_half_leave(att, cache):
@@ -352,7 +371,9 @@ def compute_late_deduction(attendance_map):
 	group of 4 lates deducts that tier's days; leftovers across tiers combining to 4 deduct
 	the smallest tier's days. Nothing deducts below a group of 4.
 
-	A first-half leave day is exempt: the second-half check-in is not a late arrival.
+	A half day counts too, measured against the half the employee is due for: on first-half
+	leave that is the shift's midpoint, so arriving for the second half is only late if it
+	is late for THAT half (Changes(HP) HRMS #10).
 	"""
 	cache = {}
 	leave_cache = {}
@@ -365,13 +386,17 @@ def compute_late_deduction(attendance_map):
 		att_date = att.get("attendance_date")
 		if not in_time or not shift or not att_date:
 			continue
-		if _is_first_half_leave(att, leave_cache):
-			continue
 		cfg = _get_shift_late_config(shift, cache)
 		if not cfg:
 			continue
 		try:
 			shift_start = get_datetime(f"{getdate(att_date)} {cfg['start_time']}")
+			# Changes(HP) HRMS #10: a half day the employee turned up for still earns the
+			# late penalty; it is measured against the half they are due for. On first-half
+			# leave that is the second half's start -- the shift's midpoint -- not the shift
+			# start, which they were on leave for.
+			if _is_first_half_leave(att, leave_cache):
+				shift_start = _second_half_start(shift_start, cfg, att_date) or shift_start
 			minutes_late = (get_datetime(in_time) - shift_start).total_seconds() / 60.0
 		except Exception:
 			continue

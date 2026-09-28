@@ -53,6 +53,18 @@ def add_attendance_request_custom_fields():
 				allow_on_submit=1,
 				default="0",
 			),
+			# Changes(HP) HRMS #12: 1 when HR raised this request on the employee's behalf.
+			# Those never consume the employee's own monthly edit balance.
+			dict(
+				fieldname="custom_raised_by_hr",
+				label="Raised by HR",
+				fieldtype="Check",
+				insert_after="custom_is_punch_edit",
+				read_only=1,
+				hidden=1,
+				allow_on_submit=1,
+				default="0",
+			),
 			# Single date for non "On Duty" requests; From/To are hidden and auto-set from this.
 			dict(
 				fieldname="custom_request_date",
