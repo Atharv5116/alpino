@@ -13,6 +13,20 @@ var PDQ_PAGE_LENGTHS = [20, 50, 100];
 
 var PDQ_STATUS_OPTIONS = '\nNot Started\nIn Progress\nCompleted';
 
+// Every filter on the page, in one list: the controls, the saved view and the server args
+// all read it (Changes(HP) #48).
+var PDQ_FILTER_KEYS = [
+	'search',
+	'sales_order',
+	'customer_po',
+	'invoice_no',
+	'dispatch_from',
+	'dispatch_to',
+	'customer',
+	'channel',
+	'status',
+];
+
 var PDQ_STATUS_COLORS = {
 	'Not Started': 'gray',
 	'In Progress': 'orange',
@@ -24,6 +38,7 @@ var PDQ_GRN_COLORS = { Pending: 'gray', Partial: 'orange', Completed: 'green', R
 var PDQ_COLUMNS = [
 	{ label: 'Delivery Note', render: (d, h) => `<strong>${h.esc(d.delivery_note)}</strong>` },
 	{ label: 'Sales Order', render: (d, h) => h.esc(d.sales_order) },
+	{ label: "Customer's Purchase No.", render: (d, h) => h.esc(d.customer_po_no || '—') },
 	{ label: 'Invoice', render: (d, h) => d.invoice_no ? (h.esc(d.invoice_no) + (d.invoice_pdf ? ` &nbsp;<a href="${h.esc(d.invoice_pdf)}" target="_blank" rel="noopener">PDF</a>` : '')) : '—' },
 	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || d.customer) },
 	{ label: 'Channel', render: (d, h) => h.esc(d.channel || '—') },
@@ -65,6 +80,30 @@ var PostDeliveryQueue = class {
 		this._filters.customer = frappe.ui.form.make_control({
 			df: { fieldtype: 'Link', fieldname: 'customer', label: __('Customer'), options: 'Customer' },
 			parent: w.find('.fld-customer'), render_input: true,
+		});
+		this._filters.sales_order = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: 'sales_order', label: __('Sales Order') },
+			parent: w.find('.fld-sales-order'), render_input: true,
+		});
+		this._filters.customer_po = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: 'customer_po', label: __("Customer's Purchase No.") },
+			parent: w.find('.fld-customer-po'), render_input: true,
+		});
+		this._filters.invoice_no = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: 'invoice_no', label: __('Invoice No.') },
+			parent: w.find('.fld-invoice-no'), render_input: true,
+		});
+		this._filters.dispatch_from = frappe.ui.form.make_control({
+			df: { fieldtype: 'Date', fieldname: 'dispatch_from', label: __('Dispatch Date - From') },
+			parent: w.find('.fld-dispatch-from'), render_input: true,
+		});
+		this._filters.dispatch_to = frappe.ui.form.make_control({
+			df: { fieldtype: 'Date', fieldname: 'dispatch_to', label: __('Dispatch Date - To') },
+			parent: w.find('.fld-dispatch-to'), render_input: true,
+		});
+		this._filters.channel = frappe.ui.form.make_control({
+			df: { fieldtype: 'Link', fieldname: 'channel', label: __('Channel'), options: 'Channel' },
+			parent: w.find('.fld-channel'), render_input: true,
 		});
 	}
 
@@ -109,24 +148,21 @@ var PostDeliveryQueue = class {
 
 	_args() {
 		const f = this._filters;
-		return {
-			start: this.start,
-			page_length: this.page_length,
-			search: f.search.get_value() || '',
-			status: f.status.get_value() || '',
-			customer: f.customer.get_value() || '',
-		};
+		var args = { start: this.start, page_length: this.page_length };
+		PDQ_FILTER_KEYS.forEach(function (k) {
+			args[k] = (f[k] && f[k].get_value()) || '';
+		});
+		return args;
 	}
 
 	_save_view_prefs() {
 		if (!window.alpinos || !alpinos.list_prefs) return;
 		const f = this._filters;
-		alpinos.list_prefs.save(PDQ_ROUTE, {
-			search: (f.search && f.search.get_value()) || '',
-			status: (f.status && f.status.get_value()) || '',
-			customer: (f.customer && f.customer.get_value()) || '',
-			page_length: this.page_length,
+		var saved = { page_length: this.page_length };
+		PDQ_FILTER_KEYS.forEach(function (k) {
+			saved[k] = (f[k] && f[k].get_value()) || '';
 		});
+		alpinos.list_prefs.save(PDQ_ROUTE, saved);
 	}
 
 	_restore_view_prefs() {
@@ -141,11 +177,13 @@ var PostDeliveryQueue = class {
 			else c.set_value(v);
 		};
 		// unknown/renamed keys are ignored, bad values dropped
-		if (typeof saved.search === 'string') set_sync(f.search, saved.search);
-		if (typeof saved.status === 'string' && PDQ_STATUS_OPTIONS.split('\n').includes(saved.status)) {
-			set_sync(f.status, saved.status);
-		}
-		if (typeof saved.customer === 'string') set_sync(f.customer, saved.customer);
+		PDQ_FILTER_KEYS.forEach(function (k) {
+			var v = saved[k];
+			if (typeof v !== 'string' || !v || !f[k]) return;
+			// A status outside the list is dropped rather than sent to the server.
+			if (k === 'status' && !PDQ_STATUS_OPTIONS.split('\n').includes(v)) return;
+			set_sync(f[k], v);
+		});
 		const pl = cint(saved.page_length);
 		if (PDQ_PAGE_LENGTHS.includes(pl)) {
 			this.page_length = pl;
