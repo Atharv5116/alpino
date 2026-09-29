@@ -300,7 +300,19 @@ var PurchaseInwardEntry = class {
 			// Without this the control appends the site time zone as a description, which
 			// renders as a loose "Asia/Kolkata" under the field.
 			hide_timezone: 1,
+			description: 'Today or later. The Inward Date cannot be in the past.',
 		}, frappe.datetime.now_datetime());
+		// Section 1: Purchase books an arrival, so the Inward Date is today or later. The
+		// calendar greys out earlier days and a typed past date is refused and put back;
+		// the server enforces the same rule on save (purchase_inward._validate_inward_dates).
+		// By day, like the server, so this morning is still accepted this afternoon.
+		if (window.alpinos_date_bound && inward_dt) {
+			alpinos_date_bound(inward_dt, {
+				label: 'Inward Date & Time',
+				bound: 'no-past',
+				reset: () => frappe.datetime.now_datetime(),
+			});
+		}
 		// Going into the field is the person's own edit; nothing programmatic focuses it.
 		if (inward_dt && inward_dt.$input) {
 			inward_dt.$input.on('focus keydown input', () => { this._inward_dt_edited = true; });

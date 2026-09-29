@@ -95,7 +95,9 @@
    the open list to the screen under its input (position fixed) and it floats over
    the card exactly as it did before the grid scrolled. */
 .purchase-order-entry .items-table { overflow-x: auto; overflow-y: hidden; }
-.purchase-order-entry .items-table td { position: relative; }
+/* Content stays inside its own column (fixed layout would otherwise let a long value
+   run over the next cell). The Link dropdowns are position:fixed, so this never clips them. */
+.purchase-order-entry .items-table td { position: relative; overflow: hidden; }
 .purchase-order-entry .items-table > table.po-table { min-width: 1640px; table-layout: fixed; }
 .purchase-order-entry .po-table td { padding: 6px 6px; }
 .purchase-order-entry .po-table .form-group { margin-bottom: 0; }
@@ -108,6 +110,12 @@
 	color: var(--text-color);
 }
 .purchase-order-entry .po-num .control-value { text-align: right; }
+/* Item Name and UOM are words, not figures: they wrap onto a second line instead of
+   running into the next column. */
+.purchase-order-entry .po-table .cell-item-name .control-value,
+.purchase-order-entry .po-table .cell-uom .control-value {
+	white-space: normal; overflow-wrap: anywhere; line-height: 1.35;
+}
 .purchase-order-entry .po-table .cell-amount .control-value { font-weight: 600; }
 
 /* Resting state: a bare route is a NEW order, which is legitimate, so the form
