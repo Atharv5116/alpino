@@ -1,3 +1,5 @@
+import re
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -178,6 +180,7 @@ class BuyerMaster(Document):
 		self.name = next_buyer_id()
 
 	def validate(self):
+		self._set_search_alias()
 		self._migrate_legacy_address_if_empty()
 		self._normalize_addresses()
 		self._validate_primary_address()
@@ -197,6 +200,28 @@ class BuyerMaster(Document):
 			)
 
 		_ensure_customer_for_obm(self)
+
+	def _set_search_alias(self):
+		"""The business name in the spellings people type (Changes(HP) #50).
+
+		The desk list filters a name with a plain LIKE, so "U.S Supplements" answered to
+		"U.S" and to nothing else -- a Sales Admin typing "US Supplements", which is how
+		anybody writes it, found the party missing. The alias carries the name as it is, the
+		name without its punctuation, and the letters and digits alone, so all three spellings
+		match. It is hidden on the form and filled here, never typed.
+		"""
+		name = (self.get("customer_business_name") or "").strip()
+		if not name:
+			self.custom_search_alias = ""
+			return
+		spaced = re.sub(r"[^0-9A-Za-z ]+", "", name)
+		spaced = re.sub(r"\s+", " ", spaced).strip()
+		bare = re.sub(r"[^0-9A-Za-z]+", "", name)
+		parts = [name]
+		for variant in (spaced, bare):
+			if variant and variant.lower() not in (p.lower() for p in parts):
+				parts.append(variant)
+		self.custom_search_alias = " | ".join(parts)
 
 	def _validate_gstin_and_pincodes(self):
 		"""GSTIN + PIN format checks, only on new/changed values so legacy bad data doesn't block saves."""
@@ -394,3 +419,51 @@ class BuyerMaster(Document):
 				self.shipping_address = ""
 				self.shipping_state = ""
 				self.shipping_city = ""
+
+
+@frappe.whitelist()
+def backfill_search_alias(apply=0, sample=10):
+	"""Fill Search (any spelling) on the buyers already on record (Changes(HP) #50).
+
+	The alias is written on save, so existing buyers carry none until they are next edited
+	and stay unfindable by any spelling but their own. This fills them in place, writing
+	only that field and leaving the modified time alone.
+
+	  bench --site SITE execute alpinos.alpinos_development.doctype.buyer_master.buyer_master.backfill_search_alias
+	  bench --site SITE execute alpinos.alpinos_development.doctype.buyer_master.buyer_master.backfill_search_alias --kwargs "{'apply':1}"
+	"""
+	apply = int(apply)
+	sample = int(sample)
+	rows = frappe.get_all(
+		"Buyer Master", fields=["name", "customer_business_name", "custom_search_alias"]
+	)
+	changed, samples = 0, []
+	for row in rows:
+		name = (row.customer_business_name or "").strip()
+		if not name:
+			continue
+		spaced = re.sub(r"\s+", " ", re.sub(r"[^0-9A-Za-z ]+", "", name)).strip()
+		bare = re.sub(r"[^0-9A-Za-z]+", "", name)
+		parts = [name]
+		for variant in (spaced, bare):
+			if variant and variant.lower() not in (p.lower() for p in parts):
+				parts.append(variant)
+		alias = " | ".join(parts)
+		if (row.custom_search_alias or "") == alias:
+			continue
+		changed += 1
+		if len(samples) < sample:
+			samples.append({"buyer": row.name, "alias": alias})
+		if apply:
+			frappe.db.set_value(
+				"Buyer Master", row.name, "custom_search_alias", alias, update_modified=False
+			)
+	if apply:
+		frappe.db.commit()
+	return {
+		"mode": "APPLY" if apply else "DRY-RUN",
+		"buyers": len(rows),
+		"to_fill": changed,
+		"filled": changed if apply else 0,
+		"sample": samples,
+	}

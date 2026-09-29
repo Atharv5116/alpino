@@ -17,6 +17,7 @@
   "gst_exclusive_buyer",
   "profile_section",
   "customer_business_name",
+  "custom_search_alias",
   "site_name",
   "is_parent",
   "parent_buyer",
@@ -124,6 +125,17 @@
    "in_list_view": 1,
    "label": "Customer (Business Name)",
    "reqd": 1
+  },
+  {
+   "fieldname": "custom_search_alias",
+   "fieldtype": "Data",
+   "label": "Search (any spelling)",
+   "description": "The business name in the spellings people type it: with its punctuation, without, and with nothing but letters and digits. Filled on save; not for entry.",
+   "read_only": 1,
+   "hidden": 1,
+   "in_standard_filter": 1,
+   "no_copy": 1,
+   "print_hide": 1
   },
   {
    "fieldname": "site_name",
@@ -519,5 +531,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "customer_business_name"
+ "title_field": "customer_business_name",
+ "search_fields": "customer_business_name,custom_search_alias"
 }
