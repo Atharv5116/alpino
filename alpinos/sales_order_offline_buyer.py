@@ -21,7 +21,19 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 	   buyers only.
 	"""
 	txt = txt or ""
-	params = {"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)}
+	# Changes(HP) #50: "U.S Supplements" was reported as unfindable. It is there, healthy and
+	# in the right channel -- but the name carries dots, and a plain LIKE leaves somebody who
+	# types "US Supplements" with nothing. Both sides are now compared with the punctuation
+	# stripped as well, so U.S, US and U S all find it. The plain LIKE stays for the GSTIN
+	# and the docname.
+	import re
+
+	params = {
+		"txt": f"%{txt}%",
+		"norm": f"%{re.sub(r'[^0-9A-Za-z]', '', txt)}%",
+		"start": int(start),
+		"page_len": int(page_len),
+	}
 	if parents_only:
 		# root = an explicit parent OR a buyer with no parent (its own single-node family)
 		parent_clause = "AND (IFNULL(m.is_parent, 0) = 1 OR IFNULL(m.parent_buyer, '') = '')"
@@ -46,7 +58,9 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		WHERE IFNULL(c.disabled, 0) = 0
 			{parent_clause}
 			{channel_clause}
-			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s OR m.gst_no LIKE %(txt)s)
+			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s OR m.gst_no LIKE %(txt)s
+				OR REGEXP_REPLACE(c.customer_name, '[^0-9A-Za-z]', '') LIKE %(norm)s
+				OR REGEXP_REPLACE(c.name, '[^0-9A-Za-z]', '') LIKE %(norm)s)
 		GROUP BY c.name, c.customer_name
 		ORDER BY c.customer_name ASC
 		LIMIT %(page_len)s OFFSET %(start)s

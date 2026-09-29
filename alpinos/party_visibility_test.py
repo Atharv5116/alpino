@@ -158,6 +158,26 @@ def _run():
 	check("#50 the broken-link report finds the renamed-away Customer and only that",
 		_broken_links_are_found)
 
+	def _a_name_with_dots_is_found_without_them():
+		"""The actual U.S Supplements complaint: the party is healthy, the typing differs."""
+		from alpinos.sales_order_offline_buyer import _customers_with_offline_buyer_master_query
+
+		cust = _customer(f"{tag} U.S Supplements")
+		_buyer(f"{tag}-OBM-7", f"{tag} U.S Supplements", customer=cust, is_parent=1)
+
+		def _search(text):
+			return {row[0] for row in _customers_with_offline_buyer_master_query(
+				text, 0, 50, channel="Offline", parents_only=True)}
+
+		_assert(cust in _search(f"{tag} U.S"), "typing the name WITH dots does not find it")
+		_assert(cust in _search(f"{tag} US"), "typing US without the dot finds nothing")
+		_assert(cust in _search(f"{tag} US Supplements"), "typing US Supplements finds nothing")
+		_assert(cust in _search("Supplements"), "a plain word search stopped working")
+		_assert(cust not in _search(f"{tag} Vitamins"), "an unrelated term matched it")
+
+	check("#50 a party whose name carries dots is found when they are not typed",
+		_a_name_with_dots_is_found_without_them)
+
 	def _mutation_the_checks_read_the_real_report():
 		"""Break the cause the report gives and the checks above must stop passing."""
 		row = _reasons(out, ecom)
