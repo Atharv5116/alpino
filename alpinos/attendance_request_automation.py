@@ -1166,3 +1166,60 @@ def build_attendance_request_details(employee, from_date, to_date, reason=None):
 		d = add_days(d, 1)
 		guard += 1
 	return {"details": details, "logs": logs}
+
+
+@frappe.whitelist()
+def backfill_raised_by_hr(apply=0, sample=25):
+	"""Stamp custom_raised_by_hr on the requests HR already raised for somebody else.
+
+	Changes(HP) HRMS #12 marks new requests as they are created, so every request made
+	BEFORE it still counts against the employee's four edits a month. This reads the ones
+	already on record: raised by a user holding HR Manager, for an employee who is somebody
+	else. Dry run by default; apply=1 writes the flag and nothing else, leaving the request's
+	modified time alone.
+
+	  bench --site SITE execute alpinos.attendance_request_automation.backfill_raised_by_hr
+	  bench --site SITE execute alpinos.attendance_request_automation.backfill_raised_by_hr --kwargs "{'apply':1}"
+	"""
+	apply = int(apply)
+	sample = int(sample)
+	if not frappe.get_meta("Attendance Request").has_field("custom_raised_by_hr"):
+		return {"error": "custom_raised_by_hr is missing -- run bench migrate on this site first"}
+
+	rows = frappe.get_all(
+		"Attendance Request",
+		filters=[["docstatus", "<", 2]],
+		fields=["name", "owner", "employee", "from_date", "custom_raised_by_hr"],
+	)
+	hr_users = {}
+	targets = []
+	for r in rows:
+		if cint(r.get("custom_raised_by_hr")):
+			continue
+		owner = r.get("owner")
+		if not owner or owner in ("Administrator", "Guest"):
+			continue
+		if owner not in hr_users:
+			hr_users[owner] = "HR Manager" in frappe.get_roles(owner)
+		if not hr_users[owner]:
+			continue
+		employee_user = frappe.db.get_value("Employee", r.employee, "user_id") if r.employee else None
+		# HR's own request still spends HR's balance, the same rule the live stamp uses.
+		if employee_user and employee_user == owner:
+			continue
+		targets.append({"request": r.name, "employee": r.employee, "raised_by": owner, "date": str(r.from_date)})
+
+	if apply:
+		for t in targets:
+			frappe.db.set_value(
+				"Attendance Request", t["request"], "custom_raised_by_hr", 1, update_modified=False
+			)
+		frappe.db.commit()
+
+	return {
+		"mode": "APPLY" if apply else "DRY-RUN",
+		"requests_checked": len(rows),
+		"to_stamp": len(targets),
+		"stamped": len(targets) if apply else 0,
+		"sample": targets if not sample else targets[:sample],
+	}
