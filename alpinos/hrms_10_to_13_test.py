@@ -221,6 +221,36 @@ def _run():
 	check("#12 MUTATION: clearing the flag puts the request back in the balance",
 		_mutation_the_check_reads_the_flag)
 
+	def _the_backfill_finds_requests_raised_before_the_flag_existed():
+		from alpinos.attendance_request_automation import backfill_raised_by_hr
+
+		hr_user = f"{tag.lower()}.hr@example.com"
+		_insert("User", name=hr_user, email=hr_user, first_name="Hr", user_type="System User", enabled=1)
+		_insert("Has Role", name=f"{tag}-ROLE", parent=hr_user, parenttype="User",
+			parentfield="roles", role="HR Manager")
+		# Two requests from before the flag: one HR raised for the employee, one the
+		# employee raised themselves. Only the first is HR's to carry.
+		old_hr = _request("OLDHR", raised_by_hr=0, edits=1)
+		old_own = _request("OLDOWN", raised_by_hr=0, edits=1)
+		frappe.db.set_value("Attendance Request", old_hr, "owner", hr_user, update_modified=False)
+		frappe.db.set_value("Attendance Request", old_own, "owner", emp_user, update_modified=False)
+
+		dry = backfill_raised_by_hr(apply=0, sample=0)
+		listed = [t["request"] for t in dry["sample"]]
+		_assert(old_hr in listed, f"the HR-raised request was not found: {listed}")
+		_assert(old_own not in listed, f"the employee's own request was picked up too: {listed}")
+		_assert(frappe.db.get_value("Attendance Request", old_hr, "custom_raised_by_hr") in (0, None),
+			"the dry run wrote the flag")
+
+		backfill_raised_by_hr(apply=1, sample=0)
+		_assert(frappe.db.get_value("Attendance Request", old_hr, "custom_raised_by_hr") == 1,
+			"the backfill did not stamp HR's request")
+		_assert(frappe.db.get_value("Attendance Request", old_own, "custom_raised_by_hr") in (0, None),
+			"the backfill stamped the employee's own request")
+
+	check("#12 the backfill stamps the HR-raised requests already on record, and only those",
+		_the_backfill_finds_requests_raised_before_the_flag_existed)
+
 	# ---------------------------------------------------------------- HRMS #13
 	from alpinos.overrides.attendance_request_override import CustomAttendanceRequest
 
