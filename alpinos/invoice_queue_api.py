@@ -893,11 +893,16 @@ def customer_link_query(doctype, txt, searchfield, start, page_len, filters):
 	channel = (filters or {}).get("channel") or None
 	where, params, _sel, _ob, _keys = _build({"channel": channel}, None, None, None)
 	params["txt"] = f"%{_escape_like(txt)}%"
+	# Changes(HP) #50: punctuation in a party's name must not decide whether it is found --
+	# "U.S Supplements" has to answer to "US Supplements" as well, here as on the entry pages.
+	params["norm"] = "%" + "".join(ch for ch in str(txt or "") if ch.isalnum()) + "%"
 	return frappe.db.sql(
 		f"""
 		SELECT DISTINCT so.customer, so.customer_name
 		FROM `tabSales Order` so {_JOINS}
-		WHERE {where} AND (so.customer LIKE %(txt)s OR so.customer_name LIKE %(txt)s)
+		WHERE {where} AND (so.customer LIKE %(txt)s OR so.customer_name LIKE %(txt)s
+			OR REGEXP_REPLACE(so.customer_name, '[^0-9A-Za-z]', '') LIKE %(norm)s
+			OR REGEXP_REPLACE(so.customer, '[^0-9A-Za-z]', '') LIKE %(norm)s)
 		ORDER BY so.customer_name
 		LIMIT {cint(page_len) or 20} OFFSET {cint(start) or 0}
 		""",
