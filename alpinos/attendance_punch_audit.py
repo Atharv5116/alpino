@@ -70,7 +70,8 @@ def touched_by_requests(from_date=None, to_date=None, limit=200):
 			"time_now": str(r.time),
 			"request": request[0].name if request else None,
 			"request_reason": request[0].reason if request else None,
-			"approved_by": request[0].owner if request else None,
+			"raised_by": request[0].owner if request else None,
+			"request_state": request[0].workflow_state if request else None,
 		}
 		if cint(r.changed_after_seconds) > _EDIT_GAP_SECONDS:
 			# The row existed before the request: the device's punch, rewritten.
@@ -81,10 +82,19 @@ def touched_by_requests(from_date=None, to_date=None, limit=200):
 		else:
 			created.append(entry)
 
+	# An On Duty request should never have touched a punch already on record: those are the
+	# ones the fix was for. A punch EDIT overwriting is what an edit is, so it is only wrong
+	# where it landed on the wrong row -- the reason tells the two apart.
+	by_reason = {}
+	for e in overwritten:
+		key = e.get("request_reason") or "no request found"
+		by_reason[key] = by_reason.get(key, 0) + 1
+
 	limit = cint(limit)
 	return {
 		"overwritten_count": len(overwritten),
 		"created_count": len(created),
+		"overwritten_by_reason": by_reason,
 		# These are the ones to look at: a real punch was replaced.
 		"overwritten": overwritten[:limit] if limit else overwritten,
 		"created_sample": created[:5],
