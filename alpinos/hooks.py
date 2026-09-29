@@ -28,7 +28,9 @@ app_license = "mit"
 app_include_css = "/assets/alpinos/css/alpinos_pages.css"
 app_include_js = [
 	"/assets/alpinos/js/sales_order_hub_desk_v3.js",
-	"/assets/alpinos/js/item_row_colors.js",
+	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
+	# the hard-coded item_row_colors.js; its reports became a default configuration).
+	"/assets/alpinos/js/item_display.js",
 	"/assets/alpinos/js/alpinos_list_prefs.js",
 	"/assets/alpinos/js/alpinos_change_log.js",
 ]
@@ -547,7 +549,8 @@ scheduler_events = {
 # --------------------
 
 extend_bootinfo = [
-	"alpinos.customize_expense_claim.extend_bootinfo"
+	"alpinos.customize_expense_claim.extend_bootinfo",
+	"alpinos.item_display_config.extend_bootinfo"
 ]
 
 # Testing

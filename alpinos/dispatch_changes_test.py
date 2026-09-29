@@ -1,15 +1,16 @@
-"""Changes(HP) #35: dispatch date sync between Sales Order, Pick List and Delivery Note, and
-#43: Dispatch Date editable on a draft Delivery Note.
+"""Changes(HP) #35-#38: dispatch date sync, Dispatch Report sections, hidden finished
+orders, and the Pick List packing sheet.
 
 Run:  bench --site alpinos.test execute alpinos.dispatch_changes_test.run
 
 #35 is driven through the REAL save paths on real Pick Lists / Delivery Notes of the
-site (after-submit edit, draft save, bulk edit, the Delivery Note entry page). Everything runs in one transaction that is
-rolled back at the end, and commits made by the code under test are ignored while it runs.
+site (after-submit edit, draft save, bulk edit); #36 and #37 run on fixture documents
+written straight to the tables. Everything runs in one transaction that is rolled back
+at the end, and commits made by the code under test are ignored while it runs.
 """
 
 import frappe
-from frappe.utils import add_days, get_datetime, getdate, today
+from frappe.utils import add_days, flt, get_datetime, getdate, today
 
 R = []
 
@@ -59,7 +60,9 @@ def run():
 		tag = "DCT-" + frappe.generate_hash(length=6).upper()
 		_dispatch_date_sync_real_documents()
 		_dispatch_date_sync_rules(tag)
-		_dispatch_date_on_draft_note()
+		_dispatch_report(tag)
+		_hidden_finished_orders(tag)
+		_packing_sheet()
 	finally:
 		frappe.db.commit = real_commit
 		frappe.db.rollback()
@@ -243,48 +246,170 @@ def _dispatch_date_sync_rules(tag):
 		_queue_status_follows_the_date)
 
 
-# --------------------------------------------------- #43 draft DN date
+# ---------------------------------------------------------------- #36 report
 
 
-def _dispatch_date_on_draft_note():
-	from alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry import (
-		get_delivery_note_data,
-		save_delivery_note_data,
-	)
+def _dispatch_report(tag):
+	from alpinos.dispatch_report_api import get_dispatch_report_data
 
-	dn = frappe.db.sql(
-		"""
-		SELECT dn.name, dn.custom_sales_order_id AS so, MAX(dni.against_pick_list) AS pl
-		FROM `tabDelivery Note` dn JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
-		WHERE dn.docstatus = 0 AND IFNULL(dn.is_return, 0) = 0 AND IFNULL(dni.against_pick_list, '') <> ''
-		  AND IFNULL(dn.custom_sales_order_id, '') <> '' AND IFNULL(dn.custom_transporter_name, '') <> ''
-		GROUP BY dn.name ORDER BY dn.modified DESC LIMIT 1
-		""",
-		as_dict=True,
-	)
-	if not dn:
-		skip("#43 draft Delivery Note date", "no draft Delivery Note with a Pick List and Transporter")
+	day = getdate("2026-09-11")
+	ct = f"{tag}-CT"
+	_insert("Alpino Customer Type", name=ct, abbreviation=tag[-4:], sequence=0)
+	i1, c1, c2, bundle = f"{tag}-I1", f"{tag}-C1", f"{tag}-C2", f"{tag}-BUNDLE"
+	for n, code in enumerate((i1, c1, c2), start=1):
+		_insert("Item", name=code, item_code=code, item_name=code, custom_sequence=90000 + n, disabled=0, stock_uom="Nos")
+
+	def so(n, status, lines, **extra):
+		name = f"{tag}-SO-{n}"
+		_insert("Sales Order", name=name, docstatus=1, custom_workflow_status=status, order_type=ct,
+			custom_dispatch_date=add_days(day, 20), status="To Deliver and Bill", customer="X", customer_name="X", **extra)
+		rows = {}
+		for idx, (code, qty) in enumerate(lines, start=1):
+			rows[code] = _insert("Sales Order Item", parent=name, parenttype="Sales Order", parentfield="items",
+				item_code=code, qty=qty, stock_qty=qty, idx=idx).name
+		return name, rows
+
+	def dn(n, sales_order, lines, dispatch, posting, docstatus=1, packed=None, pick_list=None):
+		name = f"{tag}-DN-{n}"
+		_insert("Delivery Note", name=name, docstatus=docstatus, is_return=0, custom_sales_order_id=sales_order,
+			custom_dispatch_date=dispatch, posting_date=posting)
+		items = {}
+		for idx, (code, qty, so_detail) in enumerate(lines, start=1):
+			items[code] = _insert("Delivery Note Item", parent=name, parenttype="Delivery Note", parentfield="items",
+				item_code=code, qty=qty, stock_qty=qty, so_detail=so_detail, against_sales_order=sales_order,
+				against_pick_list=pick_list, idx=idx).name
+		for idx, (parent_code, code, qty) in enumerate(packed or [], start=1):
+			_insert("Packed Item", parent=name, parenttype="Delivery Note", parentfield="packed_items",
+				parent_item=parent_code, item_code=code, qty=qty, parent_detail_docname=items[parent_code], idx=idx)
+		return name
+
+	# Approved, far-future date: pending whatever its date.
+	so("A", "Today's Dispatch", [(i1, 10)])
+	# Not approved yet: never pending.
+	so("B", "Warehouse Approval Pending", [(i1, 7)])
+	# Picking, a DRAFT note and a Pick List dated the report day: still all pending, nothing dispatched.
+	c, c_rows = so("C", "Picking In Progress", [(i1, 5)])
+	dn("C", c, [(i1, 5, c_rows[i1])], f"{day} 10:00:00", day, docstatus=0)
+	_insert("Pick List", name=f"{tag}-PL-C", docstatus=0, purpose="Delivery", custom_sales_order_id=c,
+		custom_dispatch_date=day, custom_total_box=9, custom_gross_weight=90)
+	# Partial: 8 of 20 out on the day, posted the same day.
+	d, d_rows = so("D", "Partial Dispatched", [(i1, 20)])
+	_insert("Pick List", name=f"{tag}-PL-D", docstatus=1, purpose="Delivery", custom_sales_order_id=d,
+		custom_dispatch_date=day, custom_total_box=3, custom_gross_weight=30)
+	dn("D", d, [(i1, 8, d_rows[i1])], f"{day} 11:00:00", day, pick_list=f"{tag}-PL-D")
+	# The spec's example: dated the 11th, submitted (posted) on the 12th.
+	e, e_rows = so("E", "Delivery Note Created", [(i1, 6)])
+	dn("E", e, [(i1, 6, e_rows[i1])], f"{day} 18:00:00", add_days(day, 1))
+	# Combo of 2 x C1 + 1 x C2, 3 ordered; 2 combos' worth packed on the day.
+	f, f_rows = so("F", "Partial Dispatched", [(bundle, 3)])
+	for idx, (code, qty) in enumerate(((c1, 6), (c2, 3)), start=1):
+		_insert("Packed Item", parent=f, parenttype="Sales Order", parentfield="packed_items", parent_item=bundle,
+			item_code=code, qty=qty, parent_detail_docname=f_rows[bundle], idx=idx)
+	dn("F", f, [(bundle, 2, f_rows[bundle])], f"{day} 12:00:00", day, packed=[(bundle, c1, 4), (bundle, c2, 2)])
+	# Finished by force, and force closed: never pending.
+	so("G", "Forced Completed", [(i1, 4)])
+	so("H", "Partial Dispatched", [(i1, 3)], custom_force_closed=1)
+
+	def report(on):
+		data = get_dispatch_report_data(date=str(on))
+		return {i["item_code"]: i for i in data["items"] if i["item_code"] in (i1, c1, c2)}, data["summary"]
+
+	items, summary = report(day)
+
+	check("#36 pending = approved orders less SUBMITTED notes, whatever the date or status",
+		lambda: _assert(flt(items[i1]["pending_dispatch"]) == 27,
+			f"I1 pending {items[i1]['pending_dispatch']}, expected 27 (A 10 + C 5 + D 12; B, E, G, H excluded)"))
+
+	check("#36 dispatch on a date = submitted notes carrying that Dispatch Date (draft note and Pick List ignored)",
+		lambda: _assert(flt(items[i1]["today_dispatch"]) == 14,
+			f"I1 dispatched {items[i1]['today_dispatch']}, expected 14 (D 8 + E 6)"))
+
+	def _submitted_later_stays_on_its_date():
+		nxt, _ = report(add_days(day, 1))
+		_assert(flt(nxt[i1]["today_dispatch"]) == 0,
+			f"a note dated the 11th but posted the 12th shows under the 12th ({nxt[i1]['today_dispatch']})")
+
+	check("#36 a note dated the 11th and submitted the 12th appears under the 11th only", _submitted_later_stays_on_its_date)
+
+	def _combo_in_components():
+		_assert(flt(items[c1]["today_dispatch"]) == 4 and flt(items[c2]["today_dispatch"]) == 2,
+			f"combo dispatch C1 {items[c1]['today_dispatch']} C2 {items[c2]['today_dispatch']}")
+		_assert(flt(items[c1]["pending_dispatch"]) == 2 and flt(items[c2]["pending_dispatch"]) == 1,
+			f"combo pending C1 {items[c1]['pending_dispatch']} C2 {items[c2]['pending_dispatch']}")
+
+	check("#36 a combo is counted in its components, dispatched and pending", _combo_in_components)
+
+	check("#36 per customer type columns carry the same numbers",
+		lambda: _assert(
+			flt(items[i1]["dispatch_by_ct"].get(ct)) == 14 and flt(items[i1]["pending_by_ct"].get(ct)) == 27,
+			f"by_ct {items[i1]['dispatch_by_ct']} / {items[i1]['pending_by_ct']}"))
+
+	check("#36 the day's boxes come from the notes' Pick Lists, not every Pick List dated that day",
+		lambda: _assert(flt(summary["box_by_ct"].get(ct)) == 3 and flt(summary["gw_by_ct"].get(ct)) == 30,
+			f"box {summary['box_by_ct'].get(ct)} gw {summary['gw_by_ct'].get(ct)}"))
+
+	check("#36 Net Unit subtracts only the dispatch not yet in the day's stock",
+		lambda: _assert(flt(items[i1]["net_unit"]) == flt(items[i1]["today_stock"]) - 6 - 27,
+			f"net {items[i1]['net_unit']} stock {items[i1]['today_stock']}"))
+
+
+# --------------------------------------------------------------- #37 hidden
+
+
+def _hidden_finished_orders(tag):
+	from alpinos.sales_order_api import get_sales_order_entry_list
+
+	statuses = ["Today's Dispatch", "Dispatched", "Forced Dispatched", "Completed", "Forced Completed",
+		"Cancelled", "Rejected", "Partial Dispatched"]
+	for n, status in enumerate(statuses):
+		_insert("Sales Order", name=f"{tag}-HID-{n}", docstatus=1, custom_workflow_status=status,
+			customer="X", customer_name="X", transaction_date=today(), company=frappe.defaults.get_global_default("company"))
+
+	email = "dctest.warehouse@example.com"
+	if not frappe.db.exists("User", email):
+		frappe.get_doc({"doctype": "User", "email": email, "first_name": "DCT", "send_welcome_email": 0,
+			"user_type": "System User"}).insert(ignore_permissions=True)
+	u = frappe.get_doc("User", email)
+	u.set("roles", [{"role": "Warehouse Manager"}])
+	u.save(ignore_permissions=True)
+
+	def listed(show_all):
+		frappe.set_user(email)
+		try:
+			rows = get_sales_order_entry_list(search=f"{tag}-HID", page_length=100, show_all=show_all)["data"]
+		finally:
+			frappe.set_user("Administrator")
+		return {r.get("custom_workflow_status") for r in rows}
+
+	def _default_hides_finished():
+		got = listed(0)
+		hidden = {"Dispatched", "Forced Dispatched", "Completed", "Forced Completed", "Cancelled", "Rejected"}
+		_assert(not (got & hidden), f"shown by default: {sorted(got & hidden)}")
+		_assert({"Today's Dispatch", "Partial Dispatched"} <= got, f"open orders missing: {sorted(got)}")
+
+	check("#37 Forced Dispatched, Completed and Forced Completed are hidden by default (warehouse)", _default_hides_finished)
+	check("#37 Show All brings every status back",
+		lambda: _assert(listed(1) == set(statuses), f"Show All listed {sorted(listed(1))}"))
+
+
+# --------------------------------------------------------------- #38 PDF
+
+
+def _packing_sheet():
+	from frappe.utils.pdf import prepare_options
+
+	pl = frappe.db.get_value("Pick List", {"docstatus": ["<", 2]}, "name", order_by="modified desc")
+	if not pl:
+		skip("#38 packing sheet", "no Pick List on this site")
 		return
-	n = dn[0]
-	new = add_days(today(), 6)
 
-	def _editable_and_carried():
-		frappe.db.set_value("Delivery Note", n.name, "custom_dispatch_date", f"{today()} 15:45:00", update_modified=False)
-		data = get_delivery_note_data(n.name)
-		_assert(data.get("custom_dispatch_date_value") == str(today()), f"page value {data.get('custom_dispatch_date_value')}")
-		save_delivery_note_data(n.name, frappe.as_json({"custom_dispatch_date": str(new)}))
-		value = frappe.db.get_value("Delivery Note", n.name, "custom_dispatch_date")
-		_assert(getdate(value) == getdate(new), f"note still {value}")
-		_assert(get_datetime(value).strftime("%H:%M:%S") == "15:45:00", f"time of day lost: {value}")
-		_assert(getdate(frappe.db.get_value("Sales Order", n.so, "custom_dispatch_date")) == getdate(new), "Sales Order not updated")
-		_assert(getdate(frappe.db.get_value("Pick List", n.pl, "custom_dispatch_date")) == getdate(new), "Pick List not updated")
+	def _layout_and_margins():
+		html = frappe.get_print("Pick List", pl, print_format="Pick List Packing Sheet", no_letterhead=1)
+		for text in ("QC Attended By", "Sales Order ID", "ACTUAL BOX", "TOTAL UNITS", "SAMPLE QTY", "BATCH CODE"):
+			_assert(text in html, f"{text!r} missing from the sheet")
+		_assert(">QTY<" in html and ">BOX<" in html, "item headings are not QTY / BOX")
+		_html, options = prepare_options(html, {})
+		for side in ("margin-top", "margin-bottom", "margin-left", "margin-right"):
+			_assert(options.get(side) == "5mm", f"{side} is {options.get(side)}")
 
-	check("#43 a draft note's page saves a new Dispatch Date and carries it to the order and Pick List",
-		_editable_and_carried)
-
-	def _blank_does_not_clear():
-		before = frappe.db.get_value("Delivery Note", n.name, "custom_dispatch_date")
-		save_delivery_note_data(n.name, frappe.as_json({"custom_dispatch_date": None}))
-		_assert(frappe.db.get_value("Delivery Note", n.name, "custom_dispatch_date") == before, "a blank date cleared it")
-
-	check("#43 an empty date on the page does not blank the mandatory Dispatch Date", _blank_does_not_clear)
+	check("#38 packing sheet has the reference layout and 5mm PDF margins", _layout_and_margins)

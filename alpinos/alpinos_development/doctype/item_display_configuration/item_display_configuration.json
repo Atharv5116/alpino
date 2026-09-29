@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:config_name",
+ "creation": "2026-09-15 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "config_name",
+  "enabled",
+  "targets_section",
+  "reports",
+  "pages",
+  "sku_field",
+  "color_section",
+  "apply_item_color",
+  "color_display",
+  "column_break_seq",
+  "apply_item_sequence",
+  "sort_direction"
+ ],
+ "fields": [
+  {
+   "fieldname": "config_name",
+   "fieldtype": "Data",
+   "label": "Configuration Name",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "targets_section",
+   "fieldtype": "Section Break",
+   "label": "Applies To"
+  },
+  {
+   "fieldname": "reports",
+   "fieldtype": "Table MultiSelect",
+   "label": "Applicable Reports",
+   "options": "Item Display Report",
+   "description": "Report Builder, Query, Script and Custom Reports."
+  },
+  {
+   "fieldname": "pages",
+   "fieldtype": "Table MultiSelect",
+   "label": "Applicable Pages",
+   "options": "Item Display Page",
+   "description": "Custom desk pages. The SKU column is found in the page's tables by its field name or heading."
+  },
+  {
+   "fieldname": "sku_field",
+   "fieldtype": "Data",
+   "label": "Item/SKU Field",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The column holding the Item Code: its field name in a report (e.g. item_code), or its field name / heading in a page table (e.g. SKU Code)."
+  },
+  {
+   "fieldname": "color_section",
+   "fieldtype": "Section Break",
+   "label": "Colour"
+  },
+  {
+   "fieldname": "apply_item_color",
+   "fieldtype": "Check",
+   "label": "Apply Item Master Color",
+   "description": "Use the colour set on the Item (Item > Color)."
+  },
+  {
+   "fieldname": "color_display",
+   "fieldtype": "Select",
+   "label": "Colour Display Type",
+   "options": "SKU/Item Code cell only\nEntire row\nBoth",
+   "default": "Entire row",
+   "depends_on": "eval:doc.apply_item_color",
+   "mandatory_depends_on": "eval:doc.apply_item_color"
+  },
+  {
+   "fieldname": "column_break_seq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "apply_item_sequence",
+   "fieldtype": "Check",
+   "label": "Apply Item Master Sequence",
+   "description": "Order rows by the Item's Sequence. Items without a sequence follow, in their normal order."
+  },
+  {
+   "fieldname": "sort_direction",
+   "fieldtype": "Select",
+   "label": "Sort Direction",
+   "options": "Ascending\nDescending",
+   "default": "Ascending",
+   "depends_on": "eval:doc.apply_item_sequence",
+   "mandatory_depends_on": "eval:doc.apply_item_sequence"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-15 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Item Display Configuration",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "config_name",
+ "track_changes": 1
+}
