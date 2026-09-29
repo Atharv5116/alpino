@@ -252,7 +252,8 @@
    "fieldname": "party_owner",
    "fieldtype": "Link",
    "label": "Party Owner",
-   "options": "User"
+   "options": "User",
+   "ignore_user_permissions": 1
   },
   {
    "fieldname": "tally_section",
@@ -350,7 +351,8 @@
    "fieldname": "poc_employee",
    "fieldtype": "Link",
    "label": "Employee Name",
-   "options": "Employee"
+   "options": "Employee",
+   "ignore_user_permissions": 1
   },
   {
    "fieldname": "shipping_section",
