@@ -123,9 +123,49 @@ def explain(term, user=None):
 		for c in customers if not cint(c.buyer_rows)
 	]
 
+	# What the DESK LIST shows that user, which is a different question from the dropdown:
+	# the list obeys User Permissions, and a permission on Customer (or on Buyer Master
+	# itself) silently narrows it to a handful of rows (Changes(HP) #50).
+	desk = None
+	if user:
+		try:
+			frappe.set_user(user)
+			visible = frappe.get_list(
+				"Buyer Master",
+				filters=[["customer_business_name", "like", f"%{term}%"]],
+				fields=["name", "customer_business_name"],
+				limit_page_length=0,
+			)
+			total_visible = len(frappe.get_list("Buyer Master", fields=["name"], limit_page_length=0))
+		finally:
+			frappe.set_user(original)
+		perms = frappe.get_all(
+			"User Permission",
+			filters={"user": user},
+			fields=["allow", "for_value", "applicable_for", "apply_to_all_doctypes"],
+			limit_page_length=0,
+		)
+		by_doctype = {}
+		for row in perms:
+			by_doctype[row.allow] = by_doctype.get(row.allow, 0) + 1
+		desk = {
+			"buyers_matching_the_term": [r["name"] for r in visible],
+			"buyers_this_user_can_list_at_all": total_visible,
+			"buyers_on_the_site": frappe.db.count("Buyer Master"),
+			"user_permissions_by_doctype": by_doctype,
+			"user_permission_sample": perms[:10],
+			"note": (
+				"buyers_this_user_can_list_at_all far below buyers_on_the_site means User "
+				"Permissions are narrowing the list, not the search text. The doctype named in "
+				"user_permissions_by_doctype is the one doing it -- a permission on Customer "
+				"reaches Buyer Master through its customer field."
+			),
+		}
+
 	return {
 		"term": term,
 		"as_user": user or original,
+		"desk_list": desk,
 		"buyer_masters": findings,
 		"customers_without_a_buyer_master": orphan_customers,
 		"offered_by_the_offline_dropdown": offered,
