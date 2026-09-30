@@ -114,6 +114,19 @@ def _run():
 	check("HRMS: a day marked Absent but worked short is listed under the shortage, not Absent",
 		_the_worked_short_days_are_in_the_shortage_list)
 
+	def _a_half_day_absence_is_named_as_half():
+		"""Faiz Raja read Absent 1.5 with one date: the half day was counted, never listed."""
+		_att("11", "Half Day")          # half day, no punch -> 0.5 Absent
+		att_map2 = get_attendance_map(emp, start, end)
+		s2 = calculate_attendance_stats(att_map2, {}, {}, {}, start, end, emp)
+		_assert(flt(s2.absent_days) == 1.5, f"absent days {s2.absent_days}, expected 1.5")
+		_assert("11 (half)" in s2.absent_dates,
+			f"the half-day absence is not in the dates: {s2.absent_dates}")
+		_assert(len(s2.absent_dates) == 2, f"dates {s2.absent_dates} do not account for 1.5")
+
+	check("HRMS: a half-day absence is listed as (half), so the dates account for the count",
+		_a_half_day_absence_is_named_as_half)
+
 	def _the_dispute_is_explained_by_the_two_lists():
 		"""3 marked Absent, 1 real: the dates say which is which."""
 		marked_absent = [d for d in ("7", "8", "9")]
