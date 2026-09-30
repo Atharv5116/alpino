@@ -177,6 +177,9 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 					working_days_count += 1
 			elif not on_holiday:
 				stats.absent_days += 0.5
+				# Half of a day, so the dates must say so too -- otherwise a 1.5 count
+				# lists one date and the detail reads as wrong all over again.
+				stats.absent_dates.append(f"{getdate(date_str).day} (half)")
 			if leave_type:
 				# Other half is leave -- unless the day was never a working day (#9).
 				if not on_holiday:
