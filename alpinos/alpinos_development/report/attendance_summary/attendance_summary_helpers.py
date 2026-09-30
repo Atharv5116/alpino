@@ -75,6 +75,11 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		"wfh": 0,
 		"od": 0,
 		"working_hours_shortage": 0,
+		# HRMS asked for the detail behind the two figures people dispute: which days make
+		# up Absent, and which make up the shortage. A day rejected for short hours counts
+		# as a shortage and NOT as an absence, which is what makes the totals look wrong.
+		"absent_dates": [],
+		"whs_dates": [],
 		"missing_attendance": 0,
 		"avg_working_hours": 0,
 	})
@@ -179,6 +184,7 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			elif not on_holiday:
 				# Other half is a 0.5 working-hours shortage.
 				stats.working_hours_shortage += 0.5
+				stats.whs_dates.append(f"{getdate(date_str).day} (half)")
 			continue
 
 		if status == "Work From Home":
@@ -188,7 +194,12 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			if wh:
 				total_working_hours += wh
 				working_days_count += 1
-			stats.working_hours_shortage += _whs(att, date_str)
+			_amount = _whs(att, date_str)
+			stats.working_hours_shortage += _amount
+			if _amount:
+				stats.whs_dates.append(
+					f"{getdate(date_str).day}" if _amount >= 1 else f"{getdate(date_str).day} (half)"
+				)
 			continue
 
 		# A day marked Absent still costs a full day, but how it is reported depends on
@@ -204,8 +215,10 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 				total_working_hours += wh
 				working_days_count += 1
 				stats.working_hours_shortage += 1.0
+				stats.whs_dates.append(f"{getdate(date_str).day}")
 			else:
 				stats.absent_days += 1
+				stats.absent_dates.append(f"{getdate(date_str).day}")
 			continue
 
 		# Otherwise classify by punches and hours rather than the stored status: a day with
@@ -215,9 +228,15 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			stats.clock_in_days += 1
 			total_working_hours += wh
 			working_days_count += 1
-			stats.working_hours_shortage += _whs(att, date_str)
+			_amount = _whs(att, date_str)
+			stats.working_hours_shortage += _amount
+			if _amount:
+				stats.whs_dates.append(
+					f"{getdate(date_str).day}" if _amount >= 1 else f"{getdate(date_str).day} (half)"
+				)
 		elif not on_holiday:
 			stats.absent_days += 1
+			stats.absent_dates.append(f"{getdate(date_str).day}")
 
 	# Leaves not already covered by an attendance row.
 	for date_str, leave_info in leave_map.items():

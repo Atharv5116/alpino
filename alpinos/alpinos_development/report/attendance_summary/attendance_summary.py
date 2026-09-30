@@ -63,10 +63,15 @@ def get_columns(from_date, to_date):
 		col("Clock-In Days", "clock_in_days", "Float", 110),
 		# Deduction Section
 		col("Absent Days", "absent_days", "Float", 100),
+		# HRMS asked which days make up each figure: an Absent day WITH punches is a
+		# short-hours day and counts under the shortage, not here, which is what made the
+		# totals read wrong against the dashboard.
+		col("Absent Dates", "absent_dates", "Data", 140),
 		col("Month Late Entries", "late_entries", "Data", 140),
 		col("Half Days (Late 10:16)", "late_half_days", "Float", 140),
 		col("Full Days (Late 10:31)", "late_full_days", "Float", 140),
 		col("Working Hours Shortage", "working_hours_shortage", "Float", 150),
+		col("Shortage Dates", "whs_dates", "Data", 150),
 		# Leave Section
 		col("Paid Leave", "paid_leave", "Float", 100),
 		col("Unpaid Leave", "unpaid_leave", "Float", 110),
@@ -198,6 +203,8 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 	# Summary fields (Final Format layout).
 	row.clock_in_days = stats["clock_in_days"]
 	row.absent_days = stats["absent_days"]
+	row.absent_dates = ", ".join(stats.get("absent_dates") or [])
+	row.whs_dates = ", ".join(stats.get("whs_dates") or [])
 	row.public_holiday = stats["public_holiday"]
 	row.weekend = stats["weekend"]
 	row.paid_leave = stats["paid_leave"]
@@ -246,11 +253,14 @@ def get_employee_monthly_attendance(emp, from_date, to_date):
 		date_str = current_date.strftime("%Y-%m-%d")
 		field_name = f"day_{day_num}"
 		
-		# Sundays show as WEEKEND, other Holiday List entries as the holiday name.
+		# Sundays show as WEEKEND, other Holiday List entries as the holiday name. Somebody
+		# who WORKED that day has punches on it, and HRMS asked for those to be visible --
+		# the day stays a holiday in every count, it just says when they came and went.
 		if date_str in holiday_map:
 			hinfo = holiday_map[date_str]
 			is_sunday = current_date.weekday() == SUNDAY
-			row[field_name] = "WEEKEND" if is_sunday else f"HOLIDAY - {hinfo.get('description')}"
+			label = "WEEKEND" if is_sunday else f"HOLIDAY - {hinfo.get('description')}"
+			row[field_name] = _holiday_cell(label, attendance_map.get(date_str))
 		elif date_str in leave_map:
 			leave_info = leave_map[date_str]
 			row[field_name] = format_leave_info(leave_info)
@@ -590,6 +600,32 @@ def format_leave_info(leave_info):
 		return f"HALF DAY - {leave_type}"
 	else:
 		return leave_type.upper()
+
+
+def _holiday_cell(label, att_info):
+	"""A holiday, plus the punches when somebody worked it (HRMS request).
+
+	Only a day with a real punch says more than the holiday's name: the times, the hours
+	worked, and the shift, in the same shape the other cells use.
+	"""
+	if not att_info:
+		return label
+	in_time = att_info.get("in_time")
+	out_time = att_info.get("out_time")
+	if not (in_time or out_time):
+		return label
+
+	working_hours = flt(att_info.get("working_hours"))
+	hh = int(working_hours)
+	mm = int(round((working_hours - hh) * 60))
+	lines = [
+		label,
+		f"WORKED :  In: {format_time(in_time) if in_time else '-'} | Out: {format_time(out_time) if out_time else '-'}",
+		f"T.W.HRs : {hh:02d} H : {mm:02d} M",
+	]
+	if att_info.get("shift"):
+		lines.append(f"Shift Name : {att_info.get('shift')}")
+	return "\n".join(lines)
 
 
 def format_attendance_info(att_info):
