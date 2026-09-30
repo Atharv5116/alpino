@@ -2,7 +2,7 @@
 # License: MIT
 
 import frappe
-from frappe.utils import date_diff, flt, getdate
+from frappe.utils import cint, date_diff, flt, getdate
 
 SUNDAY = 6
 
@@ -146,7 +146,10 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 				_leave_amount(leave_type, 1)
 			continue
 
-		if status == "On Duty":
+		# An approved On Duty request marks the day Present, since HRMS has no On Duty
+		# status, so the day is recognised by the request behind it (is_on_duty, set in
+		# get_attendance_map). The OD count stayed at nought until this read it.
+		if status == "On Duty" or cint(att.get("is_on_duty")):
 			# Full-day Present; no shortage and no late penalty even with no punches.
 			stats.od += 1
 			stats.clock_in_days += 1

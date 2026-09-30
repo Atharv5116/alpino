@@ -276,13 +276,30 @@ def get_attendance_map(employee, from_date, to_date):
 		fields=[
 			"attendance_date", "status", "in_time", "out_time", 
 			"working_hours", "shift", "late_entry", "early_exit",
-			"leave_type", "leave_application"
+			"leave_type", "leave_application", "attendance_request"
 		]
 	)
-	
+
+	# HRMS: an approved On Duty request marks the day PRESENT -- "On Duty" is not one of
+	# the Attendance statuses HRMS offers (Present, Absent, On Leave, Half Day, Work From
+	# Home). So the day is recognised by the request behind it, which is what the OD count
+	# and the OD tag read; nothing about the stored status changes.
+	requests = {a.attendance_request for a in attendance_records if a.get("attendance_request")}
+	on_duty_requests = set()
+	if requests:
+		on_duty_requests = {
+			r.name
+			for r in frappe.get_all(
+				"Attendance Request",
+				filters={"name": ["in", list(requests)], "reason": "On Duty", "docstatus": ["<", 2]},
+				fields=["name"],
+			)
+		}
+
 	attendance_map = {}
 	for att in attendance_records:
 		date_str = att.attendance_date.strftime("%Y-%m-%d")
+		att["is_on_duty"] = 1 if att.get("attendance_request") in on_duty_requests else 0
 		attendance_map[date_str] = att
 
 	return attendance_map
@@ -385,6 +402,9 @@ def compute_late_deduction(attendance_map):
 		shift = att.get("shift")
 		att_date = att.get("attendance_date")
 		if not in_time or not shift or not att_date:
+			continue
+		if cint(att.get("is_on_duty")):
+			# On Duty is a duty assignment, not an arrival to be measured.
 			continue
 		cfg = _get_shift_late_config(shift, cache)
 		if not cfg:
@@ -619,7 +639,8 @@ def format_attendance_info(att_info):
 	late_str = f"{in_str} To {shift_end_str}" if late_entry else ""
 	early_str = f"{shift_start_str} To {out_str}" if early_exit else ""
 
-	tag = "WFH" if status == "Work From Home" else ("OD" if status == "On Duty" else "")
+	on_duty = status == "On Duty" or cint(att_info.get("is_on_duty"))
+	tag = "WFH" if status == "Work From Home" else ("OD" if on_duty else "")
 	if status == "Half Day":
 		head = "HALF DAY"
 	elif worked_short:
