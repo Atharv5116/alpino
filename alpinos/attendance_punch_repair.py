@@ -16,7 +16,7 @@ documents.
 """
 
 import frappe
-from frappe.utils import flt, get_datetime, getdate
+from frappe.utils import cint, flt, get_datetime, getdate
 
 
 def _day_bounds(date):
@@ -140,5 +140,98 @@ def set_log_type(checkin, log_type, apply=0):
 	else:
 		result["attendance_after"] = "unchanged"
 
+	frappe.db.commit()
+	return result
+
+
+@frappe.whitelist()
+def remark_day(employee, date, apply=0):
+	"""Re-mark one day from its own punches, including a day an Attendance Request owns.
+
+	The healer refuses a day carrying an Attendance Request -- the approval decides those --
+	so a day left wrong by an approval has nowhere to go. Dharmishtha Paghadar, 02-09-2026:
+	check-in 10:27:44, check-out 18:08:41 from an approved request, 7.68 hours, status
+	Absent, because the check-out carried Skip Auto Attendance when the status was worked
+	out. The approval path no longer does that, but the day it already left behind needs
+	setting right.
+
+	This reads the day's punches, asks the shift what they amount to, and writes the status,
+	in / out and hours. The punches themselves are never changed, and a stray Skip Auto
+	Attendance on them is cleared so the day marks normally from now on. Dry run by default;
+	the write leaves a comment on the Attendance.
+
+	  bench --site SITE execute alpinos.attendance_punch_repair.remark_day --kwargs "{'employee':'AHFPL168','date':'2026-09-02'}"
+	  bench --site SITE execute alpinos.attendance_punch_repair.remark_day --kwargs "{'employee':'AHFPL168','date':'2026-09-02','apply':1}"
+	"""
+	apply = int(apply)
+	date = getdate(date)
+	att = frappe.db.get_value(
+		"Attendance",
+		{"employee": employee, "attendance_date": date, "docstatus": 1},
+		["name", "status", "shift", "in_time", "out_time", "working_hours", "attendance_request"],
+		as_dict=True,
+	)
+	if not att:
+		return {"error": f"no submitted Attendance for {employee} on {date}"}
+	if not att.shift:
+		return {"error": f"{att.name} has no shift, so the day cannot be re-marked from punches"}
+
+	punches = _day_punches(employee, date)
+	if len(punches) < 2:
+		return {"error": f"{att.name} has {len(punches)} punch(es); at least an in and an out are needed"}
+
+	logs = frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": employee, "time": ["between", _day_bounds(date)]},
+		fields=["name", "employee", "log_type", "time", "shift", "shift_start", "shift_end"],
+		order_by="time asc",
+	)
+	shift_doc = frappe.get_cached_doc("Shift Type", att.shift)
+	for log in logs:
+		if not log.shift_start:
+			log.shift_start = get_datetime(f"{date} {shift_doc.start_time}")
+		if not log.shift_end:
+			log.shift_end = get_datetime(f"{date} {shift_doc.end_time}")
+	status, working_hours, late_entry, early_exit, in_time, out_time = shift_doc.get_attendance(
+		[frappe._dict(l) for l in logs]
+	)
+
+	result = {
+		"mode": "APPLY" if apply else "DRY-RUN",
+		"attendance": att.name,
+		"employee": employee,
+		"employee_name": frappe.db.get_value("Employee", employee, "employee_name"),
+		"date": str(date),
+		"owned_by_request": att.attendance_request,
+		"punches": [f"{p.log_type} {str(p.time)[11:19]}" for p in punches],
+		"before": {"status": att.status, "in": str(att.in_time), "out": str(att.out_time),
+		           "hours": flt(att.working_hours, 2)},
+		"after": {"status": status, "in": str(in_time), "out": str(out_time),
+		          "hours": flt(working_hours, 2)},
+	}
+	if not apply:
+		return result
+
+	frappe.db.set_value(
+		"Attendance", att.name,
+		{
+			"status": status, "in_time": in_time, "out_time": out_time,
+			"working_hours": flt(working_hours, 2),
+			"late_entry": 1 if late_entry else 0, "early_exit": 1 if early_exit else 0,
+		},
+		update_modified=False,
+	)
+	frappe.get_doc("Attendance", att.name).add_comment(
+		"Comment",
+		f"Re-marked from the day's punches by {frappe.session.user}: "
+		f"{att.status} -> {status}, hours {flt(att.working_hours, 2)} -> {flt(working_hours, 2)} "
+		"(HRMS: the day was left wrong by an approval that read a Skip Auto Attendance punch).",
+	)
+	# The punches stay as they are; only a stray skip flag goes, so the day marks normally.
+	for p in punches:
+		if cint(frappe.db.get_value("Employee Checkin", p.name, "skip_auto_attendance")):
+			frappe.db.set_value(
+				"Employee Checkin", p.name, "skip_auto_attendance", 0, update_modified=False
+			)
 	frappe.db.commit()
 	return result
