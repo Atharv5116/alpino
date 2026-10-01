@@ -201,6 +201,59 @@ def _affected_attendance_names(from_date=None, to_date=None, limit=None):
 	)
 
 
+def _contradictory_absent_names(from_date=None, to_date=None, limit=None):
+	"""Days marked Absent although the day's own punches cover the shift's bar.
+
+	The other selector looks for an out-time sitting behind the day's last punch. These
+	days are the other shape: both punches are there and the hours are real, but the status
+	still reads Absent -- a punch flagged Skip Auto Attendance, or attendance marked before
+	the punches synced and never revisited. On prod in 2026 there were 35 such days, several
+	of them full nine-hour days.
+
+	The bar is the Shift Type's own absent threshold, and half the shift span when no
+	threshold is configured.
+	"""
+	conditions = [
+		"a.docstatus = 1",
+		"IFNULL(a.attendance_request, '') = ''",
+		"a.status = 'Absent'",
+		"IFNULL(a.working_hours, 0) > 0",
+	]
+	params = {}
+	if from_date:
+		conditions.append("a.attendance_date >= %(from_date)s")
+		params["from_date"] = from_date
+	if to_date:
+		conditions.append("a.attendance_date <= %(to_date)s")
+		params["to_date"] = to_date
+	where = " AND ".join(conditions)
+	lim = f"LIMIT {int(limit)}" if limit else ""
+	return frappe.db.sql(
+		f"""
+		SELECT a.name
+		FROM `tabAttendance` a
+		JOIN `tabShift Type` st ON st.name = a.shift
+		JOIN `tabEmployee Checkin` ec
+			ON ec.employee = a.employee AND ec.shift = a.shift
+			AND ec.time >= a.attendance_date
+			AND ec.time < a.attendance_date + INTERVAL 1 DAY
+		WHERE {where}
+		GROUP BY a.name, a.working_hours, st.working_hours_threshold_for_absent,
+		         st.start_time, st.end_time
+		HAVING SUM(ec.log_type = 'IN') > 0
+		   AND SUM(ec.log_type = 'OUT') > 0
+		   AND a.working_hours >= IF(
+				st.working_hours_threshold_for_absent > 0,
+				st.working_hours_threshold_for_absent,
+				ROUND(TIME_TO_SEC(TIMEDIFF(st.end_time, st.start_time)) / 3600, 2) * 0.5
+		   )
+		ORDER BY a.attendance_date {lim}
+		""",
+		params,
+		as_dict=True,
+	)
+
+
 @frappe.whitelist()
 def backfill(apply=0, from_date=None, to_date=None, limit=None):
 	"""Heal historical records. apply=0 (default) is a DRY RUN; apply=1 writes the fixes.
@@ -208,7 +261,14 @@ def backfill(apply=0, from_date=None, to_date=None, limit=None):
 	  bench --site SITE execute alpinos.attendance_healer.backfill --kwargs "{'apply':1}"
 	"""
 	apply = int(apply)
+	# Two shapes of broken day: an out-time behind the last punch, and a day marked Absent
+	# that its own punches contradict. Both are repaired the same way, from the punches.
 	names = _affected_attendance_names(from_date, to_date, limit)
+	seen = {row.name for row in names}
+	for row in _contradictory_absent_names(from_date, to_date, limit):
+		if row.name not in seen:
+			seen.add(row.name)
+			names.append(row)
 
 	changes, applied = [], 0
 	for row in names:
