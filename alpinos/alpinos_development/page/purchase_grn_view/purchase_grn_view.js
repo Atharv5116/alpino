@@ -373,6 +373,7 @@ var GRNView = class {
 	make_actions() {
 		const me = this;
 		const $bar = this.wrapper.find('.grn-actionbar').empty();
+		if (window.alpinos_list_view_button) alpinos_list_view_button($bar, 'purchase_grn_list');
 		if (!this.docname) return;
 		const doc = this.doc || {};
 		const ctx = this.ctx || {};

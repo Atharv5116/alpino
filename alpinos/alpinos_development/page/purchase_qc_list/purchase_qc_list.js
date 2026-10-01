@@ -674,8 +674,10 @@ var PurchaseQCListPage = class {
 			// BR-QC-03 / BR-QC-04 — the 2-hour clock, live on every row
 			sla: (d) => pqc_sla_html(d, 0),
 			actions: (d) => {
-				const acts = Array.isArray(d.actions) ? d.actions : [];
-				if (!acts.length) return '—';
+				// Print is replaced by PDF, which downloads the document straight away.
+				const acts = (Array.isArray(d.actions) ? d.actions : []).filter((a) => a.action !== 'print');
+				const pdf = window.alpinos_pdf_button ? alpinos_pdf_button('Purchase QC', d.name, 'QC Inspection Report') : '';
+				if (!acts.length) return pdf || '—';
 				return acts
 					.map((a) => {
 						const label = esc(a.label || a.action);
@@ -691,7 +693,7 @@ var PurchaseQCListPage = class {
 							d.name
 						)}" data-action="${esc(a.action)}" title="${label}">${label}</button>`;
 					})
-					.join(' ');
+					.join(' ') + (pdf ? ' ' + pdf : '');
 			},
 		};
 		let breached = 0;

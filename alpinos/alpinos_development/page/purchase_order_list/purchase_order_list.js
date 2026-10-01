@@ -577,7 +577,9 @@ var PurchaseOrderListPage = class {
 			actions: (d, sku_view) => {
 				let acts = Array.isArray(d.actions) ? d.actions : [];
 				if (sku_view) acts = acts.filter((a) => POL_SKU_ACTIONS.includes(a.action));
-				if (!acts.length) return '—';
+				// Every order row downloads its PDF directly (the per-SKU column does not).
+				const pdf = !sku_view && window.alpinos_pdf_button ? alpinos_pdf_button('Purchase Order', d.name, 'Purchase Order') : '';
+				if (!acts.length) return pdf || '—';
 				return acts
 					.map((a) => {
 						const label = esc(a.label || a.action);
@@ -588,7 +590,7 @@ var PurchaseOrderListPage = class {
 						}
 						return `<button type="button" class="btn btn-xs ${cls} pol-act-btn" data-name="${esc(d.name)}" data-action="${esc(a.action)}">${label}</button>`;
 					})
-					.join(' ');
+					.join(' ') + (pdf ? ' ' + pdf : '');
 			},
 		};
 		rows.forEach((d) => {

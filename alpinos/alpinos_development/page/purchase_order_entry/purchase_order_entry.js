@@ -394,30 +394,14 @@ var PurchaseOrderEntry = class {
 
 	// --------------------------------------------- planned shipment block
 
-	make_shipment_fields() {
-		this._ctl('.field-vehicle-no', {
-			fieldname: 'custom_vehicle_no', label: 'Vehicle Number',
-			description: 'Data, not a number: vehicle references carry leading zeros and spaces.',
-		});
-		// Digits only, 10 of them, flagged live. The behaviour is shared with the Goods
-		// Inward screen so both fields accept and refuse exactly the same thing; see
-		// public/js/alpinos_contact_input.js for the parts that are not obvious.
-		// Guarded for the same reason as the Inward screen: a stale desk bundle must not
-		// take the whole order screen down over a typing convenience.
-		const driver = this._ctl('.field-driver-contact-no', {
-			fieldname: 'custom_driver_contact_no', label: 'Driver Contact Number',
-			description: '10-digit number.',
-		});
-		if (window.alpinos_contact_input) alpinos_contact_input(driver);
-		this._ctl('.field-estimated-arrival', {
-			fieldname: 'custom_estimated_arrival', label: 'Estimated Arrival Date & Time',
-			fieldtype: 'Datetime',
-			// Without this the control appends the site time zone as a description.
-			hide_timezone: 1,
-			description: 'A date with no time is treated as 9:00 AM (BRD 2.1.1).',
-			no_past: 1,
-		});
-	}
+	/**
+	 * Vehicle Number, Driver Contact Number and Estimated Arrival are entered on the Purchase
+	 * Inward now (Planned Shipment, above Remarks), not on the order. The fields still exist
+	 * on the Purchase Order and older orders keep their values -- the inward pre-fills from
+	 * them -- but this screen neither shows nor sends them, so saving an old order cannot
+	 * blank what it holds.
+	 */
+	make_shipment_fields() {}
 
 	// -------------------------------------------------- BRD 2.3.2 summary
 
@@ -840,7 +824,6 @@ var PurchaseOrderEntry = class {
 			'payment_terms_template', 'custom_supplier_order_no', 'custom_inward_attachment',
 			'custom_direct_purchase_invoice', 'custom_inward_remarks', 'supplier_name',
 			'contact_display', 'contact_mobile', 'address_display', 'shipping_address_display',
-			'custom_vehicle_no', 'custom_driver_contact_no', 'custom_estimated_arrival',
 			'total_qty', 'total', 'discount_amount', 'total_taxes_and_charges', 'grand_total',
 			'custom_approval_status', 'custom_approval_action_by', 'custom_approval_datetime',
 			'custom_approval_remarks', 'name',
@@ -868,8 +851,7 @@ var PurchaseOrderEntry = class {
 					'custom_supplier_order_no', 'owner', 'custom_inward_attachment',
 					'custom_direct_purchase_invoice', 'custom_inward_remarks',
 					'supplier_name', 'contact_display', 'contact_mobile', 'address_display',
-					'shipping_address_display', 'custom_vehicle_no', 'custom_driver_contact_no',
-					'custom_estimated_arrival', 'total_qty', 'total', 'discount_amount',
+					'shipping_address_display', 'total_qty', 'total', 'discount_amount',
 					'total_taxes_and_charges', 'grand_total', 'custom_approval_status',
 					'custom_approval_action_by', 'custom_approval_datetime',
 					'custom_approval_remarks',
@@ -922,6 +904,7 @@ var PurchaseOrderEntry = class {
 	make_actions() {
 		const me = this;
 		const $bar = this.wrapper.find('.po-actionbar').empty();
+		if (window.alpinos_list_view_button) alpinos_list_view_button($bar, 'purchase_order_list');
 		// The approval buttons arrive asynchronously. When two renders run close together,
 		// both empty the bar before either reply lands and both replies then append, giving
 		// "Save | Submit for Approval | Print | Submit for Approval | Print". Each render takes
@@ -939,6 +922,10 @@ var PurchaseOrderEntry = class {
 		};
 
 		if (editable) btn(__('Save'), 'btn-primary', () => me.save());
+		// Any saved order, whatever its status, can be copied into a new draft.
+		if (this.docname && frappe.model.can_create('Purchase Order')) {
+			btn(__('Duplicate PO'), 'btn-default', () => me.duplicate_po());
+		}
 
 		if (this.docname) {
 			// The approval transitions come from the server so the two can never drift.
@@ -1041,20 +1028,13 @@ var PurchaseOrderEntry = class {
 			return;
 		}
 
-		if (status === 'Sent to Supplier') {
+		// Approved is enough: goods can arrive before the order is marked Sent to Supplier,
+		// so an inward is no longer held back for that step.
+		if (status === 'Sent to Supplier' || status === 'Approved') {
 			btn(__('Create Purchase Inward'), 'btn-primary', () => {
 				frappe.route_options = { purchase_order: me.docname };
 				frappe.set_route('purchase_inward_entry');
 			});
-		} else if (status === 'Approved') {
-			// Shown, and it says why: an absent button reads as a missing feature.
-			btn(__('Create Purchase Inward'), 'btn-default', () =>
-				frappe.msgprint({
-					title: __('Create Purchase Inward Is Not Available Yet'),
-					indicator: 'orange',
-					message: __('Send this Purchase Order to the supplier first (BRD 1.4).'),
-				})
-			);
 		}
 
 		const inwards = info.inwards || [];
@@ -1068,6 +1048,60 @@ var PurchaseOrderEntry = class {
 				frappe.set_route('purchase_inward_list');
 			});
 		}
+	}
+
+	/**
+	 * Duplicate PO: open a NEW, unsaved order carrying this one's details.
+	 *
+	 * Nothing is saved -- the buyer reviews it and presses Save, like any new order.
+	 * Deliberately NOT carried over: the ID and the whole approval trail (a new order starts
+	 * at Draft), the PO Date (today), a delivery date already in the past (it would only be
+	 * refused on save), and the Supplier Order No. and attachment, which belong to the
+	 * vendor's earlier order.
+	 */
+	duplicate_po() {
+		const me = this;
+		const src = this.doc;
+		if (!src) return;
+		const today = frappe.datetime.get_today();
+		const future = (d) => (d && String(d).slice(0, 10) >= today ? d : '');
+		const header = {
+			custom_inward_type: src.custom_inward_type,
+			supplier: src.supplier,
+			schedule_date: future(src.schedule_date),
+			set_warehouse: src.set_warehouse,
+			currency: src.currency,
+			payment_terms_template: src.payment_terms_template,
+			custom_direct_purchase_invoice: src.custom_direct_purchase_invoice,
+			custom_inward_remarks: src.custom_inward_remarks,
+		};
+		const items = (src.items || []).map((r) => ({
+			item_code: r.item_code, item_name: r.item_name, uom: r.uom,
+			qty: flt(r.qty), price_list_rate: flt(r.price_list_rate),
+			discount_percentage: flt(r.discount_percentage), rate: flt(r.rate), amount: flt(r.amount),
+			custom_gst_percent: flt(r.custom_gst_percent),
+			custom_rate_incl_gst: flt(r.custom_rate_incl_gst),
+			custom_amount_incl_gst: flt(r.custom_amount_incl_gst),
+			schedule_date: future(r.schedule_date) || header.schedule_date || '',
+			warehouse: r.warehouse, custom_item_remarks: r.custom_item_remarks || '',
+		}));
+		const fill = () => {
+			me.reset();
+			Object.keys(header).forEach((f) => me._set(f, header[f] == null ? '' : header[f]));
+			// fetch_supplier reads the Supplier control, and set_value lands asynchronously.
+			if (header.supplier) setTimeout(() => me.fetch_supplier(), 400);
+			me.items = items;
+			me._summary_from_doc = false;
+			me.redraw_items();
+			me.items.forEach((row, idx) => me.recalc_row(idx));
+			me.page.set_title(__('New Purchase Order (copy of {0})', [src.name]));
+			frappe.show_alert({
+				message: __('Copied from {0}. Review the dates and press Save to create the new order.', [src.name]),
+				indicator: 'blue',
+			}, 7);
+		};
+		// Leave the old order's URL, so a reload or Back does not reopen it over the copy.
+		Promise.resolve(frappe.set_route('purchase_order_entry')).then(() => setTimeout(fill, 200));
 	}
 
 	create_direct_invoice() {
@@ -1214,9 +1248,6 @@ var PurchaseOrderEntry = class {
 			custom_inward_attachment: this._val('custom_inward_attachment'),
 			custom_direct_purchase_invoice: cint(this._val('custom_direct_purchase_invoice')),
 			custom_inward_remarks: this._val('custom_inward_remarks'),
-			custom_vehicle_no: this._val('custom_vehicle_no'),
-			custom_driver_contact_no: this._val('custom_driver_contact_no'),
-			custom_estimated_arrival: this._val('custom_estimated_arrival'),
 			items: this.items.map((row) => ({
 				// The row's own name when it has one. save() does
 				// Object.assign({}, server_doc, _payload()), a SHALLOW merge, so this array

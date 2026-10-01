@@ -116,23 +116,27 @@
 			Purchase Inward
 			<span class="piw-stage field-stage-badge"></span>
 		</h6>
+		<!-- One grid, three fields to a row and every row full: sub-headings split the
+		     fields into short groups and left an empty slot at the end of each. -->
 		<div class="row">
 			<div class="col-md-4 col-sm-6 eso-fld field-purchase-order"></div>
 			<div class="col-md-4 col-sm-6 eso-fld field-inward-type"></div>
 			<div class="col-md-4 col-sm-6 eso-fld field-supplier"></div>
-			<div class="col-md-4 col-sm-6 eso-fld field-supplier-order-no"></div>
-			<div class="col-md-4 col-sm-6 eso-fld field-invoice-number"></div>
-			<div class="col-md-4 col-sm-6 eso-fld field-invoice-date"></div>
 		</div>
-
-		<h6 class="eso-subtitle">Consignment</h6>
 		<div class="row">
-			<div class="col-md-4 col-sm-6 eso-fld field-challan-no"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-supplier-order-no"></div>
 			<div class="col-md-4 col-sm-6 eso-fld field-gross-weight"></div>
 			<div class="col-md-4 col-sm-6 eso-fld field-inward-datetime"></div>
+		</div>
+		<div class="row">
 			<div class="col-md-4 col-sm-6 eso-fld field-gate-no"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-po-vehicle-no"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-po-driver-contact"></div>
+		</div>
+		<div class="row">
+			<div class="col-md-4 col-sm-6 eso-fld field-po-estimated-arrival"></div>
 			<div class="col-md-4 col-sm-6 eso-fld field-attachment"></div>
-			<div class="col-md-8 eso-fld field-remarks"></div>
+			<div class="col-md-4 col-sm-6 eso-fld field-remarks"></div>
 		</div>
 	</div>
 
@@ -176,19 +180,26 @@
 		</h6>
 
 		<h6 class="eso-subtitle">Vehicle &amp; Arrival</h6>
-		<!-- Gate No. is not here: it is recorded by Purchase with the consignment, in the
-		     header. What was planned on one row, what actually turned up on the next. -->
+		<!-- Gate No. and the planned vehicle, driver and arrival are not here: Purchase
+		     records them in the header. Store records what actually turned up. -->
 		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-po-vehicle-no"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-po-driver-contact"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-actual-vehicle-no"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-actual-driver-contact"></div>
-		</div>
-		<div class="row">
 			<div class="col-md-3 col-sm-6 eso-fld field-actual-arrival"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-vehicle-verified"></div>
+		</div>
+		<div class="row">
 			<div class="col-md-3 col-sm-6 eso-fld field-allow-excess"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-target-warehouse"></div>
+		</div>
+
+		<h6 class="eso-subtitle">Supplier Documents</h6>
+		<div class="row">
+			<!-- Same four-to-a-row widths as the Vehicle & Arrival rows above, so the
+			     columns line up down the whole card. -->
+			<div class="col-md-3 col-sm-6 eso-fld field-invoice-number"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-invoice-date"></div>
+			<div class="col-md-3 col-sm-6 eso-fld field-challan-no"></div>
 		</div>
 
 		<h6 class="eso-subtitle">Received Quantity</h6>

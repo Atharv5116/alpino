@@ -15,9 +15,6 @@
   "supplier_name",
   "supplier_order_no",
   "col_inward",
-  "invoice_number",
-  "invoice_date",
-  "challan_no",
   "gross_weight",
   "inward_datetime",
   "gate_no",
@@ -30,13 +27,13 @@
   "grn_status",
   "doc_section",
   "attachment",
+  "po_vehicle_no",
+  "po_driver_contact_no",
+  "po_estimated_arrival",
   "col_doc",
   "remarks",
   "planned_section",
-  "po_vehicle_no",
-  "po_driver_contact_no",
   "col_planned",
-  "po_estimated_arrival",
   "delivery_location",
   "items_section",
   "items",
@@ -58,6 +55,9 @@
   "col_receiving",
   "allow_excess_qty",
   "target_warehouse",
+  "invoice_number",
+  "invoice_date",
+  "challan_no",
   "received_by",
   "receiving_datetime",
   "receiving_remarks_section",
@@ -160,25 +160,27 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Supplier invoice number. Must be unique for this vendor (BR-PI-15).",
    "description": "Optional. Unique per vendor when one is given (BR-PI-15).",
    "fieldname": "invoice_number",
    "fieldtype": "Data",
    "in_global_search": 1,
    "in_standard_filter": 1,
    "label": "Invoice Number",
-   "search_index": 1
+   "search_index": 1,
+   "allow_on_submit": 1
   },
   {
    "fieldname": "invoice_date",
    "fieldtype": "Date",
-   "label": "Invoice Date"
+   "label": "Invoice Date",
+   "allow_on_submit": 1
   },
   {
    "description": "Validated for duplication against the same vendor (VAL-PI-22).",
    "fieldname": "challan_no",
    "fieldtype": "Data",
-   "label": "Challan / Delivery Challan No."
+   "label": "Challan / Delivery Challan No.",
+   "allow_on_submit": 1
   },
   {
    "description": "Gross weight on the supplier invoice or transport document.",
@@ -280,32 +282,26 @@
    "label": "Planned Shipment (from Purchase Order)"
   },
   {
-   "fetch_from": "purchase_order.custom_vehicle_no",
-   "fetch_if_empty": 1,
    "fieldname": "po_vehicle_no",
    "fieldtype": "Data",
-   "label": "Planned Vehicle Number",
-   "read_only": 1
+   "label": "Vehicle Number",
+   "description": "Entered by Purchase. Pre-filled from the Purchase Order when the order still carries it."
   },
   {
-   "fetch_from": "purchase_order.custom_driver_contact_no",
-   "fetch_if_empty": 1,
    "fieldname": "po_driver_contact_no",
    "fieldtype": "Data",
-   "label": "Planned Driver Contact Number",
-   "read_only": 1
+   "label": "Driver Contact Number",
+   "description": "Entered by Purchase. Pre-filled from the Purchase Order when the order still carries it."
   },
   {
    "fieldname": "col_planned",
    "fieldtype": "Column Break"
   },
   {
-   "fetch_from": "purchase_order.custom_estimated_arrival",
-   "fetch_if_empty": 1,
    "fieldname": "po_estimated_arrival",
    "fieldtype": "Datetime",
    "label": "Estimated Arrival Date & Time",
-   "read_only": 1
+   "description": "Entered by Purchase. Pre-filled from the Purchase Order when the order still carries it."
   },
   {
    "fetch_from": "purchase_order.set_warehouse",

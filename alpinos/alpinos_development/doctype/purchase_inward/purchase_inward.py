@@ -32,6 +32,7 @@ class PurchaseInward(Document):
 		self._assert_section_access()
 		self._validate_has_items()
 		self._validate_purchase_order()
+		self._prefill_planned_shipment()
 		self._sync_item_provenance()
 		self._validate_unique_po_detail()
 		self._compute_previously_received()
@@ -48,6 +49,26 @@ class PurchaseInward(Document):
 		self._stamp_dispute_attachments()
 		self._roll_up_totals()
 		self._sync_status()
+
+	def _prefill_planned_shipment(self):
+		"""A NEW inward starts with the planned shipment its Purchase Order still carries.
+
+		Purchase enters Vehicle Number, Driver Contact and Estimated Arrival on the inward
+		now; the Purchase Order screen no longer asks for them. Orders raised before that
+		still hold them, so a blank field on a new inward is filled from the order once --
+		never on a later save, and never over a value someone typed.
+		"""
+		if not (self.is_new() and self.purchase_order):
+			return
+		po = frappe.db.get_value(
+			"Purchase Order", self.purchase_order,
+			["custom_vehicle_no", "custom_driver_contact_no", "custom_estimated_arrival"], as_dict=True,
+		) or {}
+		for field, source in (("po_vehicle_no", "custom_vehicle_no"),
+		                      ("po_driver_contact_no", "custom_driver_contact_no"),
+		                      ("po_estimated_arrival", "custom_estimated_arrival")):
+			if not self.get(field) and po.get(source):
+				self.set(field, po.get(source))
 
 	def _validate_has_items(self):
 		"""An inward with no lines is refused at SAVE, not only at submit.
@@ -130,8 +151,25 @@ class PurchaseInward(Document):
 		self._validate_driver_contact_no()
 		self._validate_inward_dates()
 		self._validate_receiving_details()
+		# Invoice / Challan are Store Receiving fields now, entered after submit, so the
+		# uniqueness and date rules run here too -- for a value that is new or changed only,
+		# so an inward saved before the move is not refused over a number nobody touched.
+		self._validate_documents_after_submit()
 		self._stamp_dispute_attachments()
 		self._roll_up_totals()
+
+	def _validate_documents_after_submit(self):
+		before = self.get_doc_before_save()
+
+		def changed(field):
+			return not before or (before.get(field) or "") != (self.get(field) or "")
+
+		if changed("invoice_number"):
+			self._validate_invoice_number()
+		if changed("invoice_date"):
+			self._validate_invoice_date()
+		if changed("challan_no"):
+			self._validate_challan_no()
 
 	def on_update_after_submit(self):
 		"""Side effects that must observe the persisted row."""
@@ -702,7 +740,12 @@ class PurchaseInward(Document):
 		refused too.
 		"""
 		contact_number.validate_fields(
-			self, {"actual_driver_contact_no": "Actual Driver Contact Number"}
+			self,
+			{
+				"actual_driver_contact_no": "Actual Driver Contact Number",
+				# Entered by Purchase on the inward now, so it is held to the same rule.
+				"po_driver_contact_no": "Driver Contact Number",
+			},
 		)
 
 	def _validate_receiving_details(self):

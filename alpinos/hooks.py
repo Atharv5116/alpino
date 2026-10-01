@@ -858,7 +858,13 @@ extend_bootinfo = [
 # Request Events
 # ----------------
 # Monkey-patch OAuth server on every request to extend token expiry for Raven mobile app
-before_request = ["alpinos.overrides.oauth_override.patch_oauth_server"]
+before_request = [
+	"alpinos.overrides.oauth_override.patch_oauth_server",
+	# Batch No. on the standard Stock Ledger report's ordinary rows (read-only wrapper).
+	"alpinos.stock_ledger_batch.patch",
+]
+# A large Stock Ledger runs as a prepared report in a background worker.
+before_job = ["alpinos.stock_ledger_batch.patch"]
 # after_request = ["alpinos.utils.after_request"]
 
 # Job Events

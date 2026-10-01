@@ -66,3 +66,85 @@ window.alpinos_can_write = function (doctype, doc) {
 	const is_new = !doc || !doc.name || doc.__islocal;
 	return is_new ? frappe.model.can_create(doctype) : frappe.model.can_write(doctype);
 };
+
+/**
+ * A "List View" button that goes back to the screen's list page.
+ *
+ * Called right after an action bar is emptied, so it survives every re-render of the
+ * bar (each screen rebuilds its buttons whenever the document or its status changes)
+ * and every early return in the code that adds the other buttons.
+ *
+ * @param {jQuery} $bar   the action bar, already emptied
+ * @param {string} route  the list page route, e.g. 'purchase_qc_list'
+ */
+window.alpinos_list_view_button = function ($bar, route) {
+	if (!$bar || !$bar.length || !route) return;
+	$(`<button class="btn btn-sm btn-default alp-list-view" style="margin-left:8px;">
+		<i class="fa fa-list" style="margin-right:4px;"></i>${frappe.utils.escape_html(__('List View'))}</button>`)
+		.on('click', () => frappe.set_route(route))
+		.appendTo($bar);
+};
+
+/**
+ * A "PDF" button for a list row: downloads that document's PDF straight away, in the
+ * given print format, with no print preview in between.
+ *
+ * The click is taken in the CAPTURE phase so it runs before the list's own row handler,
+ * which would otherwise open the document as well.
+ *
+ * @param {string} doctype
+ * @param {string} name
+ * @param {string} [format]  print format; blank means the doctype's Standard format
+ */
+window.alpinos_pdf_button = function (doctype, name, format) {
+	const esc = frappe.utils.escape_html;
+	return `<button type="button" class="btn btn-xs btn-default alp-pdf-btn" title="${esc(__('Download PDF'))}"
+		data-doctype="${esc(doctype)}" data-name="${esc(name)}" data-format="${esc(format || '')}">
+		<i class="fa fa-file-pdf-o" style="margin-right:3px;"></i>${esc(__('PDF'))}</button>`;
+};
+
+window.alpinos_download_pdf = function (doctype, name, format) {
+	const url = '/api/method/frappe.utils.print_format.download_pdf'
+		+ '?doctype=' + encodeURIComponent(doctype)
+		+ '&name=' + encodeURIComponent(name)
+		+ '&format=' + encodeURIComponent(format || 'Standard')
+		+ '&no_letterhead=0';
+	// Frappe sends the PDF "inline", which some browsers open in a viewer tab instead of
+	// saving. Fetching it and saving the blob makes it a real download, named after the
+	// document, and the list stays where it is.
+	frappe.show_alert({ message: __('Preparing PDF of {0}...', [name]), indicator: 'blue' }, 3);
+	fetch(url, { credentials: 'same-origin' })
+		.then((r) => {
+			const type = r.headers.get('content-type') || '';
+			if (!r.ok || type.indexOf('pdf') === -1) throw new Error(r.status + ' ' + type);
+			return r.blob();
+		})
+		.then((blob) => {
+			const href = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = href;
+			a.download = String(name).replace(/[\\/:*?"<>|]+/g, '-') + '.pdf';
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(href), 10000);
+		})
+		.catch(() => {
+			frappe.msgprint({
+				title: __('PDF Not Available'),
+				indicator: 'red',
+				message: __('The PDF of {0} could not be generated. Please try again, or open the document and print it.', [name]),
+			});
+		});
+};
+
+if (!window.__alpinos_pdf_bound) {
+	window.__alpinos_pdf_bound = true;
+	document.addEventListener('click', (e) => {
+		const btn = e.target && e.target.closest && e.target.closest('.alp-pdf-btn');
+		if (!btn) return;
+		e.preventDefault();
+		e.stopPropagation();
+		alpinos_download_pdf(btn.dataset.doctype, btn.dataset.name, btn.dataset.format);
+	}, true);
+}

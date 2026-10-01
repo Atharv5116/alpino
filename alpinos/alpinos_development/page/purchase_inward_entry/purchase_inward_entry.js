@@ -329,6 +329,20 @@ var PurchaseInwardEntry = class {
 			label: 'Attachment',
 			fieldtype: 'Attach',
 		});
+		// Planned shipment: entered by Purchase on the inward (the Purchase Order screen no
+		// longer asks for it). Picking an order that still carries these pre-fills them.
+		this._ctl('.field-po-vehicle-no', {
+			fieldname: 'po_vehicle_no', label: 'Vehicle Number', fieldtype: 'Data',
+		});
+		const planned_driver = this._ctl('.field-po-driver-contact', {
+			fieldname: 'po_driver_contact_no', label: 'Driver Contact Number', fieldtype: 'Data',
+			description: '10-digit number.',
+		});
+		if (window.alpinos_contact_input && planned_driver) alpinos_contact_input(planned_driver);
+		this._ctl('.field-po-estimated-arrival', {
+			fieldname: 'po_estimated_arrival', label: 'Estimated Arrival Date & Time',
+			fieldtype: 'Datetime', hide_timezone: 1,
+		});
 		this._ctl('.field-remarks', {
 			fieldname: 'remarks',
 			label: 'Remarks',
@@ -583,12 +597,16 @@ var PurchaseInwardEntry = class {
 					'custom_supplier_order_no',
 					'custom_vehicle_no',
 					'custom_driver_contact_no',
+					'custom_estimated_arrival',
 					'set_warehouse',
 				]).then((res) => {
 					const v = (res && res.message) || {};
 					me._set('supplier_order_no', v.custom_supplier_order_no);
-					me._set('po_vehicle_no', v.custom_vehicle_no);
-					me._set('po_driver_contact_no', v.custom_driver_contact_no);
+					// Pre-fill only: never over what Purchase already typed on this inward.
+					[['po_vehicle_no', 'custom_vehicle_no'], ['po_driver_contact_no', 'custom_driver_contact_no'],
+						['po_estimated_arrival', 'custom_estimated_arrival']].forEach(([f, src]) => {
+						if (!me._val(f) && v[src]) me._set(f, v[src]);
+					});
 					// Section 2: Default Target Location as per the selected PO -- its own, or
 					// its lines' warehouse when the header has none.
 					const line = (d.items || []).find((row) => row.target_warehouse);
@@ -757,14 +775,6 @@ var PurchaseInwardEntry = class {
 
 	make_receiving_fields() {
 		const me = this;
-		this._ctl('.field-po-vehicle-no', {
-			fieldname: 'po_vehicle_no', label: 'Planned Vehicle (PO)',
-			fieldtype: 'Data', read_only: 1,
-		});
-		this._ctl('.field-po-driver-contact', {
-			fieldname: 'po_driver_contact_no', label: 'Planned Driver (PO)',
-			fieldtype: 'Data', read_only: 1,
-		});
 		this._ctl('.field-actual-vehicle-no', {
 			fieldname: 'actual_vehicle_no', label: 'Actual Vehicle No.', fieldtype: 'Data',
 		});
@@ -1190,7 +1200,7 @@ var PurchaseInwardEntry = class {
 			'purchase_order', 'inward_type', 'supplier', 'supplier_order_no',
 			'invoice_number', 'invoice_date', 'challan_no', 'gross_weight',
 			'inward_datetime', 'gate_no', 'attachment', 'remarks',
-			'po_vehicle_no', 'po_driver_contact_no', 'actual_vehicle_no',
+			'po_vehicle_no', 'po_driver_contact_no', 'po_estimated_arrival', 'actual_vehicle_no',
 			'actual_driver_contact_no', 'actual_arrival_datetime',
 			'vehicle_details_verified', 'allow_excess_qty', 'target_warehouse',
 			'receiving_remarks', 'dispute_file', 'dispute_kind', 'dispute_description',
@@ -1260,7 +1270,7 @@ var PurchaseInwardEntry = class {
 					'purchase_order', 'inward_type', 'supplier', 'supplier_order_no',
 					'invoice_number', 'invoice_date', 'challan_no', 'gross_weight',
 					'inward_datetime', 'gate_no', 'attachment', 'remarks', 'po_vehicle_no',
-					'po_driver_contact_no', 'actual_vehicle_no', 'actual_driver_contact_no',
+					'po_driver_contact_no', 'po_estimated_arrival', 'actual_vehicle_no', 'actual_driver_contact_no',
 					'actual_arrival_datetime', 'vehicle_details_verified', 'allow_excess_qty',
 					'target_warehouse', 'receiving_remarks',
 				].forEach((f) => me._set(f, doc[f]));
@@ -1361,6 +1371,7 @@ var PurchaseInwardEntry = class {
 	make_actions() {
 		const me = this;
 		const $bar = this.wrapper.find('.piw-actionbar').empty();
+		if (window.alpinos_list_view_button) alpinos_list_view_button($bar, 'purchase_inward_list');
 		const btn = (label, cls, handler, blocked, reason) => {
 			const $b = $(
 				`<button class="btn btn-sm ${cls}" style="margin-left:8px;">${frappe.utils.escape_html(label)}</button>`
@@ -1563,10 +1574,10 @@ var PurchaseInwardEntry = class {
 		const doc = {
 			doctype: 'Purchase Inward',
 			purchase_order: this._val('purchase_order'),
-			invoice_number: this._val('invoice_number'),
-			invoice_date: this._val('invoice_date'),
-			challan_no: this._val('challan_no'),
 			gross_weight: flt(this._val('gross_weight')),
+			po_vehicle_no: this._val('po_vehicle_no'),
+			po_driver_contact_no: this._val('po_driver_contact_no'),
+			po_estimated_arrival: this._val('po_estimated_arrival'),
 			inward_datetime: this._val('inward_datetime'),
 			// With the header, not in the receiving block below: that block is sent only
 			// once the inward is submitted, so a Purchase user saving a Draft would have had
@@ -1585,6 +1596,10 @@ var PurchaseInwardEntry = class {
 				vehicle_details_verified: cint(this._val('vehicle_details_verified')),
 				allow_excess_qty: cint(this._val('allow_excess_qty')),
 				target_warehouse: this._val('target_warehouse'),
+				// Supplier documents are recorded by Store with the receipt now.
+				invoice_number: this._val('invoice_number'),
+				invoice_date: this._val('invoice_date'),
+				challan_no: this._val('challan_no'),
 				receiving_remarks: this._val('receiving_remarks'),
 			} : {}),
 			items: this.items.map((row) => ({

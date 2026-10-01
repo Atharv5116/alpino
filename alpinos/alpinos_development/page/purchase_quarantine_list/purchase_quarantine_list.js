@@ -301,13 +301,16 @@ var PurchaseQuarantineList = class {
 			status: (s) => (s ? `<span class="indicator-pill ${PQRN_STATUS_COLORS[s] || 'gray'}">${esc(__(s))}</span>` : '—'),
 			actions: (d) =>
 				(d.actions || [])
+					.filter((a) => a.action !== 'print')
 					.map(
 						(a) =>
 							`<button type="button" class="btn btn-xs ${a.kind === 'transition' ? 'btn-primary' : 'btn-default'} pqrn-act" data-name="${esc(
 								d.name
 							)}" data-action="${esc(a.action)}">${esc(a.label)}</button>`
 					)
-					.join(''),
+					.join(' ')
+				// Every row downloads its PDF directly.
+				+ (window.alpinos_pdf_button ? ' ' + alpinos_pdf_button('Purchase Quarantine', d.name, 'Standard') : ''),
 		};
 		const tb = this.wrapper.find('.pqrn-table tbody').empty();
 		this.rows = {};

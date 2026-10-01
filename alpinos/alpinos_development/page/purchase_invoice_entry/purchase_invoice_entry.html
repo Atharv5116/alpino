@@ -198,12 +198,13 @@
 	<div class="eso-card pinv-payments">
 		<h6 class="eso-card-title">Payment &amp; Logistics Reference</h6>
 		<p class="text-muted pinv-lock-note field-payment-note"></p>
-		<div class="row">
-			<div class="col-md-2 col-sm-6 eso-fld field-supplier-payable"></div>
-			<div class="col-md-2 col-sm-6 eso-fld field-supplier-pending"></div>
-			<div class="col-md-2 col-sm-6 eso-fld field-logistics-payable"></div>
-			<div class="col-md-2 col-sm-6 eso-fld field-logistics-pending"></div>
-			<div class="col-md-2 col-sm-6 eso-fld field-total-paid"></div>
+		<!-- One column on the right, the same shape as the other Goods Inward summaries. -->
+		<div class="alp-figures">
+			<div class="eso-fld field-supplier-payable"></div>
+			<div class="eso-fld field-supplier-pending"></div>
+			<div class="eso-fld field-logistics-payable"></div>
+			<div class="eso-fld field-logistics-pending"></div>
+			<div class="eso-fld alp-figures-total field-total-paid"></div>
 		</div>
 		<h6 class="eso-subtitle">Payment History</h6>
 		<div class="alp-scroll alp-scroll--xwide" data-empty="No payment recorded yet.">

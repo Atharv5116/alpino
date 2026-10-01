@@ -129,6 +129,8 @@
 .purchase-order-entry .po-sum {
 	display: block;
 	max-width: 340px;
+	/* On the right of the card, like every other Goods Inward summary. */
+	margin-left: auto;
 }
 .purchase-order-entry .po-sum-group + .po-sum-group { margin-top: 10px; }
 .purchase-order-entry .po-sum-head {
@@ -206,20 +208,6 @@
 			<div class="col-md-2 col-sm-6 eso-fld field-contact-number"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-billing-address"></div>
 			<div class="col-md-3 col-sm-6 eso-fld field-shipping-address"></div>
-		</div>
-	</div>
-
-	<!-- ==================== planned shipment (BR-PO-16) ====================== -->
-	<div class="eso-card">
-		<h6 class="eso-card-title">Planned Shipment</h6>
-		<p class="text-muted" style="font-size:11.5px; margin: -4px 0 10px;">
-			Planned by the Purchase Team. The Purchase Inward fetches these and Store records the
-			actual values where they differ (BR-PO-17 / BR-PO-18).
-		</p>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-vehicle-no"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-driver-contact-no"></div>
-			<div class="col-md-4 col-sm-6 eso-fld field-estimated-arrival"></div>
 		</div>
 	</div>
 

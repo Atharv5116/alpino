@@ -944,9 +944,9 @@ _GRN_HTML_RAW = r"""
       {% set ns.acc = ns.acc + frappe.utils.flt(row.qty) %}
       {% set ns.rej = ns.rej + frappe.utils.flt(row.rejected_qty) %}
       <tr>
-        <td class="c">{{ row.idx }}</td>
+        <td>{{ row.idx }}</td>
         <td>{{ txt(row.item_code) }}<div class="sub">{{ txt(row.item_name) }}</div></td>
-        <td class="c">{{ txt(row.uom) }}</td>
+        <td>{{ txt(row.uom) }}</td>
         <td class="r">{{ num3(row.qty) }}</td>
         <td class="r {% if frappe.utils.flt(row.rejected_qty) %}warn{% endif %}">{{ num3(row.rejected_qty) }}</td>
         <td>{{ txt(row.warehouse) }}{% if row.custom_quarantine_status %}<div class="sub">{% if row.custom_quarantine_status == "Quarantined" %}In quarantine &middot; releases to {{ txt(row.custom_release_warehouse) }}{% else %}Released from quarantine to {{ txt(row.custom_release_warehouse) }}{% endif %}</div>{% endif %}</td>
@@ -1001,6 +1001,24 @@ def setup_grn_print_format():
 
 # ---------------------------------------------------------------- Purchase Invoice
 
+def _alpino_logo_data_uri():
+	"""The Alpino logo from the business's PO / invoice format, embedded in the HTML.
+
+	Embedded rather than linked: wkhtmltopdf fetches linked images over HTTP from the
+	site's own host name, which fails wherever that name does not resolve (background
+	jobs, bench commands, some deployments) and the PDF then errors out entirely.
+	"""
+	import base64
+	import os
+
+	path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "images", "alpino_logo.jpg")
+	try:
+		with open(path, "rb") as f:
+			return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+	except OSError:
+		return "/assets/alpinos/images/alpino_logo.jpg"
+
+
 INVOICE_PF_NAME = "Purchase Invoice"
 INVOICE_DOC_TYPE = "Purchase Invoice"
 
@@ -1032,22 +1050,22 @@ _INVOICE_HTML_RAW = r"""
       margin-bottom: 9px; font-size: 10px; line-height: 14px; }
   .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important;
       word-wrap: break-word; overflow: hidden; }
-  .piw table.g td { padding: 3px 4px !important; font-size: 9px; line-height: 13px; }
-  .piw table.g th { padding: 3px 4px !important; font-size: 8px; line-height: 11px; }
-  .piw th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: center;
-      font-weight: bold; }
-  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
-      letter-spacing: 1px; }
+  .piw table.g td { padding: 4px 5px !important; font-size: 9.5px; line-height: 13px; }
+  .piw table.g th { padding: 4px 5px !important; font-size: 9px; line-height: 12px; }
+  .piw th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: left;
+      font-weight: bold; color: #000; }
+  .piw .sec { background: #fff; font-weight: bold; text-transform: uppercase; font-size: 10.5px; line-height: 14px;
+      text-align: center; }
   .piw .lbl { background: #f6f6f6; font-weight: bold; }
   .piw .c { text-align: center; }
   .piw .r { text-align: right; }
   .piw .b { font-weight: bold; }
-  .piw .sub { font-size: 9px; line-height: 13px; color: #555; font-weight: normal; }
-  .piw .warn { color: #a30000; font-weight: bold; }
-  .piw .ok { color: #0b6b2f; font-weight: bold; }
+  .piw .sub { font-size: 9.5px; line-height: 13px; color: #000; font-weight: normal; }
+  .piw .warn { color: #000; }
+  .piw .ok { color: #000; }
   .piw .tot td { background: #f0f0f0; font-weight: bold; }
-  .piw .grand td { background: #e2e2e2; font-weight: bold; font-size: 11px; line-height: 16px; }
-  .piw .title { font-size: 17px; line-height: 24px; font-weight: bold; text-align: center; letter-spacing: 2px; }
+  .piw .grand td { background: #ececec; font-weight: bold; font-size: 10.5px; line-height: 15px; }
+  .piw .title { font-size: 19px; line-height: 26px; font-weight: bold; text-align: center; letter-spacing: 1px; }
   .piw .subtitle { text-align: center; font-size: 10px; line-height: 14px; color: #555; margin: 2px 0 8px; }
   .piw .stamp { text-align: center; font-size: 11px; line-height: 16px; font-weight: bold; letter-spacing: 2px;
       border: 1px solid #a30000; color: #a30000; padding: 2px 0; margin-bottom: 8px; }
@@ -1056,27 +1074,42 @@ _INVOICE_HTML_RAW = r"""
 </style>
 <div class="piw">
 
-  <div class="title">PURCHASE INVOICE</div>
-  <div class="subtitle">{{ doc.name or "" }}{% if doc.company %} &middot; {{ doc.company }}{% endif %}
-    &middot; {{ "Direct Purchase Invoice" if direct else "Normal Invoice" }}</div>
+  <div class="title" style="margin-bottom:8px;">PURCHASE INVOICE</div>
   {% if ds == 0 %}<div class="stamp">DRAFT &mdash; NOT SUBMITTED</div>{% endif %}
   {% if ds == 2 %}<div class="stamp">CANCELLED</div>{% endif %}
+
+  <!-- ===== header block: logo, company, invoice number and dates ===== -->
+  {%- set logo = frappe.db.get_value("Company", doc.company, "company_logo") if doc.company else None -%}
+  <table class="avoid hdr">
+    <colgroup><col style="width:22%"><col style="width:31%"><col style="width:23%"><col style="width:24%"></colgroup>
+    <tr>
+      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
+      <td><div class="sub">PURCHASE INVOICE #</div>{{ txt(doc.name) }}</td>
+      <td><div class="sub">POSTING DATE</div>{{ dte(doc.posting_date) }}</td>
+    </tr>
+    <tr>
+      <td colspan="2"><div class="sub">DOCUMENT TYPE</div>{{ "Direct Purchase Invoice" if direct else "Normal Invoice" }}</td>
+      <td><div class="sub">SUPPLIER INVOICE #</div>{{ txt(doc.bill_no) }}</td>
+      <td><div class="sub">SUPPLIER INVOICE DATE</div>{{ dte(doc.bill_date) }}</td>
+    </tr>
+  </table>
 
   <!-- ===== BRD 6.2.1 supplier bill ===== -->
   <table class="avoid">
     <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
     <tr><td class="sec" colspan="4">Supplier Bill</td></tr>
     <tr>
-      <td class="lbl">Purchase Invoice ID</td><td class="b">{{ txt(doc.name) }}</td>
-      <td class="lbl">Status</td><td class="b">{{ status }}</td>
+      <td class="lbl">Purchase Invoice ID</td><td>{{ txt(doc.name) }}</td>
+      <td class="lbl">Status</td><td>{{ status }}</td>
     </tr>
     <tr>
-      <td class="lbl">Supplier</td><td class="b">{{ txt(doc.supplier_name or doc.supplier) }}</td>
-      <td class="lbl">Supplier Invoice No.</td><td class="b">{{ txt(doc.bill_no) }}</td>
+      <td class="lbl">Supplier</td><td>{{ txt(doc.supplier_name or doc.supplier) }}</td>
+      <td class="lbl">Supplier Invoice No.</td><td>{{ txt(doc.bill_no) }}</td>
     </tr>
     <tr>
       <td class="lbl">Supplier Invoice Date</td><td>{{ dte(doc.bill_date) }}</td>
-      <td class="lbl">Payment Due Date</td><td class="b">{{ dte(doc.custom_payment_due_date) }}</td>
+      <td class="lbl">Payment Due Date</td><td>{{ dte(doc.custom_payment_due_date) }}</td>
     </tr>
     {% if direct %}
     <tr>
@@ -1124,7 +1157,7 @@ _INVOICE_HTML_RAW = r"""
       </tr>
     {% endfor %}
     <tr class="tot">
-      <td class="c" colspan="3">Total</td>
+      <td colspan="3">Total</td>
       <td class="r">{{ num3(ns.qty) }}</td>
       <td></td>
       <td class="r">{{ money(doc.net_total) }}</td>
@@ -1149,11 +1182,9 @@ _INVOICE_HTML_RAW = r"""
     {% if frappe.utils.flt(doc.discount_amount) %}
     <tr><td class="lbl" colspan="2">Discount</td><td class="r">- {{ money(doc.discount_amount) }}</td></tr>
     {% endif %}
-    {% if frappe.utils.flt(doc.rounding_adjustment) %}
-    <tr><td class="lbl" colspan="2">Rounding Adjustment</td><td class="r">{{ money(doc.rounding_adjustment) }}</td></tr>
-    {% endif %}
+    <tr><td colspan="2">Rounding Adjustment</td><td class="r">{{ money(doc.rounding_adjustment) }}</td></tr>
     <tr class="grand"><td colspan="2">Total Invoice Amount</td><td class="r">{{ money(supplier_payable) }}</td></tr>
-    <tr><td colspan="3"><span class="lbl">In Words:</span> {{ txt(doc.in_words or doc.base_in_words) }}</td></tr>
+    <tr><td colspan="3">In Words: {{ txt(doc.in_words or doc.base_in_words) }}</td></tr>
   </table>
 
   <!-- ===== BRD 6.2.3 logistics / transport bill ===== -->
@@ -1162,11 +1193,11 @@ _INVOICE_HTML_RAW = r"""
     <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
     <tr><td class="sec" colspan="4">Logistics / Transport Bill</td></tr>
     <tr>
-      <td class="lbl">Logistics Vendor</td><td class="b">{{ txt(doc.custom_logistics_vendor) }}</td>
+      <td class="lbl">Logistics Vendor</td><td>{{ txt(doc.custom_logistics_vendor) }}</td>
       <td class="lbl">Transport Invoice No.</td><td>{{ txt(doc.custom_transport_invoice_no) }}</td>
     </tr>
     <tr>
-      <td class="lbl">Freight Amount</td><td class="b">{{ money(doc.custom_freight_amount) }}</td>
+      <td class="lbl">Freight Amount</td><td>{{ money(doc.custom_freight_amount) }}</td>
       <td class="lbl">Transport Attachment</td><td>{{ "Attached" if doc.custom_transport_attachment else "-" }}</td>
     </tr>
   </table>
@@ -1199,9 +1230,7 @@ _INVOICE_HTML_RAW = r"""
     </tr>
     {% if debit_note %}
     <tr>
-      <td class="lbl">Debit Note</td>
-      <td colspan="3"><span class="b warn">{{ debit_note }}</span>
-        <span class="sub">raised against GRN {{ doc.custom_grn }} for the rejected quantity (BR-GRN-09)</span></td>
+      <td colspan="4">Debit Note: {{ debit_note }} raised against GRN {{ doc.custom_grn }} for the rejected quantity (BR-GRN-09).</td>
     </tr>
     {% endif %}
   </table>
@@ -1219,13 +1248,13 @@ _INVOICE_HTML_RAW = r"""
     </tr>
     {% for p in doc.custom_payment_references or [] %}
       <tr>
-        <td class="c">{{ loop.index }}</td>
+        <td>{{ loop.index }}</td>
         <td>{{ txt(p.payment_type) }}</td>
-        <td class="c">{{ dte(p.payment_date) }}</td>
+        <td>{{ dte(p.payment_date) }}</td>
         <td>{{ txt(p.payment_mode) }}</td>
         <td>{{ txt(p.reference_number) }}{% if p.payment_entry %}<div class="sub">{{ p.payment_entry }}</div>{% endif %}</td>
         <td class="r">{{ money(p.payment_amount) }}</td>
-        <td class="c">{{ txt(p.payment_status) }}</td>
+        <td>{{ txt(p.payment_status) }}</td>
         <td>{{ who(p.recorded_by) }}{% if p.recorded_on %}<div class="sub">{{ dtm(p.recorded_on) }}</div>{% endif %}</td>
       </tr>
     {% else %}
@@ -1236,21 +1265,273 @@ _INVOICE_HTML_RAW = r"""
   <table class="avoid">
     <colgroup><col style="width:33%"><col style="width:34%"><col style="width:33%"></colgroup>
     <tr>
-      <td><div class="sign"></div><div class="c sub">Prepared By (Purchase)</div></td>
-      <td><div class="sign"></div><div class="c sub">Accounts</div></td>
-      <td><div class="sign"></div><div class="c sub">Authorised Signatory</div></td>
+      <td style="height:40px;"></td><td></td><td></td>
+    </tr>
+    <tr>
+      <td class="c b">Prepared By (Purchase)</td>
+      <td class="c b">Accounts</td>
+      <td class="c b">Authorised Signatory</td>
     </tr>
   </table>
 
 </div>
 """
 
-_INVOICE_HTML = _MACROS + _INVOICE_HTML_RAW
+_INVOICE_HTML = _MACROS + _INVOICE_HTML_RAW.replace("__ALPINO_LOGO__", _alpino_logo_data_uri())
 
 
 def setup_purchase_invoice_print_format():
 	"""The 'Purchase Invoice' print format on Purchase Invoice (BRD 6.2 in printed form)."""
 	_upsert_print_format(INVOICE_PF_NAME, INVOICE_DOC_TYPE, _INVOICE_HTML)
+
+
+# ---------------------------------------------------------------- Purchase Order
+
+PO_PF_NAME = "Purchase Order"
+PO_DOC_TYPE = "Purchase Order"
+
+# GST state codes, so the printed "State / Code" works for an address that has a state
+# but no GSTIN (the first two digits of a GSTIN are the same code).
+_GST_STATE_CODES = {
+	"Jammu and Kashmir": "01", "Himachal Pradesh": "02", "Punjab": "03", "Chandigarh": "04",
+	"Uttarakhand": "05", "Haryana": "06", "Delhi": "07", "Rajasthan": "08", "Uttar Pradesh": "09",
+	"Bihar": "10", "Sikkim": "11", "Arunachal Pradesh": "12", "Nagaland": "13", "Manipur": "14",
+	"Mizoram": "15", "Tripura": "16", "Meghalaya": "17", "Assam": "18", "West Bengal": "19",
+	"Jharkhand": "20", "Odisha": "21", "Chhattisgarh": "22", "Madhya Pradesh": "23", "Gujarat": "24",
+	"Dadra and Nagar Haveli and Daman and Diu": "26", "Maharashtra": "27", "Karnataka": "29",
+	"Goa": "30", "Lakshadweep": "31", "Kerala": "32", "Tamil Nadu": "33", "Puducherry": "34",
+	"Andaman and Nicobar Islands": "35", "Telangana": "36", "Andhra Pradesh": "37", "Ladakh": "38",
+}
+
+# Printed in the layout the business supplied: header block with the logo, the three
+# parties side by side (vendor, bill-to, delivery), the lines with HSN and tax rate, an
+# HSN-wise GST breakup, totals, standard instructions and the signature row. Fields that
+# are SAP-specific in that sample (purchasing org, company code, storage location) are
+# mapped to what this site actually records: PO Type, Buyer, Supplier Order No.
+_PO_HTML_RAW = r"""
+{%- macro money(v) -%}{{ frappe.utils.fmt_money(frappe.utils.flt(v), currency=doc.currency) }}{%- endmacro -%}
+{%- macro amt(v) -%}{{ frappe.utils.fmt_money(frappe.utils.flt(v), precision=2) }}{%- endmacro -%}
+{%- set codes = __STATE_CODES__ -%}
+{%- set ds = frappe.utils.cint(doc.docstatus) -%}
+{%- set co = frappe.db.get_value("Company", doc.company, ["company_logo", "email", "phone_no", "tax_id"], as_dict=True) or {} -%}
+{%- set co_gstin = doc.custom_company_gstin or co.tax_id or "" -%}
+{%- set bill = frappe.db.get_value("Address", doc.billing_address, ["address_line1", "address_line2", "city", "state", "pincode", "email_id", "phone"], as_dict=True) if doc.billing_address else None -%}
+{%- set sup = frappe.db.get_value("Supplier", doc.supplier, ["tax_id", "supplier_primary_address", "email_id", "mobile_no"], as_dict=True) or {} -%}
+{%- set sup_addr_name = doc.supplier_address or sup.supplier_primary_address -%}
+{%- set sup_addr = frappe.db.get_value("Address", sup_addr_name, ["address_line1", "address_line2", "city", "state", "pincode", "email_id", "phone"], as_dict=True) if sup_addr_name else None -%}
+{%- set sup_gstin = doc.custom_supplier_gstin or sup.tax_id or "" -%}
+{%- set wh = frappe.db.get_value("Warehouse", doc.set_warehouse, ["warehouse_name", "address_line_1", "address_line_2", "city", "state", "pin"], as_dict=True) if doc.set_warehouse else None -%}
+{%- macro state_line(state, gstin) -%}{%- set code = (gstin[:2] if gstin else "") or codes.get(state or "", "") -%}{% if state or code %}State / Code: {{ state or "-" }}{% if code %} / {{ code }}{% endif %}{% endif %}{%- endmacro -%}
+{%- macro pan(gstin) -%}{{ gstin[2:12] if gstin and gstin|length >= 12 else "-" }}{%- endmacro -%}
+{%- set rev = (doc.name.split("-")[-1] if doc.amended_from else "00") -%}
+{%- set t = namespace(igst=0, cgst=0, sgst=0, other=0, igst_mode=False) -%}
+{%- for x in doc.taxes or [] -%}
+  {%- set a = (x.account_head or "") -%}
+  {%- if "IGST" in a -%}{%- set t.igst = t.igst + frappe.utils.flt(x.tax_amount) -%}{%- set t.igst_mode = True -%}
+  {%- elif "CGST" in a -%}{%- set t.cgst = t.cgst + frappe.utils.flt(x.tax_amount) -%}
+  {%- elif "SGST" in a -%}{%- set t.sgst = t.sgst + frappe.utils.flt(x.tax_amount) -%}
+  {%- else -%}{%- set t.other = t.other + frappe.utils.flt(x.tax_amount) -%}{%- endif -%}
+{%- endfor -%}
+{%- set hsn_rows = {} -%}{%- set hsn_order = [] -%}
+{%- for row in doc.items -%}
+  {%- set hsn = frappe.db.get_value("Item", row.item_code, "custom_hsn_code") or "-" -%}
+  {%- set pct = frappe.utils.flt(row.custom_gst_percent) -%}
+  {%- set key = hsn ~ "|" ~ pct -%}
+  {%- if key not in hsn_rows -%}{%- set _ = hsn_order.append(key) -%}{%- set _ = hsn_rows.update({key: {"hsn": hsn, "pct": pct, "taxable": 0}}) -%}{%- endif -%}
+  {%- set _ = hsn_rows[key].update({"taxable": hsn_rows[key]["taxable"] + frappe.utils.flt(row.net_amount or row.amount)}) -%}
+{%- endfor -%}
+<style>
+  .piw { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
+  .piw table { border-collapse: collapse; width: 100%; table-layout: fixed; margin-bottom: 9px; font-size: 10px; line-height: 14px; }
+  .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important; word-wrap: break-word; overflow: hidden; vertical-align: top; }
+  .piw table.g td { padding: 4px 5px !important; font-size: 9.5px; line-height: 13px; }
+  .piw table.g th { padding: 4px 5px !important; font-size: 9.5px; line-height: 12px; }
+  .piw th { background: #ececec; font-weight: bold; text-align: left; color: #000; }
+  .piw .sec { background: #fff; font-weight: bold; text-align: center; font-size: 10.5px; }
+  .piw .ph { background: #ececec; font-weight: bold; font-size: 10.5px; }
+  .piw .lbl { background: #f6f6f6; font-weight: bold; }
+  .piw .c { text-align: center; } .piw .r { text-align: right; } .piw .b { font-weight: bold; }
+  .piw .sub { font-size: 9.5px; line-height: 13px; color: #000; font-weight: normal; text-transform: uppercase; }
+  .piw .muted { color: #000; }
+  .piw .tot td { background: #f0f0f0; font-weight: bold; }
+  .piw .grand td { background: #ececec; font-weight: bold; font-size: 10.5px; line-height: 15px; }
+  .piw .title { font-size: 19px; line-height: 26px; font-weight: bold; text-align: center; letter-spacing: 1px; }
+  .piw .copy { text-align: right; font-size: 9.5px; margin: -2px 0 6px; }
+  .piw .stamp { text-align: center; font-size: 11px; font-weight: bold; letter-spacing: 2px; border: 1px solid #a30000; color: #a30000; padding: 2px 0; margin-bottom: 8px; }
+  .piw .avoid { page-break-inside: avoid; }
+  .piw .sign { height: 38px; }
+  .piw .foot { font-size: 9px; color: #000; margin-top: 2px; }
+</style>
+<div class="piw">
+
+  <div class="title">PURCHASE ORDER</div>
+  <div class="copy">ORIGINAL FOR RECIPIENT</div>
+  {% if ds == 0 %}<div class="stamp">DRAFT &mdash; NOT APPROVED</div>{% endif %}
+  {% if ds == 2 %}<div class="stamp">CANCELLED</div>{% endif %}
+
+  <!-- ===== header block ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:19%"><col style="width:31%"><col style="width:25%"><col style="width:25%"></colgroup>
+    <tr>
+      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
+      <td><div class="sub">PO Number / Rev</div>{{ txt(doc.name) }} / {{ rev }}</td>
+      <td><div class="sub">PO Date</div>{{ frappe.utils.formatdate(doc.transaction_date, "dd.MM.yyyy") if doc.transaction_date else "-" }}</td>
+    </tr>
+    <!-- Fixed company block, as on the format the business supplied. -->
+    <tr>
+      <td><div class="sub">Company Address</div>Plot No. 123-125, GIDC<br>Industrial Estate, Sachana<br>Surat, Gujarat - 395023, India</td>
+      <td>GSTIN: 24AAACA1234A1Z1<br>CIN: U15400GJ2020PTC112233<br>State / Code: Gujarat / 24<br>PAN: AAACA1234A</td>
+      <td><div class="sub">Purchasing Org / Group</div>1000 (India) / P01 (RM-PM)
+        <div class="sub">Company Code</div>1000 (Alpino India)</td>
+      <td><div class="sub">Payment Terms</div>{{ doc.payment_terms_template or "Z030 (Net 30 Days)" }}
+        <div class="sub">Incoterms</div>{% if doc.incoterm %}{{ doc.incoterm }}{% if doc.named_place %} ({{ doc.named_place }}){% endif %}{% else %}FOR Destination (Freight Paid){% endif %}</td>
+    </tr>
+    <tr>
+      <td colspan="4"><div class="sub">Created By</div>{{ (frappe.db.get_value("User", doc.owner, "username") or doc.owner.split("@")[0]) | upper }}</td>
+    </tr>
+  </table>
+
+  <!-- ===== the three parties ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:33.3%"><col style="width:33.3%"><col style="width:33.4%"></colgroup>
+    <tr>
+      <td class="ph">VENDOR DETAILS (Partner: {{ doc.supplier }})</td>
+      <td class="ph">INVOICE TO (Bill-To Party)</td>
+      <td class="ph">DELIVERY ADDRESS (Plant / Storage Loc)</td>
+    </tr>
+    <tr>
+      <td>
+        {{ (doc.supplier_name or doc.supplier) | upper }}<br>
+        {% if sup_addr %}{{ sup_addr.address_line1 or "" }}{% if sup_addr.address_line2 %}, {{ sup_addr.address_line2 }}{% endif %}<br>{{ sup_addr.city or "" }}{% if sup_addr.state %}, {{ sup_addr.state }}{% endif %}{% if sup_addr.pincode %} - {{ sup_addr.pincode }}{% endif %}<br>{% endif %}
+        GSTIN: {{ txt(sup_gstin) }}<br>
+        {%- set sst = sup_addr.state if sup_addr else "" -%}
+        {%- set scode = (sup_gstin[:2] if sup_gstin else "") or codes.get(sst or "", "") -%}
+        State/Code: {{ sst or "-" }}{% if scode %} / {{ scode }}{% endif %}
+        {%- set sup_contact = doc.contact_email or sup.email_id or (sup_addr.email_id if sup_addr else "") or doc.contact_mobile or sup.mobile_no -%}
+        {% if sup_contact %}<br>Contact: {{ sup_contact }}{% endif %}
+      </td>
+      <td>
+        ALPINO HEALTH FOODS PVT. LTD.<br>
+        Finance &amp; Procurement Central Desk<br>
+        Plot No. 123-125, GIDC Industrial Estate<br>
+        Surat, Gujarat - 395023<br>
+        GSTIN: 24AAACA1234A1Z1<br>
+        Email: ap.invoices@alpino.store
+      </td>
+      <td>
+        Plant 1001 (Surat Central Plant)<br>
+        Warehouse Receipt Dock #02<br>
+        Plot No. 123-125, GIDC Industrial Area<br>
+        Surat, Gujarat - 395023<br>
+        Storage Location: {{ (wh.warehouse_name if wh else "") or doc.set_warehouse or "0001 (Raw Material RM01)" }}<br>
+        Receiving Hours: 09:00 AM - 05:00 PM
+      </td>
+    </tr>
+  </table>
+
+  <!-- ===== lines ===== -->
+  <table class="g">
+    <colgroup>
+      <col style="width:6%"><col style="width:13%"><col style="width:24%"><col style="width:9%">
+      <col style="width:9%"><col style="width:6%"><col style="width:10%"><col style="width:7%"><col style="width:16%">
+    </colgroup>
+    <tr><td class="sec" colspan="9">PURCHASE ORDER ITEMS</td></tr>
+    <tr>
+      <th>Item</th><th>Material No.</th><th>Description / Technical Spec</th><th>HSN/SAC</th>
+      <th>PO Qty</th><th>Unit</th><th>Net Price (&#8377;)</th><th>Tax (%)</th><th>Net Amount (&#8377;)</th>
+    </tr>
+    {% for row in doc.items %}
+    <tr>
+      <td>{{ "%05d"|format(row.idx * 10) }}</td>
+      <td>{{ txt(row.item_code) }}</td>
+      <td>{{ txt(row.item_name) }}{% if row.custom_item_remarks %}<br>{{ row.custom_item_remarks }}{% endif %}
+        <br>Delivery Date: {{ frappe.utils.formatdate(row.schedule_date, "dd.MM.yyyy") if row.schedule_date else "-" }}</td>
+      <td>{{ frappe.db.get_value("Item", row.item_code, "custom_hsn_code") or "-" }}</td>
+      <td class="r">{{ amt(row.qty) }}</td>
+      <td>{{ (row.uom or "") | upper }}</td>
+      <td class="r">{{ amt(row.rate) }}</td>
+      <td class="r">{{ "%.1f"|format(frappe.utils.flt(row.custom_gst_percent)) }}%</td>
+      <td class="r">{{ amt(row.net_amount or row.amount) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <!-- ===== HSN-wise GST breakup ===== -->
+  <table class="g avoid">
+    <colgroup><col style="width:20%"><col style="width:20%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup>
+    <tr><td class="sec" colspan="5">GST BREAKUP DETAILS (Statutory)</td></tr>
+    <tr><th>HSN/SAC</th><th>Taxable Value</th><th>IGST</th><th>CGST</th><th>SGST</th></tr>
+    {% set g = namespace(taxable=0, igst=0, cgst=0, sgst=0) %}
+    {% for key in hsn_order %}
+      {%- set h = hsn_rows[key] -%}
+      {%- set tax = h.taxable * h.pct / 100 if (t.igst or t.cgst or t.sgst) else 0 -%}
+      {%- set g.taxable = g.taxable + h.taxable -%}
+      <tr>
+        <td>{{ h.hsn }}</td>
+        <td class="r">{{ amt(h.taxable) }}</td>
+        {% if t.igst_mode %}
+          {%- set g.igst = g.igst + tax -%}
+          <td class="r">{{ amt(tax) }} ({{ "%g"|format(h.pct) }}%)</td><td class="r">0.00</td><td class="r">0.00</td>
+        {% else %}
+          {%- set g.cgst = g.cgst + tax / 2 -%}{%- set g.sgst = g.sgst + tax / 2 -%}
+          <td class="r">0.00</td>
+          <td class="r">{{ amt(tax / 2) }} ({{ "%g"|format(h.pct / 2) }}%)</td>
+          <td class="r">{{ amt(tax / 2) }} ({{ "%g"|format(h.pct / 2) }}%)</td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    <tr class="tot">
+      <td>TOTAL</td><td class="r">{{ amt(g.taxable) }}</td>
+      <td class="r">{{ amt(t.igst) }}</td><td class="r">{{ amt(t.cgst) }}</td><td class="r">{{ amt(t.sgst) }}</td>
+    </tr>
+  </table>
+
+  <!-- ===== totals ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:65%"><col style="width:35%"></colgroup>
+    <tr><td class="b">Total Net Item Value:</td><td class="r">{{ money(doc.net_total) }}</td></tr>
+    <tr><td>Freight &amp; Cartage (Incoterms):</td><td class="r">{{ money(t.other) }}</td></tr>
+    {% if frappe.utils.flt(doc.discount_amount) %}<tr><td>Discount:</td><td class="r">- {{ money(doc.discount_amount) }}</td></tr>{% endif %}
+    <tr><td>Integrated Tax (IGST):</td><td class="r">{{ money(t.igst) }}</td></tr>
+    <tr><td>Central Tax (CGST):</td><td class="r">{{ money(t.cgst) }}</td></tr>
+    <tr><td>State Tax (SGST):</td><td class="r">{{ money(t.sgst) }}</td></tr>
+    {% if frappe.utils.flt(doc.rounding_adjustment) %}<tr><td>Rounding Adjustment:</td><td class="r">{{ money(doc.rounding_adjustment) }}</td></tr>{% endif %}
+    <tr class="grand"><td>GROSS ORDER VALUE:</td><td class="r">{{ money(doc.rounded_total or doc.grand_total) }}</td></tr>
+  </table>
+  {%- set words = (doc.in_words or "").replace("INR ", "").replace(",", "").replace(" And ", " ").replace(" only.", "").replace(" only", "").strip() -%}
+  <div style="margin:-5px 0 9px;">Total Amount in Words: {{ words }} Indian Rupees Only</div>
+
+  <!-- ===== instructions (fixed text, as on the format the business supplied) ===== -->
+  <table class="avoid">
+    <tr><td class="sec">ENTERPRISE AUDIT &amp; STANDARD DELIVERY INSTRUCTIONS</td></tr>
+    <tr><td>1. Inspection &amp; QA Release: Acceptance of materials is contingent upon receiving QA lab release. Unloading does not constitute final commercial acceptance. Materials failing COA specifications will be quarantined at supplier risk.</td></tr>
+    <tr><td>2. Documentation: Triplicate copies of Tax Invoice, Certificate of Analysis (COA), Delivery Challan, and E-Way Bill must accompany the dispatch vehicle.</td></tr>
+    <tr><td>3. Invoice Matching: The PO Number ({{ doc.name }}) and line item numbers must be explicitly stated on your tax invoice to avoid settlement delays in SAP automated clearing.</td></tr>
+    <tr><td>4. Late Delivery / LD Clause: Liquidated damages equal to 0.5% per week of delay up to a maximum of 5% of order value will apply unless prior written waiver is granted.</td></tr>
+  </table>
+
+  <!-- ===== signatures ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:33.3%"><col style="width:33.3%"><col style="width:33.4%"></colgroup>
+    <tr>
+      <td>Prepared By: PURCHASE SPECIALIST<br>System Generated (Workflow Approved)<div class="sign"></div></td>
+      <td>Verified By: PLANT HEAD / MATERIALS<br>Electronic Approval Stamp<div class="sign"></div></td>
+      <td>For ALPINO HEALTH FOODS PVT. LTD.<br><br>AUTHORIZED SIGNATORY<div class="sign"></div></td>
+    </tr>
+  </table>
+  <div class="foot">System ID: ALPINOS-ERP | Program: Purchase Order | User: {{ (frappe.db.get_value("User", doc.owner, "username") or doc.owner.split("@")[0]) | upper }} | {{ doc.name }}</div>
+
+</div>
+"""
+
+_PO_HTML = _MACROS + _PO_HTML_RAW.replace("__STATE_CODES__", _jinja_dict(_GST_STATE_CODES)).replace("__ALPINO_LOGO__", _alpino_logo_data_uri())
+
+
+def setup_purchase_order_print_format():
+	"""The 'Purchase Order' print format on Purchase Order, made its default."""
+	_upsert_print_format(PO_PF_NAME, PO_DOC_TYPE, _PO_HTML)
+	_set_default_print_format(PO_DOC_TYPE, PO_PF_NAME)
 
 def _set_default_print_format(doc_type, print_format):
 	"""Make `print_format` the default the Print button opens for `doc_type`.
@@ -1283,6 +1564,7 @@ def execute():
 	setup_qc_sample_sticker_print_format()
 	setup_grn_print_format()
 	setup_purchase_invoice_print_format()
+	setup_purchase_order_print_format()
 	# Task 296 / 312: the Print button must open the module format, not Standard.
 	_set_default_print_format(INWARD_DOC_TYPE, INWARD_PF_NAME)
 	_set_default_print_format(QC_DOC_TYPE, QC_PF_NAME)

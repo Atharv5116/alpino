@@ -765,7 +765,8 @@ function alpinos_po_render_approval(frm, status, actions) {
 }
 
 // BRD 1.3 "Create Purchase Inward" / "View Purchase Inward", offered per BRD 1.4
-// "Action Availability by Status": the order must be Sent to Supplier, and a Direct
+// "Action Availability by Status": the order must be Approved or Sent to Supplier
+// (Sent to Supplier is no longer required before an inward), and a Direct
 // Purchase Invoice order never offers it at all (the note under BRD 1.4).
 //
 // The button is drawn for every role rather than hidden from some, and the Purchase
@@ -784,19 +785,12 @@ function alpinos_po_render_inward_actions(frm, info) {
     var status = info.status;
     var group = __('Purchase Inward');
 
-    if (status === 'Sent to Supplier') {
+    // Approved is enough: goods can arrive before the order is marked Sent to Supplier.
+    if (status === 'Sent to Supplier' || status === 'Approved') {
         frm.add_custom_button(__('Create Purchase Inward'), function () {
             frappe.route_options = { purchase_order: frm.doc.name };
             frappe.set_route('purchase_inward_entry');
         }, group);
-    } else if (status === 'Approved') {
-        // Deliberately drawn but dead: BRD 1.4 puts this action on Sent to Supplier, and
-        // an absent button reads as a missing feature rather than a missing step.
-        var $b = frm.add_custom_button(__('Create Purchase Inward'), function () {}, group);
-        $b.prop('disabled', true).attr(
-            'title',
-            __('Send this Purchase Order to the supplier first (BRD 1.4).')
-        );
     }
 
     if (cint(info.inward_count)) {

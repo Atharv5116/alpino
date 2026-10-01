@@ -563,8 +563,10 @@ var PurchaseGRNListPage = class {
 				return `<span class="indicator-pill ${PGRN_STATUS_COLORS[s] || 'gray'}">${esc(__(s))}</span>`;
 			},
 			actions: (d) => {
-				const acts = Array.isArray(d.actions) ? d.actions : [];
-				if (!acts.length) return '—';
+				const acts = (Array.isArray(d.actions) ? d.actions : []).filter((a) => a.action !== 'print');
+				// Every row downloads its PDF directly.
+				const pdf = window.alpinos_pdf_button ? alpinos_pdf_button('Purchase Receipt', d.name, 'GRN') : '';
+				if (!acts.length) return pdf || '—';
 				return acts
 					.map((a) => {
 						const label = esc(a.label || a.action);
@@ -573,7 +575,7 @@ var PurchaseGRNListPage = class {
 							d.name
 						)}" data-action="${esc(a.action)}" title="${label}">${label}</button>`;
 					})
-					.join(' ');
+					.join(' ') + (pdf ? ' ' + pdf : '');
 			},
 		};
 		rows.forEach((d) => {

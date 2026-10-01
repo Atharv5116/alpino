@@ -969,6 +969,7 @@ var PurchaseQCEntry = class {
 	make_actions() {
 		const me = this;
 		const $bar = this.wrapper.find('.pqc-actionbar').empty();
+		if (window.alpinos_list_view_button) alpinos_list_view_button($bar, 'purchase_qc_list');
 		if (!this.docname) {
 			$bar.append(
 				`<span class="text-muted">${__('Open a Purchase QC from the QC list to begin.')}</span>`

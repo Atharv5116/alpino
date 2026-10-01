@@ -596,6 +596,9 @@
    Put it on the wrapper; each child stays an ordinary .eso-fld. */
 .alp-figures {
   max-width: 360px;
+  /* On the right of its card, where a total is looked for (PO, Inward, QC, Quarantine,
+     GRN, Invoice). */
+  margin-left: auto;
 }
 .alp-figures .eso-fld {
   margin-bottom: 0;
@@ -1169,19 +1172,14 @@
 }
 
 /* ----------------------------------------------------------------------------
-   The sticky page head paints over the top of the page body.
+   No extra gap between the page title and the page body.
 
-   frappe/public/scss/desk/page.scss puts .page-head at
-       position: sticky; top: var(--navbar-height);
-   Sticky repositioning does NOT reflow siblings: the head still only reserves
-   its natural flow box, so shifting it down by the navbar height leaves it
-   overlapping whatever follows. Measured on purchase_inward_entry: the head
-   painted 48px-108px while .page-body began at 65px, hiding 31 of the 36px of
-   the BRD explainer paragraph that opens both entry screens.
-
-   Reserve the sticky offset so the first element in the body clears the head.
-   Scoped to this module's four routes rather than the whole family above, so it
-   cannot move a screen nobody asked to change.
+   These routes used to reserve var(--navbar-height) (48px) above .page-body so the
+   sticky page head could not paint over the first line of the body. On the current
+   desk the head sits in normal flow (measured on purchase_order_entry: head 48-108px,
+   body from 113px with no padding), so that reservation was only an empty band under
+   the title on every Goods Inward screen. Removed; the rule is kept at 0 so a theme
+   default cannot bring the band back.
    ---------------------------------------------------------------------------- */
 :is(
   [data-page-route="purchase_inward_list"],
@@ -1198,7 +1196,7 @@
   [data-page-route="purchase_order_list"],
   [data-page-route="invoice-download-queue"]
 ) .page-body {
-  padding-top: var(--navbar-height, 48px);
+  padding-top: 0;
 }
 
 /* -------------------------------------------------------------- alpinos-readonly

@@ -476,14 +476,15 @@ def _row_actions(row, perms):
 			acts.append(_act("create_invoice", _("Create Invoice"), kind="create"))
 	elif live and current != RECV_FULL and perms["inward"]:
 		label = _("Continue Receiving") if current == RECV_PARTIAL else _("Create Inward")
-		sent = approval == C.PO_SENT_TO_SUPPLIER or current == RECV_PARTIAL
+		# Approved is enough: an inward no longer waits for Send to Supplier.
+		ready = approval in (C.PO_APPROVED, C.PO_SENT_TO_SUPPLIER) or current == RECV_PARTIAL
 		acts.append(
 			_act(
 				"create_inward",
 				label,
 				kind="create",
-				enabled=sent,
-				reason="" if sent else _("Send this Purchase Order to the supplier first (BRD 1.4)."),
+				enabled=ready,
+				reason="" if ready else _("Approve this Purchase Order first."),
 			)
 		)
 
