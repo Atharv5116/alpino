@@ -33,6 +33,29 @@ def get_location_details(location):
 	return {}
 
 
+def _shift_thresholds(shift_name, cache):
+	"""(half_day_threshold, absent_threshold) from the Shift Type, 0 when not configured.
+
+	These are HR's own policy: below the half-day threshold the day is half, below the
+	absent threshold it is absent. The report used to ignore them entirely and measure
+	every day against the shift span, so a shift configured to accept a shorter day still
+	collected a shortage.
+	"""
+	key = ("thresholds", shift_name)
+	if key in cache:
+		return cache[key]
+	half = absent = 0.0
+	if shift_name:
+		vals = frappe.db.get_value(
+			"Shift Type", shift_name,
+			["working_hours_threshold_for_half_day", "working_hours_threshold_for_absent"],
+		)
+		if vals:
+			half, absent = flt(vals[0]), flt(vals[1])
+	cache[key] = (half, absent)
+	return cache[key]
+
+
 def _required_hours(shift_name, is_saturday, cache):
 	"""Required working hours for the day: the shift span, or the Saturday threshold on Saturdays."""
 	key = (shift_name, bool(is_saturday))
@@ -111,9 +134,25 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 			is_sat = getdate(date_str).weekday() == 5
 		except Exception:
 			is_sat = False
-		req = _required_hours(att.get("shift"), is_sat, shift_hours_cache)
 		wh = flt(att.get("working_hours"))
-		if not req or wh <= 0:
+		if wh <= 0:
+			return 0.0
+
+		# The Shift Type's own thresholds come first: they are the policy HR configured.
+		# Below the absent threshold the day is a full shortage, below the half-day one a
+		# half, and at or above it nothing is owed -- a shift that accepts a shorter day
+		# stops collecting a shortage for every day of the month.
+		half_t, absent_t = _shift_thresholds(att.get("shift"), shift_hours_cache)
+		if absent_t and wh < absent_t:
+			return 1.0
+		if half_t and wh < half_t:
+			return 0.5
+		if half_t or absent_t:
+			return 0.0
+
+		# Neither threshold configured: fall back to the shift span and its tiers.
+		req = _required_hours(att.get("shift"), is_sat, shift_hours_cache)
+		if not req:
 			return 0.0
 		ratio = wh / req
 		if ratio >= 0.97:
