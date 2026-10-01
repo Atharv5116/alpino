@@ -8,7 +8,7 @@ Everything is rolled back at the end.
 """
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 from alpinos import attendance_punch_repair as R
 
@@ -134,3 +134,41 @@ def _run():
 
 	check("#13 retyping a punch to what it already is is refused",
 		_a_punch_already_that_type_is_refused)
+
+	def _a_request_owned_day_can_be_re_marked():
+		"""Dharmishtha's 2 Sep: an approved request left it Absent with 7.68 hours."""
+		emp2 = _insert("Employee", name=f"{tag}-EMP2", employee_name=f"{tag} Request Day",
+			status="Active", company=frappe.defaults.get_global_default("company"),
+			date_of_joining="2026-01-01")
+		# HO_G as it stands: a short span, absent below four hours.
+		shift = _insert("Shift Type", name=f"{tag}-HOG", start_time="11:00:00", end_time="15:00:00",
+			working_hours_threshold_for_absent=4, working_hours_threshold_for_half_day=0)
+		d = "2026-09-02"
+		_insert("Employee Checkin", name=f"{tag}-R-IN", employee=emp2, log_type="IN",
+			time=f"{d} 10:27:44", shift=shift)
+		_insert("Employee Checkin", name=f"{tag}-R-OUT", employee=emp2, log_type="OUT",
+			time=f"{d} 18:08:41", shift=shift, skip_auto_attendance=1, from_attendance_request=1)
+		req = _insert("Attendance Request", name=f"{tag}-R-ARQ", employee=emp2, from_date=d,
+			to_date=d, docstatus=1, workflow_state="Approved", reason="Office", shift=shift)
+		att2 = _insert("Attendance", name=f"{tag}-R-ATT", employee=emp2, attendance_date=d,
+			docstatus=1, status="Absent", shift=shift, attendance_request=req,
+			in_time=f"{d} 10:27:44", out_time=f"{d} 18:08:41", working_hours=7.68)
+
+		dry = R.remark_day(employee=emp2, date=d, apply=0)
+		_assert(dry["before"]["status"] == "Absent", f"before: {dry['before']}")
+		_assert(dry["after"]["status"] != "Absent",
+			f"the re-mark would leave it {dry['after']['status']}")
+		_assert(dry["owned_by_request"] == req, "the report does not say the request owns the day")
+		_assert(frappe.db.get_value("Attendance", att2, "status") == "Absent",
+			"the dry run wrote the status")
+
+		R.remark_day(employee=emp2, date=d, apply=1)
+		_assert(frappe.db.get_value("Attendance", att2, "status") != "Absent",
+			"the day is still Absent after applying")
+		_assert(not cint(frappe.db.get_value("Employee Checkin", f"{tag}-R-OUT", "skip_auto_attendance")),
+			"the stray skip flag was left on the punch")
+		_assert(str(frappe.db.get_value("Attendance", att2, "in_time")).endswith("10:27:44"),
+			"the in-time was disturbed")
+
+	check("#13 a day an Attendance Request owns can still be re-marked from its punches",
+		_a_request_owned_day_can_be_re_marked)
