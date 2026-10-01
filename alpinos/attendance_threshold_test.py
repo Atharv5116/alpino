@@ -78,6 +78,16 @@ def _run():
 	configured = _insert("Shift Type", name=f"{tag}-CFG", start_time="10:00:00", end_time="18:30:00",
 		working_hours_threshold_for_half_day=6, working_hours_threshold_for_absent=4)
 
+	# The same shift with Alpino's short Saturday configured: Present from 4.5 hours.
+	saturday = _insert("Shift Type", name=f"{tag}-SAT", start_time="10:00:00", end_time="18:30:00",
+		working_hours_threshold_for_half_day=8.25, working_hours_threshold_for_absent=4,
+		saturday_working_hours_threshold=4.5)
+	# And one with HR's three-way Saturday policy: half below 6, absent below 3.
+	saturday3 = _insert("Shift Type", name=f"{tag}-SAT3", start_time="10:00:00", end_time="18:30:00",
+		working_hours_threshold_for_half_day=8.25, working_hours_threshold_for_absent=4,
+		saturday_working_hours_threshold_for_half_day=6,
+		saturday_working_hours_threshold_for_absent=3)
+
 	def _stats(shift, hours, day="15"):
 		att = {f"2026-09-{day}": {
 			"attendance_date": f"2026-09-{day}", "status": "Present", "shift": shift,
@@ -139,3 +149,48 @@ def _run():
 
 	check("HRMS: her 13 days read 6.5 on the span and nothing once the threshold is set",
 		_dharmishthas_month_under_each_rule)
+
+	def _a_short_saturday_is_not_a_shortage():
+		"""2026-09-05 is a Saturday. 5 hours against a 4.5 hour Saturday threshold owes nothing.
+
+		The weekday thresholds (half below 8.25) would charge half a day for it, which is
+		what started appearing against every Saturday of the month.
+		"""
+		s = _stats(saturday, 5.0, day="05")
+		_assert(flt(s.working_hours_shortage) == 0.0,
+			f"shortage {s.working_hours_shortage}: Saturday met its own 4.5 hour threshold")
+
+	check("HRMS: a Saturday is measured against the Saturday threshold, not the weekday one",
+		_a_short_saturday_is_not_a_shortage)
+
+	def _a_saturday_below_its_threshold_is_a_full_day():
+		"""Two-way Saturday: below the Present threshold the marking says Absent, so a full day."""
+		s = _stats(saturday, 3.0, day="05")
+		_assert(flt(s.working_hours_shortage) == 1.0,
+			f"shortage {s.working_hours_shortage}, expected a full day below the Saturday threshold")
+
+	check("HRMS: a Saturday under its own threshold is a full day's shortage",
+		_a_saturday_below_its_threshold_is_a_full_day)
+
+	def _a_three_way_saturday_follows_its_own_pair():
+		half = _stats(saturday3, 5.0, day="05")      # under 6, over 3 -> half
+		_assert(flt(half.working_hours_shortage) == 0.5,
+			f"shortage {half.working_hours_shortage}, expected 0.5 below the Saturday half-day threshold")
+		full = _stats(saturday3, 2.0, day="05")      # under 3 -> full
+		_assert(flt(full.working_hours_shortage) == 1.0,
+			f"shortage {full.working_hours_shortage}, expected a full day below the Saturday absent threshold")
+		none = _stats(saturday3, 6.5, day="05")      # at or above 6 -> nothing
+		_assert(flt(none.working_hours_shortage) == 0.0,
+			f"shortage {none.working_hours_shortage}: the Saturday met its half-day threshold")
+
+	check("HRMS: a Saturday with its own half-day and absent thresholds uses that pair",
+		_a_three_way_saturday_follows_its_own_pair)
+
+	def _a_weekday_still_uses_the_weekday_pair():
+		"""2026-09-15 is a Tuesday: the Saturday fields must not reach it."""
+		s = _stats(saturday, 5.0, day="15")
+		_assert(flt(s.working_hours_shortage) == 0.5,
+			f"shortage {s.working_hours_shortage}: a weekday is still measured at 8.25 / 4")
+
+	check("HRMS: a weekday is untouched by the Saturday thresholds",
+		_a_weekday_still_uses_the_weekday_pair)

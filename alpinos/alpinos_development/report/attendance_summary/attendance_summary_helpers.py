@@ -33,25 +33,45 @@ def get_location_details(location):
 	return {}
 
 
-def _shift_thresholds(shift_name, cache):
+def _shift_thresholds(shift_name, is_saturday, cache):
 	"""(half_day_threshold, absent_threshold) from the Shift Type, 0 when not configured.
 
 	These are HR's own policy: below the half-day threshold the day is half, below the
 	absent threshold it is absent. The report used to ignore them entirely and measure
 	every day against the shift span, so a shift configured to accept a shorter day still
 	collected a shortage.
+
+	Saturday has its own pair, and they are the ones that count on a Saturday -- Alpino
+	works a short Saturday, so measuring it against the weekday thresholds charged a
+	shortage for every Saturday of the month. The Saturday half-day threshold falls back to
+	the Saturday Present threshold, exactly as the marking rule does
+	(attendance_request_automation.validate_saturday_attendance_threshold).
 	"""
-	key = ("thresholds", shift_name)
+	key = ("thresholds", shift_name, bool(is_saturday))
 	if key in cache:
 		return cache[key]
 	half = absent = 0.0
 	if shift_name:
-		vals = frappe.db.get_value(
-			"Shift Type", shift_name,
-			["working_hours_threshold_for_half_day", "working_hours_threshold_for_absent"],
-		)
-		if vals:
-			half, absent = flt(vals[0]), flt(vals[1])
+		if is_saturday:
+			vals = frappe.db.get_value(
+				"Shift Type", shift_name,
+				[
+					"saturday_working_hours_threshold_for_half_day",
+					"saturday_working_hours_threshold_for_absent",
+					"saturday_working_hours_threshold",
+				],
+			)
+			if vals:
+				half, absent = flt(vals[0]), flt(vals[1])
+				if not half:
+					half = flt(vals[2])
+		else:
+			vals = frappe.db.get_value(
+				"Shift Type", shift_name,
+				["working_hours_threshold_for_half_day", "working_hours_threshold_for_absent"],
+			)
+			if vals:
+				half, absent = flt(vals[0]), flt(vals[1])
 	cache[key] = (half, absent)
 	return cache[key]
 
@@ -142,7 +162,11 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		# Below the absent threshold the day is a full shortage, below the half-day one a
 		# half, and at or above it nothing is owed -- a shift that accepts a shorter day
 		# stops collecting a shortage for every day of the month.
-		half_t, absent_t = _shift_thresholds(att.get("shift"), shift_hours_cache)
+		half_t, absent_t = _shift_thresholds(att.get("shift"), is_sat, shift_hours_cache)
+		if is_sat and half_t and not absent_t:
+			# Legacy two-way Saturday, the way the marking reads it: below the Saturday
+			# Present threshold the day is Absent outright, at or above it nothing is owed.
+			return 0.0 if wh >= half_t else 1.0
 		if absent_t and wh < absent_t:
 			return 1.0
 		if half_t and wh < half_t:

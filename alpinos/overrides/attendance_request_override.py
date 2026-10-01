@@ -82,11 +82,24 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		guard = 0
 		while d <= end and guard < 366:
 			try:
-				update_attendance_times(self.employee, d)
+				# A day the request names has already been decided by the marking above --
+				# the ticked side from the request, the other side left as it stood -- so
+				# this sync must not re-derive it from the punches and undo that. Days the
+				# request covers without naming (an On Duty range) still sync normally.
+				keep = 1 if (self.reason != "On Duty" and self._detail_for(d)) else 0
+				update_attendance_times(self.employee, d, preserve_in=keep, preserve_out=keep)
 			except Exception:
 				frappe.log_error(frappe.get_traceback(), "AR refresh attendance times")
 			d = add_days(d, 1)
 			guard += 1
+
+	def _detail_for(self, date):
+		"""The Attendance Details row for one date, if the request has one."""
+		return next(
+			(r for r in (self.custom_attendance_details or [])
+			 if r.attendance_date and getdate(r.attendance_date) == getdate(date)),
+			None,
+		)
 
 	def validate_no_attendance_to_create(self):
 		# Rule 6: allow the request even when attendance already exists (we re-apply on approval).
@@ -473,7 +486,17 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			return
 
 		status = self.get_attendance_status(date)
-		
+
+		# The day is measured the way the rest of the app measures it: first log to last
+		# log, whatever their types. Two feeds (device + web) make strict IN/OUT pairing
+		# unreliable, and a day ending on a punch typed IN -- which the device's alternating
+		# count produces often enough -- otherwise stops at the previous OUT and loses hours.
+		# The scheduler and the healer bind this; updating a punch through db.set_value never
+		# loads the check-in controller, so this path did not.
+		from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
+
+		_apply_checkout_reason_patch()
+
 		from frappe.utils import get_datetime
 		date_start = get_datetime(f"{date} 00:00:00")
 		date_end = get_datetime(f"{date} 23:59:59")
@@ -537,6 +560,28 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				out_time = out_log.time
 			if in_time and out_time and working_hours is None:
 				working_hours = round((out_time - in_time).total_seconds() / 3600.0, 2)
+
+		# Only the side the request ticked is the request's to decide. The ticked side takes
+		# the time that was asked for; the other side keeps exactly what the day already had,
+		# because recomputing both made a one-sided edit move a time nobody asked about --
+		# loudest on a day carrying several punches, where the recomputation and the stored
+		# time disagree. On Duty is exempt: it states the whole day from the shift, so both
+		# sides are its to set.
+		if self.reason != "On Duty" and doc:
+			row = self._detail_for(date)
+			if row:
+				if cint(row.get("edit_check_in")) and row.get("check_in"):
+					in_time = self._time_on_date(date, row.check_in) or in_time
+				elif doc.get("in_time"):
+					in_time = doc.get("in_time")
+				if cint(row.get("edit_check_out")) and row.get("check_out"):
+					out_time = self._time_on_date(date, row.check_out) or out_time
+				elif doc.get("out_time"):
+					out_time = doc.get("out_time")
+				if in_time and out_time:
+					working_hours = round(
+						(get_datetime(out_time) - get_datetime(in_time)).total_seconds() / 3600.0, 2
+					)
 
 		# Truly-missing Absent day (no check-ins): set in/out from shift for visibility; keep real times otherwise.
 		attendance_is_absent = status == "Absent" or (doc and getattr(doc, "status", None) == "Absent")

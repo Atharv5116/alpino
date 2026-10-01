@@ -202,8 +202,12 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 
 
 @frappe.whitelist()
-def update_attendance_times(employee, date):
-	"""Set Attendance in_time/out_time from the day's Employee Checkin records."""
+def update_attendance_times(employee, date, preserve_in=0, preserve_out=0):
+	"""Set Attendance in_time/out_time from the day's Employee Checkin records.
+
+	preserve_in / preserve_out keep the side an Attendance Request did not edit: a request
+	that ticks Edit Check-in alone has no business moving the check-out.
+	"""
 	if not employee or not date:
 		return
 
@@ -216,34 +220,28 @@ def update_attendance_times(employee, date):
 	date_start = get_datetime(f"{date} 00:00:00")
 	date_end = get_datetime(f"{date} 23:59:59")
 
-	# First IN checkin
-	in_checkins = frappe.get_all(
+	# The day runs from its first log to its last log, whatever the log types say. Two feeds
+	# (the eSSL device and the web) plus the device's alternating IN/OUT counter make strict
+	# pairing unreliable: a day ending on a punch typed IN -- Harshil Gajjar, 29-09-2026, his
+	# 19:09:50 exit -- otherwise stopped at the previous punch typed OUT and lost 1h24m. This
+	# is how alpinos.overrides.employee_checkin_override measures every other day.
+	logs = frappe.get_all(
 		"Employee Checkin",
 		filters={
 			"employee": employee,
 			"time": ["between", [date_start, date_end]],
-			"log_type": "IN"
 		},
-		fields=["name", "time"],
+		fields=["name", "time", "log_type"],
 		order_by="time asc",
-		limit=1
 	)
-	
-	# Last OUT checkin
-	out_checkins = frappe.get_all(
-		"Employee Checkin",
-		filters={
-			"employee": employee,
-			"time": ["between", [date_start, date_end]],
-			"log_type": "OUT"
-		},
-		fields=["name", "time"],
-		order_by="time desc",
-		limit=1
-	)
-	
-	in_time = in_checkins[0].time if in_checkins else None
-	out_time = out_checkins[0].time if out_checkins else None
+	in_time = logs[0].time if logs else None
+	out_time = logs[-1].time if len(logs) > 1 else None
+
+	# Keep the side the request left alone.
+	if cint(preserve_in) and attendance_doc.in_time:
+		in_time = attendance_doc.in_time
+	if cint(preserve_out) and attendance_doc.out_time:
+		out_time = attendance_doc.out_time
 
 	needs_update = attendance_doc.in_time != in_time or attendance_doc.out_time != out_time
 
