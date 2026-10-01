@@ -2,7 +2,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, add_months, date_diff, formatdate, get_datetime, get_time, getdate, now_datetime
+from frappe.utils import add_days, add_months, cint, date_diff, formatdate, get_datetime, get_time, getdate, now_datetime
 from hrms.hr.doctype.attendance_request.attendance_request import AttendanceRequest as HRMSAttendanceRequest
 from alpinos.attendance_request_automation import (
 	RESERVED_EDIT_STATES,
@@ -391,7 +391,16 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			frappe.db.set_value(
 				"Employee Checkin",
 				name,
-				{"time": time, "from_attendance_request": 1, "is_manual": 1},
+				{
+					"time": time,
+					"from_attendance_request": 1,
+					"is_manual": 1,
+					# An approved request is the authority on this punch, so it must count
+					# towards the day. A punch left flagged Skip Auto Attendance is dropped
+					# from the status calculation below, which is how a day could end up
+					# with both punches, full hours and a status of Absent.
+					"skip_auto_attendance": 0,
+				},
 			)
 		else:
 			checkin = frappe.new_doc("Employee Checkin")
@@ -400,6 +409,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			checkin.time = time
 			checkin.from_attendance_request = 1
 			checkin.is_manual = 1
+			checkin.skip_auto_attendance = 0
 			if self.shift:
 				checkin.shift = self.shift
 			checkin.insert(ignore_permissions=True)
@@ -474,11 +484,17 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			filters={
 				"employee": self.employee,
 				"time": ["between", [date_start, date_end]],
-				"skip_auto_attendance": 0
 			},
 			order_by="time asc",
-			fields=["name", "time", "log_type", "shift_start", "shift_end"]
+			fields=["name", "time", "log_type", "shift_start", "shift_end",
+			        "skip_auto_attendance", "from_attendance_request"],
 		)
+		# Skip Auto Attendance keeps a punch out of the automatic marking, but a punch an
+		# approved request wrote is exactly what this marking is for, so it stays.
+		logs = [
+			l for l in logs
+			if not cint(l.get("skip_auto_attendance")) or cint(l.get("from_attendance_request"))
+		]
 		
 		in_time = out_time = working_hours = None
 		late_entry = early_exit = False
