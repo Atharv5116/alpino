@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "customer_type",
+  "parent_customer_type",
   "channel",
   "abbreviation",
   "sequence",
@@ -23,6 +24,15 @@
    "label": "Customer Type",
    "unique": 1,
    "in_list_view": 1
+  },
+  {
+   "fieldname": "parent_customer_type",
+   "fieldtype": "Link",
+   "label": "Parent Customer Type",
+   "options": "Alpino Customer Type",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Roll this type up into another one. The dispatch report then reports this type inside its parent's column instead of its own. Leave blank for a top-level type. Only one level is allowed: a parent cannot itself have a parent."
   },
   {
    "fieldname": "channel",
@@ -74,7 +84,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-05 12:00:00.000000",
+ "modified": "2026-09-08 10:05:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Alpino Customer Type",
