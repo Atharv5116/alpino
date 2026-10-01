@@ -186,6 +186,14 @@ def remark_day(employee, date, apply=0):
 		fields=["name", "employee", "log_type", "time", "shift", "shift_start", "shift_end"],
 		order_by="time asc",
 	)
+	# Measure the day the way the rest of the app measures it -- first log to last log,
+	# whatever the IN/OUT types say. shift_type.py binds HRMS's own pairing function at
+	# import time, so this has to be rebound before get_attendance is called or a day
+	# ending on a punch typed IN stops at the previous punch typed OUT.
+	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
+
+	_apply_checkout_reason_patch()
+
 	shift_doc = frappe.get_cached_doc("Shift Type", att.shift)
 	for log in logs:
 		if not log.shift_start:

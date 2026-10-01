@@ -172,3 +172,70 @@ def _run():
 
 	check("#13 a day an Attendance Request owns can still be re-marked from its punches",
 		_a_request_owned_day_can_be_re_marked)
+
+	def _harshils_day_is_re_marked_to_his_last_punch():
+		"""Harshil Gajjar, 29-09-2026: seven punches, the last one typed IN at 19:09:50.
+
+		His approved request edited the check-in alone and the day was left reading 10:00 to
+		17:45, 7.76 hours -- the last punch TYPED out. Re-marking has to reach 19:09:50, which
+		means re-binding the first-log-to-last-log rule before asking the shift: shift_type.py
+		binds HRMS's own pairing function at import time, so a process that has not loaded the
+		check-in override measures his day the old way. The stub below stands in for that
+		un-patched state, so this check fails if remark_day stops re-binding.
+		"""
+		import hrms.hr.doctype.shift_type.shift_type as st_module
+		import hrms.hr.doctype.employee_checkin.employee_checkin as ec_module
+		from alpinos.overrides import employee_checkin_override as eco
+
+		emp3 = _insert("Employee", name=f"{tag}-EMP3", employee_name=f"{tag} Seven Punches",
+			status="Active", company=frappe.defaults.get_global_default("company"),
+			date_of_joining="2026-01-01")
+		shift = _insert("Shift Type", name=f"{tag}-HO29", start_time="10:00:00", end_time="18:30:00",
+			working_hours_threshold_for_half_day=8.25, working_hours_threshold_for_absent=4)
+		d = "2026-09-29"
+		punches = [
+			("IN", "10:00:00"), ("OUT", "11:49:08"), ("IN", "15:09:03"), ("OUT", "15:33:55"),
+			("IN", "15:39:43"), ("OUT", "17:45:21"), ("IN", "19:09:50"),
+		]
+		for i, (lt, t) in enumerate(punches):
+			_insert("Employee Checkin", name=f"{tag}-H{i}", employee=emp3, log_type=lt,
+				time=f"{d} {t}", shift=shift)
+		req = _insert("Attendance Request", name=f"{tag}-H-ARQ", employee=emp3, from_date=d,
+			to_date=d, docstatus=1, workflow_state="Approved", reason="Office", shift=shift)
+		att3 = _insert("Attendance", name=f"{tag}-H-ATT", employee=emp3, attendance_date=d,
+			docstatus=1, status="Present", shift=shift, attendance_request=req,
+			in_time=f"{d} 10:00:00", out_time=f"{d} 17:45:21", working_hours=7.76)
+
+		def _strict_pairing(logs, check_in_out_type, working_hours_calc_type):
+			ins = [l for l in logs if l.log_type == "IN"]
+			outs = [l for l in logs if l.log_type == "OUT"]
+			i = ins[0].time if ins else None
+			o = outs[-1].time if outs else None
+			h = round((o - i).total_seconds() / 3600, 2) if i and o else 0
+			return h, i, o
+
+		saved = (st_module.calculate_working_hours, ec_module.calculate_working_hours, eco._patch_applied)
+		st_module.calculate_working_hours = _strict_pairing
+		ec_module.calculate_working_hours = _strict_pairing
+		eco._patch_applied = False
+		try:
+			dry = R.remark_day(employee=emp3, date=d, apply=0)
+		finally:
+			st_module.calculate_working_hours, ec_module.calculate_working_hours = saved[0], saved[1]
+			eco._patch_applied = saved[2]
+
+		_assert(str(dry["after"]["out"]).endswith("19:09:50"),
+			f"the re-mark stopped at {dry['after']['out']}, not his last punch")
+		_assert(flt(dry["after"]["hours"]) > 9.0,
+			f"hours {dry['after']['hours']}: his day runs 10:00 to 19:09")
+		_assert(dry["before"]["hours"] == 7.76, f"before: {dry['before']}")
+
+		R.remark_day(employee=emp3, date=d, apply=1)
+		row = frappe.db.get_value("Attendance", att3, ["in_time", "out_time", "working_hours", "status"],
+			as_dict=True)
+		_assert(str(row.out_time).endswith("19:09:50"), f"applied out-time {row.out_time}")
+		_assert(str(row.in_time).endswith("10:00:00"),
+			f"his requested check-in was disturbed: {row.in_time}")
+
+	check("HRMS: Harshil's 29 Sep re-marks to his last punch, not the last one typed OUT",
+		_harshils_day_is_re_marked_to_his_last_punch)
