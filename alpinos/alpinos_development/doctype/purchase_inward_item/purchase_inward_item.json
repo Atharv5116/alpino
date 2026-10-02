@@ -18,14 +18,18 @@
   "order_qty",
   "previously_received_qty",
   "pending_qty",
+  "planned_qty",
   "col_qty",
   "received_qty",
   "excess_qty",
+  "shortage_qty",
   "stock_qty",
   "receiving_section",
   "target_warehouse",
   "batch_no",
   "usp",
+  "gst_percent",
+  "hsn_code",
   "col_receiving",
   "mrp",
   "manufacturing_date",
@@ -135,6 +139,12 @@
    "read_only": 1
   },
   {
+   "fieldname": "planned_qty",
+   "fieldtype": "Float",
+   "label": "Planned Qty",
+   "description": "Entered by Purchase: how much of the PO pending quantity this inward is planned to bring. Defaults to the full pending quantity."
+  },
+  {
    "fieldname": "col_qty",
    "fieldtype": "Column Break"
   },
@@ -155,6 +165,14 @@
    "fieldtype": "Float",
    "label": "Excess Qty",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "shortage_qty",
+   "fieldtype": "Float",
+   "label": "Shortage Qty",
+   "read_only": 1,
+   "description": "Planned Qty less Received Qty, once receiving has started."
   },
   {
    "allow_on_submit": 1,
@@ -189,6 +207,20 @@
    "fieldname": "usp",
    "fieldtype": "Data",
    "label": "USP"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "gst_percent",
+   "fieldtype": "Percent",
+   "label": "GST %",
+   "description": "Entered by Store from the supplier invoice."
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "hsn_code",
+   "fieldtype": "Data",
+   "label": "HSN/SAC",
+   "description": "Entered by Store from the supplier invoice."
   },
   {
    "fieldname": "col_receiving",

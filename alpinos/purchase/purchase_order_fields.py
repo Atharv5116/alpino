@@ -296,9 +296,10 @@ def get_item_defaults(item_code):
 	"""
 	frappe.has_permission("Purchase Order", "read", throw=True)
 	item = frappe.db.get_value(
-		"Item", item_code, ["item_name", "stock_uom", "last_purchase_rate", "custom_gst_percent"],
+		"Item", item_code, ["item_name", "stock_uom", "last_purchase_rate", "custom_gst_percent", "custom_hsn_code"],
 		as_dict=True,
 	) or {}
+	item["hsn_code"] = item.pop("custom_hsn_code", None) or ""
 	# PI-47: the Rate is typed excluding GST; the screen shows this beside it and the
 	# order's tax rows are built from it on save (po_gst.apply_item_gst).
 	item["gst_percent"] = flt(item.pop("custom_gst_percent", 0))

@@ -227,6 +227,7 @@ var GRNView = class {
 				<td class="c-wh"></td><td class="c-rwh"></td>
 				<td class="c-batch"></td><td class="c-rate"></td>
 				<td class="c-mrp"></td><td class="c-usp"></td>
+				<td class="c-gst"></td><td class="c-hsn"></td>
 				<td class="c-reason"></td>
 			</tr>`);
 			$body.append($tr);
@@ -261,6 +262,7 @@ var GRNView = class {
 					ready = true;
 				});
 				if (df.fieldtype === 'Link') me._float_dropdown(c);
+				return c;
 			};
 			const wh_query = () => ({ filters: { company: doc.company, is_group: 0 } });
 			const qty_changed = () => {
@@ -291,8 +293,20 @@ var GRNView = class {
 			cell('.c-batch', { fieldtype: 'Data', read_only: 1 },
 				row.batch_no ? 'batch_no' : 'custom_internal_batch_no');
 			cell('.c-rate', { fieldtype: 'Currency' }, 'rate', null, !!cint(me.ctx.rate_editable));
-			cell('.c-mrp', { fieldtype: 'Currency' }, 'custom_mrp');
+			// MRP on the GRN is the rate AFTER GST. Changing the GST % re-derives it from the
+			// pre-tax figure underneath (MRP / (1 + old GST)), so it always matches the GST shown.
+			let gst_before = flt(row.custom_gst_percent);
+			const mrp_ctl = cell('.c-mrp', { fieldtype: 'Currency' }, 'custom_mrp');
 			cell('.c-usp', { fieldtype: 'Data' }, 'custom_usp');
+			// From the Purchase Inward line, editable here.
+			cell('.c-gst', { fieldtype: 'Percent' }, 'custom_gst_percent', () => {
+				const gst_now = flt(row.custom_gst_percent);
+				const base = flt(row.custom_mrp) / (1 + gst_before / 100);
+				row.custom_mrp = flt(base * (1 + gst_now / 100), 2);
+				gst_before = gst_now;
+				if (mrp_ctl) mrp_ctl.set_value(row.custom_mrp);
+			});
+			cell('.c-hsn', { fieldtype: 'Data' }, 'custom_hsn_code');
 			cell('.c-reason', { fieldtype: 'Data' }, 'custom_rejection_reason');
 			me.paint_received($tr, row);
 		});
@@ -455,6 +469,8 @@ var GRNView = class {
 				rate: flt(r.rate),
 				custom_mrp: flt(r.custom_mrp),
 				custom_usp: r.custom_usp,
+				custom_gst_percent: flt(r.custom_gst_percent),
+				custom_hsn_code: r.custom_hsn_code || '',
 				custom_rejection_reason: r.custom_rejection_reason,
 			})),
 			reason: this._val('edit_reason'),

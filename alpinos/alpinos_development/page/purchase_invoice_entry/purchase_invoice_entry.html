@@ -95,6 +95,12 @@
 	font-size: 12.5px; color: var(--text-muted); margin: 0 auto 18px; max-width: 40em;
 }
 .purchase-invoice-entry .pinv-empty .alp-actions { justify-content: center; }
+.purchase-invoice-entry .pinv-sum { max-width: 360px; margin-left: auto; }
+.purchase-invoice-entry .pinv-sum .po-sum-group + .po-sum-group { margin-top: 10px; }
+.purchase-invoice-entry .pinv-sum .po-sum-head { font-size: 12.5px; font-weight: 600; color: var(--text-color); margin-bottom: 2px; }
+.purchase-invoice-entry .pinv-sum .po-sum-row { display: flex; justify-content: space-between; gap: 18px; font-size: 12.5px; padding: 2px 0; }
+.purchase-invoice-entry .pinv-sum .po-sum-row > span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.purchase-invoice-entry .pinv-sum .po-sum-row.is-total { font-weight: 600; border-top: 1px solid var(--border-color, #e2e2e2); margin-top: 3px; padding-top: 5px; }
 </style>
 <div class="purchase-invoice-entry pinv-blank" style="padding: 12px;">
 
@@ -160,20 +166,19 @@
 					<th style="width:110px;" class="pinv-num">Approved Qty</th>
 					<th style="width:140px;" class="pinv-num">Unit Price</th>
 					<th style="width:130px;" class="pinv-num">Line Amount</th>
+					<th style="width:90px;">GST %</th>
+					<th style="width:110px;">HSN/SAC</th>
 					<th style="min-width:130px;">PO</th>
 				</tr></thead>
 				<tbody></tbody>
 			</table>
 		</div>
 		<h6 class="eso-subtitle">Totals</h6>
-		<div class="row">
-			<div class="col-md-3 col-sm-6 eso-fld field-net-total"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-taxes"></div>
-			<div class="col-md-3 col-sm-6 eso-fld field-total-amount"></div>
-		</div>
-		<p class="text-muted" style="font-size:11.5px; margin:0;">
-			Line Amount is Approved Qty × Unit Price. Taxes and the invoice total are recalculated
-			when the draft is saved.
+		<!-- GST breakdown, the same rows and look as the PO and Inward summaries. -->
+		<div class="pinv-sum"></div>
+		<p class="text-muted" style="font-size:11.5px; margin:6px 0 0;">
+			Line Amount is Approved Qty × Unit Price. GST is each line GST % on its Line Amount;
+			the saved invoice carries the same figures.
 		</p>
 	</div>
 

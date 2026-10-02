@@ -442,9 +442,10 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 
 	# ---------------------------------------------------------------- 11 creation validations
 	def t_no_po():
+		# No Invoice Number / Date here: they are Store Receiving fields now, recorded after
+		# submit, so a Purchase user typing them on a draft is (rightly) refused by the
+		# section guard before VAL-PI-01 is reached.
 		d = frappe.new_doc("Purchase Inward")
-		d.invoice_number = uniq("INV")
-		d.invoice_date = today()
 		d.inward_datetime = now_datetime()
 		d.append("items", {"item_code": po_a.items[0].item_code})
 		d.insert()

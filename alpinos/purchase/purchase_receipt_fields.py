@@ -528,8 +528,10 @@ LOGGED_ITEM_FIELDS = (
 	"custom_rejection_reason",
 	"custom_usp",
 	"custom_mrp",
+	"custom_gst_percent",
+	"custom_hsn_code",
 )
-_NUMERIC_LOGGED = {"qty", "rejected_qty", "rate", "custom_mrp"}
+_NUMERIC_LOGGED = {"qty", "rejected_qty", "rate", "custom_mrp", "custom_gst_percent"}
 
 
 def _log_text(fieldname, value):

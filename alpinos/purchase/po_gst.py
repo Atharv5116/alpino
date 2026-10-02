@@ -33,6 +33,8 @@ ITEM_GST_FIELD = "custom_gst_percent"
 LINE_GST_FIELD = "custom_gst_percent"
 LINE_FINAL_RATE_FIELD = "custom_rate_incl_gst"
 LINE_FINAL_AMOUNT_FIELD = "custom_amount_incl_gst"
+LINE_HSN_FIELD = "custom_hsn_code"
+ITEM_HSN_FIELD = "custom_hsn_code"
 
 from alpinos.purchase import purchase_gst as G
 
@@ -48,8 +50,15 @@ def setup_po_gst_fields():
 					label="GST %",
 					fieldtype="Percent",
 					insert_after="rate",
-					read_only=1,
-					description="From the Item Master.",
+					read_only=0,
+					description="Filled from the Item Master; the buyer may change it on the order.",
+				),
+				dict(
+					fieldname=LINE_HSN_FIELD,
+					label="HSN/SAC",
+					fieldtype="Data",
+					insert_after="item_name",
+					description="Filled from the Item Master; the buyer may change it on the order.",
 				),
 				dict(
 					fieldname=LINE_FINAL_RATE_FIELD,
@@ -67,7 +76,23 @@ def setup_po_gst_fields():
 					insert_after="amount",
 					read_only=1,
 				),
-			]
+			],
+			# GRN and Purchase Invoice lines carry the same two, under the SAME fieldnames:
+			# ERPNext's GRN -> Invoice mapper copies child fields that share a name, so a new
+			# invoice takes the GRN's values without code of its own. The GRN takes them from
+			# the Purchase Inward line (grn._apply_row). Editable on both.
+			"Purchase Receipt Item": [
+				dict(fieldname=LINE_GST_FIELD, label="GST %", fieldtype="Percent", insert_after="custom_mrp",
+				     description="From the Purchase Inward; may be changed on the GRN."),
+				dict(fieldname=LINE_HSN_FIELD, label="HSN/SAC", fieldtype="Data", insert_after=LINE_GST_FIELD,
+				     description="From the Purchase Inward; may be changed on the GRN."),
+			],
+			"Purchase Invoice Item": [
+				dict(fieldname=LINE_GST_FIELD, label="GST %", fieldtype="Percent", insert_after="rate",
+				     description="From the GRN / Purchase Inward; may be changed on the invoice."),
+				dict(fieldname=LINE_HSN_FIELD, label="HSN/SAC", fieldtype="Data", insert_after=LINE_GST_FIELD,
+				     description="From the GRN / Purchase Inward; may be changed on the invoice."),
+			],
 		},
 		ignore_validate=True,
 		update=True,
@@ -157,15 +182,35 @@ def apply_item_gst(doc, method=None):
 	heads = ("IGST",) if inter else ("CGST", "SGST")
 	usable = all(h in accounts for h in _HEADS)
 
+	# The line's own GST % is the buyer's to set (the screen fills it from the Item when the
+	# item is picked). A NEW line that arrives with none -- Frappe starts a Percent at 0, so
+	# 0 -- takes the Item Master's rate; a line already saved keeps whatever it holds, a
+	# deliberate 0 included.
+	before = doc.get_doc_before_save() if not doc.is_new() else None
+	saved = {r.name for r in (before.get("items") if before else []) or []}
 	rates = item_gst_rates(row.item_code for row in doc.get("items") or [])
 	for row in doc.get("items") or []:
-		row.set(LINE_GST_FIELD, rates.get(row.item_code, 0))
+		if not flt(row.get(LINE_GST_FIELD)) and row.name not in saved:
+			row.set(LINE_GST_FIELD, rates.get(row.item_code, 0))
 
+	if usable:
+		_apply_gst_rows(doc, accounts, heads)
+
+	for row in doc.get("items") or []:
+		pct = flt(row.get(LINE_GST_FIELD))
+		row.set(LINE_FINAL_RATE_FIELD, flt(flt(row.rate) * (1 + pct / 100), row.precision("rate")))
+		row.set(LINE_FINAL_AMOUNT_FIELD, flt(flt(row.amount) * (1 + pct / 100), row.precision("amount")))
+
+
+def _apply_gst_rows(doc, accounts, heads):
+	"""Tax rows from each line's GST %: an Item Tax Template per rate on the line, one
+	"On Net Total" row per GST account, then ERPNext's own recalculation. Shared by the
+	Purchase Order and the Purchase Invoice."""
 	# Our rows go, whatever mode they were built in; everything else stays.
 	ours = set(accounts.values())
 	kept = [t for t in doc.get("taxes") or [] if t.account_head not in ours]
 
-	if usable:
+	if True:
 		any_gst = False
 		for row in doc.get("items") or []:
 			pct = flt(row.get(LINE_GST_FIELD))
@@ -197,7 +242,125 @@ def apply_item_gst(doc, method=None):
 			t.idx = i
 		doc.calculate_taxes_and_totals()
 
-	for row in doc.get("items") or []:
-		pct = flt(row.get(LINE_GST_FIELD))
-		row.set(LINE_FINAL_RATE_FIELD, flt(flt(row.rate) * (1 + pct / 100), row.precision("rate")))
-		row.set(LINE_FINAL_AMOUNT_FIELD, flt(flt(row.amount) * (1 + pct / 100), row.precision("amount")))
+
+def apply_invoice_gst(doc, method=None):
+	"""GST on a Purchase Invoice raised by the module, from each line's GST % column.
+
+	The GRN carries no tax rows, and the invoice is mapped from the GRN, so it came out
+	with Taxes & Charges 0. The lines' GST % (fetched from the GRN / Purchase Inward and
+	editable on the invoice) now builds the tax exactly as it does on the Purchase Order.
+	A line with no GST % carries no tax: nothing is filled in from the order or the Item.
+
+	Left alone: debit notes (returns), invoices Accounts keys in outside the module, and
+	anything already submitted.
+	"""
+	if doc.get("is_return") or doc.docstatus == 2:
+		return
+	if not (doc.get("custom_purchase_inward") or doc.get("custom_invoice_type") or doc.get("custom_grn")):
+		return
+	accounts = _accounts(doc.company) if doc.get("company") else {}
+	if not all(h in accounts for h in _HEADS):
+		return
+
+	# The lines' GST % is used exactly as it stands. A normal invoice's comes from its GRN,
+	# which took it from the Purchase Inward where Store entered it (then editable on the
+	# GRN and here); nothing is read from the Purchase Order or the Item master, because the
+	# rate on the inward can legitimately differ from the order's. A Direct Purchase Invoice
+	# has no inward: its lines carry the order's GST, copied by ERPNext's PO -> invoice map.
+	grand_before = flt(doc.get("grand_total"))
+	heads = ("IGST",) if _is_inter_state(doc) else ("CGST", "SGST")
+	_apply_gst_rows(doc, accounts, heads)
+	_resync_payment_schedule(doc, grand_before)
+
+
+def _resync_payment_schedule(doc, grand_before):
+	"""ERPNext built the payment schedule against the total BEFORE the GST was added; left
+	as it is, the invoice would fail "Total Payment Amount in Payment Schedule must be
+	equal to Grand Total". One instalment takes the new total; several are rebuilt."""
+	schedule = doc.get("payment_schedule") or []
+	if not schedule:
+		return
+	total = flt(doc.get("rounded_total") or doc.get("grand_total"), doc.precision("grand_total"))
+	if abs(sum(flt(r.payment_amount) for r in schedule) - total) < 0.01:
+		return
+	if len(schedule) == 1:
+		row = schedule[0]
+		row.payment_amount = total
+		row.outstanding = total
+		if row.meta.has_field("base_payment_amount"):
+			row.base_payment_amount = flt(total * flt(doc.get("conversion_rate") or 1), row.precision("base_payment_amount"))
+		return
+	doc.set("payment_schedule", [])
+	doc.set_payment_schedule()
+
+
+def fill_line_hsn(doc, method=None):
+	"""A PO line without an HSN takes the Item Master's; a typed one is kept."""
+	rows = [r for r in doc.get("items") or [] if r.item_code and not (r.get(LINE_HSN_FIELD) or "").strip()]
+	if not rows:
+		return
+	hsn = {
+		i.name: i.get(ITEM_HSN_FIELD)
+		for i in frappe.get_all(
+			"Item", filters={"name": ("in", list({r.item_code for r in rows}))}, fields=["name", ITEM_HSN_FIELD]
+		)
+	}
+	for r in rows:
+		if hsn.get(r.item_code):
+			r.set(LINE_HSN_FIELD, hsn[r.item_code])
+
+
+def items_without_gst(doc):
+	"""The order's items whose Item Master has no GST % (stored as 0 -- the field has no
+	separate "not set" state)."""
+	codes = list({r.item_code for r in doc.get("items") or [] if r.item_code})
+	if not codes:
+		return []
+	# Plain SQL: a frappe ("in", (0, None)) filter matches nothing once None is in the list.
+	return frappe.db.sql(
+		f"""select name, item_name from `tabItem`
+		where name in %(codes)s and ifnull(`{ITEM_GST_FIELD}`, 0) <= 0 order by name""",
+		{"codes": tuple(codes)},
+		as_dict=True,
+	)
+
+
+def assert_items_have_gst(doc, method=None):
+	"""An order cannot be submitted (for approval, or approved) while any of its items has
+	no GST % in the Item Master. A popup names them so they can be fixed there."""
+	missing = items_without_gst(doc)
+	if not missing:
+		# The order's own lines too: a GST % of 0 typed (or left) on a line is refused even
+		# when the Item master has a rate.
+		zero = [r for r in doc.get("items") or [] if r.item_code and flt(r.get(LINE_GST_FIELD)) <= 0]
+		if zero:
+			lines = "".join(
+				"<li>Row {0}: {1}{2}</li>".format(
+					r.idx,
+					frappe.utils.escape_html(r.item_code),
+					" &mdash; " + frappe.utils.escape_html(r.item_name) if r.get("item_name") and r.item_name != r.item_code else "",
+				)
+				for r in zero
+			)
+			frappe.throw(
+				frappe._(
+					"GST % cannot be 0. Enter the GST percentage on these lines, then submit the "
+					"Purchase Order again:<ul style=\"margin-top:6px;\">{0}</ul>"
+				).format(lines),
+				title=frappe._("GST % Missing on Lines"),
+			)
+		return
+	rows = "".join(
+		"<li>{0}{1}</li>".format(
+			frappe.utils.get_link_to_form("Item", m.name),
+			" &mdash; " + frappe.utils.escape_html(m.item_name) if m.item_name and m.item_name != m.name else "",
+		)
+		for m in missing
+	)
+	frappe.throw(
+		frappe._(
+			"Add the GST percentage in the Item master for these items, then submit the "
+			"Purchase Order again:<ul style=\"margin-top:6px;\">{0}</ul>"
+		).format(rows),
+		title=frappe._("GST % Missing on Items"),
+	)

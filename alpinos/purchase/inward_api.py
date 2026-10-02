@@ -170,18 +170,13 @@ def receiving_item_info(item_codes):
 
 
 def po_line_mrp(row):
-	"""Section 2: an inward line's MRP defaults to its PO line's Rate (Incl. GST).
+	"""Section 2: an inward line's rate (the MRP column) defaults to its PO line's PRE-TAX rate.
 
-	MRP includes all taxes, so it is the PO screen's Rate (Incl. GST) column
-	(po_gst.LINE_FINAL_RATE_FIELD). An order saved before GST was applied has none, and
-	falls back to what it used before: the Rate column (price_list_rate, before any
-	discount), else the line's own rate, as on an order raised outside that screen.
+	The inward is priced before tax: Store's own GST % on each line is added on top in the
+	Summary, so the PO's GST must not already be inside this figure. That is the order
+	line's net rate (after discount, before GST), else its list rate.
 	"""
-	return (
-		flt(row.get("custom_rate_incl_gst"))
-		or flt(row.get("price_list_rate"))
-		or flt(row.get("rate"))
-	)
+	return flt(row.get("rate")) or flt(row.get("price_list_rate"))
 
 
 def currency_symbol(company=None):
@@ -205,7 +200,7 @@ def get_item_receiving_info(item_codes, company=None, po_details=None):
 		item_codes = frappe.parse_json(item_codes)
 	if isinstance(po_details, str):
 		po_details = frappe.parse_json(po_details)
-	po_mrp = {}
+	po_mrp, po_rate = {}, {}
 	names = [name for name in (po_details or []) if name]
 	if names:
 		# An inward saved before its MRP was defaulted still shows the PO's on screen.
@@ -215,10 +210,15 @@ def get_item_receiving_info(item_codes, company=None, po_details=None):
 			fields=["name", "rate", "price_list_rate", "custom_rate_incl_gst"],
 		):
 			po_mrp[row.name] = po_line_mrp(row)
+			# The Summary values the receipt at the order's net rate. Its GST comes only from
+			# what Store enters on the inward -- nothing GST-related is read from the order.
+			po_rate[row.name] = flt(row.rate)
 	return {
 		"items": receiving_item_info(item_codes),
 		"currency_symbol": currency_symbol(company),
 		"po_mrp": po_mrp,
+		"po_rate": po_rate,
+		"currency": frappe.get_cached_value("Company", company, "default_currency") if company else None,
 	}
 
 

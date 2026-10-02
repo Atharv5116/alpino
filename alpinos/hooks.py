@@ -387,6 +387,9 @@ override_whitelisted_methods = {
 	# Tolerate broken/unreachable images so one bad item image doesn't fail the
 	# whole PDF ("PDF generation failed because of broken image links").
 	"frappe.utils.print_format.download_pdf": "alpinos.pdf_tolerant.download_pdf",
+	# No "Invalid wkhtmltopdf version" popup in the print view (Purchase Order etc.): the
+	# installed wkhtmltopdf prints every PDF here; nothing else is to be installed.
+	"frappe.utils.pdf.is_wkhtmltopdf_valid": "alpinos.pdf_tolerant.is_wkhtmltopdf_valid",
 	"erpnext.crm.doctype.opportunity.opportunity.make_quotation": (
 		"alpinos.opportunity_make_quotation.make_quotation"
 	),
@@ -428,7 +431,12 @@ doc_events = {
 	# recorded in Tally, which is a different fact from ERPNext's ledger status -- so it
 	# lives in its own field and recompute_payment_state is its only writer.
 	"Purchase Invoice": {
-		"validate": ["alpinos.purchase.purchase_invoice.validate"],
+		"validate": [
+			# GST from each line's GST % first: the payable / pending figures the module
+			# derives next are read from the grand total this produces.
+			"alpinos.purchase.po_gst.apply_invoice_gst",
+			"alpinos.purchase.purchase_invoice.validate",
+		],
 		# Links the Purchase Inward and moves it to Payment Pending.
 		"after_insert": ["alpinos.purchase.purchase_invoice.after_insert"],
 		"before_submit": ["alpinos.purchase.purchase_invoice.before_submit"],
@@ -472,6 +480,7 @@ doc_events = {
 			# part of building the order, not an edit of one awaiting approval.
 			"alpinos.purchase.purchase_gst.set_gst_tax_category",
 			# PI-47: GST % from the Item on each line, after the GSTINs above are stamped.
+			"alpinos.purchase.po_gst.fill_line_hsn",
 			"alpinos.purchase.po_gst.apply_item_gst",
 			# VAL-PO-08 / BR-PO-12: an order awaiting approval is locked for editing.
 			"alpinos.purchase.purchase_order_approval.assert_editable",
@@ -482,6 +491,8 @@ doc_events = {
 			# BR-PO-04 first: submitting IS approving, so the role gate has to sit here
 			# and not only on the Approve button.
 			"alpinos.purchase.purchase_order_approval.assert_may_approve",
+			# Every item needs a GST % in the Item master (desk Submit / API included).
+			"alpinos.purchase.po_gst.assert_items_have_gst",
 			"alpinos.purchase.purchase_order_approval.stamp_on_submit",
 		],
 		"before_cancel": "alpinos.purchase.purchase_order_approval.stamp_on_cancel",

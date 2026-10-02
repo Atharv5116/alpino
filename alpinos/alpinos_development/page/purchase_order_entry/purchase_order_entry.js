@@ -490,6 +490,7 @@ var PurchaseOrderEntry = class {
 					<td>${idx + 1}</td>
 					<td class="cell-item-code"></td>
 					<td class="cell-item-name"></td>
+					<td class="cell-hsn"></td>
 					<td class="cell-uom"></td>
 					<td class="cell-qty"></td>
 					<td class="cell-rate"></td>
@@ -566,6 +567,9 @@ var PurchaseOrderEntry = class {
 				});
 			mk('.cell-item-name', { fieldtype: 'Data', fieldname: 'item_name', read_only: 1 },
 				row.item_name);
+			// HSN/SAC: filled from the Item Master when the item is picked; the buyer may change it.
+			mk('.cell-hsn', { fieldtype: 'Data', fieldname: 'custom_hsn_code' },
+				row.custom_hsn_code, (val) => { me.items[idx].custom_hsn_code = (val || '').trim(); });
 			mk('.cell-uom', { fieldtype: 'Data', fieldname: 'uom', read_only: 1 }, row.uom);
 			mk('.cell-qty', { fieldtype: 'Float', fieldname: 'qty' },
 				row.qty, (val) => { me.items[idx].qty = flt(val); me.recalc_row(idx); });
@@ -602,8 +606,18 @@ var PurchaseOrderEntry = class {
 				row.rate);
 			// PI-47: the Rate above is excluding GST. GST % comes from the Item Master and
 			// the final rate is Net Rate plus that GST; the server builds the tax rows.
-			mk('.cell-gst', { fieldtype: 'Percent', fieldname: 'custom_gst_percent', read_only: 1 },
-				row.custom_gst_percent);
+			// GST %: filled from the Item Master when the item is picked, and editable here.
+			mk('.cell-gst', { fieldtype: 'Percent', fieldname: 'custom_gst_percent' },
+				row.custom_gst_percent, (val) => {
+					let v = flt(val);
+					if (v < 0 || v > 100) {
+						v = Math.min(Math.max(v, 0), 100);
+						const c = me.fields[`custom_gst_percent_${idx}`];
+						if (c) c.set_value(v);
+					}
+					me.items[idx].custom_gst_percent = v;
+					me.recalc_row(idx);
+				});
 			mk('.cell-rate-incl-gst', { fieldtype: 'Currency', fieldname: 'custom_rate_incl_gst', read_only: 1 },
 				row.custom_rate_incl_gst);
 			// Amount is Qty x Rate (Incl. GST). ERPNext's own `amount` stays excluding GST
@@ -638,6 +652,7 @@ var PurchaseOrderEntry = class {
 				row.item_name = '';
 				row.uom = '';
 				row.custom_gst_percent = 0;
+				row.custom_hsn_code = '';
 				me.redraw_items();
 			}
 			return;
@@ -665,6 +680,7 @@ var PurchaseOrderEntry = class {
 			row.item_name = d.item_name || '';
 			row.uom = d.stock_uom || '';
 			row.custom_gst_percent = flt(d.gst_percent);
+			row.custom_hsn_code = d.hsn_code || '';
 			// A row picking a fresh item always starts at Rate 0, so this can never clobber
 			// a rate the buyer already typed.
 			if (!flt(row.price_list_rate) && flt(d.rate)) row.price_list_rate = flt(d.rate);
@@ -1051,57 +1067,59 @@ var PurchaseOrderEntry = class {
 	}
 
 	/**
-	 * Duplicate PO: open a NEW, unsaved order carrying this one's details.
+	 * Duplicate PO: create a new Purchase Order with this one's details, numbered from the
+	 * normal PO series, and open it.
 	 *
-	 * Nothing is saved -- the buyer reviews it and presses Save, like any new order.
-	 * Deliberately NOT carried over: the ID and the whole approval trail (a new order starts
-	 * at Draft), the PO Date (today), a delivery date already in the past (it would only be
-	 * refused on save), and the Supplier Order No. and attachment, which belong to the
-	 * vendor's earlier order.
+	 * Saved straight away as a Draft. NOT carried over: the ID and the approval trail (it
+	 * starts at Draft), the PO Date (today), and the Supplier Order No. and attachment, which
+	 * belong to the vendor's earlier order. A delivery or required-by date already in the
+	 * past becomes today, since past dates are refused.
 	 */
 	duplicate_po() {
 		const me = this;
 		const src = this.doc;
 		if (!src) return;
 		const today = frappe.datetime.get_today();
-		const future = (d) => (d && String(d).slice(0, 10) >= today ? d : '');
-		const header = {
+		const not_past = (d) => (d && String(d).slice(0, 10) >= today ? d : today);
+		const doc = {
+			doctype: 'Purchase Order',
+			company: src.company || frappe.defaults.get_default('company') || undefined,
 			custom_inward_type: src.custom_inward_type,
 			supplier: src.supplier,
-			schedule_date: future(src.schedule_date),
+			transaction_date: today,
+			schedule_date: not_past(src.schedule_date),
 			set_warehouse: src.set_warehouse,
-			currency: src.currency,
-			payment_terms_template: src.payment_terms_template,
-			custom_direct_purchase_invoice: src.custom_direct_purchase_invoice,
+			currency: src.currency || undefined,
+			payment_terms_template: src.payment_terms_template || undefined,
+			custom_direct_purchase_invoice: cint(src.custom_direct_purchase_invoice),
 			custom_inward_remarks: src.custom_inward_remarks,
+			items: (src.items || []).map((r) => ({
+				item_code: r.item_code,
+				qty: flt(r.qty),
+				price_list_rate: flt(r.price_list_rate),
+				discount_percentage: flt(r.discount_percentage),
+				custom_gst_percent: flt(r.custom_gst_percent),
+				custom_hsn_code: r.custom_hsn_code || '',
+				schedule_date: not_past(r.schedule_date || src.schedule_date),
+				warehouse: r.warehouse || src.set_warehouse,
+				custom_item_remarks: r.custom_item_remarks || '',
+			})),
 		};
-		const items = (src.items || []).map((r) => ({
-			item_code: r.item_code, item_name: r.item_name, uom: r.uom,
-			qty: flt(r.qty), price_list_rate: flt(r.price_list_rate),
-			discount_percentage: flt(r.discount_percentage), rate: flt(r.rate), amount: flt(r.amount),
-			custom_gst_percent: flt(r.custom_gst_percent),
-			custom_rate_incl_gst: flt(r.custom_rate_incl_gst),
-			custom_amount_incl_gst: flt(r.custom_amount_incl_gst),
-			schedule_date: future(r.schedule_date) || header.schedule_date || '',
-			warehouse: r.warehouse, custom_item_remarks: r.custom_item_remarks || '',
-		}));
-		const fill = () => {
-			me.reset();
-			Object.keys(header).forEach((f) => me._set(f, header[f] == null ? '' : header[f]));
-			// fetch_supplier reads the Supplier control, and set_value lands asynchronously.
-			if (header.supplier) setTimeout(() => me.fetch_supplier(), 400);
-			me.items = items;
-			me._summary_from_doc = false;
-			me.redraw_items();
-			me.items.forEach((row, idx) => me.recalc_row(idx));
-			me.page.set_title(__('New Purchase Order (copy of {0})', [src.name]));
-			frappe.show_alert({
-				message: __('Copied from {0}. Review the dates and press Save to create the new order.', [src.name]),
-				indicator: 'blue',
-			}, 7);
-		};
-		// Leave the old order's URL, so a reload or Back does not reopen it over the copy.
-		Promise.resolve(frappe.set_route('purchase_order_entry')).then(() => setTimeout(fill, 200));
+		frappe.call({
+			method: 'frappe.client.insert',
+			args: { doc: doc },
+			freeze: true,
+			freeze_message: __('Creating the Purchase Order...'),
+			callback(r) {
+				if (!r.message) return;
+				me._toast(__('Purchase Order {0} created', [r.message.name]), 'green');
+				// Claim the name before changing the route, as save() does, so the new order is
+				// loaded once.
+				me.docname = r.message.name;
+				frappe.set_route('purchase_order_entry', r.message.name);
+				me.load(r.message.name);
+			},
+		});
 	}
 
 	create_direct_invoice() {
@@ -1260,6 +1278,8 @@ var PurchaseOrderEntry = class {
 				qty: flt(row.qty),
 				price_list_rate: flt(row.price_list_rate),
 				discount_percentage: flt(row.discount_percentage),
+				custom_gst_percent: flt(row.custom_gst_percent),
+				custom_hsn_code: row.custom_hsn_code || '',
 				schedule_date: row.schedule_date || this._val('schedule_date'),
 				warehouse: row.warehouse || this._val('set_warehouse'),
 				custom_item_remarks: row.custom_item_remarks,

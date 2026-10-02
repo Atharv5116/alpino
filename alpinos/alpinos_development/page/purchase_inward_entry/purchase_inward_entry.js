@@ -339,10 +339,30 @@ var PurchaseInwardEntry = class {
 			description: '10-digit number.',
 		});
 		if (window.alpinos_contact_input && planned_driver) alpinos_contact_input(planned_driver);
-		this._ctl('.field-po-estimated-arrival', {
+		// Estimated Arrival: today or later, and choosing a date sets the time to 9:00 AM. A
+		// time the person then changes on the same date is kept. The server applies both
+		// rules too (purchase_inward._validate_inward_dates).
+		let eta_last = '';
+		const eta = this._ctl('.field-po-estimated-arrival', {
 			fieldname: 'po_estimated_arrival', label: 'Estimated Arrival Date & Time',
 			fieldtype: 'Datetime', hide_timezone: 1,
+			description: 'Today or later. Choosing a date sets 9:00 AM.',
+			change: () => {
+				const v = eta && eta.get_value();
+				if (!v) { eta_last = ''; return; }
+				const day = String(v).slice(0, 10);
+				if (day !== String(eta_last).slice(0, 10)) {
+					const nine = day + ' 09:00:00';
+					eta_last = nine;
+					if (String(v).slice(0, 19) !== nine) eta.set_value(nine);
+					return;
+				}
+				eta_last = v;
+			},
 		});
+		if (window.alpinos_date_bound && eta) {
+			alpinos_date_bound(eta, { label: 'Estimated Arrival Date & Time', bound: 'no-past' });
+		}
 		this._ctl('.field-remarks', {
 			fieldname: 'remarks',
 			label: 'Remarks',
@@ -605,6 +625,9 @@ var PurchaseInwardEntry = class {
 					// Pre-fill only: never over what Purchase already typed on this inward.
 					[['po_vehicle_no', 'custom_vehicle_no'], ['po_driver_contact_no', 'custom_driver_contact_no'],
 						['po_estimated_arrival', 'custom_estimated_arrival']].forEach(([f, src]) => {
+						// An arrival the order planned for a day already gone is not carried over.
+						if (f === 'po_estimated_arrival' && v[src]
+							&& String(v[src]).slice(0, 10) < frappe.datetime.get_today()) return;
 						if (!me._val(f) && v[src]) me._set(f, v[src]);
 					});
 					// Section 2: Default Target Location as per the selected PO -- its own, or
@@ -739,6 +762,7 @@ var PurchaseInwardEntry = class {
 				<td class="cell-uom"></td>
 				<td class="piw-num cell-order-qty"></td>
 				<td class="piw-num cell-prev-qty"></td>
+				<td class="cell-planned-qty"></td>
 				<td class="piw-num cell-pending-qty"></td>
 				<td class="cell-remarks"></td>
 				<td class="text-center">
@@ -755,9 +779,35 @@ var PurchaseInwardEntry = class {
 		$tr.find('.cell-uom').text(row.stock_uom || '');
 		$tr.find('.cell-order-qty').text(format_number(row.order_qty, null, 2));
 		$tr.find('.cell-prev-qty').text(format_number(row.previously_received_qty, null, 2));
-		$tr.find('.cell-pending-qty').text(format_number(row.pending_qty, null, 2));
-
 		const me = this;
+		// Planned Qty: typed by Purchase, out of the PO pending; blank means all of it.
+		// PO Pending Qty is what the order will still owe after this planned quantity.
+		if (!flt(row.planned_qty)) row.planned_qty = flt(row.pending_qty);
+		const paint_po_pending = () => {
+			const left = flt(row.pending_qty) - flt(row.planned_qty);
+			$tr.find('.cell-pending-qty').text(format_number(left > 0 ? left : 0, null, 2));
+		};
+		const planned = frappe.ui.form.make_control({
+			df: { fieldname: `planned_qty_${idx}`, fieldtype: 'Float', precision: 3 },
+			parent: $tr.find('.cell-planned-qty'),
+			render_input: true,
+			only_input: true,
+		});
+		planned.set_value(flt(row.planned_qty));
+		planned.$input && planned.$input.on('change', () => {
+			let v = flt(planned.get_value());
+			if (v < 0) v = 0;
+			if (v > flt(row.pending_qty)) {
+				frappe.show_alert({ message: __('Planned Qty cannot be more than the PO pending quantity ({0}).', [flt(row.pending_qty)]), indicator: 'orange' }, 5);
+				v = flt(row.pending_qty);
+				planned.set_value(v);
+			}
+			row.planned_qty = v;
+			paint_po_pending();
+			me.render_receiving_rows && me.render_receiving_rows();
+			me.recalc_totals();
+		});
+		paint_po_pending();
 		const remarks = frappe.ui.form.make_control({
 			df: { fieldname: `remarks_${idx}`, fieldtype: 'Data', placeholder: 'Remarks' },
 			parent: $tr.find('.cell-remarks'),
@@ -865,7 +915,7 @@ var PurchaseInwardEntry = class {
 					<td>${frappe.utils.escape_html(row.item_code || '')}<br>
 						<span class="text-muted" style="font-size:11px;">
 							${frappe.utils.escape_html(row.item_name || '')}</span></td>
-					<td class="piw-num cell-pending">${format_number(row.pending_qty, null, 2)}</td>
+					<td class="piw-num cell-pending">${format_number(flt(row.planned_qty) || flt(row.pending_qty), null, 2)}</td>
 					<td class="cell-received"></td>
 					<td class="piw-num cell-excess">0</td>
 					<td class="cell-warehouse"></td>
@@ -874,6 +924,8 @@ var PurchaseInwardEntry = class {
 					<td class="cell-expiry"></td>
 					<td class="cell-mrp"></td>
 					<td class="cell-usp"></td>
+					<td class="cell-gst"></td>
+					<td class="cell-hsn"></td>
 				</tr>
 			`);
 			$body.append($tr);
@@ -931,9 +983,16 @@ var PurchaseInwardEntry = class {
 				row.mrp, function (val) {
 					me.items[idx].mrp = flt(val);
 					me.update_usp(idx);
+					me.render_money();
 				});
 			mk('.cell-usp', { fieldtype: 'Data', fieldname: 'usp' },
 				row.usp, function (val) { me.items[idx].usp = val; });
+			// GST % and HSN/SAC: typed by Store from the supplier invoice, nothing fetched.
+			// The GRN takes them from here.
+			mk('.cell-gst', { fieldtype: 'Percent', fieldname: 'gst_percent' },
+				row.gst_percent, function (val) { me.items[idx].gst_percent = flt(val); me.render_money(); });
+			mk('.cell-hsn', { fieldtype: 'Data', fieldname: 'hsn_code' },
+				row.hsn_code, function (val) { me.items[idx].hsn_code = (val || '').trim(); });
 		});
 	}
 
@@ -960,6 +1019,8 @@ var PurchaseInwardEntry = class {
 				me.item_info = r.message.items || {};
 				me.currency_symbol = r.message.currency_symbol || '';
 				const po_mrp = r.message.po_mrp || {};
+				me.po_rate = r.message.po_rate || {};
+				if (r.message.currency) me.currency = r.message.currency;
 				me.items.forEach((row, idx) => {
 					// A line saved without an MRP shows its PO line's Rate.
 					if (!flt(row.mrp) && flt(po_mrp[row.po_detail])) {
@@ -970,6 +1031,7 @@ var PurchaseInwardEntry = class {
 					me.update_expiry(idx);
 					me.update_usp(idx);
 				});
+				me.render_money();
 			},
 		});
 	}
@@ -1004,10 +1066,19 @@ var PurchaseInwardEntry = class {
 		if (c) c.set_value(usp);
 	}
 
+	/** Shortage is only meaningful once Store has started entering received quantities. */
+	_receiving_entered() {
+		return (this.items || []).some((r) => flt(r.received_qty) > 0) || !!this._val('actual_arrival_datetime');
+	}
+
 	recalc_row(idx) {
 		const row = this.items[idx];
-		const over = flt(row.received_qty) - flt(row.pending_qty);
+		// Received is measured against the Planned Qty (the PO pending for an inward made
+		// before Planned Qty existed): over it is Excess, under it is a Shortage.
+		const base = flt(row.planned_qty) || flt(row.pending_qty);
+		const over = flt(row.received_qty) - base;
 		row.excess_qty = over > 0 ? over : 0;
+		row.shortage_qty = over < 0 && this._receiving_entered() ? -over : 0;
 		const $tr = this.wrapper.find(`.receiving-table tbody tr[data-idx="${idx}"]`);
 		$tr.find('.cell-excess').text(format_number(row.excess_qty, null, 2));
 		$tr.toggleClass('text-danger', row.excess_qty > 0 && !cint(this._val('allow_excess_qty')));
@@ -1021,6 +1092,7 @@ var PurchaseInwardEntry = class {
 			['total-received-qty', 'total_received_qty', 'Total Received Qty'],
 			['total-pending-qty', 'total_pending_qty', 'Total Pending Qty'],
 			['total-excess-qty', 'total_excess_qty', 'Total Excess Qty'],
+			['total-shortage-qty', 'total_shortage_qty', 'Total Shortage Qty'],
 			// Not a stored field. BRD 2.2.1 fixes Pending Quantity as the balance BEFORE
 			// this receipt, because Excess = Received - Pending depends on it, so it
 			// cannot also drop as the Store types. Nothing then showed what was left
@@ -1051,7 +1123,68 @@ var PurchaseInwardEntry = class {
 		this._set('total_received_qty', received);
 		this._set('total_pending_qty', pending);
 		this._set('total_excess_qty', excess);
+		const shortage = this.items.reduce((s, r) => s + flt(r.shortage_qty), 0);
+		this._set('total_shortage_qty', shortage);
+		// Excess and Shortage share the Summary line: a shortage replaces the excess row,
+		// and both show only when the receipt is over on some lines and under on others.
+		this.wrapper.find('.field-total-shortage-qty').toggle(shortage > 0);
+		this.wrapper.find('.field-total-excess-qty').toggle(excess > 0 || shortage <= 0);
 		this._set('total_balance_qty', balance);
+		this.render_money();
+	}
+
+	/**
+	 * Value and tax of the receipt, the same rows as the PO Summary.
+	 *
+	 * Value is received qty x the line's MRP on the receiving grid. GST is ONLY what Store has typed
+	 * in each line's GST % on the receiving grid -- nothing GST-related is taken from the
+	 * Purchase Order; a line with no GST % entered carries no tax here. A preview of what
+	 * was received -- the invoice carries the billed figures.
+	 */
+	render_money() {
+		const $out = this.wrapper.find('.piw-money');
+		if (!$out.length) return;
+		const po_rate = this.po_rate || {};
+		let value = 0;
+		let gst = 0;
+		let missing = false;
+		(this.items || []).forEach((r) => {
+			const qty = flt(r.received_qty);
+			if (!qty) return;
+			// Valued at the line's MRP as shown on the receiving grid (Store may edit it); the
+			// order's net rate only when no MRP is entered.
+			const rate = flt(r.mrp) || flt(r.rate) || flt(po_rate[r.po_detail]);
+			const line = qty * rate;
+			const pct = flt(r.gst_percent);
+			if (!pct) missing = true;
+			value += line;
+			gst += line * pct / 100;
+		});
+		if (!value) {
+			$out.html(`<div class="po-sum-note">${__('Enter the received quantities and the value and tax appear here.')}</div>`);
+			return;
+		}
+		value = flt(value, 2);
+		gst = flt(gst, 2);
+		const grand = flt(value + gst, 2);
+		const rounded = Math.round(grand);
+		const rounding = flt(rounded - grand, 2);
+		const cur = this.currency || frappe.defaults.get_default('currency');
+		const money = (v) => format_currency(flt(v), cur);
+		const esc = frappe.utils.escape_html;
+		const row = (label, v, total) => `<div class="po-sum-row${total ? ' is-total' : ''}"><span>${esc(label)}</span><span>${esc(money(v))}</span></div>`;
+		const group = (head, rows) => `<div class="po-sum-group">${head ? `<div class="po-sum-head">${esc(head)}</div>` : ''}${rows.join('')}</div>`;
+		$out.html(
+			group('', [row(__('Total Received Value'), value), row(__('Grand Total'), grand, true)])
+			+ group(__('Taxes'), [row(__('Total GST Amount'), gst)])
+			+ group(__('Net Total'), [
+				row(__('Total Amount (Excl. GST)'), value),
+				row(__('Total GST Amount'), gst),
+				row(__('Rounding Adjustment'), rounding),
+				row(__('Net Total'), rounded, true),
+			])
+			+ (missing ? `<div class="po-sum-note">${__('GST % is not entered on some received lines, so no tax is counted for them.')}</div>` : '')
+		);
 	}
 
 	// ----------------------------------------------------------- attachments
@@ -1618,6 +1751,7 @@ var PurchaseInwardEntry = class {
 				item_code: row.item_code,
 				po_detail: row.po_detail,
 				remarks: row.remarks,
+				planned_qty: flt(row.planned_qty),
 				...(receiving ? {
 					received_qty: flt(row.received_qty),
 					target_warehouse: row.target_warehouse,
@@ -1625,6 +1759,8 @@ var PurchaseInwardEntry = class {
 					manufacturing_date: row.manufacturing_date || null,
 					mrp: flt(row.mrp),
 					usp: row.usp,
+					gst_percent: flt(row.gst_percent),
+					hsn_code: row.hsn_code || '',
 				} : {}),
 			})),
 			...(receiving ? {

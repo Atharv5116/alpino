@@ -212,7 +212,8 @@ var PurchaseInvoiceEntry = class {
 		this.items = (doc.items || []).map((row) => Object.assign({}, row));
 		// Buying Settings "Maintain Same Rate" (Stop) makes ERPNext refuse any price that
 		// differs from the PO / GRN, so the price is only offered for editing when it may change.
-		this.render_items(editable && !!cint(ctx.rate_editable));
+		// GST % / HSN are editable on any draft; the price only when Maintain Same Rate allows.
+		this.render_items(editable && !!cint(ctx.rate_editable), editable);
 		this.wrapper.find('.field-rate-note').text(
 			editable && !cint(ctx.rate_editable)
 				? __('Unit Price follows the Purchase Order: Buying Settings has "Maintain Same Rate" switched on.')
@@ -294,7 +295,7 @@ var PurchaseInvoiceEntry = class {
 		ro('.field-total-paid', 'total_paid', 'Total Paid', total_paid);
 	}
 
-	render_items(editable) {
+	render_items(editable, docs_editable) {
 		const me = this;
 		const $body = this.wrapper.find('.items-table tbody').empty();
 		this.items.forEach((row, idx) => {
@@ -306,6 +307,8 @@ var PurchaseInvoiceEntry = class {
 				<td class="pinv-num">${format_number(row.qty, null, 3)}</td>
 				<td class="pinv-num c-rate"></td>
 				<td class="pinv-num c-amount"></td>
+				<td class="c-gst"></td>
+				<td class="c-hsn"></td>
 				<td>${frappe.utils.escape_html(row.purchase_order || '')}</td>
 			</tr>`);
 			$body.append($tr);
@@ -335,6 +338,28 @@ var PurchaseInvoiceEntry = class {
 				$tr.find('.c-rate').text(me._money(row.rate));
 			}
 			me.paint_amount($tr, row);
+			// GST % and HSN/SAC: fetched from the GRN / inward, editable on a draft.
+			[['.c-gst', 'custom_gst_percent', 'Percent'], ['.c-hsn', 'custom_hsn_code', 'Data']].forEach(([sel, f, type]) => {
+				if (!docs_editable) {
+					const v = row[f];
+					$tr.find(sel).text(type === 'Percent' ? (v ? flt(v) + '%' : '') : (v || ''));
+					return;
+				}
+				let ready = false;
+				const c = frappe.ui.form.make_control({
+					df: {
+						fieldname: `${f}_${idx}`, fieldtype: type,
+						change: () => {
+							if (!ready) return;
+							row[f] = type === 'Percent' ? flt(c.get_value()) : (c.get_value() || '').trim();
+							if (type === 'Percent') me.recalc_totals();
+						},
+					},
+					parent: $tr.find(sel),
+					render_input: true,
+				});
+				Promise.resolve(c.set_value(row[f] == null ? '' : row[f])).then(() => { ready = true; });
+			});
 		});
 		this.recalc_totals();
 	}
@@ -349,17 +374,55 @@ var PurchaseInvoiceEntry = class {
 	 */
 	recalc_totals() {
 		const doc = this.doc || {};
-		const net = this.items.reduce((s, r) => s + flt(r.qty) * flt(r.rate), 0);
-		const saved_total = flt(doc.rounded_total || doc.grand_total);
-		const total = cint(doc.docstatus) === 0 ? saved_total + (net - flt(doc.net_total)) : saved_total;
+		// GST breakdown. A submitted invoice shows exactly what ERPNext posted (its tax rows);
+		// a draft follows the lines live -- each line's GST % on its Line Amount, split CGST /
+		// SGST in half, or IGST when the invoice is inter-state -- which is what the server
+		// builds on save (po_gst.apply_invoice_gst).
+		const draft = cint(doc.docstatus) === 0;
+		const taxes = doc.taxes || [];
+		const by = (word) => taxes.filter((t) => String(t.account_head || '').includes(word))
+			.reduce((s, t) => s + flt(t.tax_amount), 0);
+		let net, cgst, sgst, igst, other;
+		if (draft) {
+			net = this.items.reduce((s, r) => s + flt(r.qty) * flt(r.rate), 0);
+			const gst = this.items.reduce((s, r) => s + flt(r.qty) * flt(r.rate) * flt(r.custom_gst_percent) / 100, 0);
+			const inter = taxes.some((t) => String(t.account_head || '').includes('IGST'));
+			igst = inter ? gst : 0;
+			cgst = inter ? 0 : gst / 2;
+			sgst = inter ? 0 : gst / 2;
+			other = taxes.filter((t) => !/GST/.test(String(t.account_head || ''))).reduce((s, t) => s + flt(t.tax_amount), 0);
+		} else {
+			net = flt(doc.net_total);
+			cgst = by('CGST'); sgst = by('SGST'); igst = by('IGST');
+			other = flt(doc.total_taxes_and_charges) - cgst - sgst - igst;
+		}
+		cgst = flt(cgst, 2); sgst = flt(sgst, 2); igst = flt(igst, 2); other = flt(other, 2);
+		const gst_total = flt(cgst + sgst + igst, 2);
+		const grand = flt(net + gst_total + other, 2);
+		const total = draft ? Math.round(grand) : flt(doc.rounded_total || doc.grand_total);
+		const rounding = flt(total - grand, 2);
 		this._live_total = total;
-		this._ctl('.field-net-total', { fieldname: 'net_total', label: 'Net Total', fieldtype: 'Currency', read_only: 1 }, net);
-		this._ctl('.field-taxes', {
-			fieldname: 'total_taxes_and_charges', label: 'Taxes & Charges', fieldtype: 'Currency', read_only: 1,
-		}, flt(doc.total_taxes_and_charges));
-		this._ctl('.field-total-amount', {
-			fieldname: 'total_amount', label: 'Total Invoice Amount', fieldtype: 'Currency', read_only: 1,
-		}, total);
+
+		const money = (v) => this._money(v);
+		const esc = frappe.utils.escape_html;
+		const row = (label, v, is_total) => `<div class="po-sum-row${is_total ? ' is-total' : ''}"><span>${esc(label)}</span><span>${esc(money(v))}</span></div>`;
+		const group = (head, rows) => `<div class="po-sum-group">${head ? `<div class="po-sum-head">${esc(head)}</div>` : ''}${rows.join('')}</div>`;
+		const tax_rows = [];
+		if (cgst) tax_rows.push(row(__('CGST'), cgst));
+		if (sgst) tax_rows.push(row(__('SGST'), sgst));
+		if (igst) tax_rows.push(row(__('IGST'), igst));
+		tax_rows.push(row(__('Total GST Amount'), gst_total, true));
+		this.wrapper.find('.pinv-sum').html(
+			group('', [row(__('Net Total (Excl. GST)'), net)])
+			+ group(__('Taxes'), tax_rows)
+			+ group(__('Invoice Total'), [
+				row(__('Net Total (Excl. GST)'), net),
+				row(__('Total GST Amount'), gst_total),
+			].concat(other ? [row(__('Other Charges'), other)] : []).concat([
+				row(__('Rounding Adjustment'), rounding),
+				row(__('Total Invoice Amount'), total, true),
+			]))
+		);
 		// A price change moves the supplier payable on a Draft too.
 		if (this.fields.custom_include_logistics) this.recalc_payment_summary();
 	}
@@ -502,7 +565,10 @@ var PurchaseInvoiceEntry = class {
 		// would only be overwritten.
 		if (!cint(this.ctx.due_date_auto)) data.custom_payment_due_date = this._val('custom_payment_due_date');
 		data.custom_include_logistics = data.custom_include_logistics || 'No';
-		data.items = this.items.map((r) => ({ name: r.name, rate: flt(r.rate) }));
+		data.items = this.items.map((r) => ({
+			name: r.name, rate: flt(r.rate),
+			custom_gst_percent: flt(r.custom_gst_percent), custom_hsn_code: r.custom_hsn_code || '',
+		}));
 		return data;
 	}
 

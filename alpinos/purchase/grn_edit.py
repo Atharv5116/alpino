@@ -54,8 +54,10 @@ ITEM_FIELDS = (
 	"custom_rejection_reason",
 	"custom_usp",
 	"custom_mrp",
+	"custom_gst_percent",
+	"custom_hsn_code",
 )
-_NUMERIC = {"qty", "rejected_qty", "rate", "custom_mrp"}
+_NUMERIC = {"qty", "rejected_qty", "rate", "custom_mrp", "custom_gst_percent"}
 
 
 def _has_role(roles):

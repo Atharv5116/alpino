@@ -107,6 +107,9 @@ def ensure_item(code, shelf_life_days=0):
 				"stock_uom": "Nos",
 				"is_stock_item": 1,
 				"shelf_life_in_days": shelf_life_days,
+				# A Purchase Order cannot be submitted while an item has no GST % in the Item
+				# master (po_gst.assert_items_have_gst), so test items carry one like real ones.
+				"custom_gst_percent": 5,
 			}
 		).insert(ignore_permissions=True)
 	elif shelf_life_days:

@@ -36,6 +36,7 @@ class PurchaseInward(Document):
 		self._sync_item_provenance()
 		self._validate_unique_po_detail()
 		self._compute_previously_received()
+		self._validate_planned_qty()
 		self._validate_invoice_number()
 		self._validate_invoice_date()
 		self._validate_challan_no()
@@ -67,8 +68,13 @@ class PurchaseInward(Document):
 		for field, source in (("po_vehicle_no", "custom_vehicle_no"),
 		                      ("po_driver_contact_no", "custom_driver_contact_no"),
 		                      ("po_estimated_arrival", "custom_estimated_arrival")):
-			if not self.get(field) and po.get(source):
-				self.set(field, po.get(source))
+			value = po.get(source)
+			# An arrival the order planned for a day already gone is not carried over: the
+			# inward's Estimated Arrival cannot be in the past, so it would only be refused.
+			if field == "po_estimated_arrival" and value and getdate(value) < getdate():
+				continue
+			if not self.get(field) and value:
+				self.set(field, value)
 
 	def _validate_has_items(self):
 		"""An inward with no lines is refused at SAVE, not only at submit.
@@ -621,11 +627,47 @@ class PurchaseInward(Document):
 				add_days(getdate(line.manufacturing_date), days) if days else None
 			)
 
+	def _validate_planned_qty(self):
+		"""Planned Qty: what Purchase plans this inward to bring, out of the PO pending.
+
+		Draft only (it is a Purchase header column). Blank means the whole pending quantity,
+		so an inward nobody planned behaves exactly as before. It cannot exceed what is still
+		pending on the order, and cannot be negative.
+		"""
+		if self.docstatus != 0:
+			return
+		for line in self.get("items"):
+			pending = flt(line.pending_qty)
+			planned = flt(line.planned_qty)
+			if planned < 0:
+				frappe.throw(_("Row {0}: Planned Qty cannot be negative.").format(line.idx))
+			if not planned:
+				line.planned_qty = pending if pending > 0 else 0
+				continue
+			if planned - pending > 1e-9:
+				frappe.throw(
+					_("Row {0} ({1}): Planned Qty {2} cannot be more than the PO Pending Qty {3}.").format(
+						line.idx, line.item_code, planned, pending
+					),
+					title=_("Planned Qty Too High"),
+				)
+
+	def _planned(self, line):
+		"""The quantity this line is received against: Planned Qty, or (for an inward made
+		before Planned Qty existed) the PO pending quantity."""
+		return flt(line.get("planned_qty")) or flt(line.pending_qty)
+
 	def _validate_received_quantities(self):
-		"""VAL-PI-07 / VAL-PI-08 and the over-receipt tolerance (task 300)."""
+		"""VAL-PI-07 / VAL-PI-08 and the over-receipt tolerance (task 300).
+
+		Received is measured against the line's Planned Qty: more than planned is Excess and
+		needs Allow Excess Quantity (or the tolerance); less than planned, once receiving has
+		started, is a Shortage, recorded and shown in the Summary.
+		"""
 		settings = get_settings(self.company)
 		tolerance = flt(settings.get("over_receipt_tolerance_percent"))
 		block = cint(settings.get("block_over_receipt"))
+		started = self._receiving_started()
 
 		for line in self.get("items"):
 			received = flt(line.received_qty)
@@ -633,9 +675,10 @@ class PurchaseInward(Document):
 				frappe.throw(_("Row {0}: Received Qty cannot be negative.").format(line.idx))
 
 			line.stock_qty = received * (flt(line.conversion_factor) or 1.0)
-			pending = flt(line.pending_qty)
+			pending = self._planned(line)
 			over = received - pending
 			line.excess_qty = over if over > 0 else 0.0
+			line.shortage_qty = (pending - received) if (started and over < 0) else 0.0
 
 			if over <= 0:
 				continue
@@ -652,14 +695,14 @@ class PurchaseInward(Document):
 			if block:
 				frappe.throw(
 					_(
-						"Row {0} ({1}): Received Quantity cannot be greater than Pending "
-						"Quantity. Pending is {2}, received is {3}. Tick <b>Allow Excess "
+						"Row {0} ({1}): Received Quantity cannot be greater than the Planned "
+						"Quantity. Planned is {2}, received is {3}. Tick <b>Allow Excess "
 						"Quantity</b> to receive the excess."
 					).format(line.idx, line.item_code, pending, received),
 					title=_("VAL-PI-07"),
 				)
 			frappe.msgprint(
-				_("Row {0} ({1}): receiving {2} against a pending quantity of {3}.").format(
+				_("Row {0} ({1}): receiving {2} against a planned quantity of {3}.").format(
 					line.idx, line.item_code, received, pending
 				),
 				title=_("Excess Quantity"),
@@ -696,6 +739,23 @@ class PurchaseInward(Document):
 				return bool(old) != bool(new)
 			old, new = get_datetime(old), get_datetime(new)
 			return old.replace(microsecond=0) != new.replace(microsecond=0)
+
+		# Estimated Arrival: a date with no time means 9:00 AM, and it cannot be in the past
+		# (judged by the day, like the Purchase Order's, so 9:00 AM today still counts).
+		if self.get("po_estimated_arrival"):
+			eta = get_datetime(self.po_estimated_arrival)
+			# Drafts only: on a submitted inward the field is closed, and rewriting it would be
+			# refused as a change after submission.
+			if self.docstatus == 0 and not (eta.hour or eta.minute or eta.second):
+				self.po_estimated_arrival = eta.replace(hour=9, minute=0, second=0, microsecond=0)
+			if changed("po_estimated_arrival") and getdate(self.po_estimated_arrival) < today:
+				frappe.throw(
+					_("Estimated Arrival Date & Time cannot be in the past. {0} is before today ({1}).").format(
+						frappe.bold(frappe.utils.formatdate(getdate(self.po_estimated_arrival))),
+						frappe.utils.formatdate(today),
+					),
+					title=_("Invalid Estimated Arrival"),
+				)
 
 		if self.inward_datetime and changed("inward_datetime"):
 			when = getdate(self.inward_datetime)
@@ -785,6 +845,7 @@ class PurchaseInward(Document):
 		self.total_pending_qty = sum(flt(l.pending_qty) for l in self.get("items"))
 		self.total_received_qty = sum(flt(l.received_qty) for l in self.get("items"))
 		self.total_excess_qty = sum(flt(l.excess_qty) for l in self.get("items"))
+		self.total_shortage_qty = sum(flt(l.get("shortage_qty")) for l in self.get("items"))
 		self.total_items = len(self.get("items"))
 
 	def _sync_status(self):

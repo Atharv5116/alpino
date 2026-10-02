@@ -601,7 +601,13 @@ def _grn_rows(inward, qc):
 				"rejection_reason": (decision.rejection_reason if decision else None)
 				or (qc.rejection_reason if qc and rejected > 0 else None),
 				"usp": line.usp,
-				"mrp": flt(line.mrp),
+				# The inward's rate is pre-tax; on the GRN the MRP is that rate WITH the GST
+				# Store entered on the inward line (e.g. 30.92 at 5% -> 32.47).
+				"mrp": flt(flt(line.mrp) * (1 + flt(line.get("gst_percent")) / 100), 2),
+				"mrp_pre_tax": flt(line.mrp),
+				# Typed by Store on the inward's receiving grid; the GRN starts from them.
+				"gst_percent": flt(line.get("gst_percent")),
+				"hsn_code": line.get("hsn_code") or None,
 				"quarantine_status": hold,
 				"release_warehouse": release_warehouse,
 				# The id QC settled on, as TEXT, before _batch_no decides whether a real
@@ -715,6 +721,16 @@ def _apply_row(row, source):
 	row.set("custom_rejection_reason", source["rejection_reason"])
 	row.set("custom_usp", source["usp"])
 	row.set("custom_mrp", source["mrp"])
+	# From the inward, but editable on the GRN: a re-sync never overwrites a value
+	# someone has already put on the GRN line.
+	if not flt(row.get("custom_gst_percent")) and source.get("gst_percent"):
+		row.set("custom_gst_percent", source["gst_percent"])
+	if not (row.get("custom_hsn_code") or "").strip() and source.get("hsn_code"):
+		row.set("custom_hsn_code", source["hsn_code"])
+	# MRP after GST, with the GST actually on this GRN line (an edit made on the GRN wins
+	# over the inward's figure).
+	if source.get("mrp_pre_tax") is not None:
+		row.set("custom_mrp", flt(flt(source["mrp_pre_tax"]) * (1 + flt(row.get("custom_gst_percent")) / 100), 2))
 	row.set("custom_quarantine_status", source["quarantine_status"])
 	row.set("custom_release_warehouse", source["release_warehouse"])
 	# Always written, whether or not a Batch document backs it, so the GRN can show the

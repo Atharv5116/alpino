@@ -526,7 +526,7 @@ SECTIONS = {
 				# gate then refused the very save that typed it -- "The Store Receiving
 				# Details section is closed while the document is Draft" on a document
 				# nobody had touched Store Receiving on at all.
-				"child_fields": ("item_code", "remarks"),
+				"child_fields": ("item_code", "remarks", "planned_qty"),
 				"view_roles": (),
 				"edit_roles": _PURCHASE,
 				"open_statuses": C.PI_HEADER_EDITABLE,
@@ -568,6 +568,8 @@ SECTIONS = {
 					"batch_no",
 					"usp",
 					"mrp",
+					"gst_percent",
+					"hsn_code",
 					"manufacturing_date",
 					"quarantine",
 					"quarantine_reason",

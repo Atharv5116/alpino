@@ -514,6 +514,13 @@ def perform_action(purchase_order, action, remarks=None):
 
 	target = allowed[action]
 
+	# Every item must carry a GST % in the Item master before the order goes for approval
+	# or is approved (the popup names the items to fix).
+	if action in ("Submit for Approval", "Approve"):
+		from alpinos.purchase.po_gst import assert_items_have_gst
+
+		assert_items_have_gst(doc)
+
 	# Tells the edit guard that this save IS the approval action, not a Purchase
 	# Team edit sneaking past VAL-PO-08.
 	doc.flags.po_approval_action = True

@@ -148,3 +148,40 @@ if (!window.__alpinos_pdf_bound) {
 		alpinos_download_pdf(btn.dataset.doctype, btn.dataset.name, btn.dataset.format);
 	}, true);
 }
+
+/**
+ * No PDF button in Frappe's print view for a Purchase Order.
+ *
+ * The print page is one page reused for every doctype and it adds its PDF button once,
+ * so the button is hidden whenever the page is showing a Purchase Order and shown again
+ * for anything else. Full Page and the browser's own Print are unaffected.
+ */
+(function () {
+	const HIDE_PDF_FOR = ['Purchase Order'];
+	const toggle = () => {
+		const route = frappe.get_route() || [];
+		if (route[0] !== 'print') return;
+		const hide = HIDE_PDF_FOR.includes(route[1]);
+		$('#page-print').find('.page-actions button, .page-head button').filter(function () {
+			return $(this).text().trim() === __('PDF');
+		}).toggle(!hide);
+		// Also re-check whenever the print view switches document without a route change.
+		const PV = frappe.ui.form && frappe.ui.form.PrintView;
+		if (PV && !PV.prototype.__alpinos_pdf_hide) {
+			const show = PV.prototype.show;
+			PV.prototype.show = function () {
+				const out = show.apply(this, arguments);
+				setTimeout(toggle, 50);
+				return out;
+			};
+			PV.prototype.__alpinos_pdf_hide = true;
+		}
+	};
+	$(document).on('app_ready', () => {
+		frappe.router && frappe.router.on && frappe.router.on('change', () => {
+			setTimeout(toggle, 300);
+			setTimeout(toggle, 1200);
+		});
+		setTimeout(toggle, 1200);
+	});
+})();

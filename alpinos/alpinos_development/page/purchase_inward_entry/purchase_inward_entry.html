@@ -9,6 +9,14 @@
 	padding-top: 12px;
 }
 .purchase-inward-entry .eso-fld { margin-bottom: 8px; }
+/* Value and tax block under the quantity figures: the PO Summary look, on the right. */
+.purchase-inward-entry .piw-money { max-width: 360px; margin: 12px 0 0 auto; }
+.purchase-inward-entry .piw-money .po-sum-group + .po-sum-group { margin-top: 10px; }
+.purchase-inward-entry .piw-money .po-sum-head { font-size: 12.5px; font-weight: 600; color: var(--text-color); margin-bottom: 2px; }
+.purchase-inward-entry .piw-money .po-sum-row { display: flex; justify-content: space-between; gap: 18px; font-size: 12.5px; padding: 2px 0; }
+.purchase-inward-entry .piw-money .po-sum-row > span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.purchase-inward-entry .piw-money .po-sum-row.is-total { font-weight: 600; border-top: 1px solid var(--border-color, #e2e2e2); margin-top: 3px; padding-top: 5px; }
+.purchase-inward-entry .piw-money .po-sum-note { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; }
 
 /* The Summary block uses the shared .alp-figures column (alpinos_pages.css),
    the same one the QC and Quarantine totals use. */
@@ -153,7 +161,8 @@
 						<th style="width: 60px;">UOM</th>
 						<th style="width: 80px;">Order Qty</th>
 						<th style="width: 90px;">Prev. Received</th>
-						<th style="width: 80px;">Pending</th>
+						<th style="width: 100px;">Planned Qty</th>
+						<th style="width: 100px;">PO Pending Qty</th>
 						<th style="min-width: 110px;">Remarks</th>
 						<th style="width: 30px;"></th>
 					</tr>
@@ -209,7 +218,7 @@
 					<tr>
 						<th style="width: 28px;">#</th>
 						<th style="min-width: 140px;">Item</th>
-						<th style="width: 76px;">Pending</th>
+						<th style="width: 76px;">Planned</th>
 						<th style="width: 82px;">Received</th>
 						<th style="width: 72px;">Excess</th>
 						<th style="min-width: 120px;">Target Location</th>
@@ -218,6 +227,8 @@
 						<th style="width: 90px;">Expiry</th>
 						<th style="width: 74px;">MRP</th>
 						<th style="min-width: 80px;">USP</th>
+						<th style="width: 74px;">GST %</th>
+						<th style="min-width: 90px;">HSN/SAC</th>
 					</tr>
 				</thead>
 				<tbody></tbody>
@@ -267,8 +278,13 @@
 			<div class="eso-fld field-total-received-qty"></div>
 			<div class="eso-fld field-total-pending-qty"></div>
 			<div class="eso-fld field-total-excess-qty"></div>
+			<div class="eso-fld field-total-shortage-qty"></div>
 			<div class="eso-fld alp-figures-total field-total-balance-qty"></div>
 		</div>
+		<!-- Value and tax of what was received, the same rows as the PO Summary. Drawn by
+		     recalc_totals from the receiving grid: received qty x the order net rate, and
+		     each line GST % (the order line rate where Store has not entered one). -->
+		<div class="piw-money"></div>
 	</div>
 
 </div>

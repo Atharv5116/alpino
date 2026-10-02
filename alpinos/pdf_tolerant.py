@@ -173,3 +173,15 @@ def download_pdf(
 		letterhead=letterhead,
 		pdf_generator=pdf_generator,
 	)
+
+
+@frappe.whitelist()
+def is_wkhtmltopdf_valid():
+	"""Always "valid", so the print view never shows "Invalid wkhtmltopdf version".
+
+	Frappe's own check only looks for "qt" in `wkhtmltopdf --version` (the patched-qt
+	build) and pops a warning whenever it is missing. The wkhtmltopdf installed here
+	generates every PDF this app prints, so the warning only alarmed users; no other
+	converter is wanted. PDF generation itself is untouched -- this answers the check only.
+	"""
+	return True

@@ -687,10 +687,39 @@ def create_from_grn(purchase_receipt):
 		grn=grn.name,
 		invoice_type=C.UNF_TYPE_NORMAL,
 	)
+	_fill_gst_from_inward(invoice)
 	bill_approved_quantity(invoice)
 	invoice.flags.ignore_permissions = True
 	invoice.insert(ignore_permissions=True)
 	return invoice
+
+
+def _fill_gst_from_inward(invoice):
+	"""GST % and HSN on each line: the mapper copies the GRN's; a GRN line made before the
+	GRN carried them falls back to its Purchase Inward line. Editable afterwards."""
+	rows = [r for r in invoice.get("items") or [] if r.get("pr_detail")
+	        and (not flt(r.get("custom_gst_percent")) or not (r.get("custom_hsn_code") or "").strip())]
+	if not rows:
+		return
+	pr = {
+		p.name: p for p in frappe.get_all(
+			"Purchase Receipt Item", filters={"name": ("in", [r.pr_detail for r in rows])},
+			fields=["name", "custom_purchase_inward_item", "custom_gst_percent", "custom_hsn_code"],
+		)
+	}
+	inward_names = [p.custom_purchase_inward_item for p in pr.values() if p.custom_purchase_inward_item]
+	inward = {
+		i.name: i for i in frappe.get_all(
+			"Purchase Inward Item", filters={"name": ("in", inward_names)}, fields=["name", "gst_percent", "hsn_code"],
+		)
+	} if inward_names else {}
+	for r in rows:
+		p = pr.get(r.pr_detail) or frappe._dict()
+		src = inward.get(p.get("custom_purchase_inward_item")) or frappe._dict()
+		if not flt(r.get("custom_gst_percent")):
+			r.set("custom_gst_percent", flt(p.get("custom_gst_percent")) or flt(src.get("gst_percent")))
+		if not (r.get("custom_hsn_code") or "").strip():
+			r.set("custom_hsn_code", p.get("custom_hsn_code") or src.get("hsn_code") or None)
 
 
 def bill_approved_quantity(invoice):
@@ -1191,6 +1220,17 @@ def _apply_draft_values(invoice, data):
 			"custom_transport_attachment",
 		):
 			invoice.set(field, None)
+
+	# GST % and HSN/SAC: fetched from the GRN / inward, editable on the draft whatever the
+	# Maintain Same Rate setting says (that setting is about price only).
+	for sent in data.get("items") or []:
+		row = next((r for r in invoice.get("items") or [] if r.name == sent.get("name")), None)
+		if not row:
+			continue
+		if "custom_gst_percent" in sent:
+			row.set("custom_gst_percent", flt(sent.get("custom_gst_percent")))
+		if "custom_hsn_code" in sent:
+			row.set("custom_hsn_code", (sent.get("custom_hsn_code") or "").strip() or None)
 
 	# BRD 6.2.2 Unit Price is the one item value the Purchase Team types; the quantity is
 	# the GRN's approved quantity and stays as fetched. Rows are matched by name, so a
