@@ -351,7 +351,11 @@ after_migrate = [
 # Query conditions are ANDed; the channel has_permission hooks only ever deny, so the
 # assigned-visibility hooks listed before them still decide everything else.
 permission_query_conditions = {
-	"Sales Order": "alpinos.channel_access.sales_order_query_conditions",
+	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_query_conditions",
+	"Sales Order": [
+		"alpinos.channel_access.sales_order_query_conditions",
+		"alpinos.buyer_assignment_visibility.sales_order_query_conditions",
+	],
 	"Pick List": [
 		"alpinos.assigned_visibility.pick_list_query_conditions",
 		"alpinos.channel_access.pick_list_query_conditions",
@@ -364,7 +368,11 @@ permission_query_conditions = {
 }
 
 has_permission = {
-	"Sales Order": "alpinos.channel_access.sales_order_has_permission",
+	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_has_permission",
+	"Sales Order": [
+		"alpinos.channel_access.sales_order_has_permission",
+		"alpinos.buyer_assignment_visibility.sales_order_has_permission",
+	],
 	"Pick List": [
 		"alpinos.assigned_visibility.pick_list_has_permission",
 		"alpinos.channel_access.pick_list_has_permission",

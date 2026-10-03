@@ -31,22 +31,48 @@ PRIMARY_POC_ROLES = (SALES_MANAGER_ROLE, SALES_ADMIN_ROLE)
 SECONDARY_POC_ROLES = (SALES_ADMIN_ROLE,)
 
 
+#: What the Sales Officer role may do, before assignment narrows WHICH records it sees.
+#: Only reads here: the create / write / submit matrix belongs to sections 6-11 of the
+#: document and is set where that rule is implemented.
+_SALES_OFFICER_PERMS = {
+	"Buyer Master": {"read": 1, "report": 1},
+	"Sales Order": {"read": 1, "report": 1},
+}
+
+
 def setup_assignment_roles():
-	"""Create the Sales Officer role. Sales Manager and Sales Admin already exist."""
-	if frappe.db.exists("Role", SALES_OFFICER_ROLE):
-		return
-	frappe.get_doc(
-		{
-			"doctype": "Role",
-			"role_name": SALES_OFFICER_ROLE,
-			"desk_access": 1,
-			"is_custom": 1,
-			"description": (
-				"Field sales representative. Assigned to Buyers through Buyer Master > "
-				"Sales Officer(s); may create and edit Draft Sales Orders but not submit them."
-			),
-		}
-	).insert(ignore_permissions=True)
+	"""Create the Sales Officer role and give it the reads the assignment rule needs.
+
+	Without a DocPerm row the role cannot open a list at all, so the assignment conditions
+	never get a say -- the user is refused before they apply.
+	"""
+	if not frappe.db.exists("Role", SALES_OFFICER_ROLE):
+		frappe.get_doc(
+			{
+				"doctype": "Role",
+				"role_name": SALES_OFFICER_ROLE,
+				"desk_access": 1,
+				"is_custom": 1,
+				"description": (
+					"Field sales representative. Assigned to Buyers through Buyer Master > "
+					"Sales Officer(s); may create and edit Draft Sales Orders but not submit them."
+				),
+			}
+		).insert(ignore_permissions=True)
+
+	from frappe.permissions import add_permission, update_permission_property
+
+	for doctype, perms in _SALES_OFFICER_PERMS.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		if not frappe.db.exists(
+			"Custom DocPerm", {"parent": doctype, "role": SALES_OFFICER_ROLE, "permlevel": 0}
+		):
+			add_permission(doctype, SALES_OFFICER_ROLE, 0)
+		for ptype, value in perms.items():
+			update_permission_property(
+				doctype, SALES_OFFICER_ROLE, 0, ptype, value, validate=False
+			)
 	frappe.db.commit()
 
 
