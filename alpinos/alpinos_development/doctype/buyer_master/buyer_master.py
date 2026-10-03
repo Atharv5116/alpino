@@ -1,6 +1,8 @@
 import re
 
 import frappe
+
+from alpinos.buyer_assignment import validate_assignments
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import getseries
@@ -181,6 +183,7 @@ class BuyerMaster(Document):
 
 	def validate(self):
 		self._set_search_alias()
+		validate_assignments(self)          # Sales Officer(s) / Primary POC(s) / Secondary POC
 		self._migrate_legacy_address_if_empty()
 		self._normalize_addresses()
 		self._validate_primary_address()

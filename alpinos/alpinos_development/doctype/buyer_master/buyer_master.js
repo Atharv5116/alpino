@@ -17,6 +17,17 @@ frappe.ui.form.on("Buyer Master", {
 			query: "alpinos.offline_buyer_api.poc_employee_query",
 			filters: { channel: frm.doc.channel || "" },
 		}));
+		// The three assignment fields pick from the roles the specification names: assignment
+		// grants access, so the population has to match the role that backs it.
+		frm.set_query("employee", "sales_officers", () => ({
+			query: "alpinos.buyer_assignment.sales_officer_query",
+		}));
+		frm.set_query("employee", "primary_pocs", () => ({
+			query: "alpinos.buyer_assignment.primary_poc_query",
+		}));
+		frm.set_query("secondary_poc", () => ({
+			query: "alpinos.buyer_assignment.secondary_poc_query",
+		}));
 		frm.set_query("parent_buyer", () => ({
 			filters: {
 				is_parent: 1,

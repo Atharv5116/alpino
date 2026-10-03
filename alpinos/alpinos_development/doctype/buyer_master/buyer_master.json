@@ -48,6 +48,8 @@
   "contact_section",
   "email",
   "contact_no",
+  "sales_officers",
+  "primary_pocs",
   "primary_poc",
   "secondary_poc",
   "poc_employee",
@@ -312,7 +314,7 @@
    "label": "Billing & Shipping Addresses"
   },
   {
-   "description": "\u2714 Primary = Billing Address (one per Site)   \u2714 Shipping = Shipping Address",
+   "description": "✔ Primary = Billing Address (one per Site)   ✔ Shipping = Shipping Address",
    "fieldname": "addresses",
    "fieldtype": "Table",
    "label": "Addresses",
@@ -338,14 +340,33 @@
    "reqd": 1
   },
   {
+   "fieldname": "sales_officers",
+   "fieldtype": "Table MultiSelect",
+   "label": "Sales Officer(s)",
+   "options": "Buyer Sales Officer",
+   "description": "Sales Officers responsible for this Buyer. Several may be assigned; the creating Sales Officer is added automatically."
+  },
+  {
+   "fieldname": "primary_pocs",
+   "fieldtype": "Table MultiSelect",
+   "label": "Primary POC(s)",
+   "options": "Buyer Primary POC",
+   "description": "Primary internal contacts for this Buyer. Sales Manager and Sales Admin employees may be selected."
+  },
+  {
    "fieldname": "primary_poc",
    "fieldtype": "Data",
-   "label": "Primary POC"
+   "label": "Primary POC (legacy)",
+   "read_only": 1,
+   "description": "Superseded by Primary POC(s). Kept read-only until every record is migrated."
   },
   {
    "fieldname": "secondary_poc",
-   "fieldtype": "Data",
-   "label": "Secondary POC"
+   "fieldtype": "Link",
+   "label": "Secondary POC",
+   "options": "Employee",
+   "ignore_user_permissions": 1,
+   "description": "Single Secondary POC / Sales Admin for this Buyer. Assignment controls visibility."
   },
   {
    "fieldname": "poc_employee",
@@ -487,7 +508,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-08 10:00:00.000000",
+ "modified": "2026-10-03 11:05:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Buyer Master",

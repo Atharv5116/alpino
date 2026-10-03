@@ -214,6 +214,7 @@ after_migrate = [
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.attendance_request_workflow_setup.execute",
 	"alpinos.salary_category_setup.seed_salary_categories",
+	"alpinos.buyer_assignment.setup_assignment_roles",
 	"alpinos.attendance_batch_workflow_setup.execute",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
