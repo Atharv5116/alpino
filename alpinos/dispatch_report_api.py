@@ -30,7 +30,8 @@ _EPS = 1e-6
 
 
 @frappe.whitelist()
-def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0, group_by_parent=0):
+def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0, group_by_parent=0,
+                             include_marketing_material=0):
 	"""Daily dispatch grid.
 
 	group_by_parent swaps the breakdown columns from Customer Type to the buyer FAMILY:
@@ -44,13 +45,23 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 	# Frappe sends checkbox values as strings ("0"/"1") over the wire.
 	include_material_issue = int(include_material_issue or 0)
 	group_by_parent = int(group_by_parent or 0)
+	# Changes(HP) #62: off by default. Marketing Material then counts for nothing -- not in
+	# the grid, not in any total -- rather than being shown and quietly inflating the day.
+	include_marketing_material = int(include_marketing_material or 0)
 
 	items = _get_sequenced_items()
+	mm_items = _marketing_material_items()
 	delivery_notes = _delivery_notes_dispatched_on(date)
 	dispatch_data = _get_dispatch_data(date, group_by_parent, delivery_notes)
 	if include_material_issue:
 		_merge_dispatch_data(dispatch_data, _get_material_issue_data(date, group_by_parent))
 	pending_data, pending_box_by_ct = _get_pending_data(date, group_by_parent)
+	if not include_marketing_material and mm_items:
+		# Dropped before the summary is built, so every quantity total below is computed
+		# from Finished Goods alone without each total having to remember to exclude it.
+		dispatch_data = {k: v for k, v in dispatch_data.items() if k not in mm_items}
+		pending_data = {k: v for k, v in pending_data.items() if k not in mm_items}
+		items = [i for i in items if i["item_code"] not in mm_items]
 	stock_data = _get_stock_data(warehouse, date)
 	inward_data = _get_inward_data()
 	# Both views draw their headings from the Customer Type master, so the columns keep
@@ -62,6 +73,7 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 	summary = _build_summary(
 		date, customer_types, dispatch_data, pending_data, group_by_parent,
 		delivery_notes, pending_box_by_ct,
+		exclude_marketing_material=not include_marketing_material,
 	)
 
 	result_items = []
@@ -82,6 +94,9 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 			"item_name": item["item_name"] or ic,
 			"color": item.get("color") or "",
 			"sequence": item["sequence"] or 0,
+			# The grid draws its separator off this, so Marketing Material never sits
+			# interleaved with Finished Goods even when it is included.
+			"is_marketing_material": 1 if ic in mm_items else 0,
 			"today_dispatch": today_dispatch,
 			"pending_dispatch": pending_dispatch,
 			"today_stock": today_stock,
@@ -91,10 +106,15 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 			"pending_by_ct": p.get("by_ct", {}),
 		})
 
+	# Marketing Material always comes last, below the separator the page draws.
+	result_items.sort(key=lambda r: (r["is_marketing_material"], r["sequence"], r["item_code"]))
+
 	return {
 		"date": date,
 		"warehouse": warehouse or "",
 		"group_by_parent": group_by_parent,
+		"include_marketing_material": include_marketing_material,
+		"has_marketing_material": any(r["is_marketing_material"] for r in result_items),
 		"customer_types": customer_types,
 		"items": result_items,
 		"summary": summary,
@@ -167,12 +187,66 @@ def _get_customer_types(roots_only=False):
 	]
 
 
+#: Changes(HP) #62. Marketing Material is an Item Group, so membership is a property of the
+#: SKU rather than of the line it arrived on.
+MARKETING_MATERIAL_GROUP = "Marketing Material"
+
+
+def _marketing_material_items():
+	"""Item codes in the Marketing Material group, including any sub-group of it."""
+	groups = frappe.db.sql_list(
+		"""
+		SELECT name FROM `tabItem Group`
+		WHERE name = %(g)s
+			OR lft > (SELECT lft FROM `tabItem Group` WHERE name = %(g)s)
+			AND rgt < (SELECT rgt FROM `tabItem Group` WHERE name = %(g)s)
+		""",
+		{"g": MARKETING_MATERIAL_GROUP},
+	) or [MARKETING_MATERIAL_GROUP]
+	return set(
+		frappe.db.sql_list(
+			"SELECT name FROM `tabItem` WHERE item_group IN %(groups)s", {"groups": tuple(groups)}
+		)
+	)
+
+
+def _marketing_material_boxes(pick_lists, group_by_parent=0):
+	"""Boxes contributed by Marketing Material lines, keyed the way box_by_ct is keyed.
+
+	The Pick List's header box count covers the whole document, so the only honest way to
+	take Marketing Material out of it is to measure what those lines contributed -- and to
+	measure it against the same grouping, or the subtraction lands in the wrong column.
+	"""
+	if not pick_lists:
+		return {}
+	mm = _marketing_material_items()
+	if not mm:
+		return {}
+	key, joins = _group_sql(group_by_parent)
+	out = {}
+	for names in _chunks(sorted(set(pick_lists))):
+		for r in frappe.db.sql(
+			f"""
+			SELECT {key} AS ct, SUM(IFNULL(pli.custom_box, 0)) AS box
+			FROM `tabPick List Item` pli
+			INNER JOIN `tabPick List` pl ON pl.name = pli.parent
+			LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id{joins}
+			WHERE pli.parent IN %(names)s AND pli.item_code IN %(mm)s
+			GROUP BY {key}
+			""",
+			{"names": tuple(names), "mm": tuple(mm)},
+			as_dict=True,
+		):
+			out[r["ct"]] = out.get(r["ct"], 0) + (r["box"] or 0)
+	return out
+
+
 def _get_sequenced_items():
 	"""Return all items that have a sequence assigned, ordered by sequence."""
 	return frappe.db.sql(
 		"""
 		SELECT name AS item_code, item_name, custom_sequence AS sequence,
-			custom_color AS color
+			custom_color AS color, item_group
 		FROM `tabItem`
 		WHERE disabled = 0
 		  AND COALESCE(custom_sequence, 0) > 0
@@ -439,7 +513,7 @@ def _get_inward_data():
 
 
 def _build_summary(date, customer_types, dispatch_data, pending_data, group_by_parent=0,
-                   delivery_notes=None, pending_box_by_ct=None):
+                   delivery_notes=None, pending_box_by_ct=None, exclude_marketing_material=False):
 	"""Build top-level summary totals.
 
 	The box / gross-weight rollups group on the same key as the grid above them, or the
@@ -494,6 +568,13 @@ def _build_summary(date, customer_types, dispatch_data, pending_data, group_by_p
 		):
 			box_by_ct[r["ct"]] = box_by_ct.get(r["ct"], 0) + (r["box"] or 0)
 			gw_by_ct[r["ct"]] = gw_by_ct.get(r["ct"], 0) + (r["gw"] or 0)
+	if exclude_marketing_material:
+		# The header box count covers the whole Pick List, so take out what the Marketing
+		# Material lines contributed -- column by column, so the subtraction lands where
+		# those boxes were counted.
+		for ct, box in _marketing_material_boxes(pick_lists, group_by_parent).items():
+			if ct in box_by_ct:
+				box_by_ct[ct] = max(box_by_ct[ct] - box, 0)
 	total_box = sum(box_by_ct.values())
 	total_gw = sum(gw_by_ct.values())
 

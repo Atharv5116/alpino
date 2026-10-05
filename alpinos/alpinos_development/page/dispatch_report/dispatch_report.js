@@ -116,6 +116,13 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		default: 0,
 		change() { load_data(); },
 	});
+	// Changes(HP) #62. Off: Marketing Material counts for nothing -- not in the grid, not
+	// in any total. On: it is included, but below its own separator, never interleaved.
+	let mm_field = page.add_field({
+		fieldtype: 'Check', fieldname: 'include_marketing_material', label: 'Include Marketing Material',
+		default: 0,
+		change() { load_data(); },
+	});
 	page.add_button(__('Refresh'), () => load_data(), { icon: 'refresh' });
 
 	// ── Container ─────────────────────────────────────────────────────────────
@@ -129,10 +136,14 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		let wh   = wh_field.get_value();
 		let include_mi = mi_field.get_value() ? 1 : 0;
 		let by_parent = parent_field.get_value() ? 1 : 0;
+		let with_mm = mm_field.get_value() ? 1 : 0;
 		$content.html('<p style="padding:30px;color:#888;">Loading…</p>');
 		frappe.call({
 			method: 'alpinos.dispatch_report_api.get_dispatch_report_data',
-			args: { date, warehouse: wh, include_material_issue: include_mi, group_by_parent: by_parent },
+			args: {
+				date, warehouse: wh, include_material_issue: include_mi,
+				group_by_parent: by_parent, include_marketing_material: with_mm,
+			},
 			callback(r) {
 				$content.html(r.message ? build_table(r.message)
 					: '<p style="padding:30px;color:#888;">No data found.</p>');
@@ -212,7 +223,13 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			</td></tr>`);
 		}
 
+		let mm_separator_drawn = false;
 		for (let item of items) {
+			// The API sorts Marketing Material last, so the first one marks the boundary.
+			if (item.is_marketing_material && !mm_separator_drawn) {
+				mm_separator_drawn = true;
+				rows.push(`<tr class="dr-mm-sep"><td colspan="${6+N+N}" style="padding:8px 10px; font-weight:700; letter-spacing:0.06em; background:var(--bg-color,#f4f5f6); border-top:2px solid var(--border-color,#b9c0c7);">MARKETING MATERIALS</td></tr>`);
+			}
 			let is_neg  = item.net_unit < 0;
 			let row_cls = is_neg ? 'dr-row-neg' : '';
 
