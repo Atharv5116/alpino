@@ -167,6 +167,17 @@ def setup_sales_order_custom_fields():
 				description="External invoice PDF fetched from the Drive folder (filename = Invoice No).",
 			),
 			dict(
+				# Changes(HP) #51: a partially dispatched order can carry one invoice per
+				# dispatch. The single custom_invoice_no above is untouched, so the whole
+				# history still reads correctly without a migration.
+				fieldname="custom_invoices",
+				label="Invoices",
+				fieldtype="Table",
+				options="Sales Order Invoice",
+				insert_after="custom_invoice_pdf",
+				description="One row per invoice raised against this order, with the dispatch part it belongs to.",
+			),
+			dict(
 				fieldname="custom_invoice_downloaded",
 				label="Invoice Downloaded",
 				fieldtype="Check",

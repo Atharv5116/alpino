@@ -40,7 +40,16 @@ var PDQ_COLUMNS = [
 	{ label: 'Delivery Note', render: (d, h) => `<strong>${h.esc(d.delivery_note)}</strong>` },
 	{ label: 'Sales Order', render: (d, h) => h.esc(d.sales_order) },
 	{ label: "Customer's Purchase No.", render: (d, h) => h.esc(d.customer_po_no || '—') },
-	{ label: 'Invoice', render: (d, h) => d.invoice_no ? (h.esc(d.invoice_no) + (d.invoice_pdf ? ` &nbsp;<a href="${h.esc(d.invoice_pdf)}" target="_blank" rel="noopener">PDF</a>` : '')) : '—' },
+	// Changes(HP) #51: a partially dispatched order can carry one invoice per dispatch. The
+	// cell says so before the click, and the click opens the list rather than one PDF.
+	{ label: 'Invoice', render: (d, h) => {
+		if (!d.invoice_no) return '—';
+		const so = h.esc(d.sales_order || '');
+		const badge = cint(d.invoice_count) > 1
+			? ` <span class="pdq-multi-invoice" title="${__('This order has more than one invoice')}">+${cint(d.invoice_count) - 1} ${__('more')}</span>`
+			: '';
+		return `<a href="#" class="pdq-invoice-link" data-so="${so}">${h.esc(d.invoice_no)}</a>${badge}`;
+	} },
 	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || d.customer) },
 	{ label: 'Channel', render: (d, h) => h.esc(d.channel || '—') },
 	{ label: 'Dispatch Date', render: (d, h) => h.date(d.dispatch_date) },
@@ -114,8 +123,66 @@ var PostDeliveryQueue = class {
 		});
 	}
 
+	show_invoices(sales_order) {
+		if (!sales_order) return;
+		frappe.call({
+			method: 'alpinos.sales_order_invoices.get_sales_order_invoices',
+			args: { sales_order },
+			callback(r) {
+				const res = r.message || {};
+				const rows = res.invoices || [];
+				const esc = frappe.utils.escape_html;
+				if (!rows.length) {
+					frappe.msgprint(__('No invoice is linked to {0} yet.', [sales_order]));
+					return;
+				}
+				const body = rows
+					.map((i) => {
+						const part = i.part_label
+							? `<span class="text-muted"> — ${esc(i.part_label)}</span>`
+							: '';
+						const date = i.invoice_date
+							? frappe.datetime.str_to_user(i.invoice_date)
+							: '—';
+						const amt = i.invoice_amount ? format_currency(i.invoice_amount) : '—';
+						const dl = i.invoice_pdf
+							? `<a class="btn btn-xs btn-default" href="${esc(i.invoice_pdf)}" target="_blank" rel="noopener">${__('Download')}</a>`
+							: `<span class="text-muted">${__('No PDF')}</span>`;
+						return `<tr>
+							<td><strong>${esc(i.invoice_no)}</strong>${part}</td>
+							<td>${esc(date)}</td>
+							<td class="text-right">${amt}</td>
+							<td class="text-right">${dl}</td>
+						</tr>`;
+					})
+					.join('');
+				const d = new frappe.ui.Dialog({
+					title: __('Invoices for {0}', [sales_order]),
+					size: 'large',
+					primary_action_label: __('Close'),
+					primary_action() { d.hide(); },
+				});
+				d.$body.html(`
+					<table class="table table-bordered" style="margin-bottom:0;">
+						<thead><tr>
+							<th>${__('Invoice No')}</th>
+							<th>${__('Invoice Date')}</th>
+							<th class="text-right">${__('Amount')}</th>
+							<th class="text-right">${__('Download')}</th>
+						</tr></thead>
+						<tbody>${body}</tbody>
+					</table>`);
+				d.show();
+			},
+		});
+	}
+
 	bind_events() {
 		const w = this.wrapper;
+		w.on('click', '.pdq-invoice-link', (e) => {
+			e.preventDefault();
+			this.show_invoices($(e.currentTarget).data('so'));
+		});
 		w.find('.btn-pdq-apply').on('click', () => { this.start = 0; this._save_view_prefs(); this.load_list(); });
 		w.find('.btn-pdq-clear').on('click', () => {
 			Object.values(this._filters).forEach((f) => f && f.set_value(''));

@@ -127,6 +127,15 @@ def get_post_delivery_queue(
 
 	has_more = len(rows) > page_length
 	rows = rows[:page_length]
+
+	# Changes(HP) #51: tell the page which orders carry more than one invoice, so the cell
+	# can say so before the user clicks rather than after.
+	from alpinos.sales_order_invoices import invoice_counts
+
+	counts = invoice_counts([r["sales_order"] for r in rows if r.get("sales_order")])
+	for r in rows:
+		r["invoice_count"] = counts.get(r.get("sales_order"), 1 if r.get("invoice_no") else 0)
+
 	return {"data": rows, "has_more": int(has_more), "start": start, "page_length": page_length}
 
 
