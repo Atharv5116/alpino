@@ -656,6 +656,7 @@ doc_events = {
 	"Delivery Note": {
 		"before_validate": "alpinos.delivery_note_hooks.strip_non_batch_item_batches",
 		"validate": [
+			"alpinos.lr_number.normalise_delivery_note_lr",
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 			"alpinos.qty_flow.delivery_note_qty_remarks",
