@@ -438,6 +438,43 @@ def _get_data(filters):
 
 	so_names = _channel_scoped(so_names)
 
+	# Changes(HP) #60: search by Invoice No. The number can sit on the Sales Order, on a
+	# partial Pick List, or on the Delivery Note raised from one, so all three are matched
+	# before the scan narrows -- otherwise searching a part's invoice would find nothing.
+	_invoice_q = (filters.get("invoice_no") or "").strip()
+	if _invoice_q and so_names:
+		like = f"%{_invoice_q}%"
+		matched = set(
+			frappe.db.sql_list(
+				"""
+				SELECT name FROM `tabSales Order`
+				WHERE name IN %(names)s AND IFNULL(custom_invoice_no, '') LIKE %(like)s
+				""",
+				{"names": tuple(so_names), "like": like},
+			)
+		)
+		matched |= set(
+			frappe.db.sql_list(
+				"""
+				SELECT custom_sales_order_id FROM `tabPick List`
+				WHERE custom_sales_order_id IN %(names)s AND docstatus = 1
+					AND IFNULL(custom_invoice_no, '') LIKE %(like)s
+				""",
+				{"names": tuple(so_names), "like": like},
+			)
+		)
+		matched |= set(
+			frappe.db.sql_list(
+				"""
+				SELECT dn.custom_sales_order_id FROM `tabDelivery Note` dn
+				WHERE dn.custom_sales_order_id IN %(names)s AND dn.docstatus < 2
+					AND IFNULL(dn.custom_invoice_no, '') LIKE %(like)s
+				""",
+				{"names": tuple(so_names), "like": like},
+			)
+		)
+		so_names = [s for s in so_names if s in matched]
+
 	# Only report orders whose Pick List is submitted (docstatus=1).
 	if so_names:
 		picked = set(
@@ -871,5 +908,9 @@ def _get_data(filters):
 			for r in (so.get("custom_additional_units_damage_items") or []):
 				if r.get("item_code"):
 					emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Additional Units", ordered_qty=r.get("qty"))
+
+	if _invoice_q:
+		needle = _invoice_q.lower()
+		data = [r for r in data if needle in (r.get("invoice_no") or "").lower()]
 
 	return data

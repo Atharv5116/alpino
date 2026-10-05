@@ -190,3 +190,31 @@ def _run():
 
 	check("#63 a single-part order still reports exactly as before",
 		_a_single_part_order_is_unchanged)
+
+	def _invoice_search_finds_the_part_that_carries_it():
+		"""Changes(HP) #60, and it has to work with #63: searching an invoice number must
+		find the part that carries it, not the whole order."""
+		rows = R._get_data(frappe._dict({
+			"from_date": "2026-09-01", "to_date": "2026-10-31",
+			"invoice_no": "INV-PART-ONE", "show_all": 1,
+		}))
+		mine = [r for r in rows if r.get("sales_order_id") == so]
+		_assert(mine, "the invoice search found nothing for an invoice that exists")
+		_assert(all(r.get("invoice_no") == "INV-PART-ONE" for r in mine),
+			f"the search returned other parts too: {[r.get('invoice_no') for r in mine]}")
+		dates = {r.get("dispatch_date") for r in mine}
+		_assert(dates == {"01-10-2026"},
+			f"only Part 1 carries that invoice, so only its date should appear: {dates}")
+
+	check("#60 an Invoice No. search returns the part that carries it, not the whole order",
+		_invoice_search_finds_the_part_that_carries_it)
+
+	def _an_unknown_invoice_returns_nothing():
+		rows = R._get_data(frappe._dict({
+			"from_date": "2026-09-01", "to_date": "2026-10-31",
+			"invoice_no": "INV-NO-SUCH-THING", "show_all": 1,
+		}))
+		_assert(not rows, f"an unknown invoice number returned {len(rows)} rows")
+
+	check("#60 an unknown Invoice No. returns nothing rather than everything",
+		_an_unknown_invoice_returns_nothing)
