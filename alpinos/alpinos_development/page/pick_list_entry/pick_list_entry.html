@@ -109,6 +109,31 @@
 	}
 
 	/* Tablet narrow */
+	/* Changes(HP) #54: the SKU is the column people read; Qty and Box hold two or three
+	   digits and were taking room the SKU needed. */
+	.sku-table th.col-sku,
+	.sku-table td.col-sku {
+		min-width: 210px;
+		width: 22%;
+	}
+	.sku-table th.col-qty,
+	.sku-table td.col-qty {
+		min-width: 72px;
+		width: 72px;
+	}
+	.sku-table th.col-box,
+	.sku-table td.col-box {
+		min-width: 58px;
+		width: 58px;
+	}
+	/* Changes(HP) #55: the FSN sits under the SKU code, quieter than it. */
+	.sku-table .sku-fsn {
+		font-size: 11px;
+		color: #6b7280;
+		margin-top: 2px;
+		white-space: nowrap;
+	}
+
 	@media (max-width: 720px) {
 		.pl-field {
 			grid-template-columns: 110px 1fr;

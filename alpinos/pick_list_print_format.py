@@ -31,6 +31,8 @@ _HTML = r"""
   .plps .items { margin-top: -1px; }
   .plps .gap td { height: 22px; }
   .plps .bundle { font-size: 12px; font-weight: normal; }
+  /* Changes(HP) #55: the FSN under the SKU, quieter than the code above it. */
+  .plps .fsn { font-size: 11px; font-weight: normal; color: #555; }
 </style>
 <div class="plps">
   <!-- ===== header block: label | value | label | value (as the reference sheet) ===== -->
@@ -106,14 +108,19 @@ _HTML = r"""
       <th>EXP</th>
     </tr>
 
+    {% set _ct = (frappe.db.get_value("Sales Order", doc.custom_sales_order_id, "order_type") or "") %}
+    {% set _is_flipkart = "flipkart" in _ct.lower() %}
     <!-- item rows (only what is on this Pick List), ascending by SKU No -->
     {% for row in sort_locations_by_sku(doc.locations) %}
     {# Sample rows (marketing freebies / scheme / additional units) show their picked qty
        in the Sample Qty column; the main Qty column stays empty for them. #}
     {% set _is_sample = row.custom_source_table in ['Marketing Freebies', 'Scheme Table', 'Additional Units'] %}
+    {# Changes(HP) #55: Flipkart pickers work from the FSN, so it is printed under the SKU
+       for that customer type only -- for anyone else it is a number with no meaning. #}
+    {% set _fsn = frappe.db.get_value("Item", row.item_code, "custom_fsn_no") if _is_flipkart else "" %}
     <tr>
       <td>{{ loop.index }}</td>
-      <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div class="bundle">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}</td>
+      <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div class="bundle">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}{% if _fsn %}<div class="fsn">(FSN - {{ _fsn }})</div>{% endif %}</td>
       <td class="sku">{{ frappe.db.get_value("Item", row.item_code, "custom_sku_no") or "" }}</td>
       <td>{{ (row.qty | round | int) if (row.qty and not _is_sample) else "" }}</td>
       <td>{{ (row.custom_box | round | int) if row.custom_box else "" }}</td>
