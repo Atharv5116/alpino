@@ -53,6 +53,9 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		}
 		.dr-green-sum  { background: #c8e6c9; color: #1b5e20; font-weight: 600; }
 		.dr-green-val  { background: #f1f8e9; color: #33691e; font-weight: 700; }
+		/* Changes(HP) #58: a quantity with orders behind it invites the click. */
+		.dr-drill { cursor: pointer; }
+		.dr-drill:hover { outline: 2px solid rgba(37,99,235,0.55); outline-offset: -2px; }
 		.dr-green-zero { background: #f9fbe7; color: #bdbdbd; }
 
 		/* ── Red section (Pending by CT) ── */
@@ -129,6 +132,69 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 	let $wrap = $('<div class="dr-wrap"><div class="dr-content"></div></div>');
 	$(wrapper).find('.page-content').append($wrap);
 	let $content = $wrap.find('.dr-content');
+
+	// Changes(HP) #58: one delegated handler for every section's quantities, so a cell added
+	// to any future section is clickable without wiring it again.
+	$content.on('click', '.dr-drill', function () {
+		const $c = $(this);
+		frappe.call({
+			method: 'alpinos.dispatch_report_api.get_quantity_breakup',
+			args: {
+				date: date_field.get_value(),
+				item_code: $c.data('item'),
+				kind: $c.data('kind'),
+				customer_type: $c.data('ct') || '',
+				group_by_parent: parent_field.get_value() ? 1 : 0,
+			},
+			callback(r) {
+				const res = r.message || {};
+				const rows = res.rows || [];
+				const esc = frappe.utils.escape_html;
+				const title = __('{0} — {1}', [
+					res.item_name || $c.data('item'),
+					res.kind === 'pending' ? __('Pending') : __("Today's Dispatch"),
+				]);
+				if (!rows.length) {
+					frappe.msgprint({ title, message: __('No Sales Orders behind this quantity.') });
+					return;
+				}
+				const body = rows
+					.map(
+						(d) => `<tr>
+							<td><a href="#" class="dr-so-link" data-so="${esc(d.sales_order)}">${esc(d.sales_order)}</a></td>
+							<td>${esc(d.customer || '—')}</td>
+							<td class="text-right">${format_number(d.qty)}</td>
+						</tr>`
+					)
+					.join('');
+				const d = new frappe.ui.Dialog({
+					title,
+					size: 'large',
+					primary_action_label: __('Close'),
+					primary_action() { d.hide(); },
+				});
+				d.$body.html(`
+					<table class="table table-bordered" style="margin-bottom:0;">
+						<thead><tr>
+							<th>${__('Sales Order')}</th>
+							<th>${__('Customer')}</th>
+							<th class="text-right">${__('Qty')}</th>
+						</tr></thead>
+						<tbody>${body}</tbody>
+						<tfoot><tr>
+							<th colspan="2" class="text-right">${__('Total')}</th>
+							<th class="text-right">${format_number(res.total || 0)}</th>
+						</tr></tfoot>
+					</table>`);
+				d.$body.find('.dr-so-link').on('click', function (e) {
+					e.preventDefault();
+					d.hide();
+					frappe.set_route('sales_order_entry_view', $(this).data('so'));
+				});
+				d.show();
+			},
+		});
+	});
 
 	// ── Load ──────────────────────────────────────────────────────────────────
 	function load_data() {
@@ -258,21 +324,29 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			let s_cls = item.today_stock > 0 ? 'dr-s-nz' : 'dr-s';
 			let net_extra = is_neg ? ' dr-neg-val' : '';
 
+			// Changes(HP) #58: every quantity opens the orders behind it. Only a non-zero
+			// value is clickable -- there is nothing behind a zero to show.
+			const drill = (v, kind, ct) =>
+				v > 0
+					? ` class="dr-drill" data-item="${frappe.utils.escape_html(item.item_code)}" data-kind="${kind}"` +
+					  `${ct ? ` data-ct="${frappe.utils.escape_html(ct)}"` : ''} title="${__('Click to view order breakup')}"`
+					: '';
+
 			// CT dispatch cells
 			let green_cells = customer_types.map(ct => {
 				let v = item.dispatch_by_ct[ct.name] || 0;
-				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
+				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}"${drill(v, 'dispatch', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 
 			// CT pending cells
 			let red_cells = customer_types.map(ct => {
 				let v = item.pending_by_ct[ct.name] || 0;
-				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
+				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}"${drill(v, 'pending', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 
 			rows.push(`<tr class="${row_cls}">
-				<td class="${d_cls}">${fmt(item.today_dispatch)}</td>
-				<td class="${p_cls}">${fmt(item.pending_dispatch)}</td>
+				<td class="${d_cls}"${drill(item.today_dispatch, 'dispatch', '')}>${fmt(item.today_dispatch)}</td>
+				<td class="${p_cls}"${drill(item.pending_dispatch, 'pending', '')}>${fmt(item.pending_dispatch)}</td>
 				<td class="${s_cls}">${fmt(item.today_stock)}</td>
 				<td class="dr-n${net_extra}">${fmt(item.net_unit)}</td>
 				${inward_cell}

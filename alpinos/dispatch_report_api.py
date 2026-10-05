@@ -272,7 +272,7 @@ def _delivery_notes_dispatched_on(date):
 	)
 
 
-def _get_dispatch_data(date, group_by_parent=0, delivery_notes=None):
+def _get_dispatch_data(date, group_by_parent=0, delivery_notes=None, collect=None):
 	"""What submitted Delivery Notes dated `date` took out, per SKU that left.
 
 	A combo line is replaced by its packed components; every other line counts as is.
@@ -312,6 +312,36 @@ def _get_dispatch_data(date, group_by_parent=0, delivery_notes=None):
 			{"date": getdate(date), "names": tuple(names)},
 			as_dict=True,
 		)
+	if collect is not None:
+		for names in _chunks(delivery_notes):
+			for r in frappe.db.sql(
+				f"""
+				SELECT x.item_code, dn.custom_sales_order_id AS sales_order,
+					SUM(x.qty) AS qty, {key} AS customer_type
+				FROM (
+					SELECT dni.parent, dni.item_code, dni.stock_qty AS qty
+					FROM `tabDelivery Note Item` dni
+					WHERE dni.parent IN %(names)s
+					  AND NOT EXISTS (
+						SELECT 1 FROM `tabPacked Item` pi
+						WHERE pi.parenttype = 'Delivery Note' AND pi.parent = dni.parent
+						  AND pi.parent_detail_docname = dni.name
+					  )
+					UNION ALL
+					SELECT pi.parent, pi.item_code, pi.qty
+					FROM `tabPacked Item` pi
+					WHERE pi.parenttype = 'Delivery Note' AND pi.parent IN %(names)s
+				) x
+				JOIN `tabDelivery Note` dn ON dn.name = x.parent
+				LEFT JOIN `tabSales Order` so ON so.name = dn.custom_sales_order_id{joins}
+				GROUP BY x.item_code, dn.custom_sales_order_id, {key}
+				""",
+				{"names": tuple(names)}, as_dict=True,
+			):
+				if not r.sales_order:
+					continue
+				bucket = collect.setdefault((r.item_code, r.customer_type or "Other"), {})
+				bucket[r.sales_order] = bucket.get(r.sales_order, 0) + flt(r.qty)
 	return _aggregate_by_item(rows)
 
 
@@ -351,7 +381,7 @@ def _merge_dispatch_data(target, extra):
 			target[ic]["by_ct"][ct] = target[ic]["by_ct"].get(ct, 0) + qty
 
 
-def _get_pending_data(date, group_by_parent=0):
+def _get_pending_data(date, group_by_parent=0, collect=None):
 	"""Approved, unfinished order quantity not yet on a SUBMITTED Delivery Note.
 
 	Returns ({item: {total, by_ct}}, {customer type: boxes}). Counted per order line so
@@ -450,6 +480,11 @@ def _get_pending_data(date, group_by_parent=0):
 				if qty <= _EPS or not item:
 					continue
 				rows.append({"item_code": item, "qty": qty, "customer_type": ct})
+				if collect is not None:
+					# Changes(HP) #58: the breakup is recorded by the same pass that builds
+					# the figure, so the popup cannot disagree with the cell it opened from.
+					bucket = collect.setdefault((item, ct or "Other"), {})
+					bucket[line.parent] = bucket.get(line.parent, 0) + qty
 				if item not in factor_cache:
 					from alpinos.sales_order_api import get_box_conversion_factor
 
@@ -611,3 +646,64 @@ def _aggregate_by_item(rows):
 		data[ic]["unposted"] += flt(row.get("unposted"))
 		data[ic]["by_ct"][ct] = data[ic]["by_ct"].get(ct, 0) + qty
 	return data
+
+
+@frappe.whitelist()
+def get_quantity_breakup(date=None, item_code=None, kind="dispatch", customer_type=None,
+                         group_by_parent=0, include_material_issue=0):
+	"""Changes(HP) #58: the Sales Orders behind one quantity in the Dispatch Report.
+
+	    "In every Dispatch Report section, make each quantity value clickable. When the user
+	     clicks a quantity, open a pop-up showing the Sales Orders contributing to that
+	     quantity."
+
+	`kind` is "dispatch" or "pending", and `customer_type` narrows it to one column -- the
+	same cell the user clicked. The figures are collected by the very pass that builds the
+	grid, so the popup cannot disagree with the number it opened from.
+	"""
+	if not date:
+		date = today()
+	kind = (kind or "dispatch").strip().lower()
+	group_by_parent = int(group_by_parent or 0)
+
+	collected = {}
+	if kind == "pending":
+		_get_pending_data(date, group_by_parent, collect=collected)
+	else:
+		notes = _delivery_notes_dispatched_on(date)
+		_get_dispatch_data(date, group_by_parent, notes, collect=collected)
+
+	if customer_type:
+		buckets = [collected.get((item_code, customer_type), {})]
+	else:
+		buckets = [v for (ic, _ct), v in collected.items() if ic == item_code]
+
+	totals = {}
+	for b in buckets:
+		for so, qty in b.items():
+			totals[so] = totals.get(so, 0) + flt(qty)
+	if not totals:
+		return {"date": str(date), "item_code": item_code, "kind": kind,
+		        "customer_type": customer_type or "", "rows": [], "total": 0}
+
+	names = list(totals)
+	customers = {
+		r.name: (r.customer_name or r.customer or "")
+		for r in frappe.db.sql(
+			"""SELECT name, customer, customer_name FROM `tabSales Order` WHERE name IN %(n)s""",
+			{"n": tuple(names)}, as_dict=True,
+		)
+	}
+	rows = [
+		{"sales_order": so, "customer": customers.get(so, ""), "qty": flt(qty)}
+		for so, qty in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
+	]
+	return {
+		"date": str(date),
+		"item_code": item_code,
+		"item_name": frappe.db.get_value("Item", item_code, "item_name") or item_code,
+		"kind": kind,
+		"customer_type": customer_type or "",
+		"rows": rows,
+		"total": sum(r["qty"] for r in rows),
+	}
