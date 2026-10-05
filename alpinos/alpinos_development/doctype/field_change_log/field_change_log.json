@@ -14,7 +14,11 @@
   "new_value",
   "after_submit",
   "changed_by",
-  "changed_on"
+  "changed_on",
+  "action",
+  "user_role",
+  "item_code",
+  "reason"
  ],
  "fields": [
   {
@@ -76,11 +80,37 @@
    "label": "Changed On",
    "in_list_view": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Data",
+   "label": "Action",
+   "in_list_view": 1,
+   "description": "Created / Saved / Edited / Submitted / Cancelled / Duplicated."
+  },
+  {
+   "fieldname": "user_role",
+   "fieldtype": "Data",
+   "label": "User Role",
+   "in_list_view": 1,
+   "description": "The role the change was made under, e.g. Sales Officer."
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item / SKU",
+   "options": "Item",
+   "description": "Set when the change belongs to one line rather than the document."
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-07 12:00:00.000000",
+ "modified": "2026-10-05 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Field Change Log",
