@@ -24,6 +24,7 @@ def get_post_delivery_queue(
 	sales_order=None,
 	customer_po=None,
 	invoice_no=None,
+	lr_no=None,
 	dispatch_from=None,
 	dispatch_to=None,
 	channel=None,
@@ -64,6 +65,12 @@ def get_post_delivery_queue(
 	if invoice_no:
 		conds.append("so.custom_invoice_no LIKE %(invoice_no)s")
 		params["invoice_no"] = f"%{invoice_no}%"
+	# Changes(HP) #61: the LR / GR number was already fetched for the row but could not be
+	# searched on, which is the one number a transporter query actually starts from.
+	lr_no = (lr_no or "").strip()
+	if lr_no:
+		conds.append("dn.custom_lr_gr_no LIKE %(lr_no)s")
+		params["lr_no"] = f"%{lr_no}%"
 	channel = (channel or "").strip()
 	if channel:
 		conds.append("so.custom_channel = %(channel)s")
@@ -78,7 +85,10 @@ def get_post_delivery_queue(
 
 	search = (search or "").strip()
 	if search:
-		conds.append("(dn.name LIKE %(like)s OR dn.customer_name LIKE %(like)s OR dn.custom_sales_order_id LIKE %(like)s)")
+		conds.append(
+			"(dn.name LIKE %(like)s OR dn.customer_name LIKE %(like)s"
+			" OR dn.custom_sales_order_id LIKE %(like)s OR dn.custom_lr_gr_no LIKE %(like)s)"
+		)
 		params["like"] = f"%{search}%"
 
 	where = " AND ".join(conds)

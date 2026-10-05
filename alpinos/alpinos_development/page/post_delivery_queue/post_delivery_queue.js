@@ -25,6 +25,7 @@ var PDQ_FILTER_KEYS = [
 	'customer',
 	'channel',
 	'status',
+	'lr_no',
 ];
 
 var PDQ_STATUS_COLORS = {
@@ -44,6 +45,8 @@ var PDQ_COLUMNS = [
 	{ label: 'Channel', render: (d, h) => h.esc(d.channel || '—') },
 	{ label: 'Dispatch Date', render: (d, h) => h.date(d.dispatch_date) },
 	{ label: 'Transporter', render: (d, h) => h.esc(d.transporter || '—') },
+	// Changes(HP) #61: the number a transporter query starts from.
+	{ label: 'LR No.', render: (d, h) => h.esc(d.lr_awb_no || '—') },
 	{ label: 'ASN', render: (d, h) => h.pill(d.asn_status, PDQ_ASN_COLORS) },
 	{ label: 'GRN', render: (d, h) => (cint(d.grn_available) ? h.pill(d.grn_status, PDQ_GRN_COLORS) : '—') },
 	{ label: 'Status', render: (d, h) => h.pill(d.post_delivery_status, PDQ_STATUS_COLORS) },
@@ -104,6 +107,10 @@ var PostDeliveryQueue = class {
 		this._filters.channel = frappe.ui.form.make_control({
 			df: { fieldtype: 'Link', fieldname: 'channel', label: __('Channel'), options: 'Channel' },
 			parent: w.find('.fld-channel'), render_input: true,
+		});
+		this._filters.lr_no = frappe.ui.form.make_control({
+			df: { fieldtype: 'Data', fieldname: 'lr_no', label: __('LR No.') },
+			parent: w.find('.fld-lr-no'), render_input: true,
 		});
 	}
 
