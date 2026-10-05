@@ -583,7 +583,9 @@ def setup_custom_fields():
 			fieldname="custom_checkin_type",
 			label="Check-in Type",
 			fieldtype="Select",
-			options="\nClient/Vendor\nShoot\nMeeting\nOther",
+			# Changes(HP) HRMS #14: "Other" is gone from check-in. Only the three real
+			# reasons remain, so a punch always says where the person actually was.
+			options="\nClient/Vendor\nShoot\nMeeting",
 			insert_after="custom_checkin_image",
 			read_only=1,
 			description="Type chosen on web/mobile check-in (biometric companies, when web check-in rules are enabled).",
@@ -594,7 +596,11 @@ def setup_custom_fields():
 			fieldtype="Small Text",
 			insert_after="custom_checkin_type",
 			read_only=1,
-			description="Reason entered for a web/mobile check-in of type 'Other' (letters and spaces only).",
+			# HRMS #14: the free-text reason existed only for "Other", so it no longer has
+			# anything to collect. Hidden rather than deleted, because deleting the field
+			# would take any reason already recorded with it.
+			hidden=1,
+			description="Historic only. Reason entered for a web/mobile check-in of type 'Other', which was removed in HRMS #14.",
 		),
 	],
 	"Attendance": [

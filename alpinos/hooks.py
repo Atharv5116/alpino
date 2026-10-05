@@ -557,7 +557,11 @@ doc_events = {
 	"Leave Application": {
 		# Alpino works a full Saturday, so it cannot be halved -- the same rule Work From
 		# Home Request already carries.
-		"validate": "alpinos.leave_application_rules.block_saturday_half_day",
+		"validate": [
+			"alpinos.leave_application_rules.block_saturday_half_day",
+			# HRMS #16: a day is either Leave or Work From Home, never both.
+			"alpinos.wfh_leave_exclusion.block_leave_when_wfh_exists",
+		],
 		"on_update": "alpinos.raven_notifications.notify_leave_application",
 		"on_submit": "alpinos.raven_notifications.notify_leave_application"
 	},
@@ -783,11 +787,13 @@ doc_events = {
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
 			"alpinos.work_from_home_request_automation.block_saturday_half_day",
+			"alpinos.wfh_leave_exclusion.block_wfh_when_leave_exists",
 		],
 		"before_save": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
 			"alpinos.work_from_home_request_automation.block_saturday_half_day",
+			"alpinos.wfh_leave_exclusion.block_wfh_when_leave_exists",
 		],
 		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},

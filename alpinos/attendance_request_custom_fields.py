@@ -394,6 +394,20 @@ def add_shift_type_custom_fields():
 				insert_after="saturday_working_hours_threshold_for_half_day",
 				description="On Saturdays: if working hours are below this, the day is marked Absent. Leave 0 for the legacy two-way (Present/Absent) behaviour.",
 			),
+			dict(
+				# Changes(HP) HRMS #19: the percentage of the shift a person must complete
+				# to count as a full day, per Shift Type instead of one number for everybody.
+				fieldname="working_hours_percent_fulfilment_for_full_day",
+				label="Working Hours % Fulfilment for Full Day",
+				fieldtype="Percent",
+				insert_after="saturday_working_hours_threshold_for_absent",
+				description=(
+					"Minimum share of the shift that counts as a full day. Required Hours = "
+					"Shift Duration x this %. For a 10:00-18:30 shift (8h30m): 100% needs the "
+					"full 8h30m, 97.06% needs 8h15m. Leave 0 to use the standard 97%. The "
+					"explicit Working Hours Thresholds above take precedence over this."
+				),
+			),
 			# Late-entry deduction tiers, used by the Attendance Summary report.
 			dict(
 				fieldname="custom_late_entry_thresholds",

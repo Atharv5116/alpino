@@ -20,6 +20,11 @@ var ATT_SECTION = {
 };
 var ATT_CELL_BG = { basic: "#eef2ff", days: "#e8f6ee", ded: "#fdecea", leave: "#fff8e1", other: "#f4e9fd", verify: "#eceff1" };
 var ATT_HEAD_BG = { basic: "#c7d2fe", days: "#b7e4c7", ded: "#f6bdb6", leave: "#ffe39a", other: "#e0c3fb", verify: "#cfd8dc" };
+// Changes(HP) HRMS #17: these section colours are pale on purpose, and in Dark Mode the
+// theme supplies light text to go with them -- which left whole bands unreadable. Wherever
+// this report forces a background it now forces the foreground too, so the pair is
+// self-consistent whichever theme is on. ATT_INK is the one dark ink used throughout.
+var ATT_INK = "#1f2933";
 
 frappe.query_reports["Attendance Summary"] = {
 	filters: [
@@ -57,7 +62,7 @@ frappe.query_reports["Attendance Summary"] = {
 			var _fixed = String((data && data.corrected_days) || "").split(",").indexOf(_day) !== -1;
 			var _mark = function (html) {
 				if (!_fixed) return html;
-				return '<div title="' + __("Attendance corrected") + '" style="background:#ede7f6;'
+				return '<div title="' + __("Attendance corrected") + '" style="background:#ede7f6;color:' + ATT_INK + ';'
 					+ 'border-left:3px solid #7b1fa2;margin:-4px -8px;padding:4px 5px;">' + html + '</div>';
 			};
 			if (raw === "" || raw === "-") return _mark(raw);
@@ -65,32 +70,33 @@ frappe.query_reports["Attendance Summary"] = {
 			if (esc.indexOf("In:") !== -1) {
 				var isAbsent = /(^|\n)ABSENT\b/.test(raw);
 				var html = esc
-					.replace(/^(WFH|OD)(?=\n)/, '<span style="color:#C00000;font-weight:bold">$1</span>')
+					.replace(/^(WFH|OD)(?=\n)/, '<span style="color:var(--red-500,#C00000);font-weight:bold">$1</span>')
 					.replace(/(Late Time :\s*)([^\n]+)/, function (m, p1, p2) {
-						return p2.trim() ? p1 + '<span style="color:#C00000;font-weight:bold">' + p2 + '</span>' : m;
+						return p2.trim() ? p1 + '<span style="color:var(--red-500,#C00000);font-weight:bold">' + p2 + '</span>' : m;
 					})
 					.replace(/(Early Out :\s*)([^\n]+)/, function (m, p1, p2) {
-						return p2.trim() ? p1 + '<span style="color:#C00000;font-weight:bold">' + p2 + '</span>' : m;
+						return p2.trim() ? p1 + '<span style="color:var(--red-500,#C00000);font-weight:bold">' + p2 + '</span>' : m;
 					})
 					.replace(/\n/g, "<br>");
-				return _mark(isAbsent ? '<span style="color:#C00000;font-weight:bold">' + html + '</span>' : html);
+				return _mark(isAbsent ? '<span style="color:var(--red-500,#C00000);font-weight:bold">' + html + '</span>' : html);
 			}
 			if (raw.indexOf("WEEKEND") !== -1) {
-				return _mark('<span style="color:#607d8b;font-weight:bold">' + esc + '</span>');
+				return _mark('<span style="color:var(--text-muted,#607d8b);font-weight:bold">' + esc + '</span>');
 			}
 			if (raw.indexOf("HOLIDAY") !== -1) {
-				return _mark('<span style="color:#1976d2">' + esc.replace(/\n/g, "<br>") + '</span>');
+				return _mark('<span style="color:var(--blue-500,#1976d2)">' + esc.replace(/\n/g, "<br>") + '</span>');
 			}
 			// leave day (leave type / "HALF DAY - ...") -> shaded cell
 			if (_fixed) return _mark(esc.replace(/\n/g, "<br>"));
-			return '<div style="background:#fff3cd;margin:-4px -8px;padding:4px 8px;">' + esc.replace(/\n/g, "<br>") + '</div>';
+			return '<div style="background:#fff3cd;color:' + ATT_INK + ';margin:-4px -8px;padding:4px 8px;">' + esc.replace(/\n/g, "<br>") + '</div>';
 		}
 
 		value = default_formatter(value, row, column, data);
 
 		var _bg = ATT_CELL_BG[ATT_SECTION[column.fieldname]];
 		if (_bg) {
-			value = '<div style="background:' + _bg + '; margin:-4px -8px; padding:4px 8px;">' + (value == null ? "" : value) + '</div>';
+			value = '<div style="background:' + _bg + '; color:' + ATT_INK + '; margin:-4px -8px; padding:4px 8px;">'
+				+ (value == null ? "" : value) + '</div>';
 		}
 
 		return value;
@@ -197,7 +203,7 @@ frappe.query_reports["Attendance Summary"] = {
 					if (!sec) return;
 					$(report.wrapper)
 						.find('.dt-header .dt-cell[data-col-index="' + c.colIndex + '"]')
-						.css("background-color", ATT_HEAD_BG[sec]);
+						.css({ "background-color": ATT_HEAD_BG[sec], color: ATT_INK });
 				});
 			} catch (e) { /* cosmetic — never block the report */ }
 		}
