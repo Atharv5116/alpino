@@ -215,6 +215,7 @@ after_migrate = [
 	"alpinos.attendance_request_workflow_setup.execute",
 	"alpinos.salary_category_setup.seed_salary_categories",
 	"alpinos.buyer_assignment.setup_assignment_roles",
+	"alpinos.sales_order_authority.setup_sales_officer_permissions",
 	"alpinos.attendance_batch_workflow_setup.execute",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
@@ -372,6 +373,7 @@ has_permission = {
 	"Sales Order": [
 		"alpinos.channel_access.sales_order_has_permission",
 		"alpinos.buyer_assignment_visibility.sales_order_has_permission",
+		"alpinos.sales_order_authority.sales_order_has_permission",
 	],
 	"Pick List": [
 		"alpinos.assigned_visibility.pick_list_has_permission",

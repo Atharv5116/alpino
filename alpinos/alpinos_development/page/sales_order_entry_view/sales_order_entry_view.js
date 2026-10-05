@@ -254,7 +254,25 @@ var SalesOrderEntryView = class {
 			}
 
 			if (status === 'Draft' && isSales) {
-				me.page.set_primary_action(__('Send for Warehouse Approval'), () => me.do_submit_order());
+				// Sections 7 and 11 of the 03-10-2026 changes: a Sales Officer builds the
+				// order but the Buyer's Primary or Secondary POC submits it. The server
+				// decides, because authority depends on the Buyer rather than the role.
+				frappe.call({
+					method: 'alpinos.sales_order_authority.submit_authority',
+					args: { sales_order: me._so_name },
+					callback(r) {
+						const a = r.message || {};
+						if (cint(a.can_submit)) {
+							me.page.set_primary_action(__('Send for Warehouse Approval'), () =>
+								me.do_submit_order()
+							);
+						} else if (a.reason) {
+							// Say who does submit it, rather than leaving a dead screen.
+							me.page.clear_primary_action();
+							me.page.set_indicator(__('Awaiting POC submission'), 'orange');
+						}
+					},
+				});
 			} else if (status === 'Warehouse Approval Pending' && isWarehouse) {
 				me.page.set_primary_action(__('Approve Order'), () => me.do_approve());
 			} else if (

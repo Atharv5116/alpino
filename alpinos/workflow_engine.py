@@ -459,6 +459,12 @@ def submit_sales_order(sales_order):
 	doc = frappe.get_doc("Sales Order", sales_order)
 	if doc.docstatus != 0:
 		frappe.throw(frappe._("This Sales Order is already submitted."))
+	# Sections 7 and 11 of the 03-10-2026 changes: a Sales Officer builds the order, the
+	# Buyer's Primary or Secondary POC signs it off. Checked here as well as through the
+	# permission hook so the refusal carries the reason rather than a bare 403.
+	from alpinos.sales_order_authority import require_submit_authority
+
+	require_submit_authority(sales_order)
 	# Frappe enforces the submit permission inside doc.submit().
 	doc.submit()
 	return frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
