@@ -727,6 +727,79 @@ var SalesOrderEntryView = class {
 		$td.closest('tr').show();
 	}
 
+	render_activity_trail() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.call({
+			method: 'alpinos.sales_order_trail.get_activity_trail',
+			args: { sales_order: this._so_name },
+			callback(r) {
+				const rows = r.message || [];
+				const sec = me.wrapper.find('.sec-activity-trail');
+				const tb = me.wrapper.find('.v-activity-trail tbody').empty();
+				sec.show();
+				if (!rows.length) {
+					tb.append(
+						`<tr><td colspan="8" class="text-muted text-center">${__(
+							'Nothing recorded for this Sales Order yet.'
+						)}</td></tr>`
+					);
+					return;
+				}
+				rows.forEach((d) => {
+					tb.append(`<tr>
+						<td>${me._esc(frappe.datetime.str_to_user(d.changed_on) || d.changed_on || '')}</td>
+						<td>${me._esc(d.changed_by_name || d.changed_by || '')}</td>
+						<td>${me._esc(d.user_role || '—')}</td>
+						<td>${me._esc(d.action || '—')}</td>
+						<td>${me._esc(d.field_label || '—')}</td>
+						<td>${me._esc(d.item_code || '—')}</td>
+						<td>${me._esc(d.previous_value || '—')}</td>
+						<td>${me._esc(d.new_value || '—')}</td>
+					</tr>`);
+					if (d.reason) {
+						tb.append(`<tr><td colspan="8" class="text-muted" style="padding-left:18px;">
+							${__('Reason')}: ${me._esc(d.reason)}</td></tr>`);
+					}
+				});
+			},
+		});
+	}
+
+	render_previous_orders() {
+		if (!this._so_name) return;
+		const me = this;
+		frappe.call({
+			method: 'alpinos.sales_order_trail.get_previous_sales_orders',
+			args: { sales_order: this._so_name },
+			callback(r) {
+				const rows = r.message || [];
+				const sec = me.wrapper.find('.sec-previous-orders');
+				const tb = me.wrapper.find('.v-previous-orders tbody').empty();
+				if (!rows.length) {
+					sec.hide();
+					return;
+				}
+				sec.show();
+				rows.forEach((d) => {
+					// The ID opens that order's own view page, per section 20.
+					const link = `<a href="#" class="v-prev-so-link" data-so="${me._esc(d.name)}">${me._esc(d.name)}</a>`;
+					tb.append(`<tr>
+						<td>${link}</td>
+						<td>${me._esc(frappe.datetime.str_to_user(d.transaction_date) || '')}</td>
+						<td class="text-right">${format_currency(d.grand_total || 0)}</td>
+						<td>${me._esc(d.status || '—')}</td>
+						<td>${me._esc(d.created_by_name || d.owner || '—')}</td>
+					</tr>`);
+				});
+				tb.find('.v-prev-so-link').on('click', function (e) {
+					e.preventDefault();
+					frappe.set_route('sales_order_entry_view', $(this).data('so'));
+				});
+			},
+		});
+	}
+
 	render(payload) {
 		const p = payload.parent || {};
 		const w = this.wrapper;
@@ -734,6 +807,10 @@ var SalesOrderEntryView = class {
 
 		this.update_actions();
 		this.render_rejection_note(p);
+		// Sections 16-21: what happened inside THIS order, and -- separately -- which other
+		// orders exist for the Buyer. The document is explicit that the two stay apart.
+		this.render_activity_trail();
+		this.render_previous_orders();
 
 		w.find('.v-customer-name').text(
 			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'

@@ -253,4 +253,51 @@
 			</tbody>
 		</table>
 	</div>
+
+	<!-- 7. Activity / Change Trail (sections 16-18, 21) -->
+	<div class="sec-activity-trail so-view-card" style="display: none;">
+		<h5 class="so-view-section-title alp-section-title">Activity / Change Trail</h5>
+		<div class="text-muted" style="margin:-6px 0 10px; font-size:12px;">
+			What happened inside this Sales Order, including while it was a Draft.
+		</div>
+		<div class="v-activity-trail-wrap" style="overflow-x:auto;">
+			<table class="table table-bordered so-view-table v-activity-trail">
+				<thead>
+					<tr>
+						<th style="min-width:140px;">Date &amp; Time</th>
+						<th style="min-width:150px;">Changed By</th>
+						<th style="min-width:110px;">Role</th>
+						<th style="min-width:100px;">Action</th>
+						<th style="min-width:130px;">Field</th>
+						<th style="min-width:120px;">Item / SKU</th>
+						<th style="min-width:120px;">Previous</th>
+						<th style="min-width:120px;">New</th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
+
+	<!-- 8. Previous Sales Orders (sections 19-21) - navigation only, kept apart from the trail -->
+	<div class="sec-previous-orders so-view-card" style="display: none;">
+		<h5 class="so-view-section-title alp-section-title">Previous Sales Orders</h5>
+		<div class="text-muted" style="margin:-6px 0 10px; font-size:12px;">
+			Other Sales Orders for this Buyer. For quick navigation only.
+		</div>
+		<div class="v-previous-orders-wrap" style="overflow-x:auto;">
+			<table class="table table-bordered so-view-table v-previous-orders">
+				<thead>
+					<tr>
+						<th style="min-width:150px;">Sales Order</th>
+						<th style="min-width:110px;">Order Date</th>
+						<th style="min-width:120px;" class="text-right">Grand Total</th>
+						<th style="min-width:140px;">Status</th>
+						<th style="min-width:150px;">Created By</th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+		</div>
+	</div>
 </div>

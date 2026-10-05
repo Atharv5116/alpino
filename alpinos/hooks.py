@@ -726,6 +726,8 @@ doc_events = {
 		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",
 	},
 	"Sales Order": {
+		"after_insert": "alpinos.sales_order_trail.record_creation",
+		"on_update": "alpinos.sales_order_trail.record_changes",
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
@@ -736,7 +738,10 @@ doc_events = {
 			"alpinos.workflow_engine.sales_order_validate",
 			"alpinos.qty_flow.sales_order_qty_remarks",
 		],
-		"on_submit": "alpinos.workflow_engine.sales_order_on_submit",
+		"on_submit": [
+			"alpinos.workflow_engine.sales_order_on_submit",
+			"alpinos.sales_order_trail.record_submission",
+		],
 		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",
 		"before_update_after_submit": "alpinos.ecom_sales_order_api.validate_po_expiry_terminal_lock",
 	},
