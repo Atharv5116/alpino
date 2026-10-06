@@ -184,22 +184,9 @@ def _sample_frac(row):
 	return flt(row.qty) / (factor or 1)
 
 
-def _buyer_master_id(doc):
-	"""The Buyer Master ID behind a Pick List, through its Sales Order. "" when there is none."""
-	so = doc.get("custom_sales_order_id")
-	if not so:
-		return ""
-	return frappe.db.get_value("Sales Order", so, "custom_offline_buyer_master") or ""
-
-
 def _collect_pick_list_stickers(doc):
 	"""Flat list of sticker dicts for one Pick List, one per box per row, in section order."""
-	# The sticker carries the Buyer Master ID, not the customer name: the warehouse matches
-	# a box to an account by ID, and two sites of one chain can share a name. The Pick List
-	# does not hold it, so it is resolved through the order. Where there is none -- an e-com
-	# order with no offline buyer -- the customer name is kept, because a blank line on a
-	# box in the warehouse is worse than the old value.
-	party_name = _buyer_master_id(doc) or doc.get("custom_customer_name") or ""
+	party_name = doc.get("custom_customer_name") or ""
 	po_no = doc.get("custom_po_no") or ""
 	# Gate lives on the PL header, one value for the whole pick.
 	gate = doc.get("custom_gate") or ""
