@@ -88,6 +88,62 @@ def _rewrite_so_totals_footer():
 		)
 
 
+# ---------------------------------------------------------------------------
+# Buyer phone / email: always the Buyer Master, never the Address or Contact.
+#
+# An order was printing "0" and "dummy@dummy.com" for a buyer whose Buyer Master held a
+# real number and whose own contact fields were NULL -- neither source this app knows about
+# could produce those values, so the live format had been edited to read somewhere else.
+# Rather than chase whatever it reads, both cells are rewritten to one helper, so every
+# site answers the same way and a later hand-edit is undone on the next migrate.
+#
+# Anchored on the "Phone:"/"Email:" labels and the value span that follows, because the
+# surrounding markup differs between sites. When the anchor is not found nothing is written
+# and the skip is logged -- a format that cannot be matched is left alone, not mangled.
+_CONTACT_DONE = "buyer_contact(doc)"
+
+_PHONE_RE = re.compile(
+    r"(>\s*Phone\s*:\s*</span>\s*<span[^>]*>)(.*?)(</span>)",
+    re.IGNORECASE | re.DOTALL,
+)
+_EMAIL_RE = re.compile(
+    r"(>\s*Email\s*:\s*</span>\s*<span[^>]*>)(.*?)(</span>)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _rewrite_buyer_contact():
+    """Point the buyer's Phone / Email cells at buyer_contact(doc). Idempotent."""
+    if not frappe.db.exists("Print Format", PF_NAME):
+        return
+    html = frappe.db.get_value("Print Format", PF_NAME, "html") or ""
+    if not html or _CONTACT_DONE in html:
+        return
+
+    # The company's own phone/email sit in the header and must not be touched; they are
+    # the only cells whose value expression mentions `company`.
+    def _swap(match, field):
+        if "company" in match.group(2):
+            return match.group(0)
+        return "%s{{ buyer_contact(doc).%s }}%s" % (match.group(1), field, match.group(3))
+
+    new_html, n_phone = _PHONE_RE.subn(lambda m: _swap(m, "phone"), html)
+    new_html, n_email = _EMAIL_RE.subn(lambda m: _swap(m, "email"), new_html)
+
+    if _CONTACT_DONE not in new_html:
+        frappe.logger("alpinos").warning(
+            "'%s': could not find the buyer Phone/Email cells; left unchanged." % PF_NAME
+        )
+        return
+
+    frappe.db.set_value("Print Format", PF_NAME, "html", new_html)
+    frappe.db.commit()
+    frappe.logger("alpinos").info(
+        "Patched '%s': buyer Phone/Email now read the Buyer Master (%d/%d cells)."
+        % (PF_NAME, n_phone, n_email)
+    )
+
+
 def _apply_sales_order_pf_rewrites():
 	"""Apply SALES_ORDER_PF_REWRITES to the Sales Order print format (idempotent)."""
 	if not frappe.db.exists("Print Format", PF_NAME):
@@ -211,6 +267,9 @@ def execute():
 
 	# address/site fields + rounded total; runs before the bundle-loop early-returns
 	_apply_sales_order_pf_rewrites()
+
+	# buyer phone / email always from the Buyer Master
+	_rewrite_buyer_contact()
 
 	# GST-exclusive buyer note
 	_inject_gst_exclusive_note()

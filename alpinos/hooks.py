@@ -97,6 +97,7 @@ jinja = {
 		"alpinos.utils.available_stock",
 		"alpinos.utils.sort_locations_by_sku",
 		"alpinos.utils.site_buyer_master",
+		"alpinos.utils.buyer_contact",
 	],
 }
 
