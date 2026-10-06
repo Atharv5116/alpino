@@ -262,10 +262,48 @@ def site_buyer_master(site_name, fallback=None):
 	return None
 
 
+def buyer_contact(doc):
+	"""{phone, email} for a Sales Order, from the Buyer Master that owns its Site.
+
+	One place for the rule, so a print format carries no logic of its own and every format
+	answers the same way. Resolution:
+
+	  1. the Buyer Master owning the order's Site, within the order's own buyer family
+	  2. the order's own Buyer Master
+	  3. the Sales Order's contact_mobile / contact_email
+	  4. an em-dash
+
+	Deliberately never reads the Address or Contact record. Those carry their own phone and
+	email, they are commonly left on placeholder values, and taking them is how a PDF ends
+	up printing "0" and "dummy@dummy.com" for a buyer whose real number is on file.
+	"""
+	dash = "\u2014"
+	out = {"phone": dash, "email": dash, "source": "none"}
+	try:
+		obm = site_buyer_master(doc.get("custom_site_name"), doc.get("custom_offline_buyer_master"))
+		if obm:
+			phone = (obm.get("contact_no") or "").strip()
+			email = (obm.get("email") or "").strip()
+			if phone:
+				out["phone"], out["source"] = phone, obm.name
+			if email:
+				out["email"] = email
+				out["source"] = obm.name
+		if out["phone"] == dash and (doc.get("contact_mobile") or "").strip():
+			out["phone"], out["source"] = doc.get("contact_mobile").strip(), "sales order"
+		if out["email"] == dash and (doc.get("contact_email") or "").strip():
+			out["email"], out["source"] = doc.get("contact_email").strip(), "sales order"
+	except Exception:
+		# A print must never fail over a contact lookup.
+		frappe.log_error(frappe.get_traceback(), "buyer_contact lookup failed")
+	return out
+
+
 jinja_methods = {
 	"get_combined_items": get_combined_items,
 	"pack_size": pack_size,
 	"available_stock": available_stock,
 	"sort_locations_by_sku": sort_locations_by_sku,
 	"site_buyer_master": site_buyer_master,
+	"buyer_contact": buyer_contact,
 }
