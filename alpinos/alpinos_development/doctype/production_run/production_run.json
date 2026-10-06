@@ -1,0 +1,265 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sub_order",
+  "machine_run",
+  "member_sub_orders",
+  "parent_production_order",
+  "col_1",
+  "process_master",
+  "machine",
+  "production_item",
+  "total_qty",
+  "batch_number",
+  "col_2",
+  "status",
+  "process_inward",
+  "planned_date",
+  "section_1",
+  "started_on",
+  "started_by",
+  "completed_on",
+  "completed_by",
+  "col_3",
+  "paused_since",
+  "pause_reason",
+  "col_4",
+  "gross_minutes",
+  "downtime_minutes",
+  "net_minutes",
+  "section_2",
+  "logs"
+ ],
+ "fields": [
+  {
+   "fieldname": "sub_order",
+   "fieldtype": "Link",
+   "label": "Sub PO",
+   "options": "Work Order",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "machine_run",
+   "fieldtype": "Link",
+   "label": "Machine Run",
+   "options": "Machine Run",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "member_sub_orders",
+   "fieldtype": "Small Text",
+   "label": "Sub POs In This Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "parent_production_order",
+   "fieldtype": "Link",
+   "label": "Parent Production Order",
+   "options": "Production Order",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "process_master",
+   "fieldtype": "Link",
+   "label": "Process",
+   "options": "Process Master",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "machine",
+   "fieldtype": "Link",
+   "label": "Machine",
+   "options": "Machine",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "production_item",
+   "fieldtype": "Link",
+   "label": "FG Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Planned Qty (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "batch_number",
+   "fieldtype": "Data",
+   "label": "Batch Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Ready\nRunning\nPaused\nProcess Completed\nInward Logged\nPending QC\nClosed",
+   "default": "Ready",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "process_inward",
+   "fieldtype": "Link",
+   "label": "Process Inward",
+   "options": "Process Inward",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "planned_date",
+   "fieldtype": "Date",
+   "label": "Planned Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_1",
+   "fieldtype": "Section Break",
+   "label": "Timing"
+  },
+  {
+   "fieldname": "started_on",
+   "fieldtype": "Datetime",
+   "label": "Started On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "started_by",
+   "fieldtype": "Link",
+   "label": "Started By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "completed_on",
+   "fieldtype": "Datetime",
+   "label": "Completed On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "completed_by",
+   "fieldtype": "Link",
+   "label": "Completed By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "paused_since",
+   "fieldtype": "Datetime",
+   "label": "Paused Since",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "pause_reason",
+   "fieldtype": "Data",
+   "label": "Current Pause Reason",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "gross_minutes",
+   "fieldtype": "Float",
+   "label": "Gross Minutes",
+   "precision": "2",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "downtime_minutes",
+   "fieldtype": "Float",
+   "label": "Downtime Minutes",
+   "precision": "2",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "net_minutes",
+   "fieldtype": "Float",
+   "label": "Net Minutes",
+   "precision": "2",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_2",
+   "fieldtype": "Section Break",
+   "label": "Production Audit Log"
+  },
+  {
+   "fieldname": "logs",
+   "fieldtype": "Table",
+   "label": "Logs",
+   "options": "Production Run Log",
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Production Run",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "PRUN-.YYYY.-.#####",
+ "naming_rule": "Expression (old style)",
+ "search_fields": "sub_order,machine_run,process_master,machine"
+}

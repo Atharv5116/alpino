@@ -179,6 +179,11 @@ def _attach_sub_orders(rows):
 		]
 
 
+def _standard_batch_size_kg():
+	from alpinos.production import production_settings as PS
+	return PS.standard_batch_size_kg()
+
+
 @frappe.whitelist()
 def get_form_context(production_order=None):
 	if production_order and frappe.db.exists(DOCTYPE, production_order):
@@ -209,6 +214,7 @@ def get_form_context(production_order=None):
 		"docstatus": cint(doc.docstatus) if doc else 0,
 		"production_types": list(C.PRODUCTION_TYPES),
 		"types_needing_client": list(C.PRODUCTION_TYPES_NEEDING_CLIENT),
+		"standard_batch_size_kg": _standard_batch_size_kg(),
 		"statuses": list(C.PO_STATUSES),
 		"sub_orders": sub_orders,
 		# What the screen may offer. Submit and Approve exist; Reject and Send To Store do

@@ -35,7 +35,11 @@ PLANNED_DATE_FIELD = "custom_planned_date"
 #: (MR generated, plan locked) -> Ready to Run (first Material Issue submitted) -> In
 #: Progress -> Completed.
 EXECUTION_STATUSES = ("Unassigned", "Assigned", "In Progress", "Completed",
-                      "Pending Store Issue", "Ready to Run")
+                      "Pending Store Issue", "Ready to Run",
+                      # Phase 4-9 (Production Execution / QC / Filling), appended. "Completed"
+                      # above stays the final state.
+                      "Running", "Paused", "Process Completed", "Inward Logged", "Pending QC",
+                      "Ready for Next Stage", "QC Rejected")
 
 #: Material Management: set by material_request.generate_mr.
 PLAN_LOCKED_FIELD = "custom_plan_locked"
@@ -183,3 +187,57 @@ def _custom_fields():
 
 def setup_work_order_fields():
 	create_custom_fields(_custom_fields(), ignore_validate=True)
+
+
+# --- Phase 4+ (Production Execution / QC / Filling), appended ------------------------
+# Created by alpinos.production.phase4_fields.setup_phase4_fields, not by
+# setup_work_order_fields above, so the original list stays exactly as it was.
+
+COMPLETED_PROCESSES_FIELD = "custom_completed_processes"
+CURRENT_RUN_FIELD = "custom_current_run"
+WIP_QTY_FIELD = "custom_wip_qty"
+
+
+def phase4_custom_fields(include_current_run=True):
+	"""All system-written (read_only, allow_on_submit, no_copy): a Sub PO is submitted by the
+	time it reaches the floor, so these are written with frappe.db.set_value.
+
+	custom_current_run links to "Production Run", which the execution module creates; the
+	caller leaves it out until that doctype exists (a Link to a missing doctype fails)."""
+	fields = [
+		{
+			"fieldname": COMPLETED_PROCESSES_FIELD,
+			"label": "Completed Processes",
+			"fieldtype": "Small Text",
+			"insert_after": MATERIAL_REQUEST_FIELD,
+			"read_only": 1,
+			"no_copy": 1,
+			"allow_on_submit": 1,
+			"description": "Comma-separated process codes already done for this sub order (e.g. PRC-MIX,PRC-BAK).",
+		},
+		{
+			"fieldname": CURRENT_RUN_FIELD,
+			"label": "Current Production Run",
+			"fieldtype": "Link",
+			"options": "Production Run",
+			"insert_after": COMPLETED_PROCESSES_FIELD,
+			"read_only": 1,
+			"no_copy": 1,
+			"allow_on_submit": 1,
+		},
+		{
+			"fieldname": WIP_QTY_FIELD,
+			"label": "Approved Baked WIP (KG)",
+			"fieldtype": "Float",
+			"precision": "3",
+			"insert_after": CURRENT_RUN_FIELD,
+			"read_only": 1,
+			"no_copy": 1,
+			"allow_on_submit": 1,
+			"description": "QC-approved baked KG available to Filling.",
+		},
+	]
+	if not include_current_run:
+		fields = [f for f in fields if f["fieldname"] != CURRENT_RUN_FIELD]
+		fields[-1] = dict(fields[-1], insert_after=COMPLETED_PROCESSES_FIELD)
+	return {WORK_ORDER: fields}

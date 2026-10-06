@@ -1,0 +1,49 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "test_name",
+  "test_result",
+  "test_remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "test_name",
+   "fieldtype": "Data",
+   "label": "Test",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "test_result",
+   "fieldtype": "Select",
+   "label": "Result",
+   "options": "\nPass\nFail\nPending",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "test_remarks",
+   "fieldtype": "Data",
+   "label": "Remarks",
+   "in_list_view": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-04 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Final QC Test",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

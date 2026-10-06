@@ -255,3 +255,26 @@ def setup_store_roles():
 			frappe.log_error(frappe.get_traceback(), "Store roles: Production Settings")
 		frappe.clear_cache(doctype="Production Settings")
 	frappe.db.commit()
+
+
+# --- Phase 4+ roles (Execution / QC / Filling / Inventory), appended -----------------
+# Created here; what each may do on the new doctypes is granted by
+# alpinos.production.phase4_permissions.setup_phase4_permissions.
+
+ROLE_PRODUCTION_OPERATOR = "Production Operator"
+ROLE_QC_INSPECTOR = "QC Inspector"
+ROLE_QC_MANAGER = "QC Manager"
+ROLE_PLANT_HEAD = "Plant Head"
+
+PHASE4_ROLES = (ROLE_PRODUCTION_OPERATOR, ROLE_QC_INSPECTOR, ROLE_QC_MANAGER, ROLE_PLANT_HEAD)
+
+
+def ensure_phase4_roles():
+	"""Create the Phase 4 roles if missing. Never edits an existing one."""
+	for role in PHASE4_ROLES:
+		if frappe.db.exists("Role", role):
+			continue
+		doc = frappe.new_doc("Role")
+		doc.role_name = role
+		doc.desk_access = 1
+		doc.insert(ignore_permissions=True)

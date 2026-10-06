@@ -1,0 +1,220 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "plan_date",
+  "parent_po",
+  "sub_order",
+  "bulk_item",
+  "col_1",
+  "available_wip_kg",
+  "filling_line",
+  "line_category",
+  "col_2",
+  "status",
+  "has_pending_approval",
+  "rerouted_from",
+  "rerouted_to",
+  "section_rows",
+  "rows",
+  "section_totals",
+  "total_planned_pcs",
+  "total_planned_kg",
+  "col_3",
+  "total_completed_pcs",
+  "total_pending_pcs",
+  "total_wastage_kg",
+  "section_notes",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "plan_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "parent_po",
+   "fieldtype": "Link",
+   "label": "Parent PO",
+   "options": "Production Order",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "sub_order",
+   "fieldtype": "Link",
+   "label": "Sub-PO (Batch)",
+   "options": "Work Order",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "bulk_item",
+   "fieldtype": "Link",
+   "label": "Baked Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "available_wip_kg",
+   "fieldtype": "Float",
+   "label": "Available WIP (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "filling_line",
+   "fieldtype": "Link",
+   "label": "Filling Line No.",
+   "options": "Machine",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "line_category",
+   "fieldtype": "Link",
+   "label": "Filling Category",
+   "options": "Filling Process Category",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Planned\nIn Progress\nCompleted\nShort-Closed\nRe-Routed",
+   "default": "Planned",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "has_pending_approval",
+   "fieldtype": "Check",
+   "label": "Wastage Approval Pending",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rerouted_from",
+   "fieldtype": "Link",
+   "label": "Re-Routed From",
+   "options": "Filling Plan",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rerouted_to",
+   "fieldtype": "Link",
+   "label": "Re-Routed To",
+   "options": "Filling Plan",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_rows",
+   "fieldtype": "Section Break",
+   "label": "Split Row Allocation"
+  },
+  {
+   "fieldname": "rows",
+   "fieldtype": "Table",
+   "label": "Rows",
+   "options": "Filling Plan Row"
+  },
+  {
+   "fieldname": "section_totals",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "total_planned_pcs",
+   "fieldtype": "Int",
+   "label": "Total Planned (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_planned_kg",
+   "fieldtype": "Float",
+   "label": "Total Planned (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_completed_pcs",
+   "fieldtype": "Int",
+   "label": "Total Completed (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_pending_pcs",
+   "fieldtype": "Int",
+   "label": "Total Pending (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_wastage_kg",
+   "fieldtype": "Float",
+   "label": "Total Wastage (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_notes",
+   "fieldtype": "Section Break",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-04 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Filling Plan",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "FPL-.YYYY.-.#####",
+ "naming_rule": "Expression (old style)"
+}

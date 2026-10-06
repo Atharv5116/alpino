@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "parent_po",
+  "fg_item",
+  "computed_on",
+  "col_1",
+  "issued_rm_kg",
+  "filled_kg",
+  "filled_pcs",
+  "col_2",
+  "loss_kg",
+  "loss_pct",
+  "section_sku",
+  "sku_breakdown"
+ ],
+ "fields": [
+  {
+   "fieldname": "parent_po",
+   "fieldtype": "Link",
+   "label": "Parent PO",
+   "options": "Production Order",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "fg_item",
+   "fieldtype": "Link",
+   "label": "FG Item",
+   "options": "Item",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "computed_on",
+   "fieldtype": "Datetime",
+   "label": "Computed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "issued_rm_kg",
+   "fieldtype": "Float",
+   "label": "Original Issued RM (KG)",
+   "precision": "3",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "filled_kg",
+   "fieldtype": "Float",
+   "label": "Total Final Filled FG (KG)",
+   "precision": "3",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "filled_pcs",
+   "fieldtype": "Int",
+   "label": "Total Filled (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "loss_kg",
+   "fieldtype": "Float",
+   "label": "Overall Process Loss (KG)",
+   "precision": "3",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "loss_pct",
+   "fieldtype": "Percent",
+   "label": "Process Loss (%)",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_sku",
+   "fieldtype": "Section Break",
+   "label": "By SKU"
+  },
+  {
+   "fieldname": "sku_breakdown",
+   "fieldtype": "Small Text",
+   "label": "SKU Breakdown",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-04 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Production Yield Record",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "PYR-.YYYY.-.#####",
+ "naming_rule": "Expression (old style)"
+}

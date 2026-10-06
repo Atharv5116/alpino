@@ -1,0 +1,471 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "production_run",
+  "sub_order",
+  "machine_run",
+  "member_sub_orders",
+  "parent_production_order",
+  "col_1",
+  "process_master",
+  "machine",
+  "production_item",
+  "item_name",
+  "batch_number",
+  "col_2",
+  "posting_date",
+  "shift",
+  "shift_start",
+  "shift_end",
+  "run_start",
+  "run_end",
+  "section_1",
+  "mixing_start",
+  "mixing_end",
+  "col_3",
+  "total_batch",
+  "mixing_wastage_kg",
+  "section_2",
+  "total_output_kg",
+  "first_batch_in",
+  "last_batch_out",
+  "col_4",
+  "baking_wastage_kg",
+  "section_3",
+  "ovens",
+  "section_4",
+  "actual_output_kg",
+  "total_wastage_kg",
+  "col_5",
+  "supervisor_count",
+  "operator_count",
+  "col_6",
+  "hh_labour_count",
+  "ahf_labour_count",
+  "section_5",
+  "remark",
+  "section_6",
+  "total_issued_rm",
+  "col_7",
+  "process_loss_kg",
+  "col_8",
+  "yield_pct",
+  "section_7",
+  "allocations",
+  "section_8",
+  "status",
+  "send_for_qc",
+  "stock_posted",
+  "production_qc",
+  "col_9",
+  "submitted_by",
+  "submitted_on",
+  "reversal_reason",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "production_run",
+   "fieldtype": "Link",
+   "label": "Production Run",
+   "options": "Production Run",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "sub_order",
+   "fieldtype": "Link",
+   "label": "Sub PO",
+   "options": "Work Order",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "machine_run",
+   "fieldtype": "Link",
+   "label": "Machine Run",
+   "options": "Machine Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "member_sub_orders",
+   "fieldtype": "Small Text",
+   "label": "Sub POs In This Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "parent_production_order",
+   "fieldtype": "Link",
+   "label": "Parent Production Order",
+   "options": "Production Order",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "process_master",
+   "fieldtype": "Link",
+   "label": "Process",
+   "options": "Process Master",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "machine",
+   "fieldtype": "Link",
+   "label": "Machine",
+   "options": "Machine",
+   "read_only": 1
+  },
+  {
+   "fieldname": "production_item",
+   "fieldtype": "Link",
+   "label": "Product / SKU",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Product Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "batch_number",
+   "fieldtype": "Data",
+   "label": "UID / Batch Code",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "default": "Today",
+   "reqd": 1
+  },
+  {
+   "fieldname": "shift",
+   "fieldtype": "Data",
+   "label": "Shift"
+  },
+  {
+   "fieldname": "shift_start",
+   "fieldtype": "Time",
+   "label": "Shift Start Time"
+  },
+  {
+   "fieldname": "shift_end",
+   "fieldtype": "Time",
+   "label": "Shift End Time"
+  },
+  {
+   "fieldname": "run_start",
+   "fieldtype": "Datetime",
+   "label": "Start Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "run_end",
+   "fieldtype": "Datetime",
+   "label": "End Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_1",
+   "fieldtype": "Section Break",
+   "label": "Mass Mixing"
+  },
+  {
+   "fieldname": "mixing_start",
+   "fieldtype": "Time",
+   "label": "Mixing Start Time"
+  },
+  {
+   "fieldname": "mixing_end",
+   "fieldtype": "Time",
+   "label": "Mixing End Time"
+  },
+  {
+   "fieldname": "col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_batch",
+   "fieldtype": "Int",
+   "label": "Total Batch"
+  },
+  {
+   "fieldname": "mixing_wastage_kg",
+   "fieldtype": "Float",
+   "label": "Mixing Wastage (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "section_2",
+   "fieldtype": "Section Break",
+   "label": "Baking"
+  },
+  {
+   "fieldname": "total_output_kg",
+   "fieldtype": "Float",
+   "label": "Total Output (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "first_batch_in",
+   "fieldtype": "Time",
+   "label": "First Batch IN"
+  },
+  {
+   "fieldname": "last_batch_out",
+   "fieldtype": "Time",
+   "label": "Last Batch OUT"
+  },
+  {
+   "fieldname": "col_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "baking_wastage_kg",
+   "fieldtype": "Float",
+   "label": "Total Baking Wastage (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "section_3",
+   "fieldtype": "Section Break",
+   "label": "Oven Grid"
+  },
+  {
+   "fieldname": "ovens",
+   "fieldtype": "Table",
+   "label": "Ovens",
+   "options": "Process Inward Oven Row"
+  },
+  {
+   "fieldname": "section_4",
+   "fieldtype": "Section Break",
+   "label": "Output, Manpower & Remarks"
+  },
+  {
+   "fieldname": "actual_output_kg",
+   "fieldtype": "Float",
+   "label": "Actual Output (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "total_wastage_kg",
+   "fieldtype": "Float",
+   "label": "Total Wastage (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "col_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "supervisor_count",
+   "fieldtype": "Int",
+   "label": "Supervisor"
+  },
+  {
+   "fieldname": "operator_count",
+   "fieldtype": "Int",
+   "label": "Operator"
+  },
+  {
+   "fieldname": "col_6",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "hh_labour_count",
+   "fieldtype": "Int",
+   "label": "HH Labour"
+  },
+  {
+   "fieldname": "ahf_labour_count",
+   "fieldtype": "Int",
+   "label": "AHF Labour"
+  },
+  {
+   "fieldname": "section_5",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "remark",
+   "fieldtype": "Small Text",
+   "label": "Remark"
+  },
+  {
+   "fieldname": "section_6",
+   "fieldtype": "Section Break",
+   "label": "Mass Balance"
+  },
+  {
+   "fieldname": "total_issued_rm",
+   "fieldtype": "Float",
+   "label": "Total Issued RM (KG)",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_7",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "process_loss_kg",
+   "fieldtype": "Float",
+   "label": "Process Loss (KG)",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_8",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "yield_pct",
+   "fieldtype": "Percent",
+   "label": "Actual Yield %",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_7",
+   "fieldtype": "Section Break",
+   "label": "Distribution To Sub POs"
+  },
+  {
+   "fieldname": "allocations",
+   "fieldtype": "Table",
+   "label": "Allocations",
+   "options": "Process Inward Allocation",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_8",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nInward Logged\nPending QC\nReady for Next Stage\nQC Done\nReversed",
+   "default": "Draft",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "send_for_qc",
+   "fieldtype": "Check",
+   "label": "Sent For QC",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "stock_posted",
+   "fieldtype": "Check",
+   "label": "Stock Posted",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "production_qc",
+   "fieldtype": "Link",
+   "label": "Production QC",
+   "options": "Production QC",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_9",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "submitted_by",
+   "fieldtype": "Link",
+   "label": "Submitted By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "submitted_on",
+   "fieldtype": "Datetime",
+   "label": "Submitted On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "reversal_reason",
+   "fieldtype": "Small Text",
+   "label": "Reversal Reason",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Process Inward",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Process Inward",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 0
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "PINW-.YYYY.-.#####",
+ "naming_rule": "Expression (old style)",
+ "search_fields": "sub_order,machine_run,batch_number,process_master"
+}

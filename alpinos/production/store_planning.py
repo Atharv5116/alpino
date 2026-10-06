@@ -61,8 +61,14 @@ STATUS_READY_TO_RUN = SA.STATUS_READY_TO_RUN
 STATUS_IN_PROGRESS = C.SUB_EXECUTION_IN_PROGRESS
 STATUS_COMPLETED = C.SUB_EXECUTION_COMPLETED
 
+#: Production Execution: a Sub PO whose process has passed QC comes back to the board for
+#: its NEXT process (e.g. Baking after Mixing). Its material is already issued, so it is
+#: planned without a new MR and keeps this status -- the shop floor starts it from here.
+STATUS_READY_NEXT = "Ready for Next Stage"
+COMPLETED_PROCESSES_FIELD = "custom_completed_processes"
+
 #: What the calendar shows.
-CALENDAR_STATUSES = SA.ALLOCATING_STATUSES
+CALENDAR_STATUSES = tuple(SA.ALLOCATING_STATUSES) + (STATUS_READY_NEXT,)
 
 RUN_PLANNED = "Planned"
 RUN_CANCELLED = "Cancelled"
@@ -155,10 +161,27 @@ def _sub_fields():
 		IS_LOCKED_FIELD, ASSIGNED_PROCESS_FIELD, ASSIGNED_MACHINE_FIELD, PLANNED_DATE_FIELD,
 		SPLIT_FROM_FIELD,
 	]
-	for optional in (PLAN_LOCKED_FIELD, MATERIAL_REQUEST_FIELD, MACHINE_RUN_FIELD):
+	for optional in (PLAN_LOCKED_FIELD, MATERIAL_REQUEST_FIELD, MACHINE_RUN_FIELD,
+	                 COMPLETED_PROCESSES_FIELD):
 		if _wo_has(optional):
 			fields.append(optional)
 	return fields
+
+
+def _is_next_stage(sub):
+	"""Back on the board for its next process (material already issued, no MR needed)."""
+	return (sub.get(EXECUTION_STATUS_FIELD) or "") == STATUS_READY_NEXT
+
+
+def _is_filling_process(process):
+	"""Filling is planned on the Filling Planning screens, not on this board."""
+	if not process:
+		return False
+	try:
+		from alpinos.production import execution_common as X
+		return bool(X.is_filling_process(process))
+	except ImportError:
+		return False
 
 
 def _load(sub_order):
@@ -201,6 +224,9 @@ def _assert_replannable(sub):
 	if cint(sub.get(IS_LOCKED_FIELD)):
 		frappe.throw(_("{0} is locked until {1} is sent to store.").format(
 			sub.name, sub.get(PARENT_FIELD)), title=_("Sub Order Is Locked"))
+	if _is_next_stage(sub) and cint(sub.docstatus) < 2:
+		# Its MR was used up by the first process; the next one is planned on the same issue.
+		return
 	parent_status = _parent_status(sub.get(PARENT_FIELD))
 	if parent_status != C.PO_SENT_TO_STORE:
 		frappe.throw(
@@ -253,6 +279,9 @@ def _completed_processes(sub, processes):
 	"""Processes this Sub PO has finished. Only a Completed Sub PO has one on record: the
 	sub order carries a single assigned process, and that and every earlier one by sequence
 	count as done once it is Completed."""
+	recorded = [p.strip() for p in (sub.get(COMPLETED_PROCESSES_FIELD) or "").split(",") if p.strip()]
+	if recorded:
+		return [p for p in processes if p.name in recorded]
 	if (sub.get(EXECUTION_STATUS_FIELD) != STATUS_COMPLETED) or not sub.get(ASSIGNED_PROCESS_FIELD):
 		return []
 	seq = cint(frappe.db.get_value("Process Master", sub.get(ASSIGNED_PROCESS_FIELD), "process_sequence"))
@@ -436,7 +465,7 @@ def _unplanned_rows(extra_filters=None):
 	filters = {
 		PARENT_FIELD: ("is", "set"),
 		IS_LOCKED_FIELD: 0,
-		EXECUTION_STATUS_FIELD: STATUS_UNASSIGNED,
+		EXECUTION_STATUS_FIELD: ("in", (STATUS_UNASSIGNED, STATUS_READY_NEXT)),
 		# Draft per the FRD; a submitted one only exists when an MR was generated and then
 		# cancelled and the planning cancelled after it, and it must not vanish.
 		"docstatus": ("<", 2),
@@ -451,7 +480,20 @@ def _unplanned_rows(extra_filters=None):
 		sent = set(frappe.get_all(PRODUCTION_ORDER,
 		                          filters={"name": ("in", list(parents)), "status": C.PO_SENT_TO_STORE},
 		                          pluck="name"))
-	return [r for r in rows if r.get(PARENT_FIELD) in sent]
+	out = []
+	processes = None
+	for r in rows:
+		if _is_next_stage(r):
+			if r.get(ASSIGNED_PROCESS_FIELD):
+				continue  # already planned for its next process
+			processes = processes if processes is not None else _processes()
+			nxt = _next_process(r, processes)
+			if not nxt or _is_filling_process(nxt):
+				continue  # nothing left here; Filling is planned on its own screens
+			out.append(r)
+		elif r.get(PARENT_FIELD) in sent:
+			out.append(r)
+	return out
 
 
 def _merge_candidates(sub, process, processes=None, exclude=None):
@@ -461,6 +503,8 @@ def _merge_candidates(sub, process, processes=None, exclude=None):
 	for row in _unplanned_rows({"production_item": sub.production_item}):
 		if row.name in exclude:
 			continue
+		if _is_next_stage(row) != _is_next_stage(sub):
+			continue  # a first-stage plan needs an MR, a next-stage one does not
 		if _next_process(row, processes) != process:
 			continue
 		out.append({
@@ -523,7 +567,8 @@ def _alert_scope():
 		         EXECUTION_STATUS_FIELD: ("in", (STATUS_ASSIGNED, STATUS_PENDING_STORE_ISSUE))},
 		fields=_sub_fields())
 	unplanned = _unplanned_rows()
-	subs = {r.name: r for r in planned + unplanned}
+	# Next-stage Sub POs already have their material issued: no shortage to alert on.
+	subs = {r.name: r for r in planned + [u for u in unplanned if not _is_next_stage(u)]}
 	return subs, unplanned
 
 
@@ -592,9 +637,14 @@ def get_board(year=None, month=None, process=None, machine=None):
 
 	out_unplanned = []
 	for u in unplanned:
-		rows = stock.get(u.name) or []
+		next_stage = _is_next_stage(u)
+		rows = [] if next_stage else (stock.get(u.name) or [])
 		short = [r for r in rows if r["status"] == "Shortage"]
+		nxt = _next_process(u, processes) if next_stage else None
 		out_unplanned.append({
+			"next_stage": int(next_stage),
+			"next_process": nxt,
+			"next_process_label": (all_process_rows.get(nxt) or {}).get("process_name") if nxt else None,
 			"name": u.name, "parent": u.get(PARENT_FIELD), "qty": flt(u.qty),
 			"production_item": u.production_item, "item_name": u.item_name,
 			"production_type": u.get(PRODUCTION_TYPE_FIELD), "batch": u.get(BATCH_FIELD),
@@ -640,7 +690,8 @@ def get_planning_context(sub_order, planned_date=None, process=None):
 	sub = _load(sub_order)
 	processes = _processes()
 	completed = _completed_processes(sub, processes)
-	current = sub.get(ASSIGNED_PROCESS_FIELD) if sub.get(EXECUTION_STATUS_FIELD) == STATUS_ASSIGNED else None
+	current = sub.get(ASSIGNED_PROCESS_FIELD) if (
+		sub.get(EXECUTION_STATUS_FIELD) == STATUS_ASSIGNED or _is_next_stage(sub)) else None
 	default_process = process or current or _next_process(sub, processes)
 	date = planned_date or sub.get(PLANNED_DATE_FIELD)
 	run = _active_run(sub)
@@ -719,7 +770,11 @@ def save_planning(sub_order, process, machine=None, planned_date=None, merge_wit
 	for name in new_merges:
 		other = _load(name)
 		_assert_replannable(other)
-		if other.get(EXECUTION_STATUS_FIELD) != STATUS_UNASSIGNED:
+		if _is_next_stage(sub) or _is_next_stage(other):
+			if not (_is_next_stage(sub) and _is_next_stage(other)) or other.get(ASSIGNED_PROCESS_FIELD):
+				frappe.throw(_("{0} cannot be merged: only Sub POs waiting for the same next process "
+				               "can be merged with each other.").format(name), title=_("Cannot Merge"))
+		elif other.get(EXECUTION_STATUS_FIELD) != STATUS_UNASSIGNED:
 			frappe.throw(_("{0} is already planned; only unplanned Sub POs can be merged.").format(name),
 			             title=_("Cannot Merge"))
 		if other.production_item != sub.production_item or _next_process(other, processes) != process:
@@ -753,7 +808,9 @@ def reschedule_planning(sub_order, planned_date):
 	"""Dragging a planned card to another day. A merged card moves with its whole run."""
 	_assert_can_plan()
 	sub = _load(sub_order)
-	if sub.get(EXECUTION_STATUS_FIELD) != STATUS_ASSIGNED or not sub.get(ASSIGNED_PROCESS_FIELD):
+	if _is_next_stage(sub) and sub.get(ASSIGNED_PROCESS_FIELD):
+		pass  # a next-stage plan moves like any other
+	elif sub.get(EXECUTION_STATUS_FIELD) != STATUS_ASSIGNED or not sub.get(ASSIGNED_PROCESS_FIELD):
 		if _plan_locked(sub) or sub.get(EXECUTION_STATUS_FIELD) in (
 				STATUS_PENDING_STORE_ISSUE, STATUS_READY_TO_RUN, STATUS_IN_PROGRESS):
 			frappe.throw(_(MSG_MR_EXISTS), title=_("Planning Is Locked"))
@@ -771,13 +828,15 @@ def cancel_planning(sub_order, reason=None):
 	if not reason:
 		frappe.throw(_(MSG_REASON), title=_("Reason Required"))
 	sub = _load(sub_order)
-	if sub.get(EXECUTION_STATUS_FIELD) == STATUS_UNASSIGNED and not sub.get(ASSIGNED_PROCESS_FIELD):
+	if sub.get(EXECUTION_STATUS_FIELD) in (STATUS_UNASSIGNED, STATUS_READY_NEXT) 			and not sub.get(ASSIGNED_PROCESS_FIELD):
 		frappe.throw(_("{0} is not planned, so there is nothing to cancel.").format(sub.name),
 		             title=_("Not Planned"))
 	_assert_replannable(sub)
 
 	cleared = {ASSIGNED_PROCESS_FIELD: None, ASSIGNED_MACHINE_FIELD: None,
 	           PLANNED_DATE_FIELD: None, EXECUTION_STATUS_FIELD: STATUS_UNASSIGNED}
+	if _is_next_stage(sub):
+		cleared.pop(EXECUTION_STATUS_FIELD)  # back to the next-stage backlog, not to Unassigned
 	if cint(sub.docstatus) == 1:
 		# Submitted by an MR that was cancelled since; see _apply_plan.
 		frappe.db.set_value(WORK_ORDER, sub.name, cleared)

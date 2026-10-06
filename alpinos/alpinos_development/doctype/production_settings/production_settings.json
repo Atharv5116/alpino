@@ -13,7 +13,18 @@
   "excluded_section",
   "excluded_warehouses",
   "planning_section",
-  "merge_capacity_check"
+  "merge_capacity_check",
+  "standard_batch_size_kg",
+  "phase4_warehouse_section",
+  "baked_wip_warehouse",
+  "fg_hold_warehouse",
+  "phase4_warehouse_col",
+  "fg_warehouse",
+  "rejected_warehouse",
+  "phase4_rules_section",
+  "filling_wastage_tolerance_pct",
+  "phase4_rules_col",
+  "adjustment_approval_kg"
  ],
  "fields": [
   {
@@ -62,13 +73,81 @@
    "fieldname": "merge_capacity_check",
    "fieldtype": "Check",
    "label": "Block merges above machine Max Capacity"
+  },
+  {
+   "default": "50",
+   "description": "KG of finished product one BOM batch makes. Total Batches = Production Quantity (KG) / this; each material's Total Required Qty = its BOM qty x Total Batches.",
+   "fieldname": "standard_batch_size_kg",
+   "fieldtype": "Float",
+   "label": "Standard Batch Size (KG)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "phase4_warehouse_section",
+   "fieldtype": "Section Break",
+   "label": "Production & FG Warehouses"
+  },
+  {
+   "description": "Where approved baked bulk (KG) is kept for Filling. Blank = the WIP Warehouse.",
+   "fieldname": "baked_wip_warehouse",
+   "fieldtype": "Link",
+   "label": "Baked WIP Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "description": "Filled FG lands here and stays on hold until Final QC clears the batch.",
+   "fieldname": "fg_hold_warehouse",
+   "fieldtype": "Link",
+   "label": "FG Hold Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "phase4_warehouse_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "FG-Cleared stock, available for dispatch.",
+   "fieldname": "fg_warehouse",
+   "fieldtype": "Link",
+   "label": "FG Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "description": "QC-rejected baked bulk and FG are moved here.",
+   "fieldname": "rejected_warehouse",
+   "fieldtype": "Link",
+   "label": "Rejected Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "phase4_rules_section",
+   "fieldtype": "Section Break",
+   "label": "Filling & Inventory Rules"
+  },
+  {
+   "default": "5",
+   "description": "Filling wastage above this % of the run weight needs Production Manager approval.",
+   "fieldname": "filling_wastage_tolerance_pct",
+   "fieldtype": "Float",
+   "label": "Filling Wastage Tolerance (%)"
+  },
+  {
+   "fieldname": "phase4_rules_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "500",
+   "description": "An Inventory Adjustment deducting more than this many KG needs Plant Head approval.",
+   "fieldname": "adjustment_approval_kg",
+   "fieldtype": "Float",
+   "label": "Adjustment Approval Threshold (KG)"
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-09-26 10:00:00.000000",
+ "modified": "2026-10-05 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Production Settings",

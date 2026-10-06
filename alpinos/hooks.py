@@ -313,6 +313,17 @@ after_migrate = [
 	"alpinos.production.roles.setup_store_roles",
 	"alpinos.production.workspace.setup_store_page_access",
 	"alpinos.production.material_print_formats.execute",
+	# --- Phase 4+ (Execution / QC / Filling / Inventory / Dispatch / Reports) --------
+	# Fields first (Work Order / Item / Production Settings defaults), then the builders'
+	# own setups (each imported lazily and skipped when not deployed yet -- see
+	# alpinos.production.phase4_fields.run_builder_setups), then roles + permissions on
+	# whatever doctypes exist by then, then page access and the workspace shortcuts.
+	# (The new Execution Status values reach the Select through setup_work_order_fields
+	# above, which already re-runs every migrate.)
+	"alpinos.production.phase4_fields.setup_phase4_fields",
+	"alpinos.production.phase4_fields.run_builder_setups",
+	"alpinos.production.phase4_permissions.setup_phase4_permissions",
+	"alpinos.production.phase4_fields.setup_phase4_access",
 ]
 
 # Uninstallation
@@ -600,6 +611,10 @@ doc_events = {
 		"before_cancel": "alpinos.production.material_issue.se_before_cancel",
 		"on_cancel": "alpinos.production.material_issue.se_on_cancel",
 		"before_update_after_submit": "alpinos.production.material_issue.se_before_update_after_submit",
+		# Phase 4+ (appended): Production Transfer / Inventory Adjustment stock checks. The
+		# wrapper is a no-op until alpinos.production.inventory_rules exists, and the rule
+		# itself returns at once for entries it does not own.
+		"validate": "alpinos.production.phase4_hooks.stock_entry_validate",
 	},
 	# Production Material Requests (alpinos.production.material_request). Only an MR that
 	# carries custom_sub_production_order is touched; every other MR returns at once.
@@ -650,6 +665,9 @@ doc_events = {
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 			"alpinos.qty_flow.delivery_note_qty_remarks",
 			"alpinos.partial_dispatch.validate_delivery_note_partial",
+			# Phase 4+ (appended): VAL-DSP-02, only FG-Cleared batches may ship. No-op until
+			# alpinos.production.dispatch_rules exists.
+			"alpinos.production.phase4_hooks.delivery_note_validate",
 		],
 		"after_insert": "alpinos.workflow_engine.delivery_note_after_insert",
 		"on_submit": [
@@ -694,6 +712,10 @@ doc_events = {
 		# The guard has to speak before ERPNext looks at the document at all.
 		"before_validate": "alpinos.production.sub_order.block_manual_sub_order",
 		"on_trash": "alpinos.production.sub_order.block_manual_sub_order_delete",
+		# A Sub PO is submitted by Generate MR and cancelled with its Parent -- never from
+		# the standard Work Order form (see alpinos.production.sub_order_view).
+		"before_submit": "alpinos.production.sub_order_view.block_manual_sub_order_submit",
+		"before_cancel": "alpinos.production.sub_order_view.block_manual_sub_order_cancel",
 	},
 	# A master that an open sub order points at is frozen while that work is outstanding
 	# (see alpinos.production.guards).

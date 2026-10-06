@@ -1,0 +1,56 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "oven",
+  "no_of_batches",
+  "time_mins",
+  "temp_c"
+ ],
+ "fields": [
+  {
+   "fieldname": "oven",
+   "fieldtype": "Link",
+   "label": "Oven No.",
+   "options": "Machine",
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "no_of_batches",
+   "fieldtype": "Int",
+   "label": "No of Batch",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "time_mins",
+   "fieldtype": "Int",
+   "label": "Time (Mins)",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "temp_c",
+   "fieldtype": "Int",
+   "label": "Temp (°C)",
+   "in_list_view": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Process Inward Oven Row",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

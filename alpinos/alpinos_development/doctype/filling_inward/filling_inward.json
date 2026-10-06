@@ -1,0 +1,517 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "posting_date",
+  "shift",
+  "filling_plan",
+  "plan_row",
+  "col_1",
+  "filling_line",
+  "line_category",
+  "parent_po",
+  "sub_order",
+  "col_2",
+  "bulk_item",
+  "target_sku",
+  "size_kg",
+  "section_counts",
+  "planned_pcs",
+  "completed_before_pcs",
+  "pending_before_pcs",
+  "section_input",
+  "input_pcs",
+  "equivalent_kg",
+  "wastage_kg",
+  "col_3",
+  "submission_type",
+  "mark_run_complete",
+  "section_loss",
+  "available_wip_kg",
+  "filled_kg",
+  "col_4",
+  "process_loss_kg",
+  "process_loss_pct",
+  "col_5",
+  "written_off_pcs",
+  "residual_written_off_kg",
+  "section_line",
+  "mfg_date",
+  "rm_batch_ref",
+  "col_6",
+  "manpower_count",
+  "premix_code",
+  "section_approval",
+  "needs_approval",
+  "approval_status",
+  "col_7",
+  "approved_by",
+  "approved_on",
+  "approval_remarks",
+  "section_result",
+  "fg_batch",
+  "inward_seq",
+  "stock_entry",
+  "writeoff_entry",
+  "col_8",
+  "row_closed",
+  "closed_rows",
+  "prev_plan_status",
+  "sub_completed",
+  "prev_sub_status",
+  "reversal_reason",
+  "reversed_by",
+  "remarks",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "shift",
+   "fieldtype": "Data",
+   "label": "Shift",
+   "read_only": 1
+  },
+  {
+   "fieldname": "filling_plan",
+   "fieldtype": "Link",
+   "label": "Filling Plan",
+   "options": "Filling Plan",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "plan_row",
+   "fieldtype": "Data",
+   "label": "Plan Row",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "filling_line",
+   "fieldtype": "Link",
+   "label": "Filling Line",
+   "options": "Machine",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "line_category",
+   "fieldtype": "Link",
+   "label": "Filling Category",
+   "options": "Filling Process Category",
+   "read_only": 1
+  },
+  {
+   "fieldname": "parent_po",
+   "fieldtype": "Link",
+   "label": "Parent PO",
+   "options": "Production Order",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "sub_order",
+   "fieldtype": "Link",
+   "label": "Sub-PO",
+   "options": "Work Order",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bulk_item",
+   "fieldtype": "Link",
+   "label": "Baked Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_sku",
+   "fieldtype": "Link",
+   "label": "Target SKU",
+   "options": "Item",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "size_kg",
+   "fieldtype": "Float",
+   "label": "Size (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_counts",
+   "fieldtype": "Section Break",
+   "label": "Plan"
+  },
+  {
+   "fieldname": "planned_pcs",
+   "fieldtype": "Int",
+   "label": "Target Plan (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_before_pcs",
+   "fieldtype": "Int",
+   "label": "Completed Before (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pending_before_pcs",
+   "fieldtype": "Int",
+   "label": "Pending Before (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_input",
+   "fieldtype": "Section Break",
+   "label": "Today's Input"
+  },
+  {
+   "fieldname": "input_pcs",
+   "fieldtype": "Int",
+   "label": "Today's Input (Pcs)",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "equivalent_kg",
+   "fieldtype": "Float",
+   "label": "Equivalent (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "wastage_kg",
+   "fieldtype": "Float",
+   "label": "Filling Wastage (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "submission_type",
+   "fieldtype": "Select",
+   "label": "Submission Type",
+   "options": "Partial Inward\nFinal Inward",
+   "default": "Partial Inward",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "mark_run_complete",
+   "fieldtype": "Check",
+   "label": "Mark Run Complete"
+  },
+  {
+   "fieldname": "section_loss",
+   "fieldtype": "Section Break",
+   "label": "Process Loss"
+  },
+  {
+   "fieldname": "available_wip_kg",
+   "fieldtype": "Float",
+   "label": "Available WIP (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "filled_kg",
+   "fieldtype": "Float",
+   "label": "Actual Filled Weight (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "process_loss_kg",
+   "fieldtype": "Float",
+   "label": "Process Loss (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "process_loss_pct",
+   "fieldtype": "Percent",
+   "label": "Process Loss (%)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "written_off_pcs",
+   "fieldtype": "Int",
+   "label": "Written Off (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "residual_written_off_kg",
+   "fieldtype": "Float",
+   "label": "Residual WIP Written Off (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_line",
+   "fieldtype": "Section Break",
+   "label": "Line Details"
+  },
+  {
+   "fieldname": "mfg_date",
+   "fieldtype": "Date",
+   "label": "MFG Date"
+  },
+  {
+   "fieldname": "rm_batch_ref",
+   "fieldtype": "Data",
+   "label": "RM Batch Tracking"
+  },
+  {
+   "fieldname": "col_6",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "manpower_count",
+   "fieldtype": "Int",
+   "label": "Manpower"
+  },
+  {
+   "fieldname": "premix_code",
+   "fieldtype": "Data",
+   "label": "Pre-Mix Code"
+  },
+  {
+   "fieldname": "section_approval",
+   "fieldtype": "Section Break",
+   "label": "Wastage Approval"
+  },
+  {
+   "fieldname": "needs_approval",
+   "fieldtype": "Check",
+   "label": "Needs Approval",
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approval_status",
+   "fieldtype": "Select",
+   "label": "Approval Status",
+   "options": "\nNot Required\nPending\nApproved",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_7",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approval_remarks",
+   "fieldtype": "Small Text",
+   "label": "Approval Remarks",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_result",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "fg_batch",
+   "fieldtype": "Link",
+   "label": "FG Batch Code",
+   "options": "Batch",
+   "in_list_view": 1,
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "inward_seq",
+   "fieldtype": "Int",
+   "label": "Inward Sequence",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "writeoff_entry",
+   "fieldtype": "Link",
+   "label": "Write-off Entry",
+   "options": "Stock Entry",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_8",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "row_closed",
+   "fieldtype": "Check",
+   "label": "Closed The Row",
+   "hidden": 1,
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "closed_rows",
+   "fieldtype": "Small Text",
+   "label": "Rows Closed By Run Complete",
+   "hidden": 1,
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "prev_plan_status",
+   "fieldtype": "Data",
+   "label": "Previous Plan Status",
+   "hidden": 1,
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "sub_completed",
+   "fieldtype": "Check",
+   "label": "Completed The Sub PO",
+   "hidden": 1,
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "prev_sub_status",
+   "fieldtype": "Data",
+   "label": "Previous Sub PO Status",
+   "hidden": 1,
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "reversal_reason",
+   "fieldtype": "Small Text",
+   "label": "Reversal Reason",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "reversed_by",
+   "fieldtype": "Link",
+   "label": "Reversed By",
+   "options": "User",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Filling Inward",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-04 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Filling Inward",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "FIN-.YYYY.-.#####",
+ "naming_rule": "Expression (old style)"
+}

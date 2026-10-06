@@ -123,6 +123,14 @@ var ProductionOrderEntry = class {
 		this._ctl('.field-qty-kg', {
 			fieldname: 'production_qty_kg', label: __('Production Quantity (KG)'),
 			fieldtype: 'Float', precision: 3, reqd: 1,
+			change() {
+				// Only a real change recalculates: loading a saved order sets the same value
+				// and must not overwrite a Total Required Qty the planner typed.
+				const q = flt(this.get_value());
+				if (me._qty_seen === q) return;
+				me._qty_seen = q;
+				me.apply_batches(true);
+			},
 		});
 		this._ctl('.field-qty-pcs', {
 			fieldname: 'production_qty_pcs', label: __('Production Quantity (PCS)'), fieldtype: 'Int',
@@ -138,18 +146,20 @@ var ProductionOrderEntry = class {
 
 		this._ctl('.field-total-batches', {
 			fieldname: 'total_batches', label: __('Total Batches'), fieldtype: 'Float', precision: 3,
+			read_only: 1,
+			description: __('Production Quantity (KG) ÷ {0} KG per batch.', [flt(this.ctx && this.ctx.standard_batch_size_kg) || 50]),
 		});
 		this._ctl('.field-total-rm', {
 			fieldname: 'total_rm_requirement', label: __('Total RM Requirement'),
-			fieldtype: 'Float', precision: 3,
+			fieldtype: 'Float', precision: 3, read_only: 1,
 		});
 		this._ctl('.field-total-additive', {
 			fieldname: 'total_additive_requirement', label: __('Total Additive Requirement'),
-			fieldtype: 'Float', precision: 3,
+			fieldtype: 'Float', precision: 3, read_only: 1,
 		});
 		this._ctl('.field-total-material', {
 			fieldname: 'total_material_requirement', label: __('Total Material Requirement'),
-			fieldtype: 'Float', precision: 3,
+			fieldtype: 'Float', precision: 3, read_only: 1,
 		});
 		this._ctl('.field-remarks', {
 			fieldname: 'remarks', label: __('Remarks'), fieldtype: 'Small Text',
@@ -201,6 +211,7 @@ var ProductionOrderEntry = class {
 		this.docname = null;
 		this.doc = null;
 		this.rows = [];
+		this._qty_seen = 0;
 		['po_id', 'client_name', 'batch_number', 'delivery_date', 'fg_item', 'fg_item_name',
 			'bom_no', 'uom', 'remarks'].forEach((f) => this._set(f, ''));
 		['production_qty_kg', 'production_qty_pcs', 'total_batches', 'total_rm_requirement',
@@ -244,6 +255,7 @@ var ProductionOrderEntry = class {
 	}
 
 	fill(doc) {
+		this._qty_seen = flt(doc.production_qty_kg);
 		this._set('po_id', doc.name);
 		['creation_date', 'production_type', 'batch_number', 'delivery_date', 'status',
 			'fg_item', 'fg_item_name', 'bom_no', 'production_qty_kg', 'production_qty_pcs',
@@ -355,9 +367,36 @@ var ProductionOrderEntry = class {
 					standard_qty: flt(row.standard_qty),
 					total_required_qty: saved ? flt(row.total_required_qty) : 0,
 				}));
+				if (!saved) me.apply_batches(false);
 				me.render_materials();
 			},
 		});
+	}
+
+	// Batch calculation (BA, 2026-10-05): one batch = Standard Batch Size (50 KG) of FG.
+	// Total Batches = Production Qty (KG) / batch size; each row = its BOM qty x batches.
+	// The same rule runs on the server (ProductionOrder._apply_batches).
+	apply_batches(render) {
+		const size = flt(this.ctx && this.ctx.standard_batch_size_kg) || 50;
+		const batches = flt(this._val('production_qty_kg')) / size;
+		this._set('total_batches', flt(batches, 3));
+		(this.rows || []).forEach((row) => {
+			row.total_required_qty = flt(flt(row.standard_qty) * batches, 3);
+		});
+		if (render) this.render_materials();
+		this.update_totals();
+	}
+
+	update_totals() {
+		let rm = 0, additive = 0;
+		(this.rows || []).forEach((row) => {
+			if (row.material_type === 'RM') rm += flt(row.total_required_qty);
+			else if (row.material_type === 'Additive') additive += flt(row.total_required_qty);
+		});
+		this._set('total_rm_requirement', flt(rm, 3));
+		this._set('total_additive_requirement', flt(additive, 3));
+		// RM + Additive only: PM is counted in pieces, not KG.
+		this._set('total_material_requirement', flt(rm + additive, 3));
 	}
 
 	render_materials() {
@@ -415,7 +454,7 @@ var ProductionOrderEntry = class {
 				df: {
 					fieldname: `required_${idx}`, fieldtype: 'Float', precision: 3,
 					read_only: locked ? 1 : 0,
-					change() { me.rows[idx].total_required_qty = flt(this.get_value()); },
+					change() { me.rows[idx].total_required_qty = flt(this.get_value()); me.update_totals(); },
 				},
 				parent: parent,
 				render_input: true,
@@ -451,7 +490,7 @@ var ProductionOrderEntry = class {
 		html += '</tbody></table>';
 		$out.html(html);
 		$out.find('.po-sub-row').on('click', function () {
-			frappe.set_route('Form', 'Work Order', $(this).attr('data-sub'));
+			frappe.set_route('sub_order_view', $(this).attr('data-sub'));
 		});
 	}
 
@@ -690,7 +729,11 @@ var ProductionOrderEntry = class {
 					freeze_message: __('Submitting...'),
 					callback(r) {
 						if (!r.message) return;
-						me._toast(__('Sent for approval'), 'blue');
+						if (r.message.status === 'Approved') {
+							me._toast(__('Approved. The sub order has been created.'), 'green');
+						} else {
+							me._toast(__('Sent for approval'), 'blue');
+						}
 						me.refresh_context();
 					},
 				});

@@ -56,6 +56,7 @@ class ProductionOrder(Document):
 		self._validate_fg_item()
 		self._validate_dates()
 		self._apply_bom()
+		self._apply_batches()
 		self._validate_rows()
 
 	# ------------------------------------------------- the workflow fields
@@ -242,6 +243,33 @@ class ProductionOrder(Document):
 				"total_required_qty": 0,
 			})
 
+	def _apply_batches(self):
+		"""Batch calculation (BA, 2026-10-05: one batch = Standard Batch Size, 50 KG).
+
+		Total Batches = Production Quantity (KG) / batch size, kept as a decimal -- no
+		rounding up (default pending BA confirmation). A row's Total Required Qty = its BOM
+		qty (one batch) x Total Batches, filled only where it is still 0, so a quantity the
+		planner typed over it is kept; the entry screen recalculates every row when the
+		quantity changes. The totals are always derived from the rows.
+		"""
+		from alpinos.production import production_settings as PS
+
+		size = PS.standard_batch_size_kg()
+		batches = flt(self.production_qty_kg) / size if size else 0
+		self.total_batches = flt(batches, 3)
+		rm = additive = 0.0
+		for row in self.get("items") or []:
+			if not flt(row.total_required_qty) and batches:
+				row.total_required_qty = flt(flt(row.standard_qty) * batches, 3)
+			if row.material_type == C.BOM_MATERIAL_RM:
+				rm += flt(row.total_required_qty)
+			elif row.material_type == C.BOM_MATERIAL_ADDITIVE:
+				additive += flt(row.total_required_qty)
+		self.total_rm_requirement = flt(rm, 3)
+		self.total_additive_requirement = flt(additive, 3)
+		# RM + Additive only: PM is counted in pieces, not KG.
+		self.total_material_requirement = flt(rm + additive, 3)
+
 	def _validate_rows(self):
 		"""Task 5: Total Required Qty must be at least zero."""
 		for row in self.get("items") or []:
@@ -270,12 +298,13 @@ class ProductionOrder(Document):
 	# screen and save_production_order both read.
 
 	def submit_for_approval(self):
-		"""Draft or Rejected -> Pending Approval.
+		"""Draft or Rejected -> Pending Approval, or straight to Approved for an approver.
 
-		Whether a Manager's own submit should skip straight to Approved is still open, so it
-		does not: everyone lands on Pending Approval and a Manager approves from there. That
-		is the reversible half of the choice -- adding a skip later changes one branch,
-		whereas having skipped wrongly would mean orders approved by nobody.
+		FRD Step 2: "If the user is an Operator, the status changes to Pending Approval. If
+		the user is an Admin/Manager, it instantly becomes Approved." So an approver's own
+		submit runs the normal approve() at once -- same checks, same Sub PO creation, same
+		stamps. If that approval cannot complete (a draft BOM, no FG warehouse) the order is
+		left Pending Approval and the reason is shown, rather than the submit failing.
 		"""
 		self.check_permission("submit")
 		if self.status not in (C.PO_DRAFT, C.PO_REJECTED):
@@ -290,6 +319,24 @@ class ProductionOrder(Document):
 			             title=_("No Materials"))
 		# Cleared so a re-submitted order does not carry the last refusal around with it.
 		self._set_workflow_status(C.PO_PENDING_APPROVAL, rejection_reason=None)
+
+		if self._user_may_approve():
+			frappe.db.savepoint("alpinos_auto_approve")
+			try:
+				self.approve()
+			except frappe.ValidationError as e:
+				frappe.db.rollback(save_point="alpinos_auto_approve")
+				self.reload()
+				# The original error dialog would show alongside the explanation below.
+				if frappe.local.message_log:
+					frappe.local.message_log.pop()
+				frappe.msgprint(
+					_("{0} was sent for approval but could not be approved automatically: {1}").format(
+						self.name, frappe.utils.strip_html(str(e))
+					),
+					title=_("Pending Approval"),
+					indicator="orange",
+				)
 		return self.status
 
 	def _set_workflow_status(self, status, **stamps):

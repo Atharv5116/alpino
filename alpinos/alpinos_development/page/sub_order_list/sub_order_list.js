@@ -298,7 +298,7 @@ var SubOrderList = class {
 	bind_row_actions() {
 		const me = this;
 		this.wrapper.on('click', '.so-id:not(.so-parent)', function () {
-			frappe.set_route('Form', 'Work Order', $(this).attr('data-name'));
+			frappe.set_route('sub_order_view', $(this).attr('data-name'));
 		});
 		this.wrapper.on('click', '.so-parent', function (e) {
 			e.stopPropagation();

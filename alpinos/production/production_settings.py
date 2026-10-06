@@ -7,7 +7,7 @@ disagree about it.
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 SETTINGS = "Production Settings"
 
@@ -97,3 +97,61 @@ def usable_warehouses(company=None):
 			continue
 		out.append(row.name)
 	return out
+
+
+# --- Phase 4+ (Execution / Filling / Inventory), appended ----------------------------
+
+DEFAULT_WASTAGE_TOLERANCE_PCT = 5.0
+DEFAULT_ADJUSTMENT_APPROVAL_KG = 500.0
+
+
+def _required(fieldname, label):
+	warehouse = _value(fieldname)
+	if not warehouse:
+		frappe.throw(_("Set the {0} in Production Settings.").format(_(label)),
+		             title=_("{0} Not Set").format(_(label)))
+	return warehouse
+
+
+def baked_wip_warehouse():
+	"""Where approved baked bulk waits for Filling. Falls back to the WIP warehouse."""
+	return _value("baked_wip_warehouse") or wip_warehouse()
+
+
+def fg_hold_warehouse():
+	"""Filled FG before Final QC clears it."""
+	return _required("fg_hold_warehouse", "FG Hold Warehouse")
+
+
+def fg_warehouse():
+	"""FG-Cleared stock (available for dispatch)."""
+	return _required("fg_warehouse", "FG Warehouse")
+
+
+def rejected_warehouse():
+	"""QC-rejected baked bulk and FG."""
+	return _required("rejected_warehouse", "Rejected Warehouse")
+
+
+def wastage_tolerance_pct():
+	"""Filling wastage above this % of the run weight needs approval. Blank = 5."""
+	value = _value("filling_wastage_tolerance_pct")
+	return flt(value) if value not in (None, "") else DEFAULT_WASTAGE_TOLERANCE_PCT
+
+
+#: BA answer (2026-10-05): one batch = 50 KG of finished product.
+DEFAULT_STANDARD_BATCH_SIZE_KG = 50.0
+
+
+def standard_batch_size_kg():
+	"""KG one BOM batch makes. Blank = 50."""
+	if not _installed():
+		return DEFAULT_STANDARD_BATCH_SIZE_KG
+	value = _value("standard_batch_size_kg")
+	return flt(value) if value not in (None, "") and flt(value) > 0 else DEFAULT_STANDARD_BATCH_SIZE_KG
+
+
+def adjustment_approval_kg():
+	"""Deduct adjustments above this many KG need Plant Head approval. Blank = 500."""
+	value = _value("adjustment_approval_kg")
+	return flt(value) if value not in (None, "") else DEFAULT_ADJUSTMENT_APPROVAL_KG

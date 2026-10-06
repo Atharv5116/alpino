@@ -1,0 +1,140 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "target_sku",
+  "sku_name",
+  "size_kg",
+  "planned_pcs",
+  "equivalent_kg",
+  "available_pm_stock",
+  "completed_pcs",
+  "pending_pcs",
+  "written_off_pcs",
+  "rerouted_pcs",
+  "consumed_kg",
+  "filled_kg",
+  "wastage_kg",
+  "row_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "target_sku",
+   "fieldtype": "Link",
+   "label": "Target SKU",
+   "options": "Item",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sku_name",
+   "fieldtype": "Data",
+   "label": "SKU Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "size_kg",
+   "fieldtype": "Float",
+   "label": "Size (KG)",
+   "precision": "3",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "planned_pcs",
+   "fieldtype": "Int",
+   "label": "Planned Qty (Pcs)",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "equivalent_kg",
+   "fieldtype": "Float",
+   "label": "Equivalent Weight (KG)",
+   "precision": "3",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "available_pm_stock",
+   "fieldtype": "Float",
+   "label": "Available PM Stock (Pcs)",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_pcs",
+   "fieldtype": "Int",
+   "label": "Completed (Pcs)",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "pending_pcs",
+   "fieldtype": "Int",
+   "label": "Pending (Pcs)",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "written_off_pcs",
+   "fieldtype": "Int",
+   "label": "Written Off (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rerouted_pcs",
+   "fieldtype": "Int",
+   "label": "Re-Routed (Pcs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consumed_kg",
+   "fieldtype": "Float",
+   "label": "Consumed WIP (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "filled_kg",
+   "fieldtype": "Float",
+   "label": "Filled (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "wastage_kg",
+   "fieldtype": "Float",
+   "label": "Wastage (KG)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "row_status",
+   "fieldtype": "Select",
+   "label": "Row Status",
+   "options": "Open\nClosed",
+   "default": "Open",
+   "in_list_view": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-04 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Filling Plan Row",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

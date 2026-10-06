@@ -1,0 +1,279 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-04 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "process_inward",
+  "production_run",
+  "sub_order",
+  "machine_run",
+  "member_sub_orders",
+  "parent_production_order",
+  "col_1",
+  "process_master",
+  "production_item",
+  "item_name",
+  "batch_number",
+  "col_2",
+  "total_baked_output_kg",
+  "inspector",
+  "inspection_date",
+  "section_1",
+  "observations",
+  "section_2",
+  "approved_kg",
+  "col_3",
+  "approval_remarks",
+  "section_3",
+  "rejected_kg",
+  "rejection_reason",
+  "col_4",
+  "rejection_remarks",
+  "section_4",
+  "status",
+  "stock_entries",
+  "col_5",
+  "submitted_on",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "process_inward",
+   "fieldtype": "Link",
+   "label": "Process Inward",
+   "options": "Process Inward",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "production_run",
+   "fieldtype": "Link",
+   "label": "Production Run",
+   "options": "Production Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sub_order",
+   "fieldtype": "Link",
+   "label": "Sub PO",
+   "options": "Work Order",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "machine_run",
+   "fieldtype": "Link",
+   "label": "Machine Run",
+   "options": "Machine Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "member_sub_orders",
+   "fieldtype": "Small Text",
+   "label": "Sub POs In This Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "parent_production_order",
+   "fieldtype": "Link",
+   "label": "Parent Production Order",
+   "options": "Production Order",
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "process_master",
+   "fieldtype": "Link",
+   "label": "Process",
+   "options": "Process Master",
+   "read_only": 1
+  },
+  {
+   "fieldname": "production_item",
+   "fieldtype": "Link",
+   "label": "Product / SKU",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Product Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "batch_number",
+   "fieldtype": "Data",
+   "label": "Batch Code / UID",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_baked_output_kg",
+   "fieldtype": "Float",
+   "label": "Total Baked Output (KG)",
+   "precision": "3",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "inspector",
+   "fieldtype": "Link",
+   "label": "QC Inspector",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "inspection_date",
+   "fieldtype": "Date",
+   "label": "Inspection Date",
+   "default": "Today"
+  },
+  {
+   "fieldname": "section_1",
+   "fieldtype": "Section Break",
+   "label": "Inspection"
+  },
+  {
+   "fieldname": "observations",
+   "fieldtype": "Small Text",
+   "label": "Observations / Test Results"
+  },
+  {
+   "fieldname": "section_2",
+   "fieldtype": "Section Break",
+   "label": "QC Approval"
+  },
+  {
+   "fieldname": "approved_kg",
+   "fieldtype": "Float",
+   "label": "Approved Qty (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approval_remarks",
+   "fieldtype": "Small Text",
+   "label": "Approval Remarks"
+  },
+  {
+   "fieldname": "section_3",
+   "fieldtype": "Section Break",
+   "label": "QC Rejection"
+  },
+  {
+   "fieldname": "rejected_kg",
+   "fieldtype": "Float",
+   "label": "Rejected Qty (KG)",
+   "precision": "3"
+  },
+  {
+   "fieldname": "rejection_reason",
+   "fieldtype": "Select",
+   "label": "Rejection Reason",
+   "options": "\nOverbaked\nUnderbaked\nContaminated\nOther"
+  },
+  {
+   "fieldname": "col_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "rejection_remarks",
+   "fieldtype": "Small Text",
+   "label": "Rejection Remarks"
+  },
+  {
+   "fieldname": "section_4",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nSent For Filling\nQC Rejected",
+   "default": "Draft",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "stock_entries",
+   "fieldtype": "Small Text",
+   "label": "Rejection Stock Entries",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "submitted_on",
+   "fieldtype": "Datetime",
+   "label": "Sent On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Production QC",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Production QC",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 0
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "autoname": "PQCP-.YYYY.-.#####",
+ "naming_rule": "Expression (old style)",
+ "search_fields": "sub_order,batch_number,process_inward"
+}

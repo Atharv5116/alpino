@@ -260,13 +260,14 @@ var StorePlanningBoard = class {
 							<a class="spb-eye" data-name="${this.esc(r.name)}" title="${__('Stock')}" style="margin-left:4px;cursor:pointer;">&#128065;</a></span>
 					</div>
 					<div>${this.esc(r.item_name || r.production_item)}</div>
+					${cint(r.next_stage) ? `<div><span class="indicator-pill blue">${__('Next')}: ${this.esc(r.next_process_label || r.next_process || '')}</span></div>` : ''}
 					<div class="spb-sub">${this.esc(r.parent)}${r.production_type ? ' &middot; ' + this.esc(r.production_type) : ''}</div>
 					<div class="spb-sub">${__('Start')}: ${this.esc(this.date_user(r.planned_start_date))}
 						&middot; ${__('Delivery')}: ${this.esc(this.date_user(r.expected_delivery_date))}</div>
 					<div class="spb-mini-wrap" style="display:none;"></div>
 					<div class="spb-un-actions">
 						${canPlan ? `<button class="btn btn-xs btn-default spb-plan" data-name="${this.esc(r.name)}">${__('Plan')}</button>` : ''}
-						${canSplit ? `<button class="btn btn-xs btn-default spb-split" data-name="${this.esc(r.name)}">${__('Split')}</button>` : ''}
+						${canSplit && !cint(r.next_stage) ? `<button class="btn btn-xs btn-default spb-split" data-name="${this.esc(r.name)}">${__('Split')}</button>` : ''}
 						<button class="btn btn-xs btn-default spb-open" data-name="${this.esc(r.name)}">${__('Open')}</button>
 					</div>
 				</div>`);
@@ -329,7 +330,8 @@ var StorePlanningBoard = class {
 		const locked = cint(c.plan_locked);
 		const short = cint(c.has_stock_rows) && !cint(c.stock_ok);
 		const selectable = cint(this.data.can_plan) && c.execution_status === 'Assigned' && !locked && !c.material_request;
-		const draggable = cint(this.data.can_plan) && c.execution_status === 'Assigned' && !locked;
+		const nextStage = c.execution_status === 'Ready for Next Stage';
+		const draggable = cint(this.data.can_plan) && ((c.execution_status === 'Assigned' && !locked) || nextStage);
 		const icons = [];
 		if (cint(c.has_stock_rows)) {
 			icons.push(short
@@ -390,7 +392,7 @@ var StorePlanningBoard = class {
 		});
 		w.on('click', '.spb-open', function (e) {
 			e.stopPropagation();
-			frappe.set_route('Form', 'Work Order', $(this).attr('data-name'));
+			frappe.set_route('sub_order_view', $(this).attr('data-name'));
 		});
 		w.on('click', '.spb-open-summary', function (e) {
 			e.stopPropagation();
@@ -482,7 +484,7 @@ var StorePlanningBoard = class {
 		const c = this.card(payload.name);
 		if (!c) return;
 		if (c.planned_date === date) return;
-		if (cint(c.plan_locked) || c.material_request || c.execution_status !== 'Assigned') {
+		if (c.execution_status !== 'Ready for Next Stage' && (cint(c.plan_locked) || c.material_request || c.execution_status !== 'Assigned')) {
 			this.warn(__('An MR exists for this sub order; cancel it before re-planning.'), __('Planning Is Locked'));
 			return;
 		}
@@ -668,7 +670,7 @@ var StorePlanningBoard = class {
 			{ fieldtype: 'HTML', fieldname: 'merge_html' },
 		);
 
-		const canCancel = ctx && ctx.execution_status === 'Assigned';
+		const canCancel = ctx && (ctx.execution_status === 'Assigned' || (ctx.execution_status === 'Ready for Next Stage' && ctx.default_process && ctx.planned_date));
 		const d = new frappe.ui.Dialog({
 			title: ctx ? __('Process Assignment — {0}', [ctx.sub_order]) : __('Process Assignment'),
 			size: 'large',
@@ -902,7 +904,7 @@ var StorePlanningBoard = class {
 				window.open(`/printview?doctype=Work%20Order&name=${encodeURIComponent(s.sub_order)}`
 					+ `&format=${encodeURIComponent('Sub PO Job Card')}&no_letterhead=0`, '_blank');
 			});
-			$b.on('click', '.spb-s-open', () => { d.hide(); frappe.set_route('Form', 'Work Order', s.sub_order); });
+			$b.on('click', '.spb-s-open', () => { d.hide(); frappe.set_route('sub_order_view', s.sub_order); });
 			d.show();
 		});
 	}
