@@ -359,6 +359,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		let container = page.main.find('#tables-container');
 		container.empty();
 
+		// Changes(HP) #55: the FSN rides under the SKU, but only for Flipkart -- every other
+		// customer type would just be reading a number that means nothing to them.
+		const this_is_flipkart = cint(data.is_flipkart);
+
 		let groups = {
 			"Items": [],
 			"Scheme Table": [],
@@ -382,11 +386,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<thead>
 						<tr>
 							<th>SR.</th>
-							<th>SKU</th>
+							<th class="col-sku">SKU</th>
 							<th>SKU NO</th>
-							<th>ORDERED QTY</th>
-							<th>PICKED QTY</th>
-							<th>BOX</th>
+							<th class="col-qty">ORDERED QTY</th>
+							<th class="col-qty">PICKED QTY</th>
+							<th class="col-box">BOX</th>
 							<th>BATCH CODE</th>
 							<th>MFG</th>
 							<th>EXP</th>
@@ -420,7 +424,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let row_html = `
 				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:rgba(124,58,237,0.08);"' : ''}>
 					<td>${idx + 1}</td>
-					<td data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}</td>
+					<td class="col-sku" data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}${this_is_flipkart && row.custom_fsn_no ? `<div class="sku-fsn">(FSN - ${frappe.utils.escape_html(row.custom_fsn_no)})</div>` : ''}</td>
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled}/></td>

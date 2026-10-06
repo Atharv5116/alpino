@@ -129,29 +129,51 @@ def get_on_leave_and_wfh_today():
 			"half_day_date": la.get("half_day_date"),
 		})
 
-	# On WFH today: Attendance, Work From Home, attendance_date = today
-	wfh_filters = [
-		["docstatus", "=", 1],
-		["attendance_date", "=", today],
-		["status", "=", "Work From Home"],
-	]
-	wfh_list = frappe.get_all(
+	# On WFH today. Changes(HP) HRMS #18: this read only Attendance rows with status
+	# "Work From Home", and an approved Work From Home Request does not become an Attendance
+	# until the day is marked -- normally after it has ended. So during the working day,
+	# which is the only time the panel is any use, it always said "No one on WFH today".
+	# The approved request is the source of truth for the day in progress; the Attendance
+	# row is the source for a day already marked, so both are read and merged.
+	seen, on_wfh = set(), []
+
+	def _add_wfh(employee, employee_name=None, source=None):
+		if not employee or employee in seen:
+			return
+		if allowed_employee_ids is not None and employee not in allowed_employee_ids:
+			return
+		seen.add(employee)
+		on_wfh.append({
+			"employee": employee,
+			"employee_name": employee_name
+			or frappe.db.get_value("Employee", employee, "employee_name"),
+			"attendance_date": str(today),
+			"source": source,
+		})
+
+	if frappe.db.exists("DocType", "Work From Home Request"):
+		for req in frappe.db.sql(
+			"""
+			SELECT employee, employee_name
+			FROM `tabWork From Home Request`
+			WHERE IFNULL(status, '') = 'Approved'
+				AND `date` <= %(today)s AND IFNULL(to_date, `date`) >= %(today)s
+			""",
+			{"today": today}, as_dict=True,
+		):
+			_add_wfh(req.get("employee"), req.get("employee_name"), "request")
+
+	for att in frappe.get_all(
 		"Attendance",
-		filters=wfh_filters,
+		filters=[
+			["docstatus", "=", 1],
+			["attendance_date", "=", today],
+			["status", "=", "Work From Home"],
+		],
 		fields=["employee", "employee_name", "attendance_date"],
 		ignore_permissions=True,
-	)
-	on_wfh = []
-	for att in wfh_list:
-		if allowed_employee_ids is not None and att.get("employee") not in allowed_employee_ids:
-			continue
-		# Attendance may not have employee_name in some versions
-		emp_name = att.get("employee_name") or frappe.db.get_value("Employee", att.get("employee"), "employee_name")
-		on_wfh.append({
-			"employee": att.get("employee"),
-			"employee_name": emp_name,
-			"attendance_date": str(att.get("attendance_date")) if att.get("attendance_date") else None,
-		})
+	):
+		_add_wfh(att.get("employee"), att.get("employee_name"), "attendance")
 
 	return {"allowed": True, "on_leave": on_leave, "on_wfh": on_wfh}
 

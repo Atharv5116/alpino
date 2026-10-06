@@ -479,16 +479,13 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
                     "Please use biometric device to checkin"
                 )
 
+        # Changes(HP) HRMS #14: "Other" was removed from the check-in reasons, and with it
+        # the free-text reason that only "Other" asked for. Refused here too, so a caller
+        # going straight at the endpoint cannot put it back.
         checkin_type = (checkin_type or "").strip()
-        if checkin_type not in ("Client/Vendor", "Shoot", "Meeting", "Other"):
+        if checkin_type not in ("Client/Vendor", "Shoot", "Meeting"):
             frappe.throw("Please select a valid check-in type.")
         values["custom_checkin_type"] = checkin_type
-        if checkin_type == "Other":
-            checkin_reason = (checkin_reason or "").strip()
-            if not checkin_reason:
-                frappe.throw("A reason is required when the check-in type is 'Other'.")
-            _validate_letters_only(checkin_reason, "Reason")
-            values["custom_checkin_reason"] = checkin_reason
 
     doc = frappe.get_doc(values)
     doc.insert()

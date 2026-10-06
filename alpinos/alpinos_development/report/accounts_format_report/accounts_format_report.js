@@ -20,6 +20,11 @@ frappe.query_reports["Accounts Format Report"] = {
 			fieldtype: "Data",
 		},
 		{
+			fieldname: "invoice_no",
+			label: "Invoice No.",
+			fieldtype: "Data",
+		},
+		{
 			fieldname: "customer",
 			label: "Customer",
 			fieldtype: "Link",

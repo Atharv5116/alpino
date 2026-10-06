@@ -1279,3 +1279,91 @@
 .alpinos-readonly .btn-clear {
 	display: none !important;
 }
+
+/* ----------------------------------------------------------------------------
+   8. SALES ORDER ON A PHONE
+   "Buyer Master & Sales Order - Required Changes" (03-10-2026), section 22.
+
+   The requirement is explicit that the Sales Order must not merely open on a phone
+   but be usable to fill: no cut-off labels, touch-sized inputs, readable item tables,
+   reachable action buttons, and validation messages visible beside the field they
+   belong to. These rules sit on top of the breakpoints above and target only the
+   Sales Order pages.
+   ---------------------------------------------------------------------------- */
+
+@media (max-width: 768px) {
+  :is(
+    [data-page-route="sales-order-entry"],
+    [data-page-route="sales-order-entry-view"],
+    [data-page-route="ecom-sales-order-entry"]
+  ) {
+    /* A label that wraps is readable; one that is clipped is not. */
+    .control-label,
+    .so-view-kv td:first-child,
+    .alp-section-title {
+      white-space: normal !important;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+
+    /* Touch targets. 38px is the smallest a thumb lands on reliably. */
+    input.form-control,
+    select.form-control,
+    textarea.form-control,
+    .awesomplete input,
+    .btn {
+      min-height: 38px !important;
+      font-size: 15px !important;   /* 16px-ish stops iOS zooming on focus */
+    }
+
+    /* The item grid scrolls sideways rather than squeezing every column to nothing,
+       and the SKU stays put so a row never loses its identity mid-scroll. */
+    .so-items-wrapper,
+    .eso-items-wrapper,
+    .so-view-table-wrap,
+    .v-activity-trail-wrap,
+    .v-previous-orders-wrap {
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch;
+    }
+    .so-items-wrapper table th:first-child,
+    .so-items-wrapper table td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: var(--card-bg, #fff);
+    }
+
+    /* The commercial cells people actually type into stay wide enough to read. */
+    .so-items-wrapper table :is(th, td) {
+      min-width: 92px;
+      white-space: nowrap;
+    }
+
+    /* Action bar wraps instead of pushing Submit off the edge. */
+    .page-actions,
+    .custom-actions {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 6px;
+    }
+    .page-actions .btn,
+    .custom-actions .btn {
+      flex: 0 1 auto;
+    }
+
+    /* A validation message belongs beside its field, not off-screen. */
+    .form-group .help-box,
+    .form-group .invalid-feedback,
+    .has-error .help-block {
+      white-space: normal !important;
+      font-size: 12px;
+    }
+
+    /* The two sections from 16-21 are part of the page, so they get the same treatment. */
+    :is(.sec-activity-trail, .sec-previous-orders) table :is(th, td) {
+      font-size: 12px;
+      padding: 6px 8px !important;
+    }
+  }
+}

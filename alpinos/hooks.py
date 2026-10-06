@@ -215,6 +215,7 @@ after_migrate = [
 	"alpinos.attendance_request_workflow_setup.execute",
 	"alpinos.salary_category_setup.seed_salary_categories",
 	"alpinos.buyer_assignment.setup_assignment_roles",
+	"alpinos.sales_order_authority.setup_sales_officer_permissions",
 	"alpinos.attendance_batch_workflow_setup.execute",
 	"alpinos.leave_application_custom_fields.setup_leave_application_custom_fields",
 	"alpinos.work_from_home_custom_fields.setup_work_from_home_custom_fields",
@@ -362,7 +363,11 @@ after_migrate = [
 # Query conditions are ANDed; the channel has_permission hooks only ever deny, so the
 # assigned-visibility hooks listed before them still decide everything else.
 permission_query_conditions = {
-	"Sales Order": "alpinos.channel_access.sales_order_query_conditions",
+	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_query_conditions",
+	"Sales Order": [
+		"alpinos.channel_access.sales_order_query_conditions",
+		"alpinos.buyer_assignment_visibility.sales_order_query_conditions",
+	],
 	"Pick List": [
 		"alpinos.assigned_visibility.pick_list_query_conditions",
 		"alpinos.channel_access.pick_list_query_conditions",
@@ -375,7 +380,12 @@ permission_query_conditions = {
 }
 
 has_permission = {
-	"Sales Order": "alpinos.channel_access.sales_order_has_permission",
+	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_has_permission",
+	"Sales Order": [
+		"alpinos.channel_access.sales_order_has_permission",
+		"alpinos.buyer_assignment_visibility.sales_order_has_permission",
+		"alpinos.sales_order_authority.sales_order_has_permission",
+	],
 	"Pick List": [
 		"alpinos.assigned_visibility.pick_list_has_permission",
 		"alpinos.channel_access.pick_list_has_permission",
@@ -558,7 +568,11 @@ doc_events = {
 	"Leave Application": {
 		# Alpino works a full Saturday, so it cannot be halved -- the same rule Work From
 		# Home Request already carries.
-		"validate": "alpinos.leave_application_rules.block_saturday_half_day",
+		"validate": [
+			"alpinos.leave_application_rules.block_saturday_half_day",
+			# HRMS #16: a day is either Leave or Work From Home, never both.
+			"alpinos.wfh_leave_exclusion.block_leave_when_wfh_exists",
+		],
 		"on_update": "alpinos.raven_notifications.notify_leave_application",
 		"on_submit": "alpinos.raven_notifications.notify_leave_application"
 	},
@@ -661,6 +675,7 @@ doc_events = {
 	"Delivery Note": {
 		"before_validate": "alpinos.delivery_note_hooks.strip_non_batch_item_batches",
 		"validate": [
+			"alpinos.lr_number.normalise_delivery_note_lr",
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 			"alpinos.qty_flow.delivery_note_qty_remarks",
@@ -738,6 +753,8 @@ doc_events = {
 		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",
 	},
 	"Sales Order": {
+		"after_insert": "alpinos.sales_order_trail.record_creation",
+		"on_update": "alpinos.sales_order_trail.record_changes",
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
@@ -748,7 +765,10 @@ doc_events = {
 			"alpinos.workflow_engine.sales_order_validate",
 			"alpinos.qty_flow.sales_order_qty_remarks",
 		],
-		"on_submit": "alpinos.workflow_engine.sales_order_on_submit",
+		"on_submit": [
+			"alpinos.workflow_engine.sales_order_on_submit",
+			"alpinos.sales_order_trail.record_submission",
+		],
 		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",
 		"before_update_after_submit": "alpinos.ecom_sales_order_api.validate_po_expiry_terminal_lock",
 	},
@@ -789,11 +809,13 @@ doc_events = {
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
 			"alpinos.work_from_home_request_automation.block_saturday_half_day",
+			"alpinos.wfh_leave_exclusion.block_wfh_when_leave_exists",
 		],
 		"before_save": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
 			"alpinos.work_from_home_request_automation.block_saturday_half_day",
+			"alpinos.wfh_leave_exclusion.block_wfh_when_leave_exists",
 		],
 		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},

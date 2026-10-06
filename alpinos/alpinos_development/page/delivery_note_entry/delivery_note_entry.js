@@ -110,6 +110,33 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 		$main.find('[data-fieldname="custom_invoice_no"]').val(data.custom_invoice_no || '');
 		$main.find('[data-fieldname="pick_list_name"]').val(data.pick_list_name || '');
 		$main.find('[data-fieldname="custom_lr_gr_no"]').val(data.custom_lr_gr_no || '');
+		// Changes(HP) #52: a barcode scanner is a keyboard -- it types the number then sends
+		// Enter, and some models wrap the payload in control characters. Swallow the Enter so
+		// the page does not act on it, and clean what lands in the field. The same cleaning
+		// runs on the server, which is what covers the bulk update and the LR Excel.
+		(function setup_lr_scanning() {
+			const $lr = $main.find('[data-fieldname="custom_lr_gr_no"]');
+			if (!$lr.length || $lr.data('scan-ready')) return;
+			$lr.data('scan-ready', 1);
+			$lr.attr('placeholder', __('Type or scan the LR number'));
+			$lr.attr('autocomplete', 'off');
+			const clean = (v) =>
+				String(v || '')
+					// eslint-disable-next-line no-control-regex
+					.replace(/[\x00-\x1f\x7f\u200b-\u200f\ufeff]/g, '')
+					.replace(/\s+/g, ' ')
+					.trim();
+			$lr.on('keydown', (e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					$lr.val(clean($lr.val())).trigger('change');
+					$lr.blur();
+				}
+			});
+			$lr.on('paste input', () => {
+				setTimeout(() => $lr.val(clean($lr.val())), 0);
+			});
+		})();
 		$main.find('[data-fieldname="custom_dispatch_from"]').val(data.custom_dispatch_from || '');
 		$main.find('[data-fieldname="custom_dn_so_customer_name"]').val(data.custom_dn_so_customer_name || '');
 		$main.find('[data-fieldname="custom_transporter_name"]').val(data.custom_transporter_name || '');
