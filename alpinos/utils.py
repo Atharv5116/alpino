@@ -224,20 +224,38 @@ def available_stock(item_code):
 
 
 def site_buyer_master(site_name, fallback=None):
-	"""Buyer Master that owns the given site's Buyer Address row; falls back to `fallback`."""
+	"""The Buyer Master that owns this site, WITHIN the order's own buyer family.
+
+	The site is resolved inside the family of `fallback` -- the buyer the order is actually
+	for -- and never across the whole table. Site names are not unique: "Maharashtra",
+	"NW08" and the like are reused by different buyers, and a bare lookup with LIMIT 1
+	returned whichever row the database happened to hand back first. That put a STRANGER'S
+	record on the Sales Order PDF, which prints its contact number, email, GST Type, GSTIN
+	and PAN -- so one buyer's tax identifiers could appear on another buyer's order.
+
+	With no family to search, or no owner inside it, the order's own Buyer Master is used.
+	"""
 	name = None
-	if site_name:
-		rows = frappe.db.sql(
-			"""
-			SELECT bm.name FROM `tabBuyer Address` ba
-			JOIN `tabBuyer Master` bm ON bm.name = ba.parent
-			WHERE ba.site_name = %s
-			LIMIT 1
-			""",
-			site_name,
-		)
-		if rows:
-			name = rows[0][0]
+	site_name = (site_name or "").strip()
+	if site_name and fallback:
+		try:
+			from alpinos.sales_order_offline_buyer import (
+				_masters_owning_site,
+				masters_for_customer_business,
+			)
+
+			customer = frappe.db.get_value("Buyer Master", fallback, "customer")
+			family = masters_for_customer_business(customer) if customer else []
+			# The order's own master always counts as part of its family.
+			family = list(set(family or []) | {fallback})
+			owners = _masters_owning_site(family, site_name)
+			if owners:
+				# Prefer the order's own master when it owns the site too, so a buyer with
+				# several masters on one site reports the one the order was raised against.
+				name = fallback if fallback in owners else sorted(owners)[0]
+		except Exception:
+			# Never let a print fail over this; the order's own master is a safe answer.
+			frappe.log_error(frappe.get_traceback(), "site_buyer_master lookup failed")
 	name = name or fallback
 	if name and frappe.db.exists("Buyer Master", name):
 		return frappe.get_doc("Buyer Master", name)
