@@ -424,8 +424,8 @@ def get_purchase_order_items(
 
 		found = item_inward_type(row.item_code, cache)
 		# An unclassified item is offered against every inward type; only a positive
-		# disagreement is a mismatch.
-		mismatch = bool(wanted and found and found != wanted)
+		# disagreement is a mismatch. A multi-type inward ("FG,PM") accepts any of its types.
+		mismatch = not C.type_allowed(found, wanted)
 		if mismatch:
 			unmatched_available += 1
 			if not include_unmatched:
@@ -1023,7 +1023,7 @@ def po_type_item_query(doctype, txt, searchfield, start, page_len, filters):
 	for name, item_name in rows:
 		found = item_inward_type(name, cache)
 		# None means unclassified, which is allowed on any order.
-		if found is None or found in wanted:
+		if C.type_allowed(found, wanted):
 			keep.append((name, item_name))
 	return keep[start : start + page_len]
 

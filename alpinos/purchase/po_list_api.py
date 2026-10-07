@@ -102,15 +102,12 @@ LIST_FIELDS = (
 
 #: Default order: the most recently APPROVED order first.
 #:
-#: custom_approval_datetime is stamped when an order is approved, and MariaDB sorts NULLs
-#: last on a DESC, so orders that have never been approved -- drafts, and anything still
-#: awaiting approval -- fall below every approved one and are then newest-modified first.
-#: `modified desc` alone used to put whichever order somebody last touched on top, which
-#: on a list people open to find the latest approved order is the wrong answer.
-#:
-#: Two plain columns rather than the CASE expression this would ideally be: frappe
-#: validates order_by and refuses a CASE with "Illegal SQL Query".
-DEFAULT_ORDER_BY = "custom_approval_datetime desc, modified desc"
+#: Newest first by the moment an order became current: its approval for an approved order,
+#: its creation for one not approved yet. Sorting on custom_approval_datetime alone put
+#: every draft and every order awaiting approval at the END (MariaDB sorts NULLs last on
+#: DESC), so a PO saved without Submit for Approval seemed not to appear in the list.
+#: (frappe refuses a CASE in order_by, but accepts IFNULL.)
+DEFAULT_ORDER_BY = "ifnull(custom_approval_datetime, creation) desc, modified desc"
 
 _SORTABLE = frozenset(
 	{

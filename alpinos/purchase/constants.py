@@ -383,6 +383,16 @@ def has_inward_type(value, wanted):
 	return wanted in inward_types(value)
 
 
+def type_allowed(item_type, doc_types):
+	"""May an item of `item_type` sit on a document whose types are `doc_types`?
+
+	`doc_types` can hold several types ("FG,PM") -- never compare it with == / != / in a
+	tuple. No document type, or an unclassified item, allows everything.
+	"""
+	allowed = inward_types(doc_types)
+	return not allowed or not item_type or item_type in allowed
+
+
 def any_inward_type(value, wanted):
 	"""Do this document's types overlap `wanted` (a tuple of codes)?"""
 	return bool(set(inward_types(value)) & set(wanted or ()))

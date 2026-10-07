@@ -93,12 +93,12 @@
    "label": "Purchase Inward"
   },
   {
-   "default": "PIW-.YYYY.-.#####",
+   "default": "INW-.FYS.-.#####",
    "fieldname": "naming_series",
    "fieldtype": "Select",
    "label": "Series",
    "no_copy": 1,
-   "options": "PIW-.YYYY.-.#####",
+   "options": "INW-.FYS.-.#####\nPIW-.YYYY.-.#####",
    "print_hide": 1,
    "reqd": 1,
    "set_only_once": 1

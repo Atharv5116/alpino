@@ -59,8 +59,7 @@
    "fieldname": "internal_batch_no",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Internal Batch No.",
-   "read_only": 1
+   "label": "Internal Batch No."
   },
   {
    "columns": 1,

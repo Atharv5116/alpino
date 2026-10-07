@@ -132,6 +132,12 @@ var PurchaseInvoiceEntry = class {
 					args: { purchase_invoice: doc.name },
 					callback(c) {
 						if (!c.message) return;
+						// A draft with no Supplier Invoice No. / Date takes the inward's; editable.
+						const ib = c.message.inward_bill || {};
+						if (!cint(doc.docstatus)) {
+							if (!(doc.bill_no || '').trim() && ib.bill_no) doc.bill_no = ib.bill_no;
+							if (!doc.bill_date && ib.bill_date) doc.bill_date = ib.bill_date;
+						}
 						me.doc = doc;
 						me.ctx = c.message;
 						me.docname = doc.name;

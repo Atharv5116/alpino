@@ -257,7 +257,8 @@ def get_purchase_qc_list(
 	# stale saved filter or a hand-built URL cannot inject an unknown value.
 	value = _one_of(inward_type, C.INWARD_TYPES)
 	if value:
-		filters.append(["inward_type", "=", value])
+		# LIKE, not equality: a QC can carry several types ("FG,PM").
+		filters.append(["inward_type", "like", "%" + value + "%"])
 	value = _one_of(qc_result, C.QC_RESULTS)
 	if value:
 		filters.append(["qc_result", "=", value])

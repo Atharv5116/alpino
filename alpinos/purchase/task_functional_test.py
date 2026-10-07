@@ -103,6 +103,25 @@ def probe(task, label, fn, expect=None, as_user=None, diff=None):
 		return None
 
 
+def _test_supplier():
+	"""This suite's own supplier -- the one test_cleanup.purge() removes documents for."""
+	from alpinos.purchase.test_cleanup import TEST_SUPPLIER
+
+	if not frappe.db.exists("Supplier", TEST_SUPPLIER):
+		frappe.get_doc({
+			"doctype": "Supplier",
+			"supplier_name": TEST_SUPPLIER,
+			"supplier_group": frappe.db.get_value("Supplier Group", {}, "name"),
+		}).insert(ignore_permissions=True)
+	return TEST_SUPPLIER
+
+
+def _sample_id_ok(row):
+	"""RMID / PMID is SKU / 2 letters / inward day, e.g. ALS/CI/03."""
+	import re
+	return bool(re.match(r"^%s/[A-Z]{2}/\d{2}$" % re.escape(row.item_code or ""), row.sample_id or ""))
+
+
 def check(task, label, ok, detail="", state_if_false="FAIL"):
 	R.append((task, "PASS" if ok else state_if_false, label, "" if ok else detail))
 
@@ -187,6 +206,9 @@ def fill_qc(qc_name, rejected=0, reason="Damaged in transit", sample=1, approved
 		row.approved_qty = (rec - rejected) if approved is None else approved
 		row.rejected_qty = rejected
 		row.rejection_reason = reason if rejected else None
+		# QC types the Internal Batch Code (mandatory for RM / PM, never generated).
+		if qc.inward_type != C.INWARD_FG:
+			row.internal_batch_no = row.internal_batch_no or "IB-%s-%s" % (qc_name, row.idx)
 	qc.set("vehicle_inspection", [])
 	qc.append("vehicle_inspection", dict(
 		{"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD}, **(vehicle or {})))
@@ -330,7 +352,10 @@ def run():
 	]
 	H.SEQ = H._seq()
 	H.COMPANY = H._company()
-	T["supplier"] = H.ensure_supplier()
+	# The supplier test_cleanup.purge() scopes on. H.ensure_supplier() names it by sequence
+	# ("PITEST Supplier 016"), which other suites share with non-test items, so the purge at
+	# the end found nothing of this run and every run's documents stayed on the site.
+	T["supplier"] = _test_supplier()
 	T["wh"] = H._warehouse()
 	T["purchase"] = _user("tft-purchase@example.com", list(C.PURCHASE_ROLES) + ["Purchase User"])
 	T["store"] = _user("tft-store@example.com", [C.ROLE_STORE_USER])
@@ -346,6 +371,10 @@ def run():
 
 	try:
 		_run_all(qc_mod, G, IA, notif, INV, Q)
+		# Multi-type inwards ("FG,PM"): the rule, the list filters and a source scan.
+		from alpinos.purchase import inward_type_test
+		for label, ok, detail in inward_type_test.checks():
+			check(0, "inward types: " + label, ok, detail)
 	except Exception as e:
 		R.append((0, "ERROR", "suite aborted before the end", f"{type(e).__name__}: {_msg(e)}"))
 		frappe.db.rollback()
@@ -425,7 +454,9 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 	frappe.db.commit()
 
 	# ---------------------------------------------------------------- 7
-	check(7, "Purchase Inward named PIW-", pi_a.name.startswith("PIW-"), pi_a.name)
+	from alpinos.purchase.naming import fy_short
+	check(7, "Purchase Inward named INW-<FY>- (financial-year series)",
+	      pi_a.name.startswith("INW-%s-" % fy_short(pi_a.inward_datetime)), pi_a.name)
 
 	# ---------------------------------------------------------------- 4 (draft)
 	check(4, "Purchase team can edit the header of a draft",
@@ -570,7 +601,7 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 	def t_over_pending():
 		receive(pi_a, 101, as_admin=False)
 	probe(16, "VAL-PI-07 receiving above pending without Allow Excess is refused", t_over_pending,
-	      expect="cannot be greater than Pending", as_user=S)
+	      expect="Tick Allow Excess Quantity", as_user=S)
 
 	def t_excess_store_user():
 		receive(pi_a, 110, excess=1, as_admin=False)
@@ -799,7 +830,7 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 			srow = qcd.sample_testing[0] if qcd.sample_testing else None
 			info(45, "RM internal batch number", f"{srow.internal_batch_no if srow else None!r} (inward invoice {pi_r.invoice_number}, date {getdate(pi_r.inward_datetime)})")
 			check(45, "RM sample row carries an internal batch number", bool(srow and srow.internal_batch_no), "blank", "GAP")
-			check(46, "RM sample row has an RMID", bool(srow and (srow.sample_id or "").upper().startswith("RMID")),
+			check(46, "RM sample row has an RMID (SKU/XX/DD)", bool(srow and _sample_id_ok(srow)),
 			      f"sample_id={srow.sample_id if srow else None!r}", "GAP")
 			probe(28, "QC Inspection Report print renders",
 			      lambda: _assert_contains(frappe.get_print("Purchase QC", qc_r, print_format="QC Inspection Report"), qc_r))
@@ -942,13 +973,15 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 		line = q.items[0]
 		ib = line.get("internal_batch_no") or (frappe.db.get_value("Purchase Receipt Item", {"parent": pr_f}, "batch_no") if pr_f else None)
 		info(45, "FG internal batch number", f"{ib!r} (receiving batch {pi_f.items[0].batch_no}, mfg {pi_f.items[0].manufacturing_date})")
-		check(45, "FG internal batch uses the batch number", bool(ib) and (pi_f.items[0].batch_no or "~") in (ib or ""),
-		      f"internal batch {ib!r} does not include {pi_f.items[0].batch_no!r}", "FAIL")
+		# FG: no internal batch is generated; the QC line shows the inward's supplier batch.
+		check(45, "FG QC line shows the inward supplier batch, internal batch not generated",
+		      line.get("supplier_batch_no") == pi_f.items[0].batch_no and not line.get("internal_batch_no"),
+		      f"supplier={line.get('supplier_batch_no')!r} inward={pi_f.items[0].batch_no!r} internal={line.get('internal_batch_no')!r}", "FAIL")
 
 	def t_pm_pmid():
 		_po, _pi, qc, _pr = chain(C.INWARD_PM, qty=10, rejected=0, sample=1)
 		row = frappe.get_doc("Purchase QC", qc).sample_testing[0]
-		assert (row.sample_id or "").upper().startswith("PMID"), f"sample_id={row.sample_id!r}"
+		assert _sample_id_ok(row), f"sample_id={row.sample_id!r}"
 	probe(46, "PM sample row gets a PMID", t_pm_pmid)
 
 	# ---------------------------------------------------------------- 25 control sample recorded

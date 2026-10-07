@@ -38,7 +38,7 @@ ITEM_DOCTYPE = "Purchase Receipt Item"
 # own ".#####" to whatever the option holds — parse_naming_series ignores the second counter
 # (series_set), so the explicit suffix here is redundant but harmless, and it keeps this
 # module's series string identical to the Purchase Inward / Purchase QC ones.
-GRN_NAMING_SERIES = "GRN-.YYYY.-.#####"
+GRN_NAMING_SERIES = "GRN-.FYS.-.#####"  # financial-year-wise, see purchase/naming.py
 
 # Link/Table targets that must exist before the parent fields can be created.
 _LINK_TARGETS = ("Purchase Inward", "Purchase QC", "Purchase GRN Change Log")

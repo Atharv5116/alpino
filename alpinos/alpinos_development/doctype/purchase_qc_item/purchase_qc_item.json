@@ -17,6 +17,7 @@
   "rejected_qty",
   "rejection_reason",
   "qc_result",
+  "supplier_batch_no",
   "internal_batch_no",
   "manufacturing_date",
   "expiry_date",
@@ -116,11 +117,17 @@
    "read_only": 1
   },
   {
-   "description": "Invoice No + Inward Date for RM/PM (BR-QC-11), Batch No + Manufacturing Date for FG (BR-QC-12).",
+   "fieldname": "supplier_batch_no",
+   "fieldtype": "Data",
+   "label": "Supplier Batch No.",
+   "read_only": 1,
+   "description": "The batch Store wrote on the Purchase Inward line."
+  },
+  {
+   "description": "Generated on QC completion when blank (RM/PM: invoice + inward date; FG: supplier batch + mfg date). May be typed or changed.",
    "fieldname": "internal_batch_no",
    "fieldtype": "Data",
-   "label": "Internal Batch No.",
-   "read_only": 1
+   "label": "Internal Batch No."
   },
   {
    "fieldname": "manufacturing_date",

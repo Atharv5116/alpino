@@ -603,8 +603,8 @@ def _grn_rows(inward, qc):
 				"usp": line.usp,
 				# The inward's rate is pre-tax; on the GRN the MRP is that rate WITH the GST
 				# Store entered on the inward line (e.g. 30.92 at 5% -> 32.47).
-				"mrp": flt(flt(line.mrp) * (1 + flt(line.get("gst_percent")) / 100), 2),
-				"mrp_pre_tax": flt(line.mrp),
+				"mrp": flt(_pre_tax_rate(line) * (1 + flt(line.get("gst_percent")) / 100), 2),
+				"mrp_pre_tax": _pre_tax_rate(line),
 				# Typed by Store on the inward's receiving grid; the GRN starts from them.
 				"gst_percent": flt(line.get("gst_percent")),
 				"hsn_code": line.get("hsn_code") or None,
@@ -699,6 +699,24 @@ def _row_values(source):
 		("custom_quarantine_status", source["quarantine_status"], _("Quarantine")),
 		("custom_release_warehouse", source["release_warehouse"], _("Release To Warehouse")),
 	]
+
+
+def _pre_tax_rate(line):
+	"""The inward line's rate BEFORE GST -- what the GRN adds GST to, exactly once.
+
+	Inwards made before the inward was priced pre-tax hold the PO's GST-inclusive rate in
+	the MRP column; adding GST to that applied it twice. Such a line is recognised by its
+	MRP matching the PO line's rate-incl-GST while above its own pre-tax rate, and falls
+	back to that pre-tax rate.
+	"""
+	mrp, rate = flt(line.mrp), flt(line.rate)
+	if not mrp:
+		return rate
+	if rate and mrp > rate and line.get("po_detail"):
+		incl = flt(frappe.db.get_value("Purchase Order Item", line.po_detail, "custom_rate_incl_gst"))
+		if incl and abs(mrp - incl) <= 0.01:
+			return rate
+	return mrp
 
 
 def _apply_row(row, source):

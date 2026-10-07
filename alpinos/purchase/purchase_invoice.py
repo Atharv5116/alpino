@@ -688,10 +688,28 @@ def create_from_grn(purchase_receipt):
 		invoice_type=C.UNF_TYPE_NORMAL,
 	)
 	_fill_gst_from_inward(invoice)
+	_fill_bill_from_inward(invoice)
 	bill_approved_quantity(invoice)
 	invoice.flags.ignore_permissions = True
 	invoice.insert(ignore_permissions=True)
 	return invoice
+
+
+def inward_bill(inward):
+	"""(Supplier Invoice No., Supplier Invoice Date) as Store recorded them on the inward."""
+	if not inward:
+		return None, None
+	row = frappe.db.get_value("Purchase Inward", inward, ["invoice_number", "invoice_date"], as_dict=True)
+	return ((row.invoice_number or "").strip() or None, row.invoice_date) if row else (None, None)
+
+
+def _fill_bill_from_inward(invoice):
+	"""Supplier Invoice No. / Date default to the inward's; the user may change them."""
+	bill_no, bill_date = inward_bill(invoice.get("custom_purchase_inward"))
+	if bill_no and not (invoice.get("bill_no") or "").strip():
+		invoice.bill_no = bill_no
+	if bill_date and not invoice.get("bill_date"):
+		invoice.bill_date = bill_date
 
 
 def _fill_gst_from_inward(invoice):
@@ -1143,6 +1161,8 @@ def get_invoice_context(purchase_invoice):
 		# credit days were taken from instead of leaving the date looking arbitrary.
 		"due_date_source": None if _is_direct(invoice) else payment_terms_source(invoice),
 		"rate_editable": rate_editable(),
+		# Defaults for a blank Supplier Invoice No. / Date on a draft (shown, saved on Save).
+		"inward_bill": dict(zip(("bill_no", "bill_date"), inward_bill(invoice.get("custom_purchase_inward")))),
 		"payment_types": [C.UNF_PAYMENT_SUPPLIER]
 		+ ([C.UNF_PAYMENT_LOGISTICS] if wants_logistics(invoice) else []),
 		"payment_modes": list(C.UNF_PAYMENT_MODES),

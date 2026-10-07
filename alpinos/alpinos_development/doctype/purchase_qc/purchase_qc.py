@@ -198,6 +198,9 @@ class PurchaseQC(Document):
 		self._validate_completed_sections()
 		self._stamp_inspection_evidence()
 		self._roll_up_sample_qty()
+		if self.docstatus == 0:
+			# Minted on save, so each sample sticker can be printed while the QC is open.
+			self._generate_sample_ids()
 		self._apply_control_sample_retention()
 		self._validate_decision_quantities()
 		self._roll_up_totals()
@@ -332,8 +335,11 @@ class PurchaseQC(Document):
 						"expiry_date": row.expiry_date,
 						"po_detail": row.po_detail,
 						"purchase_inward_item": row.name,
+						# The batch Store wrote on the inward line, for every item.
+						"supplier_batch_no": row.get("batch_no") or None,
 					},
 				)
+			self._fill_sample_supplier_batches()
 			return
 
 		by_item = {}
@@ -352,6 +358,22 @@ class PurchaseQC(Document):
 			line.target_warehouse = line.target_warehouse or src.target_warehouse
 			line.manufacturing_date = line.manufacturing_date or src.manufacturing_date
 			line.expiry_date = line.expiry_date or src.expiry_date
+			# Fetched, not typed: always the inward line's current batch while the QC is a draft.
+			line.supplier_batch_no = src.get("batch_no") or None
+		self._fill_sample_supplier_batches()
+
+	def _fill_sample_supplier_batches(self):
+		"""A sample row with no Supplier Batch takes its QC line's (from the inward)."""
+		lines = {line.name: line for line in self.get("items") or []}
+		by_item = {}
+		for line in self.get("items") or []:
+			by_item.setdefault(line.item_code, line)
+		for row in self.get("sample_testing") or []:
+			if (row.get("supplier_batch_no") or "").strip():
+				continue
+			line = lines.get(row.get("qc_item")) or by_item.get(row.get("item_code"))
+			if line and line.get("supplier_batch_no"):
+				row.supplier_batch_no = line.supplier_batch_no
 
 	def _ensure_child_names(self):
 		"""Name rows this controller appended during validate.
@@ -974,44 +996,36 @@ class PurchaseQC(Document):
 		}
 
 	def _generate_internal_batches(self):
-		"""BR-QC-11 / BR-QC-12 / VAL-QC-11.
+		"""Internal Batch Code is typed by QC, never generated.
 
-		RM and PM take Invoice Number + Inward Date; FG takes Batch Number +
-		Manufacturing Date. MM has no rule, so it gets no internal batch and is not
-		blocked for the lack of one.
+		RM / PM (and Additive): mandatory on every line before the QC is completed.
+		FG: optional -- the supplier batch Store entered on the inward is what it carries.
+		A line's kind comes from its Item's Material Type, else from the inward type.
 		"""
-		if C.any_inward_type(self.inward_type, C.BATCH_FROM_INVOICE_TYPES):
-			fmt = get_settings(self.company).get("rm_pm_batch_format")
-			required = ("invoice_number", "inward_date")
-		elif self.inward_type in C.BATCH_FROM_MFG_TYPES:
-			fmt = get_settings(self.company).get("fg_batch_format")
-			required = ("batch_no", "manufacturing_date")
-		else:
-			return
-
+		# A batch typed only on the line's Sample Testing row counts for the line.
 		for line in self.get("items"):
 			if (line.internal_batch_no or "").strip():
 				continue
-			context = self._batch_context(line)
-			missing = [key for key in required if not context.get(key)]
-			if missing:
-				frappe.throw(
-					_(
-						"Row {0} ({1}): Internal Batch Number could not be generated. Please "
-						"verify the required batch information ({2})."
-					).format(line.idx, line.item_code, ", ".join(missing)),
-					title=_("VAL-QC-11"),
-				)
-			batch = _clean(_render(fmt, context))
-			if not batch:
-				frappe.throw(
-					_(
-						"Row {0} ({1}): Internal Batch Number could not be generated. Please "
-						"verify the required batch information."
-					).format(line.idx, line.item_code),
-					title=_("VAL-QC-11"),
-				)
-			line.internal_batch_no = batch
+			for row in self.get("sample_testing") or []:
+				if (row.get("internal_batch_no") or "").strip() and (
+					row.get("qc_item") == line.name or (not row.get("qc_item") and row.item_code == line.item_code)
+				):
+					line.internal_batch_no = row.internal_batch_no.strip()
+					break
+		missing = [
+			line for line in self.get("items")
+			if self._needs_internal_batch(line) and not (line.internal_batch_no or "").strip()
+		]
+		if missing:
+			frappe.throw(
+				_("Please enter the Internal Batch Code for the RM / PM item(s): {0}").format(
+					", ".join("Row {0} ({1})".format(line.idx, line.item_code) for line in missing)
+				),
+				title=_("Internal Batch Code Required"),
+			)
+		for line in self.get("items"):
+			if (line.internal_batch_no or "").strip():
+				line.internal_batch_no = _clean(line.internal_batch_no)
 
 		# M15: the code above is plain Data until a Batch document actually carries it.
 		# grn._batch_no drops a batch id that has no Batch, so the receipt auto-minted an id
@@ -1023,6 +1037,27 @@ class PurchaseQC(Document):
 		for row in self.get("sample_testing") or []:
 			if not (row.internal_batch_no or "").strip():
 				row.internal_batch_no = batches.get(row.qc_item)
+
+	def _needs_internal_batch(self, line):
+		"""RM / PM / Additive lines need an Internal Batch Code; FG lines do not.
+
+		The item decides: its Material Type, else the same inward-type classification the
+		inward uses (Item field / item group). Only an item neither of those classifies
+		falls back to the inward -- and then only when the inward has no FG on it, since a
+		mixed "FG,PM" inward says nothing about which of the two this item is.
+		"""
+		if not line.item_code:
+			return False
+		material = frappe.get_cached_value("Item", line.item_code, "custom_material_type")
+		if material:
+			return material in ("RM", "PM", "Additive", "Additive Item")
+		from alpinos.purchase.inward_api import item_inward_type
+
+		found = item_inward_type(line.item_code)
+		if found:
+			return found in C.BATCH_FROM_INVOICE_TYPES
+		types = C.inward_types(self.inward_type)
+		return bool(types) and C.INWARD_FG not in types and C.any_inward_type(types, C.BATCH_FROM_INVOICE_TYPES)
 
 	def _mint_internal_batches(self):
 		"""Create the Batch each internal batch code names (BR-QC-11 / BR-QC-12).
@@ -1082,21 +1117,21 @@ class PurchaseQC(Document):
 		return None
 
 	def _generate_sample_ids(self):
-		"""BR-QC-14 / VAL-QC-12 — RMID for RM, PMID for PM, one per sample row."""
-		prefix = C.SAMPLE_ID_PREFIX.get(self.inward_type)
-		if not prefix:
+		"""RMID / PMID for every sample row with a quantity: SKU / 2 random letters / inward day.
+
+		e.g. ALS/CI/03 for SKU ALS inwarded on the 3rd. An id already on a row is never changed.
+		"""
+		rows = [
+			row for row in self.get("sample_testing") or []
+			if not (row.sample_id or "").strip() and flt(row.sample_qty) > 0 and row.item_code
+		]
+		if not rows:
 			return
-
-		settings = get_settings(self.company)
-		fmt = settings.get("rmid_format" if self.inward_type == C.INWARD_RM else "pmid_format")
-		series = _naming_series(fmt, prefix + "-.YYYY.-.#####")
-
-		for row in self.get("sample_testing") or []:
-			if (row.sample_id or "").strip():
-				continue
-			if flt(row.sample_qty) <= 0:
-				continue
-			row.sample_id = make_autoname(series)
+		inward = self._inward()
+		taken = {(r.sample_id or "").strip() for r in self.get("sample_testing") or []}
+		for row in rows:
+			row.sample_id = _mint_sample_id(row.item_code, inward.inward_datetime if inward else None, taken)
+			taken.add(row.sample_id)
 
 	# ---------------------------------------------- 308 / 309 stock movement
 
@@ -1470,3 +1505,73 @@ def get_pending_inspections(purchase_qc):
 	qc = frappe.get_doc("Purchase QC", purchase_qc)
 	qc.check_permission("read")
 	return qc._missing_inspections()
+
+
+@frappe.whitelist()
+def get_inward_batches(purchase_inward):
+	"""{inward line name: supplier batch} so a draft QC saved before the Supplier Batch
+	column existed still shows it on screen without a save."""
+	frappe.has_permission("Purchase Inward", "read", purchase_inward, throw=True)
+	return {
+		r.name: r.batch_no
+		for r in frappe.get_all(
+			"Purchase Inward Item",
+			filters={"parent": purchase_inward, "parenttype": "Purchase Inward"},
+			fields=["name", "batch_no"],
+		)
+		if r.batch_no
+	}
+
+
+def _mint_sample_id(item_code, inward_datetime, taken=()):
+	"""SKU / 2 random letters / inward day, e.g. ALS/CI/03 — unique across all QC samples."""
+	import random
+	import string
+
+	day = getdate(inward_datetime or now_datetime()).strftime("%d")
+	for _attempt in range(200):
+		code = "%s/%s/%s" % (item_code, "".join(random.choices(string.ascii_uppercase, k=2)), day)
+		if code not in taken and not frappe.db.exists("Purchase QC Sample", {"sample_id": code}):
+			return code
+	return code
+
+
+@frappe.whitelist()
+def sample_sticker(purchase_inward, item_code, sample_id=None, sample_qty=None, uom=None,
+		manufacturing_date=None, expiry_date=None, taken=None, purchase_inward_item=None):
+	"""One 100 x 75 mm sample sticker, printable before the QC is saved.
+
+	A row with no RMID / PMID gets one minted here; the screen keeps it on the row, and the
+	save stores it as is (rows that already carry an id are never re-minted).
+	"""
+	from alpinos.purchase.print_formats import render_sample_sticker
+
+	frappe.has_permission("Purchase Inward", "read", purchase_inward, throw=True)
+	if not item_code:
+		frappe.throw(_("Select the SKU first."))
+	inward = frappe.db.get_value(
+		"Purchase Inward", purchase_inward, ["inward_datetime", "supplier", "supplier_name"], as_dict=True
+	) or frappe._dict()
+	# Qty. on the sticker is the sample's quantity; the unit falls back to the inward line's.
+	where = {"parent": purchase_inward, "parenttype": "Purchase Inward"}
+	where.update({"name": purchase_inward_item} if purchase_inward_item else {"item_code": item_code})
+	src = frappe.db.get_value(
+		"Purchase Inward Item", where,
+		["manufacturing_date", "expiry_date", "received_qty", "uom"], as_dict=True, order_by="idx asc",
+	) or frappe._dict()
+	manufacturing_date = manufacturing_date or src.manufacturing_date
+	expiry_date = expiry_date or src.expiry_date
+	uom = uom or src.uom
+	taken = set(frappe.parse_json(taken) or []) if taken else set()
+	sample_id = (sample_id or "").strip() or _mint_sample_id(item_code, inward.inward_datetime, taken)
+	html = render_sample_sticker({
+		"supplier": inward.supplier_name or inward.supplier,
+		"sku": item_code,
+		"inward_date": inward.inward_datetime,
+		"mfg": manufacturing_date,
+		"exp": expiry_date,
+		"sid": sample_id,
+		"qty": flt(sample_qty),
+		"uom": uom,
+	})
+	return {"sample_id": sample_id, "html": html}

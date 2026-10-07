@@ -45,8 +45,8 @@
    "fieldname": "naming_series",
    "fieldtype": "Select",
    "label": "Series",
-   "options": "QRN-.YYYY.-",
-   "default": "QRN-.YYYY.-",
+   "options": "QRN-.FYS.-.#####\nQRN-.YYYY.-",
+   "default": "QRN-.FYS.-.#####",
    "hidden": 1,
    "reqd": 1
   },

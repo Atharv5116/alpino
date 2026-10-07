@@ -1093,11 +1093,6 @@ var PurchaseInwardEntry = class {
 			['total-pending-qty', 'total_pending_qty', 'Total Pending Qty'],
 			['total-excess-qty', 'total_excess_qty', 'Total Excess Qty'],
 			['total-shortage-qty', 'total_shortage_qty', 'Total Shortage Qty'],
-			// Not a stored field. BRD 2.2.1 fixes Pending Quantity as the balance BEFORE
-			// this receipt, because Excess = Received - Pending depends on it, so it
-			// cannot also drop as the Store types. Nothing then showed what was left
-			// after the receipt being entered, which read as "pending is not updating".
-			['total-balance-qty', 'total_balance_qty', 'Balance After This Receipt'],
 		].forEach(([sel, fieldname, label]) => {
 			this._ctl(`.field-${sel}`, {
 				fieldname: fieldname, label: label, fieldtype: 'Float', read_only: 1,
@@ -1121,7 +1116,9 @@ var PurchaseInwardEntry = class {
 		});
 		this._set('total_order_qty', order);
 		this._set('total_received_qty', received);
-		this._set('total_pending_qty', pending);
+		// Shown as what is still to come after this receipt (ordered - received before -
+		// received now); the stored pending_qty stays the balance before it.
+		this._set('total_pending_qty', balance);
 		this._set('total_excess_qty', excess);
 		const shortage = this.items.reduce((s, r) => s + flt(r.shortage_qty), 0);
 		this._set('total_shortage_qty', shortage);
@@ -1129,7 +1126,6 @@ var PurchaseInwardEntry = class {
 		// and both show only when the receipt is over on some lines and under on others.
 		this.wrapper.find('.field-total-shortage-qty').toggle(shortage > 0);
 		this.wrapper.find('.field-total-excess-qty').toggle(excess > 0 || shortage <= 0);
-		this._set('total_balance_qty', balance);
 		this.render_money();
 	}
 
@@ -1338,7 +1334,6 @@ var PurchaseInwardEntry = class {
 			'vehicle_details_verified', 'allow_excess_qty', 'target_warehouse',
 			'receiving_remarks', 'dispute_file', 'dispute_kind', 'dispute_description',
 			'total_order_qty', 'total_received_qty', 'total_pending_qty', 'total_excess_qty',
-			'total_balance_qty',
 		];
 	}
 

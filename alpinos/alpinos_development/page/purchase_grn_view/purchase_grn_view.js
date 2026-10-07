@@ -416,6 +416,9 @@ var GRNView = class {
 			btn(__('View Debit Note'), 'btn-default', () =>
 				frappe.set_route('Form', 'Purchase Invoice', ctx.debit_note)
 			);
+			btn(__('Debit Note PDF'), 'btn-default', () =>
+				alpinos_download_pdf('Purchase Invoice', ctx.debit_note, 'Debit Note')
+			);
 		}
 		if (cint(ctx.can_cancel_debit_note)) btn(__('Cancel Debit Note'), 'btn-default', () => me.cancel_debit_note());
 		if (cint(ctx.can_generate_debit_note)) btn(__('Generate Debit Note'), 'btn-default', () => me.generate_debit_note());

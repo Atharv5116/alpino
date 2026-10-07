@@ -327,11 +327,23 @@ var PurchaseQCEntry = class {
 			parent: $tr.find(sel),
 			render_input: true,
 		});
+		const numeric = ['Float', 'Currency', 'Int', 'Percent'].includes(df.fieldtype) && !cint(df.read_only);
 		Promise.resolve(
 			c.set_value(value === undefined || value === null ? '' : ALP_TRIM_MICROSECONDS(value))
 		).then(() => {
 			ready = true;
+			// An editable quantity of 0 shows empty with a "0" hint. Pre-filled "0.000" put the
+			// cursor after the zeros on click, so typing 5 made "0.0005" -- rounded straight
+			// back to 0.000 / 0.001, which read as a box that will not take a number.
+			if (numeric && c.$input && !flt(value)) c.$input.val('').attr('placeholder', '0');
 		});
+		if (numeric && c.$input) {
+			// Clicking a quantity selects it, so what is typed replaces it.
+			c.$input.on('focus', function () {
+				const input = this;
+				setTimeout(() => { if (document.activeElement === input) input.select(); }, 0);
+			});
+		}
 		me.fields[name] = c;
 		if (df.fieldtype === 'Link') me._float_dropdown(c);
 		return c;
@@ -475,6 +487,27 @@ var PurchaseQCEntry = class {
 		data.qc_item_idx = next;
 		const c = this.fields[`${key}_qc_item_idx_${idx}`];
 		if (c) c.set_value(next);
+		this._fill_sample_batch(key, idx, data);
+	}
+
+	/** Internal Batch hint: optional for FG-only, required for RM / PM, both on a mixed inward. */
+	_ib_hint() {
+		const types = String(this._val('inward_type') || '').split(',').map((t) => t.trim()).filter(Boolean);
+		const fg = types.includes('FG');
+		const rmpm = types.includes('RM') || types.includes('PM');
+		if (fg && rmpm) return __('Required for RM / PM');
+		return rmpm ? __('Required') : __('Optional');
+	}
+
+	/** A sample row with no Supplier Batch takes its QC line's (fetched from the inward). */
+	_fill_sample_batch(key, idx, data) {
+		if (key !== 'sample' || (data.supplier_batch_no || '').trim()) return;
+		const line = (this.tables.decision || [])[cint(data.qc_item_idx) - 1]
+			|| (this.tables.decision || []).find((r) => r.item_code === data.item_code);
+		if (!line || !line.supplier_batch_no) return;
+		data.supplier_batch_no = line.supplier_batch_no;
+		const c = this.fields[`${key}_supplier_batch_no_${idx}`];
+		if (c) c.set_value(data.supplier_batch_no);
 	}
 
 	add_row(key, data) {
@@ -548,12 +581,17 @@ var PurchaseQCEntry = class {
 				});
 			this._mk_cell($tr, '.c-sbatch', key, idx, { fieldtype: 'Data', fieldname: 'supplier_batch_no' },
 				data.supplier_batch_no, function (val) { data.supplier_batch_no = val; });
+			// Editable for every item; FG does not require it.
 			this._mk_cell($tr, '.c-ibatch', key, idx,
-				{ fieldtype: 'Data', fieldname: 'internal_batch_no', read_only: 1 }, data.internal_batch_no);
+				{ fieldtype: 'Data', fieldname: 'internal_batch_no' }, data.internal_batch_no,
+				function (val) { data.internal_batch_no = (val || '').trim(); });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'sample_qty' },
 				data.sample_qty, function (val) { data.sample_qty = flt(val); me.recalc_sample_rollup(); });
-			this._mk_cell($tr, '.c-id', key, idx,
-				{ fieldtype: 'Data', fieldname: 'sample_id', read_only: 1 }, data.sample_id);
+			// One sticker per sample row; works before the QC is saved.
+			$(`<button class="btn btn-xs btn-light btn-print-row-sticker">
+				<i class="fa fa-print"></i> ${__('Print')}</button>`)
+				.appendTo($tr.find('.c-id'))
+				.on('click', () => me.print_sticker(data));
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'remarks' },
 				data.remarks, function (val) { data.remarks = val; });
 
@@ -746,6 +784,8 @@ var PurchaseQCEntry = class {
 				<td>${frappe.utils.escape_html(row.item_code || '')}<br>
 					<span class="text-muted" style="font-size:11px;">
 						${frappe.utils.escape_html(row.item_name || '')}</span></td>
+				<td>${frappe.utils.escape_html(row.supplier_batch_no || '')}</td>
+				<td class="c-ibatch"></td>
 				<td class="pqc-num">${format_number(row.received_qty, null, 2)}</td>
 				<td class="pqc-num">${format_number(row.sample_qty, null, 2)}</td>
 				<td class="c-appr"></td><td class="c-rej"></td><td class="c-reason"></td>
@@ -754,6 +794,14 @@ var PurchaseQCEntry = class {
 			</tr>`);
 			$body.append($tr);
 
+			// Internal Batch: generated on completion when left blank, editable for every item.
+			// Typed by QC: mandatory for RM / PM, optional for FG (never generated).
+			me._mk_cell($tr, '.c-ibatch', 'decision', idx,
+				{ fieldtype: 'Data', fieldname: 'internal_batch_no', read_only: locked ? 1 : 0,
+					// The inward may carry several types ("FG,PM"); the server decides per item.
+					placeholder: me._ib_hint() },
+				row.internal_batch_no,
+				function (val) { row.internal_batch_no = (val || '').trim(); });
 			me._mk_cell($tr, '.c-appr', 'decision', idx,
 				{ fieldtype: 'Float', fieldname: 'approved_qty', read_only: locked ? 1 : 0 },
 				row.approved_qty,
@@ -815,22 +863,44 @@ var PurchaseQCEntry = class {
 				me.sync_done_flags();
 			}
 		});
-		this.wrapper.on('click', '.btn-print-sticker', () => {
-			if (!me.docname) {
-				frappe.msgprint(__('Save the QC first.'));
-				return;
-			}
-			// NOT set_route('print', dt, name, {format}): the print page builds the docname
-			// as route.slice(2).join('/'), so a 4th argument becomes part of the name and
-			// the route breaks. The print view only ever honours meta.default_print_format
-			// (which is the QC Inspection Report), so the sticker is opened through the
-			// standard printview endpoint, which does take a format.
-			const url =
-				'/printview?doctype=' + encodeURIComponent('Purchase QC') +
-				'&name=' + encodeURIComponent(me.docname) +
-				'&format=' + encodeURIComponent('QC Sample Sticker') +
-				'&no_letterhead=1&_lang=' + encodeURIComponent(frappe.boot.lang || 'en');
-			window.open(url, '_blank');
+	}
+
+	/**
+	 * Print one 100 x 75 mm sample sticker, saved or not. A row with no RMID / PMID gets one
+	 * minted by the server and kept on the row, so the next save stores the printed id.
+	 */
+	print_sticker(data) {
+		const inward = this._val('purchase_inward') || (this.doc && this.doc.purchase_inward);
+		if (!inward) { frappe.msgprint(__('Select the Purchase Inward first.')); return; }
+		if (!data.item_code) { frappe.msgprint(__('Select the SKU first.')); return; }
+		const lines = this.tables.decision || [];
+		const line = lines[cint(data.qc_item_idx) - 1] || lines.find((l) => l.item_code === data.item_code) || {};
+		// Opened inside the click so the browser does not block it as a popup.
+		const win = window.open('', '_blank');
+		frappe.call({
+			method: 'alpinos.alpinos_development.doctype.purchase_qc.purchase_qc.sample_sticker',
+			args: {
+				purchase_inward: inward,
+				item_code: data.item_code,
+				sample_id: data.sample_id || '',
+				sample_qty: flt(data.sample_qty),
+				uom: data.uom || line.uom || '',
+				manufacturing_date: line.manufacturing_date || '',
+				expiry_date: line.expiry_date || '',
+				purchase_inward_item: line.purchase_inward_item || '',
+				taken: JSON.stringify((this.tables.sample || []).map((r) => r.sample_id).filter(Boolean)),
+			},
+			callback(r) {
+				if (!r.message) { if (win) win.close(); return; }
+				data.sample_id = r.message.sample_id;
+				if (!win) { frappe.msgprint(__('Allow pop-ups for this site to print the sticker.')); return; }
+				win.document.open();
+				win.document.write(r.message.html);
+				win.document.close();
+				win.focus();
+				setTimeout(() => win.print(), 300);
+			},
+			error() { if (win) win.close(); },
 		});
 	}
 
@@ -888,6 +958,23 @@ var PurchaseQCEntry = class {
 				me.quarantine_states = {};
 				me.tables.decision = (doc.items || []).slice();
 				me.render_decision();
+				// A draft saved before the Supplier Batch column: show the inward batch now.
+				if (!doc.docstatus && doc.purchase_inward
+					&& me.tables.decision.some((l) => !l.supplier_batch_no)) {
+					frappe.call({
+						method: 'alpinos.alpinos_development.doctype.purchase_qc.purchase_qc.get_inward_batches',
+						args: { purchase_inward: doc.purchase_inward },
+						callback(b) {
+							if (me.doc !== doc || !b.message) return;
+							let changed = false;
+							me.tables.decision.forEach((l) => {
+								const batch = b.message[l.purchase_inward_item];
+								if (!l.supplier_batch_no && batch) { l.supplier_batch_no = batch; changed = true; }
+							});
+							if (changed) me.render_decision();
+						},
+					});
+				}
 				// set_value lands asynchronously, so the Quarantine Items tick read inside
 				// render_decision can still be the previous document's; apply it once settled.
 				setTimeout(() => { if (me.doc === doc) me.apply_quarantine_ui(); }, 0);
@@ -1076,6 +1163,7 @@ var PurchaseQCEntry = class {
 					row.rejected_qty = flt(edited.rejected_qty);
 					row.rejection_reason = edited.rejection_reason;
 					row.quarantine = cint(edited.quarantine);
+					row.internal_batch_no = (edited.internal_batch_no || '').trim() || null;
 				});
 				frappe.call({
 					method: 'frappe.client.save',

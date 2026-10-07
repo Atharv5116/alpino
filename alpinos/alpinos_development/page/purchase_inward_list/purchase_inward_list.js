@@ -690,9 +690,12 @@ var PurchaseInwardListPage = class {
 						if (a.enabled === false) {
 							// a disabled button swallows its own tooltip, so the guard reason
 							// (BRD 1.4) is carried on a wrapper span instead
-							return `<span class="piw-act-disabled" title="${esc(
+							// Clickable (greyed) so a click says why, as on the form.
+							return `<button type="button" class="btn btn-xs btn-default piw-act-btn" style="opacity:.65;" data-name="${esc(
+								d.name
+							)}" data-action="${esc(a.action)}" title="${esc(
 								a.reason || __('Not available at this stage')
-							)}"><button type="button" class="btn btn-xs ${cls}" disabled>${label}</button></span>`;
+							)}">${label}</button>`;
 						}
 						return `<button type="button" class="btn btn-xs ${cls} piw-act-btn" data-name="${esc(
 							d.name
@@ -733,7 +736,15 @@ var PurchaseInwardListPage = class {
 		const d = this._rows_by_name[name];
 		if (!d || !action) return;
 		const act = (d.actions || []).find((a) => a.action === action);
-		if (!act || act.enabled === false) return;
+		if (!act) return;
+		if (act.enabled === false) {
+			frappe.msgprint({
+				title: __('{0} Is Not Available Yet', [act.label || action]),
+				indicator: 'orange',
+				message: act.reason || __('This action is not available on this Purchase Inward yet.'),
+			});
+			return;
+		}
 
 		if (action === 'print') {
 			frappe.set_route('print', 'Purchase Inward', name);
@@ -761,9 +772,27 @@ var PurchaseInwardListPage = class {
 			return;
 		}
 
-		// view / edit / continue receiving and every workflow transition are performed on
-		// the document itself, whose buttons come from the same workflow engine — the list
-		// opens it rather than running a second, divergent copy of the transition here.
+		// Submit for QC runs right here, through the same server endpoint the form uses
+		// (its guards -- receiving complete, quarantine choice -- apply unchanged).
+		if (action === 'submit_for_qc') {
+			frappe.confirm(__('Submit {0} for QC?', [name]), () => {
+				frappe.call({
+					method: 'alpinos.purchase.inward_api.run_action',
+					args: { purchase_inward: name, action: action },
+					freeze: true,
+					freeze_message: __('Working...'),
+					callback: (r) => {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('{0}: {1} done', [name, act.label]), indicator: 'green' });
+						this.load_list();
+					},
+				});
+			});
+			return;
+		}
+
+		// view / edit / continue receiving and the other workflow transitions are performed
+		// on the document itself, whose buttons come from the same workflow engine.
 		if (act.kind === 'transition') {
 			frappe.show_alert({ message: __('Opening {0} to {1}', [name, act.label]), indicator: 'blue' });
 		}

@@ -190,6 +190,7 @@ patches = [
 ]
 
 after_migrate = [
+	"alpinos.purchase.naming.setup",
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.default_present.setup_default_present_field",
 	"alpinos.employee_suspension.setup_suspension_date_field",
@@ -449,11 +450,16 @@ override_doctype_class = {
 # ---------------
 # Hook on document methods and events
 
+# `.FYS.` = short financial year (2026-27 -> 2627) in a naming series (purchase/naming.py).
+naming_series_variables = {"FYS": "alpinos.purchase.naming.parse_fys"}
+
 doc_events = {
 	# BRD 6 "Purchase Invoice & Payment". The status here is derived from what Accounts
 	# recorded in Tally, which is a different fact from ERPNext's ledger status -- so it
 	# lives in its own field and recompute_payment_state is its only writer.
 	"Purchase Invoice": {
+		# Financial-year-wise ID (POR- / INW- / GRN- / PIV- ...).
+		"before_insert": "alpinos.purchase.naming.before_insert",
 		"validate": [
 			# GST from each line's GST % first: the payable / pending figures the module
 			# derives next are read from the grand total this produces.
@@ -482,6 +488,8 @@ doc_events = {
 		"on_cancel": ["alpinos.purchase.purchase_invoice.payment_entry_on_cancel"],
 	},
 	"Purchase Order": {
+		# Financial-year-wise ID (POR- / INW- / GRN- / PIV- ...).
+		"before_insert": "alpinos.purchase.naming.before_insert",
 		"before_validate": [
 			# Before the controller's own validate(), which computes Grand Total from Rate
 			# and Discount and throws its own (confusing) error first if Discount leaves a
@@ -520,7 +528,11 @@ doc_events = {
 		],
 		"before_cancel": "alpinos.purchase.purchase_order_approval.stamp_on_cancel",
 	},
+	"Purchase QC": {"before_insert": "alpinos.purchase.naming.before_insert"},
+	"Purchase Quarantine": {"before_insert": "alpinos.purchase.naming.before_insert"},
 	"Purchase Inward": {
+		# Financial-year-wise ID (POR- / INW- / GRN- / PIV- ...).
+		"before_insert": "alpinos.purchase.naming.before_insert",
 		"validate": "alpinos.purchase.inward_api.validate_merge_link",
 		"before_submit": [
 			"alpinos.purchase.roles.assert_can_submit_inward",
@@ -528,6 +540,8 @@ doc_events = {
 		]
 	},
 	"Purchase Receipt": {
+		# Financial-year-wise ID (POR- / INW- / GRN- / PIV- ...).
+		"before_insert": "alpinos.purchase.naming.before_insert",
 		"validate": "alpinos.purchase.purchase_receipt_fields.validate_grn_fields",
 		"before_update_after_submit": (
 			"alpinos.purchase.purchase_receipt_fields.validate_grn_status"

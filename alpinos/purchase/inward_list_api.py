@@ -234,7 +234,9 @@ def get_purchase_inward_list(
 	# stale saved filter or a hand-built URL cannot inject an unknown value.
 	value = _one_of(inward_type, C.INWARD_TYPES)
 	if value:
-		filters["inward_type"] = value
+		# LIKE, not equality: the column can hold several types ("FG,PM"), and filtering
+		# on FG must still list that inward. Type codes never contain one another.
+		filters["inward_type"] = ("like", "%" + value + "%")
 	value = _one_of(qc_status, C.QC_STATUSES)
 	if value:
 		filters["qc_status"] = value

@@ -660,7 +660,7 @@ SECTIONS = {
 					"total_rejected_qty",
 				),
 				"child_table": "items",
-				"child_fields": ("approved_qty", "rejected_qty", "rejection_reason", "quarantine"),
+				"child_fields": ("approved_qty", "rejected_qty", "rejection_reason", "quarantine", "internal_batch_no"),
 				"view_roles": (),
 				"edit_roles": _QC,
 				"open_statuses": QC_OPEN_STATUSES,

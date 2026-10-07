@@ -237,7 +237,12 @@ _INWARD_HTML_RAW = r"""
         <th>Expiry</th>
       </tr>
     </thead>
+    {% set _pend = namespace(total=0) %}
     {% for row in doc.items %}
+    {# Pending = ordered - received before - received on this inward (never below 0). #}
+    {% set _left = frappe.utils.flt(row.order_qty) - frappe.utils.flt(row.previously_received_qty) - frappe.utils.flt(row.received_qty) %}
+    {% set _left = _left if _left > 0 else 0 %}
+    {% set _pend.total = _pend.total + _left %}
     <tr>
       <td class="c">{{ loop.index }}</td>
       <td>
@@ -253,7 +258,7 @@ _INWARD_HTML_RAW = r"""
       <td class="c">{{ txt(row.uom) }}</td>
       <td class="r">{{ num(row.order_qty) }}</td>
       <td class="r">{{ num(row.previously_received_qty) }}</td>
-      <td class="r">{{ num(row.pending_qty) }}</td>
+      <td class="r">{{ num(_left) }}</td>
       <td class="r b">{{ num(row.received_qty) }}</td>
       <td class="r{% if frappe.utils.flt(row.excess_qty) > 0 %} warn{% endif %}">{{ num(row.excess_qty) }}</td>
       <td>{{ txt(row.target_warehouse) }}</td>
@@ -269,7 +274,7 @@ _INWARD_HTML_RAW = r"""
       <td colspan="3" class="r">Total ({{ frappe.utils.cint(doc.total_items) }} items)</td>
       <td class="r">{{ num(doc.total_order_qty) }}</td>
       <td class="r">{{ num(doc.total_previously_received_qty) }}</td>
-      <td class="r">{{ num(doc.total_pending_qty) }}</td>
+      <td class="r">{{ num(_pend.total) }}</td>
       <td class="r">{{ num(doc.total_received_qty) }}</td>
       <td class="r{% if frappe.utils.flt(doc.total_excess_qty) > 0 %} warn{% endif %}">{{ num(doc.total_excess_qty) }}</td>
       <td colspan="4"></td>
@@ -736,75 +741,66 @@ _QC_HTML = (
 # separately", so this prints one plain bordered block per sample id at whatever page size
 # the Print Settings already use — no label stationery is invented here. Rows without a
 # sample id (a draft QC) print the reason instead of a blank page.
-_STICKER_HTML_RAW = r"""
+# One sample sticker, 100 x 75 mm, laid out like the shared label. Shared by the per-row
+# Print button on the QC screen (render_sample_sticker) and the QC Sample Sticker format.
+STICKER_SIZE = "100mm 75mm"
+_STICKER_CSS = """
 <style>
-  .qsk { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
-  .qsk table { border-collapse: collapse; width: 100%; table-layout: fixed;
-      margin-bottom: 10px; font-size: 10px; line-height: 14px; }
-  .qsk table td { border: 1px solid #000; padding: 4px 5px !important;
-      word-wrap: break-word; overflow: hidden; }
-  .qsk .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
-      letter-spacing: 1px; }
-  .qsk .lbl { background: #f6f6f6; font-weight: bold; }
-  .qsk .b { font-weight: bold; }
-  .qsk .sub { font-size: 9px; line-height: 13px; color: #555; }
-  .qsk .id { font-size: 20px; line-height: 29px; font-weight: bold; letter-spacing: 2px; text-align: center; }
-  .qsk .sign { height: 34px; }
-  .qsk .avoid { page-break-inside: avoid; }
-  .qsk .note { font-size: 9px; line-height: 13px; color: #666; }
-  /* ids, batch codes and dates carry hyphens, which are break opportunities */
-  .qsk .nb { white-space: nowrap; }
+  @page { size: 100mm 75mm; margin: 0; }
+  html, body { margin: 0; padding: 0; }
+  .qsk-label { width: 100mm; height: 75mm; padding: 3mm; box-sizing: border-box;
+      page-break-after: always; overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 11px; }
+  .qsk-label:last-child { page-break-after: auto; }
+  .qsk-label table { border-collapse: collapse; width: 100%; height: 100%; table-layout: fixed; }
+  .qsk-label td { border: 1px solid #000; padding: 0 6px; word-wrap: break-word; text-transform: uppercase; }
+  .qsk-label td.l { text-align: center; width: 45%; }
+  .qsk-label td.f { text-align: center; }
 </style>
-{% set _inward_types = __INWARD_TYPES__ %}
-{% set _ns = namespace(printed=0) %}
-<div class="qsk">
-{% for row in doc.sample_testing or [] %}
-{% if row.sample_id %}
-{% set _ns.printed = _ns.printed + 1 %}
-  <table class="avoid">
-    <colgroup><col style="width:18%"><col style="width:32%"><col style="width:18%"><col style="width:32%"></colgroup>
-    <tr><td class="sec" colspan="4">Sample Sticker &middot;
-      {{ _inward_types.get(doc.inward_type, doc.inward_type) if doc.inward_type else "-" }}</td></tr>
-    <tr><td class="lbl">RMID / PMID</td><td class="id nb" colspan="3">{{ row.sample_id }}</td></tr>
-    <tr>
-      <td class="lbl">SKU</td>
-      <td><span class="b">{{ txt(row.item_code) }}</span>
-        {% if row.item_name and row.item_name != row.item_code %}
-        <div class="sub">{{ row.item_name }}</div>{% endif %}</td>
-      <td class="lbl">Sample Qty</td>
-      <td class="b">{{ num3(row.sample_qty) }} {{ row.uom or "" }}</td>
-    </tr>
-    <tr>
-      <td class="lbl">Internal Batch</td><td class="nb">{{ txt(row.internal_batch_no) }}</td>
-      <td class="lbl">Supplier Batch</td><td class="nb">{{ txt(row.supplier_batch_no) }}</td>
-    </tr>
-    <tr>
-      <td class="lbl">Supplier</td><td>{{ txt(doc.supplier_name or doc.supplier) }}</td>
-      <td class="lbl">Invoice No.</td><td class="nb">{{ txt(doc.invoice_number) }}</td>
-    </tr>
-    <tr>
-      <td class="lbl">Purchase Inward</td><td class="nb">{{ txt(doc.purchase_inward) }}</td>
-      <td class="lbl">QC Ref.</td>
-      <td class="nb">{{ txt(doc.name) }}<div class="sub nb">{{ dte(doc.inspection_date) }}</div></td>
-    </tr>
-    {% if row.remarks %}
-    <tr><td class="lbl">Remarks</td><td colspan="3">{{ row.remarks }}</td></tr>
-    {% endif %}
-    <tr>
-      <td class="lbl">Sampled By</td><td>{{ who(doc.inspector) }}</td>
-      <td class="lbl">Sign</td><td class="sign"></td>
-    </tr>
-  </table>
-{% endif %}
-{% endfor %}
-{% if not _ns.printed %}
-  <div class="note">No sample sticker to print: the RMID / PMID is generated when the QC
-  inspection is completed (BRD 4.1.5, BR-QC-14).</div>
-{% endif %}
-</div>
+"""
+_STICKER_LABEL = """
+<div class="qsk-label"><table>
+  <tr><td class="l">Purchase</td><td>{{ s.supplier or "-" }}</td></tr>
+  <tr><td class="l">SKU Code</td><td>{{ s.sku or "-" }}</td></tr>
+  <tr><td class="l">Inward Date</td><td>{{ frappe.utils.formatdate(s.inward_date, "dd/MM/yyyy") if s.inward_date else "-" }}</td></tr>
+  <tr><td class="l">Mfg. Date</td><td>{{ frappe.utils.formatdate(s.mfg, "dd/MM/yyyy") if s.mfg else "-" }}</td></tr>
+  <tr><td class="l">Exp. Date</td><td>{{ frappe.utils.formatdate(s.exp, "dd/MM/yyyy") if s.exp else "-" }}</td></tr>
+  <tr><td class="l">MID / RMID</td><td>{{ s.sid or "-" }}</td></tr>
+  <tr><td class="l">Qty.</td><td>{{ ("%g"|format(s.qty) ~ " " ~ (s.uom or "")) if s.qty else "" }}</td></tr>
+  <tr><td class="f" colspan="2">Allergen</td></tr>
+</table></div>
 """
 
-_STICKER_HTML = _MACROS + _STICKER_HTML_RAW.replace("__INWARD_TYPES__", _INWARD_TYPE_MAP)
+
+def render_sample_sticker(s):
+	"""A standalone page holding one sticker (dict keys as in _STICKER_LABEL)."""
+	body = frappe.render_template(_STICKER_LABEL, {"s": frappe._dict(s)})
+	return "<!doctype html><html><head><meta charset=utf-8><title>%s</title>%s</head><body>%s</body></html>" % (
+		frappe.utils.escape_html(s.get("sid") or "Sample Sticker"), _STICKER_CSS, body)
+
+
+_STICKER_HTML = _STICKER_CSS + r"""
+{% set _only = (frappe.form_dict.get("row") or "") %}
+{% set _inward = frappe.db.get_value("Purchase Inward", doc.purchase_inward, ["inward_datetime", "supplier_name"], as_dict=True) if doc.purchase_inward else None %}
+{% set _ns = namespace(printed=0) %}
+{% for row in doc.sample_testing or [] %}
+{% if row.sample_id and (not _only or row.name == _only) %}
+{% set _ns.printed = _ns.printed + 1 %}
+{% set _line = namespace(mfg=None, exp=None, qty=None, uom=None) %}
+{% for l in doc.items or [] %}
+{% if (row.qc_item and l.name == row.qc_item) or (not row.qc_item and l.item_code == row.item_code and not _line.mfg) %}
+{% set _line.mfg = l.manufacturing_date %}{% set _line.exp = l.expiry_date %}{% set _line.qty = l.received_qty %}{% set _line.uom = l.uom %}
+{% endif %}
+{% endfor %}
+{% set s = {"supplier": doc.supplier_name or (_inward.supplier_name if _inward else None) or doc.supplier,
+    "sku": row.item_code, "inward_date": _inward.inward_datetime if _inward else None,
+    "mfg": _line.mfg, "exp": _line.exp, "sid": row.sample_id,
+    "qty": frappe.utils.flt(row.sample_qty, 3), "uom": row.uom or _line.uom} %}
+""" + _STICKER_LABEL + r"""
+{% endif %}
+{% endfor %}
+{% if not _ns.printed %}<div style="font-size:10px;">No sample sticker to print.</div>{% endif %}
+"""
 
 
 # ------------------------------------------------------------------ upsert ---
@@ -862,7 +858,7 @@ def setup_qc_inspection_print_format():
 
 def setup_qc_sample_sticker_print_format():
 	"""BRD 4.1.5 — the sample sticker printed against the RMID / PMID (BR-QC-14)."""
-	_upsert_print_format(STICKER_PF_NAME, STICKER_DOC_TYPE, _STICKER_HTML, page_size=None)
+	_upsert_print_format(STICKER_PF_NAME, STICKER_DOC_TYPE, _STICKER_HTML, page_size=STICKER_SIZE)
 
 
 # --------------------------------------------------------------------------- GRN
@@ -870,96 +866,135 @@ def setup_qc_sample_sticker_print_format():
 GRN_PF_NAME = "GRN"
 GRN_DOC_TYPE = "Purchase Receipt"
 
-# BRD 5.2 in printed form: what was received, what QC approved, what it rejected, and
-# who finally submitted it. Reuses the .piw stylesheet so the three module documents
-# print as one family.
+# BRD 5.2 in printed form, laid out like the Purchase Invoice / PO prints: what was
+# received, what QC accepted and rejected, its value with GST per line, and who finally
+# submitted it.
 _GRN_HTML_RAW = r"""
+{%- macro money(v) -%}{{ frappe.utils.fmt_money(frappe.utils.flt(v), currency=doc.currency) }}{%- endmacro -%}
+{%- set ds = frappe.utils.cint(doc.docstatus) -%}
+{#- A Purchase Receipt has no bill_no / bill_date: the supplier's invoice is recorded on
+    the Purchase Inward this GRN was made from. -#}
+{%- set inw = frappe.db.get_value("Purchase Inward", doc.custom_purchase_inward, ["invoice_number", "invoice_date"], as_dict=True) if doc.custom_purchase_inward else None -%}
+{%- set sup_inv_no = (inw.invoice_number if inw else None) or doc.supplier_delivery_note -%}
+{%- set sup_inv_date = inw.invoice_date if inw else None -%}
+{%- set orders = [] -%}
+{%- for row in doc.items -%}{%- if row.purchase_order and row.purchase_order not in orders -%}{%- set _ = orders.append(row.purchase_order) -%}{%- endif -%}{%- endfor -%}
 <style>
   .piw { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
   .piw table { border-collapse: collapse; width: 100%; table-layout: fixed;
       margin-bottom: 9px; font-size: 10px; line-height: 14px; }
   .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important;
       word-wrap: break-word; overflow: hidden; }
-  .piw table.g td { padding: 3px 4px !important; font-size: 9px; line-height: 13px; }
-  .piw table.g th { padding: 3px 4px !important; font-size: 8px; line-height: 11px; }
-  .piw th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: center;
-      font-weight: bold; }
-  .piw .sec { background: #d9d9d9; font-weight: bold; text-transform: uppercase; font-size: 10px; line-height: 14px;
-      letter-spacing: 1px; }
+  .piw table.g td { padding: 4px 4px !important; font-size: 9px; line-height: 12px; }
+  .piw table.g th { padding: 4px 4px !important; font-size: 8.5px; line-height: 11px; }
+  .piw th { background: #ececec; font-size: 9px; line-height: 13px; text-transform: uppercase; text-align: left;
+      font-weight: bold; color: #000; }
+  .piw .sec { background: #fff; font-weight: bold; text-transform: uppercase; font-size: 10.5px; line-height: 14px;
+      text-align: center; }
   .piw .lbl { background: #f6f6f6; font-weight: bold; }
   .piw .c { text-align: center; }
   .piw .r { text-align: right; }
   .piw .b { font-weight: bold; }
-  .piw .sub { font-size: 9px; line-height: 13px; color: #555; font-weight: normal; }
-  .piw .warn { color: #a30000; font-weight: bold; }
+  .piw .sub { font-size: 8.5px; line-height: 12px; color: #000; font-weight: normal; }
   .piw .tot td { background: #f0f0f0; font-weight: bold; }
-  .piw .title { font-size: 17px; line-height: 24px; font-weight: bold; text-align: center; letter-spacing: 2px; }
-  .piw .subtitle { text-align: center; font-size: 10px; line-height: 14px; color: #555; margin: 2px 0 8px; }
+  .piw .grand td { background: #ececec; font-weight: bold; font-size: 10.5px; line-height: 15px; }
+  .piw .title { font-size: 19px; line-height: 26px; font-weight: bold; text-align: center; letter-spacing: 1px; }
+  .piw .stamp { text-align: center; font-size: 11px; line-height: 16px; font-weight: bold; letter-spacing: 2px;
+      border: 1px solid #a30000; color: #a30000; padding: 2px 0; margin-bottom: 8px; }
   .piw .avoid { page-break-inside: avoid; }
-  .piw .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }
 </style>
 <div class="piw">
 
-  <div class="title">GOODS RECEIPT NOTE</div>
-  <div class="subtitle">{{ doc.name or "" }}{% if doc.company %} &middot; {{ doc.company }}{% endif %}</div>
+  <div class="title" style="margin-bottom:8px;">GOODS RECEIPT NOTE</div>
+  {% if ds == 0 %}<div class="stamp">DRAFT &mdash; NOT SUBMITTED</div>{% endif %}
+  {% if ds == 2 %}<div class="stamp">CANCELLED</div>{% endif %}
 
-  <!-- ===== header: where this receipt came from ===== -->
+  <!-- ===== header block: logo, company, GRN number and dates ===== -->
+  <table class="avoid hdr">
+    <colgroup><col style="width:22%"><col style="width:31%"><col style="width:23%"><col style="width:24%"></colgroup>
+    <tr>
+      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
+      <td><div class="sub">GRN #</div>{{ txt(doc.name) }}</td>
+      <td><div class="sub">POSTING DATE</div>{{ dte(doc.posting_date) }}</td>
+    </tr>
+    <tr>
+      <td colspan="2"><div class="sub">SUPPLIER</div>{{ txt(doc.supplier_name or doc.supplier) }}</td>
+      <td><div class="sub">SUPPLIER INVOICE #</div>{{ txt(sup_inv_no) }}</td>
+      <td><div class="sub">SUPPLIER INVOICE DATE</div>{{ dte(sup_inv_date) }}</td>
+    </tr>
+  </table>
+
+  <!-- ===== where this receipt came from ===== -->
   <table class="avoid">
     <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
     <tr><td class="sec" colspan="4">GRN Details</td></tr>
     <tr>
-      <td class="lbl">GRN No.</td><td class="b">{{ txt(doc.name) }}</td>
-      <td class="lbl">Posting Date</td><td>{{ dte(doc.posting_date) }}</td>
-    </tr>
-    <tr>
-      <td class="lbl">Vendor</td><td class="b">{{ txt(doc.supplier_name or doc.supplier) }}</td>
-      <td class="lbl">Supplier Invoice No.</td><td>{{ txt(doc.bill_no) }}</td>
+      <td class="lbl">Purchase Order</td><td>{{ txt(orders | join(", ")) }}</td>
+      <td class="lbl">GRN Status</td><td class="b">{{ txt(doc.custom_grn_status) }}</td>
     </tr>
     <tr>
       <td class="lbl">Purchase Inward</td><td>{{ txt(doc.custom_purchase_inward) }}</td>
       <td class="lbl">Purchase QC</td><td>{{ txt(doc.custom_purchase_qc) }}</td>
     </tr>
-    <tr>
-      <td class="lbl">GRN Status</td><td class="b">{{ txt(doc.custom_grn_status) }}</td>
-      <td class="lbl">Document Status</td>
-      <td>{{ ["Draft", "Submitted", "Cancelled"][frappe.utils.cint(doc.docstatus)] }}</td>
-    </tr>
   </table>
 
-  <!-- ===== BRD 5.2: received / approved / rejected, per line ===== -->
+  <!-- ===== item details: quantity, rate and GST per line =====
+       GST %: the GRN line's own, else its Purchase Order line's, else the Item Master's.
+       Amount = accepted qty x rate; Total Amount = Amount + GST. -->
   <table class="g">
     <colgroup>
-      <col style="width:4%"><col style="width:22%"><col style="width:8%">
-      <col style="width:10%"><col style="width:10%"><col style="width:14%">
-      <col style="width:14%"><col style="width:18%">
+      <col style="width:4%"><col style="width:22%"><col style="width:6%">
+      <col style="width:9%"><col style="width:8%"><col style="width:10%"><col style="width:7%">
+      <col style="width:11%"><col style="width:11%"><col style="width:12%">
     </colgroup>
-    <tr><td class="sec" colspan="8">Received Quantity and QC Outcome</td></tr>
+    <tr><td class="sec" colspan="10">Item Details</td></tr>
     <tr>
-      <th>#</th><th>Item</th><th>UOM</th>
-      <th>Accepted</th><th>Rejected</th><th>Accepted Warehouse</th>
-      <th>Rejected Warehouse</th><th>Batch</th>
+      <th>#</th><th>Item</th><th>UOM</th><th>Accepted Qty</th><th>Rejected Qty</th>
+      <th>Rate</th><th>GST %</th><th>Including GST Rate</th><th>Amount</th><th>Total Amount</th>
     </tr>
-    {% set ns = namespace(acc=0, rej=0) %}
+    {% set ns = namespace(taxable=0, gst=0) %}
     {% for row in doc.items %}
-      {% set ns.acc = ns.acc + frappe.utils.flt(row.qty) %}
-      {% set ns.rej = ns.rej + frappe.utils.flt(row.rejected_qty) %}
+      {%- set pct = frappe.utils.flt(row.get("custom_gst_percent")) -%}
+      {%- if not pct and row.purchase_order_item -%}
+        {%- set pct = frappe.utils.flt(frappe.db.get_value("Purchase Order Item", row.purchase_order_item, "custom_gst_percent")) -%}
+      {%- endif -%}
+      {%- if not pct and row.item_code -%}
+        {%- set pct = frappe.utils.flt(frappe.db.get_value("Item", row.item_code, "custom_gst_percent")) -%}
+      {%- endif -%}
+      {%- set rate = frappe.utils.flt(row.rate) -%}
+      {%- set amount = frappe.utils.flt(row.qty) * rate -%}
+      {%- set gst = amount * pct / 100 -%}
+      {%- set ns.taxable = ns.taxable + amount -%}
+      {%- set ns.gst = ns.gst + gst -%}
       <tr>
-        <td>{{ row.idx }}</td>
-        <td>{{ txt(row.item_code) }}<div class="sub">{{ txt(row.item_name) }}</div></td>
-        <td>{{ txt(row.uom) }}</td>
+        <td class="c">{{ row.idx }}</td>
+        <td>{{ txt(row.item_code) }}<div class="sub">{{ txt(row.item_name) }}</div>{% if row.batch_no %}<div class="sub">Batch: {{ row.batch_no }}</div>{% endif %}</td>
+        <td class="c">{{ txt(row.uom) }}</td>
         <td class="r">{{ num3(row.qty) }}</td>
-        <td class="r {% if frappe.utils.flt(row.rejected_qty) %}warn{% endif %}">{{ num3(row.rejected_qty) }}</td>
-        <td>{{ txt(row.warehouse) }}{% if row.custom_quarantine_status %}<div class="sub">{% if row.custom_quarantine_status == "Quarantined" %}In quarantine &middot; releases to {{ txt(row.custom_release_warehouse) }}{% else %}Released from quarantine to {{ txt(row.custom_release_warehouse) }}{% endif %}</div>{% endif %}</td>
-        <td>{{ txt(row.rejected_warehouse) }}</td>
-        <td>{{ txt(row.batch_no) }}</td>
+        <td class="r">{{ num3(row.rejected_qty) }}</td>
+        <td class="r">{{ money(rate) }}</td>
+        <td class="r">{{ "%.1f"|format(pct) }}%</td>
+        <td class="r">{{ money(rate * (1 + pct / 100)) }}</td>
+        <td class="r">{{ money(amount) }}</td>
+        <td class="r">{{ money(amount + gst) }}</td>
       </tr>
     {% endfor %}
     <tr class="tot">
-      <td class="c" colspan="3">Total</td>
-      <td class="r">{{ num3(ns.acc) }}</td>
-      <td class="r">{{ num3(ns.rej) }}</td>
-      <td colspan="3"></td>
+      <td colspan="8">Total</td>
+      <td class="r">{{ money(ns.taxable) }}</td>
+      <td class="r">{{ money(ns.taxable + ns.gst) }}</td>
     </tr>
+  </table>
+
+  <!-- ===== totals ===== -->
+  <table class="avoid">
+    <colgroup><col style="width:55%"><col style="width:20%"><col style="width:25%"></colgroup>
+    <tr><td class="sec" colspan="3">GRN Value</td></tr>
+    <tr><td class="lbl" colspan="2">Amount (before GST)</td><td class="r">{{ money(ns.taxable) }}</td></tr>
+    <tr><td colspan="2">GST</td><td class="r">{{ money(ns.gst) }}</td></tr>
+    <tr class="grand"><td colspan="2">Total Amount (after GST)</td><td class="r">{{ money(ns.taxable + ns.gst) }}</td></tr>
+    <tr><td colspan="3">In Words: {{ frappe.utils.money_in_words(ns.taxable + ns.gst, doc.currency) }}</td></tr>
   </table>
 
   <!-- ===== BR-GRN-07: who let this into stock ===== -->
@@ -973,8 +1008,7 @@ _GRN_HTML_RAW = r"""
     {% if doc.custom_debit_note %}
     <tr>
       <td class="lbl">Debit Note</td>
-      <td class="b warn" colspan="3">{{ txt(doc.custom_debit_note) }}
-        <span class="sub">raised for the rejected quantity (BR-QC-21)</span></td>
+      <td colspan="3">{{ txt(doc.custom_debit_note) }} raised for the rejected quantity (BR-QC-21).</td>
     </tr>
     {% endif %}
   </table>
@@ -982,21 +1016,27 @@ _GRN_HTML_RAW = r"""
   <table class="avoid">
     <colgroup><col style="width:33%"><col style="width:34%"><col style="width:33%"></colgroup>
     <tr>
-      <td><div class="sign"></div><div class="c sub">Store</div></td>
-      <td><div class="sign"></div><div class="c sub">Quality Control</div></td>
-      <td><div class="sign"></div><div class="c sub">Authorised Signatory</div></td>
+      <td style="height:40px;"></td><td></td><td></td>
+    </tr>
+    <tr>
+      <td class="c b">Store</td>
+      <td class="c b">Quality Control</td>
+      <td class="c b">Authorised Signatory</td>
     </tr>
   </table>
 
 </div>
 """
 
-_GRN_HTML = _MACROS + _GRN_HTML_RAW
+_GRN_HTML = None  # built lazily: the logo helper is defined further down
 
 
 def setup_grn_print_format():
-	"""The 'GRN' print format on Purchase Receipt (BRD 5.2 in printed form)."""
-	_upsert_print_format(GRN_PF_NAME, GRN_DOC_TYPE, _GRN_HTML)
+	"""The 'GRN' print format on Purchase Receipt, in the Purchase Invoice / PO style:
+	logo header, then per line accepted / rejected qty, rate, GST %, rate after GST,
+	amount and total amount."""
+	html = _MACROS + _GRN_HTML_RAW.replace("__ALPINO_LOGO__", _alpino_logo_data_uri())
+	_upsert_print_format(GRN_PF_NAME, GRN_DOC_TYPE, html)
 
 
 # ---------------------------------------------------------------- Purchase Invoice
@@ -1285,6 +1325,134 @@ def setup_purchase_invoice_print_format():
 	_upsert_print_format(INVOICE_PF_NAME, INVOICE_DOC_TYPE, _INVOICE_HTML)
 
 
+# ---------------------------------------------------------------- Debit Note
+
+DEBIT_NOTE_PF_NAME = "Debit Note"
+
+# The Debit Note a GRN raises for the quantity QC rejected (a Purchase Invoice return).
+# Same .piw family as the GRN and the invoice. Quantities and amounts print as positive
+# figures: the note itself says they are returned / debited.
+_DEBIT_NOTE_HTML_RAW = r"""
+{%- macro money(v) -%}{{ frappe.utils.fmt_money(frappe.utils.flt(v) | abs, currency=doc.currency) }}{%- endmacro -%}
+{%- set ds = frappe.utils.cint(doc.docstatus) -%}
+{%- set grn = (doc.items[0].purchase_receipt if doc.items else None) -%}
+{%- set inward = frappe.db.get_value("Purchase Receipt", grn, "custom_purchase_inward") if grn else None -%}
+{%- set orders = [] -%}
+{%- for row in doc.items -%}{%- if row.purchase_order and row.purchase_order not in orders -%}{%- set _ = orders.append(row.purchase_order) -%}{%- endif -%}{%- endfor -%}
+<style>
+  .piw { font-family: 'Alpinos Print Sans', Arial, Helvetica, sans-serif; color: #000; font-size: 10px; line-height: 14px; }
+  .piw table { border-collapse: collapse; width: 100%; table-layout: fixed; margin-bottom: 9px; }
+  .piw table td, .piw table th { border: 1px solid #000; padding: 4px 5px !important; word-wrap: break-word; }
+  .piw th { background: #ececec; font-size: 9px; text-transform: uppercase; text-align: left; font-weight: bold; }
+  .piw .sec { font-weight: bold; text-transform: uppercase; font-size: 10.5px; text-align: center; }
+  .piw .lbl { background: #f6f6f6; font-weight: bold; }
+  .piw .c { text-align: center; } .piw .r { text-align: right; } .piw .b { font-weight: bold; }
+  .piw .sub { font-size: 9px; color: #000; }
+  .piw .tot td { background: #f0f0f0; font-weight: bold; }
+  .piw .grand td { background: #ececec; font-weight: bold; font-size: 10.5px; }
+  .piw .title { font-size: 19px; line-height: 26px; font-weight: bold; text-align: center; letter-spacing: 1px; margin-bottom: 8px; }
+  .piw .stamp { text-align: center; font-size: 11px; font-weight: bold; letter-spacing: 2px;
+      border: 1px solid #a30000; color: #a30000; padding: 2px 0; margin-bottom: 8px; }
+  .piw .avoid { page-break-inside: avoid; }
+  .piw .sign { height: 40px; border-bottom: 1px solid #666; margin: 8px 0 3px; }
+</style>
+<div class="piw">
+  <div class="title">DEBIT NOTE</div>
+  {% if ds == 2 %}<div class="stamp">CANCELLED</div>{% endif %}
+
+  <table class="avoid">
+    <colgroup><col style="width:22%"><col style="width:31%"><col style="width:23%"><col style="width:24%"></colgroup>
+    <tr>
+      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
+      <td><div class="sub">DEBIT NOTE #</div>{{ txt(doc.name) }}</td>
+      <td><div class="sub">DATE</div>{{ dte(doc.posting_date) }}</td>
+    </tr>
+  </table>
+
+  <table class="avoid">
+    <colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>
+    <tr><td class="sec" colspan="4">Details</td></tr>
+    <tr>
+      <td class="lbl">Supplier</td><td>{{ txt(doc.supplier_name or doc.supplier) }}</td>
+      <td class="lbl">Supplier GSTIN</td><td>{{ txt(doc.get("supplier_gstin")) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">GRN</td><td>{{ txt(grn) }}</td>
+      <td class="lbl">Purchase Inward</td><td>{{ txt(inward) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Supplier Invoice No.</td><td>{{ txt(doc.bill_no) }}</td>
+      <td class="lbl">Supplier Invoice Date</td><td>{{ dte(doc.bill_date) }}</td>
+    </tr>
+    <tr>
+      <td class="lbl">Purchase Order</td><td>{{ txt(orders | join(", ")) }}</td>
+      <td class="lbl">Reason</td><td>Quantity rejected at QC</td>
+    </tr>
+  </table>
+
+  <table>
+    <colgroup>
+      <col style="width:5%"><col style="width:33%"><col style="width:8%"><col style="width:11%">
+      <col style="width:13%"><col style="width:13%"><col style="width:17%">
+    </colgroup>
+    <tr><td class="sec" colspan="7">Items Returned / Debited</td></tr>
+    <tr><th>Sr.</th><th>Item</th><th>UOM</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th><th>Rejection Reason</th></tr>
+    {% set _t = namespace(qty=0) %}
+    {% for row in doc.items %}
+    {% set _t.qty = _t.qty + (frappe.utils.flt(row.qty) | abs) %}
+    {% set _reason = frappe.db.get_value("Purchase Receipt Item", row.pr_detail, "custom_rejection_reason") if row.pr_detail else None %}
+    <tr>
+      <td class="c">{{ loop.index }}</td>
+      <td><span class="b">{{ txt(row.item_code) }}</span>
+        {% if row.item_name and row.item_name != row.item_code %}<div class="sub">{{ row.item_name }}</div>{% endif %}</td>
+      <td class="c">{{ txt(row.uom) }}</td>
+      <td class="r">{{ num(frappe.utils.flt(row.qty) | abs) }}</td>
+      <td class="r">{{ money(row.rate) }}</td>
+      <td class="r">{{ money(row.amount) }}</td>
+      <td>{{ txt(_reason) }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="tot">
+      <td colspan="3" class="r">Total</td><td class="r">{{ num(_t.qty) }}</td><td></td>
+      <td class="r">{{ money(doc.net_total) }}</td><td></td>
+    </tr>
+  </table>
+
+  <table class="avoid" style="width:55%; margin-left:45%;">
+    <colgroup><col style="width:60%"><col style="width:40%"></colgroup>
+    <tr><td class="lbl">Amount (Excl. GST)</td><td class="r">{{ money(doc.net_total) }}</td></tr>
+    {% for t in doc.taxes or [] %}{% if frappe.utils.flt(t.tax_amount) %}
+    <tr><td class="lbl">{{ t.description or t.account_head }}</td><td class="r">{{ money(t.tax_amount) }}</td></tr>
+    {% endif %}{% endfor %}
+    {% if frappe.utils.flt(doc.rounding_adjustment) %}
+    <tr><td class="lbl">Rounding Adjustment</td><td class="r">{{ money(doc.rounding_adjustment) }}</td></tr>
+    {% endif %}
+    <tr class="grand"><td>Total Debit Amount</td><td class="r">{{ money(doc.rounded_total or doc.grand_total) }}</td></tr>
+  </table>
+  <div class="sub" style="margin-bottom:10px;">Amount in words: {{ frappe.utils.money_in_words(frappe.utils.flt(doc.rounded_total or doc.grand_total) | abs, doc.currency) }}</div>
+
+  {% if doc.remarks %}
+  <table class="avoid"><tr><td class="lbl" style="width:20%;">Remarks</td><td>{{ doc.remarks }}</td></tr></table>
+  {% endif %}
+
+  <table class="avoid">
+    <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
+    <tr>
+      <td>Prepared By: <span class="b">{{ who(doc.owner) }}</span><div class="sign"></div>Signature</td>
+      <td>For {{ txt(doc.company) }}<div class="sign"></div>Authorised Signatory</td>
+    </tr>
+  </table>
+</div>
+"""
+
+
+def setup_debit_note_print_format():
+	"""'Debit Note' print format on Purchase Invoice, for the GRN's rejected-quantity note."""
+	html = _MACROS + _DEBIT_NOTE_HTML_RAW.replace("__ALPINO_LOGO__", _alpino_logo_data_uri())
+	_upsert_print_format(DEBIT_NOTE_PF_NAME, INVOICE_DOC_TYPE, html)
+
+
 # ---------------------------------------------------------------- Purchase Order
 
 PO_PF_NAME = "Purchase Order"
@@ -1564,6 +1732,7 @@ def execute():
 	setup_qc_sample_sticker_print_format()
 	setup_grn_print_format()
 	setup_purchase_invoice_print_format()
+	setup_debit_note_print_format()
 	setup_purchase_order_print_format()
 	# Task 296 / 312: the Print button must open the module format, not Standard.
 	_set_default_print_format(INWARD_DOC_TYPE, INWARD_PF_NAME)
