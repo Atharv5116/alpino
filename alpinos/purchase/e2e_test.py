@@ -96,6 +96,23 @@ def _untyped_leaf_group():
 	return leaves[0] if leaves else None
 
 
+def _test_hsn():
+	"""{"gst_hsn_code": <a real HSN>} when India Compliance is installed, else {}."""
+	if not frappe.get_meta("Item").has_field("gst_hsn_code"):
+		return {}
+	hsn = None
+	if frappe.db.exists("DocType", "GST HSN Code"):
+		hsn = frappe.db.get_value("GST HSN Code", {"name": ("like", "2106%")}, "name") or frappe.db.get_value(
+			"GST HSN Code", {"name": ("like", "________")}, "name"
+		)
+	if not hsn and frappe.db.exists("DocType", "GST HSN Code"):
+		# A site whose HSN list was never imported: one standard code is enough for fixtures.
+		hsn = frappe.get_doc(
+			{"doctype": "GST HSN Code", "hsn_code": "21069099", "description": "Food preparations n.e.c."}
+		).insert(ignore_permissions=True).name
+	return {"gst_hsn_code": hsn} if hsn else {}
+
+
 def ensure_item(code, shelf_life_days=0):
 	if not frappe.db.exists("Item", code):
 		frappe.get_doc(
@@ -110,6 +127,8 @@ def ensure_item(code, shelf_life_days=0):
 				# A Purchase Order cannot be submitted while an item has no GST % in the Item
 				# master (po_gst.assert_items_have_gst), so test items carry one like real ones.
 				"custom_gst_percent": 5,
+				# India Compliance makes an HSN/SAC code mandatory on every Item.
+				**_test_hsn(),
 			}
 		).insert(ignore_permissions=True)
 	elif shelf_life_days:

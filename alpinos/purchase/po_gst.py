@@ -25,6 +25,7 @@ any other tax row somebody adds by hand is left alone.
 """
 
 import frappe
+from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.utils import flt
 
@@ -106,25 +107,107 @@ def setup_input_gst_accounts():
 	New accounts only, beside the output ones under the same parent; nothing existing is
 	touched. A company without a CGST account is left alone.
 	"""
-	for company, abbr in frappe.get_all("Company", fields=["name", "abbr"], as_list=True):
-		parent = frappe.db.get_value("Account", f"CGST - {abbr}", "parent_account")
-		if not parent:
-			continue
-		for name in _HEADS.values():
-			G._ensure_input_account(company, name, parent)
+	for company, _abbr in frappe.get_all("Company", fields=["name", "abbr"], as_list=True):
+		ensure_input_accounts(company)
 	frappe.db.commit()
 
 
-def _accounts(company):
-	"""{"CGST": "Input CGST - X", ...} for the company, only those that exist."""
-	out = {}
-	for head, account_name in _HEADS.items():
-		acc = frappe.db.get_value(
-			"Account", {"company": company, "account_name": account_name, "is_group": 0}, "name"
+def _tax_parent(company):
+	"""The group the GST accounts sit in, whatever this chart of accounts calls them.
+
+	Only "CGST - <abbr>" was looked for, so a site whose chart names it otherwise (UAT)
+	never got the Input accounts and every PO saved with its GST silently dropped.
+	"""
+	abbr = frappe.get_cached_value("Company", company, "abbr")
+	parent = frappe.db.get_value("Account", f"CGST - {abbr}", "parent_account")
+	if parent:
+		return parent
+	for pattern in ("%CGST%", "%SGST%", "%IGST%", "%GST%"):
+		parent = frappe.db.get_value(
+			"Account",
+			{"company": company, "is_group": 0, "account_name": ("like", pattern)},
+			"parent_account",
 		)
-		if acc:
-			out[head] = acc
+		if parent:
+			return parent
+	parent = frappe.db.get_value(
+		"Account", {"company": company, "is_group": 1, "account_name": "Duties and Taxes"}, "name"
+	)
+	if parent:
+		return parent
+	return frappe.db.get_value(
+		"Account", {"company": company, "is_group": 1, "account_type": "Tax"}, "name"
+	)
+
+
+def ensure_input_accounts(company):
+	"""Input CGST / SGST / IGST for `company` (created when missing). {head: account}."""
+	accounts = _accounts(company)
+	if all(h in accounts for h in _HEADS):
+		return accounts
+	parent = _tax_parent(company)
+	if not parent:
+		return accounts
+	for name in _HEADS.values():
+		G._ensure_input_account(company, name, parent)
+	return _accounts(company)
+
+
+def _gst_unavailable_message(company):
+	return _(
+		"GST could not be calculated: the Input CGST / Input SGST / Input IGST accounts do not "
+		"exist for {0}, and no GST or Duties and Taxes account group was found to create "
+		"them in. Please ask Accounts to create them."
+	).format(company)
+
+
+def _accounts(company):
+	"""{"CGST": <account>, "SGST": ..., "IGST": ...} for the company's PURCHASE (input) GST.
+
+	In order, the first that gives an account:
+	    1. India Compliance's GST Settings -> GST Accounts, the company's "Input" row
+	       (UAT: "Input Tax CGST - AHFPL" ...). Its accounts are the ones India Compliance
+	       validates transactions against, so they must win.
+	    2. An account named "Input Tax CGST" (India Compliance's naming) or "Input CGST"
+	       (what setup_input_gst_accounts creates where India Compliance is absent).
+	Only "Input CGST" was looked for, so on UAT every PO saved with its GST dropped.
+	"""
+	out = {}
+	if frappe.db.exists("DocType", "GST Account"):
+		try:
+			row = frappe.get_all(
+				"GST Account",
+				filters={"parent": "GST Settings", "company": company, "account_type": "Input"},
+				fields=["cgst_account", "sgst_account", "igst_account"],
+				limit=1,
+			)
+		except Exception:
+			row = []
+		if row:
+			for head, field in (("CGST", "cgst_account"), ("SGST", "sgst_account"), ("IGST", "igst_account")):
+				if row[0].get(field):
+					out[head] = row[0][field]
+	for head, account_name in _HEADS.items():
+		if head in out:
+			continue
+		for name in ("Input Tax " + head, account_name):
+			acc = frappe.db.get_value(
+				"Account", {"company": company, "account_name": name, "is_group": 0}, "name"
+			)
+			if acc:
+				out[head] = acc
+				break
 	return out
+
+
+def _input_gst_accounts(company):
+	"""Every purchase-GST account of the company, under either naming."""
+	names = [p + h for p in ("Input ", "Input Tax ") for h in _HEADS]
+	return set(
+		frappe.get_all(
+			"Account", filters={"company": company, "account_name": ("in", names), "is_group": 0}, pluck="name"
+		)
+	)
 
 
 def _is_inter_state(doc):
@@ -135,25 +218,53 @@ def _is_inter_state(doc):
 TEMPLATE_PREFIX = "GST "
 
 
+def _template_fits(name, pct, accounts):
+	"""Does this Item Tax Template carry the purchase GST accounts at this rate?"""
+	rates = {
+		r.tax_type: flt(r.tax_rate)
+		for r in frappe.get_all(
+			"Item Tax Template Detail", filters={"parent": name}, fields=["tax_type", "tax_rate"]
+		)
+	}
+	return (
+		abs(rates.get(accounts["CGST"], -1) - pct / 2) < 0.001
+		and abs(rates.get(accounts["SGST"], -1) - pct / 2) < 0.001
+		and abs(rates.get(accounts["IGST"], -1) - pct) < 0.001
+	)
+
+
 def _gst_template(company, pct, accounts):
-	"""The Item Tax Template for this GST rate, created on first use."""
+	"""The Item Tax Template for this GST rate: an existing one that already carries the
+	purchase GST accounts (India Compliance ships "GST 5% - <abbr>" and the like), else our
+	own, created on first use. An existing template is never edited."""
 	abbr = frappe.get_cached_value("Company", company, "abbr")
 	title = f"{TEMPLATE_PREFIX}{pct:g}%"
 	name = f"{title} - {abbr}"
-	if frappe.db.exists("Item Tax Template", name):
+	if frappe.db.exists("Item Tax Template", name) and _template_fits(name, pct, accounts):
 		return name
-	tpl = frappe.get_doc(
-		{
-			"doctype": "Item Tax Template",
-			"title": title,
-			"company": company,
-			"taxes": [
-				{"tax_type": accounts["CGST"], "tax_rate": pct / 2},
-				{"tax_type": accounts["SGST"], "tax_rate": pct / 2},
-				{"tax_type": accounts["IGST"], "tax_rate": pct},
-			],
-		}
-	)
+	if frappe.db.exists("Item Tax Template", name):
+		# Taken by a template without these accounts (India Compliance's own, say).
+		title = f"{title} Purchase"
+		name = f"{title} - {abbr}"
+		if frappe.db.exists("Item Tax Template", name):
+			return name
+	values = {
+		"doctype": "Item Tax Template",
+		"title": title,
+		"company": company,
+		"taxes": [
+			{"tax_type": accounts["CGST"], "tax_rate": pct / 2},
+			{"tax_type": accounts["SGST"], "tax_rate": pct / 2},
+			{"tax_type": accounts["IGST"], "tax_rate": pct},
+		],
+	}
+	meta = frappe.get_meta("Item Tax Template")
+	# India Compliance's mandatory fields on the template, when it is installed.
+	if meta.has_field("gst_treatment"):
+		values["gst_treatment"] = "Taxable"
+	if meta.has_field("gst_rate"):
+		values["gst_rate"] = pct
+	tpl = frappe.get_doc(values)
 	tpl.insert(ignore_permissions=True)
 	return tpl.name
 
@@ -181,6 +292,9 @@ def apply_item_gst(doc, method=None):
 	inter = _is_inter_state(doc)
 	heads = ("IGST",) if inter else ("CGST", "SGST")
 	usable = all(h in accounts for h in _HEADS)
+	if not usable and doc.get("company"):
+		accounts = ensure_input_accounts(doc.company)
+		usable = all(h in accounts for h in _HEADS)
 
 	# The line's own GST % is the buyer's to set (the screen fills it from the Item when the
 	# item is picked). A NEW line that arrives with none -- Frappe starts a Percent at 0, so
@@ -195,6 +309,9 @@ def apply_item_gst(doc, method=None):
 
 	if usable:
 		_apply_gst_rows(doc, accounts, heads)
+	elif any(flt(row.get(LINE_GST_FIELD)) for row in doc.get("items") or []):
+		# Never silently: the line shows GST but the total would not include it.
+		frappe.msgprint(_gst_unavailable_message(doc.company), indicator="orange", alert=True)
 
 	for row in doc.get("items") or []:
 		pct = flt(row.get(LINE_GST_FIELD))
@@ -206,8 +323,10 @@ def _apply_gst_rows(doc, accounts, heads):
 	"""Tax rows from each line's GST %: an Item Tax Template per rate on the line, one
 	"On Net Total" row per GST account, then ERPNext's own recalculation. Shared by the
 	Purchase Order and the Purchase Invoice."""
-	# Our rows go, whatever mode they were built in; everything else stays.
-	ours = set(accounts.values())
+	# Our rows go, whatever mode they were built in; everything else stays. "Ours" includes
+	# the other purchase-GST account names too (Input CGST / Input Tax CGST ...), so a row
+	# built before the company's GST accounts changed does not linger at 0 on the order.
+	ours = set(accounts.values()) | _input_gst_accounts(doc.company)
 	kept = [t for t in doc.get("taxes") or [] if t.account_head not in ours]
 
 	if True:
@@ -260,6 +379,9 @@ def apply_invoice_gst(doc, method=None):
 		return
 	accounts = _accounts(doc.company) if doc.get("company") else {}
 	if not all(h in accounts for h in _HEADS):
+		accounts = ensure_input_accounts(doc.company)
+	if not all(h in accounts for h in _HEADS):
+		frappe.msgprint(_gst_unavailable_message(doc.company), indicator="orange", alert=True)
 		return
 
 	# The lines' GST % is used exactly as it stands. A normal invoice's comes from its GRN,
@@ -349,6 +471,10 @@ def assert_items_have_gst(doc, method=None):
 				).format(lines),
 				title=frappe._("GST % Missing on Lines"),
 			)
+		# Lines carry GST but the order's total does not: the GST accounts are missing.
+		accounts = set(_accounts(doc.company).values()) if doc.get("company") else set()
+		if not any(t.account_head in accounts and flt(t.tax_amount) for t in doc.get("taxes") or []):
+			frappe.throw(_gst_unavailable_message(doc.company), title=frappe._("GST Not Calculated"))
 		return
 	rows = "".join(
 		"<li>{0}{1}</li>".format(

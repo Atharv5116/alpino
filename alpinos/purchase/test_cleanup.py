@@ -140,6 +140,7 @@ def purge(dry_run=True, supplier=TEST_SUPPLIER):
 
 	for user in users:
 		_delete_user(user, report)
+	_delete_test_contacts()
 	frappe.db.sql(
 		"DELETE FROM `tabDeleted Document` WHERE owner LIKE %s", (TEST_USER_PREFIX + "%",)
 	)
@@ -245,6 +246,25 @@ def _delete_voucher(dt, name, report):
 		frappe.db.sql(f"UPDATE `tab{dt}` SET docstatus = 2 WHERE name = %s", (name,))
 	_try(report, dt, name, lambda: frappe.delete_doc(
 		dt, name, force=True, ignore_permissions=True, ignore_on_trash=True, delete_permanently=True))
+
+
+def _delete_test_contacts():
+	"""Contacts the tft- users left, with their child rows.
+
+	Their `user` link is often blank, so _delete_user's `user = %s` missed them, and each run
+	appended another primary email row to the same contact until a later run failed with
+	"Only one Email ID can be set as primary". Matched on the test email domain only.
+	"""
+	names = frappe.db.sql_list(
+		"""SELECT DISTINCT parent FROM `tabContact Email` WHERE email_id LIKE %(p)s
+		UNION SELECT name FROM `tabContact` WHERE email_id LIKE %(p)s""",
+		{"p": TEST_USER_PREFIX + "%@example.com"},
+	)
+	for name in names:
+		for child in ("Contact Email", "Contact Phone", "Dynamic Link"):
+			frappe.db.sql(f"DELETE FROM `tab{child}` WHERE parenttype = 'Contact' AND parent = %s", (name,))
+		frappe.db.sql("DELETE FROM `tabContact` WHERE name = %s", (name,))
+	return len(names)
 
 
 def _delete_user(user, report):
