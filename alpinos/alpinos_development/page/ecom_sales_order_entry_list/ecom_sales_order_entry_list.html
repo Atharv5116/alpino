@@ -1,29 +1,14 @@
 <style>
-	/* Keep the Workflow Status pill on one line so a long label does not wrap
-	   inside the narrow column and render as a blob. */
-	.ecom-so-list .eso-list-table .indicator-pill {
-		display: inline-block;
-		white-space: nowrap;
-		vertical-align: middle;
-	}
 	.ecom-so-list .eso-list-table td {
 		vertical-align: middle;
 	}
-	/* This list has 14 columns; at width:100% the browser squeezes them to their
-	   minimum (dates and the customer name already wrap), leaving no room for the
-	   Workflow Status pill, which then overflows onto Created By. Give the table a
-	   wider min-width so it scrolls inside its wrapper and every column gets its
-	   natural width. Higher specificity than the shared .alp-scroll--xwide rule. */
+	/* This list has 14 columns. The min-width is what gives the <colgroup>
+	   percentages something to resolve against -- at the viewport width alone the
+	   Workflow Status column lands around 129px, which no status label fits in.
+	   The table scrolls inside its wrapper instead of squeezing.
+	   Higher specificity than the shared .alp-scroll--xwide rule. */
 	.ecom-so-list .alp-scroll--xwide > .eso-list-table {
 		min-width: 1850px;
-	}
-	/* Reserve width for the Workflow Status column and keep its pill on one line.
-	   Target the class (when present) and the 12th cell positionally as a fallback
-	   in case the bundled JS class is not loaded yet. */
-	.ecom-so-list .eso-list-table .eso-col-wf,
-	.ecom-so-list .eso-list-table tr > :nth-child(12) {
-		min-width: 175px;
-		white-space: nowrap;
 	}
 </style>
 <div class="ecom-so-list">
