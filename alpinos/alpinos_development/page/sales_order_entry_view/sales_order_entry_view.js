@@ -794,7 +794,7 @@ var SalesOrderEntryView = class {
 				});
 				tb.find('.v-prev-so-link').on('click', function (e) {
 					e.preventDefault();
-					frappe.set_route('sales_order_entry_view', $(this).data('so'));
+					frappe.set_route('sales-order-entry-view', $(this).data('so'));
 				});
 			},
 		});

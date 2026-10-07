@@ -189,7 +189,7 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 				d.$body.find('.dr-so-link').on('click', function (e) {
 					e.preventDefault();
 					d.hide();
-					frappe.set_route('sales_order_entry_view', $(this).data('so'));
+					frappe.set_route('sales-order-entry-view', $(this).data('so'));
 				});
 				d.show();
 			},
