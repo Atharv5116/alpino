@@ -683,8 +683,13 @@ def get_quantity_breakup(date=None, item_code=None, kind="dispatch", customer_ty
 		for so, qty in b.items():
 			totals[so] = totals.get(so, 0) + flt(qty)
 	if not totals:
-		return {"date": str(date), "item_code": item_code, "kind": kind,
-		        "customer_type": customer_type or "", "rows": [], "total": 0}
+		# Same shape as the populated path: the dialog reads item_name for its title, and a
+		# payload that drops a key when empty is a contract that only half holds.
+		return {
+			"date": str(date), "item_code": item_code,
+			"item_name": frappe.db.get_value("Item", item_code, "item_name") or item_code,
+			"kind": kind, "customer_type": customer_type or "", "rows": [], "total": 0,
+		}
 
 	names = list(totals)
 	customers = {
