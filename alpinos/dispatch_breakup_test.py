@@ -148,3 +148,41 @@ def _run():
 
 	check("#58 narrowing to one column returns only that column's orders",
 		_a_column_can_be_narrowed_to_its_customer_type)
+
+	def _the_clickable_cells_actually_carry_the_class():
+		"""Reported 07-10: clicking a quantity did nothing.
+
+		The cells were emitting a SECOND class attribute --
+		<td class="dr-green-val" class="dr-drill"> -- and an HTML parser keeps the first and
+		discards the duplicate, so dr-drill never reached the element and the delegated
+		handler matched nothing. The API was fine the whole time, which is why the earlier
+		checks all passed.
+		"""
+		import io
+		import os
+
+		js_path = os.path.join(
+			os.path.dirname(os.path.abspath(__file__)),
+			"alpinos_development", "page", "dispatch_report", "dispatch_report.js",
+		)
+		js = io.open(js_path, encoding="utf-8").read()
+
+		# No template line may open two class attributes on one tag.
+		for line in js.split("\n"):
+			if line.strip().startswith("//"):
+				continue
+			if "<td" in line and line.count('class="') > 1:
+				raise AssertionError(f"two class attributes on one cell: {line.strip()[:110]}")
+
+		_assert("drill_cls" in js, "the drill class is not merged into the cell's own class")
+		# Every drillable cell must take its class through drill_cls.
+		for marker in ("dr-green-val", "dr-red-val"):
+			for line in js.split("\n"):
+				if line.strip().startswith("//"):
+					continue
+				if marker in line and "<td" in line:
+					_assert("drill_cls(" in line,
+						f"a drillable cell does not merge the class: {line.strip()[:110]}")
+
+	check("#58 the clickable cells carry dr-drill in their own class attribute",
+		_the_clickable_cells_actually_carry_the_class)

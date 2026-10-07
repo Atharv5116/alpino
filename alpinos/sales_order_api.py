@@ -2197,9 +2197,14 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	Pick Lists and drops fully-covered rows (the "Create PL for Remaining Qty" flow)."""
 	so = _ensure_so_packed_items(frappe.get_doc("Sales Order", sales_order))
 
+	_ct = (so.get("order_type") or "")
 	pick_list = frappe._dict({
 		"company": so.company,
 		"purpose": "Delivery",
+		# Changes(HP) #55: the FSN is shown for Flipkart only, and the create path has to
+		# know that as surely as the load path does.
+		"custom_customer_type": _ct,
+		"is_flipkart": 1 if "flipkart" in _ct.lower() else 0,
 		"custom_sales_order_id": so.name,
 		"custom_customer_name": so.customer_name,
 		# Party Code = the customer's PO number; falls back to the Customer name.
@@ -2237,7 +2242,7 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 			frappe.db.get_value(
 				"Item",
 				item_row.item_code,
-				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days"],
+				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days", "custom_fsn_no"],
 				as_dict=True,
 			)
 			or {}
@@ -2257,6 +2262,10 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 			"custom_conversion_factor": factor,
 			"custom_bundle_parent": bundle_parent or "",
 			"custom_sku_no": item_info.get("custom_sku_no") or "",
+			# Changes(HP) #55: the FSN rides from the moment the Pick List is being built,
+			# not only once it exists. This mapping is what the entry page draws a NEW pick
+			# from, so leaving it out here is why the FSN appeared only after submission.
+			"custom_fsn_no": item_info.get("custom_fsn_no") or "",
 			"custom_weight_per_box": flt(item_info.get("custom_gross_weight")) or 0,
 			"shelf_life_in_days": item_info.get("shelf_life_in_days") or 0,
 			"warehouse": warehouse

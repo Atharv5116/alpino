@@ -326,27 +326,32 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 
 			// Changes(HP) #58: every quantity opens the orders behind it. Only a non-zero
 			// value is clickable -- there is nothing behind a zero to show.
+			// The class has to be MERGED into the cell's existing class attribute. Emitting a
+			// second class="..." produces <td class="dr-green-val" class="dr-drill">, and an
+			// HTML parser keeps the first and discards the duplicate -- so dr-drill never
+			// landed on the element and clicking a quantity did nothing at all.
+			const drill_cls = (v) => (v > 0 ? ' dr-drill' : '');
 			const drill = (v, kind, ct) =>
 				v > 0
-					? ` class="dr-drill" data-item="${frappe.utils.escape_html(item.item_code)}" data-kind="${kind}"` +
+					? ` data-item="${frappe.utils.escape_html(item.item_code)}" data-kind="${kind}"` +
 					  `${ct ? ` data-ct="${frappe.utils.escape_html(ct)}"` : ''} title="${__('Click to view order breakup')}"`
 					: '';
 
 			// CT dispatch cells
 			let green_cells = customer_types.map(ct => {
 				let v = item.dispatch_by_ct[ct.name] || 0;
-				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}"${drill(v, 'dispatch', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
+				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}${drill_cls(v)}"${drill(v, 'dispatch', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 
 			// CT pending cells
 			let red_cells = customer_types.map(ct => {
 				let v = item.pending_by_ct[ct.name] || 0;
-				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}"${drill(v, 'pending', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
+				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}${drill_cls(v)}"${drill(v, 'pending', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 
 			rows.push(`<tr class="${row_cls}">
-				<td class="${d_cls}"${drill(item.today_dispatch, 'dispatch', '')}>${fmt(item.today_dispatch)}</td>
-				<td class="${p_cls}"${drill(item.pending_dispatch, 'pending', '')}>${fmt(item.pending_dispatch)}</td>
+				<td class="${d_cls}${drill_cls(item.today_dispatch)}"${drill(item.today_dispatch, 'dispatch', '')}>${fmt(item.today_dispatch)}</td>
+				<td class="${p_cls}${drill_cls(item.pending_dispatch)}"${drill(item.pending_dispatch, 'pending', '')}>${fmt(item.pending_dispatch)}</td>
 				<td class="${s_cls}">${fmt(item.today_stock)}</td>
 				<td class="dr-n${net_extra}">${fmt(item.net_unit)}</td>
 				${inward_cell}

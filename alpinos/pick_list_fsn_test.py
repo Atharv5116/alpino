@@ -78,6 +78,12 @@ def _run():
 	def _pick_list_for(customer_type, suffix):
 		so = _insert("Sales Order", name=f"SOFSN-{tag}-{suffix}", docstatus=1, company=company,
 			customer="Cust", order_type=customer_type)
+		# The mapping the CREATE path uses reads the order's own lines, so the fixture
+		# needs one; the Pick List Item alone is not enough.
+		_insert("Sales Order Item", name=f"SOIFSN-{tag}-{suffix}", parent=so,
+			parenttype="Sales Order", parentfield="items", idx=1, docstatus=1,
+			item_code=item, qty=4, stock_qty=4, rate=10, amount=40, conversion_factor=1,
+			delivered_qty=0, warehouse=wh.name if wh else None)
 		pl = _insert("Pick List", name=f"PLFSN-{tag}-{suffix}", docstatus=1, company=company,
 			custom_sales_order_id=so, purpose="Delivery")
 		_insert("Pick List Item", name=f"PLIFSN-{tag}-{suffix}", parent=pl,
@@ -143,3 +149,36 @@ def _run():
 
 	check("#54 the SKU, Qty and Box columns carry their new widths",
 		_the_columns_were_resized)
+
+	def _the_fsn_is_there_while_the_pick_list_is_being_created():
+		"""Changes(HP) #55, reported 07-10: "FSN No. should reflect immediately while
+		creating the Pick List, not only after submission."
+
+		The entry page draws a NEW pick from get_pick_list_mapping_data, and an existing one
+		from get_pick_list_data. The FSN was only on the second, so it appeared once the
+		Pick List existed and not while it was being built.
+		"""
+		from alpinos.sales_order_api import get_pick_list_mapping_data
+
+		so = frappe.db.get_value("Pick List", flipkart, "custom_sales_order_id")
+		data = get_pick_list_mapping_data(so)
+		_assert(data.get("is_flipkart") == 1,
+			f"the create path does not know this is Flipkart: {data.get('custom_customer_type')!r}")
+		rows = [r for r in (data.get("locations") or []) if r.get("item_code") == item]
+		_assert(rows, "the item is not in the mapping at all")
+		_assert(rows[0].get("custom_fsn_no") == "JKHBHAJ78687698",
+			f"the FSN is missing while creating: {rows[0].get('custom_fsn_no')!r}")
+
+	check("#55 the FSN is present while the Pick List is being created, not only after",
+		_the_fsn_is_there_while_the_pick_list_is_being_created)
+
+	def _a_non_flipkart_create_does_not_get_the_flag():
+		from alpinos.sales_order_api import get_pick_list_mapping_data
+
+		so = frappe.db.get_value("Pick List", other, "custom_sales_order_id")
+		data = get_pick_list_mapping_data(so)
+		_assert(data.get("is_flipkart") == 0,
+			"a non-Flipkart order was flagged on the create path")
+
+	check("#55 a non-Flipkart order is not flagged on the create path either",
+		_a_non_flipkart_create_does_not_get_the_flag)
