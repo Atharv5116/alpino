@@ -99,6 +99,8 @@ doctype_js = {
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
 	"Purchase Receipt": "public/js/purchase_receipt_grn.js",
 	"Purchase Invoice": "public/js/purchase_invoice_debit_note.js",
+	# Changes(HP) #20: Half Day is not offered when the reason is On Duty.
+	"Attendance Request": "public/js/attendance_request_on_duty.js",
 	# One file for all three: the desk form is the one Production surface that neither the
 	# module screens nor frappe.re_route can correct the breadcrumb on.
 	"Machine": "public/js/production_doctype_breadcrumb.js",
@@ -837,9 +839,11 @@ doc_events = {
 	"Attendance Request": {
 		"validate": [
 			"alpinos.attendance_request_automation.set_reporting_person",
-			# Changes(HP) #6 / #7 -- regularisation can't point at the future, and a
-			# Saturday can't be halved.
+			# Changes(HP) #6 / #7 / #20 -- regularisation can't point at the future
+			# (On Duty excepted, #15), a Saturday can't be halved, and On Duty is
+			# always a full day.
 			"alpinos.attendance_request_rules.block_future_date_time",
+			"alpinos.attendance_request_rules.block_half_day_when_on_duty",
 			"alpinos.attendance_request_rules.block_saturday_half_day",
 		],
 		"on_submit": "alpinos.raven_notifications.notify_attendance_request"
