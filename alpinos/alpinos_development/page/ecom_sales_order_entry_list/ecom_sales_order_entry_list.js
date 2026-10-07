@@ -45,22 +45,28 @@ var ESO_WF_COLORS = {
 	Cancelled: 'red',
 };
 
-// specced separately from the offline Sales/Warehouse layouts
+// specced separately from the offline Sales/Warehouse layouts.
+// `width` drives the <colgroup>, as it does on the offline list. The shared CSS puts this
+// table in table-layout:fixed, which ignores a cell's min-width and splits the width evenly
+// between columns -- without these the Workflow Status pill is nowrap in a 129px column and
+// prints straight over the Invoice No beside it. Workflow Status is the widest on purpose:
+// its longest label ("Partial Delivery Note Created") needs ~207px of pill.
+// The checkbox column takes the remaining 3%.
 var ESO_COLUMNS = [
-	{ label: 'ID', sort: 'name', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-	{ label: 'PO No', sort: 'custom_po_number', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
-	{ label: 'Customer Name', sort: 'customer_name', render: (d, h) => h.esc(d.customer_name) },
-	{ label: 'Site Name', sort: 'custom_site_name', render: (d, h) => h.esc(d.custom_site_name || '—') },
-	{ label: 'PO Date', sort: 'custom_po_date', render: (d, h) => h.date(d.custom_po_date || d.po_date) },
-	{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', render: (d, h) => h.date(d.custom_po_expiry_date) },
-	{ label: 'Delivery By', sort: 'custom_delivery_by_date', render: (d, h) => h.date(d.custom_delivery_by_date || d.delivery_date) },
-	{ label: 'Dispatch Date', sort: 'custom_dispatch_date', render: (d, h) => h.date(d.custom_dispatch_date) },
-	{ label: 'Links', cls: 'text-center', render: (d, h) => h.links(d) },
-	{ label: 'ASN Detail', render: (d, h) => h.asn(d) },
-	{ label: 'Workflow Status', sort: 'custom_workflow_status', cls: 'eso-col-wf', render: (d, h) => h.wf(d) },
-	{ label: 'Invoice No', sort: 'custom_invoice_no', render: (d, h) => h.esc(d.invoice_no || '—') },
-	{ label: 'Created By', sort: 'owner', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-	{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', render: (d, h) => h.money(d) },
+	{ label: 'ID', sort: 'name', width: '7%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+	{ label: 'PO No', sort: 'custom_po_number', width: '7%', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
+	{ label: 'Customer Name', sort: 'customer_name', width: '9%', render: (d, h) => h.esc(d.customer_name) },
+	{ label: 'Site Name', sort: 'custom_site_name', width: '6.5%', render: (d, h) => h.esc(d.custom_site_name || '—') },
+	{ label: 'PO Date', sort: 'custom_po_date', width: '5.5%', render: (d, h) => h.date(d.custom_po_date || d.po_date) },
+	{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: '5.5%', render: (d, h) => h.date(d.custom_po_expiry_date) },
+	{ label: 'Delivery By', sort: 'custom_delivery_by_date', width: '5.5%', render: (d, h) => h.date(d.custom_delivery_by_date || d.delivery_date) },
+	{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: '5.5%', render: (d, h) => h.date(d.custom_dispatch_date) },
+	{ label: 'Links', cls: 'text-center', width: '8%', render: (d, h) => h.links(d) },
+	{ label: 'ASN Detail', width: '5.5%', render: (d, h) => h.asn(d) },
+	{ label: 'Workflow Status', sort: 'custom_workflow_status', cls: 'eso-col-wf', width: '13%', render: (d, h) => h.wf(d) },
+	{ label: 'Invoice No', sort: 'custom_invoice_no', width: '5.5%', render: (d, h) => h.esc(d.invoice_no || '—') },
+	{ label: 'Created By', sort: 'owner', width: '6.5%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+	{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '7%', render: (d, h) => h.money(d) },
 ];
 
 var EcomSalesOrderListPage = class {
@@ -396,8 +402,15 @@ var EcomSalesOrderListPage = class {
 	}
 
 	render_header() {
+		// colgroup so the header row and the data rows share one column grid
+		const table = this.wrapper.find('.eso-list-table');
+		let cg = table.children('colgroup');
+		if (!cg.length) { cg = $('<colgroup></colgroup>'); table.prepend(cg); }
+		cg.empty().append('<col style="width:3%">');
+		this._columns.forEach((c) => cg.append(`<col${c.width ? ` style="width:${c.width}"` : ''}>`));
+
 		const tr = this.wrapper.find('.eso-list-table thead tr').empty();
-		tr.append('<th style="width:40px; text-align:center;"><input type="checkbox" class="eso-list-select-all"></th>');
+		tr.append('<th style="text-align:center;"><input type="checkbox" class="eso-list-select-all"></th>');
 		this._columns.forEach((c) => {
 			if (!c.sort) {
 				tr.append(`<th class="${c.cls || ''}">${__(c.label)}</th>`);

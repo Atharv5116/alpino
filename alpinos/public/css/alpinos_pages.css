@@ -971,16 +971,21 @@
 .indicator-pill.red    { --alp-pill-bg: var(--bg-red,    #fbe2e0); --alp-pill-fg: var(--text-on-red,    #a92e26); --alp-pill-bd: rgba(169, 46, 38, 0.20); }
 .indicator-pill.purple { --alp-pill-bg: var(--bg-purple, #ece2fa); --alp-pill-fg: var(--text-on-purple, #65389b); --alp-pill-bd: rgba(101, 56, 155, 0.20); }
 
-/* E-com list: keep the Workflow Status pill on one line and give its column
-   enough width so a long label never overflows onto the Created By column.
-   Lives here (a fingerprinted public asset) rather than the page inline style
-   so bench build reliably cache-busts it. */
+/* E-com list: the Workflow Status pill stays inside its own column.
+   The column width itself is set by the page's <colgroup> (ESO_COLUMNS), because this
+   table is table-layout:fixed further down and fixed layout IGNORES a cell's min-width --
+   an earlier min-width here looked like a fix but could never take effect, which is how a
+   nowrap pill ended up printed over the Invoice No beside it.
+   The wrap below is the backstop: should a status longer than the column ever be added,
+   it wraps inside the pill instead of bleeding into the next cell. height:auto is what
+   keeps the pill background around the second line (the theme pins it to 20px). */
 [data-page-route="ecom-sales-order-entry-list"] .eso-list-table .indicator-pill {
-  white-space: nowrap !important;
+  white-space: normal;
+  height: auto;
+  min-height: 20px;
 }
 [data-page-route="ecom-sales-order-entry-list"] .eso-list-table .eso-col-wf {
-  min-width: 170px !important;
-  white-space: nowrap !important;
+  overflow: hidden;
 }
 
 /* ----------------------------------------------------------------------------
