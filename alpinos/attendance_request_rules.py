@@ -4,6 +4,9 @@ Regularisation is a record of what already happened, so it can never point at a 
 that has not arrived yet (#6), and Alpino works a full Saturday, so a Saturday cannot be
 regularised as a half day (#7) -- the same rule Leave Application and Work From Home
 Request already carry.
+
+#15 carves On Duty out of #6: an On Duty request is raised ahead of the duty, so it is the
+one reason that may carry a future date.
 """
 
 import frappe
@@ -35,6 +38,14 @@ def block_future_date_time(doc, method=None):
 	today is never blocked just because midnight has passed.
 	"""
 	if doc.doctype != "Attendance Request":
+		return
+
+	# Changes(HP) #15 (01-10-2026) supersedes #6 for this one reason: "If reason is ON DUTY
+	# then allow future date Attendance Request raising." On Duty is a duty assignment made
+	# in advance, not a record of a day already worked, so the premise of #6 does not hold.
+	# The whole request is exempt, not just From/To: the Details table carries a row per
+	# requested date, so exempting the header alone would still refuse the save.
+	if doc.get("reason") == "On Duty":
 		return
 
 	now = now_datetime()
