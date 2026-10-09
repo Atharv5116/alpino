@@ -20,6 +20,48 @@ SO_ID_HEADER = "Sales Order Id"
 INVOICE_HEADER = "Invoice No"
 
 
+#: The digits at the end of whatever the cell holds.
+_TRAILING_DIGITS = re.compile(r"(\d+)\s*$")
+
+
+def invoice_number(raw):
+	"""The Invoice No to store, from whatever the Excel cell holds.
+
+	Reported 09-10: nobody could upload a sheet once the series reached 10000. This took
+	the last FOUR characters of the cell -- fine while every invoice was four digits, but
+	"10000" became "0000" and "10001" became "0001". The sheet still uploaded; it wrote the
+	wrong number onto every order and then looked for a PDF named after it, which is why it
+	read as a failed upload. Worse than failing: "10001" -> "0001" can land on a number that
+	already belongs to a real invoice.
+
+	The intent behind the four was to drop a prefix ("abcd4567" -> "4567"), so that is what
+	is done now -- the trailing run of digits, whatever its width:
+
+	    "9863"            -> "9863"        unchanged, the old common case
+	    "10000"           -> "10000"       was "0000"
+	    "abcd4567"        -> "4567"        the prefix case the four was for
+	    "6057.pdf"        -> "6057"        the cell holds the file name (#42.3)
+	    "AHF/26-27/10234" -> "10234"       the number as the report displays it
+	    "6057A"           -> "6057A"       no trailing digits: kept as typed, not mangled
+	"""
+	text = (raw or "").strip()
+	if not text:
+		return ""
+	# The cell holds the PDF's file name (Changes(HP) #42.3).
+	text = re.sub(r"[.]pdf$", "", text, flags=re.I).strip()
+	# Excel hands a whole number back as 10000, but can hand it back as "10000.0". Without
+	# this the match below would take the single "0" after the point.
+	text = re.sub(r"[.]0+$", "", text).strip()
+	if not text:
+		return ""
+	if text.isdigit():
+		return text
+	m = _TRAILING_DIGITS.search(text)
+	# Nothing numeric to find means the number is not a number; keep what was typed rather
+	# than dropping the row or storing a slice of it.
+	return m.group(1) if m else text
+
+
 # ── config / auth ───────────────────────────────────────────────────────────
 def _settings():
 	return frappe.get_single("Invoice Sync Settings")
@@ -137,12 +179,7 @@ def process_invoice_excel(file_url):
 			continue
 		so_id = str(r[so_idx]).strip() if r[so_idx] is not None else ""
 		invoice = str(r[inv_idx]).strip() if len(r) > inv_idx and r[inv_idx] is not None else ""
-		# Only the last 4 characters are the actual Invoice ID (e.g. "abcd4567" -> "4567");
-		# that's what the SO stores and what the Drive PDF is named by.
-		if invoice:
-			# A cell holding the PDF's file name ("6057.pdf") would otherwise keep ".pdf" as
-			# the number (Changes(HP) #42.3).
-			invoice = re.sub(r"[.]pdf$", "", invoice, flags=re.I).strip()[-4:]
+		invoice = invoice_number(invoice)
 		if so_id and invoice:
 			mapping[so_id] = invoice
 
