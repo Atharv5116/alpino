@@ -646,21 +646,13 @@ function formatDuration(ms){
     with open(os.path.join(_wdir, "attendance_calendar.js"), encoding="utf-8") as _f:
         cal_script = _f.read()
 
-    if frappe.db.exists("Custom HTML Block", cal_label):
-        cal_block = frappe.get_doc("Custom HTML Block", cal_label)
-        cal_block.html = cal_html
-        cal_block.script = cal_script
-        cal_block.save(ignore_permissions=True)
-    else:
-        cal_block = frappe.get_doc(
-            {
-                "doctype": "Custom HTML Block",
-                "name": cal_label,
-                "html": cal_html,
-                "script": cal_script,
-            }
-        )
-        cal_block.insert(ignore_permissions=True)
+    # This used to overwrite the block on every migrate, which is why an edit made through
+    # the UI lasted exactly until the next deploy. Now the app's files are written only when
+    # they have actually changed since this patch last wrote them; an unchanged deploy
+    # leaves the block as it is. alpinos.widget_content explains the fingerprint.
+    from alpinos.widget_content import write_if_shipped_changed
+
+    write_if_shipped_changed(cal_label, html=cal_html, script=cal_script)
 
     cal_exists = frappe.db.exists(
         "Workspace Custom Block",
