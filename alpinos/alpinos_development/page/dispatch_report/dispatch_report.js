@@ -126,7 +126,7 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		default: 0,
 		change() { load_data(); },
 	});
-	page.add_button(__('Refresh'), () => load_data(), { icon: 'refresh' });
+	page.add_button(__('Refresh'), () => load_data(true), { icon: 'refresh' });
 
 	// ── Container ─────────────────────────────────────────────────────────────
 	let $wrap = $('<div class="dr-wrap"><div class="dr-content"></div></div>');
@@ -197,12 +197,25 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 	});
 
 	// ── Load ──────────────────────────────────────────────────────────────────
-	function load_data() {
+	// Reported 09-10: the first click on a quantity only reloaded the grid and the breakup
+	// appeared on the SECOND click. A filter control fires its change handler on blur -- a
+	// Date re-formats what it holds and reports a change even when the day is the same --
+	// so pressing the mouse on a cell blurred the filter, load_data() replaced the table
+	// with "Loading…" straight away, and mouseup landed on a node that no longer existed.
+	// No mouseup on the same element means no click event at all, so the handler never ran.
+	// Reloading only when a filter VALUE actually changed removes the cause rather than the
+	// symptom; Refresh passes force, because asking for a refresh means asking again.
+	let last_sig = null;
+
+	function load_data(force) {
 		let date = date_field.get_value();
 		let wh   = wh_field.get_value();
 		let include_mi = mi_field.get_value() ? 1 : 0;
 		let by_parent = parent_field.get_value() ? 1 : 0;
 		let with_mm = mm_field.get_value() ? 1 : 0;
+		const sig = JSON.stringify([date, wh, include_mi, by_parent, with_mm]);
+		if (!force && sig === last_sig) return;
+		last_sig = sig;
 		$content.html('<p style="padding:30px;color:#888;">Loading…</p>');
 		frappe.call({
 			method: 'alpinos.dispatch_report_api.get_dispatch_report_data',

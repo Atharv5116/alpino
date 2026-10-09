@@ -699,9 +699,12 @@ def get_quantity_breakup(date=None, item_code=None, kind="dispatch", customer_ty
 			{"n": tuple(names)}, as_dict=True,
 		)
 	}
+	# Asked for 09-10: the orders read in ascending Sales Order order. It was largest
+	# quantity first, which answers "who took the most" -- but the popup is read against a
+	# list of order numbers, and finding one in a list sorted by quantity means scanning it.
 	rows = [
 		{"sales_order": so, "customer": customers.get(so, ""), "qty": flt(qty)}
-		for so, qty in sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
+		for so, qty in sorted(totals.items(), key=lambda kv: kv[0])
 	]
 	return {
 		"date": str(date),

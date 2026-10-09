@@ -149,6 +149,49 @@ def _run():
 	check("#58 narrowing to one column returns only that column's orders",
 		_a_column_can_be_narrowed_to_its_customer_type)
 
+	def _the_orders_read_in_ascending_order():
+		"""Asked for 09-10: ascending Sales Order, not largest quantity first.
+
+		The third order is given the SMALLEST quantity and a name that sorts FIRST, so the
+		old "quantity descending" order would put it last. Checking only two orders would
+		pass under either rule.
+		"""
+		_dispatched("0", 10, "Aarav Traders")   # name sorts first, qty sorts last
+		out = D.get_quantity_breakup(date=day, item_code=item, kind="dispatch")
+		names = [r["sales_order"] for r in out["rows"]]
+		_assert(names == sorted(names),
+			f"the orders are not in ascending Sales Order order: {names}")
+		_assert(names[0].endswith("-0"),
+			f"the smallest quantity sorts first by name, so it must lead: {names}")
+
+	check("#58 the breakup reads in ascending Sales Order order",
+		_the_orders_read_in_ascending_order)
+
+	def _a_quantity_click_is_not_eaten_by_a_filter_reload():
+		"""Reported 09-10: the first click only reloaded; the breakup needed a second click.
+
+		A filter control fires change on blur, so pressing the mouse on a cell reloaded the
+		grid, load_data() replaced the table with "Loading..." at once, and mouseup landed
+		on a node that no longer existed -- no mouseup on the same element, no click event.
+		The guard is that a reload happens only when a filter VALUE actually changed.
+		"""
+		import io as _io
+		import os as _os
+
+		js = _io.open(_os.path.join(
+			_os.path.dirname(_os.path.abspath(__file__)),
+			"alpinos_development", "page", "dispatch_report", "dispatch_report.js",
+		), encoding="utf-8").read()
+
+		_assert("last_sig" in js, "load_data does not remember the filters it last loaded")
+		_assert("if (!force && sig === last_sig) return;" in js,
+			"load_data still reloads when no filter value changed")
+		_assert("load_data(true)" in js,
+			"Refresh no longer forces a reload past the guard")
+
+	check("#58 a filter reload no longer swallows the first click on a quantity",
+		_a_quantity_click_is_not_eaten_by_a_filter_reload)
+
 	def _the_clickable_cells_actually_carry_the_class():
 		"""Reported 07-10: clicking a quantity did nothing.
 
