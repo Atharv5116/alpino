@@ -53,6 +53,8 @@ app_include_js = [
 # HRMS doctypes (Job Applicant, Interview, Employee Onboarding) use Client Scripts instead.
 doctype_js = {
 	"User": "public/js/user_override.js",
+	# Changes(HP) #20: Half Day is not offered when the reason is On Duty.
+	"Attendance Request": "public/js/attendance_request_on_duty.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
 }
@@ -314,7 +316,11 @@ doc_events = {
 	"Leave Application": {
 		# Alpino works a full Saturday, so it cannot be halved -- the same rule Work From
 		# Home Request already carries.
-		"validate": "alpinos.leave_application_rules.block_saturday_half_day",
+		"validate": [
+			"alpinos.leave_application_rules.block_saturday_half_day",
+			# HRMS #16: a day is either Leave or Work From Home, never both.
+			"alpinos.wfh_leave_exclusion.block_leave_when_wfh_exists",
+		],
 		"on_update": "alpinos.raven_notifications.notify_leave_application",
 		"on_submit": "alpinos.raven_notifications.notify_leave_application"
 	},
@@ -396,6 +402,7 @@ doc_events = {
 	"Delivery Note": {
 		"before_validate": "alpinos.delivery_note_hooks.strip_non_batch_item_batches",
 		"validate": [
+			"alpinos.lr_number.normalise_delivery_note_lr",
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",
 			"alpinos.qty_flow.delivery_note_qty_remarks",
@@ -485,20 +492,24 @@ doc_events = {
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
 			"alpinos.work_from_home_request_automation.block_saturday_half_day",
+			"alpinos.wfh_leave_exclusion.block_wfh_when_leave_exists",
 		],
 		"before_save": [
 			"alpinos.work_from_home_request_automation.auto_populate_employee_and_approver",
 			"alpinos.work_from_home_request_automation.enforce_single_day",
 			"alpinos.work_from_home_request_automation.block_saturday_half_day",
+			"alpinos.wfh_leave_exclusion.block_wfh_when_leave_exists",
 		],
 		"on_update": "alpinos.raven_notifications.notify_work_from_home"
 	},
 	"Attendance Request": {
 		"validate": [
 			"alpinos.attendance_request_automation.set_reporting_person",
-			# Changes(HP) #6 / #7 -- regularisation cannot point at the future, and a
-			# Saturday cannot be halved.
+			# Changes(HP) #6 / #7 / #20 -- regularisation can't point at the future
+			# (On Duty excepted, #15), a Saturday can't be halved, and On Duty is
+			# always a full day.
 			"alpinos.attendance_request_rules.block_future_date_time",
+			"alpinos.attendance_request_rules.block_half_day_when_on_duty",
 			"alpinos.attendance_request_rules.block_saturday_half_day",
 		],
 		"on_submit": "alpinos.raven_notifications.notify_attendance_request"

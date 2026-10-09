@@ -30,7 +30,8 @@ _EPS = 1e-6
 
 
 @frappe.whitelist()
-def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0, group_by_parent=0):
+def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0, group_by_parent=0,
+                             include_marketing_material=0):
 	"""Daily dispatch grid.
 
 	group_by_parent swaps the breakdown columns from Customer Type to the buyer FAMILY:
@@ -44,13 +45,23 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 	# Frappe sends checkbox values as strings ("0"/"1") over the wire.
 	include_material_issue = int(include_material_issue or 0)
 	group_by_parent = int(group_by_parent or 0)
+	# Changes(HP) #62: off by default. Marketing Material then counts for nothing -- not in
+	# the grid, not in any total -- rather than being shown and quietly inflating the day.
+	include_marketing_material = int(include_marketing_material or 0)
 
 	items = _get_sequenced_items()
+	mm_items = _marketing_material_items()
 	delivery_notes = _delivery_notes_dispatched_on(date)
 	dispatch_data = _get_dispatch_data(date, group_by_parent, delivery_notes)
 	if include_material_issue:
 		_merge_dispatch_data(dispatch_data, _get_material_issue_data(date, group_by_parent))
 	pending_data, pending_box_by_ct = _get_pending_data(date, group_by_parent)
+	if not include_marketing_material and mm_items:
+		# Dropped before the summary is built, so every quantity total below is computed
+		# from Finished Goods alone without each total having to remember to exclude it.
+		dispatch_data = {k: v for k, v in dispatch_data.items() if k not in mm_items}
+		pending_data = {k: v for k, v in pending_data.items() if k not in mm_items}
+		items = [i for i in items if i["item_code"] not in mm_items]
 	stock_data = _get_stock_data(warehouse, date)
 	inward_data = _get_inward_data()
 	# Both views draw their headings from the Customer Type master, so the columns keep
@@ -62,6 +73,7 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 	summary = _build_summary(
 		date, customer_types, dispatch_data, pending_data, group_by_parent,
 		delivery_notes, pending_box_by_ct,
+		exclude_marketing_material=not include_marketing_material,
 	)
 
 	result_items = []
@@ -82,6 +94,9 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 			"item_name": item["item_name"] or ic,
 			"color": item.get("color") or "",
 			"sequence": item["sequence"] or 0,
+			# The grid draws its separator off this, so Marketing Material never sits
+			# interleaved with Finished Goods even when it is included.
+			"is_marketing_material": 1 if ic in mm_items else 0,
 			"today_dispatch": today_dispatch,
 			"pending_dispatch": pending_dispatch,
 			"today_stock": today_stock,
@@ -91,10 +106,15 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 			"pending_by_ct": p.get("by_ct", {}),
 		})
 
+	# Marketing Material always comes last, below the separator the page draws.
+	result_items.sort(key=lambda r: (r["is_marketing_material"], r["sequence"], r["item_code"]))
+
 	return {
 		"date": date,
 		"warehouse": warehouse or "",
 		"group_by_parent": group_by_parent,
+		"include_marketing_material": include_marketing_material,
+		"has_marketing_material": any(r["is_marketing_material"] for r in result_items),
 		"customer_types": customer_types,
 		"items": result_items,
 		"summary": summary,
@@ -167,12 +187,66 @@ def _get_customer_types(roots_only=False):
 	]
 
 
+#: Changes(HP) #62. Marketing Material is an Item Group, so membership is a property of the
+#: SKU rather than of the line it arrived on.
+MARKETING_MATERIAL_GROUP = "Marketing Material"
+
+
+def _marketing_material_items():
+	"""Item codes in the Marketing Material group, including any sub-group of it."""
+	groups = frappe.db.sql_list(
+		"""
+		SELECT name FROM `tabItem Group`
+		WHERE name = %(g)s
+			OR lft > (SELECT lft FROM `tabItem Group` WHERE name = %(g)s)
+			AND rgt < (SELECT rgt FROM `tabItem Group` WHERE name = %(g)s)
+		""",
+		{"g": MARKETING_MATERIAL_GROUP},
+	) or [MARKETING_MATERIAL_GROUP]
+	return set(
+		frappe.db.sql_list(
+			"SELECT name FROM `tabItem` WHERE item_group IN %(groups)s", {"groups": tuple(groups)}
+		)
+	)
+
+
+def _marketing_material_boxes(pick_lists, group_by_parent=0):
+	"""Boxes contributed by Marketing Material lines, keyed the way box_by_ct is keyed.
+
+	The Pick List's header box count covers the whole document, so the only honest way to
+	take Marketing Material out of it is to measure what those lines contributed -- and to
+	measure it against the same grouping, or the subtraction lands in the wrong column.
+	"""
+	if not pick_lists:
+		return {}
+	mm = _marketing_material_items()
+	if not mm:
+		return {}
+	key, joins = _group_sql(group_by_parent)
+	out = {}
+	for names in _chunks(sorted(set(pick_lists))):
+		for r in frappe.db.sql(
+			f"""
+			SELECT {key} AS ct, SUM(IFNULL(pli.custom_box, 0)) AS box
+			FROM `tabPick List Item` pli
+			INNER JOIN `tabPick List` pl ON pl.name = pli.parent
+			LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id{joins}
+			WHERE pli.parent IN %(names)s AND pli.item_code IN %(mm)s
+			GROUP BY {key}
+			""",
+			{"names": tuple(names), "mm": tuple(mm)},
+			as_dict=True,
+		):
+			out[r["ct"]] = out.get(r["ct"], 0) + (r["box"] or 0)
+	return out
+
+
 def _get_sequenced_items():
 	"""Return all items that have a sequence assigned, ordered by sequence."""
 	return frappe.db.sql(
 		"""
 		SELECT name AS item_code, item_name, custom_sequence AS sequence,
-			custom_color AS color
+			custom_color AS color, item_group
 		FROM `tabItem`
 		WHERE disabled = 0
 		  AND COALESCE(custom_sequence, 0) > 0
@@ -198,7 +272,7 @@ def _delivery_notes_dispatched_on(date):
 	)
 
 
-def _get_dispatch_data(date, group_by_parent=0, delivery_notes=None):
+def _get_dispatch_data(date, group_by_parent=0, delivery_notes=None, collect=None):
 	"""What submitted Delivery Notes dated `date` took out, per SKU that left.
 
 	A combo line is replaced by its packed components; every other line counts as is.
@@ -238,6 +312,36 @@ def _get_dispatch_data(date, group_by_parent=0, delivery_notes=None):
 			{"date": getdate(date), "names": tuple(names)},
 			as_dict=True,
 		)
+	if collect is not None:
+		for names in _chunks(delivery_notes):
+			for r in frappe.db.sql(
+				f"""
+				SELECT x.item_code, dn.custom_sales_order_id AS sales_order,
+					SUM(x.qty) AS qty, {key} AS customer_type
+				FROM (
+					SELECT dni.parent, dni.item_code, dni.stock_qty AS qty
+					FROM `tabDelivery Note Item` dni
+					WHERE dni.parent IN %(names)s
+					  AND NOT EXISTS (
+						SELECT 1 FROM `tabPacked Item` pi
+						WHERE pi.parenttype = 'Delivery Note' AND pi.parent = dni.parent
+						  AND pi.parent_detail_docname = dni.name
+					  )
+					UNION ALL
+					SELECT pi.parent, pi.item_code, pi.qty
+					FROM `tabPacked Item` pi
+					WHERE pi.parenttype = 'Delivery Note' AND pi.parent IN %(names)s
+				) x
+				JOIN `tabDelivery Note` dn ON dn.name = x.parent
+				LEFT JOIN `tabSales Order` so ON so.name = dn.custom_sales_order_id{joins}
+				GROUP BY x.item_code, dn.custom_sales_order_id, {key}
+				""",
+				{"names": tuple(names)}, as_dict=True,
+			):
+				if not r.sales_order:
+					continue
+				bucket = collect.setdefault((r.item_code, r.customer_type or "Other"), {})
+				bucket[r.sales_order] = bucket.get(r.sales_order, 0) + flt(r.qty)
 	return _aggregate_by_item(rows)
 
 
@@ -277,7 +381,7 @@ def _merge_dispatch_data(target, extra):
 			target[ic]["by_ct"][ct] = target[ic]["by_ct"].get(ct, 0) + qty
 
 
-def _get_pending_data(date, group_by_parent=0):
+def _get_pending_data(date, group_by_parent=0, collect=None):
 	"""Approved, unfinished order quantity not yet on a SUBMITTED Delivery Note.
 
 	Returns ({item: {total, by_ct}}, {customer type: boxes}). Counted per order line so
@@ -376,6 +480,11 @@ def _get_pending_data(date, group_by_parent=0):
 				if qty <= _EPS or not item:
 					continue
 				rows.append({"item_code": item, "qty": qty, "customer_type": ct})
+				if collect is not None:
+					# Changes(HP) #58: the breakup is recorded by the same pass that builds
+					# the figure, so the popup cannot disagree with the cell it opened from.
+					bucket = collect.setdefault((item, ct or "Other"), {})
+					bucket[line.parent] = bucket.get(line.parent, 0) + qty
 				if item not in factor_cache:
 					from alpinos.sales_order_api import get_box_conversion_factor
 
@@ -439,7 +548,7 @@ def _get_inward_data():
 
 
 def _build_summary(date, customer_types, dispatch_data, pending_data, group_by_parent=0,
-                   delivery_notes=None, pending_box_by_ct=None):
+                   delivery_notes=None, pending_box_by_ct=None, exclude_marketing_material=False):
 	"""Build top-level summary totals.
 
 	The box / gross-weight rollups group on the same key as the grid above them, or the
@@ -494,6 +603,13 @@ def _build_summary(date, customer_types, dispatch_data, pending_data, group_by_p
 		):
 			box_by_ct[r["ct"]] = box_by_ct.get(r["ct"], 0) + (r["box"] or 0)
 			gw_by_ct[r["ct"]] = gw_by_ct.get(r["ct"], 0) + (r["gw"] or 0)
+	if exclude_marketing_material:
+		# The header box count covers the whole Pick List, so take out what the Marketing
+		# Material lines contributed -- column by column, so the subtraction lands where
+		# those boxes were counted.
+		for ct, box in _marketing_material_boxes(pick_lists, group_by_parent).items():
+			if ct in box_by_ct:
+				box_by_ct[ct] = max(box_by_ct[ct] - box, 0)
 	total_box = sum(box_by_ct.values())
 	total_gw = sum(gw_by_ct.values())
 
@@ -530,3 +646,72 @@ def _aggregate_by_item(rows):
 		data[ic]["unposted"] += flt(row.get("unposted"))
 		data[ic]["by_ct"][ct] = data[ic]["by_ct"].get(ct, 0) + qty
 	return data
+
+
+@frappe.whitelist()
+def get_quantity_breakup(date=None, item_code=None, kind="dispatch", customer_type=None,
+                         group_by_parent=0, include_material_issue=0):
+	"""Changes(HP) #58: the Sales Orders behind one quantity in the Dispatch Report.
+
+	    "In every Dispatch Report section, make each quantity value clickable. When the user
+	     clicks a quantity, open a pop-up showing the Sales Orders contributing to that
+	     quantity."
+
+	`kind` is "dispatch" or "pending", and `customer_type` narrows it to one column -- the
+	same cell the user clicked. The figures are collected by the very pass that builds the
+	grid, so the popup cannot disagree with the number it opened from.
+	"""
+	if not date:
+		date = today()
+	kind = (kind or "dispatch").strip().lower()
+	group_by_parent = int(group_by_parent or 0)
+
+	collected = {}
+	if kind == "pending":
+		_get_pending_data(date, group_by_parent, collect=collected)
+	else:
+		notes = _delivery_notes_dispatched_on(date)
+		_get_dispatch_data(date, group_by_parent, notes, collect=collected)
+
+	if customer_type:
+		buckets = [collected.get((item_code, customer_type), {})]
+	else:
+		buckets = [v for (ic, _ct), v in collected.items() if ic == item_code]
+
+	totals = {}
+	for b in buckets:
+		for so, qty in b.items():
+			totals[so] = totals.get(so, 0) + flt(qty)
+	if not totals:
+		# Same shape as the populated path: the dialog reads item_name for its title, and a
+		# payload that drops a key when empty is a contract that only half holds.
+		return {
+			"date": str(date), "item_code": item_code,
+			"item_name": frappe.db.get_value("Item", item_code, "item_name") or item_code,
+			"kind": kind, "customer_type": customer_type or "", "rows": [], "total": 0,
+		}
+
+	names = list(totals)
+	customers = {
+		r.name: (r.customer_name or r.customer or "")
+		for r in frappe.db.sql(
+			"""SELECT name, customer, customer_name FROM `tabSales Order` WHERE name IN %(n)s""",
+			{"n": tuple(names)}, as_dict=True,
+		)
+	}
+	# Asked for 09-10: the orders read in ascending Sales Order order. It was largest
+	# quantity first, which answers "who took the most" -- but the popup is read against a
+	# list of order numbers, and finding one in a list sorted by quantity means scanning it.
+	rows = [
+		{"sales_order": so, "customer": customers.get(so, ""), "qty": flt(qty)}
+		for so, qty in sorted(totals.items(), key=lambda kv: kv[0])
+	]
+	return {
+		"date": str(date),
+		"item_code": item_code,
+		"item_name": frappe.db.get_value("Item", item_code, "item_name") or item_code,
+		"kind": kind,
+		"customer_type": customer_type or "",
+		"rows": rows,
+		"total": sum(r["qty"] for r in rows),
+	}

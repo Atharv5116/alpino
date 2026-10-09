@@ -1,5 +1,6 @@
 import frappe
 from frappe.utils import flt, getdate, now_datetime
+from math import ceil
 
 from alpinos.sales_order_api import get_box_conversion_factor
 
@@ -79,15 +80,13 @@ def _sync_rows_and_totals(doc):
 			)
 
 		table_name = row.custom_source_table or "Items"
-		# Box counts are fractional — 50 units at 12 per box is 4.17, and the entry
-		# page stores exactly that (flt(qty / factor, 2)). Rounding here overwrote
-		# what the warehouse entered the moment anything saved the doc through the
-		# ORM — submit, a workflow action, Delivery Note creation — and dragged
-		# Gross Weight (box x weight per box) down with it.
 		if not flt(row.custom_box):
-			row.custom_box = flt(qty / factor, 2) if (table_name == "Items" and qty) else 0
+			if table_name == "Items":
+				row.custom_box = int(ceil(qty / factor)) if qty else 0
+			else:
+				row.custom_box = 0
 		else:
-			row.custom_box = flt(row.custom_box, 2)
+			row.custom_box = int(round(flt(row.custom_box)))
 
 		if row.batch_no:
 			batch_details = frappe.db.get_value(
@@ -96,8 +95,7 @@ def _sync_rows_and_totals(doc):
 				["manufacturing_date", "expiry_date"],
 				as_dict=True,
 			) or {}
-			# Only mirror dates the Batch master actually has — manually entered
-			# MFG/Expiry must survive when the master lacks them.
+			# Only mirror dates the Batch master has; keep manually entered MFG/Expiry otherwise.
 			if batch_details.get("manufacturing_date"):
 				row.custom_mfg_date = batch_details.get("manufacturing_date")
 			if batch_details.get("expiry_date"):
@@ -110,39 +108,27 @@ def _sync_rows_and_totals(doc):
 			actual_box += row_box
 			gross_weight += row_box * row_weight_per_box
 		else:
-			# Sample rows carry FRACTIONAL boxes (qty / factor); they are combined
-			# continuously across the sample sections below, not summed per row.
-			# Shared with the sticker generator so the form's Sample Box and the
-			# printed stickers can't disagree — including the one-box fallback for
-			# items with no Box UOM conversion.
-			from alpinos.pick_list_api import sample_box_fraction
-
-			sample_infos.append({"sku_name": row.item_code, "frac": sample_box_fraction(row)})
+			# Sample rows carry fractional boxes (qty / factor), combined continuously below.
+			sample_infos.append({"sku_name": row.item_code, "frac": qty / factor})
 			sample_weight += row_box * row_weight_per_box
 
 		total_unit += qty
 
-	# Sample Box = number of physical boxes after combining decimal quantities across
-	# Marketing Freebies + Scheme + Additional Units (mixed boxes shared between SKUs).
-	# Single source of truth with the sticker generator, so form/report/stickers agree.
+	# Sample Box = physical boxes after combining decimal quantities across sample tables.
+	# Shares combine_sample_boxes with the sticker generator so form/report/stickers agree.
 	from alpinos.pick_list_api import combine_sample_boxes
 	sample_box = len(combine_sample_boxes(sample_infos))
 
-	# Actual / Total Box keep their decimals too — they are the sum of the rows'
-	# fractional boxes, and the entry page shows them that way (7.17 / 8.17).
-	# Sample Box stays whole: it counts physical boxes, not fractions of one.
-	doc.custom_actual_box = flt(actual_box, 2)
+	doc.custom_actual_box = int(round(actual_box))
 	doc.custom_sample_box = sample_box
 	doc.custom_sample_weight = flt(sample_weight, 2)
-	doc.custom_total_box = flt(actual_box + sample_box, 2)
+	doc.custom_total_box = int(round(actual_box)) + sample_box
 	doc.custom_gross_weight = flt(gross_weight, 2)
 	doc.custom_total_unit = flt(total_unit, 2)
 
 
 def _unset_batch_no_mandatory():
-	# Hack to ensure backend doesn't enforce batch_no mandatory regardless of DB/Cache state
-	# Since Frappe's _validate_mandatory checks doc.meta.get("fields", {"reqd": 1}),
-	# we strip reqd=1 from batch_no before the validation runs.
+	"""Drop a stale reqd=1 on batch_no from the cached meta before Frappe checks mandatory."""
 	meta = frappe.get_meta("Pick List Item")
 	df = meta.get_field("batch_no")
 	if df and df.reqd:
@@ -152,20 +138,19 @@ def _unset_batch_no_mandatory():
 def before_update_after_submit_pick_list(doc, method=None):
 	"""Editing a submitted pick list skips before_validate, but still checks mandatory fields.
 
-	Frappe only runs before_validate for save/submit, so the strip above never reached an
+	Frappe only runs before_validate for save/submit, so the strip below never reached an
 	edit-after-submit (changing the dispatch date, say) and every row failed on Batch No.
 	"""
 	_unset_batch_no_mandatory()
 
 
 def before_validate_pick_list(doc, method):
+	# Strip reqd=1 from batch_no before validation so the backend doesn't force it,
+	# regardless of DB/cache state.
 	_unset_batch_no_mandatory()
 
-	# Free-text batch codes (items without batch tracking, or codes typed before
-	# the Batch master exists) must live in custom_batch_code, never in batch_no
-	# (a Link to Batch) — a non-existent value there fails link validation here
-	# and batch validation on the Delivery Note. Move it instead of dropping it:
-	# the batch mention has to survive the whole SO → PL → DN cycle.
+	# Free-text batch codes must live in custom_batch_code, not batch_no (a Link to Batch),
+	# where a non-existent value fails link validation. Move it so the code survives SO->PL->DN.
 	for row in doc.get("locations") or []:
 		if row.get("batch_no") and not frappe.db.exists("Batch", row.batch_no):
 			if hasattr(row, "custom_batch_code") and not row.get("custom_batch_code"):
@@ -184,8 +169,7 @@ def _validate_mandatory_rows(doc):
 	if not doc.custom_qc_attended_by:
 		frappe.throw("QC Attended By is mandatory.")
 
-	# Transporter + PO No. are mandatory before the Pick List can be submitted
-	# (draft may still be saved without them so the details can be filled later).
+	# Transporter + PO No. are mandatory before submit (draft may be saved without them).
 	if doc.docstatus == 1:
 		if not (doc.get("custom_transporter") or "").strip():
 			frappe.throw("Transporter is mandatory before submitting the Pick List.")

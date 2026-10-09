@@ -4,6 +4,10 @@ Regularisation is a record of what already happened, so it can never point at a 
 that has not arrived yet (#6), and Alpino works a full Saturday, so a Saturday cannot be
 regularised as a half day (#7) -- the same rule Leave Application and Work From Home
 Request already carry.
+
+#15 carves On Duty out of #6: an On Duty request is raised ahead of the duty, so it is the
+one reason that may carry a future date. #20 adds the other half of the On Duty shape: it is
+a full day or it is nothing.
 """
 
 import frappe
@@ -37,6 +41,14 @@ def block_future_date_time(doc, method=None):
 	if doc.doctype != "Attendance Request":
 		return
 
+	# Changes(HP) #15 (01-10-2026) supersedes #6 for this one reason: "If reason is ON DUTY
+	# then allow future date Attendance Request raising." On Duty is a duty assignment made
+	# in advance, not a record of a day already worked, so the premise of #6 does not hold.
+	# The whole request is exempt, not just From/To: the Details table carries a row per
+	# requested date, so exempting the header alone would still refuse the save.
+	if doc.get("reason") == "On Duty":
+		return
+
 	now = now_datetime()
 	today = getdate(now)
 	offenders = []
@@ -66,6 +78,32 @@ def block_future_date_time(doc, method=None):
 	frappe.throw(
 		_(FUTURE_MESSAGE) + "<br><br>" + "<br>".join(dict.fromkeys(offenders)),
 		title=_("Future Date / Time Not Allowed"),
+	)
+
+
+def block_half_day_when_on_duty(doc, method=None):
+	"""Changes(HP) #20 - On Duty is a full day; Half Day is not offered for it.
+
+	    "Reason = On Duty -> Half Day selection should be disabled/not allowed. Users should
+	     only be able to submit the request for a Full Day when the reason is On Duty."
+
+	The form hides and clears the box (attendance_request_on_duty.js), so in practice nobody
+	reaches this. It is here because that is a convenience, not a rule: an import, an API
+	call or a script can set half_day without the form ever loading, and #20 asks for a
+	validation. Half Day Date is cleared with it rather than left behind pointing at a day
+	that is no longer half.
+	"""
+	if doc.doctype != "Attendance Request":
+		return
+	if doc.get("reason") != "On Duty":
+		return
+	if not doc.get("half_day"):
+		return
+
+	frappe.throw(
+		_("An On Duty request is raised for a full day, so Half Day cannot be selected. "
+		  "Untick Half Day, or choose a different Reason."),
+		title=_("Half Day Not Allowed for On Duty"),
 	)
 
 

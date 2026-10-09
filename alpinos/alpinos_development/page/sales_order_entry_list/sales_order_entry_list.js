@@ -171,12 +171,92 @@ var SalesOrderEntryListPage = class {
 			);
 			if (this.btn_resync_invoices) this.btn_resync_invoices.hide();
 		}
+		// Changes(HP) #59: create Draft Pick Lists for the selected orders. Warehouse only,
+		// so nobody else is shown a button the server will refuse.
+		this._can_bulk_pl = ['Warehouse Admin', 'Warehouse Manager', 'System Manager'].some((r) =>
+			(frappe.user_roles || []).includes(r)
+		);
+		if (this._can_bulk_pl) {
+			this.btn_bulk_pick_lists = this.page.add_inner_button(__('Create Pick Lists'), () =>
+				this.bulk_create_pick_lists()
+			);
+			if (this.btn_bulk_pick_lists) this.btn_bulk_pick_lists.hide();
+		}
 		// Only for someone the queue will let in, or the button leads to "Not permitted".
 		if ((frappe.boot.page_info || {})['invoice-download-queue']) {
 			this.page.add_inner_button(__('Order Fulfilment Report'), () =>
 				frappe.set_route('invoice-download-queue')
 			);
 		}
+	}
+
+	bulk_create_pick_lists() {
+		const sales_orders = this._selected_names();
+		if (!sales_orders.length) {
+			frappe.msgprint(__('Please select at least one Sales Order.'));
+			return;
+		}
+		// Say what will actually happen before it happens: an order that already has a
+		// Pick List, or is force closed, is not going to produce one.
+		frappe.call({
+			method: 'alpinos.bulk_dispatch.bulk_action_preview',
+			args: { sales_orders },
+			callback: (p) => {
+				const rows = ((p.message || {}).pick_lists_to_create) || [];
+				const eligible = rows.filter((r) => r.eligible).length;
+				const blocked = rows.length - eligible;
+				const note = blocked
+					? __('{0} of {1} will be skipped (already picked, or not submitted).', [
+							blocked,
+							rows.length,
+					  ])
+					: '';
+				frappe.confirm(
+					__('Create Draft Pick Lists for {0} order(s)?', [eligible]) +
+						(note ? `<br><span class="text-muted">${note}</span>` : ''),
+					() => {
+						frappe.dom.freeze(__('Creating Pick Lists…'));
+						frappe.call({
+							method: 'alpinos.bulk_dispatch.bulk_create_pick_lists',
+							args: { sales_orders },
+							always: () => frappe.dom.unfreeze(),
+							callback: (r) => {
+								if (!r.message) return;
+								const esc = frappe.utils.escape_html;
+								const res = r.message;
+								let html = `<p><b>${res.counts.done}</b> ${__(
+									'Draft Pick List(s) created'
+								)}.</p>`;
+								if ((res.skipped || []).length) {
+									html +=
+										`<p><b>${res.skipped.length}</b> ${__('skipped')}:</p><ul>` +
+										res.skipped
+											.map((x) => `<li>${esc(x.name)} — ${esc(x.reason)}</li>`)
+											.join('') +
+										'</ul>';
+								}
+								if ((res.failed || []).length) {
+									html +=
+										`<p style="color:var(--text-danger,#c0392b);"><b>${res.failed.length}</b> ${__(
+											'failed'
+										)}:</p><ul>` +
+										res.failed
+											.map((x) => `<li>${esc(x.name)} — ${esc(x.error)}</li>`)
+											.join('') +
+										'</ul>';
+								}
+								frappe.msgprint({
+									title: __('Create Pick Lists'),
+									message: html,
+									indicator: res.counts.failed ? 'red' : 'green',
+								});
+								this.load_list();
+							},
+						});
+					}
+				);
+			},
+		});
 	}
 
 	resync_selected_invoices() {
@@ -225,6 +305,7 @@ var SalesOrderEntryListPage = class {
 			if (this.btn_export_invoices) this.btn_export_invoices.show();
 			if (this.btn_order_invoice) this.btn_order_invoice.show();
 			if (this.btn_resync_invoices) this.btn_resync_invoices.show();
+			if (this.btn_bulk_pick_lists) this.btn_bulk_pick_lists.show();
 			if (this.page.set_indicator) {
 				this.page.set_indicator(__('{0} selected', [checked.length]), 'orange');
 			}
@@ -233,6 +314,7 @@ var SalesOrderEntryListPage = class {
 			if (this.btn_export_invoices) this.btn_export_invoices.hide();
 			if (this.btn_order_invoice) this.btn_order_invoice.hide();
 			if (this.btn_resync_invoices) this.btn_resync_invoices.hide();
+			if (this.btn_bulk_pick_lists) this.btn_bulk_pick_lists.hide();
 			if (this.page.clear_indicator) this.page.clear_indicator();
 		}
 	}
@@ -394,7 +476,8 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-au-damage-filter'),
 			render_input: true,
 		});
-		// reveals Dispatched / Cancelled / Rejected (warehouse view) and all channels; default off
+		// reveals finished (Dispatched / Forced Dispatched / Completed / Forced Completed),
+		// Cancelled and Rejected orders (warehouse view) and all channels; default off
 		this._filter_fields.show_all = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Check',

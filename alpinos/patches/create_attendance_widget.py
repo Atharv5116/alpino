@@ -242,31 +242,24 @@ function checkIn(){
 }
 
 // Check-in type/reason dialog for biometric companies (web check-in rules enabled).
-// Reason box appears only for "Other" and accepts letters and spaces (words) —
-// a whitespace-only reason is rejected by the trim + required check.
+// HRMS #14 removed the "Other" reason from check-in, and with it the free-text box that
+// only "Other" asked for. The outside-CHECKOUT reason below still has its own "Other";
+// the ticket names check-in and nothing else.
 function showCheckinTypeDialog(onConfirm, onCancel){
   const d = new frappe.ui.Dialog({
     title: "Check In",
     primary_action_label: "Check In",
     primary_action(){
+      // HRMS #14: the three reasons are all there is now, so there is nothing to
+      // validate beyond having chosen one.
       const type = (d.$body.find(".checkin-type-select").val() || "").trim();
-      const reason = (d.$body.find(".checkin-reason-input").val() || "").trim();
+      const reason = "";
       if(!type){
         frappe.msgprint("Please select a check-in type.");
         return;
       }
-      if(type === "Other"){
-        if(!reason){
-          frappe.msgprint("Please enter a reason for 'Other'.");
-          return;
-        }
-        if(!/^[A-Za-z]+( +[A-Za-z]+)*$/.test(reason)){
-          frappe.msgprint("Reason must contain letters and spaces only (no numbers or special characters).");
-          return;
-        }
-      }
       d.hide();
-      onConfirm({ type: type, reason: type === "Other" ? reason : null });
+      onConfirm({ type: type, reason: null });
     },
     secondary_action_label: "Cancel",
     secondary_action(){ d.hide(); if(onCancel) onCancel(); }
@@ -278,17 +271,8 @@ function showCheckinTypeDialog(onConfirm, onCancel){
       <option value="Client/Vendor">Client/Vendor</option>
       <option value="Shoot">Shoot</option>
       <option value="Meeting">Meeting</option>
-      <option value="Other">Other</option>
     </select>
-    <textarea class="form-control checkin-reason-input" rows="2" placeholder="Enter the reason (letters and spaces only)" style="display:none;"></textarea>
   `);
-  d.$body.find(".checkin-type-select").on("change", function(){
-    d.$body.find(".checkin-reason-input").toggle($(this).val() === "Other");
-  });
-  // Block disallowed characters as the user types (letters and spaces only).
-  d.$body.find(".checkin-reason-input").on("input", function(){
-    this.value = this.value.replace(/[^A-Za-z ]/g, "");
-  });
   d.show();
 }
 

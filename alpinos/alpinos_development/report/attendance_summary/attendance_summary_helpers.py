@@ -33,6 +33,35 @@ def get_location_details(location):
 	return {}
 
 
+#: The share of the shift that counts as a full day when a Shift Type does not say.
+DEFAULT_FULL_DAY_PERCENT = 97.0
+
+#: One minute, in hours. A percentage typed to two decimals cannot land exactly on the
+#: minute it was meant to express, so the comparison allows that much.
+_HOUR_TOLERANCE = 1.0 / 60.0
+
+
+def _full_day_percent(shift_name, cache):
+	"""The Shift Type's own full-day percentage, as a fraction. Changes(HP) HRMS #19.
+
+	Before this the report used one number for every shift. A shift with a shorter span
+	needs its own, because 97% of a four-hour shift is not the same promise as 97% of
+	eight and a half.
+	"""
+	key = ("full_day_percent", shift_name)
+	if key in cache:
+		return cache[key]
+	percent = 0.0
+	if shift_name:
+		percent = flt(
+			frappe.db.get_value(
+				"Shift Type", shift_name, "working_hours_percent_fulfilment_for_full_day"
+			)
+		)
+	cache[key] = (percent or DEFAULT_FULL_DAY_PERCENT) / 100.0
+	return cache[key]
+
+
 def _shift_thresholds(shift_name, is_saturday, cache):
 	"""(half_day_threshold, absent_threshold) from the Shift Type, 0 when not configured.
 
@@ -142,9 +171,9 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		"""Working-Hours-Shortage day-value from the %-of-required tiers.
 
 		Only for a day with both a clock-in and a clock-out; holidays / weekly-offs never count.
-		  >= 97% of required hours -> 0.0
-		  50% - 97%                -> 0.5
-		  < 50%                    -> 1.0
+		  >= the shift's full-day % of required hours -> 0.0   (97% when it sets none)
+		  half that share and above                   -> 0.5
+		  below half                                  -> 1.0
 		"""
 		if date_str in holiday_map:
 			return 0.0
@@ -174,14 +203,20 @@ def calculate_attendance_stats(attendance_map, holiday_map, leave_map, wfh_map, 
 		if half_t or absent_t:
 			return 0.0
 
-		# Neither threshold configured: fall back to the shift span and its tiers.
+		# Neither threshold configured: fall back to the shift span and its tiers. The
+		# full-day share comes from the Shift Type (HRMS #19), falling back to the standard
+		# 97% for a shift that does not set one; half a day stays at half the span.
 		req = _required_hours(att.get("shift"), is_sat, shift_hours_cache)
 		if not req:
 			return 0.0
-		ratio = wh / req
-		if ratio >= 0.97:
+		full_day = _full_day_percent(att.get("shift"), shift_hours_cache)
+		# Compared in hours with a minute's tolerance, not as bare ratios. Somebody setting
+		# 97.06% means "8h15m of an 8h30m shift", but 8h15m is 97.0588% -- comparing the
+		# ratios exactly makes the number they typed miss the day they meant by a rounding
+		# error, and the whole month then collects half-day shortages.
+		if wh + _HOUR_TOLERANCE >= req * full_day:
 			return 0.0
-		if ratio >= 0.50:
+		if wh + _HOUR_TOLERANCE >= req * 0.50:
 			return 0.5
 		return 1.0
 

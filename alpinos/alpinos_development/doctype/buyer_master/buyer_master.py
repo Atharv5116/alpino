@@ -1,6 +1,8 @@
 import re
 
 import frappe
+
+from alpinos.tally_pl_name import set_tally_fields
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import getseries
@@ -181,6 +183,7 @@ class BuyerMaster(Document):
 
 	def validate(self):
 		self._set_search_alias()
+		set_tally_fields(self)              # Changes(HP) #56: Offline P&L name + warehouse
 		self._migrate_legacy_address_if_empty()
 		self._normalize_addresses()
 		self._validate_primary_address()

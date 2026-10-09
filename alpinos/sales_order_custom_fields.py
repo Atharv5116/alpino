@@ -167,30 +167,23 @@ def setup_sales_order_custom_fields():
 				description="External invoice PDF fetched from the Drive folder (filename = Invoice No).",
 			),
 			dict(
+				# Changes(HP) #51: a partially dispatched order can carry one invoice per
+				# dispatch. The single custom_invoice_no above is untouched, so the whole
+				# history still reads correctly without a migration.
+				fieldname="custom_invoices",
+				label="Invoices",
+				fieldtype="Table",
+				options="Sales Order Invoice",
+				insert_after="custom_invoice_pdf",
+				description="One row per invoice raised against this order, with the dispatch part it belongs to.",
+			),
+			dict(
 				fieldname="custom_invoice_downloaded",
 				label="Invoice Downloaded",
 				fieldtype="Check",
 				insert_after="custom_invoice_pdf",
 				read_only=1,
-				description="Set once anyone has downloaded the invoice PDF (bulk export or the per-row SI button). Who downloaded it is tracked per user in Alpino Invoice Download — that, not this flag, decides whose Pending Invoice Downloads list the order drops off.",
-			),
-			dict(
-				fieldname="custom_invoice_downloaded_legacy",
-				label="Invoice Downloaded (Pre Per-User)",
-				fieldtype="Check",
-				insert_after="custom_invoice_downloaded",
-				read_only=1,
-				hidden=1,
-				description="Set by a one-time patch on invoices already downloaded before download tracking became per-user. There is no record of who took those, so they stay off everyone's pending list instead of reappearing for the whole team.",
-			),
-			dict(
-				fieldname="custom_rejection_reason",
-				label="Rejection Reason",
-				fieldtype="Small Text",
-				insert_after="custom_invoice_downloaded_legacy",
-				read_only=1,
-				depends_on="eval:doc.custom_workflow_status=='Rejected'",
-				description="Why the warehouse rejected this order. Captured when Reject is used and kept for future reference.",
+				description="Set once the invoice PDF has been downloaded (bulk export or the per-row SI button). Bulk export skips orders already marked, so each invoice is downloaded only once.",
 			),
 			# Cash Discount section (visible in Totals area)
 			dict(

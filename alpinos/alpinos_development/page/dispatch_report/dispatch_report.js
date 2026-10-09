@@ -53,6 +53,9 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		}
 		.dr-green-sum  { background: #c8e6c9; color: #1b5e20; font-weight: 600; }
 		.dr-green-val  { background: #f1f8e9; color: #33691e; font-weight: 700; }
+		/* Changes(HP) #58: a quantity with orders behind it invites the click. */
+		.dr-drill { cursor: pointer; }
+		.dr-drill:hover { outline: 2px solid rgba(37,99,235,0.55); outline-offset: -2px; }
 		.dr-green-zero { background: #f9fbe7; color: #bdbdbd; }
 
 		/* ── Red section (Pending by CT) ── */
@@ -116,23 +119,110 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 		default: 0,
 		change() { load_data(); },
 	});
-	page.add_button(__('Refresh'), () => load_data(), { icon: 'refresh' });
+	// Changes(HP) #62. Off: Marketing Material counts for nothing -- not in the grid, not
+	// in any total. On: it is included, but below its own separator, never interleaved.
+	let mm_field = page.add_field({
+		fieldtype: 'Check', fieldname: 'include_marketing_material', label: 'Include Marketing Material',
+		default: 0,
+		change() { load_data(); },
+	});
+	page.add_button(__('Refresh'), () => load_data(true), { icon: 'refresh' });
 
 	// ── Container ─────────────────────────────────────────────────────────────
 	let $wrap = $('<div class="dr-wrap"><div class="dr-content"></div></div>');
 	$(wrapper).find('.page-content').append($wrap);
 	let $content = $wrap.find('.dr-content');
 
+	// Changes(HP) #58: one delegated handler for every section's quantities, so a cell added
+	// to any future section is clickable without wiring it again.
+	$content.on('click', '.dr-drill', function () {
+		const $c = $(this);
+		frappe.call({
+			method: 'alpinos.dispatch_report_api.get_quantity_breakup',
+			args: {
+				date: date_field.get_value(),
+				item_code: $c.data('item'),
+				kind: $c.data('kind'),
+				customer_type: $c.data('ct') || '',
+				group_by_parent: parent_field.get_value() ? 1 : 0,
+			},
+			callback(r) {
+				const res = r.message || {};
+				const rows = res.rows || [];
+				const esc = frappe.utils.escape_html;
+				const title = __('{0} — {1}', [
+					res.item_name || $c.data('item'),
+					res.kind === 'pending' ? __('Pending') : __("Today's Dispatch"),
+				]);
+				if (!rows.length) {
+					frappe.msgprint({ title, message: __('No Sales Orders behind this quantity.') });
+					return;
+				}
+				const body = rows
+					.map(
+						(d) => `<tr>
+							<td><a href="#" class="dr-so-link" data-so="${esc(d.sales_order)}">${esc(d.sales_order)}</a></td>
+							<td>${esc(d.customer || '—')}</td>
+							<td class="text-right">${format_number(d.qty)}</td>
+						</tr>`
+					)
+					.join('');
+				const d = new frappe.ui.Dialog({
+					title,
+					size: 'large',
+					primary_action_label: __('Close'),
+					primary_action() { d.hide(); },
+				});
+				d.$body.html(`
+					<table class="table table-bordered" style="margin-bottom:0;">
+						<thead><tr>
+							<th>${__('Sales Order')}</th>
+							<th>${__('Customer')}</th>
+							<th class="text-right">${__('Qty')}</th>
+						</tr></thead>
+						<tbody>${body}</tbody>
+						<tfoot><tr>
+							<th colspan="2" class="text-right">${__('Total')}</th>
+							<th class="text-right">${format_number(res.total || 0)}</th>
+						</tr></tfoot>
+					</table>`);
+				d.$body.find('.dr-so-link').on('click', function (e) {
+					e.preventDefault();
+					d.hide();
+					frappe.set_route('sales-order-entry-view', $(this).data('so'));
+				});
+				d.show();
+			},
+		});
+	});
+
 	// ── Load ──────────────────────────────────────────────────────────────────
-	function load_data() {
+	// Reported 09-10: the first click on a quantity only reloaded the grid and the breakup
+	// appeared on the SECOND click. A filter control fires its change handler on blur -- a
+	// Date re-formats what it holds and reports a change even when the day is the same --
+	// so pressing the mouse on a cell blurred the filter, load_data() replaced the table
+	// with "Loading…" straight away, and mouseup landed on a node that no longer existed.
+	// No mouseup on the same element means no click event at all, so the handler never ran.
+	// Reloading only when a filter VALUE actually changed removes the cause rather than the
+	// symptom; Refresh passes force, because asking for a refresh means asking again.
+	let last_sig = null;
+
+	function load_data(force) {
 		let date = date_field.get_value();
 		let wh   = wh_field.get_value();
 		let include_mi = mi_field.get_value() ? 1 : 0;
 		let by_parent = parent_field.get_value() ? 1 : 0;
+		let with_mm = mm_field.get_value() ? 1 : 0;
+		const sig = JSON.stringify([date, wh, include_mi, by_parent, with_mm]);
+		if (!force && sig === last_sig) return;
+		last_sig = sig;
 		$content.html('<p style="padding:30px;color:#888;">Loading…</p>');
 		frappe.call({
 			method: 'alpinos.dispatch_report_api.get_dispatch_report_data',
-			args: { date, warehouse: wh, include_material_issue: include_mi, group_by_parent: by_parent },
+			args: {
+				date, warehouse: wh, include_material_issue: include_mi,
+				group_by_parent: by_parent, include_marketing_material: with_mm,
+			},
 			callback(r) {
 				$content.html(r.message ? build_table(r.message)
 					: '<p style="padding:30px;color:#888;">No data found.</p>');
@@ -212,7 +302,13 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			</td></tr>`);
 		}
 
+		let mm_separator_drawn = false;
 		for (let item of items) {
+			// The API sorts Marketing Material last, so the first one marks the boundary.
+			if (item.is_marketing_material && !mm_separator_drawn) {
+				mm_separator_drawn = true;
+				rows.push(`<tr class="dr-mm-sep"><td colspan="${6+N+N}" style="padding:8px 10px; font-weight:700; letter-spacing:0.06em; background:var(--bg-color,#f4f5f6); border-top:2px solid var(--border-color,#b9c0c7);">MARKETING MATERIALS</td></tr>`);
+			}
 			let is_neg  = item.net_unit < 0;
 			let row_cls = is_neg ? 'dr-row-neg' : '';
 
@@ -241,21 +337,34 @@ frappe.pages['dispatch-report'].on_page_load = function (wrapper) {
 			let s_cls = item.today_stock > 0 ? 'dr-s-nz' : 'dr-s';
 			let net_extra = is_neg ? ' dr-neg-val' : '';
 
+			// Changes(HP) #58: every quantity opens the orders behind it. Only a non-zero
+			// value is clickable -- there is nothing behind a zero to show.
+			// The class has to be MERGED into the cell's existing class attribute. Emitting a
+			// second class="..." produces <td class="dr-green-val" class="dr-drill">, and an
+			// HTML parser keeps the first and discards the duplicate -- so dr-drill never
+			// landed on the element and clicking a quantity did nothing at all.
+			const drill_cls = (v) => (v > 0 ? ' dr-drill' : '');
+			const drill = (v, kind, ct) =>
+				v > 0
+					? ` data-item="${frappe.utils.escape_html(item.item_code)}" data-kind="${kind}"` +
+					  `${ct ? ` data-ct="${frappe.utils.escape_html(ct)}"` : ''} title="${__('Click to view order breakup')}"`
+					: '';
+
 			// CT dispatch cells
 			let green_cells = customer_types.map(ct => {
 				let v = item.dispatch_by_ct[ct.name] || 0;
-				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
+				return `<td class="${v > 0 ? 'dr-green-val' : 'dr-green-zero'}${drill_cls(v)}"${drill(v, 'dispatch', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 
 			// CT pending cells
 			let red_cells = customer_types.map(ct => {
 				let v = item.pending_by_ct[ct.name] || 0;
-				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}">${v > 0 ? fmt(v) : '0'}</td>`;
+				return `<td class="${v > 0 ? 'dr-red-val' : 'dr-red-zero'}${drill_cls(v)}"${drill(v, 'pending', ct.name)}>${v > 0 ? fmt(v) : '0'}</td>`;
 			}).join('');
 
 			rows.push(`<tr class="${row_cls}">
-				<td class="${d_cls}">${fmt(item.today_dispatch)}</td>
-				<td class="${p_cls}">${fmt(item.pending_dispatch)}</td>
+				<td class="${d_cls}${drill_cls(item.today_dispatch)}"${drill(item.today_dispatch, 'dispatch', '')}>${fmt(item.today_dispatch)}</td>
+				<td class="${p_cls}${drill_cls(item.pending_dispatch)}"${drill(item.pending_dispatch, 'pending', '')}>${fmt(item.pending_dispatch)}</td>
 				<td class="${s_cls}">${fmt(item.today_stock)}</td>
 				<td class="dr-n${net_extra}">${fmt(item.net_unit)}</td>
 				${inward_cell}

@@ -1,4 +1,53 @@
+// Changes(HP) #57: entering or correcting a GST No. fetches the party's details. Everything
+// fetched is written into the ordinary fields and stays editable -- the user can correct any
+// of it afterwards, and correcting the GST No. itself fetches again.
+function fetch_gst_details(frm, { silent = false } = {}) {
+	const gstin = (frm.doc.gst_no || "").trim().toUpperCase();
+	if (!gstin) return;
+	if (frm.__gst_fetched_for === gstin) return;   // already fetched for this number
+	frm.__gst_fetched_for = gstin;
+
+	frappe.call({
+		method: "alpinos.buyer_gst_fetch.fetch_gstin_details",
+		args: { gstin },
+		freeze: !silent,
+		freeze_message: __("Fetching GST details…"),
+		callback(r) {
+			const res = r.message || {};
+			if (!cint(res.ok)) {
+				// Every failure says which kind it was, so "invalid number" and "the service
+				// is down" do not look like the same problem.
+				frm.__gst_fetched_for = null;
+				if (!silent) {
+					frappe.msgprint({
+						title: __("GST Details"),
+						message: res.message || __("Could not fetch details for this GST No."),
+						indicator: res.reason === "invalid" ? "red" : "orange",
+					});
+				}
+				return;
+			}
+			const d = res.data || {};
+			const set_if = (field, value) => {
+				if (value) frm.set_value(field, value);
+			};
+			set_if("customer_business_name", d.customer_business_name);
+			set_if("gst_type", d.gst_type);
+			set_if("state", d.state);
+			set_if("city", d.city);
+			set_if("pincode", d.pincode);
+			frappe.show_alert({ message: res.message, indicator: "green" });
+		},
+	});
+}
+
 frappe.ui.form.on("Buyer Master", {
+	gst_no(frm) {
+		// Fires on every correction, which is what the ticket asks for.
+		frm.__gst_fetched_for = null;
+		fetch_gst_details(frm);
+	},
+
 	refresh(frm) {
 		toggle_tax_fields(frm);
 		set_city_state_queries(frm);
@@ -17,6 +66,14 @@ frappe.ui.form.on("Buyer Master", {
 			query: "alpinos.offline_buyer_api.poc_employee_query",
 			filters: { channel: frm.doc.channel || "" },
 		}));
+		// Changes(HP) #57: a button for the case where the number was already saved
+		// before the fetch existed.
+		if (frm.doc.gst_no) {
+			frm.add_custom_button(__("Fetch GST Details"), () => {
+				frm.__gst_fetched_for = null;
+				fetch_gst_details(frm);
+			});
+		}
 		frm.set_query("parent_buyer", () => ({
 			filters: {
 				is_parent: 1,

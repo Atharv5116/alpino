@@ -70,11 +70,15 @@ def _voucher_type(registration_type, state):
 	return "B to C GST Sales Offline" if gujarat else "B to C IGST Sales Offline"
 
 
-def _picklist_map(so_name):
+def _picklist_map(so_name, pick_list=None):
 	"""Picked qty + box per (item, source table) from the submitted Pick List(s).
 
 	Keying by source table keeps a SKU that appears in both the Items section and a
 	sample section reporting each section's qty on its own row.
+
+	With `pick_list` the figures come from that one part only (Changes(HP) #63): an order
+	dispatched in two parts must report 100 against Part 1 and 50 against Part 2, never 150
+	on either.
 	"""
 	rows = frappe.db.sql(
 		"""
@@ -88,15 +92,16 @@ def _picklist_map(so_name):
 		INNER JOIN `tabPick List` pl ON pl.name = pli.parent AND pl.docstatus = 1
 		WHERE (pl.custom_sales_order_id = %(so)s OR pli.sales_order = %(so)s)
 			AND IFNULL(pli.custom_bundle_parent, '') = ''
+			AND (%(pl)s IS NULL OR pl.name = %(pl)s)
 		GROUP BY pli.item_code, src
 		""",
-		{"so": so_name},
+		{"so": so_name, "pl": pick_list},
 		as_dict=True,
 	)
 	return {(r.item_code, r.src): r for r in rows}
 
 
-def _combo_picklist_map(so_name):
+def _combo_picklist_map(so_name, pick_list=None):
 	"""Picked qty + box per (component item, combo SKU) for combo-component Pick List rows.
 
 	Kept apart from the standalone 'Items' picks so a combo line reports its own picked qty.
@@ -110,25 +115,31 @@ def _combo_picklist_map(so_name):
 		INNER JOIN `tabPick List` pl ON pl.name = pli.parent AND pl.docstatus = 1
 		WHERE (pl.custom_sales_order_id = %(so)s OR pli.sales_order = %(so)s)
 			AND IFNULL(pli.custom_bundle_parent, '') <> ''
+			AND (%(pl)s IS NULL OR pl.name = %(pl)s)
 		GROUP BY pli.item_code, pli.custom_bundle_parent
 		""",
-		{"so": so_name},
+		{"so": so_name, "pl": pick_list},
 		as_dict=True,
 	)
 	return {(r.item_code, r.combo): r for r in rows}
 
 
-def _pl_header(so_name):
-	"""Dispatch header (transporter, PO no, gate, total box/weight, updated-on) from the submitted Pick List(s)."""
+def _pl_header(so_name, pick_list=None):
+	"""Dispatch header (transporter, PO no, gate, total box/weight, updated-on).
+
+	With `pick_list` the header belongs to that part alone, so Part 2's totals and PO
+	number never overwrite Part 1's (Changes(HP) #63).
+	"""
 	pls = frappe.db.sql(
 		"""
-		SELECT custom_transporter, custom_po_no, custom_gate, custom_total_box,
+		SELECT name, custom_transporter, custom_po_no, custom_gate, custom_total_box,
 		       custom_gross_weight, modified
 		FROM `tabPick List`
 		WHERE custom_sales_order_id = %(so)s AND docstatus = 1
+			AND (%(pl)s IS NULL OR name = %(pl)s)
 		ORDER BY modified DESC
 		""",
-		{"so": so_name}, as_dict=True,
+		{"so": so_name, "pl": pick_list}, as_dict=True,
 	)
 	if not pls:
 		return {}
@@ -254,6 +265,50 @@ def _resolve_scp_from_text(customer, text, cache):
 	return {}
 
 
+def _submitted_parts(so_name):
+	"""The order's submitted Pick Lists, oldest dispatch first -- Part 1, Part 2, ..."""
+	return frappe.db.sql(
+		"""
+		SELECT name, custom_dispatch_date, custom_invoice_no
+		FROM `tabPick List`
+		WHERE custom_sales_order_id = %(so)s AND docstatus = 1
+		ORDER BY IFNULL(custom_dispatch_date, '9999-12-31') ASC, creation ASC
+		""",
+		{"so": so_name}, as_dict=True,
+	)
+
+
+def _part_invoice_no(part):
+	"""The invoice for ONE part, or blank.
+
+	Changes(HP) #63: "Keep the Invoice No. blank for the partial Pick List unless an
+	invoice is specifically linked to that particular part." The Sales Order's own
+	custom_invoice_no is deliberately not used as a fallback -- it is the number the
+	invoice-sync import stamped for the order as a whole, and showing it against every
+	part is exactly the bug: Part 2 would carry Part 1's invoice.
+	"""
+	if (part.get("custom_invoice_no") or "").strip():
+		return part["custom_invoice_no"].strip()
+	# A Delivery Note raised from this part may carry it instead.
+	dn_invoice = frappe.db.sql(
+		"""
+		SELECT dn.custom_invoice_no
+		FROM `tabDelivery Note` dn
+		INNER JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
+		WHERE dni.against_pick_list = %(pl)s AND dn.docstatus < 2
+			AND IFNULL(dn.custom_invoice_no, '') <> ''
+		ORDER BY dn.modified DESC LIMIT 1
+		""",
+		{"pl": part["name"]},
+	)
+	return (dn_invoice[0][0] or "").strip() if dn_invoice else ""
+
+
+def _part_dispatch_date(part, so):
+	"""That part's own dispatch date; the order's only when the part has none."""
+	return part.get("custom_dispatch_date") or so.get("custom_dispatch_date")
+
+
 def get_columns():
 	def col(label, fn, w=120, ft="Data"):
 		return {"label": label, "fieldname": fn, "fieldtype": ft, "width": w}
@@ -347,6 +402,17 @@ def _buyer_master_scope_customers(filters):
 	return {r.customer for r in rows}
 
 
+def _channel_scoped(so_names):
+	"""Changes(HP) #22: the report, and so its export, keeps only the user's channels."""
+	from alpinos.channel_access import allowed_sales_orders
+
+	allowed = allowed_sales_orders()
+	if allowed is None:
+		return so_names
+	allowed = set(allowed)
+	return [s for s in so_names if s in allowed]
+
+
 def _get_data(filters):
 	so_filters = {"docstatus": 1}
 	# Dispatch Date is the primary date filter (Order Date From/To removed).
@@ -369,6 +435,45 @@ def _get_data(filters):
 			so_filters["customer"] = ["in", list(allowed_customers)]
 
 	so_names = frappe.get_all("Sales Order", filters=so_filters, pluck="name", order_by="custom_dispatch_date asc, name asc")
+
+	so_names = _channel_scoped(so_names)
+
+	# Changes(HP) #60: search by Invoice No. The number can sit on the Sales Order, on a
+	# partial Pick List, or on the Delivery Note raised from one, so all three are matched
+	# before the scan narrows -- otherwise searching a part's invoice would find nothing.
+	_invoice_q = (filters.get("invoice_no") or "").strip()
+	if _invoice_q and so_names:
+		like = f"%{_invoice_q}%"
+		matched = set(
+			frappe.db.sql_list(
+				"""
+				SELECT name FROM `tabSales Order`
+				WHERE name IN %(names)s AND IFNULL(custom_invoice_no, '') LIKE %(like)s
+				""",
+				{"names": tuple(so_names), "like": like},
+			)
+		)
+		matched |= set(
+			frappe.db.sql_list(
+				"""
+				SELECT custom_sales_order_id FROM `tabPick List`
+				WHERE custom_sales_order_id IN %(names)s AND docstatus = 1
+					AND IFNULL(custom_invoice_no, '') LIKE %(like)s
+				""",
+				{"names": tuple(so_names), "like": like},
+			)
+		)
+		matched |= set(
+			frappe.db.sql_list(
+				"""
+				SELECT dn.custom_sales_order_id FROM `tabDelivery Note` dn
+				WHERE dn.custom_sales_order_id IN %(names)s AND dn.docstatus < 2
+					AND IFNULL(dn.custom_invoice_no, '') LIKE %(like)s
+				""",
+				{"names": tuple(so_names), "like": like},
+			)
+		)
+		so_names = [s for s in so_names if s in matched]
 
 	# Only report orders whose Pick List is submitted (docstatus=1).
 	if so_names:
@@ -526,267 +631,286 @@ def _get_data(filters):
 			"less_qty": None,
 			"less_qty_amount": None,
 		}
-		header.update(_pl_header(so.name))
-		for i in range(3):
-			header[f"bill_addr_{i+1}"] = bill_lines[i]
-			header[f"ship_addr_{i+1}"] = ship_lines[i]
+		# Changes(HP) #63: a Sales Order dispatched through several partial Pick Lists is
+		# reported one part at a time. Each part keeps its own dispatch date, its own items
+		# and quantities, and its own invoice number; creating Part 2 no longer rewrites what
+		# Part 1 said. A single-part order (the overwhelming majority) takes _parts = [None]
+		# and behaves exactly as before.
+		_all_parts = _submitted_parts(so.name)
+		_parts = _all_parts if len(_all_parts) > 1 else [None]
+		_base_header = header
+		for _part in _parts:
+			header = dict(_base_header)
+			_part_name = _part["name"] if _part else None
+			if _part:
+				_pd = _part_dispatch_date(_part, so)
+				header["dispatch_date"] = formatdate(_pd, "dd-MM-yyyy") if _pd else ""
+				header["invoice_no"] = _part_invoice_no(_part)
+			header.update(_pl_header(so.name, _part_name))
+			for i in range(3):
+				header[f"bill_addr_{i+1}"] = bill_lines[i]
+				header[f"ship_addr_{i+1}"] = ship_lines[i]
 
-		pl_map = _picklist_map(so.name)
-		combo_pl_map = _combo_picklist_map(so.name)
-		has_pl = bool(pl_map) or bool(combo_pl_map)
-		# Cash discount % is a flat % of the grand total; applying it per line keeps the
-		# rows summing to the SO grand total after cash discount.
-		cash_pct = flt(so.get("custom_cash_discount"))
+			pl_map = _picklist_map(so.name, _part_name)
+			combo_pl_map = _combo_picklist_map(so.name, _part_name)
+			has_pl = bool(pl_map) or bool(combo_pl_map)
+			# Cash discount % is a flat % of the grand total; applying it per line keeps the
+			# rows summing to the SO grand total after cash discount.
+			cash_pct = flt(so.get("custom_cash_discount"))
 
-		def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items", ordered_qty=None):
-			it = item_info(item_code)
-			if _round_pu and selling_price:
-				selling_price = round(flt(selling_price))
-			# UNIT/Box mirror the submitted Pick List: a line not in it is dropped; with no
-			# submitted pick list at all, fall back to the ordered qty/box.
-			if not from_picklist:
-				unit, box = flt(fallback_qty), flt(fallback_box)
-			else:
-				plr = pl_map.get((item_code, source_table))
-				if not plr and source_table == "Items":
-					# Exploded components can land under a source table other than "Items",
-					# so fall back to this item's total picked qty/box across all sections.
-					tq = sum(flt(v.get("qty")) for (ic, _s), v in pl_map.items() if ic == item_code)
-					tb = sum(flt(v.get("box")) for (ic, _s), v in pl_map.items() if ic == item_code)
-					if tq:
-						plr = {"qty": tq, "box": tb}
-				if plr:
-					unit, box = flt(plr.get("qty")), flt(plr.get("box"))
-				elif has_pl:
-					# On the SO but not in the submitted Pick List: not dispatched, drop it.
-					return
-				else:
+			def emit(item_code, fallback_qty, fallback_box, mrp, selling_price, flat, offer, additional, is_priced, from_picklist=True, source_table="Items", ordered_qty=None):
+				it = item_info(item_code)
+				if _round_pu and selling_price:
+					selling_price = round(flt(selling_price))
+				# UNIT/Box mirror the submitted Pick List: a line not in it is dropped; with no
+				# submitted pick list at all, fall back to the ordered qty/box.
+				if not from_picklist:
 					unit, box = flt(fallback_qty), flt(fallback_box)
-
-			gst_pct = flt(it.get("custom_gst_percent"))
-			gst_rate = 100 + gst_pct
-			
-			if not is_priced:
-				mrp, selling_price = 0, 0
-			
-			if selling_price:
-				base_line = flt(flt(selling_price) * flt(unit) * (1 - flt(additional) / 100.0), 2)
-			else:
-				base_line = flt(
-					flt(mrp) * flt(unit)
-					* (1 - flt(flat) / 100.0)
-					* (1 - flt(offer) / 100.0)
-					* (1 - flt(additional) / 100.0),
-					2,
-				)
-			# Deduct the cash discount % per line (freebies are 0, unaffected).
-			if cash_pct:
-				base_line = flt(base_line * (1 - cash_pct / 100.0), 2)
-
-			if _gst_excl:
-				# GST-exclusive buyer: the SO line value is the taxable; add GST on top.
-				final_taxable = base_line
-				igst = flt(final_taxable * gst_pct / 100.0, 2)
-				cgst = flt(igst / 2.0, 2)
-				final_total = flt(final_taxable + igst, 2)
-			else:
-				final_total = base_line
-				final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
-				igst = flt(final_total - final_taxable, 2)
-				cgst = flt(igst / 2.0, 2)
-
-			# EAN for Amazon, FSN for Flipkart; flag "Missing" when the required code is absent.
-			ean_fsn, ean_fsn_flag = "", ""
-			if cust_type == "Amazon":
-				ean_fsn = it.get("custom_ean_no") or ""
-				if not ean_fsn:
-					ean_fsn_flag = "Missing"
-			elif cust_type == "Flipkart":
-				ean_fsn = it.get("custom_fsn_no") or ""
-				if not ean_fsn:
-					ean_fsn_flag = "Missing"
-
-			# Less Qty = ordered - dispatched qty, valued at the GST-inclusive selling price.
-			less_qty = flt(flt(ordered_qty) - flt(unit), 3) if ordered_qty is not None else 0
-			if less_qty and selling_price:
-				sp_incl = flt(selling_price) * (1 + gst_pct / 100.0) if _gst_excl else flt(selling_price)
-				less_qty_amount = flt(less_qty * sp_incl, 2)
-			else:
-				less_qty_amount = None
-			row = dict(header)
-			row.update({
-				"alpino_sku": it.get("custom_tally_sku") or item_code,
-				"ean_fsn": ean_fsn,
-				"ean_fsn_flag": ean_fsn_flag,
-				"alpino_product_name": it.get("custom_tally_item_name") or it.get("item_name") or item_code,
-				"unit": flt(unit),
-				"box": flt(box),
-				"alpino_mrp": mrp,
-				"selling_price": flt(selling_price) or None,
-				"flat_discount": flt(flat),
-				"offer_discount": flt(offer),
-				"additional_discount": flt(additional),
-				"item_type": it.get("item_group") or "",
-				"cash_discount": cash_pct,
-				"gst_rate": gst_rate,
-				"final_taxable": final_taxable if is_priced else 0,
-				"cgst": cgst if is_priced else 0,
-				"igst": igst if is_priced else 0,
-				"final_total": final_total,
-				"is_billable": "Yes" if it.get("custom_is_billable") else "No",
-				"less_qty": less_qty or None,
-				"less_qty_amount": less_qty_amount,
-			})
-			data.append(row)
-
-		combine_product_bundles = True
-		val = obm.get("combine_product_bundles")
-		if val is not None:
-			combine_product_bundles = bool(val)
-
-		# Main item lines (priced). One row per SO line's own contribution; a combo's
-		# components are never merged into a standalone line of the same SKU. Qty follows
-		# the submitted Pick List, but has to be allocated back onto the SO lines first: the
-		# Pick List holds only exploded components, and a component also ordered standalone
-		# sits in one merged picked row. Walking the lines in order and consuming picked
-		# stock as we go keeps them from double-counting that shared row.
-		import math
-		from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
-		from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
-
-		def _combo_components(r):
-			"""[(component_item, qty_per_combo_unit)] for a bundle SO line, else None."""
-			packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
-			oq = flt(r.qty) or 1
-			if packed:
-				return [(p.item_code, (flt(p.qty) / oq) if oq else flt(p.qty)) for p in packed]
-			comps = _bundle_components(r.item_code)
-			if comps:
-				return [(c.item, flt(c.base_qty)) for c in comps]
-			pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
-			if pb_name:
-				pbis = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
-				return [(p.item_code, flt(p.qty)) for p in pbis]
-			return None
-
-		def _component_price(item_code):
-			"""(mrp, flat%, selling price) for an exploded component from the buyer catalog."""
-			res = get_offline_buyer_item_rate(so.customer, item_code)
-			if res and flt(res.get("mrp")) > 0:
-				return flt(res.get("mrp")), flt(res.get("margin_percent")), flt(res.get("rate"))
-			res_mrp = get_customer_item_mrp(so.customer, item_code)
-			mrp = flt(res_mrp) if res_mrp else flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
-			return mrp, 0.0, mrp
-
-		# Picked-but-not-yet-allocated stock per item, from the submitted Pick List.
-		avail, box_pool = {}, {}
-		for (ic, src), v in pl_map.items():
-			if src == "Items":
-				avail[ic] = flt(avail.get(ic, 0.0)) + flt(v.get("qty"))
-				box_pool[ic] = flt(box_pool.get(ic, 0.0)) + flt(v.get("box"))
-		for (ic, _src), v in pl_map.items():
-			# Fall back to the item's total picked qty when it has no "Items" row (same as emit()).
-			if ic not in avail:
-				avail[ic] = sum(flt(x.get("qty")) for (c, _s), x in pl_map.items() if c == ic)
-				box_pool[ic] = sum(flt(x.get("box")) for (c, _s), x in pl_map.items() if c == ic)
-		picked_total = dict(avail)  # snapshot, before the lines consume it
-
-		def _take(item_code, want):
-			"""Consume up to `want` of item_code from the unallocated picked stock."""
-			got = min(flt(avail.get(item_code, 0.0)), flt(want))
-			if got > 0:
-				avail[item_code] = flt(avail.get(item_code, 0.0)) - got
-			return got
-
-		def _box_share(item_code, units):
-			"""This line's slice of the item's picked boxes, pro rata on units."""
-			tot = flt(picked_total.get(item_code, 0.0))
-			if not tot or not flt(units):
-				return 0.0
-			return flt(round(flt(box_pool.get(item_code, 0.0)) * flt(units) / tot))
-
-		for r in so.items:
-			ordered = flt(r.qty)
-			comps = _combo_components(r)
-			if not has_pl:
-				picked = ordered
-			elif comps:
-				# This combo's own picked qty, from Pick List rows tagged with this combo.
-				picked = ordered
-				for (citem, per) in comps:
-					per = flt(per) or 1
-					cp = combo_pl_map.get((citem, r.item_code))
-					comp_picked = flt(cp.get("qty")) if cp else 0.0
-					picked = min(picked, math.floor(comp_picked / per))
-				picked = max(flt(picked), 0.0)
-			else:
-				picked = _take(r.item_code, ordered)
-
-			if has_pl and not picked:
-				# Nothing of this line survived in the Pick List: not dispatched.
-				continue
-
-			if comps and combine_product_bundles:
-				# Combined: explode this combo line into component rows priced from the buyer catalog.
-				for (citem, per) in comps:
-					cqty = picked * (flt(per) or 1)
-					if not cqty:
-						continue
-					if has_pl:
-						cp = combo_pl_map.get((citem, r.item_code))
-						cbox = flt(cp.get("box")) if cp else 0.0
+				else:
+					plr = pl_map.get((item_code, source_table))
+					if not plr and source_table == "Items":
+						# Exploded components can land under a source table other than "Items",
+						# so fall back to this item's total picked qty/box across all sections.
+						tq = sum(flt(v.get("qty")) for (ic, _s), v in pl_map.items() if ic == item_code)
+						tb = sum(flt(v.get("box")) for (ic, _s), v in pl_map.items() if ic == item_code)
+						if tq:
+							plr = {"qty": tq, "box": tb}
+					if plr:
+						unit, box = flt(plr.get("qty")), flt(plr.get("box"))
+					elif has_pl:
+						# On the SO but not in the submitted Pick List: not dispatched, drop it.
+						return
 					else:
-						cf = flt(get_box_conversion_factor(citem))
-						cbox = math.ceil(cqty / cf) if cf else 0
-					# Price the component from the COMBO LINE, not from the catalog.
-					#
-					# _component_price falls back to (mrp, 0.0, mrp) when the buyer catalog
-					# has no entry for the component, and emit() below takes its
-					# selling-price branch whenever selling_price is truthy -- a branch that
-					# never applies `flat`. So an exploded component silently reported at
-					# FULL MRP: on a 50%-flat order that is exactly double what was sold.
-					# The line already knows its own discount; carry it.
-					mrp_v, _catalog_flat, _catalog_sp = _component_price(citem)
-					flat_v = flt(r.get("custom_flat_discount"))
-					sp_v = flt(mrp_v) * (1 - flat_v / 100.0) if mrp_v else 0
-					emit(
-						r.item_code, cqty, cbox,
-						mrp_v, sp_v, flat_v,
-						r.get("custom_offer"), r.get("custom_additional_discount"),
-						is_priced=True, from_picklist=False,
-						ordered_qty=ordered * (flt(per) or 1),
+						unit, box = flt(fallback_qty), flt(fallback_box)
+
+				gst_pct = flt(it.get("custom_gst_percent"))
+				gst_rate = 100 + gst_pct
+			
+				if not is_priced:
+					mrp, selling_price = 0, 0
+			
+				if selling_price:
+					base_line = flt(flt(selling_price) * flt(unit) * (1 - flt(additional) / 100.0), 2)
+				else:
+					base_line = flt(
+						flt(mrp) * flt(unit)
+						* (1 - flt(flat) / 100.0)
+						* (1 - flt(offer) / 100.0)
+						* (1 - flt(additional) / 100.0),
+						2,
 					)
-				continue
+				# Deduct the cash discount % per line (freebies are 0, unaffected).
+				if cash_pct:
+					base_line = flt(base_line * (1 - cash_pct / 100.0), 2)
 
-			# The line itself: a plain item, or the combo SKU as entered when Combine Product
-			# Bundles is off. A combo SKU has no picked row, so its Box is its components' picked boxes.
-			if not has_pl:
-				box = flt(r.get("custom_box"))
-			elif comps:
-				box = sum(flt((combo_pl_map.get((citem, r.item_code)) or {}).get("box") or 0) for (citem, per) in comps)
-			else:
-				box = _box_share(r.item_code, picked)
+				if _gst_excl:
+					# GST-exclusive buyer: the SO line value is the taxable; add GST on top.
+					final_taxable = base_line
+					igst = flt(final_taxable * gst_pct / 100.0, 2)
+					cgst = flt(igst / 2.0, 2)
+					final_total = flt(final_taxable + igst, 2)
+				else:
+					final_total = base_line
+					final_taxable = flt(final_total * 100.0 / gst_rate, 2) if gst_rate else final_total
+					igst = flt(final_total - final_taxable, 2)
+					cgst = flt(igst / 2.0, 2)
 
-			emit(
-				r.item_code, picked, box,
-				r.get("custom_customer_mrp"),
-				r.get("custom_selling_price") or r.get("rate"),
-				r.get("custom_flat_discount"), r.get("custom_offer"),
-				r.get("custom_additional_discount"), is_priced=True,
-				from_picklist=False,
-				ordered_qty=ordered,
-			)
+				# EAN for Amazon, FSN for Flipkart; flag "Missing" when the required code is absent.
+				ean_fsn, ean_fsn_flag = "", ""
+				if cust_type == "Amazon":
+					ean_fsn = it.get("custom_ean_no") or ""
+					if not ean_fsn:
+						ean_fsn_flag = "Missing"
+				elif cust_type == "Flipkart":
+					ean_fsn = it.get("custom_fsn_no") or ""
+					if not ean_fsn:
+						ean_fsn_flag = "Missing"
 
-		# Marketing freebies / scheme / additional-unit (damage) items: selling rate 0,
-		# qty taken straight from the Sales Order.
-		for r in (so.get("custom_marketing_freebies") or []):
-			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Marketing Freebies", ordered_qty=r.get("qty"))
-		for r in (so.get("custom_scheme_item_table") or []):
-			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Scheme Table", ordered_qty=r.get("qty"))
-		for r in (so.get("custom_additional_units_damage_items") or []):
-			if r.get("item_code"):
-				emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Additional Units", ordered_qty=r.get("qty"))
+				# Less Qty = ordered - dispatched qty, valued at the GST-inclusive selling price.
+				less_qty = flt(flt(ordered_qty) - flt(unit), 3) if ordered_qty is not None else 0
+				if less_qty and selling_price:
+					sp_incl = flt(selling_price) * (1 + gst_pct / 100.0) if _gst_excl else flt(selling_price)
+					less_qty_amount = flt(less_qty * sp_incl, 2)
+				else:
+					less_qty_amount = None
+				row = dict(header)
+				row.update({
+					"alpino_sku": it.get("custom_tally_sku") or item_code,
+					"ean_fsn": ean_fsn,
+					"ean_fsn_flag": ean_fsn_flag,
+					"alpino_product_name": it.get("custom_tally_item_name") or it.get("item_name") or item_code,
+					"unit": flt(unit),
+					"box": flt(box),
+					"alpino_mrp": mrp,
+					"selling_price": flt(selling_price) or None,
+					"flat_discount": flt(flat),
+					"offer_discount": flt(offer),
+					"additional_discount": flt(additional),
+					"item_type": it.get("item_group") or "",
+					"cash_discount": cash_pct,
+					"gst_rate": gst_rate,
+					"final_taxable": final_taxable if is_priced else 0,
+					"cgst": cgst if is_priced else 0,
+					"igst": igst if is_priced else 0,
+					"final_total": final_total,
+					"is_billable": "Yes" if it.get("custom_is_billable") else "No",
+					"less_qty": less_qty or None,
+					"less_qty_amount": less_qty_amount,
+				})
+				data.append(row)
+
+			combine_product_bundles = True
+			val = obm.get("combine_product_bundles")
+			if val is not None:
+				combine_product_bundles = bool(val)
+
+			# Main item lines (priced). One row per SO line's own contribution; a combo's
+			# components are never merged into a standalone line of the same SKU. Qty follows
+			# the submitted Pick List, but has to be allocated back onto the SO lines first: the
+			# Pick List holds only exploded components, and a component also ordered standalone
+			# sits in one merged picked row. Walking the lines in order and consuming picked
+			# stock as we go keeps them from double-counting that shared row.
+			import math
+			from alpinos.sales_order_offline_buyer import get_offline_buyer_item_rate
+			from alpinos.sales_order_api import get_customer_item_mrp, get_box_conversion_factor, _bundle_components
+
+			def _combo_components(r):
+				"""[(component_item, qty_per_combo_unit)] for a bundle SO line, else None."""
+				packed = [p for p in (so.get("packed_items") or []) if p.parent_detail_docname == r.name]
+				oq = flt(r.qty) or 1
+				if packed:
+					return [(p.item_code, (flt(p.qty) / oq) if oq else flt(p.qty)) for p in packed]
+				comps = _bundle_components(r.item_code)
+				if comps:
+					return [(c.item, flt(c.base_qty)) for c in comps]
+				pb_name = frappe.db.get_value("Product Bundle", {"new_item_code": r.item_code}, "name")
+				if pb_name:
+					pbis = frappe.db.get_all("Product Bundle Item", filters={"parent": pb_name}, fields=["item_code", "qty"])
+					return [(p.item_code, flt(p.qty)) for p in pbis]
+				return None
+
+			def _component_price(item_code):
+				"""(mrp, flat%, selling price) for an exploded component from the buyer catalog."""
+				res = get_offline_buyer_item_rate(so.customer, item_code)
+				if res and flt(res.get("mrp")) > 0:
+					return flt(res.get("mrp")), flt(res.get("margin_percent")), flt(res.get("rate"))
+				res_mrp = get_customer_item_mrp(so.customer, item_code)
+				mrp = flt(res_mrp) if res_mrp else flt(frappe.db.get_value("Item", item_code, "valuation_rate") or 0)
+				return mrp, 0.0, mrp
+
+			# Picked-but-not-yet-allocated stock per item, from the submitted Pick List.
+			avail, box_pool = {}, {}
+			for (ic, src), v in pl_map.items():
+				if src == "Items":
+					avail[ic] = flt(avail.get(ic, 0.0)) + flt(v.get("qty"))
+					box_pool[ic] = flt(box_pool.get(ic, 0.0)) + flt(v.get("box"))
+			for (ic, _src), v in pl_map.items():
+				# Fall back to the item's total picked qty when it has no "Items" row (same as emit()).
+				if ic not in avail:
+					avail[ic] = sum(flt(x.get("qty")) for (c, _s), x in pl_map.items() if c == ic)
+					box_pool[ic] = sum(flt(x.get("box")) for (c, _s), x in pl_map.items() if c == ic)
+			picked_total = dict(avail)  # snapshot, before the lines consume it
+
+			def _take(item_code, want):
+				"""Consume up to `want` of item_code from the unallocated picked stock."""
+				got = min(flt(avail.get(item_code, 0.0)), flt(want))
+				if got > 0:
+					avail[item_code] = flt(avail.get(item_code, 0.0)) - got
+				return got
+
+			def _box_share(item_code, units):
+				"""This line's slice of the item's picked boxes, pro rata on units."""
+				tot = flt(picked_total.get(item_code, 0.0))
+				if not tot or not flt(units):
+					return 0.0
+				return flt(round(flt(box_pool.get(item_code, 0.0)) * flt(units) / tot))
+
+			for r in so.items:
+				ordered = flt(r.qty)
+				comps = _combo_components(r)
+				if not has_pl:
+					picked = ordered
+				elif comps:
+					# This combo's own picked qty, from Pick List rows tagged with this combo.
+					picked = ordered
+					for (citem, per) in comps:
+						per = flt(per) or 1
+						cp = combo_pl_map.get((citem, r.item_code))
+						comp_picked = flt(cp.get("qty")) if cp else 0.0
+						picked = min(picked, math.floor(comp_picked / per))
+					picked = max(flt(picked), 0.0)
+				else:
+					picked = _take(r.item_code, ordered)
+
+				if has_pl and not picked:
+					# Nothing of this line survived in the Pick List: not dispatched.
+					continue
+
+				if comps and combine_product_bundles:
+					# Combined: explode this combo line into component rows priced from the buyer catalog.
+					for (citem, per) in comps:
+						cqty = picked * (flt(per) or 1)
+						if not cqty:
+							continue
+						if has_pl:
+							cp = combo_pl_map.get((citem, r.item_code))
+							cbox = flt(cp.get("box")) if cp else 0.0
+						else:
+							cf = flt(get_box_conversion_factor(citem))
+							cbox = math.ceil(cqty / cf) if cf else 0
+						# Price the component from the COMBO LINE, not from the catalog.
+						#
+						# _component_price falls back to (mrp, 0.0, mrp) when the buyer catalog
+						# has no entry for the component, and emit() below takes its
+						# selling-price branch whenever selling_price is truthy -- a branch that
+						# never applies `flat`. So an exploded component silently reported at
+						# FULL MRP: on a 50%-flat order that is exactly double what was sold.
+						# The line already knows its own discount; carry it.
+						mrp_v, _catalog_flat, _catalog_sp = _component_price(citem)
+						flat_v = flt(r.get("custom_flat_discount"))
+						sp_v = flt(mrp_v) * (1 - flat_v / 100.0) if mrp_v else 0
+						emit(
+							r.item_code, cqty, cbox,
+							mrp_v, sp_v, flat_v,
+							r.get("custom_offer"), r.get("custom_additional_discount"),
+							is_priced=True, from_picklist=False,
+							ordered_qty=ordered * (flt(per) or 1),
+						)
+					continue
+
+				# The line itself: a plain item, or the combo SKU as entered when Combine Product
+				# Bundles is off. A combo SKU has no picked row, so its Box is its components' picked boxes.
+				if not has_pl:
+					box = flt(r.get("custom_box"))
+				elif comps:
+					box = sum(flt((combo_pl_map.get((citem, r.item_code)) or {}).get("box") or 0) for (citem, per) in comps)
+				else:
+					box = _box_share(r.item_code, picked)
+
+				emit(
+					r.item_code, picked, box,
+					r.get("custom_customer_mrp"),
+					r.get("custom_selling_price") or r.get("rate"),
+					r.get("custom_flat_discount"), r.get("custom_offer"),
+					r.get("custom_additional_discount"), is_priced=True,
+					from_picklist=False,
+					ordered_qty=ordered,
+				)
+
+			# Marketing freebies / scheme / additional-unit (damage) items: selling rate 0,
+			# qty taken straight from the Sales Order.
+			for r in (so.get("custom_marketing_freebies") or []):
+				if r.get("item_code"):
+					emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Marketing Freebies", ordered_qty=r.get("qty"))
+			for r in (so.get("custom_scheme_item_table") or []):
+				if r.get("item_code"):
+					emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Scheme Table", ordered_qty=r.get("qty"))
+			for r in (so.get("custom_additional_units_damage_items") or []):
+				if r.get("item_code"):
+					emit(r.item_code, r.get("qty"), 0, 0, 0, 0, 0, 0, is_priced=False, from_picklist=True, source_table="Additional Units", ordered_qty=r.get("qty"))
+
+	if _invoice_q:
+		needle = _invoice_q.lower()
+		data = [r for r in data if needle in (r.get("invoice_no") or "").lower()]
 
 	return data

@@ -1,3 +1,18 @@
+// Every filter on the page, in one list: the controls, the saved view and the server args
+// all read it, so a new filter is added in one place (Changes(HP) #47). `var`, because the
+// page script is re-evaluated on navigation and a re-declared const blanks the page.
+var FILTER_KEYS = [
+	'search',
+	'sales_order',
+	'invoice_no',
+	'lr_no',
+	'dispatch_from',
+	'dispatch_to',
+	'customer',
+	'status',
+	'company',
+];
+
 frappe.pages['delivery_note_entry_list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -47,30 +62,14 @@ var DeliveryNoteListPage = class {
 		const isWarehouse = ['Warehouse Admin', 'Warehouse Manager', 'System Manager']
 			.some((r) => frappe.user.has_role(r));
 		if (isWarehouse) {
-			this.page.add_inner_button(__('Download LR Excel'), () => this.download_lr_excel(), __('LR'));
+			this.page.add_inner_button(__('Download LR Excel'), () => {
+				window.open(
+					'/api/method/alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.download_lr_excel',
+					'_blank'
+				);
+			}, __('LR'));
 			this.page.add_inner_button(__('Upload LR Excel'), () => this.upload_lr_excel(), __('LR'));
 		}
-	}
-
-	_selected_names() {
-		const names = [];
-		this.wrapper.find('.dnl-row-select:checked').each((i, el) => {
-			names.push($(el).data('name'));
-		});
-		return names;
-	}
-
-	// Ticked rows win; with nothing ticked this stays the old behaviour —
-	// every draft Delivery Note dispatching today.
-	download_lr_excel() {
-		const base =
-			'/api/method/alpinos.alpinos_development.page.delivery_note_entry.delivery_note_entry.download_lr_excel';
-		const names = this._selected_names();
-		const url = names.length
-			? base + '?delivery_notes=' + encodeURIComponent(JSON.stringify(names))
-			: base;
-		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
-		if (!w) frappe.msgprint(__('Please allow pop-ups to download the LR Excel.'));
 	}
 
 	upload_lr_excel() {
@@ -124,12 +123,71 @@ var DeliveryNoteListPage = class {
 			parent: w.find('.fld-search'),
 			render_input: true,
 		});
+		// Changes(HP) #47: the fields people search notes by, each on its own.
+		this._filter_fields.sales_order = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				fieldname: 'sales_order',
+				label: __('Sales Order'),
+			},
+			parent: w.find('.fld-sales-order'),
+			render_input: true,
+		});
+		this._filter_fields.invoice_no = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				fieldname: 'invoice_no',
+				label: __('Invoice No.'),
+			},
+			parent: w.find('.fld-invoice-no'),
+			render_input: true,
+		});
+		this._filter_fields.lr_no = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				fieldname: 'lr_no',
+				label: __('LR No.'),
+			},
+			parent: w.find('.fld-lr-no'),
+			render_input: true,
+		});
+		this._filter_fields.dispatch_from = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Date',
+				fieldname: 'dispatch_from',
+				label: __('Dispatch Date - From'),
+			},
+			parent: w.find('.fld-dispatch-from'),
+			render_input: true,
+		});
+		this._filter_fields.dispatch_to = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Date',
+				fieldname: 'dispatch_to',
+				label: __('Dispatch Date - To'),
+			},
+			parent: w.find('.fld-dispatch-to'),
+			render_input: true,
+		});
+		this._filter_fields.customer = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Link',
+				fieldname: 'customer',
+				label: __('Customer'),
+				options: 'Customer',
+			},
+			parent: w.find('.fld-customer'),
+			render_input: true,
+		});
+		// The Status column reads the workflow stage off the docstatus, so the filter offers
+		// the same three values. ERPNext's own status (To Bill, Closed, ...) named different
+		// things in the dropdown and the column, which is what Changes(HP) #47 replaces.
 		this._filter_fields.status = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Select',
 				fieldname: 'status',
-				label: __('Status'),
-				options: '\nDraft\nTo Bill\nCompleted\nCancelled\nClosed\nReturn Issued',
+				label: __('Workflow Status'),
+				options: '\nDraft\nDispatched\nCancelled',
 			},
 			parent: w.find('.fld-status'),
 			render_input: true,
@@ -180,36 +238,17 @@ var DeliveryNoteListPage = class {
 			if (!name) return;
 			frappe.set_route('delivery_note_entry', name);
 		});
-		this.wrapper.on('change', '.dnl-select-all', (e) => {
-			this.wrapper.find('.dnl-row-select').prop('checked', $(e.target).prop('checked'));
-			this.update_selection();
-		});
-		this.wrapper.on('change', '.dnl-row-select', () => this.update_selection());
-	}
-
-	// Selection lives on the rows currently rendered, so it clears whenever the
-	// list reloads (filter, page size, paging).
-	update_selection() {
-		const boxes = this.wrapper.find('.dnl-row-select');
-		const checked = this.wrapper.find('.dnl-row-select:checked').length;
-		this.wrapper.find('.dnl-select-all').prop('checked', !!boxes.length && checked === boxes.length);
-		if (checked && this.page.set_indicator) {
-			this.page.set_indicator(__('{0} selected', [checked]), 'orange');
-		} else if (this.page.clear_indicator) {
-			this.page.clear_indicator();
-		}
 	}
 
 	// Persists filters + page size, never the pagination offset — a fresh visit starts at page 1.
 	_save_view_prefs() {
 		if (!(window.alpinos && alpinos.list_prefs)) return;
 		const f = this._filter_fields;
-		alpinos.list_prefs.save(this._prefs_route, {
-			search: (f.search && f.search.get_value()) || '',
-			status: (f.status && f.status.get_value()) || '',
-			company: (f.company && f.company.get_value()) || '',
-			page_length: this.page_length,
+		var saved = { page_length: this.page_length };
+		FILTER_KEYS.forEach(function (k) {
+			saved[k] = (f[k] && f[k].get_value()) || '';
 		});
+		alpinos.list_prefs.save(this._prefs_route, saved);
 	}
 
 	// Applies the saved view to instance state + UI controls before the first data load.
@@ -218,7 +257,7 @@ var DeliveryNoteListPage = class {
 		const saved = alpinos.list_prefs.load(this._prefs_route);
 		if (!saved || typeof saved !== 'object') return;
 		const f = this._filter_fields;
-		['search', 'status', 'company'].forEach((k) => {
+		FILTER_KEYS.forEach((k) => {
 			const v = saved[k];
 			if (typeof v !== 'string' || !v || !f[k]) return;
 			// set_input applies synchronously so the first load_list() reads the restored values.
@@ -237,14 +276,13 @@ var DeliveryNoteListPage = class {
 
 	_args() {
 		const f = this._filter_fields;
-		return {
-			start: this.start,
-			page_length: this.page_length,
-			search: f.search.get_value() || '',
-			status: f.status.get_value() || '',
-			company: f.company.get_value() || '',
-			sales_order: this.so_filter || '',
-		};
+		var args = { start: this.start, page_length: this.page_length };
+		FILTER_KEYS.forEach(function (k) {
+			args[k] = (f[k] && f[k].get_value()) || '';
+		});
+		// A Sales Order carried in from another page wins over the typed one.
+		if (this.so_filter) args.sales_order = this.so_filter;
+		return args;
 	}
 
 	load_list() {
@@ -270,10 +308,8 @@ var DeliveryNoteListPage = class {
 
 	render_rows(rows) {
 		const tb = this.wrapper.find('.dnl-table tbody').empty();
-		this.wrapper.find('.dnl-select-all').prop('checked', false);
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="13" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
-			this.update_selection();
+			tb.append(`<tr><td colspan="12" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
@@ -292,7 +328,6 @@ var DeliveryNoteListPage = class {
 			}
 			const customer = d.custom_dn_so_customer_name || d.customer_name || '';
 			tb.append(`<tr class="dnl-row" data-name="${esc(d.name)}" style="cursor:pointer;">
-				<td style="text-align:center;"><input type="checkbox" class="dnl-row-select" data-name="${esc(d.name)}"></td>
 				<td><strong>${esc(d.name)}</strong></td>
 				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
 				<td>${dash(d.custom_sales_order_id)}</td>

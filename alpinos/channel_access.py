@@ -16,9 +16,6 @@ Enforced on the DATA, through the permission hooks on the three doctypes, so it 
 the desk list and Report view, their export, opening a record by URL, and every
 frappe.get_list call. Pages and reports that read with frappe.get_all or raw SQL bypass
 those hooks and apply `allowed_sales_orders` themselves.
-
-On main the permission hooks are NOT registered in hooks.py yet (#22 is not live here);
-only the Order Fulfilment Report (alpinos.invoice_queue_api) uses this module.
 """
 
 import frappe

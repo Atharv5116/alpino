@@ -170,7 +170,11 @@ COLUMNS = {
 	                   "type": "Data"},
 	"customer_name":  {"label": "Customer",       "select": "so.customer_name",        "type": "Data"},
 	"pl_po_no":       {"label": "PL PO No.",      "select": "pl.pl_po_no",             "type": "Data"},
-	"state":          {"label": "State",          "select": "addr.state",              "type": "Data"},
+	# The state the ORDER itself works on: its billing address, which is what decides
+	# IGST vs CGST/SGST (alpinos.sales_order_api._apply_tax_mode_from_billing). The
+	# shipping address is the fallback, since most orders carry no shipping address at
+	# all and the column was blank for them.
+	"state":          {"label": "State",          "select": "__STATE__",               "type": "Data"},
 	# Shown as AHF/<financial year>/<number> (Changes(HP) #42). The year is the order's
 	# Dispatch Date's (the invoice is raised on dispatch), else its Order Date; a number
 	# already stored with the prefix is shown as it is. Sorted by the number itself.
@@ -218,6 +222,7 @@ _INVOICE_AMOUNT = (
 	"NULLIF(ROUND(dnv.ordered_value * so.grand_total / NULLIF(so.net_total, 0), 2), 0),"
 	" NULLIF(so.custom_total_invoice_value, 0), 0)"
 )
+_STATE = "COALESCE(NULLIF(baddr.state, ''), NULLIF(addr.state, ''))"
 _FY_DATE = "COALESCE(so.custom_dispatch_date, so.transaction_date)"
 _FY_START = f"(YEAR({_FY_DATE}) - IF(MONTH({_FY_DATE}) < 4, 1, 0))"
 # The stored number without a file extension some orders carry ("6057.pdf"), Changes(HP) #42.3.
@@ -235,6 +240,7 @@ for _spec in COLUMNS.values():
 			_spec["select"]
 			.replace("__INVOICE_AMOUNT__", _INVOICE_AMOUNT)
 			.replace("__INVOICE_DISPLAY__", _INVOICE_DISPLAY)
+			.replace("__STATE__", _STATE)
 		)
 
 # The order the screen opens with, per the attached column sheet. `download` is not
@@ -425,6 +431,7 @@ _JOINS = """
 		GROUP BY d.so_id
 	) dnv ON dnv.so_id = so.name
 	LEFT JOIN `tabAddress` addr ON addr.name = so.shipping_address_name
+	LEFT JOIN `tabAddress` baddr ON baddr.name = so.customer_address
 	LEFT JOIN `tabUser` own ON own.name = so.owner
 """
 
@@ -437,7 +444,7 @@ _FILTERS = {
 	"lr_number":      ("dn.lr_no LIKE %(lr_number)s", "like"),
 	"customer":       ("so.customer = %(customer)s", "eq"),
 	"customer_type":  ("so.order_type = %(customer_type)s", "eq"),
-	"state":          ("addr.state = %(state)s", "eq"),
+	"state":          (f"{_STATE} = %(state)s", "eq"),
 	"order_date_from":    ("so.transaction_date >= %(order_date_from)s", "eq"),
 	"order_date_to":      ("so.transaction_date <= %(order_date_to)s", "eq"),
 	"dispatch_date_from": ("pl.dispatch_date >= %(dispatch_date_from)s", "eq"),
@@ -598,8 +605,8 @@ def get_filter_options(channel=None):
 		params,
 	)
 	states = frappe.db.sql(
-		f"SELECT DISTINCT addr.state AS v FROM `tabSales Order` so {_JOINS} "
-		f"WHERE {where} AND IFNULL(addr.state,'') <> '' ORDER BY addr.state",
+		f"SELECT DISTINCT {_STATE} AS v FROM `tabSales Order` so {_JOINS} "
+		f"WHERE {where} AND IFNULL({_STATE},'') <> '' ORDER BY v",
 		params,
 	)
 	return {

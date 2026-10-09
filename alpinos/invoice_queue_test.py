@@ -641,6 +641,15 @@ def _run():
 	expect_throw("a saved view cannot be written for another user", _plant_bypassing_permissions,
 		"only be saved for yourself")
 
+	def _old_sidebar_filters_convert():
+		from alpinos.patches.v1_0.invoice_queue_saved_filters_to_views import _filters
+
+		got = _filters({"order_date": "2026-09-01", "customer": "C1", "po_date": "", "dispatch_date": "2026-09-02"})
+		_assert(got == {"order_date_from": "2026-09-01", "order_date_to": "2026-09-01",
+			"dispatch_date_from": "2026-09-02", "dispatch_date_to": "2026-09-02", "customer": "C1"}, got)
+
+	check("old sidebar saved filters convert to the new date ranges", _old_sidebar_filters_convert)
+
 	# --------------------------------------------------------- other filters
 	def _remaining_filters():
 		def got(**kw):

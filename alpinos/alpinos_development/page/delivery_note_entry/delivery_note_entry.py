@@ -10,7 +10,7 @@ def get_delivery_note_data(name):
 	dn = frappe.get_doc("Delivery Note", name)
 	dn.check_permission("read")
 
-	# Get Pick List name from the first item that has one
+	# Pick List name from the first item that carries one
 	pick_list_name = ""
 	for item in dn.items:
 		if item.get("against_pick_list"):
@@ -54,7 +54,7 @@ def get_delivery_note_data(name):
 		"owner_full_name": frappe.utils.get_fullname(dn.owner),
 		"posting_date": formatdate(str(dn.posting_date)) if dn.posting_date else "",
 		"custom_sales_order_id": dn.get("custom_sales_order_id") or "",
-		# Invoice Id is assigned on the Sales Order (invoice sync) — show the SO's live value.
+		# Invoice No is set on the Sales Order; show its live value.
 		"custom_invoice_no": (
 			frappe.db.get_value("Sales Order", dn.get("custom_sales_order_id"), "custom_invoice_no")
 			if dn.get("custom_sales_order_id") else ""
@@ -81,12 +81,10 @@ _EDITABLE_HEADER_FIELDS = {
 	"custom_lr_gr_no",
 	"custom_dispatch_from",
 	"custom_assigned_to",
-	# Transporter is seeded from the Pick List at DN creation but is editable while
-	# the DN is in Draft; a change here propagates back to the Pick List and is logged
-	# on both docs (delivery_note_on_update_draft).
+	# Transporter is seeded from the Pick List but editable in Draft; a change here
+	# propagates back to the Pick List (delivery_note_on_update_draft).
 	"custom_transporter_name",
-	# vehicle_no (Picklist PO No.) is still synced from Pick List and rendered
-	# read-only on the entry page — intentionally omitted so the page can't overwrite it.
+	# vehicle_no is synced from the Pick List and read-only, so it's left out here.
 	# Changes(HP) #43: Dispatch Date is editable in Draft; the save's on_update hook
 	# (alpinos.dispatch_date_sync) carries it to the Sales Order, Pick List and Post Dispatch.
 	"custom_dispatch_date",
@@ -97,8 +95,7 @@ _DN_QTY_EDIT_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager", 
 
 
 def _can_edit_dn_qty():
-	"""Only authorized roles may change Delivery Note item quantities; everyone
-	else re-posts the (read-only) qty unchanged."""
+	"""Only authorized roles may change DN item quantities; others re-post it unchanged."""
 	return bool(set(frappe.get_roles()) & _DN_QTY_EDIT_ROLES)
 
 
@@ -120,8 +117,7 @@ def _apply_items_changes(dn, items):
 		if entry.get("delete"):
 			to_remove.append(row)
 			continue
-		# Qty is read-only unless the user holds an authorized role. Unauthorized
-		# edits are silently ignored (the page re-posts the existing qty on submit).
+		# Qty edits from users without the role are ignored.
 		if can_edit_qty and "qty" in entry and entry.get("qty") not in (None, ""):
 			try:
 				row.qty = float(entry["qty"])
@@ -184,18 +180,10 @@ def save_delivery_note_data(name, header, items=None, dispatch_to=None):
 
 
 def _backfill_item_dates_from_pick_list(dn):
-	"""Fill MFG / Expiry / Box / Batch on DN items from the best available source.
+	"""Fill MFG/Expiry/Box/Batch on DN items from the DN row, else the Pick List Item, else the Batch master.
 
-	Priority for each field, first non-empty wins:
-	1. The DN item itself (already populated)
-	2. The linked Pick List Item (custom_mfg_date / custom_expiry_date / custom_box
-	   / custom_batch_code)
-	3. The Batch master pointed to by batch_no — Batch always has
-	   manufacturing_date + expiry_date
-
-	The DN custom_mfg_date / custom_expiry_date fields are reqd=1 read_only=1, so
-	without this no DN can submit if either the Pick List didn't enter dates or
-	the DN was created before pick_list_api started copying them.
+	Those DN date fields are reqd + read-only, so without this a DN can't submit
+	when the Pick List left dates blank or predates them being copied.
 	"""
 	pl_row_names = [it.get("pick_list_item") for it in dn.items if it.get("pick_list_item")]
 	pl_data = {}
@@ -220,10 +208,9 @@ def _backfill_item_dates_from_pick_list(dn):
 	for item in dn.items:
 		pl = pl_data.get(item.get("pick_list_item")) or {}
 
-		# Batch first — Pick List's custom_batch_code is the source of truth.
-		# The free-text code always lands in custom_batch_code; batch_no (a Link
-		# to Batch) is only set when a real Batch master exists or can be created
-		# (batch-tracked items) — a bare string there fails DN submit.
+		# Batch first: the free-text code lands in custom_batch_code; batch_no (a
+		# Link to Batch) is set only when a real Batch exists, since a bare string
+		# there fails DN submit.
 		_fill(item, "custom_batch_code", pl.get("custom_batch_code"))
 		if not item.get("batch_no") and item.get("custom_batch_code"):
 			bn = _ensure_batch_exists(
@@ -278,6 +265,11 @@ def get_delivery_note_list(
 	status="",
 	company="",
 	sales_order="",
+	invoice_no="",
+	lr_no="",
+	dispatch_from="",
+	dispatch_to="",
+	customer="",
 ):
 	if not frappe.has_permission("Delivery Note", "read"):
 		frappe.throw(frappe._("You are not permitted to view Delivery Notes."), frappe.PermissionError)
@@ -285,19 +277,59 @@ def get_delivery_note_list(
 	page_length = cint(page_length)
 
 	filters = {}
+	# Changes(HP) #47: the list's Status column is the workflow stage, read off the
+	# docstatus, so the filter that sits beside it works in the same three values.
+	_STAGE_DOCSTATUS = {"Draft": 0, "Dispatched": 1, "Cancelled": 2}
 	if status:
-		filters["status"] = status
+		if status in _STAGE_DOCSTATUS:
+			filters["docstatus"] = _STAGE_DOCSTATUS[status]
+		else:
+			# An older saved view may still hold an ERPNext status (To Bill, Closed, ...).
+			filters["status"] = status
 	if company:
 		filters["company"] = company
-	if sales_order:
-		filters["custom_sales_order_id"] = sales_order
+	if customer:
+		filters["customer"] = customer
+	if lr_no:
+		filters["custom_lr_gr_no"] = ["like", f"%{lr_no}%"]
+	# The Dispatch Date is a Datetime: "to" has to cover the whole day, not midnight.
+	if dispatch_from:
+		filters["custom_dispatch_date"] = [">=", f"{getdate(dispatch_from)} 00:00:00"]
+	if dispatch_to:
+		_to = ["<=", f"{getdate(dispatch_to)} 23:59:59"]
+		filters["custom_dispatch_date"] = (
+			["between", [f"{getdate(dispatch_from)} 00:00:00", _to[1]]] if dispatch_from else _to
+		)
 
-	# A dedicated DN User only sees Delivery Notes assigned to them. Warehouse
-	# admins/managers (and System Manager) keep full visibility.
+	# Sales Order and Invoice No both narrow the same column. Invoice No is the ORDER's
+	# live value -- the same one the list shows -- not the copy stored on the note, which
+	# is written once and can lag.
+	_so_ids = None
+	if sales_order or invoice_no:
+		_so_filters = {}
+		if sales_order:
+			_so_filters["name"] = ["like", f"%{sales_order}%"]
+		if invoice_no:
+			_so_filters["custom_invoice_no"] = ["like", f"%{invoice_no}%"]
+		_so_ids = set(frappe.get_all("Sales Order", filters=_so_filters, pluck="name"))
+	if _so_ids is not None:
+		filters["custom_sales_order_id"] = ["in", sorted(_so_ids) or ["__no_match__"]]
+
+	# A dedicated DN User only sees DNs assigned to them; admins/managers see all.
 	_roles = set(frappe.get_roles())
 	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "PL Manager"}
 	if "DN User" in _roles and not (_roles & _override):
 		filters["custom_assigned_to"] = frappe.session.user
+
+	# Changes(HP) #22: only notes of orders in the user's channels (frappe.get_all skips the
+	# permission hooks that do this for the desk list).
+	from alpinos.channel_access import allowed_sales_orders
+
+	_allowed_sos = allowed_sales_orders()
+	if _allowed_sos is not None:
+		if _so_ids is not None:
+			_allowed_sos = [so for so in _allowed_sos if so in _so_ids]
+		filters["custom_sales_order_id"] = ["in", _allowed_sos or ["__no_match__"]]
 
 	or_filters = []
 	if search:
@@ -336,8 +368,8 @@ def get_delivery_note_list(
 	if has_more:
 		rows = rows[:page_length]
 
-	# Invoice No lives on the Sales Order (set after the DN is made), so show the
-	# SO's live value rather than the DN's fetched-at-save copy which is usually empty.
+	# Invoice No lives on the Sales Order (set after the DN is made); the DN's own
+	# copy is usually empty, so show the SO's live value.
 	so_ids = list({r.custom_sales_order_id for r in rows if r.get("custom_sales_order_id")})
 	inv_by_so = {}
 	if so_ids:
@@ -367,7 +399,7 @@ def get_delivery_note_list(
 	}
 
 
-# ── Bulk LR No. update (Warehouse Admin / Manager) ───────────────────────────
+# Bulk LR No. update (Warehouse Admin / Manager)
 _LR_BULK_ROLES = {"Warehouse Admin", "Warehouse Manager", "System Manager"}
 
 
@@ -437,34 +469,23 @@ def _lr_pick_lists(dn_names):
 	return {dn: ", ".join(names) for dn, names in picks.items()}
 
 
-def _lr_rows(names=None):
-	"""The sheet's rows: the notes named, in that order, else today's draft dispatches.
-
-	`names` comes from the rows ticked on the list page. Without it the sheet covers every
-	DRAFT Delivery Note dispatching TODAY, which is what the button did before selection.
-	"""
+def _lr_rows_for_today():
+	"""Draft Delivery Notes dispatching today, as the sheet's rows."""
 	today = frappe.utils.today()
-	fields = [
-		"name", "posting_date", "custom_sales_order_id", "custom_dn_so_customer_name",
-		"vehicle_no", "custom_dispatch_date", "custom_transporter_name", "custom_lr_gr_no",
-		"custom_total_units_dn", "custom_total_boxes", "custom_dn_order_gross_weight",
-	]
-	if names:
-		fetched = {d["name"]: d for d in frappe.get_all(
-			"Delivery Note", filters={"name": ["in", names]}, fields=fields)}
-		# Keep the caller's order, so the sheet reads down the list as it was ticked.
-		dns = [fetched[n] for n in names if n in fetched]
-	else:
-		# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
-		dns = frappe.get_all(
-			"Delivery Note",
-			filters={
-				"docstatus": 0,
-				"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
-			},
-			fields=fields,
-			order_by="name",
-		)
+	# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
+	dns = frappe.get_all(
+		"Delivery Note",
+		filters={
+			"docstatus": 0,
+			"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
+		},
+		fields=[
+			"name", "posting_date", "custom_sales_order_id", "custom_dn_so_customer_name",
+			"vehicle_no", "custom_dispatch_date", "custom_transporter_name", "custom_lr_gr_no",
+			"custom_total_units_dn", "custom_total_boxes", "custom_dn_order_gross_weight",
+		],
+		order_by="name",
+	)
 	picks = _lr_pick_lists([dn.name for dn in dns])
 	for dn in dns:
 		dn["pick_list"] = picks.get(dn.name, "")
@@ -477,22 +498,14 @@ def _lr_rows(names=None):
 
 
 @frappe.whitelist()
-def download_lr_excel(delivery_notes=None):
-	"""Excel for bulk Dispatch Date / LR No. entry, in the agreed format.
-
-	`delivery_notes` (a JSON list, from the rows ticked on the list page) exports exactly
-	those; without it the sheet covers every DRAFT Delivery Note dispatching TODAY.
+def download_lr_excel():
+	"""Excel of DRAFT Delivery Notes dispatching TODAY, for bulk Dispatch Date / LR No. entry.
 
 	Twelve columns in the order of the agreed format; DISPATCH DATE and LR NO. are the
 	editable ones and are highlighted in yellow, the rest are filled in by the system.
 	"""
 	_require_lr_roles()
 	import io
-
-	names = frappe.parse_json(delivery_notes) if delivery_notes else None
-	if isinstance(names, str):
-		names = [names]
-	names = [n for n in (names or []) if n]
 
 	try:
 		import openpyxl
@@ -513,7 +526,7 @@ def download_lr_excel(delivery_notes=None):
 			cell.fill = highlight
 		ws.column_dimensions[cell.column_letter].width = _LR_COLUMN_WIDTHS.get(label, 16)
 
-	for idx, dn in enumerate(_lr_rows(names), start=2):
+	for idx, dn in enumerate(_lr_rows_for_today(), start=2):
 		for col, (label, field) in enumerate(_LR_COLUMNS, start=1):
 			value = dn.get(field)
 			cell = ws.cell(row=idx, column=col, value=value if value not in (None, "") else None)
@@ -526,8 +539,7 @@ def download_lr_excel(delivery_notes=None):
 	stream = io.BytesIO()
 	wb.save(stream)
 
-	suffix = "selected" if names else frappe.utils.today()
-	frappe.response["filename"] = f"LR_Update_{suffix}.xlsx"
+	frappe.response["filename"] = f"LR_Update_{frappe.utils.today()}.xlsx"
 	frappe.response["filecontent"] = stream.getvalue()
 	frappe.response["type"] = "binary"
 

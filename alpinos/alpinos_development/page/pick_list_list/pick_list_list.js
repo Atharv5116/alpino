@@ -85,6 +85,97 @@ var PickListListPage = class {
 			this.download_pdfs()
 		);
 		if (this.btn_download_pdf) this.btn_download_pdf.hide();
+		// Changes(HP) #59: warehouse bulk actions. Hidden unless the user holds a
+		// warehouse role, so the rest of the team never sees a button the server refuses.
+		this._can_bulk =
+			frappe.user.has_role('Warehouse Admin') ||
+			frappe.user.has_role('Warehouse Manager') ||
+			frappe.user.has_role('System Manager');
+		if (this._can_bulk) {
+			this.btn_bulk_submit = this.page.add_inner_button(__('Submit Selected'), () =>
+				this.bulk_submit()
+			);
+			if (this.btn_bulk_submit) this.btn_bulk_submit.hide();
+			this.btn_bulk_dn = this.page.add_inner_button(__('Create Delivery Notes'), () =>
+				this.bulk_create_delivery_notes()
+			);
+			if (this.btn_bulk_dn) this.btn_bulk_dn.hide();
+		}
+	}
+
+	_bulk_result_message(res, noun) {
+		// One line per outcome. A skip is not a failure and reads differently, because in a
+		// batch of forty "not ready yet" and "broken" are different news.
+		const esc = frappe.utils.escape_html;
+		const parts = [`<p><b>${esc(String(res.counts.done))}</b> ${esc(noun)}.</p>`];
+		if ((res.skipped || []).length) {
+			parts.push(
+				`<p><b>${res.skipped.length}</b> ${__('skipped')}:</p><ul>` +
+					res.skipped
+						.map((r) => `<li>${esc(r.name)} — ${esc(r.reason)}</li>`)
+						.join('') +
+					'</ul>'
+			);
+		}
+		if ((res.failed || []).length) {
+			parts.push(
+				`<p style="color:var(--text-danger,#c0392b);"><b>${res.failed.length}</b> ${__('failed')}:</p><ul>` +
+					res.failed.map((r) => `<li>${esc(r.name)} — ${esc(r.error)}</li>`).join('') +
+					'</ul>'
+			);
+		}
+		return parts.join('');
+	}
+
+	bulk_submit() {
+		const pick_lists = this._selected_names();
+		if (!pick_lists.length) {
+			frappe.msgprint(__('Please select at least one Pick List.'));
+			return;
+		}
+		frappe.confirm(
+			__('Submit {0} Pick List(s)? Submitting cannot be undone.', [pick_lists.length]),
+			() => {
+				frappe.dom.freeze(__('Submitting…'));
+				frappe.call({
+					method: 'alpinos.bulk_dispatch.bulk_submit_pick_lists',
+					args: { pick_lists },
+					always: () => frappe.dom.unfreeze(),
+					callback: (r) => {
+						if (!r.message) return;
+						frappe.msgprint({
+							title: __('Bulk Submit'),
+							message: this._bulk_result_message(r.message, __('submitted')),
+							indicator: r.message.counts.failed ? 'red' : 'green',
+						});
+						this.load_list();
+					},
+				});
+			}
+		);
+	}
+
+	bulk_create_delivery_notes() {
+		const pick_lists = this._selected_names();
+		if (!pick_lists.length) {
+			frappe.msgprint(__('Please select at least one Pick List.'));
+			return;
+		}
+		frappe.dom.freeze(__('Creating Delivery Notes…'));
+		frappe.call({
+			method: 'alpinos.bulk_dispatch.bulk_create_delivery_notes',
+			args: { pick_lists },
+			always: () => frappe.dom.unfreeze(),
+			callback: (r) => {
+				if (!r.message) return;
+				frappe.msgprint({
+					title: __('Create Delivery Notes'),
+					message: this._bulk_result_message(r.message, __('Draft Delivery Note(s) created')),
+					indicator: r.message.counts.failed ? 'red' : 'green',
+				});
+				this.load_list();
+			},
+		});
 	}
 
 	_selected_names() {
@@ -416,6 +507,8 @@ var PickListListPage = class {
 			if (this.btn_bulk_edit) this.btn_bulk_edit.show();
 			if (this.btn_download_stickers) this.btn_download_stickers.show();
 			if (this.btn_download_pdf) this.btn_download_pdf.show();
+			if (this.btn_bulk_submit) this.btn_bulk_submit.show();
+			if (this.btn_bulk_dn) this.btn_bulk_dn.show();
 			if (this.page && this.page.set_indicator) {
 				this.page.set_indicator(__('{0} selected', [checked_count]), 'orange');
 			}
@@ -423,6 +516,8 @@ var PickListListPage = class {
 			if (this.btn_bulk_edit) this.btn_bulk_edit.hide();
 			if (this.btn_download_stickers) this.btn_download_stickers.hide();
 			if (this.btn_download_pdf) this.btn_download_pdf.hide();
+			if (this.btn_bulk_submit) this.btn_bulk_submit.hide();
+			if (this.btn_bulk_dn) this.btn_bulk_dn.hide();
 			if (this.page && this.page.clear_indicator) this.page.clear_indicator();
 		}
 	}

@@ -44,18 +44,26 @@ def get_pick_list_data(name):
 
 	from alpinos.sales_order_api import get_box_conversion_factor
 	doc_dict = doc.as_dict()
+	# Changes(HP) #55: the FSN is shown only for Flipkart, so the page is told which it is.
+	doc_dict["custom_customer_type"] = (
+		frappe.db.get_value("Sales Order", doc.get("custom_sales_order_id"), "order_type") or ""
+	)
+	doc_dict["is_flipkart"] = 1 if "flipkart" in doc_dict["custom_customer_type"].lower() else 0
 	for row in doc_dict.get("locations", []):
 		row["custom_conversion_factor"] = get_box_conversion_factor(row.get("item_code")) or 1
 		item_info = (
 			frappe.db.get_value(
 				"Item",
 				row.get("item_code"),
-				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days", "has_batch_no"],
+				["custom_sku_no", "custom_gross_weight", "shelf_life_in_days", "has_batch_no",
+				 "custom_fsn_no"],
 				as_dict=True,
 			)
 			or {}
 		)
 		row["custom_sku_no"] = item_info.get("custom_sku_no") or ""
+		# Changes(HP) #55: Flipkart pickers work from the FSN, so it rides along with the SKU.
+		row["custom_fsn_no"] = item_info.get("custom_fsn_no") or ""
 		if not row.get("custom_weight_per_box"):
 			row["custom_weight_per_box"] = item_info.get("custom_gross_weight") or 0
 		row["shelf_life_in_days"] = item_info.get("shelf_life_in_days") or 0
@@ -285,6 +293,19 @@ def get_pick_list_entry_list(
 	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "DN Manager"}
 	if "PL User" in _roles and not (_roles & _override):
 		filters["custom_assigned_to"] = frappe.session.user
+
+	# Changes(HP) #22: only Pick Lists of orders in the user's channels. frappe.get_all skips
+	# the permission hooks that do this for the desk list, so it is applied here.
+	from alpinos.channel_access import allowed_sales_orders
+
+	_allowed_sos = allowed_sales_orders()
+	if _allowed_sos is not None:
+		if sales_order:
+			if sales_order not in _allowed_sos:
+				_allowed_sos = []
+			else:
+				_allowed_sos = [sales_order]
+		filters["custom_sales_order_id"] = ["in", _allowed_sos or ["__no_match__"]]
 		
 	or_filters = []
 	if search:
