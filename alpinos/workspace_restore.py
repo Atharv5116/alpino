@@ -4,6 +4,12 @@
 	bench --site SITE execute alpinos.workspace_restore.show --kwargs "{'version':'<name>'}"
 	bench --site SITE execute alpinos.workspace_restore.restore --kwargs "{'version':'<name>','apply':1}"
 
+For the CONTENT of a widget (the calendar, the check-in box) rather than the layout:
+
+	bench --site SITE execute alpinos.workspace_restore.block_history
+	bench --site SITE execute alpinos.workspace_restore.block_show --kwargs "{'version':'<name>'}"
+	bench --site SITE execute alpinos.workspace_restore.block_restore --kwargs "{'version':'<name>','apply':1}"
+
 Five after_migrate hooks rebuild the Home workspace on every migrate: each overwrites its
 Custom HTML Block and splices itself back in at a fixed index, then saves the workspace.
 Anything anyone arranged by hand is overwritten, every time.
@@ -130,3 +136,114 @@ def restore(version, workspace="Home", apply=0):
 	frappe.clear_cache()
 	print(f"\nRestored '{workspace}'. Reload the browser to see it.")
 	print("The next migrate will rearrange it again until the widget patches stop repositioning.")
+
+
+# ── Custom HTML Block: the content inside a widget ──────────────────────────
+#
+# The layout and the content are separate records, and the patches rewrite both. When the
+# block ORDER comes back identical across a migrate but a widget still looks different, it
+# is the Custom HTML Block that changed, not the workspace -- the calendar is one of these.
+
+#: The fields a widget patch overwrites.
+_BLOCK_FIELDS = ("html", "script", "style")
+
+
+def _block_changes(version_name):
+	"""{field: (before, after)} for a Custom HTML Block version."""
+	raw = frappe.db.get_value("Version", version_name, "data") or "{}"
+	try:
+		data = json.loads(raw)
+	except Exception:
+		return {}
+	out = {}
+	for field, old, new in data.get("changed") or []:
+		if field in _BLOCK_FIELDS:
+			out[field] = (old or "", new or "")
+	return out
+
+
+def block_history(block=None, limit=40):
+	"""Versions that changed a widget's content. Omit `block` to list every widget."""
+	filters = {"ref_doctype": "Custom HTML Block"}
+	if block:
+		filters["docname"] = block
+	rows = frappe.get_all(
+		"Version", filters=filters, fields=["name", "docname", "creation", "owner"],
+		order_by="creation desc", limit_page_length=int(limit),
+	)
+	rows = [r for r in rows if _block_changes(r.name)]
+	if not rows:
+		print("No content changes recorded" + (f" for '{block}'." if block else " for any widget."))
+		return []
+	print("Widget content changes, newest first.\n")
+	for r in rows:
+		ch = _block_changes(r.name)
+		bits = ", ".join(
+			f"{f} {len(b)}->{len(a)} chars" for f, (b, a) in sorted(ch.items())
+		)
+		print(f"   {r.name}  {r.creation}  {r.docname}")
+		print(f"        {bits}")
+	print("\nInspect:  alpinos.workspace_restore.block_show --kwargs \"{'version':'<name>'}\"")
+	return rows
+
+
+def block_show(version, context=3, max_lines=80):
+	"""A unified diff of what this version changed, so the actual edit is visible."""
+	import difflib
+
+	ch = _block_changes(version)
+	if not ch:
+		print(f"Version {version} changed none of {_BLOCK_FIELDS}.")
+		return
+	docname = frappe.db.get_value("Version", version, "docname")
+	print(f"{docname} -- version {version}\n")
+	for field, (before, after) in sorted(ch.items()):
+		print(f"=== {field}: {len(before)} -> {len(after)} chars")
+		diff = list(difflib.unified_diff(
+			before.splitlines(), after.splitlines(),
+			fromfile="before", tofile="after", lineterm="", n=int(context),
+		))
+		if not diff:
+			print("   (identical text, only the record was re-saved)")
+		for line in diff[:int(max_lines)]:
+			print("   " + line)
+		if len(diff) > int(max_lines):
+			print(f"   ... {len(diff) - int(max_lines)} more diff lines")
+		print()
+
+
+def block_restore(version, apply=0):
+	"""Write this version's BEFORE content back onto the widget. Dry run by default."""
+	apply = int(apply)
+	ch = _block_changes(version)
+	if not ch:
+		print(f"Version {version} changed none of {_BLOCK_FIELDS}; nothing to restore.")
+		return
+	docname = frappe.db.get_value("Version", version, "docname")
+	if not frappe.db.exists("Custom HTML Block", docname):
+		print(f"Custom HTML Block '{docname}' no longer exists.")
+		return
+
+	pending = {}
+	for field, (before, _after) in sorted(ch.items()):
+		current = frappe.db.get_value("Custom HTML Block", docname, field) or ""
+		if current == before:
+			print(f"   {field}: already matches the restore point, leaving it")
+		else:
+			pending[field] = before
+			print(f"   {field}: {len(current)} chars -> {len(before)} chars")
+	if not pending:
+		print("\nNothing to do.")
+		return
+	if not apply:
+		print(f"\nDry run on '{docname}'. Re-run with apply:1 to write.")
+		return
+
+	doc = frappe.get_doc("Custom HTML Block", docname)
+	for field, value in pending.items():
+		setattr(doc, field, value)
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.clear_cache()
+	print(f"\nRestored {', '.join(pending)} on '{docname}'. Hard-refresh the browser.")
+	print("The next migrate will overwrite it again until the widget patches are changed.")
