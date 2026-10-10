@@ -822,6 +822,8 @@ doc_events = {
 		],
 		"on_update": [
 			"alpinos.approval_access.grant_rm_role_for_employee",
+			# HRMS v16 reads holidays only from Holiday List Assignments; see hrms_compat.
+			"alpinos.hrms_compat.bridge_employee_holiday_list",
 		]
 	},
 	"Work From Home Request": {

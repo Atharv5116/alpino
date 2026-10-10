@@ -205,7 +205,7 @@ def _run():
 
 	def _a_real_on_duty_half_day_request_cannot_be_saved():
 		"""The rule in the chain, on a real document, not a stand-in."""
-		employee = frappe.db.get_value("Employee", {"status": "Active"}, "name")
+		employee = frappe.db.get_value("Employee", {"status": "Active"}, "name", order_by="creation asc")
 		_assert(employee, "no active Employee on this site")
 
 		doc = frappe.get_doc({
