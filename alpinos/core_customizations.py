@@ -54,7 +54,6 @@ _V15_CELL_RULE_MARK = "/* alpinos: v15 print cells */"
 _V15_CELL_RULE = (
 	_V15_CELL_RULE_MARK
 	+ "\n.print-format td, .print-format th { vertical-align: top !important; padding: 6px !important; }"
-	+ '\n.print-format { font-family: Inter, "Helvetica Neue", Helvetica, Arial, "Open Sans", sans-serif; }'
 	+ "\n/* alpinos: end */\n"
 )
 
@@ -66,8 +65,8 @@ def keep_v15_print_cells():
 	padding: 6px` with !important, which silently overrode the padding and centring the
 	alpinos print formats write inline. v16 dropped the !important, so those inline rules
 	took effect: taller rows, a centred logo, and a Quotation that spilled onto a second
-	page. v16 also switched the print font to InterVariable, which wraps lines differently;
-	the v15 font family is pinned as well. Appending the v15 rule to each custom format's CSS (which Frappe adds after
+	page. v16's InterVariable font still wraps a few long lines at different words; pinning
+	v15's family does not help, since v16's PDF renderer does not load that font. Appending the v15 rule to each custom format's CSS (which Frappe adds after
 	everything else) brings back the layout the formats were designed and checked against.
 	Runs last in after_migrate, after the steps that rebuild these formats; idempotent.
 	"""
