@@ -71,62 +71,62 @@ def create_job_applicant_workflow_actions():
 	print(f"✅ Workflow Actions: {created_count} created, {existing_count} already existed")
 
 
-def update_job_applicant_status_options():
-	status_options = (
-		"Draft\n"
-		"Submitted\n"
-		"New Application\n"
-		"Rejected\n"
-		"Archived"
+JOB_APPLICANT_STATUS_OPTIONS = "Draft\nSubmitted\nNew Application\nRejected\nArchived"
+
+
+def _property_setter(fieldname, prop, value, property_type):
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	make_property_setter(
+		"Job Applicant",
+		fieldname,
+		prop,
+		value,
+		property_type,
+		for_doctype=not fieldname,
+		validate_fields_for_doctype=False,
 	)
-	
-	try:
-		field = frappe.get_doc("DocField", {"parent": "Job Applicant", "fieldname": "status"})
-		if field:
-			field.options = status_options
-			field.save(ignore_permissions=True)
-			frappe.db.commit()
-			print("✅ Updated status field options")
-	except Exception as e:
-		print(f"⚠️  Could not update status field: {str(e)}")
-		# fall back to a property setter
-		try:
-			from alpinos.patches.v1_0.update_job_applicant_fields import update_property_setter
-			update_property_setter("Job Applicant", "status", "options", status_options, "Text")
-			print("✅ Updated status field options via property setter")
-		except Exception as e2:
-			print(f"⚠️  Could not update status field via property setter: {str(e2)}")
+
+
+def update_job_applicant_status_options():
+	# A Property Setter, not an edit to the DocField: HRMS ships Job Applicant, so a
+	# DocField edit is overwritten whenever HRMS updates the doctype (it was, on v16).
+	_property_setter("status", "options", JOB_APPLICANT_STATUS_OPTIONS, "Text")
+	print("✅ Job Applicant status options set")
 
 
 def make_job_applicant_submittable():
-	try:
-		doc_type = frappe.get_doc("DocType", "Job Applicant")
-		if not doc_type.is_submittable:
-			doc_type.is_submittable = 1
-			doc_type.make_amendable()
-			doc_type.save(ignore_permissions=True)
-			frappe.db.commit()
-			print("✅ Made Job Applicant submittable")
-		else:
-			print("ℹ️  Job Applicant is already submittable")
-			doc_type.make_amendable()
-			if doc_type.has_value_changed("fields"):
-				doc_type.save(ignore_permissions=True)
-				frappe.db.commit()
-	except Exception as e:
-		print(f"⚠️  Could not make Job Applicant submittable: {str(e)}")
+	"""Job Applicant is submittable here (the Job Application Workflow submits and cancels).
+
+	Stock HRMS ships it non-submittable. Editing the standard DocType record did this
+	until v16, whose schema sync resets it; a DocType-level Property Setter plus an
+	amended_from Custom Field is the customisation that survives an HRMS update.
+	"""
+	_property_setter(None, "is_submittable", "1", "Check")
+	frappe.clear_cache(doctype="Job Applicant")
+	if not frappe.get_meta("Job Applicant").has_field("amended_from"):
+		from frappe.custom.doctype.custom_field.custom_field import create_custom_field
+
+		create_custom_field(
+			"Job Applicant",
+			{
+				"fieldname": "amended_from",
+				"label": "Amended From",
+				"fieldtype": "Link",
+				"options": "Job Applicant",
+				"read_only": 1,
+				"no_copy": 1,
+				"print_hide": 1,
+				"search_index": 1,
+				"insert_after": "upper_range",
+			},
+		)
+	print("✅ Job Applicant submittable")
 
 
 def update_status_field_allow_on_submit():
-	try:
-		status_field = frappe.get_doc("DocField", {"parent": "Job Applicant", "fieldname": "status"})
-		if not status_field.allow_on_submit:
-			status_field.allow_on_submit = 1
-			status_field.save(ignore_permissions=True)
-			frappe.db.commit()
-			print("✅ Updated status field - allow_on_submit: 1")
-	except Exception as e:
-		print(f"⚠️  Could not update status field allow_on_submit: {str(e)}")
+	_property_setter("status", "allow_on_submit", "1", "Check")
+	print("✅ Job Applicant status allow_on_submit")
 
 
 def setup_job_applicant_workflow():
