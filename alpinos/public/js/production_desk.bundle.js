@@ -59,6 +59,18 @@ window.alpinos_format_capacity = function (value, uom) {
  * other records, and the workspace is still one crumb further left.
  */
 window.alpinos_workspace_breadcrumb = function (workspace, label, route) {
+	// Frappe v16: the page owns its trail. The legacy add() below draws only the workspace
+	// crumb there, losing the list crumb and the page's title, which v16 shows as the LAST
+	// crumb (page.set_title replaces it). So end the trail on a title crumb. v15 has neither
+	// get_current_page nor set_breadcrumbs and keeps the path below.
+	const page = window.frappe && frappe.get_current_page && frappe.get_current_page();
+	if (page && page.set_breadcrumbs) {
+		const items = [{ label: workspace.label, href: workspace.route }];
+		if (label && route) items.push({ label: label, href: route });
+		items.push({ label: page.title || '' });
+		page.set_breadcrumbs(items);
+		return;
+	}
 	if (!(window.frappe && frappe.breadcrumbs && frappe.breadcrumbs.add)) return;
 	const trail = (label && route) ? [{ label: label, route: route }] : [];
 	if (trail.length) alpinos_support_breadcrumb_trail();
