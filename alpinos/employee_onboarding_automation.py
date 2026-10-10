@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.model.meta import get_meta
 from frappe.utils import add_days, getdate, nowdate, get_url
+
+from alpinos.hrms_compat import ensure_round_as_interview_type, interview_round_meta
 from datetime import datetime, timedelta
 
 
@@ -420,6 +422,9 @@ def ensure_pre_onboarding_interview_round_exists():
 	"""Return the "pre-onboarding" Interview Round, creating it if missing."""
 	round_name = "pre-onboarding"
 	
+	if interview_round_meta()[0] == "Interview Type":
+		return ensure_round_as_interview_type(round_name, "Pre-Onboarding Interview")
+
 	if frappe.db.exists("Interview Round", round_name):
 		return round_name
 	
@@ -488,10 +493,11 @@ def create_pre_onboarding_interview(doc):
 		frappe.throw(_("Job Applicant is required to create Interview"))
 	
 	interview_round_name = ensure_pre_onboarding_interview_round_exists()
+	round_doctype, _name_field, round_link = interview_round_meta()
 	
 	existing_interview = frappe.db.get_value("Interview", {
 		"job_applicant": doc.job_applicant,
-		"interview_round": interview_round_name
+		round_link: interview_round_name
 	}, "name")
 	
 	if existing_interview:
@@ -502,7 +508,7 @@ def create_pre_onboarding_interview(doc):
 	try:
 		interview = frappe.get_doc({
 			"doctype": "Interview",
-			"interview_round": interview_round_name,
+			round_link: interview_round_name,
 			"job_applicant": doc.job_applicant,
 			"designation": doc.designation_company_profile or doc.onboarding_designation or job_applicant.designation,
 			"resume_link": job_applicant.resume_link if hasattr(job_applicant, 'resume_link') else None,
@@ -510,7 +516,7 @@ def create_pre_onboarding_interview(doc):
 			"status": "Pending"
 		})
 		
-		interview_round = frappe.get_doc("Interview Round", interview_round_name)
+		interview_round = frappe.get_doc(round_doctype, interview_round_name)
 		if hasattr(interview_round, 'interviewers') and interview_round.interviewers:
 			for interviewer_row in interview_round.interviewers:
 				interview.append("interview_details", {
@@ -885,7 +891,7 @@ def handle_pre_onboarding_workflow(doc, method=None):
 	if doc.boarding_status == "Pre-Onboarding Initiated":
 		if not frappe.db.exists("Interview", {
 			"job_applicant": doc.job_applicant,
-			"interview_round": "pre-onboarding"
+			interview_round_meta()[2]: "pre-onboarding"
 		}):
 			try:
 				interview_name = create_pre_onboarding_interview(doc)
