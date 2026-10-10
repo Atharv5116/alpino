@@ -19,7 +19,7 @@ def get_current_employee_and_approver():
 	employee = frappe.db.get_value(
 		"Employee",
 		{"user_id": current_user, "status": "Active"},
-		"name"
+		"name", order_by="name asc"
 	)
 	
 	# If no active employee found, try without status filter
@@ -27,7 +27,7 @@ def get_current_employee_and_approver():
 		employee = frappe.db.get_value(
 			"Employee",
 			{"user_id": current_user},
-			"name"
+			"name", order_by="name asc"
 		)
 	
 	if not employee:
@@ -92,7 +92,7 @@ def auto_populate_employee_and_approver(doc, method=None):
 		employee = frappe.db.get_value(
 			"Employee",
 			{"user_id": current_user, "status": "Active"},
-			"name"
+			"name", order_by="name asc"
 		)
 		
 		# If no active employee found, try without status filter
@@ -100,7 +100,7 @@ def auto_populate_employee_and_approver(doc, method=None):
 			employee = frappe.db.get_value(
 				"Employee",
 				{"user_id": current_user},
-				"name"
+				"name", order_by="name asc"
 			)
 		
 		if employee:
