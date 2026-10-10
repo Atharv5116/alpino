@@ -981,7 +981,7 @@ def update_expense_claim_status_options():
 			"Expense Claim",
 			"status",
 			"options",
-			"Draft\nPending RM Approval\nApproved by RM\nRejected\nSubmitted to Payroll\nPaid",
+			"Draft\nPending RM Approval\nApproved by RM\nRejected\nSubmitted to Payroll\nPaid\nCancelled",
 			"Text"
 		)
 		print("✅ Updated status field options to match workflow states")
@@ -999,7 +999,7 @@ def update_expense_claim_approval_status_options():
 			"Expense Claim",
 			"approval_status",
 			"options",
-			"Draft\nPending RM Approval\nApproved by RM\nRejected\nSubmitted to Payroll\nPaid",
+			"Draft\nPending RM Approval\nApproved by RM\nRejected\nSubmitted to Payroll\nPaid\nCancelled",
 			"Text"
 		)
 		print("✅ Updated approval_status field options to match workflow states")
@@ -1702,6 +1702,10 @@ class ExpenseClaimOverride(OriginalExpenseClaim):
 			for d in self.get("reimbursement"):
 				self.total_claimed_amount += flt(d.amount_claimed)
 		
+		# HRMS v16 keeps company-currency copies, filled in super() from the old total.
+		if hasattr(self, "set_base_fields_amount"):
+			self.set_base_fields_amount(self, ["total_claimed_amount"])
+
 		# Set grand total
 		self.grand_total = self.total_claimed_amount
 	

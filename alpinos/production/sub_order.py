@@ -92,7 +92,12 @@ def _resolve_fg_warehouse(item_code, company):
 	eventually book a production run into the Rejected warehouse. So it comes from a real
 	default, and when there is none the approval is refused with something actionable.
 	"""
-	warehouse = frappe.db.get_single_value("Manufacturing Settings", "default_fg_warehouse")
+	# ERPNext v16 moved the default to Company; v15 keeps it in Manufacturing Settings.
+	warehouse = None
+	if company and frappe.get_meta("Company").has_field("default_fg_warehouse"):
+		warehouse = frappe.db.get_value("Company", company, "default_fg_warehouse")
+	if not warehouse and frappe.get_meta("Manufacturing Settings").has_field("default_fg_warehouse"):
+		warehouse = frappe.db.get_single_value("Manufacturing Settings", "default_fg_warehouse")
 	if warehouse:
 		return warehouse
 

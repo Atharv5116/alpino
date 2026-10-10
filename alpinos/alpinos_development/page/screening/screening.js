@@ -304,7 +304,9 @@ frappe.pages['screening'].on_page_load = function(wrapper) {
 		var interviewDoc = frappe.model.get_new_doc("Interview");
 
 		interviewDoc.job_applicant = job_applicant.name;
-		interviewDoc.interview_round = interview_round;
+		// HRMS v16 folded Interview Round into Interview Type.
+		var round_field = frappe.meta.has_field("Interview", "interview_round") ? "interview_round" : "interview_type";
+		interviewDoc[round_field] = interview_round;
 
 		if (resumeLink) {
 			interviewDoc.resume_link = resumeLink;

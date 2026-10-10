@@ -3,6 +3,8 @@
 import frappe
 from frappe import _
 from frappe.utils import now, getdate, today
+
+from alpinos.hrms_compat import ensure_round_as_interview_type, interview_round_meta
 import os
 
 def generate_candidate_id(doc, method=None):
@@ -659,6 +661,9 @@ def ensure_call_round_interview_exists():
 	"""Ensure the "Call Round Interview" Interview Round exists, creating it if needed."""
 	round_name = "Call Round Interview"
 	
+	if interview_round_meta()[0] == "Interview Type":
+		return ensure_round_as_interview_type(round_name)
+
 	# Check if it already exists
 	if frappe.db.exists("Interview Round", round_name):
 		return round_name

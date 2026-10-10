@@ -306,10 +306,10 @@ $(document).ready(function() {
         }
         
         // Remove spaces, hyphens, parentheses for validation
-        const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+        const cleanPhone = phone.replace(/[\\s\\-\\(\\)]/g, '');
         
         // Check if it contains only digits and +
-        if (!/^[\+]?[0-9]+$/.test(cleanPhone)) {
+        if (!/^[\\+]?[0-9]+$/.test(cleanPhone)) {
             frappe.msgprint({
                 title: __('Invalid Phone Number'),
                 message: __('Phone number can only contain numbers, spaces, +, -, ( )'),
@@ -320,7 +320,7 @@ $(document).ready(function() {
         }
         
         // Check minimum length (at least 10 digits)
-        const digitsOnly = cleanPhone.replace(/\+/g, '');
+        const digitsOnly = cleanPhone.replace(/\\+/g, '');
         if (digitsOnly.length < 10) {
             frappe.msgprint({
                 title: __('Invalid Phone Number'),
@@ -351,7 +351,7 @@ $(document).ready(function() {
         }
         
         // Check for numbers or invalid special characters
-        if (/[0-9@#$%^&*()_+=\[\]{};:"\\|,.<>\/?]/.test(name)) {
+        if (/[0-9@#$%^&*()_+=\\[\\]{};:"\\|,.<>\\/?]/.test(name)) {
             frappe.msgprint({
                 title: __('Invalid Name'),
                 message: __('Name cannot contain numbers or special characters (except spaces, hyphens, apostrophes)'),
@@ -530,7 +530,7 @@ $(document).ready(function() {
         if (!url) return; // Optional field
         
         // Basic URL validation
-        const urlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+        const urlPattern = /^(https?:\\/\\/)?([\\da-z\\.-]+)\\.([a-z\\.]{2,6})([\\/\\w \\.-]*)*\\/?$/;
         if (!urlPattern.test(url)) {
             frappe.msgprint({
                 title: __('Invalid URL'),
