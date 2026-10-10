@@ -68,12 +68,12 @@ def recompute_attendance(att_name, apply=False, fallback_shift=None):
 		return None  # a single punch cannot yield an out-time
 
 	# Bind the last-log-as-out patch, then reuse the shift's own attendance calc.
-	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
+	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch, shift_get_attendance
 
 	_apply_checkout_reason_patch()
 	shift = frappe.get_cached_doc("Shift Type", effective_shift)
 	log_objs = [frappe._dict(row) for row in logs]
-	status, working_hours, late_entry, early_exit, in_time, out_time = shift.get_attendance(log_objs)
+	status, working_hours, late_entry, early_exit, in_time, out_time = shift_get_attendance(shift, log_objs, att.employee, att.attendance_date)
 	status, half_day_status = _apply_saturday_override(
 		att.attendance_date, effective_shift, status, working_hours, att.half_day_status
 	)

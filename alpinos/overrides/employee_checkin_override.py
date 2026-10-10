@@ -66,6 +66,26 @@ def _apply_checkout_reason_patch():
 	_patch_applied = True
 
 
+def shift_get_attendance(shift_doc, logs, employee=None, attendance_date=None):
+	"""ShiftType.get_attendance on either HRMS version.
+
+	v15 reads the absent/half-day thresholds off the shift itself; v16 takes them as
+	arguments, and its own caller halves them on a half holiday. This passes them the way
+	v16's process_auto_attendance does, so a recomputed day matches an auto-marked one.
+	"""
+	import inspect
+
+	if "working_hours_threshold_for_absent" not in inspect.signature(shift_doc.get_attendance).parameters:
+		return shift_doc.get_attendance(logs)
+
+	for_absent = flt(shift_doc.working_hours_threshold_for_absent)
+	for_half_day = flt(shift_doc.working_hours_threshold_for_half_day)
+	if employee and attendance_date and shift_doc.is_half_holiday(employee, attendance_date):
+		for_absent /= 2
+		for_half_day /= 2
+	return shift_doc.get_attendance(logs, for_absent, for_half_day)
+
+
 class CustomEmployeeCheckin(EmployeeCheckin):
 	def validate_time_change(self):
 		# Bypass the core warning about modifying time on linked checkins; our Attendance sync handles it.

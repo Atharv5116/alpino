@@ -2094,7 +2094,7 @@ def get_sales_order_entry_list(
 	}
 	sf = (sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
-	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else "modified desc"
+	order_by = f"{sf} {sd}" if sf in _SORTABLE else "modified desc"
 
 	rows = frappe.get_list(
 		"Sales Order",
