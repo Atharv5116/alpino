@@ -63,3 +63,39 @@ def company_holiday_list(company, on_date, v15_holiday_list):
 	if not hl:
 		return v15_holiday_list
 	return hl.get_assigned_holiday_list(company, as_on=on_date) or v15_holiday_list
+
+
+def bridge_employee_holiday_list(doc, method=None):
+	"""Employee on_update, HRMS v16 only: turn Employee.holiday_list into an assignment.
+
+	HR sets the Holiday List on the Employee. v16 no longer reads that field -- only Holiday
+	List Assignments -- and creates none for a new employee, so a joiner whose company has
+	no assignment of its own had no holidays: attendance, leave and requests refused them.
+	This creates the employee's first assignment from the field, starting at the joining
+	date (clamped into the list's range). An employee who already has one is left alone,
+	so assignments HR makes directly always win. A failure is logged, never raised: it must
+	not stop the Employee from saving.
+	"""
+	from frappe.utils import getdate
+
+	if not _assignment_lookup() or not doc.get("holiday_list"):
+		return
+	if frappe.db.exists(
+		"Holiday List Assignment", {"applicable_for": "Employee", "assigned_to": doc.name, "docstatus": 1}
+	):
+		return
+	try:
+		start, end = frappe.db.get_value("Holiday List", doc.holiday_list, ["from_date", "to_date"])
+		from_date = min(max(getdate(doc.get("date_of_joining") or start), getdate(start)), getdate(end))
+		hla = frappe.new_doc("Holiday List Assignment")
+		hla.update({
+			"applicable_for": "Employee",
+			"assigned_to": doc.name,
+			"holiday_list": doc.holiday_list,
+			"from_date": from_date,
+		})
+		hla.flags.ignore_permissions = True
+		hla.insert()
+		hla.submit()
+	except Exception:
+		frappe.log_error(title=f"Holiday List Assignment for {doc.name} not created")

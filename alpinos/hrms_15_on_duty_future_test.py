@@ -157,7 +157,8 @@ def _run():
 		monthly cap or the HRMS core checks, each of which could refuse the same document.
 		So the document is really inserted.
 		"""
-		employee = frappe.db.get_value("Employee", {"status": "Active"}, "name")
+		# Oldest first: v16's get_value applies the default sort and would pick the newest.
+		employee = frappe.db.get_value("Employee", {"status": "Active"}, "name", order_by="creation asc")
 		_assert(employee, "no active Employee on this site to raise a request for")
 
 		# A future day that is not a holiday for this employee: HRMS refuses a request whose
