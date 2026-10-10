@@ -75,6 +75,7 @@ app_include_js = [
 	# has no imports, so it needs no build, and _asset()'s ?v=<mtime> stamp gives it the
 	# same cache-busting the content hash did.
 	_asset("js/production_desk.bundle.js"),
+	_asset("js/alpinos_desk_links.js"),
 ]
 
 # include js, css files in header of web template

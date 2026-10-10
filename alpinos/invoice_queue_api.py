@@ -73,6 +73,15 @@ def expand_channel(channel):
 
 
 @frappe.whitelist()
+def can_open_page():
+	"""Whether the session user may open this page, by the Page's own roles.
+
+	v15 put this in frappe.boot.page_info; v16 stopped sending it.
+	"""
+	return bool(frappe.get_doc("Page", "invoice-download-queue").is_permitted())
+
+
+@frappe.whitelist()
 def get_access():
 	"""What the page needs to draw and lock its Channel filter."""
 	_assert_can_read()
