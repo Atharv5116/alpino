@@ -15,6 +15,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production import filling_common as F
 
@@ -60,7 +62,7 @@ def compute_yield(parent_po):
 	                      pluck="name")
 	issued = flt(_net_issued(subs), 3)
 	rows = frappe.get_all(F.INWARD, filters={"parent_po": parent_po, "docstatus": 1},
-	                      fields=["target_sku", "sum(filled_kg) as kg", "sum(input_pcs) as pcs"],
+	                      fields=["target_sku", agg("sum", "filled_kg", "kg"), agg("sum", "input_pcs", "pcs")],
 	                      group_by="target_sku")
 	filled = flt(sum(flt(r.kg) for r in rows), 3)
 	pcs = sum(cint(r.pcs) for r in rows)

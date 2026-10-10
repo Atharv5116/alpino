@@ -41,6 +41,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.query_compat import agg, sort_by_expression
+
 from alpinos.purchase import constants as C
 from alpinos.purchase import purchase_order_approval as A
 from alpinos.purchase.inward_list_api import _date, _like, _restrict_names
@@ -107,7 +109,15 @@ LIST_FIELDS = (
 #: every draft and every order awaiting approval at the END (MariaDB sorts NULLs last on
 #: DESC), so a PO saved without Submit for Approval seemed not to appear in the list.
 #: (frappe refuses a CASE in order_by, but accepts IFNULL.)
-DEFAULT_ORDER_BY = "ifnull(custom_approval_datetime, creation) desc, modified desc"
+# Newest approval first, falling back to creation -- an expression, so it goes through
+# query_compat.sort_by_expression (v16 takes no expression in ORDER BY).
+DEFAULT_SORT_COLUMNS, _default_sort = sort_by_expression(
+	"ifnull(custom_approval_datetime, creation)",
+	{"IFNULL": ["custom_approval_datetime", "creation"]},
+	"sort_approved_on",
+	"desc",
+)
+DEFAULT_ORDER_BY = f"{_default_sort}, modified desc"
 
 _SORTABLE = frozenset(
 	{
@@ -319,11 +329,12 @@ def get_purchase_order_list(
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
-	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else DEFAULT_ORDER_BY
+	order_by = f"{sf} {sd}" if sf in _SORTABLE else DEFAULT_ORDER_BY
+	sort_columns = [] if sf in _SORTABLE else list(DEFAULT_SORT_COLUMNS)
 
 	count_rows = frappe.get_list(
 		DOCTYPE,
-		fields=["count(name) as total"],
+		fields=[agg("count", "name", "total")],
 		filters=filters or None,
 		limit_page_length=0,
 	)
@@ -331,7 +342,7 @@ def get_purchase_order_list(
 
 	rows = frappe.get_list(
 		DOCTYPE,
-		fields=list(LIST_FIELDS),
+		fields=list(LIST_FIELDS) + sort_columns,
 		filters=filters or None,
 		limit_start=start,
 		limit_page_length=page_length + 1,
@@ -390,7 +401,7 @@ def _attach_row_extras(rows, sku=""):
 		for r in frappe.get_all(
 			"Purchase Inward",
 			filters={"purchase_order": ["in", names], "docstatus": ["<", 2]},
-			fields=["purchase_order", "count(name) as n"],
+			fields=["purchase_order", agg("count", "name", "n")],
 			group_by="purchase_order",
 		)
 	}

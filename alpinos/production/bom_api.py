@@ -22,6 +22,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production.bom_fields import MATERIAL_TYPE_FIELD, STAGE_FIELD, VARIATION_FIELD
 from alpinos.production.bom_rules import (
@@ -85,7 +87,7 @@ def get_list(search=None, fg_item=None, is_active=None, start=0,
 		}
 
 	count_rows = frappe.get_list(
-		DOCTYPE, fields=["count(name) as total"], filters=filters,
+		DOCTYPE, fields=[agg("count", "name", "total")], filters=filters,
 		or_filters=or_filters, limit_page_length=0,
 	)
 	total = cint(count_rows[0].get("total")) if count_rows else 0
@@ -120,7 +122,7 @@ def get_list(search=None, fg_item=None, is_active=None, start=0,
 		filters={"parent": ("in", [r["name"] for r in rows]), "parenttype": DOCTYPE},
 		# NOT "as lines": `lines` is a reserved word in MariaDB and the query dies with a
 		# syntax error, which surfaces as an empty list rather than as anything readable.
-		fields=["parent", "count(name) as line_count"],
+		fields=["parent", agg("count", "name", "line_count")],
 		group_by="parent",
 	)
 	by_parent = {c["parent"]: c["line_count"] for c in counts}

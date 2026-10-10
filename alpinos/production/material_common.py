@@ -8,6 +8,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production import material_constants as M
 from alpinos.production.work_order_fields import (
@@ -153,7 +155,7 @@ def bin_qty(item_codes, warehouse):
 		return {}
 	out = {}
 	for row in frappe.get_all("Bin", filters={"item_code": ("in", codes), "warehouse": warehouse},
-	                          fields=["item_code", "sum(actual_qty) as qty"], group_by="item_code"):
+	                          fields=["item_code", agg("sum", "actual_qty", "qty")], group_by="item_code"):
 		out[row.item_code] = flt(row.qty)
 	return out
 

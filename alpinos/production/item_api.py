@@ -14,6 +14,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production.item_fields import (
 	ALLOWED_CATEGORIES_FIELD,
@@ -153,11 +155,11 @@ def get_list(
 
 	sf = (sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "asc").lower() == "asc" else "desc"
-	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else "item_code asc"
+	order_by = f"{sf} {sd}" if sf in _SORTABLE else "item_code asc"
 
 	count_rows = frappe.get_list(
 		DOCTYPE,
-		fields=["count(name) as total"],
+		fields=[agg("count", "name", "total")],
 		filters=filters or None,
 		or_filters=or_filters,
 		limit_page_length=0,

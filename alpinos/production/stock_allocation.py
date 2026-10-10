@@ -23,6 +23,8 @@ import datetime
 import frappe
 from frappe.utils import flt, getdate
 
+from alpinos.query_compat import agg
+
 from alpinos.production.work_order_fields import (
 	EXECUTION_STATUS_FIELD,
 	PARENT_FIELD,
@@ -100,7 +102,7 @@ def physical_stock(items, company=None):
 	for row in frappe.get_all(
 		"Bin",
 		filters={"item_code": ("in", items), "warehouse": ("in", warehouses)},
-		fields=["item_code", "sum(actual_qty) as qty"],
+		fields=["item_code", agg("sum", "actual_qty", "qty")],
 		group_by="item_code",
 	):
 		out[row.item_code] = flt(row.qty)

@@ -20,6 +20,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, flt, get_datetime, get_link_to_form, getdate, now_datetime
 
+from alpinos.query_compat import agg
+
 from alpinos import contact_number
 from alpinos.purchase import constants as C
 from alpinos.purchase.settings import get_settings
@@ -455,7 +457,7 @@ class PurchaseInward(Document):
 				"po_detail": ("in", list(po_details)),
 				"docstatus": 1,
 			},
-			fields=["po_detail", "sum(received_qty) as qty"],
+			fields=["po_detail", agg("sum", "received_qty", "qty")],
 			group_by="po_detail",
 		)
 		return {r.po_detail: flt(r.qty) for r in rows}

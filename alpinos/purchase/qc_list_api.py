@@ -26,6 +26,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime, get_fullname, getdate, now_datetime, time_diff_in_seconds
 
+from alpinos.query_compat import agg
+
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 
@@ -292,13 +294,13 @@ def get_purchase_qc_list(
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
-	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else "modified desc"
+	order_by = f"{sf} {sd}" if sf in _SORTABLE else "modified desc"
 
 	# A lone count() with no group by drops the default order by, so this is one plain
 	# aggregate over the same permission-filtered set.
 	count_rows = frappe.get_list(
 		DOCTYPE,
-		fields=["count(name) as total"],
+		fields=[agg("count", "name", "total")],
 		filters=filters or None,
 		limit_page_length=0,
 	)

@@ -14,6 +14,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production.item_fields import ALLOWED_CATEGORIES_FIELD
 
@@ -167,7 +169,7 @@ def get_category_list(search=None, is_active=None, limit=200):
 	for row in frappe.get_all(
 		"Machine",
 		filters={"filling_process_category": ("in", ids)},
-		fields=["filling_process_category", "status", "count(name) as qty"],
+		fields=["filling_process_category", "status", agg("count", "name", "qty")],
 		group_by="filling_process_category, status",
 	):
 		bucket = machines.setdefault(row.filling_process_category, {"total": 0, "active": 0})
@@ -177,14 +179,15 @@ def get_category_list(search=None, is_active=None, limit=200):
 
 	# Counted off the child table directly. Going through Item would count an item once per
 	# row it holds, which is the same number only by accident.
+	# Distinct pairs, counted here: v16 has no string form of count(distinct ...).
 	skus = {}
 	for row in frappe.get_all(
 		"Item Filling Category",
 		filters={"filling_process_category": ("in", ids), "parenttype": "Item"},
-		fields=["filling_process_category", "count(distinct parent) as qty"],
-		group_by="filling_process_category",
+		fields=["filling_process_category", "parent"],
+		distinct=True,
 	):
-		skus[row.filling_process_category] = cint(row.qty)
+		skus[row.filling_process_category] = skus.get(row.filling_process_category, 0) + 1
 
 	for row in rows:
 		bucket = machines.get(row["name"], {"total": 0, "active": 0})

@@ -493,7 +493,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# count produces often enough -- otherwise stops at the previous OUT and loses hours.
 		# The scheduler and the healer bind this; updating a punch through db.set_value never
 		# loads the check-in controller, so this path did not.
-		from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
+		from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch, shift_get_attendance
 
 		_apply_checkout_reason_patch()
 
@@ -534,7 +534,7 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 						log.shift_end = get_datetime(f"{date} {shift_doc.end_time}")
 				
 				# Auto-calculate based on HRMS config (Absent, Half Day, Present bounds)
-				calc_status, working_hours, late_entry, early_exit, in_time, out_time = shift_doc.get_attendance(logs)
+				calc_status, working_hours, late_entry, early_exit, in_time, out_time = shift_get_attendance(shift_doc, logs, self.employee, date)
 
 				# Use the shift's hours-based status unless the reason forces WFH/Half Day.
 				if self.reason != "Work From Home" and not (self.half_day and frappe.utils.date_diff(frappe.utils.getdate(self.half_day_date), frappe.utils.getdate(date)) == 0):

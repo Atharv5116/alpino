@@ -190,7 +190,7 @@ def remark_day(employee, date, apply=0):
 	# whatever the IN/OUT types say. shift_type.py binds HRMS's own pairing function at
 	# import time, so this has to be rebound before get_attendance is called or a day
 	# ending on a punch typed IN stops at the previous punch typed OUT.
-	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch
+	from alpinos.overrides.employee_checkin_override import _apply_checkout_reason_patch, shift_get_attendance
 
 	_apply_checkout_reason_patch()
 
@@ -200,8 +200,8 @@ def remark_day(employee, date, apply=0):
 			log.shift_start = get_datetime(f"{date} {shift_doc.start_time}")
 		if not log.shift_end:
 			log.shift_end = get_datetime(f"{date} {shift_doc.end_time}")
-	status, working_hours, late_entry, early_exit, in_time, out_time = shift_doc.get_attendance(
-		[frappe._dict(l) for l in logs]
+	status, working_hours, late_entry, early_exit, in_time, out_time = shift_get_attendance(
+		shift_doc, [frappe._dict(l) for l in logs], employee, date
 	)
 
 	result = {

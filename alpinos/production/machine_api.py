@@ -12,6 +12,8 @@ Writes are NOT here. Insert, save and delete go through the standard endpoints s
 import frappe
 from frappe.utils import cint
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 
 MACHINE = "Machine"
@@ -94,7 +96,7 @@ def get_machine_list(search=None, machine_type=None, status=None,
 		or_filters = {"name": ("like", like), "machine_name": ("like", like)}
 
 	count_rows = frappe.get_list(
-		MACHINE, fields=["count(name) as total"], filters=filters,
+		MACHINE, fields=[agg("count", "name", "total")], filters=filters,
 		or_filters=or_filters, limit_page_length=0,
 	)
 	total = cint(count_rows[0].get("total")) if count_rows else 0
@@ -225,7 +227,7 @@ def get_machine_type_list(search=None, is_active=None, limit=200):
 	for row in frappe.get_all(
 		MACHINE,
 		filters={"machine_type": ("in", ids)},
-		fields=["machine_type", "status", "count(name) as qty"],
+		fields=["machine_type", "status", agg("count", "name", "qty")],
 		group_by="machine_type, status",
 	):
 		bucket = counts.setdefault(row.machine_type, {"total": 0, "active": 0})

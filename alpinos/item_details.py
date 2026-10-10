@@ -135,13 +135,16 @@ def set_taxes(
 	)
 
 
+# ERPNext v16 renamed the first argument of both methods from `args` to `ctx`, and the desk
+# now sends `ctx`. frappe.call drops keyword arguments a function does not declare, so these
+# accept either name; the ERPNext call is positional, which both versions read the same way.
 @frappe.whitelist()
-def get_item_details(args, doc=None, for_validate=False, overwrite_warehouse=True):
-	args, doc = _normalize_obm_quotation_args(args, doc)
-	return erpnext_get_item_details(args, doc, for_validate, overwrite_warehouse)
+def get_item_details(ctx=None, doc=None, for_validate=False, overwrite_warehouse=True, args=None):
+	ctx, doc = _normalize_obm_quotation_args(ctx if ctx is not None else args, doc)
+	return erpnext_get_item_details(ctx, doc, for_validate, overwrite_warehouse)
 
 
 @frappe.whitelist()
-def get_item_tax_template(args, item=None, out=None):
-	args, _doc = _normalize_obm_quotation_args(args)
-	return erpnext_get_item_tax_template(args, item, out)
+def get_item_tax_template(ctx=None, item=None, out=None, args=None):
+	ctx, _doc = _normalize_obm_quotation_args(ctx if ctx is not None else args)
+	return erpnext_get_item_tax_template(ctx, item, out)

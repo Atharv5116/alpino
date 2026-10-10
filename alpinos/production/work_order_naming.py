@@ -72,7 +72,7 @@ class AlpinosWorkOrder(WorkOrder):
 			if isinstance(value, str):
 				self.set(df.fieldname, cint(value))
 
-	def set_required_items(self, reset_only_qty=False):
+	def set_required_items(self, reset_only_qty=False, **kwargs):
 		"""A Sub PO takes its material quantities from its Parent, not from the BOM.
 
 		ERPNext multiplies the BOM by `qty`, and this BOM is written for ONE BATCH -- so a
@@ -87,7 +87,7 @@ class AlpinosWorkOrder(WorkOrder):
 
 		An ordinary Work Order with no Parent keeps ERPNext's behaviour untouched.
 		"""
-		super().set_required_items(reset_only_qty=reset_only_qty)
+		super().set_required_items(reset_only_qty=reset_only_qty, **kwargs)
 
 		parent_name = self.get(PARENT_FIELD)
 		if not parent_name or not self.get("required_items"):

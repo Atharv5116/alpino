@@ -16,6 +16,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production.item_fields import MATERIAL_TYPE_FIELD as ITEM_MATERIAL_TYPE
 
@@ -103,10 +105,10 @@ def get_list(search=None, production_type=None, fg_item=None, status=None, clien
 
 	sf = (sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "desc").lower() == "asc" else "desc"
-	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else "creation desc"
+	order_by = f"{sf} {sd}" if sf in _SORTABLE else "creation desc"
 
 	count_rows = frappe.get_list(
-		DOCTYPE, fields=["count(name) as total"], filters=filters or None,
+		DOCTYPE, fields=[agg("count", "name", "total")], filters=filters or None,
 		or_filters=or_filters, limit_page_length=0,
 	)
 	total = cint(count_rows[0].get("total")) if count_rows else 0
@@ -599,7 +601,7 @@ def _available_stock(item_codes, warehouse=None):
 	out = {}
 	for row in frappe.get_all(
 		"Bin", filters=filters,
-		fields=["item_code", "sum(actual_qty) as qty"], group_by="item_code",
+		fields=["item_code", agg("sum", "actual_qty", "qty")], group_by="item_code",
 	):
 		out[row.item_code] = flt(row.qty)
 	return out

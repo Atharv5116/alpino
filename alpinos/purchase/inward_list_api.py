@@ -23,6 +23,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_fullname, getdate
 
+from alpinos.query_compat import agg, sort_by_expression
+
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 
@@ -102,8 +104,13 @@ _GUARD_FIELDS = (
 # renders `actual_vehicle_no or po_vehicle_no` (see _attach_row_extras), so sorting on
 # actual_vehicle_no alone left the key blank for every row still awaiting receipt and the
 # header looked broken. Sorting on the same expression the cell shows fixes that.
+# (v15 SQL, v16 dict form, alias) -- see query_compat.sort_by_expression.
 _SORT_EXPRESSIONS = {
-	"vehicle_no": "COALESCE(NULLIF(`actual_vehicle_no`, ''), `po_vehicle_no`)",
+	"vehicle_no": (
+		"COALESCE(NULLIF(`actual_vehicle_no`, ''), `po_vehicle_no`)",
+		{"IFNULL": [{"NULLIF": ["actual_vehicle_no", "''"]}, "po_vehicle_no"]},
+		"sort_vehicle_no",
+	),
 }
 
 _SORTABLE = frozenset(
@@ -315,10 +322,11 @@ def get_purchase_inward_list(
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
+	sort_columns = []
 	if sf in _SORT_EXPRESSIONS:
-		order_by = f"{_SORT_EXPRESSIONS[sf]} {sd}"
+		sort_columns, order_by = sort_by_expression(*_SORT_EXPRESSIONS[sf], sd)
 	elif sf in _SORTABLE:
-		order_by = f"`{sf}` {sd}"
+		order_by = f"{sf} {sd}"
 	else:
 		order_by = "modified desc"
 
@@ -326,7 +334,7 @@ def get_purchase_inward_list(
 	# aggregate over the same permission-filtered set.
 	count_rows = frappe.get_list(
 		DOCTYPE,
-		fields=["count(name) as total"],
+		fields=[agg("count", "name", "total")],
 		filters=filters or None,
 		or_filters=or_filters,
 		limit_page_length=0,
@@ -335,7 +343,7 @@ def get_purchase_inward_list(
 
 	rows = frappe.get_list(
 		DOCTYPE,
-		fields=list(LIST_FIELDS),
+		fields=list(LIST_FIELDS) + sort_columns,
 		filters=filters or None,
 		or_filters=or_filters,
 		limit_start=start,

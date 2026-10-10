@@ -25,6 +25,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production.work_order_fields import (
 	ASSIGNED_MACHINE_FIELD,
@@ -271,7 +273,7 @@ def get_sub_order_list(search=None, parent=None, batch=None, item=None, process=
 		or_filters = {"name": ("like", like), "production_item": ("like", like),
 		              BATCH_FIELD: ("like", like)}
 
-	count = frappe.get_list(WORK_ORDER, fields=["count(name) as total"], filters=filters,
+	count = frappe.get_list(WORK_ORDER, fields=[agg("count", "name", "total")], filters=filters,
 	                        or_filters=or_filters, limit_page_length=0)
 	total = cint(count[0].get("total")) if count else 0
 

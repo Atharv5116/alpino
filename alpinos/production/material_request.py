@@ -19,6 +19,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_fullname, getdate, nowdate
 
+from alpinos.query_compat import agg
+
 from alpinos.production import material_common as MC
 from alpinos.production import material_constants as M
 from alpinos.production.production_settings import main_warehouse, wip_warehouse
@@ -448,7 +450,7 @@ def get_mr_list(search=None, status=None, sub_order=None, parent=None, fg_item=N
 		or_filters = {"name": ("like", like), SUB_FIELD: ("like", like),
 		              "custom_target_fg_item": ("like", like)}
 
-	count = frappe.get_all(MR, fields=["count(name) as total"], filters=filters,
+	count = frappe.get_all(MR, fields=[agg("count", "name", "total")], filters=filters,
 	                       or_filters=or_filters, limit_page_length=0)
 	total = cint(count[0].get("total")) if count else 0
 	rows = frappe.get_all(MR, filters=filters, or_filters=or_filters, fields=list(LIST_FIELDS),

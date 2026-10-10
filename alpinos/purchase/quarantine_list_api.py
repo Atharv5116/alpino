@@ -9,6 +9,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate
 
+from alpinos.query_compat import agg
+
 from alpinos.purchase import constants as C
 from alpinos.purchase.quarantine import RELEASE_ROLES
 
@@ -109,9 +111,9 @@ def get_quarantine_list(
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
-	order_by = f"`{sf}` {sd}" if sf in _SORTABLE else "modified desc"
+	order_by = f"{sf} {sd}" if sf in _SORTABLE else "modified desc"
 
-	count_rows = frappe.get_list(DOCTYPE, fields=["count(name) as total"], filters=filters, limit_page_length=0)
+	count_rows = frappe.get_list(DOCTYPE, fields=[agg("count", "name", "total")], filters=filters, limit_page_length=0)
 	total = cint(count_rows[0].get("total")) if count_rows else 0
 	rows = frappe.get_list(
 		DOCTYPE,

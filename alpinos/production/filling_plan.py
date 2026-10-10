@@ -13,6 +13,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alpinos.query_compat import agg
+
 from alpinos.production import constants as C
 from alpinos.production import filling_common as F
 
@@ -555,8 +557,8 @@ def get_calendar(date_from, date_to, filling_line=None, sku=None, status=None):
 		rows.setdefault(r.parent, []).append(r)
 	loss = {}
 	for r in frappe.get_all(F.INWARD, filters={"filling_plan": ("in", names), "docstatus": 1},
-	                        fields=["filling_plan", "sum(process_loss_kg) as loss_kg",
-	                                "sum(wastage_kg) as wastage_kg"], group_by="filling_plan"):
+	                        fields=["filling_plan", agg("sum", "process_loss_kg", "loss_kg"),
+	                                agg("sum", "wastage_kg", "wastage_kg")], group_by="filling_plan"):
 		loss[r.filling_plan] = r
 	lines = _line_labels([p.filling_line for p in plans])
 	out = []
