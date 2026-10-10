@@ -168,7 +168,7 @@ def _run():
 
 		_assert(A.sales_order_has_permission(doc, officer_user, "read") is NO_OBJECTION,
 			"the hook interfered with read; it must only ever deny submit or cancel")
-		_assert(A.sales_order_has_permission(doc, officer_user, "write") is None,
+		_assert(A.sales_order_has_permission(doc, officer_user, "write") is NO_OBJECTION,
 			"the hook interfered with write, which section 7 grants")
 
 	check("§7 the hook denies submission without touching read or write",

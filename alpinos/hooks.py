@@ -438,6 +438,7 @@ override_doctype_class = {
 	# no Parent keeps its own MFG-WO- name, and nothing else is changed.
 	"Work Order": "alpinos.production.work_order_naming.AlpinosWorkOrder",
 	"Sales Order": "alpinos.overrides.sales_order_override.CustomSalesOrder",
+	"Customer": "alpinos.overrides.customer_override.CustomCustomer",
 	"Pick List": "alpinos.overrides.pick_list_override.CustomPickList",
 	"Job Applicant": "alpinos.overrides.job_applicant_override.CustomJobApplicant",
 	"Expense Claim": "alpinos.customize_expense_claim.ExpenseClaimOverride",
