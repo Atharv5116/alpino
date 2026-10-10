@@ -213,6 +213,8 @@ after_migrate = [
 	"alpinos.sales_order_print_format_patch.execute",
 	"alpinos.pick_list_print_format.execute",
 	"alpinos.after_submit_sync.ensure_after_submit_fields",
+	# Last: after the steps that rebuild print formats (core_customizations).
+	"alpinos.core_customizations.keep_v15_print_cells",
 ]
 
 # Uninstallation
