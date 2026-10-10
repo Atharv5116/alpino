@@ -10,7 +10,7 @@ from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employe
 
 
 def _get_employee_for_user(user):
-    return frappe.db.get_value("Employee", {"user_id": user}, "name")
+    return frappe.db.get_value("Employee", {"user_id": user}, "name", order_by="name asc")
 
 
 def _employee_no_biometric(employee):
@@ -545,7 +545,7 @@ def get_today_wfh_request():
 		"Work From Home Request",
 		{"employee": employee, "date": today, "status": ["in", ["Draft", "Approved", "Live"]]},
 		["name", "status"],
-		as_dict=True,
+		as_dict=True, order_by="name asc"
 	)
 	if not result:
 		return None
@@ -642,7 +642,7 @@ def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reaso
             "date": today,
             "status": ["in", ["Draft", "Approved", "Live"]]
         },
-        "name"
+        "name", order_by="name asc"
     )
     
     return {

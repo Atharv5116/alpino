@@ -118,10 +118,10 @@ def _resolve_customer(val):
 		return None
 	if frappe.db.exists("Customer", val):
 		return val
-	c = frappe.db.get_value("Customer", {"customer_name": val}, "name")
+	c = frappe.db.get_value("Customer", {"customer_name": val}, "name", order_by="name asc")
 	if c:
 		return c
-	return frappe.db.get_value("Buyer Master", {"customer_business_name": val}, "customer")
+	return frappe.db.get_value("Buyer Master", {"customer_business_name": val}, "customer", order_by="name asc")
 
 
 def _orders_from_rows(rows):

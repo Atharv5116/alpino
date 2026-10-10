@@ -81,7 +81,7 @@ def get_upcoming_birthdays_and_anniversaries(days=30):
 
 
 def _get_employee_for_user(user):
-	return frappe.db.get_value("Employee", {"user_id": user}, "name")
+	return frappe.db.get_value("Employee", {"user_id": user}, "name", order_by="name asc")
 
 
 @frappe.whitelist()

@@ -75,7 +75,7 @@ def get_pick_list_data(name):
 	doc_dict["existing_delivery_note"] = frappe.db.get_value(
 		"Delivery Note Item",
 		{"against_pick_list": name, "docstatus": ["<", 2]},
-		"parent",
+		"parent", order_by="name asc"
 	)
 
 	# COMBO table recomputed from the SO bundle lines so it survives reload of a

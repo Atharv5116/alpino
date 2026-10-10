@@ -211,7 +211,7 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 		employee = frappe.db.get_value("Employee", {"attendance_device_id": device_id}, "name")
 
 		if not employee:
-			employee = frappe.db.get_value("Employee", {"employee_number": device_id}, "name")
+			employee = frappe.db.get_value("Employee", {"employee_number": device_id}, "name", order_by="name asc")
 
 		if not employee:
 			employee = frappe.db.get_value("Employee", {"name": device_id}, "name")

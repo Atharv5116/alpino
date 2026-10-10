@@ -1138,7 +1138,7 @@ def gather_day_info(employee, date):
 def build_attendance_request_details(employee, from_date, to_date, reason=None):
 	"""Read-only rows for the two Attendance Request tables (editable details + existing logs)."""
 	if "HR Manager" not in frappe.get_roles():
-		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name", order_by="name asc")
 	if not (employee and from_date and to_date):
 		return {"details": [], "logs": []}
 

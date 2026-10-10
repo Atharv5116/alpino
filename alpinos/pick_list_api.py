@@ -686,7 +686,7 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	existing_dn = frappe.db.get_value(
 		"Delivery Note Item",
 		{"against_pick_list": pick_list_name, "docstatus": ["<", 2]},
-		"parent",
+		"parent", order_by="name asc"
 	)
 	if existing_dn:
 		return existing_dn
