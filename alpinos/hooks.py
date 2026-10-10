@@ -195,6 +195,7 @@ patches = [
 after_migrate = [
 	# First: a dead workspace link makes Home unsavable and stops the steps below.
 	"alpinos.workspace_links.prune_dead_links",
+	"alpinos.permission_compat.grant_account_select",
 	"alpinos.purchase.naming.setup",
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.default_present.setup_default_present_field",

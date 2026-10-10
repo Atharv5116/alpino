@@ -38,8 +38,11 @@ def _address_owner(address):
 def _order_and_other_customer():
 	"""A draft order with a resolved billing address, plus a different customer that
 	actually has one of its own (so a correct re-resolve is possible)."""
+	# Oldest first: without an order_by, v15 and v16 pick different rows (v16 applies the
+	# doctype's default sort), and a newer draft may carry a contact the switch rejects.
 	so = frappe.db.get_value(
-		"Sales Order", {"docstatus": 0, "customer_address": ("is", "set")}, "name"
+		"Sales Order", {"docstatus": 0, "customer_address": ("is", "set")}, "name",
+		order_by="creation asc",
 	)
 	if not so:
 		return None, None

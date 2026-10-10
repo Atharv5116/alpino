@@ -164,7 +164,9 @@ def _run():
 		doc = frappe.get_doc("Sales Order", so)
 		_assert(A.sales_order_has_permission(doc, officer_user, "submit") is False,
 			"the hook did not deny submit to a Sales Officer")
-		_assert(A.sales_order_has_permission(doc, officer_user, "read") is None,
+		from alpinos.permission_compat import NO_OBJECTION
+
+		_assert(A.sales_order_has_permission(doc, officer_user, "read") is NO_OBJECTION,
 			"the hook interfered with read; it must only ever deny submit or cancel")
 		_assert(A.sales_order_has_permission(doc, officer_user, "write") is None,
 			"the hook interfered with write, which section 7 grants")
