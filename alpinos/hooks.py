@@ -335,6 +335,8 @@ after_migrate = [
 	"alpinos.production.phase4_fields.run_builder_setups",
 	"alpinos.production.phase4_permissions.setup_phase4_permissions",
 	"alpinos.production.phase4_fields.setup_phase4_access",
+	# Last: after the steps that rebuild print formats (core_customizations).
+	"alpinos.core_customizations.keep_v15_print_cells",
 ]
 
 # Uninstallation

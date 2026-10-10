@@ -48,3 +48,36 @@ def keep_hand_made_trees():
 		make_property_setter(doctype, None, "nsm_parent_field", parent_field, "Data", for_doctype=True, validate_fields_for_doctype=False)
 		frappe.clear_cache(doctype=doctype)
 		print(f"{doctype}: tree fields kept as customisations ({', '.join(f['fieldname'] for f in missing)})")
+
+
+_V15_CELL_RULE_MARK = "/* alpinos: v15 print cells */"
+_V15_CELL_RULE = (
+	_V15_CELL_RULE_MARK
+	+ "\n.print-format td, .print-format th { vertical-align: top !important; padding: 6px !important; }\n"
+)
+
+
+def keep_v15_print_cells():
+	"""v16 only: the site's own print formats lay out as they did on v15.
+
+	v15's standard print stylesheet forced every table cell to `vertical-align: top;
+	padding: 6px` with !important, which silently overrode the padding and centring the
+	alpinos print formats write inline. v16 dropped the !important, so those inline rules
+	took effect: taller rows, a centred logo, and a Quotation that spilled onto a second
+	page. Appending the v15 rule to each custom format's CSS (which Frappe adds after
+	everything else) brings back the layout the formats were designed and checked against.
+	Runs last in after_migrate, after the steps that rebuild these formats; idempotent.
+	"""
+	from alpinos.query_compat import IS_V16
+
+	if not IS_V16:
+		return
+	for name, css in frappe.get_all(
+		"Print Format",
+		filters={"standard": "No", "disabled": 0, "print_format_type": "Jinja"},
+		fields=["name", "css"],
+		as_list=True,
+	):
+		if _V15_CELL_RULE_MARK in (css or ""):
+			continue
+		frappe.db.set_value("Print Format", name, "css", (css or "") + "\n" + _V15_CELL_RULE, update_modified=False)
