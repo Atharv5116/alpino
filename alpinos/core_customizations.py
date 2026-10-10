@@ -53,7 +53,9 @@ def keep_hand_made_trees():
 _V15_CELL_RULE_MARK = "/* alpinos: v15 print cells */"
 _V15_CELL_RULE = (
 	_V15_CELL_RULE_MARK
-	+ "\n.print-format td, .print-format th { vertical-align: top !important; padding: 6px !important; }\n"
+	+ "\n.print-format td, .print-format th { vertical-align: top !important; padding: 6px !important; }"
+	+ '\n.print-format { font-family: Inter, "Helvetica Neue", Helvetica, Arial, "Open Sans", sans-serif; }'
+	+ "\n/* alpinos: end */\n"
 )
 
 
@@ -64,7 +66,8 @@ def keep_v15_print_cells():
 	padding: 6px` with !important, which silently overrode the padding and centring the
 	alpinos print formats write inline. v16 dropped the !important, so those inline rules
 	took effect: taller rows, a centred logo, and a Quotation that spilled onto a second
-	page. Appending the v15 rule to each custom format's CSS (which Frappe adds after
+	page. v16 also switched the print font to InterVariable, which wraps lines differently;
+	the v15 font family is pinned as well. Appending the v15 rule to each custom format's CSS (which Frappe adds after
 	everything else) brings back the layout the formats were designed and checked against.
 	Runs last in after_migrate, after the steps that rebuild these formats; idempotent.
 	"""
@@ -78,6 +81,12 @@ def keep_v15_print_cells():
 		fields=["name", "css"],
 		as_list=True,
 	):
-		if _V15_CELL_RULE_MARK in (css or ""):
+		css = css or ""
+		if _V15_CELL_RULE in css:
 			continue
-		frappe.db.set_value("Print Format", name, "css", (css or "") + "\n" + _V15_CELL_RULE, update_modified=False)
+		if _V15_CELL_RULE_MARK in css:  # an older version of the block: replace it
+			start = css.index(_V15_CELL_RULE_MARK)
+			end_mark = css.find("/* alpinos: end */", start)
+			end = css.find("\n", end_mark) + 1 if end_mark != -1 else css.find("}", start) + 1
+			css = css[:start].rstrip("\n") + css[end:]
+		frappe.db.set_value("Print Format", name, "css", css + "\n" + _V15_CELL_RULE, update_modified=False)
