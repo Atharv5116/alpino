@@ -25,7 +25,7 @@ def get_pending_approvals(from_date=None, to_date=None):
 	roles = set(frappe.get_roles(user))
 	is_hr = user == "Administrator" or bool(set(HR_ROLES) & roles)
 	is_hod = "HOD" in roles
-	emp = frappe.db.get_value("Employee", {"user_id": user}, "name")
+	emp = frappe.db.get_value("Employee", {"user_id": user}, "name", order_by="name asc")
 	is_rm = bool(emp) and bool(frappe.db.exists("Employee", {"reports_to": emp}))
 
 	today = getdate()

@@ -124,7 +124,7 @@ def populate_from_job_applicant(doc, method=None):
 					# no exact match: try a fuzzy name match
 					designation_match = frappe.db.get_value("Designation", 
 						{"name": ["like", f"%{doc.designation_company_profile}%"]}, 
-						"name"
+						"name", order_by="name asc"
 					)
 					if designation_match:
 						doc.designation = designation_match
@@ -285,7 +285,7 @@ def create_employee_onboarding_from_job_applicant(job_applicant_name):
 	if not job_applicant_name:
 		frappe.throw(_("Job Applicant is required"))
 	
-	existing = frappe.db.exists("Employee Onboarding", {"job_applicant": job_applicant_name})
+	existing = frappe.db.get_value("Employee Onboarding", {"job_applicant": job_applicant_name}, "name", order_by="name asc")
 	if existing:
 		return existing
 	
@@ -498,7 +498,7 @@ def create_pre_onboarding_interview(doc):
 	existing_interview = frappe.db.get_value("Interview", {
 		"job_applicant": doc.job_applicant,
 		round_link: interview_round_name
-	}, "name")
+	}, "name", order_by="name asc")
 	
 	if existing_interview:
 		return existing_interview
@@ -598,7 +598,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 			if user_details:
 				hr_name = user_details.full_name or hr_name
 				hr_phone = user_details.phone or hr_phone
-				employee_designation = frappe.db.get_value("Employee", {"user_id": user_details.name}, "designation")
+				employee_designation = frappe.db.get_value("Employee", {"user_id": user_details.name}, "designation", order_by="name asc")
 				hr_designation = employee_designation or hr_designation
 			else:
 				# Otherwise look for any active user with HR Manager role
@@ -618,7 +618,7 @@ def send_pre_onboarding_email(doc, applicant_email):
 						hr_name = ud.full_name or hr_user.parent or hr_name
 						hr_email = ud.email or hr_email
 						hr_phone = ud.phone or hr_phone
-						employee_designation = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation")
+						employee_designation = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation", order_by="name asc")
 						hr_designation = employee_designation or hr_designation
 						break
 		except Exception:

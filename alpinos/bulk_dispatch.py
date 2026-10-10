@@ -107,7 +107,7 @@ def _default_header_and_items(so_name, remaining_only=0):
 
 def _existing_open_pick_list(so_name):
 	return frappe.db.get_value(
-		"Pick List", {"custom_sales_order_id": so_name, "docstatus": ["<", 2]}, "name"
+		"Pick List", {"custom_sales_order_id": so_name, "docstatus": ["<", 2]}, "name", order_by="name asc"
 	)
 
 
@@ -206,7 +206,7 @@ def bulk_create_delivery_notes(pick_lists):
 			return {"skipped": _("the Pick List is not submitted")}
 
 		existing = frappe.db.get_value(
-			"Delivery Note Item", {"against_pick_list": name, "docstatus": ["<", 2]}, "parent"
+			"Delivery Note Item", {"against_pick_list": name, "docstatus": ["<", 2]}, "parent", order_by="name asc"
 		)
 		if existing:
 			return {"skipped": _("Delivery Note {0} already exists").format(existing)}
@@ -244,7 +244,7 @@ def bulk_action_preview(sales_orders=None, pick_lists=None):
 		for pl in _as_list(pick_lists):
 			docstatus = frappe.db.get_value("Pick List", pl, "docstatus")
 			existing_dn = frappe.db.get_value(
-				"Delivery Note Item", {"against_pick_list": pl, "docstatus": ["<", 2]}, "parent"
+				"Delivery Note Item", {"against_pick_list": pl, "docstatus": ["<", 2]}, "parent", order_by="name asc"
 			)
 			rows.append(
 				{

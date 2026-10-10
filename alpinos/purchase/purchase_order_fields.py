@@ -309,7 +309,7 @@ def get_item_defaults(item_code):
 		rate = frappe.db.get_value(
 			"Item Price",
 			{"item_code": item_code, "price_list": price_list, "buying": 1},
-			"price_list_rate",
+			"price_list_rate", order_by="name asc"
 		)
 	item["price_list_rate"] = flt(rate)
 	# What the item was last actually bought for, which is what the screen offers first:

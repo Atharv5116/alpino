@@ -557,7 +557,7 @@ def quick_create_offline_buyer(
 		actual_parent = frappe.db.get_value(
 			"Buyer Master",
 			{"customer_business_name": biz_name_stripped, "is_parent": 1},
-			"name"
+			"name", order_by="name asc"
 		)
 
 		if not actual_parent:

@@ -22,7 +22,7 @@ def _is_salary_admin(user):
 
 
 def _employee_for_user(user):
-	return frappe.db.get_value("Employee", {"user_id": user}, "name")
+	return frappe.db.get_value("Employee", {"user_id": user}, "name", order_by="name asc")
 
 
 # Salary Slip

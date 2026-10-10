@@ -25,7 +25,7 @@ def set_requested_by(doc, method=None):
 			)
 	
 	if doc.custom_requested_by and not doc.requested_by_employee:
-		employee = frappe.db.get_value("Employee", {"user_id": doc.custom_requested_by}, "name")
+		employee = frappe.db.get_value("Employee", {"user_id": doc.custom_requested_by}, "name", order_by="name asc")
 		if employee:
 			doc.requested_by_employee = employee
 
@@ -41,7 +41,7 @@ def set_requested_by(doc, method=None):
 def fetch_reporting_manager(doc, method=None):
 	"""Fetch reporting managers: requestor's always, linked employee's for replacements."""
 	if doc.custom_requested_by:
-		requestor_employee = frappe.db.get_value("Employee", {"user_id": doc.custom_requested_by}, "name")
+		requestor_employee = frappe.db.get_value("Employee", {"user_id": doc.custom_requested_by}, "name", order_by="name asc")
 		if requestor_employee:
 			doc.requested_by_employee = requestor_employee
 
