@@ -527,7 +527,11 @@ doc_events = {
 		# A punch on an already auto-marked day re-opens and recomputes that day's
 		# Attendance, so late or out-of-order punches still fold in.
 		"after_insert": "alpinos.attendance_healer.heal_on_checkin"
-	}
+	},
+	"Workspace": {
+		# One dead shortcut makes a workspace unsavable; see workspace_links.py.
+		"before_validate": "alpinos.workspace_links.prune_dead_links",
+	},
 }
 
 # Scheduled Tasks
