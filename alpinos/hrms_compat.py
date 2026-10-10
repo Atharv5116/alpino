@@ -99,3 +99,47 @@ def bridge_employee_holiday_list(doc, method=None):
 		hla.submit()
 	except Exception:
 		frappe.log_error(title=f"Holiday List Assignment for {doc.name} not created")
+
+
+def carry_interview_rounds_over():
+	"""after_migrate, HRMS v16 only: each Interview Round becomes an Interview Type of the same
+	name, and an Interview still pointing at a round points at that type.
+
+	v16 Interview links to Interview Type (required) and no longer has interview_round; its
+	merge patch ships commented out. The round table survives the upgrade, so the rounds'
+	designation, skills and interviewers are copied across, and interview_type is filled
+	from the old interview_round column. The round naming matches interview_round_meta,
+	which creates new rounds as types of that name. Idempotent; existing types are left
+	as they are.
+	"""
+	if interview_round_meta()[0] != "Interview Type" or not frappe.db.table_exists("Interview Round"):
+		return
+	for r in frappe.db.sql(
+		"select name, designation, expected_average_rating from `tabInterview Round`", as_dict=True
+	):
+		if frappe.db.exists("Interview Type", r.name):
+			continue
+		doc = frappe.new_doc("Interview Type")
+		doc.interview_type_name = r.name
+		doc.designation = r.designation
+		doc.expected_average_rating = r.expected_average_rating
+		for skill, description in frappe.db.sql(
+			"""select skill, description from `tabExpected Skill Set`
+			where parenttype = 'Interview Round' and parent = %s order by idx""",
+			r.name,
+		):
+			doc.append("expected_skill_set", {"skill": skill, "description": description})
+		for (user,) in frappe.db.sql(
+			"select user from `tabInterviewer` where parenttype = 'Interview Round' and parent = %s order by idx",
+			r.name,
+		):
+			doc.append("interviewers", {"user": user})
+		doc.flags.ignore_mandatory = True
+		doc.insert(ignore_permissions=True)
+		print(f"Interview Round {r.name!r} carried over as an Interview Type")
+	if frappe.db.has_column("Interview", "interview_round"):
+		frappe.db.sql(
+			"""update `tabInterview` i join `tabInterview Type` t on t.name = i.interview_round
+			set i.interview_type = i.interview_round
+			where ifnull(i.interview_type, '') = '' and ifnull(i.interview_round, '') != ''"""
+		)
