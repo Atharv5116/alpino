@@ -33,3 +33,48 @@ def apply_print_font_fix():
 
 	get_font._alpinos_v15_font = True
 	printview.get_font = get_font
+
+
+# Print rules v15's stylesheets had and v16's dropped. v15 forced every table cell to
+# vertical-align: top; padding: 6px with !important (v16 lost the !important), and printed
+# all text black (v16's print stylesheet lost `color: #000`). Appended after the print
+# style, so standard formats lay out as on v15 too, not only the alpinos ones that
+# core_customizations.keep_v15_print_cells already covers.
+V15_PRINT_RULES = """
+/* alpinos: v15 print rules */
+.print-format td, .print-format th { vertical-align: top !important; padding: 6px !important; }
+@media print { *, *:before, *:after { color: #000; } }
+"""
+
+
+def apply_print_style_fix():
+	try:
+		import frappe.www.printview as printview
+	except Exception:
+		return
+	original = printview.get_print_style
+	if getattr(original, "_alpinos_v15_rules", False):
+		return
+	from alpinos.query_compat import IS_V16
+
+	if not IS_V16:
+		return
+
+	def get_print_style(style=None, print_format=None, for_legacy=False):
+		return original(style, print_format, for_legacy) + V15_PRINT_RULES
+
+	get_print_style._alpinos_v15_rules = True
+	printview.get_print_style = get_print_style
+	# modules that imported the function by name keep their own reference
+	import importlib
+
+	for module_name in (
+		"frappe.www.printpreview",
+		"erpnext.accounts.doctype.process_statement_of_accounts.process_statement_of_accounts",
+	):
+		try:
+			module = importlib.import_module(module_name)
+		except Exception:
+			continue
+		if getattr(module, "get_print_style", None) is original:
+			module.get_print_style = get_print_style
