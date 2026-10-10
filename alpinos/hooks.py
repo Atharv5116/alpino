@@ -196,6 +196,7 @@ after_migrate = [
 	# First: a dead workspace link makes Home unsavable and stops the steps below.
 	"alpinos.workspace_links.prune_dead_links",
 	"alpinos.permission_compat.grant_account_select",
+	"alpinos.core_customizations.keep_hand_made_trees",
 	"alpinos.purchase.naming.setup",
 	"alpinos.custom_fields.setup_custom_fields",
 	"alpinos.default_present.setup_default_present_field",
@@ -208,6 +209,7 @@ after_migrate = [
 	"alpinos.workflow_setup.execute",
 	"alpinos.employee_onboarding_workflow_setup.execute",
 	"alpinos.patches.v1_0.setup_job_applicant_workflow.execute",
+	"alpinos.hrms_compat.carry_interview_rounds_over",
 	"alpinos.page_setup.create_screening_page",
 	"alpinos.overrides.interview_override.setup_interview_override",
 	"alpinos.update_job_application_webform.update_web_form_script",
