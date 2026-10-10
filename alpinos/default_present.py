@@ -5,6 +5,8 @@ import datetime
 import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate, now_datetime
 
+from alpinos.hrms_compat import employee_holiday_list
+
 LOOKBACK_DAYS = 3  # also re-check the last few days in case the job was down
 
 
@@ -89,7 +91,7 @@ def mark_default_present_for_day(employee, date):
 		return None
 	if emp.relieving_date and date > getdate(emp.relieving_date):
 		return None
-	if _is_holiday(emp.holiday_list, date):
+	if _is_holiday(employee_holiday_list(employee, date, emp.holiday_list), date):
 		return None
 
 	shift = _shift_for(employee, date, emp.default_shift)
@@ -184,7 +186,7 @@ def backfill(from_date, to_date, employee=None, apply=0):
 			skip = (
 				(row.get("date_of_joining") and d < getdate(row.date_of_joining))
 				or (row.get("relieving_date") and d > getdate(row.relieving_date))
-				or _is_holiday(row.get("holiday_list"), d)
+				or _is_holiday(employee_holiday_list(emp, d, row.get("holiday_list")), d)
 				or not _shift_for(emp, d, row.get("default_shift"))
 			)
 			if not skip:

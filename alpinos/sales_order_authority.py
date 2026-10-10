@@ -24,6 +24,8 @@ else in the app, and removing it here would strand orders whose POC has left.
 import frappe
 from frappe import _
 
+from alpinos.permission_compat import NO_OBJECTION
+
 from alpinos.buyer_assignment import SALES_OFFICER_ROLE
 
 #: Roles that may submit any Sales Order, regardless of who the buyer's POC is.
@@ -119,20 +121,20 @@ def sales_order_has_permission(doc, user=None, permission_type=None):
 	is how frappe.permissions.has_controller_permissions reads a chain.
 	"""
 	if permission_type not in ("submit", "cancel"):
-		return None
+		return NO_OBJECTION
 	user = user or frappe.session.user
 	roles = set(frappe.get_roles(user))
 	if user == "Administrator" or (roles & SUBMIT_OVERRIDE_ROLES):
-		return None
+		return NO_OBJECTION
 	name = doc.get("name") if hasattr(doc, "get") else None
 	buyer = (doc.get(SO_BUYER_FIELD) if hasattr(doc, "get") else None) or (
 		frappe.db.get_value("Sales Order", name, SO_BUYER_FIELD) if name else None
 	)
 	if is_poc_for_buyer(buyer, user):
-		return None
+		return NO_OBJECTION
 	if SALES_OFFICER_ROLE in roles:
 		return False
-	return None
+	return NO_OBJECTION
 
 
 @frappe.whitelist()

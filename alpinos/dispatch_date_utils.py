@@ -48,7 +48,11 @@ def _get_next_working_day(from_date):
 	company = frappe.defaults.get_defaults().get("company")
 	holiday_list = None
 	if company:
-		holiday_list = frappe.db.get_value("Company", company, "default_holiday_list")
+		from alpinos.hrms_compat import company_holiday_list
+
+		holiday_list = company_holiday_list(
+			company, getdate(from_date), frappe.db.get_value("Company", company, "default_holiday_list")
+		)
 
 	date = getdate(from_date)
 	for _ in range(30):

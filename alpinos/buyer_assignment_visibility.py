@@ -21,6 +21,8 @@ governs list scope only, so inventing a restriction for them here would contradi
 
 import frappe
 
+from alpinos.permission_compat import NO_OBJECTION
+
 from alpinos.buyer_assignment import SALES_OFFICER_ROLE
 
 #: Holding any of these means the Sales Officer narrowing does not apply.
@@ -95,17 +97,17 @@ def buyer_master_query_conditions(user=None):
 
 
 def buyer_master_has_permission(doc, user=None, permission_type=None):
-	"""Deny an unassigned Buyer; otherwise stay out of the way (return None)."""
+	"""Deny an unassigned Buyer; otherwise stay out of the way (return NO_OBJECTION)."""
 	user = user or frappe.session.user
 	if not is_assignment_scoped(user):
-		return None
+		return NO_OBJECTION
 	employee = _employee_for(user)
 	name = doc.get("name") if hasattr(doc, "get") else None
 	if not name:
-		return None
+		return NO_OBJECTION
 	if not employee or name not in _assigned_buyer_names(employee):
 		return False
-	return None
+	return NO_OBJECTION
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +130,7 @@ def sales_order_query_conditions(user=None):
 def sales_order_has_permission(doc, user=None, permission_type=None):
 	user = user or frappe.session.user
 	if not is_assignment_scoped(user):
-		return None
+		return NO_OBJECTION
 	buyer = doc.get(SO_BUYER_FIELD) if hasattr(doc, "get") else None
 	if not buyer:
 		# Not an offline-buyer order, so no Buyer assignment can grant it.
@@ -136,7 +138,7 @@ def sales_order_has_permission(doc, user=None, permission_type=None):
 	employee = _employee_for(user)
 	if not employee or buyer not in _assigned_buyer_names(employee):
 		return False
-	return None
+	return NO_OBJECTION
 
 
 @frappe.whitelist()

@@ -33,3 +33,33 @@ def ensure_round_as_interview_type(round_name, description=None):
 	doc.flags.ignore_mandatory = True
 	doc.insert(ignore_permissions=True)
 	return doc.name
+
+
+def _assignment_lookup():
+	"""HRMS v16's Holiday List Assignment lookups, or None on v15 (which has neither)."""
+	import hrms.utils.holiday_list as hl
+
+	if hasattr(hl, "get_holiday_list_for_employee") and hasattr(hl, "get_assigned_holiday_list"):
+		return hl
+	return None
+
+
+def employee_holiday_list(employee, on_date, v15_holiday_list):
+	"""The employee's holiday list on `on_date`.
+
+	HRMS v16 resolves it from Holiday List Assignments (the employee's own, else the
+	company's) and no longer reads Employee.holiday_list, which HR stops maintaining. On v15
+	this returns `v15_holiday_list` untouched, so each caller keeps the rule it had.
+	"""
+	hl = _assignment_lookup()
+	if not hl:
+		return v15_holiday_list
+	return hl.get_holiday_list_for_employee(employee, raise_exception=False, as_on=on_date)
+
+
+def company_holiday_list(company, on_date, v15_holiday_list):
+	"""The company's holiday list on `on_date`; on v16 its assignment, else the old field."""
+	hl = _assignment_lookup()
+	if not hl:
+		return v15_holiday_list
+	return hl.get_assigned_holiday_list(company, as_on=on_date) or v15_holiday_list
