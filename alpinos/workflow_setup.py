@@ -136,23 +136,38 @@ def update_status_field_options():
 		"On Hold"
 	)
 	
-	try:
-		field = frappe.get_doc("DocField", {"parent": "Job Requisition", "fieldname": "status"})
-		if field:
-			field.options = status_options
-			field.save(ignore_permissions=True)
-			frappe.db.commit()
-			print("✅ Updated status field options")
-	except Exception as e:
-		print(f"⚠️  Could not update status field: {str(e)}")
-		try:
-			from alpinos.patches.v1_0.update_job_requisition_fields import update_property_setter
-			update_property_setter("Job Requisition", "status", "options", status_options, "Text")
-			print("✅ Updated status field options via property setter")
-		except Exception as e2:
-			print(f"⚠️  Could not update status field via property setter: {str(e2)}")
-		else:
-			print(f"ℹ️  Role {role_data['role_name']} already exists")
+	# A Property Setter, not an edit to the DocField: HRMS ships Job Requisition, so a
+	# DocField edit is overwritten whenever HRMS updates the doctype (it was, on v16).
+	from alpinos.patches.v1_0.update_job_requisition_fields import update_property_setter
+
+	update_property_setter("Job Requisition", "status", "options", status_options, "Text")
+	print("✅ Job Requisition status options set")
+
+
+def _live_doc_status():
+	"""Docstatus of the Live state.
+
+	Job Requisition is not submittable, yet Live was declared as docstatus 1. v15 accepted
+	the definition; v16 rejects a workflow that would submit a non-submittable doctype,
+	so on v16 Live stays a draft. Nothing here reads docstatus: going Live is keyed on
+	status == "Live" (job_requisition_automation), which the state still sets.
+	"""
+	from alpinos.query_compat import IS_V16
+
+	if IS_V16 and not frappe.get_meta("Job Requisition").is_submittable:
+		return "0"
+	return "1"
+
+
+def _reset_submitted_requisitions():
+	"""On v16, a non-submittable Job Requisition left at docstatus 1 goes back to 0.
+
+	Otherwise the next transition out of Live would be a submitted-to-draft move Frappe
+	refuses. Idempotent, so it runs on every migrate rather than as a one-off patch that a
+	v15 migrate would mark done before the upgrade.
+	"""
+	if _live_doc_status() == "0":
+		frappe.db.sql("update `tabJob Requisition` set docstatus = 0 where docstatus = 1")
 
 
 def setup_job_requisition_workflow():
@@ -207,7 +222,7 @@ def setup_job_requisition_workflow():
 		},
 		{
 			"state": "Live",
-			"doc_status": "1",
+			"doc_status": _live_doc_status(),
 			"update_field": "status",
 			"update_value": "Live",
 			"is_optional_state": 0,
@@ -483,6 +498,7 @@ def execute():
 		update_status_field_options()
 		create_required_roles()
 		frappe.clear_cache()
+		_reset_submitted_requisitions()
 		setup_job_requisition_workflow()
 		frappe.clear_cache()
 		print("\n✅ Job Requisition Workflow setup completed successfully!")
