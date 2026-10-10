@@ -1000,3 +1000,8 @@ before_job = ["alpinos.stock_ledger_batch.patch"]
 from alpinos.quotation_obm_patch import apply_quotation_obm_customer_patch
 
 apply_quotation_obm_customer_patch()
+
+# Frappe v16 ships a malformed default print font; see print_compat.
+from alpinos.print_compat import apply_print_font_fix
+
+apply_print_font_fix()
