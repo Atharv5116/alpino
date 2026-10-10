@@ -107,6 +107,14 @@ def _has_checkin_by_cutoff(employee, day_start, cutoff):
 
 
 def _is_holiday(emp, today):
+	from alpinos.hrms_compat import _assignment_lookup, employee_holiday_list
+
+	if _assignment_lookup():
+		holiday_list = employee_holiday_list(emp.name, today, None)
+		return bool(holiday_list) and bool(
+			frappe.db.exists("Holiday", {"parent": holiday_list, "holiday_date": today})
+		)
+
 	holiday_list = emp.get("holiday_list")
 	if not holiday_list:
 		try:

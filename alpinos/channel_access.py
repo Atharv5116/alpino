@@ -20,6 +20,8 @@ those hooks and apply `allowed_sales_orders` themselves.
 
 import frappe
 
+from alpinos.permission_compat import NO_OBJECTION
+
 CHANNEL_ECOM = "E-com"
 CHANNEL_OFFLINE = "Offline"
 OFFLINE_CHANNELS = ("Offline", "General Trade")
@@ -122,9 +124,9 @@ def delivery_note_query_conditions(user):
 	return _linked_order_condition("Delivery Note", user)
 
 
-# frappe.permissions.has_controller_permissions takes the FIRST hook that returns something
-# other than None. These hooks therefore only ever DENY (False) and otherwise return None,
-# so the assigned-visibility hooks on Pick List / Delivery Note still get their say.
+# These hooks only ever DENY (False) and otherwise return NO_OBJECTION, so the
+# assigned-visibility hooks on Pick List / Delivery Note still get their say: v15 stops at
+# the first answer other than None, v16 denies on any falsy one (see permission_compat).
 
 
 def _is_unsaved(doc):
@@ -135,17 +137,17 @@ def sales_order_has_permission(doc, user=None, permission_type=None):
 	# A new, unsaved order has no channel to judge yet; creating one is governed by the
 	# role's create permission, and reading it back afterwards by this rule.
 	if _is_unsaved(doc):
-		return None
-	return None if channel_allowed(doc.get("custom_channel"), user) else False
+		return NO_OBJECTION
+	return NO_OBJECTION if channel_allowed(doc.get("custom_channel"), user) else False
 
 
 def _linked_order_allowed(doc, user):
 	if _is_unsaved(doc) or resolve_access(user)["channels"] is None:
-		return None
+		return NO_OBJECTION
 	so = doc.get("custom_sales_order_id")
 	channel = frappe.db.get_value("Sales Order", so, "custom_channel") if so else None
 	if so and channel_allowed(channel, user):
-		return None
+		return NO_OBJECTION
 	return False
 
 
