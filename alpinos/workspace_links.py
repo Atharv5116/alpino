@@ -1,68 +1,55 @@
-"""Drop workspace rows that point at something which no longer exists, before a save.
+"""Remove workspace links and shortcuts that point at something which no longer exists.
 
 A Workspace validates every link on save, so one dead shortcut makes the whole workspace
 unsavable -- and the Home widgets re-save Home on every migrate. On this site that has
 happened twice: a "Bad POS" shortcut to another app's page, and on Frappe v16 the
 Leaderboard page, which v16 removed. Either one stopped every after_migrate step after it.
 
-Hooked on Workspace before_validate, so it covers alpinos's own saves and anyone else's.
-It only ever removes a row whose target is missing (the save would fail on it anyway),
-together with the layout block that showed it; nothing that resolves is touched.
+Runs as the FIRST alpinos after_migrate step. By then Frappe has synced every standard
+DocType, Report and Page, so a target that is missing really is gone. (It is not a
+Workspace doc_event: during the standard sync a workspace is imported before the charts
+and cards it shows exist, and v16 validates links before any before_validate hook.)
+Rows are deleted directly rather than through a save, which is the very thing they break.
 """
 
 import json
 
 import frappe
 
-# child table -> (type field or fixed doctype, name field, content block type, block key)
-_TABLES = {
-	"shortcuts": ("type", "link_to", "shortcut", "shortcut_name"),
-	"links": ("link_type", "link_to", None, None),
-	"charts": ("=Dashboard Chart", "chart_name", "chart", "chart_name"),
-	"number_cards": ("=Number Card", "number_card_name", "number_card", "number_card_name"),
-	"quick_lists": ("=DocType", "document_type", "quick_list", "quick_list_name"),
-	"custom_blocks": ("=Custom HTML Block", "custom_block_name", "custom_block", "custom_block_name"),
-}
-_LINKABLE = {"DocType", "Report", "Page", "Dashboard", "Dashboard Chart", "Number Card", "Custom HTML Block"}
+_LINKABLE = {"DocType", "Report", "Page", "Dashboard"}
 
 
-def _target_doctype(row, type_spec):
-	if type_spec.startswith("="):
-		return type_spec[1:]
-	return row.get(type_spec)
+def prune_dead_links():
+	for row in frappe.db.sql(
+		"""select name, parent, parentfield, type as target_type, link_to, label
+		from `tabWorkspace Shortcut` where ifnull(link_to, '') != ''
+		union all
+		select name, parent, parentfield, link_type, link_to, label
+		from `tabWorkspace Link` where type = 'Link' and ifnull(link_to, '') != ''""",
+		as_dict=True,
+	):
+		if row.target_type not in _LINKABLE or frappe.db.exists(row.target_type, row.link_to):
+			continue
+		child = "Workspace Shortcut" if row.parentfield == "shortcuts" else "Workspace Link"
+		frappe.db.delete(child, {"name": row.name})
+		if child == "Workspace Shortcut":
+			_drop_shortcut_block(row.parent, row.label)
+		frappe.log_error(
+			title=f"Workspace {row.parent}: removed a dead {child.split()[-1].lower()}",
+			message=f"{row.target_type} {row.link_to!r} no longer exists (label {row.label!r}).",
+		)
+		print(f"Workspace {row.parent}: removed dead {row.target_type} link {row.link_to!r}")
 
 
-def prune_dead_links(doc, method=None):
-	removed_blocks = set()
-	for table, (type_spec, name_field, block_type, block_key) in _TABLES.items():
-		keep = []
-		for row in doc.get(table) or []:
-			target_doctype = _target_doctype(row, type_spec)
-			target = row.get(name_field)
-			if target and target_doctype in _LINKABLE and not frappe.db.exists(target_doctype, target):
-				if block_type:
-					removed_blocks.add((block_type, block_key, row.get("label") or target))
-				frappe.log_error(
-					title=f"Workspace {doc.name}: dropped a dead {table[:-1].replace('_', ' ')}",
-					message=f"{target_doctype} {target!r} no longer exists (row label {row.get('label')!r}).",
-				)
-				continue
-			keep.append(row)
-		if len(keep) != len(doc.get(table) or []):
-			doc.set(table, keep)
-
-	if removed_blocks and doc.content:
-		try:
-			blocks = json.loads(doc.content)
-		except ValueError:
-			return
-
-		def is_removed(block):
-			data = block.get("data") or {}
-			return any(
-				block.get("type") == block_type and data.get(key) == name
-				for block_type, key, name in removed_blocks
-			)
-
-		blocks = [b for b in blocks if not is_removed(b)]
-		doc.content = json.dumps(blocks)
+def _drop_shortcut_block(workspace, label):
+	content = frappe.db.get_value("Workspace", workspace, "content")
+	try:
+		blocks = json.loads(content or "[]")
+	except ValueError:
+		return
+	kept = [
+		b for b in blocks
+		if not (b.get("type") == "shortcut" and (b.get("data") or {}).get("shortcut_name") == label)
+	]
+	if len(kept) != len(blocks):
+		frappe.db.set_value("Workspace", workspace, "content", json.dumps(kept), update_modified=False)
