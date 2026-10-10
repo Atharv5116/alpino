@@ -69,7 +69,7 @@ def _may_act(sales_order, user=None):
 		return True
 	# An assigned Sales Officer of that Buyer, per the section 9 matrix.
 	if SALES_OFFICER_ROLE in roles:
-		employee = frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "name")
+		employee = frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "name", order_by="name asc")
 		return bool(
 			employee
 			and buyer

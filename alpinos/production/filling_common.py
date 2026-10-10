@@ -304,7 +304,7 @@ def sku_bom(sku):
 			cint(frappe.db.get_value("BOM", bom, "docstatus")) < 2:
 		return bom
 	return frappe.db.get_value("BOM", {"item": sku, "is_active": 1, "is_default": 1,
-	                                   "docstatus": ("<", 2)}, "name") or \
+	                                   "docstatus": ("<", 2)}, "name", order_by="name asc") or \
 		frappe.db.get_value("BOM", {"item": sku, "is_active": 1, "docstatus": ("<", 2)}, "name", order_by="name asc")
 
 

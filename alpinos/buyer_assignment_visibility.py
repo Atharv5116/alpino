@@ -39,7 +39,7 @@ SO_BUYER_FIELD = "custom_offline_buyer_master"
 
 
 def _employee_for(user):
-	return frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "name")
+	return frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "name", order_by="name asc")
 
 
 def is_assignment_scoped(user=None):

@@ -125,7 +125,7 @@ def employee_for_user(user=None):
 	if not user or user == "Administrator":
 		return None
 	return frappe.db.get_value(
-		"Employee", {"user_id": user, "status": "Active"}, "name"
+		"Employee", {"user_id": user, "status": "Active"}, "name", order_by="name asc"
 	)
 
 
