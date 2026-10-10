@@ -183,10 +183,17 @@ var SalesOrderEntryListPage = class {
 			if (this.btn_bulk_pick_lists) this.btn_bulk_pick_lists.hide();
 		}
 		// Only for someone the queue will let in, or the button leads to "Not permitted".
-		if ((frappe.boot.page_info || {})['invoice-download-queue']) {
+		// v15 boots the permitted pages; v16 does not, so ask the server there.
+		const add_queue_button = () =>
 			this.page.add_inner_button(__('Order Fulfilment Report'), () =>
 				frappe.set_route('invoice-download-queue')
 			);
+		if (frappe.boot.page_info) {
+			if (frappe.boot.page_info['invoice-download-queue']) add_queue_button();
+		} else {
+			frappe
+				.xcall('alpinos.invoice_queue_api.can_open_page')
+				.then((ok) => ok && add_queue_button());
 		}
 	}
 

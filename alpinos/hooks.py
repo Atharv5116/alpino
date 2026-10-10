@@ -33,6 +33,7 @@ app_include_js = [
 	"/assets/alpinos/js/item_display.js",
 	"/assets/alpinos/js/alpinos_list_prefs.js",
 	"/assets/alpinos/js/alpinos_change_log.js",
+	"/assets/alpinos/js/alpinos_desk_links.js",
 ]
 
 # include js, css files in header of web template
