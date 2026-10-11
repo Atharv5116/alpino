@@ -105,6 +105,18 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# Rule 6: allow the request even when attendance already exists (we re-apply on approval).
 		pass
 
+	@frappe.whitelist()
+	def get_attendance_warnings(self) -> list:
+		"""No "Attendance Warnings" panel on the form.
+
+		HRMS's form script draws it from this method on every refresh, listing each day as
+		"Overwrite" or "Skip". Neither holds here: approval re-applies the requested punch even
+		when the status would stay the same (Rule 6). A client-script stub cannot remove the
+		panel, because Frappe runs every handler registered for an event rather than replacing
+		HRMS's. Holidays and leave days are still reported when the request is approved.
+		"""
+		return []
+
 	def _is_hr_manager(self):
 		"""True when the request's EMPLOYEE (not the session user) is an HR Manager; Rules 1 & 2 skip them."""
 		user = frappe.db.get_value("Employee", self.employee, "user_id") if self.employee else None
