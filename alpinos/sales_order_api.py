@@ -441,6 +441,15 @@ def _apply_clean_gst_amounts(doc):
 		rate = flt(calc["rate"])
 		row.rate = row.net_rate = row.base_rate = row.base_net_rate = rate
 		row.price_list_rate = row.base_price_list_rate = rate
+		# The price list rate is now the rate, so no margin or item discount remains. Left in
+		# place, ERPNext 15 re-applied the margin it had derived from the "Standard Selling"
+		# price on the next save (rate 349.07 became 462.01) before this ran again, and the
+		# amount in words and payment schedule it sets on the way were stale.
+		row.margin_type = ""
+		row.margin_rate_or_amount = 0
+		row.rate_with_margin = row.base_rate_with_margin = rate
+		row.discount_percentage = 0
+		row.discount_amount = 0
 		row.amount = row.net_amount = row.base_amount = row.base_net_amount = net
 		if calc.get("gst_amount") is not None:
 			row.custom_item_tax = flt(calc.get("gst_amount"))
@@ -475,6 +484,13 @@ def _apply_clean_gst_amounts(doc):
 		rt = flt(round(grand), 2)
 		doc.rounded_total = doc.base_rounded_total = rt
 		doc.rounding_adjustment = doc.base_rounding_adjustment = flt(rt - grand, 2)
+
+	# ERPNext set the amount in words and the payment schedule in its own validate, from the
+	# totals it had before this recomputation; bring them in line with the final totals.
+	if hasattr(doc, "set_total_in_words"):
+		doc.set_total_in_words()
+	if doc.get("payment_schedule") and hasattr(doc, "set_payment_schedule"):
+		doc.set_payment_schedule()
 
 
 def _buyer_rounds_per_unit(customer):
