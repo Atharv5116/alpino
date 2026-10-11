@@ -89,3 +89,25 @@ def keep_v15_print_cells():
 			end = css.find("\n", end_mark) + 1 if end_mark != -1 else css.find("}", start) + 1
 			css = css[:start].rstrip("\n") + css[end:]
 		frappe.db.set_value("Print Format", name, "css", css + "\n" + _V15_CELL_RULE, update_modified=False)
+
+
+def keep_v15_hidden_empty_fields():
+	"""v16 only: forms hide read-only fields that have no value, as they did on v15.
+
+	Frappe 15 always hid them. Frappe 16 made it a System Setting, "Hide Empty Read-Only
+	Fields", whose default (on) only reaches new sites: a migrated site has no stored value,
+	reads it as off, and every form fills up with empty read-only fields (Reporting Person,
+	onboarding and request fields...). Set it once, when it has never been set, so an
+	administrator who turns it off later keeps that choice.
+	"""
+	from alpinos.query_compat import IS_V16
+
+	if not IS_V16 or not frappe.get_meta("System Settings").has_field("hide_empty_read_only_fields"):
+		return
+	if frappe.db.sql(
+		"select 1 from `tabSingles` where doctype = 'System Settings' and field = 'hide_empty_read_only_fields'"
+	):
+		return
+	frappe.db.set_single_value("System Settings", "hide_empty_read_only_fields", 1)
+	frappe.db.set_default("hide_empty_read_only_fields", "1")
+	print("System Settings: Hide Empty Read-Only Fields on, as Frappe 15 behaved")

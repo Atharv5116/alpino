@@ -113,6 +113,8 @@ doctype_js = {
 	"Purchase Invoice": "public/js/purchase_invoice_debit_note.js",
 	# Changes(HP) #20: Half Day is not offered when the reason is On Duty.
 	"Attendance Request": "public/js/attendance_request_on_duty.js",
+	# HRMS 16 hides the Holiday List field; HR still sets it there (see the file).
+	"Employee": "public/js/employee_holiday_list.js",
 	# One file for all three: the desk form is the one Production surface that neither the
 	# module screens nor frappe.re_route can correct the breadcrumb on.
 	"Machine": "public/js/production_doctype_breadcrumb.js",
@@ -348,6 +350,7 @@ after_migrate = [
 	"alpinos.production.phase4_fields.setup_phase4_access",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
+	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
 ]
 
 # Uninstallation
