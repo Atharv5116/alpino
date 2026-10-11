@@ -42,6 +42,10 @@ var ProcessInwardEntry = class {
 	fields(d, ro) {
 		const RO = 1;
 		const ovens = (this.ctx.ovens || []);
+		// An empty editable time starts at the time the screen opened. Frappe 15's time picker
+		// put that into empty Time fields by itself and the floor relied on it; Frappe 16's
+		// leaves them blank and the inward then saved with no times at all.
+		const opened_at = ro ? null : frappe.datetime.now_time();
 		return [
 			{ fieldtype: 'Section Break', label: __('Header') },
 			{ fieldname: 'posting_date', label: __('Date / Day'), fieldtype: 'Date', default: d.posting_date, read_only: ro, reqd: 1 },
@@ -59,8 +63,8 @@ var ProcessInwardEntry = class {
 			{ fieldname: 'production_run', label: __('Production Run'), fieldtype: 'Data', default: d.production_run, read_only: RO },
 
 			{ fieldtype: 'Section Break', label: __('Mass Mixing') },
-			{ fieldname: 'mixing_start', label: __('Mixing Start Time'), fieldtype: 'Time', default: d.mixing_start, read_only: ro },
-			{ fieldname: 'mixing_end', label: __('Mixing End Time'), fieldtype: 'Time', default: d.mixing_end, read_only: ro },
+			{ fieldname: 'mixing_start', label: __('Mixing Start Time'), fieldtype: 'Time', default: d.mixing_start || opened_at, read_only: ro },
+			{ fieldname: 'mixing_end', label: __('Mixing End Time'), fieldtype: 'Time', default: d.mixing_end || opened_at, read_only: ro },
 			{ fieldtype: 'Column Break' },
 			{ fieldname: 'total_batch', label: __('Total Batch'), fieldtype: 'Int', default: d.total_batch, read_only: ro },
 			{ fieldname: 'mixing_wastage_kg', label: __('Wastage (KG)'), fieldtype: 'Float', precision: 3,
@@ -68,8 +72,8 @@ var ProcessInwardEntry = class {
 
 			{ fieldtype: 'Section Break', label: __('Baking') },
 			{ fieldname: 'total_output_kg', label: __('Total Output (KG)'), fieldtype: 'Float', precision: 3, default: d.total_output_kg, read_only: ro },
-			{ fieldname: 'first_batch_in', label: __('First Batch IN'), fieldtype: 'Time', default: d.first_batch_in, read_only: ro },
-			{ fieldname: 'last_batch_out', label: __('Last Batch OUT'), fieldtype: 'Time', default: d.last_batch_out, read_only: ro },
+			{ fieldname: 'first_batch_in', label: __('First Batch IN'), fieldtype: 'Time', default: d.first_batch_in || opened_at, read_only: ro },
+			{ fieldname: 'last_batch_out', label: __('Last Batch OUT'), fieldtype: 'Time', default: d.last_batch_out || opened_at, read_only: ro },
 			{ fieldtype: 'Column Break' },
 			{ fieldname: 'baking_wastage_kg', label: __('Total Baking Wastage (KG)'), fieldtype: 'Float', precision: 3,
 				default: d.baking_wastage_kg, read_only: ro, change: () => this.recalc() },
