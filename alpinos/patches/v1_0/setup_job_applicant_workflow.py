@@ -129,6 +129,28 @@ def update_status_field_allow_on_submit():
 	print("✅ Job Applicant status allow_on_submit")
 
 
+# Roles that run applications through the workflow ("Review" / "Reject" / "Archive" are
+# HR User transitions). "Submit Application" submits the document and "Reject" cancels it,
+# so beyond Write they need Submit and Cancel, which the site's Job Applicant permissions
+# (Custom DocPerm, replacing HRMS's own) never granted: every Submit Application by HR
+# ended in "does not have doctype access via role permission".
+WORKFLOW_ROLES = ("HR User", "HR Manager")
+
+
+def grant_job_applicant_submit_and_cancel():
+	from frappe.permissions import add_permission, update_permission_property
+
+	for role in WORKFLOW_ROLES:
+		if not frappe.db.exists(
+			"Custom DocPerm", {"parent": "Job Applicant", "role": role, "permlevel": 0, "if_owner": 0}
+		):
+			add_permission("Job Applicant", role, 0)
+		for ptype in ("submit", "cancel"):
+			update_permission_property("Job Applicant", role, 0, ptype, 1, validate=False)
+	frappe.clear_cache(doctype="Job Applicant")
+	print("✅ Job Applicant submit/cancel granted to " + ", ".join(WORKFLOW_ROLES))
+
+
 def setup_job_applicant_workflow():
 	workflow_name = "Job Application Workflow"
 	doctype = "Job Applicant"
@@ -265,6 +287,7 @@ def execute():
 		create_job_applicant_workflow_actions()
 		update_job_applicant_status_options()
 		update_status_field_allow_on_submit()
+		grant_job_applicant_submit_and_cancel()
 		frappe.clear_cache()
 		setup_job_applicant_workflow()
 		frappe.clear_cache()
