@@ -37,6 +37,9 @@ from alpinos.production import constants as C
 MATERIAL_TYPE_FIELD = "custom_material_type"
 MATERIAL_CATEGORY_FIELD = "custom_material_category"
 HSN_FIELD = "custom_hsn_code"
+#: India Compliance's own HSN field on Item (a Link to "GST HSN Code"). When that app is
+#: installed it validates THIS field on every sales item, not HSN_FIELD -- see item_api.
+GST_HSN_FIELD = "gst_hsn_code"
 #: Retired. Kept only so the note below can name it and an old import does not break --
 #: nothing creates or reads this field any more. The GST rate is LEGACY_GST_PERCENT_FIELD.
 TAX_RATE_FIELD = "custom_tax_rate"
@@ -99,9 +102,10 @@ def _custom_fields():
 				description="Required for packaging material.",
 			),
 			dict(
-				# Data, not a Link: this site has no "GST HSN Code" doctype, because the
-				# india_compliance app is not installed. A Link to a doctype that does not
-				# exist would refuse every save.
+				# Data, not a Link: a site without the india_compliance app has no "GST HSN
+				# Code" doctype, and a Link to a doctype that does not exist would refuse
+				# every save. Where the app IS installed, item_api copies this value into
+				# its gst_hsn_code (GST_HSN_FIELD) as well.
 				fieldname=HSN_FIELD,
 				label="HSN Code",
 				fieldtype="Data",
