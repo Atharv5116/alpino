@@ -1,0 +1,47 @@
+{
+ "app": "alpinos",
+ "creation": "2026-10-11 18:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Dock",
+ "idx": 0,
+ "items": [
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "storefront-duotone",
+   "link_to": "Alpino Sales",
+   "link_type": "Sidebar",
+   "title": "Sales & Dispatch"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "shelf-rack-duotone",
+   "link_to": "Alpino Goods Inward",
+   "link_type": "Sidebar",
+   "title": "Goods Inward"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "factory-duotone",
+   "link_to": "Alpino Production",
+   "link_type": "Sidebar",
+   "title": "Production"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "briefcase-duotone",
+   "link_to": "Alpino HR",
+   "link_type": "Sidebar",
+   "title": "HR & Attendance"
+  }
+ ],
+ "modified": "2026-10-11 18:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "alpinos",
+ "owner": "Administrator",
+ "standard": 1,
+ "user": ""
+}
