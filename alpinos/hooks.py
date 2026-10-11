@@ -871,7 +871,8 @@ doc_events = {
 			"alpinos.attendance_request_rules.block_half_day_when_on_duty",
 			"alpinos.attendance_request_rules.block_saturday_half_day",
 		],
-		"on_submit": "alpinos.raven_notifications.notify_attendance_request"
+		# Each approval step is a workflow_state change; the notifier keys on that.
+		"on_update": "alpinos.raven_notifications.notify_attendance_request"
 	},
 	"Attendance": {
 		"validate": [

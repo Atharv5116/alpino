@@ -177,28 +177,6 @@ def _notify_stage(label, doc, state, detail=""):
 			)
 
 
-def _submitted(label, who, detail, doc):
-	"""A fresh submission: tell the applicant + ping the reporting manager."""
-	bot = _get_bot()
-	if not bot:
-		return
-	applicant = _applicant_user(doc)
-	_send_dm(
-		bot,
-		applicant,
-		f"🔔 Your <b>{label}</b> request{detail} was submitted — pending approval.",
-		doc,
-	)
-	rm = _rm_user(doc)
-	if rm and rm != applicant:
-		_send_dm(
-			bot,
-			rm,
-			f"🔔 <b>{label}</b> request from <b>{who}</b>{detail} needs your approval.",
-			doc,
-		)
-
-
 # --------------------------------------------------------------------------- doc events
 
 
@@ -214,9 +192,17 @@ def notify_leave_application(doc, method=None):
 
 
 def notify_attendance_request(doc, method=None):
-	if method == "on_submit":
-		when = _fmt_date(doc.get("custom_request_date") or doc.get("from_date"))
-		_submitted("Attendance Request", _emp(doc), f" ({doc.get('reason')}, {when})", doc)
+	# per-stage, driven by workflow_state, so the RM hears on Pending RM Approval, HR on
+	# Pending HR Approval and the employee at each step and on the decision. Hooked on
+	# on_update only: submitting (the final approval) runs on_update too, so an on_submit
+	# hook as well would send the Approved message twice.
+	if not doc.has_value_changed("workflow_state"):
+		return
+	state = doc.get("workflow_state")
+	if not state or state == "Draft":
+		return
+	when = _fmt_range(doc.get("from_date"), doc.get("to_date"))
+	_notify_stage("Attendance Request", doc, state, f" ({doc.get('reason')}, {when})")
 
 
 def notify_work_from_home(doc, method=None):
