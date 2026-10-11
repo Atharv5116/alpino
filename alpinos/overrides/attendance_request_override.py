@@ -470,6 +470,27 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		)
 		return not has_out
 
+	def get_attendance_doc(self, attendance_date: str):
+		"""The day's attendance for this employee, whichever shift the request carries.
+
+		HRMS 15.59+ and 16 also filter on the request's shift, but alpinos hides that field: a
+		request raised before the upgrade, or outside the form, has none, and the day's
+		Attendance (marked by eSSL, default-present or the batch, often without a shift either)
+		was then not found, so approving inserted a second Attendance and failed with "Duplicate
+		Attendance". alpinos runs one shift per employee per day, so the day decides, as on
+		HRMS 15.54 (UAT); the request's shift only picks between rows if a day ever has two.
+		"""
+		rows = frappe.get_all(
+			"Attendance",
+			filters={"employee": self.employee, "attendance_date": attendance_date, "docstatus": ("!=", 2)},
+			fields=["name", "shift"],
+			order_by="name asc",
+		)
+		if not rows:
+			return None
+		name = next((r.name for r in rows if self.shift and r.shift == self.shift), rows[0].name)
+		return frappe.get_doc("Attendance", name)
+
 	def create_or_update_attendance(self, date: str):
 		doc = self.get_attendance_doc(date)
 
