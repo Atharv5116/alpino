@@ -29,10 +29,11 @@ frappe.ui.form.on('Job Applicant', {
 								
 								frappe.set_route('Form', 'Employee Onboarding', onboarding_doc.name);
 								
-								// Trigger refresh after route
+								// Trigger refresh after route. Frappe has no frappe.ui.form.get_open_form;
+								// cur_frm is the form on screen, once the route has opened it.
 								setTimeout(function() {
-									var frm = frappe.ui.form.get_open_form('Employee Onboarding', onboarding_doc.name);
-									if (frm && frm.doc.job_applicant) {
+									var frm = window.cur_frm;
+									if (frm && frm.doctype === 'Employee Onboarding' && frm.docname === onboarding_doc.name && frm.doc.job_applicant) {
 										frm.trigger('job_applicant');
 									}
 								}, 500);
@@ -104,10 +105,11 @@ frappe.ui.form.on('Interview', {
 								
 								frappe.set_route('Form', 'Employee Onboarding', onboarding_doc.name);
 								
-								// Trigger refresh after route
+								// Trigger refresh after route. Frappe has no frappe.ui.form.get_open_form;
+								// cur_frm is the form on screen, once the route has opened it.
 								setTimeout(function() {
-									var frm = frappe.ui.form.get_open_form('Employee Onboarding', onboarding_doc.name);
-									if (frm && frm.doc.job_applicant) {
+									var frm = window.cur_frm;
+									if (frm && frm.doctype === 'Employee Onboarding' && frm.docname === onboarding_doc.name && frm.doc.job_applicant) {
 										frm.trigger('job_applicant');
 									}
 								}, 500);
