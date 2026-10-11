@@ -236,6 +236,9 @@ after_migrate = [
 	"alpinos.essl_sync.get_essl_settings",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.attendance_request_workflow_setup.execute",
+	# Employee.salary_category: the Monthly Attendance Batch picks employees by it. Before
+	# salary_visibility below, which moves it to permlevel 1 with the other salary fields.
+	"alpinos.employee_custom_fields.setup_employee_custom_fields",
 	"alpinos.salary_category_setup.seed_salary_categories",
 	"alpinos.buyer_assignment.setup_assignment_roles",
 	"alpinos.sales_order_authority.setup_sales_officer_permissions",

@@ -33,6 +33,8 @@ def setup_employee_custom_fields():
 				fieldtype="Check",
 				insert_after="salary_category",
 				read_only=1,
+				# Internal guard only, and nothing sets it while the confirmation hook is unwired.
+				hidden=1,
 				no_copy=1,
 				print_hide=1,
 				description="Set automatically once Casual/Bereavement/Restricted leave was allocated on confirmation. Prevents double allocation.",
