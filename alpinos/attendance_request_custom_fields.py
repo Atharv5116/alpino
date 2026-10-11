@@ -18,6 +18,7 @@ def setup_attendance_request_custom_fields():
 	cleanup_attendance_request_legacy_fields()
 	clear_attendance_request_details_depends_on()
 	hide_attendance_request_time_field()
+	hide_attendance_request_legacy_status_field()
 
 	# Disable any stray Attendance Request client script that fills the check-in/out cells.
 	disable_conflicting_attendance_request_client_scripts()
@@ -222,6 +223,28 @@ def hide_attendance_request_time_field():
 	except Exception as e:
 		print(f"⚠️  Could not hide Attendance Request Time field: {str(e)}")
 		frappe.log_error(frappe.get_traceback(), "Hide AR Time Field")
+
+
+def hide_attendance_request_legacy_status_field():
+	"""Hide the site-added "Status" field on Attendance Request, if present.
+
+	It was the state field of the retired status-driven workflows (Draft / Send for
+	Approval / Submit). "Attendance Request Approval" runs on workflow_state, so nothing
+	updates it any more and it shows a stale value -- "Draft" on approved requests. v15
+	happened to put it inside the collapsed Existing Check-in Logs section; Frappe 16 places
+	a custom Section Break after the fields that follow its insert_after, so the field now
+	sits visibly under Reason.
+	"""
+	try:
+		cf = frappe.db.get_value("Custom Field", {"dt": "Attendance Request", "fieldname": "status"}, "name")
+		if cf and not frappe.db.get_value("Custom Field", cf, "hidden"):
+			frappe.db.set_value("Custom Field", cf, "hidden", 1)
+			frappe.db.commit()
+			frappe.clear_cache(doctype="Attendance Request")
+			print("✅ Hid the legacy Status field on Attendance Request")
+	except Exception as e:
+		print(f"⚠️  Could not hide Attendance Request Status field: {str(e)}")
+		frappe.log_error(frappe.get_traceback(), "Hide AR Status Field")
 
 
 def disable_conflicting_attendance_request_client_scripts():

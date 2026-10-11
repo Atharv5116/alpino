@@ -240,6 +240,9 @@ after_migrate = [
 	"alpinos.essl_sync.get_essl_settings",
 	"alpinos.attendance_request_custom_fields.setup_attendance_request_custom_fields",
 	"alpinos.attendance_request_workflow_setup.execute",
+	# Employee.salary_category: the Monthly Attendance Batch picks employees by it. Before
+	# salary_visibility below, which moves it to permlevel 1 with the other salary fields.
+	"alpinos.employee_custom_fields.setup_employee_custom_fields",
 	"alpinos.salary_category_setup.seed_salary_categories",
 	"alpinos.buyer_assignment.setup_assignment_roles",
 	"alpinos.sales_order_authority.setup_sales_officer_permissions",
@@ -876,7 +879,8 @@ doc_events = {
 			"alpinos.attendance_request_rules.block_half_day_when_on_duty",
 			"alpinos.attendance_request_rules.block_saturday_half_day",
 		],
-		"on_submit": "alpinos.raven_notifications.notify_attendance_request"
+		# Each approval step is a workflow_state change; the notifier keys on that.
+		"on_update": "alpinos.raven_notifications.notify_attendance_request"
 	},
 	"Attendance": {
 		"validate": [

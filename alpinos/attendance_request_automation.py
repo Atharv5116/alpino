@@ -618,10 +618,9 @@ frappe.ui.form.on('Attendance Request', {
 	employee: function(frm) {
 		alp_populate(frm, true);
 		alp_show_ar_remaining(frm);
-	},
-	show_attendance_warnings: function() {
-		// Suppress the standard HRMS attendance warnings section
 	}
+	// HRMS's Attendance Warnings panel is switched off server-side
+	// (CustomAttendanceRequest.get_attendance_warnings returns none).
 });
 
 function alp_toggle_date_fields(frm) {
