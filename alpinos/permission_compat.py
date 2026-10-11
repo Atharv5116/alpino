@@ -13,10 +13,14 @@ from alpinos.query_compat import IS_V16
 NO_OBJECTION = True if IS_V16 else None
 
 
-# Documents whose save resolves a party account (erpnext.accounts.party.get_party_account).
+# Documents whose save resolves a party account (erpnext.accounts.party.get_party_account),
+# and HR documents whose form fills an Account link on open: HRMS 16 sets the payable account
+# on a new Expense Claim / Employee Advance, and Frappe 16 validates that link with a select
+# check, so every employee opening a new claim got "Insufficient Permission for Account".
 _PARTY_ACCOUNT_DOCTYPES = (
 	"Quotation", "Sales Order", "Delivery Note", "Sales Invoice", "Pick List",
 	"Purchase Order", "Purchase Receipt", "Purchase Invoice", "Payment Entry", "Stock Entry",
+	"Expense Claim", "Employee Advance",
 )
 
 
