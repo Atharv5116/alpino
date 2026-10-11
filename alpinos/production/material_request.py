@@ -108,15 +108,26 @@ def refresh_issue_status(mr_name):
 # ================================================================= building an MR
 
 def _pending_requirements(sub_name):
-	"""Sub PO required_items still to be transferred, in the Sub PO's own row order."""
+	"""Sub PO required_items still to be transferred, in the Sub PO's own row order.
+
+	Transferred = the larger of the row's transferred_qty and what submitted Material Issues
+	moved to the Sub PO, as stock_allocation.pending_requirements counts it: ERPNext 16 stopped
+	updating transferred_qty on a Work Order with skip_transfer, which every Sub PO has, so on
+	its own it would stay 0 and material already issued would be asked for again."""
+	from alpinos.production.stock_allocation import _issued_qty
+
 	rows = frappe.get_all(
 		"Work Order Item",
 		filters={"parent": sub_name, "parenttype": WORK_ORDER},
 		fields=["item_code", "item_name", "required_qty", "transferred_qty", "stock_uom"],
 		order_by="idx asc")
+	issued_left = dict(_issued_qty([sub_name]).get(sub_name, {}))
 	out = []
 	for row in rows:
-		pending = flt(row.required_qty) - flt(row.transferred_qty)
+		# an item listed twice takes its issued quantity row by row, not once per row
+		from_issues = min(flt(issued_left.get(row.item_code)), flt(row.required_qty))
+		issued_left[row.item_code] = flt(issued_left.get(row.item_code)) - from_issues
+		pending = flt(row.required_qty) - max(flt(row.transferred_qty), from_issues)
 		if row.item_code and pending > 0:
 			out.append(frappe._dict(item_code=row.item_code, item_name=row.item_name,
 			                        qty=pending, uom=row.stock_uom, required_qty=flt(row.required_qty)))
