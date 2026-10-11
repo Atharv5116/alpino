@@ -181,8 +181,9 @@ def _notify_stage(label, doc, state, detail=""):
 
 
 def notify_leave_application(doc, method=None):
-	# per-stage, driven by workflow_state; pending stages are on_update, outcomes on_submit
-	if method == "on_update" and not doc.has_value_changed("workflow_state"):
+	# per-stage, driven by workflow_state; hooked on on_update only, which the final
+	# approval's submit runs as well
+	if not doc.has_value_changed("workflow_state"):
 		return
 	state = doc.get("workflow_state")
 	if not state or state == "Draft":

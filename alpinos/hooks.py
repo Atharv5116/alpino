@@ -621,8 +621,9 @@ doc_events = {
 			# HRMS #16: a day is either Leave or Work From Home, never both.
 			"alpinos.wfh_leave_exclusion.block_leave_when_wfh_exists",
 		],
-		"on_update": "alpinos.raven_notifications.notify_leave_application",
-		"on_submit": "alpinos.raven_notifications.notify_leave_application"
+		# Every step, including the final approval, is a workflow_state change on on_update
+		# (a submit runs on_update too); an on_submit hook as well sent "Approved" twice.
+		"on_update": "alpinos.raven_notifications.notify_leave_application"
 	},
 	"Expense Claim": {
 		"on_update": "alpinos.raven_notifications.notify_expense_claim",
