@@ -19,6 +19,7 @@ from alpinos.query_compat import agg
 from alpinos.production import constants as C
 from alpinos.production.item_fields import (
 	ALLOWED_CATEGORIES_FIELD,
+	GST_HSN_FIELD,
 	HSN_FIELD,
 	LEGACY_GST_PERCENT_FIELD,
 	LOSS_PERCENT_FIELD,
@@ -209,6 +210,10 @@ def get_form_context(item=None):
 		data["allowed_filling_categories"] = [
 			r.filling_process_category for r in doc.get(ALLOWED_CATEGORIES_FIELD) or []
 		]
+		# An item made elsewhere may carry only India Compliance's HSN; show that one
+		# rather than an empty box, so saving from here keeps it.
+		if not data.get(HSN_FIELD) and data.get(GST_HSN_FIELD):
+			data[HSN_FIELD] = data.get(GST_HSN_FIELD)
 		can_write = frappe.has_permission(DOCTYPE, "write", doc=doc)
 	else:
 		doc = None
@@ -277,6 +282,15 @@ def save_item(payload):
 	for field in ITEM_FIELDS:
 		if field in payload:
 			doc.set(field, payload.get(field))
+
+	# India Compliance, when installed, requires ITS HSN field (gst_hsn_code) on every sales
+	# item and never looks at custom_hsn_code, so with only the latter filled no item could
+	# be created from this screen. Write the typed code into both: custom_hsn_code stays
+	# because the purchase screens and print formats read it. A blank never clears the
+	# India Compliance code -- that would only trade one refusal for another.
+	hsn = (payload.get(HSN_FIELD) or "").replace(" ", "")
+	if hsn and frappe.get_meta(DOCTYPE).has_field(GST_HSN_FIELD):
+		doc.set(GST_HSN_FIELD, hsn)
 
 	# The Material Category rule (required for PM, cleared otherwise) is applied by the
 	# Item validate hook, so it holds for every writer rather than just this one.

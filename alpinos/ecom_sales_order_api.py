@@ -299,11 +299,16 @@ def _write_back_addresses_to_buyer(so):
 		# the Sales Order save. If the buyer can't be saved (e.g. a pre-existing
 		# duplicate Buyer Master for this customer), roll back just this write and
 		# log it — the order still saves.
+		messages_before = len(frappe.local.message_log)
 		try:
 			frappe.db.savepoint("eso_addr_writeback")
 			obm.save()
 		except Exception:
 			frappe.db.rollback(save_point="eso_addr_writeback")
+			# frappe.throw queues its message before raising, and catching the exception
+			# does not take it back: it would still reach the browser as an error dialog
+			# over an order that saved fine. Drop what the failed buyer save queued.
+			del frappe.local.message_log[messages_before:]
 			frappe.log_error(frappe.get_traceback(), "E-com SO buyer address write-back skipped")
 
 

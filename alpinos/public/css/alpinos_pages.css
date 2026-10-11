@@ -1372,3 +1372,91 @@
     }
   }
 }
+
+/* ----------------------------------------------------------------------------
+   16. FRAPPE v16 — give every alpinos desk page its side padding back
+   On v15 .page-body is a Bootstrap .container, so each of these pages sat 15px
+   in from the edges. v16's desk sets `.page-container .page-body { padding: 0 }`,
+   so the same pages run flush against the sidebar and the right edge (a wide
+   report table looks cut off). This restores the v15 15px on v16 only: the
+   selector needs the v16 sidebar (.body-sidebar-container, prepended to <body>
+   before .main-section), which the v15 desk does not have, so v15 is untouched.
+   Every alpinos Page is listed, since they all share the problem.
+   ---------------------------------------------------------------------------- */
+.body-sidebar-container ~ .main-section :is(
+  [data-page-route="attendance_batch_entry"],
+  [data-page-route="attendance_batch_list"],
+  [data-page-route="bom_master_entry"],
+  [data-page-route="bom_master_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="dispatch-report"],
+  [data-page-route="dispatch_tracking"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="filling_calendar"],
+  [data-page-route="filling_category_entry"],
+  [data-page-route="filling_category_list"],
+  [data-page-route="filling_entry"],
+  [data-page-route="filling_plan_entry"],
+  [data-page-route="filling_plan_list"],
+  [data-page-route="final_qc_entry"],
+  [data-page-route="final_qc_list"],
+  [data-page-route="inventory_adjustment_entry"],
+  [data-page-route="inventory_adjustment_list"],
+  [data-page-route="invoice-download-queue"],
+  [data-page-route="invoice-sync"],
+  [data-page-route="item_master_entry"],
+  [data-page-route="item_master_list"],
+  [data-page-route="machine_entry"],
+  [data-page-route="machine_list"],
+  [data-page-route="machine_type_entry"],
+  [data-page-route="machine_type_list"],
+  [data-page-route="material_issue_entry"],
+  [data-page-route="material_issue_list"],
+  [data-page-route="material_request_entry"],
+  [data-page-route="material_request_list"],
+  [data-page-route="material_return_entry"],
+  [data-page-route="material_return_list"],
+  [data-page-route="offline-buyer-catalog"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="process_inward_entry"],
+  [data-page-route="process_master_entry"],
+  [data-page-route="process_master_list"],
+  [data-page-route="production_floor"],
+  [data-page-route="production_inventory"],
+  [data-page-route="production_order_entry"],
+  [data-page-route="production_order_list"],
+  [data-page-route="production_qc_entry"],
+  [data-page-route="production_qc_list"],
+  [data-page-route="production_reports"],
+  [data-page-route="production_transfer_entry"],
+  [data-page-route="production_transfer_list"],
+  [data-page-route="purchase_grn_list"],
+  [data-page-route="purchase_grn_view"],
+  [data-page-route="purchase_invoice_entry"],
+  [data-page-route="purchase_invoice_list"],
+  [data-page-route="purchase_inward_entry"],
+  [data-page-route="purchase_inward_list"],
+  [data-page-route="purchase_order_entry"],
+  [data-page-route="purchase_order_list"],
+  [data-page-route="purchase_qc_entry"],
+  [data-page-route="purchase_qc_list"],
+  [data-page-route="purchase_quarantine_list"],
+  [data-page-route="purchase_quarantine_view"],
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="sales-order-import"],
+  [data-page-route="screening"],
+  [data-page-route="stock-entry-import"],
+  [data-page-route="stock-reconciliation-import"],
+  [data-page-route="store_planning_board"],
+  [data-page-route="sub_order_list"],
+  [data-page-route="sub_order_view"]
+) .page-body {
+  padding-left: 15px;
+  padding-right: 15px;
+}

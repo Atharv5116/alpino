@@ -215,6 +215,12 @@ def _plan_locked(sub):
 	return bool(cint(sub.get(PLAN_LOCKED_FIELD)))
 
 
+def _planned_on_issued_material(sub):
+	"""A next-stage Sub PO is planned on the issue its first MR already made, so the lock
+	that MR left behind does not stop it (see _assert_replannable)."""
+	return _is_next_stage(sub) and cint(sub.docstatus) < 2
+
+
 def _parent_status(parent):
 	return frappe.db.get_value(PRODUCTION_ORDER, parent, "status")
 
@@ -224,7 +230,7 @@ def _assert_replannable(sub):
 	if cint(sub.get(IS_LOCKED_FIELD)):
 		frappe.throw(_("{0} is locked until {1} is sent to store.").format(
 			sub.name, sub.get(PARENT_FIELD)), title=_("Sub Order Is Locked"))
-	if _is_next_stage(sub) and cint(sub.docstatus) < 2:
+	if _planned_on_issued_material(sub):
 		# Its MR was used up by the first process; the next one is planned on the same issue.
 		return
 	parent_status = _parent_status(sub.get(PARENT_FIELD))
@@ -715,7 +721,9 @@ def get_planning_context(sub_order, planned_date=None, process=None):
 		"run_members": [{"name": r.name, "qty": flt(r.qty)} for r in frappe.get_all(
 			WORK_ORDER, filters={"name": ("in", run_members)}, fields=["name", "qty"])] if run_members else [],
 		"stock": SA.sub_order_stock(sub.name, as_of_date=date or None),
-		"plan_locked": int(_plan_locked(sub)),
+		# What save_planning will actually refuse: the board stops at this flag before it
+		# opens the popup, so a next-stage Sub PO must not report its old MR's lock here.
+		"plan_locked": int(_plan_locked(sub) and not _planned_on_issued_material(sub)),
 		"capacity_check": int(_capacity_check_enabled()),
 		"can_plan": int(_may_plan()),
 	}

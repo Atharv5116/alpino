@@ -141,12 +141,24 @@ var EcomSalesOrderEntry = class {
 		this.f_dispatch = mk('.fld-dispatch-date', {
 			fieldtype: 'Date', fieldname: 'dispatch_date', label: __('Dispatch Date'), reqd: 1,
 		});
-		this.f_dispatch.set_value(frappe.datetime.get_today());
+		this.set_default_dispatch_date();
 
 		// Freebies flag
 		this.f_freebie_po = mk('.fld-is-freebie-po', {
 			fieldtype: 'Check', fieldname: 'is_freebie_po', label: __('Freebies (Entire PO Free)'),
 			onchange: () => this.toggle_freebie_po(),
+		});
+	}
+
+	// The server's default (alpinos.dispatch_date_utils): today before the 2 PM cutoff, the
+	// next working day after it. A plain "today" was refused by the Sales Order validate hook
+	// every afternoon. Fills only an empty field, so a date loaded or typed meanwhile stays.
+	set_default_dispatch_date() {
+		frappe.call({
+			method: 'alpinos.dispatch_date_utils.get_default_dispatch_date',
+			callback: (r) => {
+				if (r.message && !this.f_dispatch.get_value()) this.f_dispatch.set_value(r.message.date);
+			},
 		});
 	}
 
@@ -854,7 +866,8 @@ var EcomSalesOrderEntry = class {
 				this.f_po_date.set_value(d.po_date || '');
 				this.f_po_expiry.set_value(d.po_expiry_date || '');
 				this.f_delivery_by.set_value(d.delivery_by_date || '');
-				this.f_dispatch.set_value(d.dispatch_date || frappe.datetime.get_today());
+				// No saved date: keep the default clear_form() already asked the server for.
+				if (d.dispatch_date) this.f_dispatch.set_value(d.dispatch_date);
 				this.f_freebie_po.set_value(cint(d.is_freebie_po));
 
 				this.items = [];
@@ -896,9 +909,9 @@ var EcomSalesOrderEntry = class {
 			this.f_customer, this.f_customer_type, this.f_appointment, this.f_grn, this.f_partial,
 			this.f_gst_excl, this.f_site, this.f_bill_gstin, this.f_ship_gstin, this.f_bill_addr,
 			this.f_ship_addr, this.f_po_no, this.f_po_date, this.f_po_expiry, this.f_delivery_by,
-			this.f_freebie_po,
+			this.f_freebie_po, this.f_dispatch,
 		].forEach((f) => f && f.set_value(''));
-		this.f_dispatch.set_value(frappe.datetime.get_today());
+		this.set_default_dispatch_date();
 		this.add_item_row();
 		this.render_total();
 		this.toggle_freebie_po();

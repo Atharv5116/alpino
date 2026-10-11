@@ -29,7 +29,8 @@ var ProductionQCList = class {
 		};
 		page.set_primary_action(__('Refresh'), () => this.refresh(), 'refresh');
 		page.add_inner_button(__('Shop Floor'), () => frappe.set_route('production_floor'));
-		this.wrapper.html(`<div class="pql"><div class="pql-body"></div>
+		// append, not html(): the filters above live in page.main's .page-form.
+		this.wrapper.append(`<div class="pql"><div class="pql-body"></div>
 			<div class="pql-more" style="margin-top:10px;text-align:center"></div></div>`);
 		this.wrapper.on('click', '.pql-row', function () { frappe.set_route('production_qc_entry', $(this).attr('data-name')); });
 		this.wrapper.on('click', '.pql-next', () => { this.start += this.page_length; this.refresh(); });

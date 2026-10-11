@@ -59,7 +59,9 @@ var ProductionFloor = class {
 	}
 
 	render_shell() {
-		this.wrapper.html(`
+		// append, not html(): page.main also holds the .page-form that page.add_field()
+		// put the filters in (make_filters runs first), and html() would wipe it.
+		this.wrapper.append(`
 			<div class="pf">
 				<style>
 					.pf .pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
