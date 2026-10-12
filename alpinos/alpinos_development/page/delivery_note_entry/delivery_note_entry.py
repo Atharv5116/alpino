@@ -469,23 +469,34 @@ def _lr_pick_lists(dn_names):
 	return {dn: ", ".join(names) for dn, names in picks.items()}
 
 
-def _lr_rows_for_today():
-	"""Draft Delivery Notes dispatching today, as the sheet's rows."""
+def _lr_rows(names=None):
+	"""The sheet's rows: the notes named, in that order, else today's draft dispatches.
+
+	`names` comes from the rows ticked on the list page. Without it the sheet covers every
+	DRAFT Delivery Note dispatching TODAY, which is what the button did before selection.
+	"""
 	today = frappe.utils.today()
-	# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
-	dns = frappe.get_all(
-		"Delivery Note",
-		filters={
-			"docstatus": 0,
-			"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
-		},
-		fields=[
-			"name", "posting_date", "custom_sales_order_id", "custom_dn_so_customer_name",
-			"vehicle_no", "custom_dispatch_date", "custom_transporter_name", "custom_lr_gr_no",
-			"custom_total_units_dn", "custom_total_boxes", "custom_dn_order_gross_weight",
-		],
-		order_by="name",
-	)
+	fields = [
+		"name", "posting_date", "custom_sales_order_id", "custom_dn_so_customer_name",
+		"vehicle_no", "custom_dispatch_date", "custom_transporter_name", "custom_lr_gr_no",
+		"custom_total_units_dn", "custom_total_boxes", "custom_dn_order_gross_weight",
+	]
+	if names:
+		fetched = {d["name"]: d for d in frappe.get_all(
+			"Delivery Note", filters={"name": ["in", names]}, fields=fields)}
+		# Keep the caller's order, so the sheet reads down the list as it was ticked.
+		dns = [fetched[n] for n in names if n in fetched]
+	else:
+		# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
+		dns = frappe.get_all(
+			"Delivery Note",
+			filters={
+				"docstatus": 0,
+				"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
+			},
+			fields=fields,
+			order_by="name",
+		)
 	picks = _lr_pick_lists([dn.name for dn in dns])
 	for dn in dns:
 		dn["pick_list"] = picks.get(dn.name, "")
@@ -498,14 +509,22 @@ def _lr_rows_for_today():
 
 
 @frappe.whitelist()
-def download_lr_excel():
-	"""Excel of DRAFT Delivery Notes dispatching TODAY, for bulk Dispatch Date / LR No. entry.
+def download_lr_excel(delivery_notes=None):
+	"""Excel for bulk Dispatch Date / LR No. entry, in the agreed format.
+
+	`delivery_notes` (a JSON list, from the rows ticked on the list page) exports exactly
+	those; without it the sheet covers every DRAFT Delivery Note dispatching TODAY.
 
 	Twelve columns in the order of the agreed format; DISPATCH DATE and LR NO. are the
 	editable ones and are highlighted in yellow, the rest are filled in by the system.
 	"""
 	_require_lr_roles()
 	import io
+
+	names = frappe.parse_json(delivery_notes) if delivery_notes else None
+	if isinstance(names, str):
+		names = [names]
+	names = [n for n in (names or []) if n]
 
 	try:
 		import openpyxl
@@ -526,7 +545,7 @@ def download_lr_excel():
 			cell.fill = highlight
 		ws.column_dimensions[cell.column_letter].width = _LR_COLUMN_WIDTHS.get(label, 16)
 
-	for idx, dn in enumerate(_lr_rows_for_today(), start=2):
+	for idx, dn in enumerate(_lr_rows(names), start=2):
 		for col, (label, field) in enumerate(_LR_COLUMNS, start=1):
 			value = dn.get(field)
 			cell = ws.cell(row=idx, column=col, value=value if value not in (None, "") else None)
@@ -539,7 +558,8 @@ def download_lr_excel():
 	stream = io.BytesIO()
 	wb.save(stream)
 
-	frappe.response["filename"] = f"LR_Update_{frappe.utils.today()}.xlsx"
+	suffix = "selected" if names else frappe.utils.today()
+	frappe.response["filename"] = f"LR_Update_{suffix}.xlsx"
 	frappe.response["filecontent"] = stream.getvalue()
 	frappe.response["type"] = "binary"
 
