@@ -31,6 +31,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 	if (page.btn_cancel_pl) page.btn_cancel_pl.hide();
 
 	// edits after submission propagate to the linked Delivery Note(s) and are audited
+	// (Field Change Log), and the Change Log button shows that trail here.
+	page.btn_change_log = page.add_inner_button(__('Change Log'), function() {
+		alpinos_show_change_log('Pick List', page.pick_list_name);
+	});
 	page.btn_edit_after_submit = page.add_inner_button(__('Edit Transporter / Dispatch'), function() {
 		const d = new frappe.ui.Dialog({
 			title: __('Edit After Submission'),
