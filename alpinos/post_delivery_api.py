@@ -27,6 +27,9 @@ def get_post_delivery_queue(start=0, page_length=20, search=None, status=None, c
 	status = (status or "").strip()
 	if status:
 		conds.append("IFNULL(pd.post_delivery_status, 'Not Started') = %(status)s")
+		# The value has to be bound too: without this the filter raised KeyError: status
+		# and the Status dropdown on the page did nothing but fail.
+		params["status"] = status
 	else:
 		conds.append("IFNULL(pd.post_delivery_status, 'Not Started') != 'Completed'")
 
