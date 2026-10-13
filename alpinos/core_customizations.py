@@ -132,3 +132,26 @@ def keep_v15_silent_notifications():
 		if frappe.db.get_value("Notification", name, "enabled"):
 			frappe.db.set_value("Notification", name, "enabled", 0, update_modified=False)
 			print(f"Notification {name!r} disabled: it sent nothing on v15")
+
+
+def keep_v15_optional_expense_payable():
+	"""v16 only: an Expense Claim saves without a Payable Account, as on v15.
+
+	HRMS 16 made payable_account mandatory unless the claim is paid (v15 never required it;
+	every claim here has it empty, as they are settled through payroll), and the default it
+	fills, the company's Payroll Payable, is not of account type Payable, so HRMS's own filter
+	clears it again: no employee could save a claim. Clear the new mandatory rule; an
+	accounts team that sets a Payable-type default account can still fill it.
+	"""
+	from alpinos.query_compat import IS_V16
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	if not IS_V16 or not frappe.get_meta("Expense Claim").get_field("payable_account"):
+		return
+	if frappe.get_meta("Expense Claim").get_field("payable_account").mandatory_depends_on:
+		make_property_setter(
+			"Expense Claim", "payable_account", "mandatory_depends_on", "", "Code",
+			validate_fields_for_doctype=False,
+		)
+		frappe.clear_cache(doctype="Expense Claim")
+		print("Expense Claim: Payable Account optional again, as on v15")
