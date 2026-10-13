@@ -21,7 +21,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, now_datetime, nowtime
+from frappe.utils import cint, flt, getdate, now_datetime, nowdate, nowtime
 
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
@@ -389,7 +389,7 @@ def amend_grn(purchase_receipt):
 	new.set("custom_debit_note", None)
 	new.set("custom_final_submitted_by", None)
 	new.set("custom_final_submission_datetime", None)
-	new.posting_date = getdate()
+	new.posting_date = nowdate()
 	new.posting_time = nowtime()
 	new.set_posting_time = 0
 	# custom_purchase_inward_item is no_copy, and it is the only identity that survives a

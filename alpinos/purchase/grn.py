@@ -33,7 +33,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, now_datetime, nowtime
+from frappe.utils import cint, flt, getdate, now_datetime, nowdate, nowtime
 
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
@@ -388,7 +388,10 @@ def make_debit_note(purchase_receipt):
 	# quantity), so letting this debit note write back a billed amount would make the GRN look
 	# part-billed and the real Purchase Invoice over-billed later.
 	note.update_billed_amount_in_purchase_receipt = 0
-	note.posting_date = getdate()
+	# Dates go on as strings: ERPNext 16 type-checks the whitelisted helpers it calls with
+	# them (get_payment_term_details: posting_date / bill_date `str | None`) and refuses a
+	# datetime.date, which v15 let through.
+	note.posting_date = nowdate()
 	note.posting_time = nowtime()
 	note.set_posting_time = 0
 	note.currency = pr.currency
@@ -399,7 +402,7 @@ def make_debit_note(purchase_receipt):
 		# BRD 5.6 "Link Debit Note": vendor, GRN, Purchase Inward, Invoice Number and the
 		# rejected quantity. bill_no is ERPNext's home for the vendor's invoice number.
 		note.bill_no = inward.invoice_number
-		note.bill_date = inward.invoice_date
+		note.bill_date = str(inward.invoice_date) if inward.invoice_date else None
 	series = _debit_note_naming_series()
 	if series:
 		note.naming_series = series
@@ -654,7 +657,7 @@ def _apply_header(pr, inward, qc):
 	pr.supplier = inward.supplier
 	# Posting date can never be in the future (purchase_receipt.py:267), so the GRN is
 	# stamped now rather than carrying the inward's arrival timestamp forward.
-	pr.posting_date = getdate()
+	pr.posting_date = nowdate()
 	pr.posting_time = nowtime()
 	pr.set_posting_time = 0
 	pr.set_warehouse = inward.target_warehouse

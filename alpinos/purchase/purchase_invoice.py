@@ -709,7 +709,11 @@ def _fill_bill_from_inward(invoice):
 	if bill_no and not (invoice.get("bill_no") or "").strip():
 		invoice.bill_no = bill_no
 	if bill_date and not invoice.get("bill_date"):
-		invoice.bill_date = bill_date
+		# As a string: ERPNext 16 type-checks get_payment_term_details(posting_date / bill_date:
+		# `str | None`), which the payment schedule calls with this date, and refused the
+		# datetime.date the database returns -- Create Invoice did nothing for any inward that
+		# carried the supplier's invoice date. v15 did not check.
+		invoice.bill_date = str(bill_date)
 
 
 def _fill_gst_from_inward(invoice):
@@ -1218,7 +1222,7 @@ def _align_erpnext_schedule(invoice):
 		due = terms_due_date(invoice)
 	else:
 		due = invoice.get("custom_payment_due_date")
-	invoice.due_date = max(getdate(due), bill) if due else bill
+	invoice.due_date = str(max(getdate(due), bill) if due else bill)
 	invoice.set("payment_schedule", [])
 
 
