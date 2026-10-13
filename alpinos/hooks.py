@@ -25,8 +25,19 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/alpinos/css/alpinos_pages.css"
+app_include_css = ["/assets/alpinos/css/alpinos_pages.css"]
+from alpinos.query_compat import IS_V16  # noqa: E402
+
+if IS_V16:
+	# Frappe 16's desk stylesheet no longer bundles Font Awesome 4 (Frappe 15's desk.bundle.scss
+	# imported it). alpinos pages draw buttons with `fa fa-*` icons - Pick List split / remove
+	# row, Sales Order row delete, the "+" on Add Row - which render empty without it. Frappe 16
+	# still ships the file; loaded first so alpinos_pages.css keeps the last word.
+	app_include_css.insert(0, "/assets/frappe/css/fonts/fontawesome/font-awesome.min.css")
 app_include_js = [
+	# Frappe 16 control changes that break page and dialog fields (typed dates wiped, saved
+	# link values blanked); restores Frappe 15 behaviour for those controls. See the file.
+	"/assets/alpinos/js/alpinos_page_controls.js",
 	"/assets/alpinos/js/sales_order_hub_desk_v3.js",
 	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
 	# the hard-coded item_row_colors.js; its reports became a default configuration).
