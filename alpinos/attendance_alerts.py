@@ -25,6 +25,8 @@ def get_flagged_employees(today=None):
 		"Employee",
 		filters={"status": "Active"},
 		fields=["name", "employee_name", "company", "department", "reports_to", "holiday_list"],
+		# ERPNext 16 changed Employee's default sort to creation; keep v15's order
+		order_by="modified desc",
 	)
 
 	flagged = []
