@@ -79,7 +79,16 @@ var AlpinosFillingPlanEntry = class {
 		this._ctl('.f-parent', {
 			fieldname: 'parent_po', label: __('Parent PO'), fieldtype: 'Link', options: 'Production Order', reqd: 1,
 			get_query() { return { query: 'alpinos.production.filling_plan.parent_query' }; },
-			change() { if (!me.loading) { me._set('sub_order', ''); me.refresh_wip(); } },
+			// Clear the Sub-PO only when the Parent PO really changed: the control fires change
+			// again after it has checked a loaded value, by when `loading` is long over, and that
+			// late event blanked the saved Sub-PO on some opens of a plan.
+			change() {
+				const parent = me._val('parent_po') || '';
+				if (me.loading || parent === me._parent_po) return;
+				me._parent_po = parent;
+				me._set('sub_order', '');
+				me.refresh_wip();
+			},
 		});
 		this._ctl('.f-sub', {
 			fieldname: 'sub_order', label: __('Sub-PO (Batch)'), fieldtype: 'Link', options: 'Work Order', reqd: 1,
@@ -120,6 +129,7 @@ var AlpinosFillingPlanEntry = class {
 	}
 
 	reset() {
+		this._parent_po = '';
 		['name', 'parent_po', 'sub_order', 'filling_line', 'line_category', 'remarks', 'available_wip_kg'].forEach((f) => this._set(f, ''));
 		this._set('plan_date', frappe.datetime.get_today());
 		this._set('status', 'Planned');
@@ -129,6 +139,7 @@ var AlpinosFillingPlanEntry = class {
 	}
 
 	fill(d) {
+		this._parent_po = d.parent_po || '';
 		this._set('name', d.name); this._set('plan_date', d.plan_date); this._set('parent_po', d.parent_po);
 		this._set('sub_order', d.sub_order); this._set('filling_line', d.filling_line); this._set('line_category', d.line_category);
 		this._set('status', d.status); this._set('remarks', d.remarks);
