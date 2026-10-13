@@ -856,3 +856,39 @@
 [data-page-route="invoice-download-queue"] .page-body {
   padding-top: var(--navbar-height, 48px);
 }
+
+/* ----------------------------------------------------------------------------
+   16. FRAPPE v16 — give every alpinos desk page its side padding back
+   On v15 .page-body is a Bootstrap .container, so each of these pages sat 15px
+   in from the edges. v16's desk sets `.page-container .page-body { padding: 0 }`,
+   so the same pages run flush against the sidebar and the right edge (a wide
+   report table looks cut off). This restores the v15 15px on v16 only: the
+   selector needs the v16 sidebar (.body-sidebar-container, prepended to <body>
+   before .main-section), which the v15 desk does not have, so v15 is untouched.
+   Every alpinos Page is listed, since they all share the problem.
+   ---------------------------------------------------------------------------- */
+.body-sidebar-container ~ .main-section :is(
+  [data-page-route="attendance_batch_entry"],
+  [data-page-route="attendance_batch_list"],
+  [data-page-route="delivery_note_entry"],
+  [data-page-route="delivery_note_entry_list"],
+  [data-page-route="dispatch-report"],
+  [data-page-route="ecom-sales-order-entry"],
+  [data-page-route="ecom-sales-order-entry-list"],
+  [data-page-route="invoice-download-queue"],
+  [data-page-route="invoice-sync"],
+  [data-page-route="offline-buyer-catalog"],
+  [data-page-route="pick_list_entry"],
+  [data-page-route="pick_list_list"],
+  [data-page-route="post-delivery-queue"],
+  [data-page-route="sales-order-entry"],
+  [data-page-route="sales-order-entry-list"],
+  [data-page-route="sales-order-entry-view"],
+  [data-page-route="sales-order-import"],
+  [data-page-route="screening"],
+  [data-page-route="stock-entry-import"],
+  [data-page-route="stock-reconciliation-import"]
+) .page-body {
+  padding-left: 15px;
+  padding-right: 15px;
+}
