@@ -591,6 +591,8 @@ scheduler_events = {
 # --------------------
 
 extend_bootinfo = [
+	# Frappe 16: alpinos pages open in their own Alpino sidebar, not by module (see the file).
+	"alpinos.desk_shells.extend_bootinfo",
 	"alpinos.customize_expense_claim.extend_bootinfo",
 	"alpinos.item_display_config.extend_bootinfo"
 ]
