@@ -23,6 +23,7 @@ from frappe.custom.doctype.property_setter.property_setter import make_property_
 from frappe.utils import cint, flt, get_datetime, getdate, today
 
 from alpinos import contact_number
+from alpinos.query_compat import IS_V16
 from alpinos.purchase import constants as C
 
 PO = "Purchase Order"
@@ -60,7 +61,10 @@ def _custom_fields():
 				fieldname="custom_inward_section",
 				label="Purchase Inward",
 				fieldtype="Section Break",
-				insert_after="amended_from",
+				# ERPNext 16 moved amended_from to the More Info tab, which took the whole
+				# inward / shipment / approval block with it; supplier_warehouse is the field
+				# amended_from followed on v15 and is still on the Details tab.
+				insert_after="supplier_warehouse" if IS_V16 else "amended_from",
 				collapsible=1,
 			),
 			dict(
