@@ -293,6 +293,11 @@ SUPPORTING_READ_DOCTYPES = (
 	"Tax Category",
 	"Item Tax Template",
 	"Purchase Taxes and Charges Template",
+	# ERPNext 16 dropped "All: select" from both: the PO entry page validates its Payment
+	# Terms link and the payment schedule checks select on each Payment Term, so a buyer
+	# got "Insufficient Permission for Payment Terms Template" and a blank Payment Terms.
+	"Payment Terms Template",
+	"Payment Term",
 	"Terms and Conditions",
 	"Quality Inspection",
 	"Quality Inspection Template",
