@@ -69,6 +69,8 @@ doctype_js = {
 	"Attendance Request": "public/js/attendance_request_on_duty.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
+	# HRMS 16 hides the Holiday List field; HR still sets it there (see the file).
+	"Employee": "public/js/employee_holiday_list.js",
 }
 doctype_list_js = {
 	"Pick List": "public/js/pick_list_list.js",
@@ -226,6 +228,7 @@ after_migrate = [
 	"alpinos.after_submit_sync.ensure_after_submit_fields",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
+	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
 ]
 
 # Uninstallation
