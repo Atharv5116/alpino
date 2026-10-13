@@ -294,9 +294,22 @@ def can_resync_invoices():
 	return bool(_INVOICE_RESYNC_ROLES & set(frappe.get_roles()))
 
 
+#: Above this many orders the work goes to a background job instead of the request.
+#: One order is a couple of seconds; the gateway gives up long before a full selection is
+#: through, so anything that is not a quick handful is queued.
+RESYNC_INLINE_LIMIT = 3
+
+
 @frappe.whitelist()
 def resync_invoices_bulk(sales_orders):
-	"""Resync invoice PDFs for many Sales Orders; logs each and returns per-order results + counts."""
+	"""Resync invoice PDFs for many Sales Orders.
+
+	A small selection runs inline and returns its results. A larger one is queued, exactly
+	as process_invoice_excel already does, because the same per-order Drive fetch is behind
+	both: building the Drive client, resolving <root>/<FY>/<Month>, searching, downloading.
+	Serially, for a whole selection, that passes the gateway timeout and the user sees a 504
+	while the job is in fact still running -- which is what was reported.
+	"""
 	import json
 
 	if isinstance(sales_orders, str):
@@ -306,12 +319,48 @@ def resync_invoices_bulk(sales_orders):
 	if not sales_orders:
 		frappe.throw(_("No Sales Orders selected."))
 
+	if len(sales_orders) > RESYNC_INLINE_LIMIT:
+		frappe.enqueue(
+			"alpinos.invoice_sync._run_resync_bulk",
+			queue="long",
+			timeout=3600,
+			sales_orders=sales_orders,
+			enqueue_after_commit=True,
+		)
+		return {
+			"ok": True,
+			"queued": True,
+			"count": len(sales_orders),
+			"message": _(
+				"Resyncing {0} invoice(s) in the background. Check the Invoice Sync Log for results."
+			).format(len(sales_orders)),
+		}
+
+	out = _run_resync_bulk(sales_orders)
+	out["queued"] = False
+	return out
+
+
+def _run_resync_bulk(sales_orders):
+	"""Resync a batch, sharing one Drive client and one folder cache across it.
+
+	resync_invoice_pdf builds its own Drive service and passes an EMPTY folder cache, which
+	is right for one order and wasteful for fifty: every order rebuilt the client and
+	re-resolved the same month folder over the network. Shared here, so a batch costs one
+	client and one folder lookup per month rather than per order.
+	"""
 	from alpinos.alpinos_development.doctype.invoice_sync_log.invoice_sync_log import log_invoice_sync
+
+	s = _settings()
+	if not _drive_enabled(s):
+		frappe.throw(_("Invoice Drive sync is not enabled/configured in Invoice Sync Settings."))
+	drive = _drive_service(s)
+	folder_cache = {}
 
 	success, failed, results = 0, 0, []
 	for so in sales_orders:
 		try:
-			r = resync_invoice_pdf(so) or {}
+			r = _resync_one(so, s, drive, folder_cache) or {}
 			ok = bool(r.get("ok"))
 			success += 1 if ok else 0
 			failed += 0 if ok else 1
@@ -321,7 +370,9 @@ def resync_invoices_bulk(sales_orders):
 			inv = (frappe.db.get_value("Sales Order", so, "custom_invoice_no") or "")
 			log_invoice_sync(so, inv, "Failed", str(e)[:500], sync_type="Resync")
 			results.append({"sales_order": so, "ok": False, "message": str(e)[:200]})
-	frappe.db.commit()
+		# Each order is its own short transaction, so one failure cannot undo the batch and
+		# no row lock is held across the next order's Drive fetch.
+		frappe.db.commit()
 
 	msg = _("Invoice Resynced Successfully: {0}").format(success)
 	if failed:
@@ -334,17 +385,24 @@ def resync_invoice_pdf(sales_order):
 	"""Re-fetch a single Sales Order's invoice PDF from Drive, replacing any attached copy."""
 	if not (_INVOICE_RESYNC_ROLES & set(frappe.get_roles())):
 		frappe.throw(_("You are not permitted to resync invoice PDFs."), frappe.PermissionError)
+	s = _settings()
+	if not _drive_enabled(s):
+		frappe.throw(_("Invoice Drive sync is not enabled/configured in Invoice Sync Settings."))
+	return _resync_one(sales_order, s, _drive_service(s), {})
+
+
+def _resync_one(sales_order, s, drive, folder_cache):
+	"""One order, against a Drive client and folder cache the caller owns.
+
+	Split out so a batch can build those once instead of once per order. The permission
+	check stays with the whitelisted callers; this is internal.
+	"""
 	if not sales_order or not frappe.db.exists("Sales Order", sales_order):
 		frappe.throw(_("Sales Order not found."))
 
 	invoice_no = (frappe.db.get_value("Sales Order", sales_order, "custom_invoice_no") or "").strip()
 	if not invoice_no:
 		frappe.throw(_("This Sales Order has no Invoice No to resync."))
-
-	s = _settings()
-	if not _drive_enabled(s):
-		frappe.throw(_("Invoice Drive sync is not enabled/configured in Invoice Sync Settings."))
-	drive = _drive_service(s)
 
 	# Empty the current value first: delete the attached File(s) and clear the field, so the
 	# resync always pulls a fresh copy even if one is already present.
@@ -360,7 +418,7 @@ def resync_invoice_pdf(sales_order):
 
 	from alpinos.alpinos_development.doctype.invoice_sync_log.invoice_sync_log import log_invoice_sync
 
-	file_url, err = _fetch_invoice_pdf(drive, s, sales_order, invoice_no, {})
+	file_url, err = _fetch_invoice_pdf(drive, s, sales_order, invoice_no, folder_cache)
 	frappe.db.commit()
 	if err:
 		log_invoice_sync(sales_order, invoice_no, "Failed", err, sync_type="Resync")
