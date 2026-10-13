@@ -1,3 +1,5 @@
+from alpinos.query_compat import IS_V16
+
 app_name = "alpinos"
 app_title = "Alpinos Development"
 app_publisher = "Hetvi Patel"
@@ -10,24 +12,26 @@ app_license = "mit"
 
 # required_apps = []
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "alpinos",
-# 		"logo": "/assets/alpinos/logo.png",
-# 		"title": "Alpinos Development",
-# 		"route": "/alpinos",
-# 		"has_permission": "alpinos.api.permission.has_app_permission"
-# 	}
-# ]
+# Frappe 16's desk opens on an apps screen and reaches a workspace only through an app's dock,
+# so without an entry here the alpinos sales pages and HR home could be found only by search.
+# The dock (alpinos/dock/alpinos) lists the alpinos sidebars; each sidebar shows a user only the
+# pages they can open, and the tile lands on the first one they can reach.
+# Frappe 15's /apps page is left as it was.
+if IS_V16:
+	add_to_apps_screen = [
+		{
+			"name": "alpinos",
+			"logo": "/assets/alpinos/images/alpino_logo.jpg",
+			"title": "Alpino",
+			"sequence_id": 0.5,
+		}
+	]
 
 # Includes in <head>
 # ------------------
 
 # include js, css files in header of desk.html
 app_include_css = ["/assets/alpinos/css/alpinos_pages.css"]
-from alpinos.query_compat import IS_V16  # noqa: E402
-
 if IS_V16:
 	# Frappe 16's desk stylesheet no longer bundles Font Awesome 4 (Frappe 15's desk.bundle.scss
 	# imported it). alpinos pages draw buttons with `fa fa-*` icons - Pick List split / remove
