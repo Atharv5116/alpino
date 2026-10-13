@@ -34,6 +34,8 @@ def get_upcoming_birthdays_and_anniversaries(days=30):
 		"Employee",
 		filters={"status": "Active"},
 		fields=["name", "employee_name", "date_of_birth", "date_of_joining", "company"],
+		# ERPNext 16 changed Employee's default sort to creation; keep v15's order for ties
+		order_by="modified desc",
 	)
 
 	birthdays = []
@@ -211,7 +213,7 @@ def get_upcoming_employee_lifecycle(days=30):
 	if has_internship:
 		fields.append("custom_internship_duration")
 
-	employees = frappe.get_all("Employee", filters={"status": "Active"}, fields=fields)
+	employees = frappe.get_all("Employee", filters={"status": "Active"}, fields=fields, order_by="modified desc")
 
 	probation = []
 	internship = []
