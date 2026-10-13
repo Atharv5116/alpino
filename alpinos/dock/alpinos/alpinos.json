@@ -8,21 +8,21 @@
   {
    "added": 0,
    "hidden": 0,
-   "icon": "storefront-duotone",
-   "link_to": "Alpino Sales",
-   "link_type": "Sidebar",
-   "title": "Sales & Dispatch"
-  },
-  {
-   "added": 0,
-   "hidden": 0,
    "icon": "briefcase-duotone",
    "link_to": "Alpino HR",
    "link_type": "Sidebar",
    "title": "HR & Attendance"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "storefront-duotone",
+   "link_to": "Alpino Sales",
+   "link_type": "Sidebar",
+   "title": "Sales & Dispatch"
   }
  ],
- "modified": "2026-10-11 18:00:00.000000",
+ "modified": "2026-10-13 15:15:00.000000",
  "modified_by": "Administrator",
  "name": "alpinos",
  "owner": "Administrator",

@@ -32,12 +32,73 @@ def shell_for(page):
 	return None
 
 
+# The workspaces each Alpino sidebar stands for. Frappe 16 derives a sidebar's workspaces from its
+# module, so all four listed both Production and Goods Inward, and it opens a workspace in the
+# first sidebar listing it: the Production dock entry landed in Goods Inward, and the HR entry's
+# Home (module Setup) landed in the Setup sidebar (Company, Users...) instead of Alpino HR.
+_SHELL_WORKSPACES = {
+	SALES: (),
+	GOODS_INWARD: ("Goods Inward",),
+	PRODUCTION: ("Production",),
+	HR: ("Home",),
+}
+
+
+# Pages with no roles of their own, which Frappe 16 therefore lists for every user although
+# the page itself refuses anyone who cannot read its documents (an employee clicking the Alpino
+# tile landed on "You are not permitted to view Pick Lists"). Listed only for readers.
+_PAGE_NEEDS_READ = {
+	"pick_list_list": "Pick List",
+	"delivery_note_entry_list": "Delivery Note",
+	"sales-order-import": "Sales Order",
+	"stock-entry-import": "Stock Entry",
+	"stock-reconciliation-import": "Stock Reconciliation",
+}
+
+
+def _drop_unreadable_links(bootinfo, visible):
+	import frappe
+
+	for shell in list(visible):
+		if not shell.startswith("Alpino "):
+			continue
+		sidebar = visible[shell]
+		items = [
+			i for i in sidebar.get("items") or []
+			if not (i.get("link_type") == "Page" and i.get("link_to") in _PAGE_NEEDS_READ
+			        and not frappe.has_permission(_PAGE_NEEDS_READ[i["link_to"]], "read"))
+		]
+		sidebar["items"] = items
+		if any(i.get("type") == "Link" for i in items):
+			continue
+		# nothing left to open: drop the sidebar and its dock entry instead of showing it empty
+		del visible[shell]
+		for app in bootinfo.get("app_data") or []:
+			if app.get("dock"):
+				app["dock"] = [e for e in app["dock"] if e.get("link_to") != shell]
+		for app, entries in (bootinfo.get("dock") or {}).items():
+			bootinfo["dock"][app] = [e for e in entries if e.get("link_to") != shell]
+
+
 def extend_bootinfo(bootinfo):
 	import frappe
 
-	pages = (bootinfo.get("canonical_shell") or {}).get("Page")
 	visible = bootinfo.get("module_sidebars") or {}
-	if not pages or not visible:
+	if not visible:
+		return
+	_drop_unreadable_links(bootinfo, visible)
+
+	# every workspace this user can open already appears in some sidebar's list
+	reachable = set()
+	for sidebar in visible.values():
+		reachable.update(sidebar.get("workspaces") or ())
+	for shell, workspaces in _SHELL_WORKSPACES.items():
+		sidebar = visible.get(shell)
+		if sidebar is not None and "workspaces" in sidebar:
+			sidebar["workspaces"] = [w for w in workspaces if w in reachable]
+
+	pages = (bootinfo.get("canonical_shell") or {}).get("Page")
+	if not pages:
 		return
 	ours = set(frappe.get_all("Page", filters={"module": "Alpinos Development"}, pluck="name"))
 	for page in pages:
