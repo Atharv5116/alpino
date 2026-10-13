@@ -150,7 +150,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							'Each sticker is 100 &times; 75 mm. Pick the paper you are printing on — the box comes out the same size on both.'
 						)}</p>`,
 					}],
-					primary_action_label: __('Label Printer (100 &times; 75)'),
+					primary_action_label: __('Label Printer (100 × 75)'),
 					primary_action() { d.hide(); open_stickers('label'); },
 					secondary_action_label: __('A4 Sheet'),
 					secondary_action() { d.hide(); open_stickers('a4'); },
