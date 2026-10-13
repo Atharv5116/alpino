@@ -761,9 +761,19 @@ def download_sales_invoices_zip(names):
 	if not added:
 		frappe.throw(_("None of the selected Sales Orders have a fetched invoice PDF yet."))
 
-	# mark exported orders downloaded so they drop off the Pending Invoice Downloads report
+	# Mark the exported orders as downloaded so they drop off the "Pending Invoice
+	# Downloads" list. No skip/validation here — a bulk export always downloads
+	# everything selected that has a PDF, even if downloaded before.
+	# The pending list is per-user: the log row is what hides the order from THIS
+	# user, while the flag stays as "someone has downloaded this" for the order
+	# list's SI indicator.
+	from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
+		log as log_invoice_download,
+	)
+
 	for name in exported:
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
+		log_invoice_download(name)
 	frappe.db.commit()
 
 	frappe.local.response.filename = "sales-invoices-{0}.zip".format(added)
@@ -902,11 +912,16 @@ def _bundle_parts(name, wanted, format_name, no_letterhead):
 				# Keep whatever the invoice actually is; it is not always a PDF.
 				ext = (file_url.rsplit(".", 1)[-1] or "pdf").lower() if "." in file_url else "pdf"
 				produced.append((BUNDLE_LABELS[part], ext, content))
-				# Still stamped, but it no longer decides queue membership -- see the
-				# MAIN NOTE on Changes(HP) #30 and pending_invoice_downloads.
+				# Still stamped, but it no longer decides the Order Fulfilment Report's rows.
+				# The per-user record keeps the Pending Invoice Downloads report right.
 				frappe.db.set_value(
 					"Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False
 				)
+				from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
+					log as log_invoice_download,
+				)
+
+				log_invoice_download(name)
 		except Exception:
 			frappe.log_error(title="Bundle: {0} failed for {1}".format(part, name))
 			missing.append(BUNDLE_LABELS[part])
@@ -1023,8 +1038,9 @@ def sales_invoices_availability(names):
 
 @frappe.whitelist()
 def download_single_invoice(name):
-	"""Download one Sales Order's fetched invoice PDF (the per-row SI button), and mark
-	the order downloaded. Never blocks, so it can be reused."""
+	"""Download one Sales Order's fetched invoice PDF (the per-row SI button), and record
+	the download for this user so it drops off their Pending Invoice Downloads list.
+	Never blocks, so it can be reused."""
 	from frappe.utils.file_manager import get_file
 
 	if not name or not frappe.db.exists("Sales Order", name):
@@ -1041,9 +1057,14 @@ def download_single_invoice(name):
 	if isinstance(content, str):
 		content = content.encode("utf-8")
 	base = _invoice_file_base(name, row.get("custom_invoice_no"))
+	from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
+		log as log_invoice_download,
+	)
 	if not frappe.db.get_value("Sales Order", name, "custom_invoice_downloaded"):
 		frappe.db.set_value("Sales Order", name, "custom_invoice_downloaded", 1, update_modified=False)
-		frappe.db.commit()
+	# Per user, so a second person's download is recorded even after the flag is set.
+	log_invoice_download(name)
+	frappe.db.commit()
 	frappe.local.response.filename = base + ".pdf"
 	frappe.local.response.filecontent = content
 	frappe.local.response.type = "download"
