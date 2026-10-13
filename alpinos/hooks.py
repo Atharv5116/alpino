@@ -229,6 +229,7 @@ after_migrate = [
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
+	"alpinos.core_customizations.keep_v15_silent_notifications",
 ]
 
 # Uninstallation

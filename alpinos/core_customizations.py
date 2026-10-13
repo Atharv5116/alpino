@@ -111,3 +111,24 @@ def keep_v15_hidden_empty_fields():
 	frappe.db.set_single_value("System Settings", "hide_empty_read_only_fields", 1)
 	frappe.db.set_default("hide_empty_read_only_fields", "1")
 	print("System Settings: Hide Empty Read-Only Fields on, as Frappe 15 behaved")
+
+
+# Standard notifications that Frappe 15 shipped but never sent, and that Frappe 16 turned on.
+_V15_SILENT_NOTIFICATIONS = (
+	# ERPNext 15's recipient row used a key Notification no longer reads, so it had no recipient;
+	# ERPNext 16 sends it to the creator of every Material Request that gets (partly) received.
+	"Material Request Receipt Notification",
+)
+
+
+def keep_v15_silent_notifications():
+	"""v16 only: keep standard notifications quiet that sent nothing on v15. Runs on every
+	migrate, because ERPNext re-imports its standard notifications when their file changes."""
+	from alpinos.query_compat import IS_V16
+
+	if not IS_V16:
+		return
+	for name in _V15_SILENT_NOTIFICATIONS:
+		if frappe.db.get_value("Notification", name, "enabled"):
+			frappe.db.set_value("Notification", name, "enabled", 0, update_modified=False)
+			print(f"Notification {name!r} disabled: it sent nothing on v15")
