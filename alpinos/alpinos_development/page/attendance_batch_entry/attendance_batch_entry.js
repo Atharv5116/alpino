@@ -238,7 +238,10 @@ var AttendanceBatchEntryPage = class {
 					indicator: 'green',
 				});
 				this.load(this.batch_name);
-			});
+			})
+			// the server's refusal (e.g. employees without a Salary Category) is already shown
+			// as a dialog; without this the rejected promise was also logged as unhandled
+			.catch(() => {});
 	}
 
 	upload_excel() {
