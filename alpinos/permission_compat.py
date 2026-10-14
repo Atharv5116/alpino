@@ -61,4 +61,8 @@ def grant_account_select():
 			update_permission_property("Account", role, 0, "select", 1)
 		else:
 			add_permission("Account", role, 0, ptype="select")
+			# Custom DocPerm defaults read and export to 1, so the new row would also let the
+			# role open and export the chart of accounts; a link field needs select only.
+			for ptype in ("read", "export"):
+				update_permission_property("Account", role, 0, ptype, 0, validate=False)
 		print(f"Account: select granted to {role} (ERPNext v16 checks it when a party account is set)")
