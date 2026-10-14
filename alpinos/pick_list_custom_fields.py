@@ -97,7 +97,14 @@ def setup_pick_list_custom_fields():
 				fieldtype="Data",
 				insert_after="custom_party_code",
 				length=20,
-				description="Dispatch gate / bay code printed on every sticker for this Pick List (e.g. A1).",
+				# Changes(HP) #85.1: G-7 is the gate nearly every dispatch leaves from, so it
+				# is the default rather than something to type each time. A Pick List that
+				# leaves from another gate is still free to say so -- this fills the field,
+				# it does not fix it. create_custom_fields runs with update=True, so the
+				# default reaches the field on migrate; Pick Lists already saved keep
+				# whatever they carry, since a default only applies to a new document.
+				default="G-7",
+				description="Dispatch gate / bay code printed on every sticker for this Pick List (e.g. G-7).",
 			),
 			dict(
 				fieldname="custom_order_total_section",
