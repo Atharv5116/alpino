@@ -120,6 +120,11 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 				title=_("Date Too Old")
 			)
 	
+	# Looked up before the audit log below, which needs it to find the request; it was read
+	# there before being set, so every dialog check-in without a passed request lost its log.
+	attendance = get_attendance_for_date(employee, date)
+	attendance_name = attendance.get("name") if attendance else None
+
 	try:
 		request_ip = getattr(frappe.request, "remote_addr", "") if getattr(frappe, "request", None) else ""
 		request_path = getattr(frappe.request, "path", "") if getattr(frappe, "request", None) else ""
@@ -155,9 +160,6 @@ def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, 
 		}).insert(ignore_permissions=True)
 	except Exception:
 		pass
-		
-	attendance = get_attendance_for_date(employee, date)
-	attendance_name = attendance.get("name") if attendance else None
 
 	if checkin_name:
 		new_time = get_datetime(time)
