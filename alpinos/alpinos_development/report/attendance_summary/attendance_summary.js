@@ -71,10 +71,10 @@ frappe.query_reports["Attendance Summary"] = {
 				var isAbsent = /(^|\n)ABSENT\b/.test(raw);
 				var html = esc
 					.replace(/^(WFH|OD)(?=\n)/, '<span style="color:var(--red-500,#C00000);font-weight:bold">$1</span>')
-					.replace(/(Late Time :\s*)([^\n]+)/, function (m, p1, p2) {
+					.replace(/(Late Time :[ \t]*)([^\n]+)/, function (m, p1, p2) {
 						return p2.trim() ? p1 + '<span style="color:var(--red-500,#C00000);font-weight:bold">' + p2 + '</span>' : m;
 					})
-					.replace(/(Early Out :\s*)([^\n]+)/, function (m, p1, p2) {
+					.replace(/(Early Out :[ \t]*)([^\n]+)/, function (m, p1, p2) {
 						return p2.trim() ? p1 + '<span style="color:var(--red-500,#C00000);font-weight:bold">' + p2 + '</span>' : m;
 					})
 					.replace(/\n/g, "<br>");
