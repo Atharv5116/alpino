@@ -66,32 +66,36 @@ function alpDimPlaceholderCells(root) {
 // Role-based column layouts. Warehouse staff (without a sales role) get the
 // warehouse layout; everyone else — sales roles, System Manager — gets sales.
 // E-Com layout is specced but deferred — add here later.
-// `width` drives the <colgroup> so headers and data share one fixed column grid.
+// `width` (px) is the narrowest a column stays readable at. It drives the <colgroup> so
+// headers and data share one fixed column grid, and the columns' sum is the table's
+// min-width: a wider screen spreads the extra space over the columns, a narrower one scrolls
+// the table inside its card instead of squeezing words apart ("LINK S", "Administr ator").
+var SO_LIST_SELECT_COL_WIDTH = 36;
 var SO_LIST_LAYOUTS = {
 	sales: [
-		{ label: 'ID', sort: 'name', width: '12%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'Customer Name', sort: 'customer_name', width: '19%', render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Order Date', sort: 'transaction_date', width: '9%', render: (d, h) => h.date(d.transaction_date) },
-		{ label: 'PO No', sort: 'po_no', width: '12%', render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '14%', render: (d, h) => h.wf(d) },
-		{ label: 'Invoice No', sort: 'custom_invoice_no', width: '10%', render: (d, h) => h.esc(d.invoice_no || '—') },
-		{ label: 'Links', cls: 'text-center', width: '6%', render: (d, h) => h.links(d) },
-		{ label: 'Created By', sort: 'owner', width: '11%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '11%', render: (d, h) => h.money(d) },
+		{ label: 'ID', sort: 'name', width: 130, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'Customer Name', sort: 'customer_name', width: 170, render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Order Date', sort: 'transaction_date', width: 96, render: (d, h) => h.date(d.transaction_date) },
+		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 140, render: (d, h) => h.wf(d) },
+		{ label: 'Invoice No', sort: 'custom_invoice_no', width: 105, render: (d, h) => h.esc(d.invoice_no || '—') },
+		{ label: 'Links', cls: 'text-center', width: 64, render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: 112, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 120, render: (d, h) => h.money(d) },
 	],
 	warehouse: [
-		{ label: 'Customer Type', sort: 'order_type', width: '9%', render: (d, h) => h.esc(d.order_type || '—') },
-		{ label: 'ID', sort: 'name', width: '11%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'PO No', sort: 'po_no', width: '10%', render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Customer Name', sort: 'customer_name', width: '15%', render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: '9%', render: (d, h) => h.date(d.custom_dispatch_date) },
-		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: '9%', render: (d, h) => h.date(d.custom_po_expiry_date) },
-		{ label: 'Delivery Date', sort: 'delivery_date', width: '9%', render: (d, h) => h.date(d.delivery_date) },
-		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: '12%', render: (d, h) => h.wf(d) },
-		{ label: 'Invoice No', sort: 'custom_invoice_no', width: '9%', render: (d, h) => h.esc(d.invoice_no || '—') },
-		{ label: 'Links', cls: 'text-center', width: '5%', render: (d, h) => h.links(d) },
-		{ label: 'Created By', sort: 'owner', width: '9%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '11%', render: (d, h) => h.money(d) },
+		{ label: 'Customer Type', sort: 'order_type', width: 100, render: (d, h) => h.esc(d.order_type || '—') },
+		{ label: 'ID', sort: 'name', width: 130, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'PO No', sort: 'po_no', width: 105, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: 96, render: (d, h) => h.date(d.custom_dispatch_date) },
+		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: 96, render: (d, h) => h.date(d.custom_po_expiry_date) },
+		{ label: 'Delivery Date', sort: 'delivery_date', width: 96, render: (d, h) => h.date(d.delivery_date) },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 130, render: (d, h) => h.wf(d) },
+		{ label: 'Invoice No', sort: 'custom_invoice_no', width: 100, render: (d, h) => h.esc(d.invoice_no || '—') },
+		{ label: 'Links', cls: 'text-center', width: 64, render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: 112, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 120, render: (d, h) => h.money(d) },
 	],
 };
 
@@ -723,8 +727,11 @@ var SalesOrderEntryListPage = class {
 		const table = this.wrapper.find('.so-list-table');
 		let cg = table.children('colgroup');
 		if (!cg.length) { cg = $('<colgroup></colgroup>'); table.prepend(cg); }
-		cg.empty().append('<col style="width:3%">');
-		this._columns.forEach((c) => cg.append(`<col${c.width ? ` style="width:${c.width}"` : ''}>`));
+		cg.empty().append(`<col style="width:${SO_LIST_SELECT_COL_WIDTH}px">`);
+		this._columns.forEach((c) => cg.append(`<col style="width:${c.width}px">`));
+		// Inline, as alpinos_pages.css's .alp-scroll--wide min-width outranks the page's own rule.
+		const min_width = this._columns.reduce((sum, c) => sum + c.width, SO_LIST_SELECT_COL_WIDTH);
+		table.css('min-width', `${min_width}px`);
 
 		const tr = this.wrapper.find('.so-list-table thead tr').empty();
 		tr.append(
@@ -736,10 +743,12 @@ var SalesOrderEntryListPage = class {
 				return;
 			}
 			const active = this._sort.field === c.sort;
-			const arrow = active ? (this._sort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
+			// The label may wrap between its words (never clipped); the no-break space keeps
+			// the arrow on the label's last line.
+			const arrow = active ? (this._sort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
 			tr.append(
 				`<th class="${c.cls || ''} so-sort-th" data-sort="${c.sort}" ` +
-				`style="cursor:pointer; user-select:none; white-space:nowrap;" title="${__('Click to sort')}">` +
+				`style="cursor:pointer; user-select:none;" title="${__('Click to sort')}">` +
 				`${__(c.label)}<span class="text-muted" style="font-size:10px; opacity:${active ? 1 : 0.4};">${arrow}</span></th>`
 			);
 		});
