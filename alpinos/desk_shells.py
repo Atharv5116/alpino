@@ -56,6 +56,15 @@ _PAGE_NEEDS_READ = {
 }
 
 
+# Frappe doctypes the Alpino pages send users into. Frappe 16 keeps a sidebar on screen only for
+# its own app's entities, so the Data Import that Sales Order / Stock Entry / Stock Reconciliation
+# Import open switched to Frappe's "Data" sidebar (Data Export, File, Naming, Logs...), which led
+# users into the wrong tools. Claimed by an Alpino sidebar, the form stays in the Alpino sidebar
+# the user came from; opened from Frappe's own Data sidebar it still stays there.
+_ADOPTED_DOCTYPES = ("Data Import",)
+_ADOPTING_SHELLS = (SALES, PRODUCTION, GOODS_INWARD, HR)
+
+
 def _drop_unreadable_links(bootinfo, visible):
 	import frappe
 
@@ -97,7 +106,14 @@ def extend_bootinfo(bootinfo):
 		if sidebar is not None and "workspaces" in sidebar:
 			sidebar["workspaces"] = [w for w in workspaces if w in reachable]
 
-	pages = (bootinfo.get("canonical_shell") or {}).get("Page")
+	canonical = bootinfo.get("canonical_shell") or {}
+	doctypes = canonical.get("DocType")
+	adopting = next((shell for shell in _ADOPTING_SHELLS if shell in visible), None)
+	if doctypes is not None and adopting:
+		for doctype in _ADOPTED_DOCTYPES:
+			doctypes[doctype] = adopting
+
+	pages = canonical.get("Page")
 	if not pages:
 		return
 	ours = set(frappe.get_all("Page", filters={"module": "Alpinos Development"}, pluck="name"))
