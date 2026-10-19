@@ -70,32 +70,33 @@ function alpDimPlaceholderCells(root) {
 // headers and data share one fixed column grid, and the columns' sum is the table's
 // min-width: a wider screen spreads the extra space over the columns, a narrower one scrolls
 // the table inside its card instead of squeezing words apart ("LINK S", "Administr ator").
+// `nowrap` keeps a cell (never its header) on one line: IDs and dates read badly split at a hyphen.
 var SO_LIST_SELECT_COL_WIDTH = 36;
 var SO_LIST_LAYOUTS = {
 	sales: [
-		{ label: 'ID', sort: 'name', width: 130, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'Customer Name', sort: 'customer_name', width: 170, render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Order Date', sort: 'transaction_date', width: 96, render: (d, h) => h.date(d.transaction_date) },
-		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
-		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 140, render: (d, h) => h.wf(d) },
-		{ label: 'Invoice No', sort: 'custom_invoice_no', width: 105, render: (d, h) => h.esc(d.invoice_no || '—') },
-		{ label: 'Links', cls: 'text-center', width: 64, render: (d, h) => h.links(d) },
-		{ label: 'Created By', sort: 'owner', width: 112, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 120, render: (d, h) => h.money(d) },
-	],
-	warehouse: [
-		{ label: 'Customer Type', sort: 'order_type', width: 100, render: (d, h) => h.esc(d.order_type || '—') },
-		{ label: 'ID', sort: 'name', width: 130, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'PO No', sort: 'po_no', width: 105, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
 		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
-		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: 96, render: (d, h) => h.date(d.custom_dispatch_date) },
-		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: 96, render: (d, h) => h.date(d.custom_po_expiry_date) },
-		{ label: 'Delivery Date', sort: 'delivery_date', width: 96, render: (d, h) => h.date(d.delivery_date) },
-		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 130, render: (d, h) => h.wf(d) },
+		{ label: 'Order Date', sort: 'transaction_date', width: 111, nowrap: true, render: (d, h) => h.date(d.transaction_date) },
+		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 120, render: (d, h) => h.wf(d) },
 		{ label: 'Invoice No', sort: 'custom_invoice_no', width: 100, render: (d, h) => h.esc(d.invoice_no || '—') },
 		{ label: 'Links', cls: 'text-center', width: 64, render: (d, h) => h.links(d) },
 		{ label: 'Created By', sort: 'owner', width: 112, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 120, render: (d, h) => h.money(d) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 125, render: (d, h) => h.money(d) },
+	],
+	warehouse: [
+		{ label: 'Customer Type', sort: 'order_type', width: 92, render: (d, h) => h.esc(d.order_type || '—') },
+		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: 111, nowrap: true, render: (d, h) => h.date(d.custom_dispatch_date) },
+		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: 111, nowrap: true, render: (d, h) => h.date(d.custom_po_expiry_date) },
+		{ label: 'Delivery Date', sort: 'delivery_date', width: 111, nowrap: true, render: (d, h) => h.date(d.delivery_date) },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 120, render: (d, h) => h.wf(d) },
+		{ label: 'Invoice No', sort: 'custom_invoice_no', width: 95, render: (d, h) => h.esc(d.invoice_no || '—') },
+		{ label: 'Links', cls: 'text-center', width: 64, render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: 106, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 125, render: (d, h) => h.money(d) },
 	],
 };
 
@@ -800,7 +801,7 @@ var SalesOrderEntryListPage = class {
 		};
 		rows.forEach((d) => {
 			const cells = this._columns
-				.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`)
+				.map((c) => `<td class="${c.cls || ''}"${c.nowrap ? ' style="white-space:nowrap"' : ''}>${c.render(d, helpers)}</td>`)
 				.join('');
 			tb.append(`<tr class="so-list-row" data-name="${esc(d.name)}" style="cursor:pointer;">
 				<td style="text-align: center;"><input type="checkbox" class="so-list-row-select" data-name="${esc(d.name)}"></td>
