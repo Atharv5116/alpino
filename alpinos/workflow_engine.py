@@ -722,9 +722,16 @@ def _recompute_so_status(so):
 
 	cur = frappe.db.get_value("Sales Order", so, "custom_workflow_status")
 
-	# Force-closed orders are locked to their forced terminal state.
+	# Rejected is terminal and nothing here can derive it, so this recompute (every migrate)
+	# used to send a rejected order back into the dispatch queue as Today's Dispatch.
+	if cur == SO_REJECTED:
+		return SO_REJECTED
+
+	# Force-closed orders are locked to their forced state. Forced Delivery Note Created is one
+	# of them (a Delivery Note raised after the force-close); left out, it became Forced Completed.
 	if frappe.db.get_value("Sales Order", so, "custom_force_closed"):
-		return cur if cur in (SO_FORCED_DISPATCHED, SO_FORCED_COMPLETED) else SO_FORCED_COMPLETED
+		forced = (SO_FORCED_DN_CREATED, SO_FORCED_DISPATCHED, SO_FORCED_COMPLETED)
+		return cur if cur in forced else SO_FORCED_COMPLETED
 
 	from alpinos import partial_dispatch as pd
 	partial = pd.is_partial_order(so)
