@@ -1,16 +1,20 @@
 {
  "content": null,
- "creation": "2026-05-11 12:00:00.000000",
+ "creation": "2026-05-11 12:00:00",
+ "docstatus": 0,
  "doctype": "Page",
  "icon": "fa fa-list",
- "idx": 0,
- "modified": "2026-07-30 18:00:00.000000",
+ "idx": 2,
+ "modified": "2026-09-29 15:53:01.735034",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "sales-order-entry-list",
  "owner": "Administrator",
  "page_name": "sales-order-entry-list",
  "roles": [
+  {
+   "role": "Warehouse Admin"
+  },
   {
    "role": "Sales User"
   },
@@ -25,9 +29,14 @@
   },
   {
    "role": "Accounts User"
+  },
+  {
+   "role": "Sales Admin"
   }
  ],
+ "script": null,
  "standard": "Yes",
+ "style": null,
  "system_page": 0,
  "title": "Alpino Sales Orders"
 }

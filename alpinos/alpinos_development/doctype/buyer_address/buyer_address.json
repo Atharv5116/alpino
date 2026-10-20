@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-05-01 00:00:00.000000",
+ "creation": "2026-05-01 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -19,12 +19,12 @@
  ],
  "fields": [
   {
+   "description": "Site / trade name for this location. Shown on the Sales Order print for the chosen shipping address.",
    "fieldname": "site_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "reqd": 1,
    "label": "Site Name",
-   "description": "Site / trade name for this location. Shown on the Sales Order print for the chosen shipping address."
+   "reqd": 1
   },
   {
    "fieldname": "address_line",
@@ -37,21 +37,24 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "State",
-   "options": "State"
+   "options": "State",
+   "reqd": 1
   },
   {
    "fieldname": "city",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "City",
-   "options": "City"
+   "options": "City",
+   "reqd": 1
   },
   {
    "fieldname": "pincode",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Pincode",
-   "options": "Phone"
+   "options": "Phone",
+   "reqd": 1
   },
   {
    "default": "0",
@@ -74,10 +77,10 @@
    "options": "Country"
   },
   {
+   "description": "Optional e.g. Head Office, Warehouse",
    "fieldname": "address_label",
    "fieldtype": "Data",
-   "label": "Label",
-   "description": "Optional e.g. Head Office, Warehouse"
+   "label": "Label"
   },
   {
    "fieldname": "area",
@@ -90,15 +93,15 @@
    "label": "Sub Area"
   }
  ],
- "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-08-22 12:00:00.000000",
- "modified_by": "Administrator",
+ "modified": "2026-09-16 10:44:08.004847",
+ "modified_by": "bateam@alpinohealthfoods.com",
  "module": "Alpinos Development",
  "name": "Buyer Address",
  "owner": "Administrator",
  "permissions": [],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
