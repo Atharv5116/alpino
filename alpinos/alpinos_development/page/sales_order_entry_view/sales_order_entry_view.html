@@ -42,6 +42,17 @@
 	padding: 10px 8px;
 	vertical-align: middle;
 }
+/* Frappe 16 leaves this table about 270px narrower than Frappe 15 did, and auto layout broke
+   the SKU at every hyphen (HO- / DC- / 1000) and the item name over five lines. SKU columns stay
+   on one line and the item name keeps room to read; the wrapper scrolls instead. */
+.so-view-shell .so-view-items-table tbody td:nth-child(3),
+.so-view-shell .v-freebies tbody td:first-child,
+.so-view-shell .v-scheme tbody td:first-child {
+	white-space: nowrap;
+}
+.so-view-shell .so-view-items-table tbody td:nth-child(4) {
+	min-width: 180px;
+}
 /* Keep currency/number columns (₹ 519.00, amounts) on one line so the ₹ symbol
    never wraps under the number. The table scrolls horizontally if needed. */
 .so-view-shell .so-view-items-table thead th.text-right,

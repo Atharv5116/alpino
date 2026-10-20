@@ -21,9 +21,13 @@ var PDQ_STATUS_COLORS = {
 var PDQ_ASN_COLORS = { Pending: 'gray', Uploaded: 'blue', Accepted: 'green', Rejected: 'red' };
 var PDQ_GRN_COLORS = { Pending: 'gray', Partial: 'orange', Completed: 'green', Rejected: 'red' };
 
+// Frappe 16 leaves this table ~270px narrower than Frappe 15 did, and auto layout squeezed it:
+// Delivery Note and Sales Order IDs over four lines, dates over three, the Start Post Dispatch
+// button clipped at the edge. `nowrap` keeps those cells (never their headers) on one line; the
+// table then takes the width it needs and scrolls inside its card.
 var PDQ_COLUMNS = [
-	{ label: 'Delivery Note', render: (d, h) => `<strong>${h.esc(d.delivery_note)}</strong>` },
-	{ label: 'Sales Order', render: (d, h) => h.esc(d.sales_order) },
+	{ label: 'Delivery Note', nowrap: true, render: (d, h) => `<strong>${h.esc(d.delivery_note)}</strong>` },
+	{ label: 'Sales Order', nowrap: true, render: (d, h) => h.esc(d.sales_order) },
 	// Changes(HP) #51: a partially dispatched order can carry one invoice per dispatch. The
 	// cell says so before the click, and the click opens the list rather than one PDF.
 	{ label: 'Invoice', render: (d, h) => {
@@ -36,14 +40,14 @@ var PDQ_COLUMNS = [
 	} },
 	{ label: 'Customer', render: (d, h) => h.esc(d.customer_name || d.customer) },
 	{ label: 'Channel', render: (d, h) => h.esc(d.channel || '—') },
-	{ label: 'Dispatch Date', render: (d, h) => h.date(d.dispatch_date) },
+	{ label: 'Dispatch Date', nowrap: true, render: (d, h) => h.date(d.dispatch_date) },
 	{ label: 'Transporter', render: (d, h) => h.esc(d.transporter || '—') },
 	// Changes(HP) #61: the number a transporter query starts from.
-	{ label: 'LR No.', render: (d, h) => h.esc(d.lr_awb_no || '—') },
+	{ label: 'LR No.', nowrap: true, render: (d, h) => h.esc(d.lr_awb_no || '—') },
 	{ label: 'ASN', render: (d, h) => h.pill(d.asn_status, PDQ_ASN_COLORS) },
 	{ label: 'GRN', render: (d, h) => (cint(d.grn_available) ? h.pill(d.grn_status, PDQ_GRN_COLORS) : '—') },
 	{ label: 'Status', render: (d, h) => h.pill(d.post_delivery_status, PDQ_STATUS_COLORS) },
-	{ label: 'Action', cls: 'text-center', render: (d, h) => h.action(d) },
+	{ label: 'Action', cls: 'text-center', nowrap: true, render: (d, h) => h.action(d) },
 ];
 
 var PostDeliveryQueue = class {
@@ -276,7 +280,7 @@ var PostDeliveryQueue = class {
 			},
 		};
 		rows.forEach((d) => {
-			const cells = this._columns.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`).join('');
+			const cells = this._columns.map((c) => `<td class="${c.cls || ''}"${c.nowrap ? ' style="white-space:nowrap"' : ''}>${c.render(d, helpers)}</td>`).join('');
 			tb.append(`<tr>${cells}</tr>`);
 		});
 	}

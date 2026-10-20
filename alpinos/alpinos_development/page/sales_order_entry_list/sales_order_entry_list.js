@@ -75,9 +75,9 @@ var SO_LIST_SELECT_COL_WIDTH = 36;
 var SO_LIST_LAYOUTS = {
 	sales: [
 		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Customer Name', sort: 'customer_name', width: 140, render: (d, h) => h.esc(d.customer_name) },
 		{ label: 'Order Date', sort: 'transaction_date', width: 111, nowrap: true, render: (d, h) => h.date(d.transaction_date) },
-		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'PO No', sort: 'po_no', width: 120, render: (d, h) => h.esc(d.po_no || '—') },
 		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 140, render: (d, h) => h.wf(d) },
 		{ label: 'Invoice No', sort: 'custom_invoice_no', width: 95, render: (d, h) => h.esc(d.invoice_no || '—') },
 		{ label: 'Links', cls: 'text-center', width: 64, render: (d, h) => h.links(d) },
@@ -87,7 +87,7 @@ var SO_LIST_LAYOUTS = {
 	warehouse: [
 		{ label: 'Customer Type', sort: 'order_type', width: 92, render: (d, h) => h.esc(d.order_type || '—') },
 		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'PO No', sort: 'po_no', width: 120, render: (d, h) => h.esc(d.po_no || '—') },
 		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
 		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: 111, nowrap: true, render: (d, h) => h.date(d.custom_dispatch_date) },
 		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: 111, nowrap: true, render: (d, h) => h.date(d.custom_po_expiry_date) },

@@ -51,22 +51,27 @@ var ESO_WF_COLORS = {
 // between columns -- without these the Workflow Status pill is nowrap in a 129px column and
 // prints straight over the Invoice No beside it. Workflow Status is the widest on purpose:
 // its longest label ("Partial Delivery Note Created") needs ~207px of pill.
-// The checkbox column takes the remaining 3%.
+// Frappe 16: `width` is now the narrowest (px) a column stays readable at, measured with production
+// data, and the table's min-width is their sum: beside the Frappe 16 sidebar the page is ~270px
+// narrower than on Frappe 15, and percentage columns squeezed IDs and dates onto two lines. A wider
+// screen spreads the extra space; a narrower one scrolls the table in its card. `nowrap` keeps a
+// cell (never its header) on one line.
+var ESO_SELECT_COL_WIDTH = 36;
 var ESO_COLUMNS = [
-	{ label: 'ID', sort: 'name', width: '7%', render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
-	{ label: 'PO No', sort: 'custom_po_number', width: '7%', render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
-	{ label: 'Customer Name', sort: 'customer_name', width: '9%', render: (d, h) => h.esc(d.customer_name) },
-	{ label: 'Site Name', sort: 'custom_site_name', width: '6.5%', render: (d, h) => h.esc(d.custom_site_name || '—') },
-	{ label: 'PO Date', sort: 'custom_po_date', width: '5.5%', render: (d, h) => h.date(d.custom_po_date || d.po_date) },
-	{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: '5.5%', render: (d, h) => h.date(d.custom_po_expiry_date) },
-	{ label: 'Delivery By', sort: 'custom_delivery_by_date', width: '5.5%', render: (d, h) => h.date(d.custom_delivery_by_date || d.delivery_date) },
-	{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: '5.5%', render: (d, h) => h.date(d.custom_dispatch_date) },
-	{ label: 'Links', cls: 'text-center', width: '8%', render: (d, h) => h.links(d) },
-	{ label: 'ASN Detail', width: '5.5%', render: (d, h) => h.asn(d) },
-	{ label: 'Workflow Status', sort: 'custom_workflow_status', cls: 'eso-col-wf', width: '13%', render: (d, h) => h.wf(d) },
-	{ label: 'Invoice No', sort: 'custom_invoice_no', width: '5.5%', render: (d, h) => h.esc(d.invoice_no || '—') },
-	{ label: 'Created By', sort: 'owner', width: '6.5%', render: (d, h) => h.esc(d.owner_full_name || d.owner) },
-	{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: '7%', render: (d, h) => h.money(d) },
+	{ label: 'ID', sort: 'name', width: 145, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+	{ label: 'PO No', sort: 'custom_po_number', width: 170, render: (d, h) => h.esc(d.custom_po_number || d.po_no || '—') },
+	{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
+	{ label: 'Site Name', sort: 'custom_site_name', width: 150, render: (d, h) => h.esc(d.custom_site_name || '—') },
+	{ label: 'PO Date', sort: 'custom_po_date', width: 108, nowrap: true, render: (d, h) => h.date(d.custom_po_date || d.po_date) },
+	{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: 108, nowrap: true, render: (d, h) => h.date(d.custom_po_expiry_date) },
+	{ label: 'Delivery By', sort: 'custom_delivery_by_date', width: 108, nowrap: true, render: (d, h) => h.date(d.custom_delivery_by_date || d.delivery_date) },
+	{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: 108, nowrap: true, render: (d, h) => h.date(d.custom_dispatch_date) },
+	{ label: 'Links', cls: 'text-center', width: 120, render: (d, h) => h.links(d) },
+	{ label: 'ASN Detail', width: 70, render: (d, h) => h.asn(d) },
+	{ label: 'Workflow Status', sort: 'custom_workflow_status', cls: 'eso-col-wf', width: 150, render: (d, h) => h.wf(d) },
+	{ label: 'Invoice No', sort: 'custom_invoice_no', width: 95, render: (d, h) => h.esc(d.invoice_no || '—') },
+	{ label: 'Created By', sort: 'owner', width: 106, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+	{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 120, render: (d, h) => h.money(d) },
 ];
 
 var EcomSalesOrderListPage = class {
@@ -406,8 +411,10 @@ var EcomSalesOrderListPage = class {
 		const table = this.wrapper.find('.eso-list-table');
 		let cg = table.children('colgroup');
 		if (!cg.length) { cg = $('<colgroup></colgroup>'); table.prepend(cg); }
-		cg.empty().append('<col style="width:3%">');
-		this._columns.forEach((c) => cg.append(`<col${c.width ? ` style="width:${c.width}"` : ''}>`));
+		cg.empty().append(`<col style="width:${ESO_SELECT_COL_WIDTH}px">`);
+		this._columns.forEach((c) => cg.append(`<col style="width:${c.width}px">`));
+		// Inline, as alpinos_pages.css's .alp-scroll--wide min-width outranks the page's own rule.
+		table.css('min-width', `${this._columns.reduce((sum, c) => sum + c.width, ESO_SELECT_COL_WIDTH)}px`);
 
 		const tr = this.wrapper.find('.eso-list-table thead tr').empty();
 		tr.append('<th style="text-align:center;"><input type="checkbox" class="eso-list-select-all"></th>');
@@ -417,10 +424,12 @@ var EcomSalesOrderListPage = class {
 				return;
 			}
 			const active = this._sort.field === c.sort;
-			const arrow = active ? (this._sort.dir === 'asc' ? ' ▲' : ' ▼') : ' ⇅';
+			// The label may wrap between its words (never clipped); the no-break space keeps the
+			// arrow on the label's last line.
+			const arrow = active ? (this._sort.dir === 'asc' ? '\u00a0▲' : '\u00a0▼') : '\u00a0⇅';
 			tr.append(
 				`<th class="${c.cls || ''} eso-sort-th" data-sort="${c.sort}" ` +
-				`style="cursor:pointer; user-select:none; white-space:nowrap;" title="${__('Click to sort')}">` +
+				`style="cursor:pointer; user-select:none;" title="${__('Click to sort')}">` +
 				`${__(c.label)}<span class="text-muted" style="font-size:10px; opacity:${active ? 1 : 0.4};">${arrow}</span></th>`
 			);
 		});
@@ -476,7 +485,7 @@ var EcomSalesOrderListPage = class {
 			},
 		};
 		rows.forEach((d) => {
-			const cells = this._columns.map((c) => `<td class="${c.cls || ''}">${c.render(d, helpers)}</td>`).join('');
+			const cells = this._columns.map((c) => `<td class="${c.cls || ''}"${c.nowrap ? ' style="white-space:nowrap"' : ''}>${c.render(d, helpers)}</td>`).join('');
 			tb.append(`<tr class="eso-list-row" data-name="${esc(d.name)}" style="cursor:pointer;"><td style="text-align:center;"><input type="checkbox" class="eso-list-row-select" data-name="${esc(d.name)}"></td>${cells}</tr>`);
 		});
 		this.wrapper.find('.eso-list-select-all').prop('checked', false);
