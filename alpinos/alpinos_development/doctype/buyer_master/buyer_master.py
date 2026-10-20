@@ -53,8 +53,10 @@ def _selling_defaults():
 	ss = frappe.get_single("Selling Settings")
 	cg = ss.customer_group
 	territory = ss.territory
-	if not cg:
-		cg = frappe.db.get_value("Customer Group", {}, "name", order_by="lft asc")
+	# ERPNext refuses a group Customer Group on a Customer ("Cannot select a Group type Customer
+	# Group", Frappe 16 and later 15s), and the first group by lft is the root, All Customer Groups.
+	if not cg or frappe.db.get_value("Customer Group", cg, "is_group"):
+		cg = frappe.db.get_value("Customer Group", {"is_group": 0}, "name", order_by="lft asc")
 	if not territory:
 		territory = frappe.db.get_value("Territory", {}, "name", order_by="lft asc")
 	return cg, territory
@@ -140,6 +142,10 @@ def _ensure_customer_for_obm(doc):
 		cust = frappe.get_doc("Customer", doc.customer)
 		if cust.customer_name != biz_name:
 			cust.customer_name = biz_name
+		# A customer filed under a group (the root, which ERPNext 15.95 still allowed) can no
+		# longer be saved at all, so this buyer could not be saved either: move it as it syncs.
+		if not cust.customer_group or frappe.db.get_value("Customer Group", cust.customer_group, "is_group"):
+			cust.customer_group = cg
 		if mapped_order_type:
 			cust.custom_order_type = mapped_order_type
 		if doc.gst_type == "Registered Business" and doc.gst_no:
