@@ -183,6 +183,21 @@
    "indent": 0,
    "is_default_module": 0,
    "keep_closed": 0,
+   "label": "Buyer Master",
+   "link_to": "Buyer Master",
+   "link_type": "DocType",
+   "open_in_new_tab": 0,
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "added": 0,
+   "child": 1,
+   "collapsible": 1,
+   "hidden": 0,
+   "indent": 0,
+   "is_default_module": 0,
+   "keep_closed": 0,
    "label": "Buyer Catalog",
    "link_to": "offline-buyer-catalog",
    "link_type": "Page",
@@ -206,7 +221,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-11 18:00:00.000000",
+ "modified": "2026-10-19 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Alpino Sales",
