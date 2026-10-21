@@ -143,3 +143,24 @@ def carry_interview_rounds_over():
 			set i.interview_type = i.interview_round
 			where ifnull(i.interview_type, '') = '' and ifnull(i.interview_round, '') != ''"""
 		)
+
+
+@frappe.whitelist()
+def get_assignable_masters(company: str) -> dict[str, bool]:
+	"""HRMS 16's Employee form asks which assignment buttons to offer (Leave Policy, Salary
+	Structure, Shift Schedule) through a permission-checked get_list, so anyone allowed to open
+	an Employee but not to read one of those masters got "Insufficient Permission for Leave
+	Policy" instead of the form. Offer only the assignments the user can read; grant nothing."""
+	masters = {
+		"Leave Policy": {"docstatus": 1},
+		"Salary Structure": {"docstatus": 1, "is_active": "Yes", "company": company},
+		"Shift Schedule": {"docstatus": 1},
+	}
+	return {
+		doctype: bool(
+			frappe.db.exists("DocType", doctype)
+			and frappe.has_permission(doctype, "read")
+			and frappe.get_list(doctype, filters=filters, limit=1, pluck="name")
+		)
+		for doctype, filters in masters.items()
+	}
