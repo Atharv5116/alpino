@@ -810,6 +810,7 @@ doc_events = {
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
+			"alpinos.sales_order_api.validate_so_row_quantities",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
 			"alpinos.sales_order_api.validate_so_freebies_and_box_multiples",
 			"alpinos.ecom_sales_order_api.validate_ecom_sales_order",

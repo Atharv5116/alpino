@@ -575,6 +575,33 @@ def _buyer_excludes_box_conversion(customer, site_name):
 	return False
 
 
+# The Sales Order tables whose rows carry a quantity (Changes(HP) #93)
+SO_QTY_TABLES = (
+	("items", "Sales Order Items"),
+	("custom_marketing_freebies", "Marketing Freebies"),
+	("custom_scheme_item_table", "Scheme Items"),
+	("custom_additional_units_damage_items", "Additional Units Items"),
+)
+
+
+def validate_so_row_quantities(doc, method=None):
+	"""Every Sales Order row with an item needs a quantity above 0, on save and on submit.
+	ERPNext refuses only a zero in Items; a zero or negative freebie, scheme or additional
+	unit row used to save as it was."""
+	if doc.docstatus == 2:
+		return
+	bad = []
+	for fieldname, label in SO_QTY_TABLES:
+		for row in doc.get(fieldname) or []:
+			if row.get("item_code") and flt(row.get("qty")) <= 0:
+				bad.append(_("{0} row #{1}: {2}").format(_(label), row.idx, frappe.bold(row.item_code)))
+	if bad:
+		frappe.throw(
+			_("Quantity must be greater than 0:") + "<br>" + "<br>".join(bad),
+			title=_("Item Quantity Must Be Greater Than 0"),
+		)
+
+
 def validate_so_freebies_and_box_multiples(doc, method=None):
 	"""Two Sales Order save rules (drafts only): marketing freebies must be items also in
 	the Items table; ordered qty (+ freebies) must fill whole boxes per item (Box UOM items only)."""
