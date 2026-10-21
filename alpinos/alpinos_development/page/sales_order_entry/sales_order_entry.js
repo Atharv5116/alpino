@@ -1897,11 +1897,32 @@ var SalesOrderEntry = class {
 		if (!customer) return frappe.throw('Please select a Customer');
 		if (!order_type) return frappe.throw('Please select Customer Type');
 
-		let valid_items = this.items.filter(i => i.item_code && flt(i.qty) > 0);
-		if (!valid_items.length) return frappe.throw('Please add at least one item');
-
 		// captures latest values even if the user clicks create immediately after an awesomplete select
 		this._sync_other_detail_rows_from_ui();
+
+		// every row with an item needs a quantity above 0; an item row at 0 used to be dropped
+		// without a word, and a freebie / scheme / additional unit row saved at 0 (Changes(HP) #93)
+		const zero_qty = [];
+		const check_qty = (rows, label) => rows.forEach((r, i) => {
+			if (r.item_code && !(flt(r.qty) > 0)) {
+				zero_qty.push(__('{0} row #{1}: {2}', [label, i + 1, frappe.utils.escape_html(r.item_code).bold()]));
+			}
+		});
+		check_qty(this.items, __('Sales Order Items'));
+		check_qty(this.freebies, __('Marketing Freebies'));
+		check_qty(this.scheme_items, __('Scheme Items'));
+		if (me.additional_units_damage_field.get_value()) {
+			check_qty(this.additional_units_items, __('Additional Units Items'));
+		}
+		if (zero_qty.length) {
+			return frappe.throw({
+				title: __('Item Quantity Must Be Greater Than 0'),
+				message: __('Quantity must be greater than 0:') + '<br>' + zero_qty.join('<br>'),
+			});
+		}
+
+		let valid_items = this.items.filter(i => i.item_code && flt(i.qty) > 0);
+		if (!valid_items.length) return frappe.throw('Please add at least one item');
 
 		let items = valid_items.map(item => ({
 			item_code: item.item_code,
