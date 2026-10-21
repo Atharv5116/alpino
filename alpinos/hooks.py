@@ -300,6 +300,8 @@ override_whitelisted_methods = {
 	"erpnext.accounts.party.set_taxes": "alpinos.item_details.set_taxes",
 	"erpnext.stock.get_item_details.get_item_details": "alpinos.item_details.get_item_details",
 	"erpnext.stock.get_item_details.get_item_tax_template": "alpinos.item_details.get_item_tax_template",
+	# HRMS 16 Employee form: offer only the assignments the user may read (see hrms_compat).
+	"hrms.overrides.employee_master.get_assignable_masters": "alpinos.hrms_compat.get_assignable_masters",
 }
 
 override_doctype_class = {
@@ -685,3 +687,8 @@ from alpinos.print_compat import apply_print_font_fix, apply_print_style_fix
 
 apply_print_font_fix()
 apply_print_style_fix()
+
+# Frappe 16.52 heatmap dashboard charts always fail; see desk_compat.
+from alpinos.desk_compat import apply_heatmap_fix
+
+apply_heatmap_fix()
