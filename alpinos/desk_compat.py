@@ -48,3 +48,27 @@ def apply_heatmap_fix():
 
 	get_heatmap_chart_config._alpinos_fixed = True
 	dc.get_heatmap_chart_config = get_heatmap_chart_config
+
+
+def apply_raven_push_fix():
+	"""Raven 3 sends no push notification at all from a site in developer mode (its guard against
+	restored backups on a laptop notifying real phones). Production runs in developer mode by
+	choice, so every push stopped after the upgrade; Raven 2 on Frappe 15 had no such rule.
+	A site whose site_config sets raven_push_in_developer_mode gets pushes again; localhost stays
+	silent, and every other site keeps Raven's rule unchanged."""
+	try:
+		import raven.notification as rn
+	except Exception:
+		return
+	original = getattr(rn, "push_disabled", None)
+	if not original or getattr(original, "_alpinos_fixed", False):
+		return
+
+	def push_disabled():
+		if frappe.conf.get("raven_push_in_developer_mode"):
+			url = frappe.utils.get_url(allow_header_override=False)
+			return url.startswith("http://localhost") or url.startswith("http://127.0.0.1")
+		return original()
+
+	push_disabled._alpinos_fixed = True
+	rn.push_disabled = push_disabled
