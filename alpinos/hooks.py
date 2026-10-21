@@ -1037,6 +1037,8 @@ apply_print_font_fix()
 apply_print_style_fix()
 
 # Frappe 16.52 heatmap dashboard charts always fail; see desk_compat.
-from alpinos.desk_compat import apply_heatmap_fix
+from alpinos.desk_compat import apply_heatmap_fix, apply_raven_push_fix
 
 apply_heatmap_fix()
+# Raven 3 silences every push on a developer-mode site; production opts back in (see desk_compat).
+apply_raven_push_fix()
