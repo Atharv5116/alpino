@@ -96,6 +96,9 @@ _SEES_ALL = "System Manager"
 # the user came from; opened from Frappe's own Data sidebar it still stays there.
 _ADOPTED_DOCTYPES = ("Data Import",)
 _ADOPTING_SHELLS = (SALES, STOCK, PRODUCTION, GOODS_INWARD, HR)
+# The same for the report views Alpino Sales & Dispatch lists: they belong to ERPNext's Selling
+# and Stock sidebars, so the Sales Order Report link landed in Selling.
+_SALES_DOCTYPES = ("Sales Order", "Pick List", "Delivery Note")
 
 
 def _item_allowed(shell, item, roles):
@@ -178,6 +181,9 @@ def extend_bootinfo(bootinfo):
 	if doctypes is not None and adopting:
 		for doctype in _ADOPTED_DOCTYPES:
 			doctypes[doctype] = adopting
+	if doctypes is not None and SALES in visible:
+		for doctype in _SALES_DOCTYPES:
+			doctypes[doctype] = SALES
 
 	pages = canonical.get("Page")
 	if not pages:
