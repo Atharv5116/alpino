@@ -272,7 +272,11 @@ def create_employee_checkin(device_id, timestamp_str, device_name, category=None
 			from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
 			shift_details = get_employee_shift(employee, timestamp, consider_default_shift=True)
 			if shift_details:
-				checkin.shift = shift_details.get("shift_type")
+				# HRMS hands back the Shift Type record (name, start_time, ...); the field takes its
+				# name. Frappe 16 refuses the record itself ("Unexpected value for field shift"),
+				# so every punch of an employee on a shift failed to save.
+				shift_type = shift_details.get("shift_type")
+				checkin.shift = shift_type.get("name") if isinstance(shift_type, dict) else getattr(shift_type, "name", shift_type)
 		except Exception:
 			pass
 
