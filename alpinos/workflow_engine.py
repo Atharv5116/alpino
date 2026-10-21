@@ -692,6 +692,12 @@ def _recompute_so_status(so):
 		forced = (SO_FORCED_DN_CREATED, SO_FORCED_DISPATCHED, SO_FORCED_COMPLETED)
 		return cur if cur in forced else SO_FORCED_COMPLETED
 
+	# Completed with no Delivery Note at all is an order closed by hand (the USOR orders brought
+	# over from UAT as records, Changes(HP) #98). Nothing below derives Completed without a
+	# Delivery Note, so every migrate sent such an order back to Today's Dispatch.
+	if cur == SO_COMPLETED and not frappe.db.exists("Delivery Note", {"custom_sales_order_id": so}):
+		return SO_COMPLETED
+
 	from alpinos import partial_dispatch as pd
 	partial = pd.is_partial_order(so)
 
