@@ -1,5 +1,6 @@
 """Changes(HP) #35-#38: dispatch date sync, Dispatch Report sections, hidden finished
-orders, and the Pick List packing sheet.
+orders, and the Pick List packing sheet. The Dispatch Report checks follow #87, which
+moved its sections from the submitted Delivery Note to the submitted Pick List.
 
 Run:  bench --site alpinos.test execute alpinos.dispatch_changes_test.run
 
@@ -283,28 +284,41 @@ def _dispatch_report(tag):
 				parent_item=parent_code, item_code=code, qty=qty, parent_detail_docname=items[parent_code], idx=idx)
 		return name
 
-	# Approved, far-future date: pending whatever its date.
-	so("A", "Today's Dispatch", [(i1, 10)])
+	def pl(n, sales_order, lines, docstatus=1, box=0, gw=0, bundle_line=None):
+		"""A Pick List dated the report day; with bundle_line its rows are that combo's components."""
+		name = f"{tag}-PL-{n}"
+		_insert("Pick List", name=name, docstatus=docstatus, purpose="Delivery", custom_sales_order_id=sales_order,
+			custom_dispatch_date=day, custom_total_box=box, custom_gross_weight=gw)
+		for idx, (code, qty, so_line) in enumerate(lines, start=1):
+			_insert("Pick List Item", parent=name, parenttype="Pick List", parentfield="locations", idx=idx,
+				docstatus=docstatus, item_code=code, qty=qty, stock_qty=qty, picked_qty=qty, sales_order=sales_order,
+				sales_order_item=so_line, product_bundle_item=bundle_line or "", custom_source_table="Items")
+		return name
+
+	# Approved, far-future date: pending whatever its date. A Pick List that was submitted
+	# and then cancelled counts for nothing: its quantity is back in pending.
+	a, a_rows = so("A", "Today's Dispatch", [(i1, 10)])
+	pl("A", a, [(i1, 10, a_rows[i1])], docstatus=2)
 	# Not approved yet: never pending.
 	so("B", "Warehouse Approval Pending", [(i1, 7)])
-	# Picking, a DRAFT note and a Pick List dated the report day: still all pending, nothing dispatched.
+	# Picking, a DRAFT Pick List and a draft note dated the report day: still all pending, nothing dispatched.
 	c, c_rows = so("C", "Picking In Progress", [(i1, 5)])
 	dn("C", c, [(i1, 5, c_rows[i1])], f"{day} 10:00:00", day, docstatus=0)
-	_insert("Pick List", name=f"{tag}-PL-C", docstatus=0, purpose="Delivery", custom_sales_order_id=c,
-		custom_dispatch_date=day, custom_total_box=9, custom_gross_weight=90)
-	# Partial: 8 of 20 out on the day, posted the same day.
+	pl("C", c, [(i1, 5, c_rows[i1])], docstatus=0, box=9, gw=90)
+	# Partial: 8 of 20 picked on the day and noted, posted the same day.
 	d, d_rows = so("D", "Partial Dispatched", [(i1, 20)])
-	_insert("Pick List", name=f"{tag}-PL-D", docstatus=1, purpose="Delivery", custom_sales_order_id=d,
-		custom_dispatch_date=day, custom_total_box=3, custom_gross_weight=30)
+	pl("D", d, [(i1, 8, d_rows[i1])], box=3, gw=30)
 	dn("D", d, [(i1, 8, d_rows[i1])], f"{day} 11:00:00", day, pick_list=f"{tag}-PL-D")
-	# The spec's example: dated the 11th, submitted (posted) on the 12th.
+	# Picked on the 11th; its note dated the 11th was posted on the 12th.
 	e, e_rows = so("E", "Delivery Note Created", [(i1, 6)])
-	dn("E", e, [(i1, 6, e_rows[i1])], f"{day} 18:00:00", add_days(day, 1))
+	pl("E", e, [(i1, 6, e_rows[i1])])
+	dn("E", e, [(i1, 6, e_rows[i1])], f"{day} 18:00:00", add_days(day, 1), pick_list=f"{tag}-PL-E")
 	# Combo of 2 x C1 + 1 x C2, 3 ordered; 2 combos' worth packed on the day.
 	f, f_rows = so("F", "Partial Dispatched", [(bundle, 3)])
 	for idx, (code, qty) in enumerate(((c1, 6), (c2, 3)), start=1):
 		_insert("Packed Item", parent=f, parenttype="Sales Order", parentfield="packed_items", parent_item=bundle,
 			item_code=code, qty=qty, parent_detail_docname=f_rows[bundle], idx=idx)
+	pl("F", f, [(c1, 4, f_rows[bundle]), (c2, 2, f_rows[bundle])], bundle_line=f_rows[bundle])
 	dn("F", f, [(bundle, 2, f_rows[bundle])], f"{day} 12:00:00", day, packed=[(bundle, c1, 4), (bundle, c2, 2)])
 	# Finished by force, and force closed: never pending.
 	so("G", "Forced Completed", [(i1, 4)])
@@ -316,11 +330,11 @@ def _dispatch_report(tag):
 
 	items, summary = report(day)
 
-	check("#36 pending = approved orders less SUBMITTED notes, whatever the date or status",
+	check("#87 pending = approved orders less SUBMITTED Pick Lists, whatever the date; a cancelled one gives its qty back",
 		lambda: _assert(flt(items[i1]["pending_dispatch"]) == 27,
 			f"I1 pending {items[i1]['pending_dispatch']}, expected 27 (A 10 + C 5 + D 12; B, E, G, H excluded)"))
 
-	check("#36 dispatch on a date = submitted notes carrying that Dispatch Date (draft note and Pick List ignored)",
+	check("#87 dispatch on a date = submitted Pick Lists carrying that Dispatch Date (draft and cancelled ignored)",
 		lambda: _assert(flt(items[i1]["today_dispatch"]) == 14,
 			f"I1 dispatched {items[i1]['today_dispatch']}, expected 14 (D 8 + E 6)"))
 
@@ -329,7 +343,7 @@ def _dispatch_report(tag):
 		_assert(flt(nxt[i1]["today_dispatch"]) == 0,
 			f"a note dated the 11th but posted the 12th shows under the 12th ({nxt[i1]['today_dispatch']})")
 
-	check("#36 a note dated the 11th and submitted the 12th appears under the 11th only", _submitted_later_stays_on_its_date)
+	check("#87 a Pick List dated the 11th appears under the 11th only, whenever its note is posted", _submitted_later_stays_on_its_date)
 
 	def _combo_in_components():
 		_assert(flt(items[c1]["today_dispatch"]) == 4 and flt(items[c2]["today_dispatch"]) == 2,
@@ -337,18 +351,18 @@ def _dispatch_report(tag):
 		_assert(flt(items[c1]["pending_dispatch"]) == 2 and flt(items[c2]["pending_dispatch"]) == 1,
 			f"combo pending C1 {items[c1]['pending_dispatch']} C2 {items[c2]['pending_dispatch']}")
 
-	check("#36 a combo is counted in its components, dispatched and pending", _combo_in_components)
+	check("#87 a combo is counted in its components, dispatched and pending", _combo_in_components)
 
-	check("#36 per customer type columns carry the same numbers",
+	check("#87 per customer type columns carry the same numbers",
 		lambda: _assert(
 			flt(items[i1]["dispatch_by_ct"].get(ct)) == 14 and flt(items[i1]["pending_by_ct"].get(ct)) == 27,
 			f"by_ct {items[i1]['dispatch_by_ct']} / {items[i1]['pending_by_ct']}"))
 
-	check("#36 the day's boxes come from the notes' Pick Lists, not every Pick List dated that day",
+	check("#87 the day's boxes come from its submitted Pick Lists, not a draft one dated that day",
 		lambda: _assert(flt(summary["box_by_ct"].get(ct)) == 3 and flt(summary["gw_by_ct"].get(ct)) == 30,
 			f"box {summary['box_by_ct'].get(ct)} gw {summary['gw_by_ct'].get(ct)}"))
 
-	check("#36 Net Unit subtracts only the dispatch not yet in the day's stock",
+	check("#87 Net Unit still subtracts what no Delivery Note has carried yet, stock falling only at the note",
 		lambda: _assert(flt(items[i1]["net_unit"]) == flt(items[i1]["today_stock"]) - 6 - 27,
 			f"net {items[i1]['net_unit']} stock {items[i1]['today_stock']}"))
 

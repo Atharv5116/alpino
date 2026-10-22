@@ -75,7 +75,7 @@ def _run():
 		customer="__Test Customer", customer_name="__Test Customer", transaction_date=day)
 	pl = _insert("Pick List", name=f"PLMM-{tag}", docstatus=1, company=company,
 		custom_sales_order_id=so, purpose="Delivery", custom_total_box=12,
-		custom_gross_weight=100)
+		custom_gross_weight=100, custom_dispatch_date=day)
 	_insert("Pick List Item", name=f"PLIMM-{tag}-1", parent=pl, parenttype="Pick List",
 		parentfield="locations", idx=1, docstatus=1, item_code=fg, qty=100,
 		picked_qty=100, stock_qty=100, sales_order=so, custom_box=10)

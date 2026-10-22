@@ -76,6 +76,12 @@ def _run():
 		_insert("Delivery Note Item", name=f"DNIBRK-{tag}-{suffix}", parent=dn,
 			parenttype="Delivery Note", parentfield="items", idx=1, docstatus=1,
 			item_code=item, qty=qty, stock_qty=qty, against_sales_order=so)
+		# Changes(HP) #87: the dispatch section counts the submitted Pick List the note came from
+		pl = _insert("Pick List", name=f"PLBRK-{tag}-{suffix}", docstatus=1, company=company,
+			purpose="Delivery", custom_sales_order_id=so, custom_dispatch_date=day)
+		_insert("Pick List Item", name=f"PLIBRK-{tag}-{suffix}", parent=pl, parenttype="Pick List",
+			parentfield="locations", idx=1, docstatus=1, item_code=item, qty=qty, stock_qty=qty,
+			picked_qty=qty, sales_order=so, custom_source_table="Items")
 		return so
 
 	so_a = _dispatched("A", 80, "Reliance Retail Ltd.")
