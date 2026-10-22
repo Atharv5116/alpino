@@ -672,7 +672,11 @@ doc_events = {
 		# these returns at once for a Stock Entry with no custom_entry_kind, so ordinary
 		# stock entries are untouched. before_validate so the rules speak before ERPNext's
 		# own validation does.
-		"before_validate": "alpinos.production.material_issue.se_before_validate",
+		"before_validate": [
+			"alpinos.production.material_issue.se_before_validate",
+			# Changes(HP) #82: a typed Batch Code becomes the Batch on receipt
+			"alpinos.stock_entry_hooks.apply_batch_codes",
+		],
 		"on_submit": "alpinos.production.material_issue.se_on_submit",
 		"before_cancel": "alpinos.production.material_issue.se_before_cancel",
 		"on_cancel": "alpinos.production.material_issue.se_on_cancel",

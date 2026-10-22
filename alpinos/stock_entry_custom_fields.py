@@ -55,11 +55,20 @@ def setup_stock_entry_custom_fields():
 				fieldtype="Currency",
 				insert_after="custom_usp",
 			),
+			# Free text like the Pick List / Delivery Note Batch Code (Changes(HP) #82): typed
+			# freely, and turned into the Batch master on receipt when the item is batch-tracked
+			# (stock_entry_hooks.apply_batch_codes)
+			dict(
+				fieldname="custom_batch_code",
+				label="Batch Code",
+				fieldtype="Data",
+				insert_after="batch_no",
+			),
 			dict(
 				fieldname="custom_mfg_date",
 				label="MFG Date",
 				fieldtype="Date",
-				insert_after="batch_no",
+				insert_after="custom_batch_code",
 			),
 			dict(
 				fieldname="custom_exp_date",
@@ -151,6 +160,17 @@ def _setup_stock_entry_property_setters():
 			field_name="qty",
 			property="label",
 			value="Quantity",
+			property_type="Data",
+		),
+		# Batch No only picks an existing Batch, and no item here is batch-tracked, so the empty
+		# picker stood where people wanted to type a code. Batch Code is the input; Batch No
+		# shows once it holds a batch (set from Batch Code for a batch-tracked item).
+		dict(
+			doctype_or_field="DocField",
+			doc_type="Stock Entry Detail",
+			field_name="batch_no",
+			property="depends_on",
+			value="eval:doc.use_serial_batch_fields === 1 && doc.batch_no",
 			property_type="Data",
 		),
 		dict(
