@@ -1,13 +1,15 @@
 """Daily dispatch report data API for Alpinos.
 
-Section logic (Changes(HP) #36):
+Section logic (Changes(HP) #87, replacing the Delivery Note basis of #36):
 
   Pending Dispatch  every order the warehouse has approved and not finished, whatever
-                    its Dispatch Date or workflow status, less what SUBMITTED Delivery
-                    Notes have already covered. A draft note or a Pick List moves nothing.
-  Dispatch (date)   what SUBMITTED Delivery Notes carrying that Dispatch Date took out.
-                    The note's Dispatch Date decides the section, not the day it was
-                    submitted: dated the 11th and submitted on the 12th, it is the 11th.
+                    its Dispatch Date or workflow status, less what SUBMITTED Pick Lists
+                    have picked. A draft Pick List moves nothing; cancelling a submitted
+                    one puts its quantity back here.
+  Dispatch (date)   what SUBMITTED Pick Lists carrying that Dispatch Date picked.
+  Stock             falls only when the Delivery Note is submitted (ERPNext posts stock
+                    there), so Net Unit still takes off everything not yet delivered: the
+                    picked part and the pending part.
 
 Quantities are in the SKUs that physically leave, so a combo counts as its components
 (the note's packed items; the order's own packed items for what is still pending).
@@ -51,11 +53,16 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 
 	items = _get_sequenced_items()
 	mm_items = _marketing_material_items()
-	delivery_notes = _delivery_notes_dispatched_on(date)
-	dispatch_data = _get_dispatch_data(date, group_by_parent, delivery_notes)
+	# Changes(HP) #87: the green section is what the day's submitted Pick Lists picked
+	pick_lists = _pick_lists_dispatched_on(date)
+	dispatch_data = _get_picked_data(date, group_by_parent, pick_lists)
 	if include_material_issue:
 		_merge_dispatch_data(dispatch_data, _get_material_issue_data(date, group_by_parent))
 	pending_data, pending_box_by_ct = _get_pending_data(date, group_by_parent)
+	# Stock falls only at the Delivery Note, so Net Unit takes off what no note has carried
+	# yet (picked or not) and the day's notes posted after the date, exactly as before.
+	undelivered, _boxes = _get_pending_data(date, group_by_parent, basis="delivery_note")
+	noted = _get_dispatch_data(date, group_by_parent, _delivery_notes_dispatched_on(date))
 	if not include_marketing_material and mm_items:
 		# Dropped before the summary is built, so every quantity total below is computed
 		# from Finished Goods alone without each total having to remember to exclude it.
@@ -72,7 +79,7 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 		customer_types = _with_other(customer_types, dispatch_data, pending_data)
 	summary = _build_summary(
 		date, customer_types, dispatch_data, pending_data, group_by_parent,
-		delivery_notes, pending_box_by_ct,
+		pick_lists, pending_box_by_ct,
 		exclude_marketing_material=not include_marketing_material,
 	)
 
@@ -87,7 +94,11 @@ def get_dispatch_report_data(date=None, warehouse=None, include_material_issue=0
 		# Stock as of the date already excludes every note POSTED by then; subtracting
 		# those again would count them twice. Only a note dated today but posted later
 		# (dated the 11th, submitted the 12th) is still sitting in the stock figure.
-		net_unit = today_stock - d.get("unposted", 0) - pending_dispatch
+		net_unit = (
+			today_stock
+			- noted.get(ic, {}).get("unposted", 0)
+			- undelivered.get(ic, {}).get("total", 0)
+		)
 
 		result_items.append({
 			"item_code": ic,
@@ -272,6 +283,62 @@ def _delivery_notes_dispatched_on(date):
 	)
 
 
+def _pick_lists_dispatched_on(date):
+	"""Submitted Pick Lists whose Dispatch Date is `date` (Changes(HP) #87)."""
+	return frappe.db.sql_list(
+		"SELECT name FROM `tabPick List` WHERE docstatus = 1 AND custom_dispatch_date = %(date)s",
+		{"date": getdate(date)},
+	)
+
+
+# What a Pick List row stands for: the quantity picked, or the row's own when nothing was
+# recorded as picked (a submitted list was signed off).
+_PICKED_QTY = "CASE WHEN IFNULL(pli.picked_qty, 0) > 0 THEN pli.picked_qty ELSE pli.stock_qty END"
+
+
+def _get_picked_data(date, group_by_parent=0, pick_lists=None, collect=None):
+	"""What the submitted Pick Lists dated `date` picked, per SKU (Changes(HP) #87).
+
+	A Pick List already lists a combo as its components, so every row is a SKU that leaves;
+	freebie, scheme and additional unit rows count as they do on the Delivery Note.
+	"""
+	if not pick_lists:
+		return {}
+	key, joins = _group_sql(group_by_parent)
+	rows = []
+	for names in _chunks(pick_lists):
+		rows += frappe.db.sql(
+			f"""
+			SELECT pli.item_code, SUM({_PICKED_QTY}) AS qty, {key} AS customer_type
+			FROM `tabPick List Item` pli
+			JOIN `tabPick List` pl ON pl.name = pli.parent
+			LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id{joins}
+			WHERE pli.parent IN %(names)s
+			GROUP BY pli.item_code, {key}
+			""",
+			{"names": tuple(names)},
+			as_dict=True,
+		)
+		if collect is not None:
+			for r in frappe.db.sql(
+				f"""
+				SELECT pli.item_code, pl.custom_sales_order_id AS sales_order,
+					SUM({_PICKED_QTY}) AS qty, {key} AS customer_type
+				FROM `tabPick List Item` pli
+				JOIN `tabPick List` pl ON pl.name = pli.parent
+				LEFT JOIN `tabSales Order` so ON so.name = pl.custom_sales_order_id{joins}
+				WHERE pli.parent IN %(names)s
+				GROUP BY pli.item_code, pl.custom_sales_order_id, {key}
+				""",
+				{"names": tuple(names)}, as_dict=True,
+			):
+				if not r.sales_order:
+					continue
+				bucket = collect.setdefault((r.item_code, r.customer_type or "Other"), {})
+				bucket[r.sales_order] = bucket.get(r.sales_order, 0) + flt(r.qty)
+	return _aggregate_by_item(rows)
+
+
 def _get_dispatch_data(date, group_by_parent=0, delivery_notes=None, collect=None):
 	"""What submitted Delivery Notes dated `date` took out, per SKU that left.
 
@@ -381,8 +448,10 @@ def _merge_dispatch_data(target, extra):
 			target[ic]["by_ct"][ct] = target[ic]["by_ct"].get(ct, 0) + qty
 
 
-def _get_pending_data(date, group_by_parent=0, collect=None):
-	"""Approved, unfinished order quantity not yet on a SUBMITTED Delivery Note.
+def _get_pending_data(date, group_by_parent=0, collect=None, basis="pick_list"):
+	"""Approved, unfinished order quantity not yet on a SUBMITTED Pick List (Changes(HP) #87),
+	or with basis "delivery_note", not yet on a SUBMITTED Delivery Note (what Net Unit takes
+	off the stock, which only a Delivery Note reduces).
 
 	Returns ({item: {total, by_ct}}, {customer type: boxes}). Counted per order line so
 	a partial dispatch leaves exactly its remainder, and a combo line is counted in its
@@ -434,37 +503,10 @@ def _get_pending_data(date, group_by_parent=0, collect=None):
 		):
 			ordered_components.setdefault(r.line, {})[r.item_code] = flt(r.qty)
 
-		delivered_line = {
-			r.line: flt(r.qty)
-			for r in frappe.db.sql(
-				"""
-				SELECT dni.so_detail AS line, SUM(dni.stock_qty) AS qty
-				FROM `tabDelivery Note Item` dni
-				JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-				WHERE dni.so_detail IN %(lines)s
-				  AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
-				GROUP BY dni.so_detail
-				""",
-				{"lines": line_names},
-				as_dict=True,
-			)
-		}
-		delivered_components = {
-			(r.line, r.item_code): flt(r.qty)
-			for r in frappe.db.sql(
-				"""
-				SELECT dni.so_detail AS line, pi.item_code, SUM(pi.qty) AS qty
-				FROM `tabPacked Item` pi
-				JOIN `tabDelivery Note Item` dni ON dni.name = pi.parent_detail_docname
-				JOIN `tabDelivery Note` dn ON dn.name = pi.parent
-				WHERE pi.parenttype = 'Delivery Note' AND dni.so_detail IN %(lines)s
-				  AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
-				GROUP BY dni.so_detail, pi.item_code
-				""",
-				{"lines": line_names},
-				as_dict=True,
-			)
-		}
+		if basis == "delivery_note":
+			delivered_line, delivered_components = _delivered_against(line_names)
+		else:
+			delivered_line, delivered_components = _picked_against(line_names)
 
 		for line in lines:
 			ct = ct_of.get(line.parent)
@@ -493,6 +535,72 @@ def _get_pending_data(date, group_by_parent=0, collect=None):
 				boxes[key_ct] = boxes.get(key_ct, 0) + ceil(qty / factor_cache[item] - _EPS)
 
 	return _aggregate_by_item(rows), boxes
+
+
+def _delivered_against(line_names):
+	"""Per order line: what submitted Delivery Notes carried, and per combo component."""
+	delivered_line = {
+		r.line: flt(r.qty)
+		for r in frappe.db.sql(
+			"""
+			SELECT dni.so_detail AS line, SUM(dni.stock_qty) AS qty
+			FROM `tabDelivery Note Item` dni
+			JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+			WHERE dni.so_detail IN %(lines)s
+			  AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
+			GROUP BY dni.so_detail
+			""",
+			{"lines": line_names},
+			as_dict=True,
+		)
+	}
+	delivered_components = {
+		(r.line, r.item_code): flt(r.qty)
+		for r in frappe.db.sql(
+			"""
+			SELECT dni.so_detail AS line, pi.item_code, SUM(pi.qty) AS qty
+			FROM `tabPacked Item` pi
+			JOIN `tabDelivery Note Item` dni ON dni.name = pi.parent_detail_docname
+			JOIN `tabDelivery Note` dn ON dn.name = pi.parent
+			WHERE pi.parenttype = 'Delivery Note' AND dni.so_detail IN %(lines)s
+			  AND dn.docstatus = 1 AND IFNULL(dn.is_return, 0) = 0
+			GROUP BY dni.so_detail, pi.item_code
+			""",
+			{"lines": line_names},
+			as_dict=True,
+		)
+	}
+	return delivered_line, delivered_components
+
+
+def _picked_against(line_names):
+	"""Per order line: what submitted Pick Lists picked, and per combo component.
+
+	Only the order's own item rows count against it. Freebie, scheme and additional unit
+	rows also point at an order line of the same SKU, but they were never part of the
+	ordered quantity. A Pick List lists a combo as its components (product_bundle_item set).
+	"""
+	picked_line, picked_components = {}, {}
+	for r in frappe.db.sql(
+		f"""
+		SELECT pli.sales_order_item AS line, pli.item_code,
+			IF(IFNULL(pli.product_bundle_item, '') <> '', 1, 0) AS component,
+			SUM({_PICKED_QTY}) AS qty
+		FROM `tabPick List Item` pli
+		JOIN `tabPick List` pl ON pl.name = pli.parent
+		WHERE pli.sales_order_item IN %(lines)s AND pl.docstatus = 1
+		  AND IFNULL(pli.custom_source_table, 'Items') IN ('', 'Items')
+		GROUP BY pli.sales_order_item, pli.item_code, component
+		""",
+		{"lines": line_names},
+		as_dict=True,
+	):
+		if r.component:
+			key = (r.line, r.item_code)
+			picked_components[key] = picked_components.get(key, 0) + flt(r.qty)
+		else:
+			picked_line[r.line] = picked_line.get(r.line, 0) + flt(r.qty)
+	return picked_line, picked_components
 
 
 def _mapped_components(line):
@@ -548,7 +656,7 @@ def _get_inward_data():
 
 
 def _build_summary(date, customer_types, dispatch_data, pending_data, group_by_parent=0,
-                   delivery_notes=None, pending_box_by_ct=None, exclude_marketing_material=False):
+                   pick_lists=None, pending_box_by_ct=None, exclude_marketing_material=False):
 	"""Build top-level summary totals.
 
 	The box / gross-weight rollups group on the same key as the grid above them, or the
@@ -574,19 +682,10 @@ def _build_summary(date, customer_types, dispatch_data, pending_data, group_by_p
 		for ct, qty in p.get("by_ct", {}).items():
 			pending_by_ct[ct] = pending_by_ct.get(ct, 0) + qty
 
-	# Box / gross weight of the day's dispatch: the Pick Lists those notes were made from
-	# (the note itself carries no box count).
+	# Box / gross weight of the day's dispatch: its Pick Lists (Changes(HP) #87).
 	box_by_ct, gw_by_ct = {}, {}
-	pick_lists = []
-	for names in _chunks(delivery_notes or []):
-		pick_lists += frappe.db.sql_list(
-			"""
-			SELECT DISTINCT against_pick_list FROM `tabDelivery Note Item`
-			WHERE parent IN %(names)s AND IFNULL(against_pick_list, '') <> ''
-			""",
-			{"names": tuple(names)},
-		)
-	for names in _chunks(sorted(set(pick_lists))):
+	pick_lists = sorted(set(pick_lists or []))
+	for names in _chunks(pick_lists):
 		for r in frappe.db.sql(
 			f"""
 			SELECT
@@ -670,8 +769,7 @@ def get_quantity_breakup(date=None, item_code=None, kind="dispatch", customer_ty
 	if kind == "pending":
 		_get_pending_data(date, group_by_parent, collect=collected)
 	else:
-		notes = _delivery_notes_dispatched_on(date)
-		_get_dispatch_data(date, group_by_parent, notes, collect=collected)
+		_get_picked_data(date, group_by_parent, _pick_lists_dispatched_on(date), collect=collected)
 
 	if customer_type:
 		buckets = [collected.get((item_code, customer_type), {})]
