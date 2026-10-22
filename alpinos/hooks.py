@@ -395,6 +395,7 @@ doc_events = {
 	},
 	"Stock Entry": {
 		"before_insert": "alpinos.stock_entry_hooks.set_entry_by",
+		"before_validate": "alpinos.stock_entry_hooks.apply_batch_codes",
 	},
 	"Pick List": {
 		"before_validate": "alpinos.pick_list_hooks.before_validate_pick_list",
