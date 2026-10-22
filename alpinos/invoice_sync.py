@@ -18,6 +18,11 @@ from frappe.utils import getdate
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 SO_ID_HEADER = "Sales Order Id"
 INVOICE_HEADER = "Invoice No"
+# Changes(HP) #83: an empty file on Drive is not attached as the invoice
+ZERO_KB_MESSAGE = (
+	"Couldn’t fetch the invoice because its file size is 0 KB on Google Drive. "
+	"Kindly check the invoice file and upload the Excel file again."
+)
 
 
 #: The digits at the end of whatever the cell holds.
@@ -278,9 +283,14 @@ def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None):
 	file_id = _find_file(drive, folder, invoice_no, ext)
 	if not file_id:
 		return None, "PDF not found"
+	if _file_size(drive, file_id) == 0:
+		return None, _(ZERO_KB_MESSAGE)
+	content = _download(drive, file_id)
+	if not content:
+		return None, _(ZERO_KB_MESSAGE)
 	from frappe.utils.file_manager import save_file
 
-	f = save_file(f"{invoice_no}{ext}", _download(drive, file_id), "Sales Order", so_id, is_private=1)
+	f = save_file(f"{invoice_no}{ext}", content, "Sales Order", so_id, is_private=1)
 	frappe.db.set_value("Sales Order", so_id, "custom_invoice_pdf", f.file_url, update_modified=False)
 	return f.file_url, None
 
@@ -500,6 +510,12 @@ def _find_file(drive, folder_id, invoice_no, ext):
 	).execute()
 	files = res.get("files", [])
 	return files[0]["id"] if files else None
+
+
+def _file_size(drive, file_id):
+	"""The file's size in bytes as Drive reports it, or None when Drive gives none."""
+	size = drive.files().get(fileId=file_id, fields="size", supportsAllDrives=True).execute().get("size")
+	return int(size) if size not in (None, "") else None
 
 
 def _download(drive, file_id):
