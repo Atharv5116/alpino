@@ -892,3 +892,22 @@
   padding-left: 15px;
   padding-right: 15px;
 }
+
+/* ----------------------------------------------------------------------------
+   17. Changes(HP) #84 — the in-page action bars stay on screen while scrolling
+   The page head (Create Sales Order, the Sales Order View's Order menu, Cancel Pick
+   List, Cancel Delivery Note) is already sticky on the v16 desk. The Pick List's own
+   bar (View Delivery Note, Download PDF...) and the Delivery Note's (Submit, Save,
+   Print...) sit at the top of the page body and scrolled away with it; they now stop
+   right under the page head. The background keeps the rows scrolling beneath from
+   showing through between the buttons.
+   ---------------------------------------------------------------------------- */
+[data-page-route="pick_list_entry"] .pl-actions,
+[data-page-route="delivery_note_entry"] .dn-actions {
+  position: sticky;
+  top: calc(var(--page-head-height, 48px) + 1px);
+  z-index: 5;
+  background: var(--bg-color);
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
