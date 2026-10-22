@@ -6,6 +6,12 @@ PF_NAME = "Pick List Packing Sheet"
 DOC_TYPE = "Pick List"
 
 _HTML = r"""
+{#- A part-filled box prints as it is: 2.5, not 2 (Changes(HP) #99). Jinja's round rounds half
+    to even, so the old "| round | int" printed 2.5 boxes as 2. -#}
+{%- macro boxes(value) -%}
+{%- set b = (value or 0) | float -%}
+{{ (b | int) if b == (b | int) else (b | round(2)) }}
+{%- endmacro -%}
 <style>
   /* Page margins. Frappe reads margin-* ONLY from a top-level .print-format rule and
      hands them to wkhtmltopdf as the page margins (default 15mm). The same rule would
@@ -62,7 +68,7 @@ _HTML = r"""
       <td class="lbl">PARTY NAME</td>
       <td colspan="2" class="val">{{ doc.custom_customer_name or "" }}</td>
       <td class="lbl">TOTAL BOX</td>
-      <td class="val">{{ (doc.custom_total_box | round | int) if doc.custom_total_box is not none else 0 }}</td>
+      <td class="val">{{ boxes(doc.custom_total_box) if doc.custom_total_box is not none else 0 }}</td>
     </tr>
     <tr>
       <td class="lbl">PARTY CODE</td>
@@ -123,7 +129,7 @@ _HTML = r"""
       <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div class="bundle">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}{% if _fsn %}<div class="fsn">(FSN - {{ _fsn }})</div>{% endif %}</td>
       <td class="sku">{{ frappe.db.get_value("Item", row.item_code, "custom_sku_no") or "" }}</td>
       <td>{{ (row.qty | round | int) if (row.qty and not _is_sample) else "" }}</td>
-      <td>{{ (row.custom_box | round | int) if row.custom_box else "" }}</td>
+      <td>{{ boxes(row.custom_box) if row.custom_box else "" }}</td>
       <td>{{ (row.qty | round | int) if (row.qty and _is_sample) else "" }}</td>
       <td>{{ row.custom_batch_code or row.batch_no or "" }}</td>
       <td>{{ frappe.utils.formatdate(row.custom_mfg_date, "dd-MM-yyyy") if row.custom_mfg_date else "" }}</td>
