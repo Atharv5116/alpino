@@ -20,6 +20,7 @@ from frappe.utils import cint, flt, getdate, nowdate
 from alpinos.ecom_sales_order_custom_fields import CHANNEL_ECOM, is_modern_trade
 from alpinos.sales_order_api import (
 	_parse_so_entry_args,
+	_apply_rl_no_invoice,
 	_populate_so_from_entry,
 )
 from alpinos.sales_order_api import get_box_conversion_factor, get_customer_item_mrp
@@ -336,7 +337,8 @@ def create_ecom_sales_order(customer, order_type, company, items, flags=None,
                             billing_gstin=None, shipping_gstin=None,
                             billing_address=None, shipping_address=None,
                             site_name=None, is_freebie_po=0, freebies=None,
-                            taxes_and_charges=None, sticker_attachments=None, submit_now=1):
+                            taxes_and_charges=None, sticker_attachments=None, submit_now=1,
+                            rl_no_invoice=None):
 	"""Create an E-com channel Sales Order from the e-com entry page."""
 	if not frappe.has_permission("Sales Order", "create"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
@@ -357,6 +359,7 @@ def create_ecom_sales_order(customer, order_type, company, items, flags=None,
 		site_name, billing_address, shipping_address, taxes_and_charges,
 	)
 	_apply_sticker_attachments(so, sticker_attachments)
+	_apply_rl_no_invoice(so, rl_no_invoice)
 	so.insert()
 	if cint(submit_now):
 		so.submit()
@@ -372,7 +375,7 @@ def update_ecom_sales_order(name, customer, order_type, company, items, flags=No
                             billing_gstin=None, shipping_gstin=None,
                             billing_address=None, shipping_address=None,
                             site_name=None, is_freebie_po=0, freebies=None,
-                            taxes_and_charges=None, sticker_attachments=None):
+                            taxes_and_charges=None, sticker_attachments=None, rl_no_invoice=None):
 	"""Rewrite a draft E-com Sales Order from the e-com entry page (edit mode)."""
 	items, freebies, _s, _a = _parse_so_entry_args(items, freebies, [], [])
 	flags = _parse_json(flags) or {}
@@ -396,6 +399,7 @@ def update_ecom_sales_order(name, customer, order_type, company, items, flags=No
 		site_name, billing_address, shipping_address, taxes_and_charges,
 	)
 	_apply_sticker_attachments(so, sticker_attachments)
+	_apply_rl_no_invoice(so, rl_no_invoice)
 	so.save()
 	_write_back_addresses_to_buyer(so)
 	frappe.db.commit()
@@ -461,6 +465,7 @@ def get_ecom_so_entry_payload(sales_order):
 		"billing_address": doc.get("custom_billing_address_text") or "",
 		"shipping_address": doc.get("custom_shipping_address_text") or "",
 		"is_freebie_po": cint(doc.get("custom_is_freebie_po")),
+		"rl_no_invoice": cint(doc.get("custom_rl_no_invoice")),
 		"items": items,
 		"freebies": freebies,
 		"sticker_attachments": sticker_attachments,

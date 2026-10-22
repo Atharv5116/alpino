@@ -405,6 +405,67 @@ def _setup_status_fields():
 				allow_on_submit=1,
 				depends_on="eval:doc.custom_workflow_status=='Rejected'",
 			),
+			# Changes(HP) #100: why the order was cancelled, and who did it.
+			dict(
+				fieldname="custom_cancellation_reason",
+				label="Reason for Cancellation",
+				fieldtype="Small Text",
+				insert_after="custom_rejected_on",
+				read_only=1,
+				allow_on_submit=1,
+				no_copy=1,
+				depends_on="eval:doc.docstatus==2",
+			),
+			dict(
+				fieldname="custom_cancelled_by",
+				label="Cancelled By",
+				fieldtype="Link",
+				options="User",
+				insert_after="custom_cancellation_reason",
+				read_only=1,
+				allow_on_submit=1,
+				no_copy=1,
+				depends_on="eval:doc.docstatus==2",
+			),
+			dict(
+				fieldname="custom_cancelled_on",
+				label="Cancelled On",
+				fieldtype="Datetime",
+				insert_after="custom_cancelled_by",
+				read_only=1,
+				allow_on_submit=1,
+				no_copy=1,
+				depends_on="eval:doc.docstatus==2",
+			),
+			# Changes(HP) #89: who sent the order on (submitted it), for the Accounts Format Report.
+			dict(
+				fieldname="custom_submitted_by",
+				label="Submitted By",
+				fieldtype="Link",
+				options="User",
+				insert_after="custom_cancelled_on",
+				read_only=1,
+				allow_on_submit=1,
+				no_copy=1,
+			),
+			dict(
+				fieldname="custom_submitted_on",
+				label="Submitted On",
+				fieldtype="Datetime",
+				insert_after="custom_submitted_by",
+				read_only=1,
+				allow_on_submit=1,
+				no_copy=1,
+			),
+			# Changes(HP) #88: an order that needs no invoice. Picking, delivery and stock work
+			# as for any order; the Accounts Format Report leaves it out.
+			dict(
+				fieldname="custom_rl_no_invoice",
+				label="RL No Invoice",
+				fieldtype="Check",
+				insert_after="order_type",
+				default="0",
+			),
 		],
 		"Pick List": [
 			dict(
@@ -544,9 +605,10 @@ def execute():
 	_setup_supporting_read_access()
 	_setup_page_access()
 	# backfill existing Sales Orders / Pick Lists now the status fields exist
-	from alpinos.workflow_engine import backfill_workflow_statuses
+	from alpinos.workflow_engine import backfill_submitted_by, backfill_workflow_statuses
 
 	backfill_workflow_statuses()
+	backfill_submitted_by()
 	# native stock reservation: Pick List reserves, DN deducts
 	from alpinos.stock_reservation import enable_stock_reservation
 

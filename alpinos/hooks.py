@@ -826,6 +826,7 @@ doc_events = {
 			"alpinos.workflow_engine.sales_order_on_submit",
 			"alpinos.sales_order_trail.record_submission",
 		],
+		"before_cancel": "alpinos.workflow_engine.sales_order_before_cancel",
 		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",
 		"before_update_after_submit": "alpinos.ecom_sales_order_api.validate_po_expiry_terminal_lock",
 	},

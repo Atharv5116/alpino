@@ -98,21 +98,39 @@ var SalesOrderEntryView = class {
 			}, __('Order'));
 		}
 		// submitted orders only; server blocks with the linked Pick List / Delivery Note ID while active
+		// Changes(HP) #100: a cancellation needs a reason, kept on the order (the server refuses a blank one)
 		this.btn_cancel_so = this.page.add_inner_button(__('Cancel Order'), () => {
 			const me = this;
-			frappe.confirm(__('Cancel Sales Order {0}?', [me._so_name]), () => {
-				frappe.call({
-					method: 'alpinos.workflow_engine.cancel_document',
-					args: { doctype: 'Sales Order', name: me._so_name },
-					freeze: true,
-					freeze_message: __('Cancelling...'),
-					callback: (r) => {
-						if (r.exc) return;
-						frappe.show_alert({ message: __('Sales Order cancelled'), indicator: 'red' });
-						me.load_order(me._so_name);
+			const d = new frappe.ui.Dialog({
+				title: __('Cancel Sales Order {0}', [me._so_name]),
+				fields: [{
+					fieldtype: 'Small Text',
+					fieldname: 'reason',
+					label: __('Reason for Cancellation'),
+					reqd: 1,
+				}],
+				primary_action_label: __('Cancel Order'),
+				primary_action(values) {
+					const reason = (values.reason || '').trim();
+					if (!reason) {
+						frappe.msgprint(__('Please enter a reason for cancellation.'));
+						return;
 					}
-				});
+					d.hide();
+					frappe.call({
+						method: 'alpinos.workflow_engine.cancel_document',
+						args: { doctype: 'Sales Order', name: me._so_name, reason: reason },
+						freeze: true,
+						freeze_message: __('Cancelling...'),
+						callback: (r) => {
+							if (r.exc) return;
+							frappe.show_alert({ message: __('Sales Order cancelled'), indicator: 'red' });
+							me.load_order(me._so_name);
+						}
+					});
+				},
 			});
+			d.show();
 		}, __('Order'));
 		if (this.btn_cancel_so) this.btn_cancel_so.hide();
 		// Warehouse Admin/Manager only, early stages before a Pick List is submitted
@@ -625,21 +643,6 @@ var SalesOrderEntryView = class {
 		);
 	}
 
-	/** Changes(HP) #21: a rejected order shows why, who rejected it and when. */
-	render_rejection_note(p) {
-		const w = this.wrapper;
-		w.find('.alp-reject-note').remove();
-		if (p.custom_workflow_status !== 'Rejected') return;
-		const by = p.custom_rejected_by ? frappe.user.full_name(p.custom_rejected_by) : '';
-		const on = p.custom_rejected_on ? frappe.datetime.str_to_user(p.custom_rejected_on) : '';
-		const who = [by, on].filter(Boolean).join(', ');
-		const reason = p.custom_rejection_reason ? this._esc(p.custom_rejection_reason) : __('No reason was recorded.');
-		$(`<div class="alp-reject-note alert alert-danger" style="margin:0 0 12px;">
-			<strong>${__('Rejected')}</strong>${who ? ` <span class="text-muted">(${this._esc(who)})</span>` : ''}<br>
-			${__('Reason')}: ${reason}
-		</div>`).prependTo(w);
-	}
-
 	load_order(name, opts = {}) {
 		this._so_name = name;
 		frappe.call({
@@ -800,13 +803,32 @@ var SalesOrderEntryView = class {
 		});
 	}
 
+	/** Changes(HP) #21 / #100: a rejected or cancelled order shows why, who did it and when, on top. */
+	render_status_note(p) {
+		const w = this.wrapper;
+		w.find('.alp-status-note').remove();
+		let title, reason, by, on;
+		if (p.custom_workflow_status === 'Rejected') {
+			[title, reason, by, on] = [__('Rejected'), p.custom_rejection_reason, p.custom_rejected_by, p.custom_rejected_on];
+		} else if (p.custom_workflow_status === 'Cancelled' || p.custom_cancellation_reason) {
+			[title, reason, by, on] = [__('Cancelled'), p.custom_cancellation_reason, p.custom_cancelled_by, p.custom_cancelled_on];
+		} else {
+			return;
+		}
+		const who = [by ? frappe.user.full_name(by) : '', on ? frappe.datetime.str_to_user(on) : ''].filter(Boolean).join(', ');
+		$(`<div class="alp-status-note alert alert-danger" style="margin:0 0 12px;">
+			<strong>${title}</strong>${who ? ` <span class="text-muted">(${this._esc(who)})</span>` : ''}<br>
+			${__('Reason')}: ${reason ? this._esc(reason) : __('No reason was recorded.')}
+		</div>`).prependTo(w);
+	}
+
 	render(payload) {
 		const p = payload.parent || {};
 		const w = this.wrapper;
 		const currency = p.currency || frappe.boot?.sysdefaults?.currency || '';
 
 		this.update_actions();
-		this.render_rejection_note(p);
+		this.render_status_note(p);
 		// Sections 16-21: what happened inside THIS order, and -- separately -- which other
 		// orders exist for the Buyer. The document is explicit that the two stay apart.
 		this.render_activity_trail();
