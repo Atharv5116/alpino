@@ -372,6 +372,9 @@ def get_columns():
 		col("Gate No", "gate_no", 80),
 		col("PL / DN Updated On", "pl_dn_updated_on", 140, "Datetime"),
 		col("Terms of Delivery", "terms_of_delivery", 340),
+		# Changes(HP) #89: kept as the two rightmost columns
+		col("Sales Order Submitted By", "so_submitted_by", 150),
+		col("Sales Order Submitted On", "so_submitted_on", 150, "Datetime"),
 	]
 	return cols
 
@@ -415,6 +418,10 @@ def _channel_scoped(so_names):
 
 def _get_data(filters):
 	so_filters = {"docstatus": 1}
+	# Changes(HP) #88: an RL No Invoice order is picked, delivered and stocked as usual but is
+	# not invoiced, so it has no place here.
+	if frappe.get_meta("Sales Order").has_field("custom_rl_no_invoice"):
+		so_filters["custom_rl_no_invoice"] = ["!=", 1]
 	# Dispatch Date is the primary date filter (Order Date From/To removed).
 	if filters.get("from_date") and filters.get("to_date"):
 		so_filters["custom_dispatch_date"] = ["between", [filters.from_date, filters.to_date]]
@@ -627,6 +634,8 @@ def _get_data(filters):
 			"site_name": so.get("custom_site_name") or "",
 			"order_date": formatdate(so.transaction_date, "dd-MM-yyyy") if so.transaction_date else "",
 			"gst_excl_flag": "Yes" if _gst_excl else "",
+			"so_submitted_by": frappe.utils.get_fullname(so.get("custom_submitted_by")) if so.get("custom_submitted_by") else "",
+			"so_submitted_on": so.get("custom_submitted_on"),
 			# Less Qty / Less Qty Amount are computed per line in emit().
 			"less_qty": None,
 			"less_qty_amount": None,

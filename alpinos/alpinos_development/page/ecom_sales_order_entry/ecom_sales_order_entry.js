@@ -148,6 +148,10 @@ var EcomSalesOrderEntry = class {
 			fieldtype: 'Check', fieldname: 'is_freebie_po', label: __('Freebies (Entire PO Free)'),
 			onchange: () => this.toggle_freebie_po(),
 		});
+		// Changes(HP) #88: picked, delivered and stocked as usual, but kept out of the Accounts Format Report
+		this.f_rl_no_invoice = mk('.fld-rl-no-invoice', {
+			fieldtype: 'Check', fieldname: 'rl_no_invoice', label: __('RL No Invoice'),
+		});
 	}
 
 	// events
@@ -762,6 +766,7 @@ var EcomSalesOrderEntry = class {
 			shipping_address: this.f_ship_addr.get_value(),
 			site_name: this.f_site.get_value(),
 			is_freebie_po: freebie_po,
+			rl_no_invoice: cint(this.f_rl_no_invoice.get_value()),
 			sticker_attachments: JSON.stringify(
 				(this.stickers || []).filter((s) => s.attachment).map((s) => ({
 					attachment: s.attachment, file_name: s.file_name || '', remarks: s.remarks || '',
@@ -856,6 +861,7 @@ var EcomSalesOrderEntry = class {
 				this.f_delivery_by.set_value(d.delivery_by_date || '');
 				this.f_dispatch.set_value(d.dispatch_date || frappe.datetime.get_today());
 				this.f_freebie_po.set_value(cint(d.is_freebie_po));
+				this.f_rl_no_invoice.set_value(cint(d.rl_no_invoice));
 
 				this.items = [];
 				this.freebies = [];
@@ -896,7 +902,7 @@ var EcomSalesOrderEntry = class {
 			this.f_customer, this.f_customer_type, this.f_appointment, this.f_grn, this.f_partial,
 			this.f_gst_excl, this.f_site, this.f_bill_gstin, this.f_ship_gstin, this.f_bill_addr,
 			this.f_ship_addr, this.f_po_no, this.f_po_date, this.f_po_expiry, this.f_delivery_by,
-			this.f_freebie_po,
+			this.f_freebie_po, this.f_rl_no_invoice,
 		].forEach((f) => f && f.set_value(''));
 		this.f_dispatch.set_value(frappe.datetime.get_today());
 		this.add_item_row();

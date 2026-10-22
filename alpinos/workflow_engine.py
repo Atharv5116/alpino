@@ -18,7 +18,7 @@ by separate stock ledger entries.
 """
 
 import frappe
-from frappe.utils import flt, getdate, today
+from frappe.utils import flt, getdate, now_datetime, today
 
 
 # --- SO / PL status vocab ---------------------------------------------------
@@ -259,12 +259,29 @@ def sales_order_validate(doc, method=None):
 		doc.custom_workflow_status = SO_DRAFT
 
 
+def sales_order_before_cancel(doc, method=None):
+	"""Changes(HP) #100: no Sales Order is cancelled without a reason. cancel_document (the
+	Sales Order View's Cancel) asks for one; the desk form and bulk cancel do not, so they
+	are sent there."""
+	if not (doc.flags.get("cancellation_reason") or "").strip():
+		frappe.throw(
+			frappe._("Cancel this Sales Order from its Sales Order View, which asks for the reason for cancellation."),
+			title=frappe._("Reason for Cancellation Needed"),
+		)
+
+
 def sales_order_on_submit(doc, method=None):
 	# "Send for Warehouse Approval" always lands in Warehouse Approval Pending —
 	# the approval stage must never be skipped. The date-driven Today's Dispatch
 	# transition happens afterwards via refresh_todays_dispatch (the daily job
 	# flips due-today orders forward), so it's the stage after, not instead.
 	doc.db_set("custom_workflow_status", SO_WAREHOUSE_PENDING, update_modified=False)
+	# Changes(HP) #89: the Accounts Format Report shows who submitted the order and when
+	if doc.meta.has_field("custom_submitted_by"):
+		doc.db_set(
+			{"custom_submitted_by": frappe.session.user, "custom_submitted_on": now_datetime()},
+			update_modified=False,
+		)
 	from alpinos import so_notifications as son
 	_notify(lambda: son.n01_so_submitted(doc))
 
@@ -482,20 +499,38 @@ def delivery_note_on_cancel(doc, method=None):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def cancel_document(doctype, name):
+def cancel_document(doctype, name, reason=None):
 	"""Cancel a Sales Order / Pick List / Delivery Note from its entry page.
 
 	Requires cancel permission on the doctype (the page only shows the button
 	when the user has it; this is the server-side enforcement). Cancellation
 	guards run via on_cancel and block with the linked document's ID when a
-	downstream document is still active."""
+	downstream document is still active.
+
+	A Sales Order needs a reason (Changes(HP) #100), kept on the order with who
+	cancelled it and when."""
 	if doctype not in _ENTRY_PAGE_ROUTES:
 		frappe.throw(frappe._("Cancellation is not supported for {0}.").format(doctype))
 	doc = frappe.get_doc(doctype, name)
 	doc.check_permission("cancel")
 	if doc.docstatus != 1:
 		frappe.throw(frappe._("Only submitted documents can be cancelled."))
+	reason = (reason or "").strip()
+	if doctype == "Sales Order" and not reason:
+		frappe.throw(frappe._("Please enter a reason for cancellation."))
+	doc.flags.cancellation_reason = reason
 	doc.cancel()
+	if doctype == "Sales Order" and doc.meta.has_field("custom_cancellation_reason"):
+		frappe.db.set_value(
+			"Sales Order",
+			doc.name,
+			{
+				"custom_cancellation_reason": reason,
+				"custom_cancelled_by": frappe.session.user,
+				"custom_cancelled_on": now_datetime(),
+			},
+			update_modified=False,
+		)
 	return {"name": doc.name, "docstatus": doc.docstatus}
 
 
@@ -546,7 +581,16 @@ def reject_sales_order(sales_order, reason=None):
 		frappe.throw(frappe._("This order can't be rejected at its current stage ({0}).").format(cur or "—"))
 	if frappe.db.exists("Pick List", {"custom_sales_order_id": sales_order, "docstatus": 1}):
 		frappe.throw(frappe._("Cancel the submitted Pick List before rejecting this order."))
-	frappe.db.set_value("Sales Order", sales_order, "custom_rejection_reason", reason, update_modified=False)
+	frappe.db.set_value(
+		"Sales Order",
+		sales_order,
+		{
+			"custom_rejection_reason": reason,
+			"custom_rejected_by": frappe.session.user,
+			"custom_rejected_on": now_datetime(),
+		},
+		update_modified=False,
+	)
 	_set_status("Sales Order", sales_order, SO_REJECTED)
 	frappe.db.commit()
 	return {"status": SO_REJECTED, "reason": reason}
@@ -774,6 +818,48 @@ def _recompute_so_status(so):
 	if dd and getdate(dd) <= getdate(today()):
 		return SO_TODAYS_DISPATCH
 	return SO_FUTURE_DISPATCH if cur == SO_FUTURE_DISPATCH else SO_WAREHOUSE_PENDING
+
+
+def backfill_submitted_by():
+	"""Fill Submitted By / On (Changes(HP) #89) on orders submitted before the fields existed,
+	from the document history Frappe kept: the change that set docstatus 0 -> 1. Only blank
+	orders are read, so later migrates touch almost nothing; an order with no such history
+	(the USOR records brought in without one) stays blank."""
+	import json
+
+	if not frappe.get_meta("Sales Order").has_field("custom_submitted_by"):
+		return 0
+	names = frappe.get_all(
+		"Sales Order", filters={"docstatus": [">", 0], "custom_submitted_by": ["is", "not set"]}, pluck="name"
+	)
+	filled = 0
+	for i in range(0, len(names), 500):
+		found = {}
+		for v in frappe.db.sql(
+			"""
+			SELECT docname, owner, creation, data FROM `tabVersion`
+			WHERE ref_doctype = 'Sales Order' AND docname IN %(names)s AND data LIKE %(like)s
+			ORDER BY creation
+			""",
+			{"names": tuple(names[i : i + 500]), "like": '%"docstatus"%'},
+			as_dict=True,
+		):
+			if v.docname in found:
+				continue
+			try:
+				changed = (json.loads(v.data or "{}") or {}).get("changed") or []
+			except ValueError:
+				continue
+			if any(c[:3] == ["docstatus", 0, 1] for c in changed if isinstance(c, list)):
+				found[v.docname] = v
+		for so, v in found.items():
+			frappe.db.set_value(
+				"Sales Order", so, {"custom_submitted_by": v.owner, "custom_submitted_on": v.creation},
+				update_modified=False,
+			)
+			filled += 1
+	frappe.db.commit()
+	return filled
 
 
 def backfill_workflow_statuses():
