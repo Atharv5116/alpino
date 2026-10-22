@@ -214,6 +214,11 @@ COLUMNS = {
 	"downloaded":     {"label": "Downloaded",
 	                   "select": "CASE WHEN IFNULL(so.custom_invoice_downloaded,0) = 1 THEN 'Yes' ELSE 'No' END",
 	                   "type": "Data"},
+	# Every item line of the order added up, as ordered (Changes(HP) #80).
+	"total_ordered_qty": {"label": "Total Ordered Qty",
+	                      "select": "(SELECT IFNULL(SUM(soi.qty), 0) FROM `tabSales Order Item` soi"
+	                                " WHERE soi.parent = so.name)",
+	                      "type": "Float"},
 	# Combo-aware and per-row, so it is computed after the page is fetched.
 	"undispatched":   {"label": "Undispatched Items / Qty", "select": None,
 	                   "type": "Data", "sortable": False},
@@ -259,7 +264,7 @@ DEFAULT_COLUMNS = [
 	"channel", "order_date", "dispatch_date", "customer_type", "sales_order",
 	"customer_po_no", "customer_name", "pl_po_no", "state", "invoice_id",
 	"transporter", "lr_number", "so_amount", "invoice_amount", "amount_diff",
-	"undispatched", "total_box", "weight", "owner_name",
+	"total_ordered_qty", "undispatched", "total_box", "weight", "owner_name",
 ]
 
 # Dynamic columns: any plain field of these documents, per the spec's "fields available
@@ -746,9 +751,10 @@ def _undispatched_for(names):
 			shipped = delivered.get((o.so, o.item_code), 0)
 		short = flt(o.qty) - flt(shipped)
 		if short > 0.0001:
-			pending.setdefault(o.so, []).append(
-				{"item_code": o.item_code, "item_name": o.item_name or o.item_code, "qty": _trim(short)}
-			)
+			pending.setdefault(o.so, []).append({
+				"item_code": o.item_code, "item_name": o.item_name or o.item_code,
+				"ordered_qty": _trim(o.qty), "qty": _trim(short),
+			})
 	return pending
 
 
