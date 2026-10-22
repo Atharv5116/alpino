@@ -24,6 +24,8 @@ var IDQ_PAGE_LENGTH = 50;
 // Same user-settings key the page used before the rewrite, so a user last-used filters
 // carry over.
 var IDQ_SETTINGS_KEY = 'invoice_download_queue';
+// Columns added to the default layout after people had saved theirs (see _apply_state).
+var IDQ_ADDED_COLUMNS = ['total_ordered_qty'];
 var IDQ_GROUP_ORDER = ['Report', 'Sales Order', 'Pick List', 'Delivery Note', 'Post Dispatch'];
 
 frappe.pages['invoice-download-queue'].on_page_load = function (wrapper) {
@@ -344,7 +346,11 @@ var InvoiceDownloadQueue = class {
 
 	async _apply_state(state) {
 		const s = state || {};
-		const cols = (s.columns || []).filter((k) => this._catalogue[k]);
+		let cols = (s.columns || []).filter((k) => this._catalogue[k]);
+		// A layout left at the old default follows the default as columns join it (Changes(HP) #80);
+		// one the user arranged keeps their choice, and the column picker offers the new ones.
+		const prior_default = this._default_columns.filter((k) => !IDQ_ADDED_COLUMNS.includes(k));
+		if (cols.join() === prior_default.join()) cols = this._default_columns.slice();
 		if (cols.length) this._columns = cols;
 		if (s.sort_field && this._catalogue[s.sort_field]) this._sort_field = s.sort_field;
 		if (s.sort_dir) this._sort_dir = s.sort_dir === 'asc' ? 'asc' : 'desc';
@@ -553,6 +559,8 @@ var InvoiceDownloadQueue = class {
 		if (v === null || v === undefined || v === '') return '<span class="text-muted">&mdash;</span>';
 		if (meta.type === 'Date' || meta.type === 'Datetime') return esc(frappe.datetime.str_to_user(String(v)));
 		if (meta.type === 'Currency') return format_currency(v);
+		// a quantity reads as 50, not 50.00, unless it has a fraction
+		if (key === 'total_ordered_qty') return format_number(v, null, flt(v) % 1 ? 2 : 0);
 		if (meta.type === 'Float') return format_number(v, null, 2);
 		if (meta.type === 'Int') return format_number(v, null, 0);
 		if (key === 'pdf_ready' || key === 'downloaded') {
@@ -579,18 +587,23 @@ var InvoiceDownloadQueue = class {
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
 		const d = (this._rows_by_so || {})[so];
 		const items = (d && d.undispatched_items) || [];
+		const qty = (v) => esc(format_number(v, null, flt(v) % 1 ? 2 : 0));
 		const total = items.reduce((sum, i) => sum + flt(i.qty), 0);
+		// Ordered beside Undispatched, to compare what was asked for with what is left (Changes(HP) #81)
+		const ordered = items.reduce((sum, i) => sum + flt(i.ordered_qty), 0);
 		const rows = items.map((i, idx) => `<tr><td>${idx + 1}</td><td>${esc(i.item_code)}</td><td>${esc(i.item_name)}</td>` +
-			`<td class="text-right">${esc(format_number(i.qty, null, flt(i.qty) % 1 ? 2 : 0))}</td></tr>`).join('');
+			`<td class="text-right">${qty(i.ordered_qty)}</td><td class="text-right">${qty(i.qty)}</td></tr>`).join('');
 		const dialog = new frappe.ui.Dialog({
 			title: __('Undispatched Items: {0}', [so]),
 			fields: [{ fieldname: 'body', fieldtype: 'HTML' }],
 		});
 		dialog.fields_dict.body.$wrapper.html(
 			`<table class="table table-bordered idq-und-table"><thead><tr><th>#</th><th>${__('Item Code')}</th>` +
-			`<th>${__('Item Name')}</th><th class="text-right">${__('Undispatched Qty')}</th></tr></thead>` +
+			`<th>${__('Item Name')}</th><th class="text-right">${__('Ordered Qty')}</th>` +
+			`<th class="text-right">${__('Undispatched Qty')}</th></tr></thead>` +
 			`<tbody>${rows}</tbody><tfoot><tr><td colspan="3" class="text-right"><strong>${__('Total')}</strong></td>` +
-			`<td class="text-right"><strong>${esc(format_number(total, null, total % 1 ? 2 : 0))}</strong></td></tr></tfoot></table>`
+			`<td class="text-right"><strong>${qty(ordered)}</strong></td>` +
+			`<td class="text-right"><strong>${qty(total)}</strong></td></tr></tfoot></table>`
 		);
 		dialog.show();
 	}
