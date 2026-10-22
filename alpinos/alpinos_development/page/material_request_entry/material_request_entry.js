@@ -314,7 +314,8 @@ var MaterialRequestEntry = class {
 			const $tr = $(this);
 			me._cell($tr.find('.c-item'), {
 				fieldtype: 'Link', options: 'Item',
-				get_query() { return { filters: { custom_material_type: ['in', types], disabled: 0 } }; },
+				// By Item Group (Raw Material / Packaging Material / Additive), not a field on the Item.
+				get_query() { return { query: 'alpinos.production.material_type.item_query', filters: { types: types } }; },
 			}, row.item_code, (v) => { row.item_code = v; me.refresh_row(idx, $tr); });
 			me._cell($tr.find('.c-qty'), { fieldtype: 'Float', precision: 3 }, row.qty, (v) => {
 				row.qty = flt(v);

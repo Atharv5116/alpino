@@ -344,10 +344,9 @@ def issued_rm_kg(sub_name):
 	net = net_issued_by_item(sub_name)
 	if not net:
 		return 0.0
-	types = {}
-	if frappe.get_meta("Item").has_field("custom_material_type"):
-		types = dict(frappe.get_all("Item", filters={"name": ("in", list(net))},
-		                            fields=["name", "custom_material_type"], as_list=True))
+	from alpinos.production import material_type as MT
+
+	types = MT.item_types(list(net))  # from the Item Group
 	return flt(sum(q for code, q in net.items() if (types.get(code) or "") != C.MATERIAL_PM), 3)
 
 

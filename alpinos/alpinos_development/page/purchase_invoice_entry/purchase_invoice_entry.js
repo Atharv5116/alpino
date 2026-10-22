@@ -205,7 +205,8 @@ var PurchaseInvoiceEntry = class {
 			description: editable ? due_note : '',
 		}, doc.custom_payment_due_date);
 
-		ro('.field-grand-total', 'grand_total', 'Total Invoice Amount', 'Currency', null,
+		// Total Amount = the supplier bill plus the logistics bill (set in recalc_payment_summary).
+		ro('.field-grand-total', 'grand_total', 'Total Amount', 'Currency', null,
 			flt(doc.rounded_total || doc.grand_total));
 		ed('.field-invoice-attachment', {
 			fieldname: 'custom_invoice_attachment', label: 'Invoice Attachment', fieldtype: 'Attach', reqd: 1,
@@ -235,7 +236,7 @@ var PurchaseInvoiceEntry = class {
 			options: ['Yes', 'No', 'Door Delivery'],
 			change: () => {
 				me.toggle_logistics();
-				me.recalc_payment_summary();
+				me.recalc_totals();
 			},
 		});
 		ed('.field-logistics-vendor', {
@@ -247,11 +248,11 @@ var PurchaseInvoiceEntry = class {
 		});
 		const freight = ed('.field-freight-amount', {
 			fieldname: 'custom_freight_amount', label: 'Freight Amount', fieldtype: 'Currency', reqd: 1,
-			change: () => me.recalc_payment_summary(),
+			change: () => me.recalc_totals(),
 		});
 		// df.change only fires when the box loses focus; follow the typing as well.
 		if (freight && freight.$input) {
-			freight.$input.on('input', frappe.utils.debounce(() => me.recalc_payment_summary(), 150));
+			freight.$input.on('input', frappe.utils.debounce(() => me.recalc_totals(), 150));
 		}
 		ed('.field-transport-attachment', {
 			fieldname: 'custom_transport_attachment', label: 'Transport Attachment', fieldtype: 'Attach', reqd: 1,
@@ -299,6 +300,9 @@ var PurchaseInvoiceEntry = class {
 		ro('.field-logistics-payable', 'logistics_payable', 'Logistics Payable', logistics_payable);
 		ro('.field-logistics-pending', 'logistics_pending', 'Logistics Pending', logistics_pending);
 		ro('.field-total-paid', 'total_paid', 'Total Paid', total_paid);
+		// The header Total Amount is what is owed in all: supplier bill + logistics bill.
+		const total_ctl = this.fields.grand_total;
+		if (total_ctl) total_ctl.set_value(flt(supplier_payable + logistics_payable, 2));
 	}
 
 	render_items(editable, docs_editable) {
@@ -409,6 +413,10 @@ var PurchaseInvoiceEntry = class {
 		const rounding = flt(total - grand, 2);
 		this._live_total = total;
 
+		// The logistics bill, when one is included: typed freight on a draft, recorded on a saved one.
+		const logistics_amt = draft
+			? (this._val('custom_include_logistics') === 'Yes' ? flt(this._val('custom_freight_amount')) : 0)
+			: flt((this.ctx || {}).logistics_payable);
 		const money = (v) => this._money(v);
 		const esc = frappe.utils.escape_html;
 		const row = (label, v, is_total) => `<div class="po-sum-row${is_total ? ' is-total' : ''}"><span>${esc(label)}</span><span>${esc(money(v))}</span></div>`;
@@ -427,7 +435,10 @@ var PurchaseInvoiceEntry = class {
 			].concat(other ? [row(__('Other Charges'), other)] : []).concat([
 				row(__('Rounding Adjustment'), rounding),
 				row(__('Total Invoice Amount'), total, true),
-			]))
+			]).concat(logistics_amt ? [
+				row(__('Logistics Amount'), logistics_amt),
+				row(__('Total Amount (Supplier + Logistics)'), flt(total + logistics_amt, 2), true),
+			] : []))
 		);
 		// A price change moves the supplier payable on a Draft too.
 		if (this.fields.custom_include_logistics) this.recalc_payment_summary();

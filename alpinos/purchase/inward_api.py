@@ -91,7 +91,7 @@ QC_ACTION_ENDPOINTS = {
 ITEM_TYPE_FIELD = "custom_inward_type"
 
 GROUP_PHRASES = (
-	(C.INWARD_RM, ("raw material", "raw materials")),
+	(C.INWARD_RM, ("raw material", "raw materials", "additive", "additives")),
 	(C.INWARD_PM, ("packaging material", "packing material", "packaging materials")),
 	(C.INWARD_FG, ("finished good", "finished goods")),
 	(C.INWARD_MM, ("miscellaneous material", "miscellaneous materials", "miscellaneous")),

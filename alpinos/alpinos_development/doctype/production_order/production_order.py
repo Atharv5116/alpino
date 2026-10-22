@@ -152,7 +152,9 @@ class ProductionOrder(Document):
 		"""
 		if not self.fg_item:
 			return
-		declared = frappe.db.get_value("Item", self.fg_item, ITEM_MATERIAL_TYPE)
+		from alpinos.production import material_type as MT
+
+		declared = MT.item_type(self.fg_item)  # from the Item Group
 		if declared and declared != C.MATERIAL_FG:
 			frappe.throw(
 				_("{0} is a {1} item. A Production Order can only be raised for a Finished Good.").format(
@@ -180,28 +182,49 @@ class ProductionOrder(Document):
 	# -------------------------------------------------- Task 4 + 5, PO-V06
 
 	def _apply_bom(self):
-		"""Find the FG's Active default BOM and snapshot its rows onto this order.
+		"""Use the chosen BOM -- else the FG's Active default -- and snapshot its rows.
 
-		A snapshot on purpose: Task 4 says editing a BOM later must not change orders already
-		written. So the rows are re-copied only when the BOM this order points at changes --
-		which happens when the FG changes, or on the first save.
+		The planner may pick any Active BOM of the finished good; left blank, the default is
+		used. A snapshot on purpose: Task 4 says editing a BOM later must not change orders
+		already written. So an order keeps its rows while its BOM and FG are unchanged (even
+		if that BOM is later deactivated or another becomes the default), and they are
+		re-copied only when the BOM this order points at changes.
 
-		Draft or submitted is not part of the question. Only `is_active` and `is_default`
-		are, because Production reads draft BOMs (see bom_api._clear_other_defaults).
+		Draft or submitted is not part of the question. Only `is_active` (and, for the
+		fallback, `is_default`) are, because Production reads draft BOMs.
 		"""
 		if not self.fg_item:
 			return
 
-		bom = self._default_bom()
-		if not bom:
-			frappe.throw(
-				_("No active default BOM found for {0}. Create one in BOM Master.").format(
-					self.fg_item
-				),
-				title=_("No Default BOM"),
-			)
+		before = self.get_doc_before_save() if not self.is_new() else None
+		if (
+			before and self.bom_no and self.get("items")
+			and before.bom_no == self.bom_no and before.fg_item == self.fg_item
+		):
+			return  # the order owns its snapshot
 
-		if self.bom_no == bom and self.get("items"):
+		chosen = (self.bom_no or "").strip()
+		if chosen:
+			problem = bom_selection_problem(self.fg_item, chosen)
+			if problem:
+				frappe.throw(problem, title=_("BOM Not Usable"))
+			bom = chosen
+		else:
+			bom = self._default_bom()
+			if not bom:
+				if frappe.db.exists("BOM", {"item": self.fg_item, "is_active": 1, "docstatus": ("<", 2)}):
+					frappe.throw(
+						_("{0} has no default BOM. Choose a BOM for this order.").format(self.fg_item),
+						title=_("No BOM Chosen"),
+					)
+				frappe.throw(
+					_("No active BOM found for {0}. Create one in BOM Master.").format(self.fg_item),
+					title=_("No Default BOM"),
+				)
+
+		# A saved order whose BOM (or finished good) was just changed has the OLD recipe's rows.
+		switched = bool(before) and (before.bom_no != bom or before.fg_item != self.fg_item)
+		if self.bom_no == bom and self.get("items") and not switched:
 			return  # already snapshotted from this BOM; leave the rows alone
 
 		self.bom_no = bom
@@ -592,3 +615,21 @@ class ProductionOrder(Document):
 		"""PPO-06 -- whether cancelling cascades to the Sub POs is still open, so nothing
 		cascades yet. The status is left to the flow rather than stamped here."""
 		pass
+
+
+def bom_selection_problem(fg_item, bom_no):
+	"""Why `bom_no` cannot be used for an order of `fg_item`, or None when it can.
+
+	One rule for the entry screen and the document: the BOM exists, is for this finished
+	good, is not cancelled, and is Active.
+	"""
+	row = frappe.db.get_value("BOM", bom_no, ["item", "is_active", "docstatus"], as_dict=True)
+	if not row:
+		return _("BOM {0} does not exist.").format(bom_no)
+	if row.item != fg_item:
+		return _("BOM {0} is the recipe for {1}, not {2}.").format(bom_no, row.item, fg_item)
+	if cint(row.docstatus) == 2:
+		return _("BOM {0} is cancelled.").format(bom_no)
+	if not cint(row.is_active):
+		return _("BOM {0} is not Active. Choose an Active BOM, or make this one Active in BOM Master.").format(bom_no)
+	return None

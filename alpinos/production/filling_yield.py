@@ -42,10 +42,9 @@ def _net_issued(sub_names):
 			totals[r.item_code][0] += sign * flt(r.transfer_qty or r.qty)
 	if not totals:
 		return 0.0
-	item_types = {}
-	if F.has_field("Item", "custom_material_type"):
-		item_types = dict(frappe.get_all("Item", filters={"name": ("in", list(totals))},
-		                                 fields=["name", "custom_material_type"], as_list=True))
+	from alpinos.production import material_type as MT
+
+	item_types = MT.item_types(list(totals))  # from the Item Group
 	out = 0.0
 	for item, (qty, row_type) in totals.items():
 		mtype = row_type or item_types.get(item)

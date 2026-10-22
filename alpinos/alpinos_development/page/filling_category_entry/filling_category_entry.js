@@ -232,7 +232,7 @@ var FillingCategoryEntry = class {
 		html += '</tbody></table>';
 		$out.html(html);
 		$out.find('.pm-sku-row').on('click', function () {
-			frappe.set_route('item_master_entry', $(this).attr('data-item'));
+			frappe.set_route('Form', 'Item', $(this).attr('data-item'));
 		});
 	}
 

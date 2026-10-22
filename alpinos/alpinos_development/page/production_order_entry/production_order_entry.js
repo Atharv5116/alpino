@@ -116,8 +116,16 @@ var ProductionOrderEntry = class {
 			fieldname: 'fg_item_name', label: __('FG Item Name'), fieldtype: 'Data', read_only: 1,
 		});
 		this._ctl('.field-bom-no', {
-			fieldname: 'bom_no', label: __('BOM No'), fieldtype: 'Data', read_only: 1,
-			description: __('The Active default recipe for this item.'),
+			fieldname: 'bom_no', label: __('BOM No'), fieldtype: 'Link', options: 'BOM',
+			// The Active BOMs of the chosen finished good, the default first.
+			get_query() {
+				return {
+					query: 'alpinos.production.production_order_api.bom_for_item_query',
+					filters: { fg_item: me._val('fg_item') },
+				};
+			},
+			change() { me.on_bom_changed(this.get_value()); },
+			description: __('Loads the Active default recipe; choose another BOM of this item if needed.'),
 		});
 
 		this._ctl('.field-qty-kg', {
@@ -212,6 +220,7 @@ var ProductionOrderEntry = class {
 		this.doc = null;
 		this.rows = [];
 		this._qty_seen = 0;
+		this._bom_loaded = '';
 		['po_id', 'client_name', 'batch_number', 'delivery_date', 'fg_item', 'fg_item_name',
 			'bom_no', 'uom', 'remarks'].forEach((f) => this._set(f, ''));
 		['production_qty_kg', 'production_qty_pcs', 'total_batches', 'total_rm_requirement',
@@ -256,6 +265,8 @@ var ProductionOrderEntry = class {
 
 	fill(doc) {
 		this._qty_seen = flt(doc.production_qty_kg);
+		// The rows on screen belong to this BOM; setting the box below must not reload them.
+		this._bom_loaded = doc.bom_no || '';
 		this._set('po_id', doc.name);
 		['creation_date', 'production_type', 'batch_number', 'delivery_date', 'status',
 			'fg_item', 'fg_item_name', 'bom_no', 'production_qty_kg', 'production_qty_pcs',
@@ -338,18 +349,24 @@ var ProductionOrderEntry = class {
 				// A late reply for a finished good the user has already moved off must not
 				// redraw the grid underneath the current one.
 				if (me._val('fg_item') !== fg_item) return;
-				if (m.error) {
+				// A saved order for this same finished good keeps the BOM it was saved with,
+				// whether or not that is the default now.
+				const kept = (me.doc && me.doc.fg_item === fg_item) ? (me.doc.bom_no || '') : '';
+				if (m.error && !kept) {
 					// Said once, plainly, and the grid is cleared: a stale grid beside a
 					// message about a missing BOM is worse than an empty one.
 					me._set('bom_no', '');
+					me._bom_loaded = '';
 					me.rows = [];
 					me.render_materials();
 					frappe.msgprint({ message: m.error, title: __('No Default BOM'), indicator: 'orange' });
 					return;
 				}
-				me._set('bom_no', m.bom_no || '');
-				me._set('fg_item_name', m.fg_item_name || '');
-				me._set('uom', m.uom || '');
+				me._bom_loaded = kept || m.bom_no || '';
+				me._set('bom_no', kept || m.bom_no || '');
+				const saved_doc = (me.doc && me.doc.fg_item === fg_item) ? me.doc : {};
+				me._set('fg_item_name', m.fg_item_name || saved_doc.fg_item_name || '');
+				me._set('uom', m.uom || saved_doc.uom || '');
 				// The saved order OWNS its rows. Copying a blank set off the BOM is only
 				// right when the finished good is not the one this order was saved with --
 				// a different recipe, so any quantity typed against the old one is
@@ -368,6 +385,39 @@ var ProductionOrderEntry = class {
 					total_required_qty: saved ? flt(row.total_required_qty) : 0,
 				}));
 				if (!saved) me.apply_batches(false);
+				me.render_materials();
+			},
+		});
+	}
+
+	/**
+	 * The planner picked a BOM other than the default: load that recipe's rows. Typed Total
+	 * Required Qty values belong to the old recipe, so they restart from the batch formula,
+	 * the same as when the finished good changes.
+	 */
+	on_bom_changed(bom) {
+		const me = this;
+		const fg_item = this._val('fg_item');
+		// Filling the box from fetch_bom / fill() lands here too, with the BOM already loaded.
+		if (!bom || !fg_item || bom === this._bom_loaded) return;
+		frappe.call({
+			method: 'alpinos.production.production_order_api.bom_details',
+			args: { fg_item: fg_item, bom_no: bom },
+			callback(r) {
+				const m = r.message || {};
+				if (me._val('bom_no') !== bom) return;  // chosen again since
+				if (m.error) {
+					frappe.msgprint({ message: m.error, title: __('BOM Not Usable'), indicator: 'orange' });
+					me._set('bom_no', me._bom_loaded);   // back to the BOM the rows are from
+					return;
+				}
+				me._bom_loaded = bom;
+				me.rows = (m.items || []).map((row) => ({
+					item_code: row.item_code, item_name: row.item_name, uom: row.uom,
+					material_type: row.material_type, process_stage: row.process_stage,
+					standard_qty: flt(row.standard_qty), total_required_qty: 0,
+				}));
+				me.apply_batches(false);
 				me.render_materials();
 			},
 		});
@@ -772,6 +822,7 @@ var ProductionOrderEntry = class {
 			batch_number: this._val('batch_number'),
 			delivery_date: this._val('delivery_date') || null,
 			fg_item: this._val('fg_item'),
+			bom_no: this._val('bom_no') || null,
 			production_qty_kg: flt(this._val('production_qty_kg')),
 			production_qty_pcs: cint(this._val('production_qty_pcs')),
 			production_start_date: this._val('production_start_date') || null,

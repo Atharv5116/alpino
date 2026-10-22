@@ -21,7 +21,12 @@ from frappe.utils import cint, flt, getdate
 from alpinos.query_compat import agg
 
 from alpinos.purchase import constants as C
-from alpinos.purchase.purchase_invoice import document_state, invoice_status
+from alpinos.purchase.purchase_invoice import (
+	_payable_logistics,
+	_payable_supplier,
+	document_state,
+	invoice_status,
+)
 
 DOCTYPE = "Purchase Invoice"
 ITEM_DOCTYPE = "Purchase Invoice Item"
@@ -48,6 +53,8 @@ LIST_FIELDS = (
 	"currency",
 	"grand_total",
 	"rounded_total",
+	"custom_include_logistics",
+	"custom_freight_amount",
 	"custom_supplier_pending_amount",
 	"custom_logistics_pending_amount",
 	"custom_total_paid_amount",
@@ -258,7 +265,11 @@ def _attach_row_extras(rows, with_actions=1):
 		row["status"] = invoice_status(row)
 		row["doc_state"] = document_state(row)
 		row["invoice_type"] = row.get("custom_invoice_type") or C.UNF_TYPE_NORMAL
-		row["invoice_amount"] = flt(row.get("rounded_total") or row.get("grand_total"))
+		# The total owed on the invoice: the supplier bill plus the logistics bill when one is
+		# included. It used to be the supplier bill alone, so Pending (which carries both)
+		# could be larger than the Amount beside it.
+		row["logistics_amount"] = _payable_logistics(row)
+		row["invoice_amount"] = flt(_payable_supplier(row) + row["logistics_amount"], 2)
 		row["pending_amount"] = flt(row.get("custom_supplier_pending_amount")) + flt(
 			row.get("custom_logistics_pending_amount")
 		)

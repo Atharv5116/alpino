@@ -437,9 +437,12 @@ def report_material_availability(f):
 		col("current", "Current Stock", "Float", width=110), col("reserved", "Reserved Stock (Planned)", "Float", width=140),
 		col("net", "Net Available", "Float", width=110),
 	]
-	if not IC.has_field("Item", "custom_material_type"):
+	from alpinos.production import material_type as MT
+
+	input_groups = MT.groups_of_type(MT.RM, MT.PM, MT.ADDITIVE)
+	if not input_groups:
 		return columns, []
-	item_filters = {"custom_material_type": ("in", ["RM", "PM", "Additive"]), "disabled": 0}
+	item_filters = {"item_group": ("in", input_groups), "disabled": 0}
 	if f.get("sku"):
 		item_filters["name"] = f.sku
 	items = frappe.get_all("Item", filters=item_filters, pluck="name", limit_page_length=0)
@@ -569,10 +572,10 @@ def report_category_stock(f):
 		col("total_kg", "Total Aggregate Weight (KG)", "Float", width=160),
 		col("total_value", "Total Value", "Currency", width=130),
 	]
-	if not IC.has_field("Item", "custom_material_type"):
-		return columns, []
+	from alpinos.production import material_type as MT
+
 	bins = frappe.db.sql(
-		"""select b.item_code, ifnull(i.custom_material_type, '') as category,
+		f"""select b.item_code, {MT.sql_type_expr("i")} as category,
 		          sum(b.actual_qty) as qty, sum(b.stock_value) as value
 		   from `tabBin` b join `tabItem` i on i.name = b.item_code
 		   where b.actual_qty > 0 group by b.item_code, category""", as_dict=True)

@@ -199,7 +199,7 @@ var ProductionOrderList = class {
 		this.page.add_inner_button(__('Merge'), () => this.merge());
 		this.page.add_inner_button(__('Sub Orders'), () => frappe.set_route('sub_order_list'));
 		this.page.add_inner_button(__('BOM Master'), () => frappe.set_route('bom_master_list'));
-		this.page.add_inner_button(__('Item Master'), () => frappe.set_route('item_master_list'));
+		this.page.add_inner_button(__('Item Master'), () => frappe.set_route('List', 'Item'));
 	}
 
 	// ------------------------------------------------------------- selection

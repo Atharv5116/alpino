@@ -48,6 +48,8 @@ WRITABLE_FIELDS = (
 	"batch_number",
 	"delivery_date",
 	"fg_item",
+	# The BOM the planner picked (blank = the FG's default); ProductionOrder._apply_bom checks it.
+	"bom_no",
 	"production_qty_kg",
 	"production_qty_pcs",
 	"production_start_date",
@@ -265,7 +267,9 @@ def default_bom(fg_item):
 	if not fg_item:
 		return {}
 
-	declared = frappe.db.get_value("Item", fg_item, ITEM_MATERIAL_TYPE)
+	from alpinos.production import material_type as MT
+
+	declared = MT.item_type(fg_item)  # from the Item Group
 	if declared and declared != C.MATERIAL_FG:
 		return {"error": _("{0} is a {1} item, not a Finished Good.").format(fg_item, declared)}
 
@@ -275,11 +279,53 @@ def default_bom(fg_item):
 		pluck="name", order_by="modified desc", limit=1,
 	)
 	if not rows:
-		return {"error": _("No active default BOM found for {0}. Create one in BOM Master.").format(fg_item)}
+		has_active = frappe.db.exists("BOM", {"item": fg_item, "is_active": 1, "docstatus": ("<", 2)})
+		if has_active:
+			# An item may have no default BOM; the planner picks one in the BOM No box.
+			return {"error": _("{0} has no default BOM. Choose one in the BOM No box.").format(fg_item)}
+		return {"error": _("No active BOM found for {0}. Create one in BOM Master.").format(fg_item)}
 
+	return _bom_payload(fg_item, rows[0])
+
+
+@frappe.whitelist()
+def bom_details(fg_item, bom_no):
+	"""The BOM the planner picked instead of the default: same payload as default_bom."""
+	frappe.has_permission("BOM", "read", throw=True)
+	if not (fg_item and bom_no):
+		return {}
+	from alpinos.alpinos_development.doctype.production_order.production_order import bom_selection_problem
+
+	problem = bom_selection_problem(fg_item, bom_no)
+	if problem:
+		return {"error": problem}
+	return _bom_payload(fg_item, bom_no)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def bom_for_item_query(doctype, txt, searchfield, start, page_len, filters):
+	"""Link search for the BOM No box: the Active BOMs of the chosen finished good, the
+	default first, each shown with its variation name."""
+	frappe.has_permission("BOM", "read", throw=True)
+	filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+	fg_item = filters.get("fg_item")
+	if not fg_item:
+		return []
+	return frappe.db.sql(
+		"""select name, ifnull(custom_bom_variation_name, ''), if(is_default = 1, 'Default', '')
+		from `tabBOM`
+		where item = %(fg)s and is_active = 1 and docstatus < 2
+		  and (name like %(txt)s or ifnull(custom_bom_variation_name, '') like %(txt)s)
+		order by is_default desc, modified desc
+		limit %(start)s, %(page_len)s""",
+		{"fg": fg_item, "txt": "%{}%".format(txt or ""), "start": int(start or 0), "page_len": int(page_len or 20)},
+	)
+
+
+def _bom_payload(fg_item, bom):
 	from alpinos.production.bom_fields import MATERIAL_TYPE_FIELD, STAGE_FIELD
 
-	bom = rows[0]
 	item = frappe.db.get_value("Item", fg_item, ["item_name", "stock_uom"], as_dict=True)
 	return {
 		"bom_no": bom,

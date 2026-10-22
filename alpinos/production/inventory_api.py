@@ -382,10 +382,13 @@ def get_fg_dashboard(status=None, item=None, warehouse=None, batch=None):
 	_assert_read()
 	out = {"rows": [], "totals": {}, "tracked": int(IC.batch_fg_tracked()), "message": "",
 	       "fg_warehouse": IC.setting("fg_warehouse")}
-	if not IC.has_field("Item", "custom_material_type"):
-		out["message"] = _("Items carry no Material Type yet, so FG items cannot be identified.")
+	from alpinos.production import material_type as MT
+
+	fg_groups = MT.groups_of_type(MT.FG)
+	if not fg_groups:
+		out["message"] = _("No Item Group sits under Finished Goods, so FG items cannot be identified.")
 		return out
-	item_filters = {"custom_material_type": "FG", "is_stock_item": 1}
+	item_filters = {"item_group": ("in", fg_groups), "is_stock_item": 1}
 	if item:
 		item_filters["name"] = item
 	fg_items = frappe.get_all("Item", filters=item_filters, pluck="name", limit_page_length=0)

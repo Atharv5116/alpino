@@ -130,7 +130,7 @@ var PINV_COLUMNS = [
 				: `<span class="indicator-pill blue">${__('Normal')}</span>`,
 	},
 	{
-		label: 'Amount',
+		label: 'Total Amount',
 		sort: 'grand_total',
 		cls: 'text-right',
 		width: '7%',

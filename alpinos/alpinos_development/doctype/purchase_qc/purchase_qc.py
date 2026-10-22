@@ -1048,7 +1048,9 @@ class PurchaseQC(Document):
 		"""
 		if not line.item_code:
 			return False
-		material = frappe.get_cached_value("Item", line.item_code, "custom_material_type")
+		from alpinos.production import material_type as MT
+
+		material = MT.item_type(line.item_code)  # from the Item Group
 		if material:
 			return material in ("RM", "PM", "Additive", "Additive Item")
 		from alpinos.purchase.inward_api import item_inward_type
@@ -1575,3 +1577,16 @@ def sample_sticker(purchase_inward, item_code, sample_id=None, sample_qty=None, 
 		"uom": uom,
 	})
 	return {"sample_id": sample_id, "html": html}
+
+
+@frappe.whitelist()
+def get_unreceived_lines(purchase_inward):
+	"""Inward lines with no received quantity. They are not on the QC (nothing arrived to
+	inspect), so the QC screen names them instead of silently showing fewer rows."""
+	frappe.has_permission("Purchase Inward", "read", purchase_inward, throw=True)
+	return frappe.get_all(
+		"Purchase Inward Item",
+		filters={"parent": purchase_inward, "parenttype": "Purchase Inward", "received_qty": ["<=", 0]},
+		fields=["item_code", "item_name", "uom", "planned_qty"],
+		order_by="idx asc",
+	)

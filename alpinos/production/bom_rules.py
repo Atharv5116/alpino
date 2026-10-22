@@ -42,7 +42,9 @@ def item_material_type(item_code):
 	"""The item's production classification, in the recipe's shorter vocabulary."""
 	if not item_code:
 		return None
-	value = frappe.db.get_value("Item", item_code, ITEM_MATERIAL_TYPE)
+	from alpinos.production import material_type as MT
+
+	value = MT.item_type(item_code)  # from the Item Group
 	return {
 		C.MATERIAL_RM: C.BOM_MATERIAL_RM,
 		C.MATERIAL_PM: C.BOM_MATERIAL_PM,
@@ -87,7 +89,9 @@ def _validate_fg_parent(doc):
 	if before and before.item == doc.item:
 		return  # unchanged; an existing BOM keeps opening whatever it was written for
 
-	declared = frappe.db.get_value("Item", doc.item, ITEM_MATERIAL_TYPE)
+	from alpinos.production import material_type as MT
+
+	declared = MT.item_type(doc.item)  # from the Item Group
 	if declared and declared != C.MATERIAL_FG:
 		frappe.throw(
 			_("{0} is a {1} item. A BOM can only be written for a Finished Good.").format(
@@ -148,7 +152,9 @@ def _validate_row_item(row):
 	An FG in the ingredient list gives the Job Card a material the shop floor cannot draw
 	from anywhere, and makes the recipe look like it builds itself.
 	"""
-	declared = frappe.db.get_value("Item", row.item_code, ITEM_MATERIAL_TYPE)
+	from alpinos.production import material_type as MT
+
+	declared = MT.item_type(row.item_code)  # from the Item Group
 	if declared == C.MATERIAL_FG:
 		frappe.throw(
 			_("Row {0}: {1} is a Finished Good, so it cannot be a material inside a recipe.").format(
@@ -228,6 +234,34 @@ def _validate_no_duplicate_rows(doc):
 			seen[key] = (row.idx, _row_is_touched(row, previous))
 
 
+def _validate_single_default(doc):
+	"""One default BOM per finished good, and no automatic switching.
+
+	Only a tick that is being SWITCHED ON is checked (a new BOM, or one that was not default
+	before), so a recipe that is already the default always saves. To move the default the
+	planner unticks the old BOM first, then ticks the new one; having no default at all is
+	allowed.
+	"""
+	if not cint(doc.is_default) or not doc.item:
+		return
+	before = _before(doc)
+	if before and cint(before.is_default):
+		return
+	others = frappe.get_all(
+		"BOM",
+		filters={"item": doc.item, "is_default": 1, "docstatus": ("<", 2), "name": ("!=", doc.name or "")},
+		pluck="name",
+		limit=1,
+	)
+	if others:
+		frappe.throw(
+			_("{0} is already the default BOM for {1}. Untick Is Default on {0} first, then tick it here.").format(
+				others[0], doc.item
+			),
+			title=_("Another BOM Is The Default"),
+		)
+
+
 def _warn_default_deactivated(doc):
 	"""BOM-07. Deactivating the default recipe for a finished good.
 
@@ -282,12 +316,18 @@ def assert_not_used_by_open_order(bom_name):
 
 # ------------------------------------------------------------------ the hook
 
+def apply_default_rule_after_submit(doc, method=None):
+	"""The one-default rule for a change to a submitted BOM (Frappe skips `validate` there)."""
+	_validate_single_default(doc)
+
+
 def apply_bom_rules(doc, method=None):
 	"""Every BOM rule, for every writer. Wired at BOM `validate` in hooks.py."""
 	_validate_fg_parent(doc)
 	_validate_variation(doc)
 	_validate_rows(doc)
 	_validate_no_duplicate_rows(doc)
+	_validate_single_default(doc)
 	_warn_default_deactivated(doc)
 	if not doc.is_new() and cint(doc.docstatus) == 0:
 		assert_not_used_by_open_order(doc.name)

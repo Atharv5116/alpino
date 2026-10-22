@@ -1502,7 +1502,7 @@ _PO_HTML_RAW = r"""
 {%- endfor -%}
 {%- set hsn_rows = {} -%}{%- set hsn_order = [] -%}
 {%- for row in doc.items -%}
-  {%- set hsn = frappe.db.get_value("Item", row.item_code, "custom_hsn_code") or "-" -%}
+  {%- set hsn = frappe.db.get_value("Item", row.item_code, "gst_hsn_code") or "-" -%}
   {%- set pct = frappe.utils.flt(row.custom_gst_percent) -%}
   {%- set key = hsn ~ "|" ~ pct -%}
   {%- if key not in hsn_rows -%}{%- set _ = hsn_order.append(key) -%}{%- set _ = hsn_rows.update({key: {"hsn": hsn, "pct": pct, "taxable": 0}}) -%}{%- endif -%}
@@ -1615,7 +1615,7 @@ _PO_HTML_RAW = r"""
       <td>{{ txt(row.item_code) }}</td>
       <td>{{ txt(row.item_name) }}{% if row.custom_item_remarks %}<br>{{ row.custom_item_remarks }}{% endif %}
         <br>Delivery Date: {{ frappe.utils.formatdate(row.schedule_date, "dd.MM.yyyy") if row.schedule_date else "-" }}</td>
-      <td>{{ frappe.db.get_value("Item", row.item_code, "custom_hsn_code") or "-" }}</td>
+      <td>{{ frappe.db.get_value("Item", row.item_code, "gst_hsn_code") or "-" }}</td>
       <td class="r">{{ amt(row.qty) }}</td>
       <td>{{ (row.uom or "") | upper }}</td>
       <td class="r">{{ amt(row.rate) }}</td>

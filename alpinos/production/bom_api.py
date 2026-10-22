@@ -138,15 +138,19 @@ def get_form_context(bom=None):
 		doc.check_permission("read")
 		data = doc.as_dict()
 		can_write = frappe.has_permission(DOCTYPE, "write", doc=doc) and cint(doc.docstatus) == 0
+		# Is Default stays editable after submit (and on an inactive BOM), unlike the rest.
+		can_set_default = frappe.has_permission(DOCTYPE, "write", doc=doc) and cint(doc.docstatus) < 2
 	else:
 		doc = None
 		data = None
 		frappe.has_permission(DOCTYPE, "read", throw=True)
 		can_write = frappe.has_permission(DOCTYPE, "create")
+		can_set_default = can_write
 
 	return {
 		"doc": data,
 		"can_write": bool(can_write),
+		"can_set_default": bool(can_set_default),
 		"can_submit": bool(doc and cint(doc.docstatus) == 0
 		                   and frappe.has_permission(DOCTYPE, "submit", doc=doc)),
 		"docstatus": cint(doc.docstatus) if doc else 0,
@@ -204,41 +208,29 @@ def component_item_query(doctype, txt, searchfield, start, page_len, filters):
 
 
 def _item_query_by_type(txt, start, page_len, material_type, include_fg):
+	from alpinos.production import material_type as MT
+
 	comparison = "=" if include_fg else "!="
 	txt = f"%{txt or ''}%"
+	# The item's type comes from its Item Group; an item in no category group is unclassified
+	# ('') and is offered in both pickers, listed after the ones that match.
+	kind = MT.sql_type_expr("i")
 	return frappe.db.sql(
 		f"""
-		select name, item_name
-		from `tabItem`
-		where disabled = 0
-		  and (custom_material_type {comparison} %(mt)s
-		       or ifnull(custom_material_type, '') = '')
-		  and (name like %(txt)s or item_name like %(txt)s)
+		select i.name, i.item_name
+		from `tabItem` i
+		where i.disabled = 0
+		  and ({kind} {comparison} %(mt)s
+		       or {kind} = '')
+		  and (i.name like %(txt)s or i.item_name like %(txt)s)
 		order by
-			case when custom_material_type {comparison} %(mt)s then 0 else 1 end,
-			name asc
+			case when {kind} != '' and {kind} {comparison} %(mt)s then 0 else 1 end,
+			i.name asc
 		limit %(start)s, %(page_len)s
 		""",
 		{"mt": material_type, "txt": txt, "start": cint(start),
 		 "page_len": cint(page_len) or 20},
 	)
-
-
-def _clear_other_defaults(bom_name, fg_item):
-	"""One default BOM per finished good, drafts included.
-
-	ERPNext's manage_default_bom() does this on submit/cancel only, and its lookup filters
-	docstatus=1 -- so two drafts could both sit ticked, and whichever was submitted last
-	would silently win. Production reads draft BOMs, so the rule is applied on save.
-	"""
-	others = frappe.get_all(
-		DOCTYPE,
-		filters={"item": fg_item, "is_default": 1, "docstatus": ("<", 2)},
-		pluck="name",
-	)
-	for other in others:
-		if other != bom_name:
-			frappe.db.set_value(DOCTYPE, other, "is_default", 0, update_modified=False)
 
 
 @frappe.whitelist()
@@ -302,10 +294,35 @@ def save_bom(payload):
 		frappe.throw(_("Add at least one material to the recipe."), title=_("No Materials"))
 
 	doc.save()
-	if cint(doc.is_default):
-		_clear_other_defaults(doc.name, doc.item)
 	frappe.db.commit()
 	return {"name": doc.name}
+
+
+@frappe.whitelist()
+def set_default_bom(bom, is_default=1):
+	"""Tick or untick Is Default on a BOM at any stage, submitted included.
+
+	Everything else on a submitted BOM is locked, but which recipe is the default has to stay
+	changeable. The rules: an item may have no default at all, and only one BOM may be ticked
+	-- so to move the default the old one is unticked first (bom_rules._validate_single_default
+	refuses a second tick, and AlpinosBOM.manage_default_bom no longer ticks or switches
+	anything on its own). is_default is an allow-on-submit field, so this is an ordinary save.
+	"""
+	is_default = cint(is_default)
+	doc = frappe.get_doc(DOCTYPE, bom)
+	doc.check_permission("write")
+	if cint(doc.docstatus) == 2:
+		frappe.throw(_("A cancelled BOM cannot be the default."), title=_("BOM Cancelled"))
+	if is_default and not cint(doc.is_active):
+		frappe.throw(
+			_("Only an Active BOM can be the default. Make it Active first."),
+			title=_("BOM Not Active"),
+		)
+	doc.is_default = is_default
+	doc.save()
+	frappe.db.commit()
+	doc.reload()
+	return {"name": doc.name, "is_default": cint(doc.is_default)}
 
 
 @frappe.whitelist()
@@ -313,7 +330,5 @@ def submit_bom(bom):
 	doc = frappe.get_doc(DOCTYPE, bom)
 	doc.check_permission("submit")
 	doc.submit()
-	if cint(doc.is_default):
-		_clear_other_defaults(doc.name, doc.item)
 	frappe.db.commit()
 	return {"name": doc.name, "docstatus": doc.docstatus}

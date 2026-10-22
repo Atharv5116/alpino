@@ -321,10 +321,9 @@ def pm_per_pack(sku):
 		fields.append("custom_material_type")
 	rows = frappe.get_all("BOM Item", filters={"parent": bom, "parenttype": "BOM"}, fields=fields)
 	codes = [r.item_code for r in rows]
-	types = {}
-	if codes and has_field("Item", "custom_material_type"):
-		types = dict(frappe.get_all("Item", filters={"name": ("in", codes)},
-		                            fields=["name", "custom_material_type"], as_list=True))
+	from alpinos.production import material_type as MT
+
+	types = MT.item_types(codes)  # from the Item Group
 	out = {}
 	for r in rows:
 		mtype = r.get("custom_material_type") or types.get(r.item_code)

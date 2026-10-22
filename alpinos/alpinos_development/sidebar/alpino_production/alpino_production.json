@@ -335,8 +335,8 @@
    "is_default_module": 0,
    "keep_closed": 0,
    "label": "Item Master",
-   "link_to": "item_master_list",
-   "link_type": "Page",
+   "link_to": "Item",
+   "link_type": "DocType",
    "open_in_new_tab": 0,
    "show_arrow": 0,
    "type": "Link"
@@ -432,7 +432,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-11 18:00:00.000000",
+ "modified": "2026-10-20 17:30:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Alpino Production",

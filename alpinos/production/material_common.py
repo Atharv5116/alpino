@@ -134,15 +134,18 @@ def item_info(item_codes):
 	codes = [c for c in set(item_codes or []) if c]
 	if not codes:
 		return {}
-	fields = ["name", "item_name", "stock_uom", "has_batch_no"]
-	if frappe.get_meta("Item").has_field("custom_material_type"):
-		fields.append("custom_material_type")
+	from alpinos.production import material_type as MT
+
+	gmap = MT.group_types()
 	out = {}
-	for row in frappe.get_all("Item", filters={"name": ("in", codes)}, fields=fields):
+	for row in frappe.get_all(
+			"Item", filters={"name": ("in", codes)},
+			fields=["name", "item_name", "stock_uom", "has_batch_no", "item_group"]):
 		out[row.name] = frappe._dict(
 			item_name=row.item_name, stock_uom=row.stock_uom,
 			has_batch_no=cint(row.has_batch_no),
-			material_type=row.get("custom_material_type") or "")
+			# From the Item Group (Raw Material / Packaging Material / Additive / Finished Goods).
+			material_type=MT.type_of_group(row.item_group, gmap))
 	return out
 
 

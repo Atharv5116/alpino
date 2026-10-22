@@ -35,7 +35,8 @@ LINE_GST_FIELD = "custom_gst_percent"
 LINE_FINAL_RATE_FIELD = "custom_rate_incl_gst"
 LINE_FINAL_AMOUNT_FIELD = "custom_amount_incl_gst"
 LINE_HSN_FIELD = "custom_hsn_code"
-ITEM_HSN_FIELD = "custom_hsn_code"
+# India Compliance's HSN on the Item (the module's own Item.custom_hsn_code is retired).
+ITEM_HSN_FIELD = "gst_hsn_code"
 
 from alpinos.purchase import purchase_gst as G
 

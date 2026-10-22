@@ -119,6 +119,8 @@ doctype_js = {
 	"Attendance Request": "public/js/attendance_request_on_duty.js",
 	# HRMS 16 hides the Holiday List field; HR still sets it there (see the file).
 	"Employee": "public/js/employee_holiday_list.js",
+	# FG / PM sections of the Item form follow the Item Group (production/material_type.py).
+	"Item": "public/js/item_material_type.js",
 	# One file for all three: the desk form is the one Production surface that neither the
 	# module screens nor frappe.re_route can correct the breadcrumb on.
 	"Machine": "public/js/production_doctype_breadcrumb.js",
@@ -804,6 +806,9 @@ doc_events = {
 		# standard desk form, the REST API and an import all went past the versions that
 		# used to sit in bom_api.save_bom (see alpinos.production.bom_rules).
 		"validate": "alpinos.production.bom_rules.apply_bom_rules",
+		# Frappe runs `validate` only for a normal save; a change to a SUBMITTED BOM (the Is
+		# Default tick) goes through this hook instead, so the one-default rule rides on it too.
+		"before_update_after_submit": "alpinos.production.bom_rules.apply_default_rule_after_submit",
 	},
 	"File": {
 		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",

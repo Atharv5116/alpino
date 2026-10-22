@@ -13,15 +13,13 @@ frappe.pages['item_master_entry'].on_page_load = function (wrapper) {
 		title: __('Item'),
 		single_column: true,
 	});
-	page.main.html(frappe.render_template('item_master_entry'));
-	wrapper.item_entry = new ItemMasterEntry(page);
+	// Retired: Frappe's own Item form replaces this screen. The page stays so an old
+	// bookmark or link lands there instead of on a 404.
 };
 
-frappe.pages['item_master_entry'].on_page_show = function (wrapper) {
-	// The Item list, not the Production workspace: this screen is one item, and the way
-	// back from it is the other items. Same destination as the Back to List button.
-	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb(__('Item Master'), '/app/item_master_list');
-	if (wrapper.item_entry) wrapper.item_entry.handle_route();
+frappe.pages['item_master_entry'].on_page_show = function () {
+	const name = (frappe.get_route() || [])[1];
+	setTimeout(() => (name ? frappe.set_route('Form', 'Item', name) : frappe.new_doc('Item')), 0);
 };
 
 var ItemMasterEntry = class {

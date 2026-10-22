@@ -958,6 +958,23 @@ var PurchaseQCEntry = class {
 				me.quarantine_states = {};
 				me.tables.decision = (doc.items || []).slice();
 				me.render_decision();
+				// An inward line with nothing received is not on the QC; say so, so a short
+				// list is never a mystery (the usual cause: its quantity was never entered).
+				me.wrapper.find('.pqc-unreceived').remove();
+				if (!cint(doc.docstatus) && doc.purchase_inward) {
+					frappe.call({
+						method: 'alpinos.alpinos_development.doctype.purchase_qc.purchase_qc.get_unreceived_lines',
+						args: { purchase_inward: doc.purchase_inward },
+						callback(u) {
+							if (me.doc !== doc || !u.message || !u.message.length) return;
+							const esc = frappe.utils.escape_html;
+							const list = u.message.map((l) => `${esc(l.item_code)} (${esc(l.uom || '')}, ${__('planned')} ${format_number(flt(l.planned_qty), null, 3)})`).join(', ');
+							me.wrapper.find('.decision-table').closest('.alp-scroll, .eso-card').first().before(
+								`<div class="pqc-unreceived alert alert-warning" style="margin:0 0 10px;">${__('Not on this QC: no received quantity was entered on the Purchase Inward for')} <b>${list}</b>. ${__('Enter the received quantity on the inward to inspect it.')}</div>`
+							);
+						},
+					});
+				}
 				// A draft saved before the Supplier Batch column: show the inward batch now.
 				if (!doc.docstatus && doc.purchase_inward
 					&& me.tables.decision.some((l) => !l.supplier_batch_no)) {

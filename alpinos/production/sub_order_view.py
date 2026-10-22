@@ -137,10 +137,9 @@ def get_sub_order_view(sub_order):
 	issued = _qty_by_item([r.name for r in issues if cint(r.docstatus) == 1])
 	returned = _qty_by_item([r.name for r in returns if cint(r.docstatus) == 1])
 	codes = list({row.item_code for row in sub.required_items if row.item_code})
-	types = {}
-	if codes and _has("Item", "custom_material_type"):
-		types = dict(frappe.get_all("Item", filters={"name": ("in", codes)},
-		                            fields=["name", "custom_material_type"], as_list=True))
+	from alpinos.production import material_type as MT
+
+	types = MT.item_types(codes)  # from the Item Group
 	materials = []
 	for row in sub.required_items:
 		code = row.item_code

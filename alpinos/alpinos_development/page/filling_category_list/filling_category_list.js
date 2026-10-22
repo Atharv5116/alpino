@@ -114,7 +114,7 @@ var FillingCategoryList = class {
 			}, 'add');
 		}
 		this.page.add_inner_button(__('Machines'), () => frappe.set_route('machine_list'));
-		this.page.add_inner_button(__('Items'), () => frappe.set_route('item_master_list'));
+		this.page.add_inner_button(__('Items'), () => frappe.set_route('List', 'Item'));
 	}
 
 	refresh() {

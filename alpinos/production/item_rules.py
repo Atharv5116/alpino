@@ -35,6 +35,14 @@ from alpinos.production.item_fields import (
 BATCH_TRACKED_TYPES = (C.MATERIAL_RM, C.MATERIAL_ADDITIVE)
 
 
+def _type(doc):
+	"""The item's type, from its Item Group (Raw Material / Packaging Material / Additive /
+	Finished Goods), or '' for a group outside those four."""
+	from alpinos.production import material_type as MT
+
+	return MT.doc_type(doc)
+
+
 def _was(doc, fieldname):
 	"""The stored value before this save, or None on a new document."""
 	before = doc.get_doc_before_save() if not doc.is_new() else None
@@ -73,28 +81,16 @@ def _material_type_is_required(doc):
 
 
 def _validate_material_type(doc):
-	material_type = doc.get(MATERIAL_TYPE_FIELD)
-	if material_type:
-		return
-
-	if doc.is_new():
-		if _material_type_is_required(doc):
-			frappe.throw(_("Material Type is required."), title=_("Material Type Required"))
-		return
-
-	# Not new. Only refuse when the value is being taken AWAY -- a legacy item that never
-	# had one keeps saving.
-	if _was(doc, MATERIAL_TYPE_FIELD):
-		frappe.throw(
-			_("Material Type cannot be cleared once it has been set."),
-			title=_("Material Type Required"),
-		)
+	"""IM-01 is retired: there is no Material Type to fill in. An item is RM / PM / Additive /
+	FG by the Item Group it is filed under, and an item in a group outside those four is simply
+	unclassified, like the legacy items with a blank type were."""
+	return
 
 
 # ----------------------------------------------------------- IM-02 and IM-03
 
 def _validate_material_category(doc):
-	if doc.get(MATERIAL_TYPE_FIELD) != C.MATERIAL_PM:
+	if _type(doc) != C.MATERIAL_PM:
 		# IM-03. A category left on an item that is no longer PM would keep surfacing in
 		# filters, reports and exports, which `depends_on` does not reach.
 		if doc.get(MATERIAL_CATEGORY_FIELD):
@@ -126,7 +122,7 @@ def _apply_batch_tracking(doc):
 	that are supposed to carry it. The 4 RM/Additive items already untracked here keep
 	saving, because their stored value is 0 and clearing 0 changes nothing.
 	"""
-	material_type = doc.get(MATERIAL_TYPE_FIELD)
+	material_type = _type(doc)
 	if doc.is_new():
 		if material_type in BATCH_TRACKED_TYPES and not cint(doc.has_batch_no):
 			doc.has_batch_no = 1
@@ -165,7 +161,7 @@ def _validate_filling_categories(doc):
 	if not rows:
 		return
 
-	if doc.get(MATERIAL_TYPE_FIELD) != C.MATERIAL_FG:
+	if _type(doc) != C.MATERIAL_FG:
 		doc.set(ALLOWED_CATEGORIES_FIELD, [])
 		return
 

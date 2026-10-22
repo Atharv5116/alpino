@@ -170,15 +170,18 @@ def item_meta(item_codes):
 	if not codes:
 		return {}
 	meta = frappe.get_meta("Item")
-	fields = ["name", "item_name", "stock_uom", "has_batch_no", "weight_per_unit", "weight_uom"]
-	for f in ("custom_material_type", "custom_pack_size_kg"):
-		if meta.has_field(f):
-			fields.append(f)
+	from alpinos.production import material_type as MT
+
+	fields = ["name", "item_name", "stock_uom", "has_batch_no", "weight_per_unit", "weight_uom", "item_group"]
+	if meta.has_field("custom_pack_size_kg"):
+		fields.append("custom_pack_size_kg")
+	gmap = MT.group_types()
 	out = {}
 	for r in frappe.get_all("Item", filters={"name": ("in", codes)}, fields=fields):
 		out[r.name] = frappe._dict(
 			item_name=r.item_name, stock_uom=r.stock_uom, has_batch_no=cint(r.has_batch_no),
-			material_type=r.get("custom_material_type") or "",
+			# From the Item Group, not a field on the Item.
+			material_type=MT.type_of_group(r.item_group, gmap),
 			weight_per_unit=flt(r.weight_per_unit), weight_uom=(r.weight_uom or ""),
 			pack_size_kg=flt(r.get("custom_pack_size_kg")))
 	return out

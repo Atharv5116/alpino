@@ -73,11 +73,13 @@ def _line(machine):
 def _check_sku(sku, machine):
 	if not sku:
 		frappe.throw(_("Choose the Target SKU on every row."), title=_("Target SKU Required"))
-	if F.has_field("Item", "custom_material_type"):
-		mtype = frappe.db.get_value("Item", sku, "custom_material_type")
-		if mtype and mtype != C.MATERIAL_FG:
-			frappe.throw(_("{0} is not an FG item and cannot be a filling target.").format(sku),
-			             title=_("Not An FG Item"))
+	from alpinos.production import material_type as MT
+
+	# An item whose group is outside the four categories is unclassified and still allowed.
+	mtype = MT.item_type(sku)
+	if mtype and mtype != C.MATERIAL_FG:
+		frappe.throw(_("{0} is not an FG item and cannot be a filling target.").format(sku),
+		             title=_("Not An FG Item"))
 	size = F.pack_size(sku)
 	if size <= 0:
 		frappe.throw(_("Set the Pack Size (KG) on {0} in Item Master before planning it.").format(
@@ -419,8 +421,9 @@ def sku_query(doctype, txt, searchfield, start, page_len, filters):
 			cond = """ and exists (select 1 from `tabItem Filling Category` c where c.parent = i.name
 			           and c.parenttype = 'Item' and c.filling_process_category = %(cat)s)"""
 			params["cat"] = cat
-	if F.has_field("Item", "custom_material_type"):
-		cond += " and ifnull(i.custom_material_type, '') in ('', 'FG')"
+	from alpinos.production import material_type as MT
+
+	cond += " and {} in ('', 'FG')".format(MT.sql_type_expr("i"))
 	return frappe.db.sql(
 		f"""
 		select i.name, i.item_name, i.{F.PACK_SIZE_FIELD}

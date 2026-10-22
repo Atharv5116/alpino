@@ -14,7 +14,8 @@ WORKSPACE = "Production"
 
 SHORTCUTS = (
 	# (label, type, link_to, doc_view)
-	("Item Master", "Page", "item_master_list", ""),
+	# Frappe's own Item list and a new Item form: the custom Item Master screens are retired.
+	("Item Master", "DocType", "Item", "List"),
 	("BOM Master", "Page", "bom_master_list", ""),
 	("Process Master", "Page", "process_master_list", ""),
 	# The module's own screens, not the desk list: the desk grid shows raw TYP- ids where
@@ -29,7 +30,7 @@ SHORTCUTS = (
 	("Production Orders", "Page", "production_order_list", ""),
 	("Sub Production Orders", "Page", "sub_order_list", ""),
 	("New Production Order", "Page", "production_order_entry", ""),
-	("New Item", "Page", "item_master_entry", ""),
+	("New Item", "DocType", "Item", "New"),
 	("New BOM", "Page", "bom_master_entry", ""),
 	# Store Planning / Material Management (appended).
 	("Store Planning Board", "Page", "store_planning_board", ""),

@@ -36,10 +36,12 @@ from alpinos.production import constants as C
 
 MATERIAL_TYPE_FIELD = "custom_material_type"
 MATERIAL_CATEGORY_FIELD = "custom_material_category"
-HSN_FIELD = "custom_hsn_code"
-#: India Compliance's own HSN field on Item (a Link to "GST HSN Code"). When that app is
-#: installed it validates THIS field on every sales item, not HSN_FIELD -- see item_api.
+#: The Item's HSN is India Compliance's own field (a Link to "GST HSN Code"). The module's
+#: former Data field "custom_hsn_code" is retired (retire_custom_hsn below); HSN_FIELD stays
+#: as a name so existing imports keep working, and now simply IS the India Compliance field.
 GST_HSN_FIELD = "gst_hsn_code"
+HSN_FIELD = GST_HSN_FIELD
+RETIRED_HSN_FIELD = "custom_hsn_code"
 #: Retired. Kept only so the note below can name it and an old import does not break --
 #: nothing creates or reads this field any more. The GST rate is LEGACY_GST_PERCENT_FIELD.
 TAX_RATE_FIELD = "custom_tax_rate"
@@ -75,8 +77,11 @@ def _custom_fields():
 				fieldtype="Select",
 				options="\n" + C.select_options(C.ITEM_MATERIAL_TYPES),
 				insert_after="custom_production_section",
-				in_standard_filter=1,
-				description="What this item is to production: a raw material, packaging, or an additive.",
+				# Retired: an item's type comes from its Item Group (see production/material_type.py).
+				# Hidden, not deleted, so what it held stays; nothing reads or writes it.
+				hidden=1,
+				in_standard_filter=0,
+				description="Retired. The type comes from the Item Group.",
 			),
 			dict(
 				fieldname="custom_production_col_1",
@@ -92,26 +97,13 @@ def _custom_fields():
 				fieldtype="Select",
 				options="\n" + C.select_options(C.PM_CATEGORIES),
 				insert_after="custom_production_col_1",
-				depends_on=f"eval:doc.{MATERIAL_TYPE_FIELD}=='{C.MATERIAL_PM}'",
-				# The one mandatory field in this module, and only ever for PM items, so a
-				# plain RM or Additive item is never blocked by a packaging question that
-				# does not apply to it. Frappe enforces mandatory_depends_on on save, so
-				# this holds for the standard Item form and the REST API too, not just the
-				# Item Master screen.
-				mandatory_depends_on=f"eval:doc.{MATERIAL_TYPE_FIELD}=='{C.MATERIAL_PM}'",
+				# Shown only for items filed under Packaging Material: the Item form script
+				# (public/js/item_material_type.js) toggles it, and item_rules requires it on
+				# the server. No depends_on: the type is no longer a field on the form. An
+				# empty string, not omitted, so the old expression is cleared on existing sites.
+				depends_on="",
+				mandatory_depends_on="",
 				description="Required for packaging material.",
-			),
-			dict(
-				# Data, not a Link: a site without the india_compliance app has no "GST HSN
-				# Code" doctype, and a Link to a doctype that does not exist would refuse
-				# every save. Where the app IS installed, item_api copies this value into
-				# its gst_hsn_code (GST_HSN_FIELD) as well.
-				fieldname=HSN_FIELD,
-				label="HSN Code",
-				fieldtype="Data",
-				insert_after=LEGACY_GST_PERCENT_FIELD,
-				in_standard_filter=1,
-				description="Customs / GST classification code for this item.",
 			),
 			# TAX_RATE_FIELD is deliberately NOT created any more -- see the note beside
 			# LEGACY_GST_PERCENT_FIELD. The GST rate lives in custom_gst_percent, which the
@@ -132,12 +124,12 @@ def _custom_fields():
 				fieldname="custom_filling_section",
 				label="Filling",
 				fieldtype="Section Break",
-				# Anchored on HSN, not on the retired tax-rate field: a fresh site never
-				# creates that one, and insert_after pointing at nothing would drop this
-				# section at the bottom of the form.
-				insert_after=HSN_FIELD,
+				# Anchored on the GST % this module creates, not on the retired tax-rate field
+				# (a fresh site never creates that one, and insert_after pointing at nothing
+				# would drop this section at the bottom of the form).
+				insert_after=LEGACY_GST_PERCENT_FIELD,
 				collapsible=1,
-				depends_on=f"eval:doc.{MATERIAL_TYPE_FIELD}=='{C.MATERIAL_FG}'",
+				depends_on="",  # shown for Finished Goods by public/js/item_material_type.js
 			),
 			dict(
 				fieldname=TARGET_SKU_NAME_FIELD,
@@ -145,7 +137,7 @@ def _custom_fields():
 				fieldtype="Data",
 				insert_after="custom_filling_section",
 				description="How this SKU is named on the filling line, e.g. 400g Chocolate Oats.",
-				depends_on=f"eval:doc.{MATERIAL_TYPE_FIELD}=='{C.MATERIAL_FG}'",
+				depends_on="",
 			),
 			dict(
 				# Table MultiSelect, not a Select: 8.5 requires a new filling process to
@@ -157,14 +149,44 @@ def _custom_fields():
 				options="Item Filling Category",
 				insert_after=TARGET_SKU_NAME_FIELD,
 				description="Which filling lines may run this SKU. Empty means it has not been decided yet.",
-				depends_on=f"eval:doc.{MATERIAL_TYPE_FIELD}=='{C.MATERIAL_FG}'",
+				depends_on="",
 			),
 		]
 	}
 
 
+def retire_custom_hsn():
+	"""Drop the module's own "HSN Code" Data field from Item; India Compliance's gst_hsn_code
+	is the Item's HSN now.
+
+	A value typed only in the old field is first carried into gst_hsn_code when that is blank
+	and the code exists in India Compliance's HSN list; where both hold a code, India
+	Compliance's wins. The database column is left in place (a Custom Field delete does not
+	drop it), so nothing is lost at the SQL level.
+	"""
+	name = f"Item-{RETIRED_HSN_FIELD}"
+	if not frappe.db.exists("Custom Field", name):
+		return
+	if frappe.db.has_column("Item", RETIRED_HSN_FIELD) and frappe.get_meta("Item").has_field(GST_HSN_FIELD) and frappe.db.exists("DocType", "GST HSN Code"):
+		for row in frappe.db.sql(
+			f"""select name, `{RETIRED_HSN_FIELD}` as old from `tabItem`
+			where ifnull(`{RETIRED_HSN_FIELD}`, '') != '' and ifnull(`{GST_HSN_FIELD}`, '') = ''""",
+			as_dict=True,
+		):
+			code = (row.old or "").replace(" ", "")
+			if frappe.db.exists("GST HSN Code", code):
+				frappe.db.set_value("Item", row.name, GST_HSN_FIELD, code, update_modified=False)
+	frappe.delete_doc("Custom Field", name, force=True, ignore_permissions=True)
+	frappe.clear_cache(doctype="Item")
+
+
 def setup_item_fields():
 	create_custom_fields(_custom_fields(), ignore_validate=True, update=True)
+	retire_custom_hsn()
+	# Packaging Material and Additive groups (Raw Material / Finished Goods exist already).
+	from alpinos.production import material_type as MT
+
+	MT.ensure_category_groups()
 	frappe.db.commit()
 
 

@@ -79,4 +79,33 @@
 		};
 		link.__alpinos_page_controls = true;
 	}
+
+	// 4. Typing into a number box that shows "0.000" appends to the zeros. Clicking a Received /
+	//    Approved / Rate cell put the caret after "0.000", so typing 4000 gave 0.0004000, which
+	//    rounds back to 0: the quantity was silently lost (a received line that never reached QC).
+	//    Tab already selects the box, which is why only boxes reached with the mouse failed.
+	//    Selecting on focus makes what is typed replace what is there. Page and dialog boxes only;
+	//    desk forms and grids keep Frappe's own behaviour.
+	if (!window.__alpinos_numeric_focus) {
+		window.__alpinos_numeric_focus = true;
+		const NUMERIC = ['Float', 'Currency', 'Int', 'Percent'];
+		document.addEventListener(
+			'focusin',
+			(e) => {
+				const input = e.target;
+				if (!input || input.tagName !== 'INPUT' || input.readOnly || input.disabled) return;
+				const control = input.closest('.frappe-control');
+				if (!control || NUMERIC.indexOf(control.getAttribute('data-fieldtype')) === -1) return;
+				if (input.closest('.form-layout, .grid-row')) return;
+				const select = () => {
+					try { input.select(); } catch (err) { /* not selectable */ }
+				};
+				select();
+				setTimeout(select, 0);
+				// The mouse-up that finishes this click would put the caret back and deselect.
+				input.addEventListener('mouseup', (ev) => ev.preventDefault(), { once: true });
+			},
+			true
+		);
+	}
 })();

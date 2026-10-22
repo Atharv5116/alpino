@@ -104,7 +104,10 @@ var BomMasterEntry = class {
 		});
 		this._ctl('.field-is-default', {
 			fieldname: 'is_default', label: __('Is Default'), fieldtype: 'Check',
-			description: __('Auto-loads during production. Only one per FG Item.'),
+			description: __('Auto-loads during production. Only one per FG Item: untick the current default before ticking another. An item may have no default.'),
+			// On a submitted BOM the rest of the form is locked but this stays live, so the
+			// default can be moved at any time: the change is saved as soon as it is made.
+			change: () => this.on_default_change(),
 		});
 		this._ctl('.field-batch-size', {
 			fieldname: 'quantity', label: __('Base Batch Size'), fieldtype: 'Float', read_only: 1,
@@ -196,7 +199,7 @@ var BomMasterEntry = class {
 					// Narrow the picker to the material type this row is already for, so a
 					// PM row cannot be given a raw material.
 					const wanted = me.item_material_type(me.rows[idx].custom_material_type);
-					if (wanted) return { filters: { disabled: 0, custom_material_type: wanted } };
+					if (wanted) return { query: 'alpinos.production.material_type.item_query', filters: { types: [wanted] } };
 					// No type chosen yet. The picker used to offer everything, finished
 					// goods included -- and an FG is what a BOM MAKES, never a line inside
 					// one. A server query rather than a `!= FG` filter, because in SQL that
@@ -378,6 +381,48 @@ var BomMasterEntry = class {
 		// as a control-value display area with no input element at all -- there is nothing
 		// for a lock to switch off, and nothing an unlock could hand back.
 		alpinos_set_readonly(this.wrapper.find('.bm-card'), !this.ctx.can_write);
+		// Is Default is the one field that stays editable on a submitted BOM (whoever may
+		// write the BOM). Switched back on after the lock, and its remembered state dropped
+		// so a later unlock does not touch it.
+		if (!this.ctx.can_write && cint(this.ctx.can_set_default)) {
+			this.wrapper.find('.field-is-default input')
+				.prop('disabled', false)
+				.removeAttr('data-alpinos-prev');
+		}
+	}
+
+	/**
+	 * A submitted BOM cannot be saved from this screen, so ticking or unticking Is Default
+	 * there is sent straight to the server. A draft carries the tick with its normal Save.
+	 */
+	on_default_change() {
+		const me = this;
+		if (!this.docname || !this.doc || cint(this.doc.docstatus) !== 1) return;
+		const want = cint(this._val('is_default'));
+		// fill() sets the control from the stored value, which fires this too: nothing to do.
+		if (want === cint(this.doc.is_default)) return;
+		frappe.call({
+			method: 'alpinos.production.bom_api.set_default_bom',
+			args: { bom: this.docname, is_default: want },
+			freeze: true,
+			freeze_message: __('Updating the default BOM...'),
+			callback(r) {
+				if (!r.message) {
+					me._set('is_default', cint(me.doc.is_default));
+					return;
+				}
+				me.doc.is_default = cint(r.message.is_default);
+				frappe.show_alert({
+					message: me.doc.is_default
+						? __('{0} is now the default BOM for {1}.', [me.docname, me._val('item')])
+						: __('{0} is no longer the default BOM.', [me.docname]),
+					indicator: 'green',
+				}, 5);
+			},
+			// A refusal (another BOM is the default, not Active, cancelled, no permission)
+			// puts the tick back as it was; the server's message explains it.
+			error() { me._set('is_default', cint(me.doc.is_default)); },
+		});
 	}
 
 	// -------------------------------------------------------------- actions

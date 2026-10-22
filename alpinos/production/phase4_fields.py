@@ -38,7 +38,7 @@ def _item_fields():
 				"fieldtype": "Float",
 				"precision": "3",
 				"insert_after": ALLOWED_CATEGORIES_FIELD,
-				"depends_on": f"eval:doc.{MATERIAL_TYPE_FIELD}=='FG'",
+				"depends_on": "",  # shown for Finished Goods by public/js/item_material_type.js
 				# default pending BA confirmation: pack size kept on the FG Item in KG.
 				"description": "Net weight of one pack in KG, e.g. 0.4 for 400 g. FG items only.",
 			},

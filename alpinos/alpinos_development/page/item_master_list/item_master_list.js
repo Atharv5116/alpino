@@ -12,12 +12,12 @@ frappe.pages['item_master_list'].on_page_load = function (wrapper) {
 		title: __('Item Master'),
 		single_column: true,
 	});
-	wrapper.item_list = new ItemMasterList(page);
+	// Retired: Frappe's own Item list replaces this screen. The page stays so an old
+	// bookmark or link lands there instead of on a 404.
 };
 
-frappe.pages['item_master_list'].on_page_show = function (wrapper) {
-	window.alpinos_production_breadcrumb && alpinos_production_breadcrumb();
-	if (wrapper.item_list) wrapper.item_list.refresh();
+frappe.pages['item_master_list'].on_page_show = function () {
+	setTimeout(() => frappe.set_route('List', 'Item'), 0);
 };
 
 var ItemMasterList = class {
