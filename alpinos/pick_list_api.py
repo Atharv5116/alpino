@@ -889,6 +889,41 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	_pl_module.create_dn_with_so = _patched_create_dn_with_so
 	_pl_module.create_dn_wo_so = _patched_create_dn_wo_so
 
+	# ERPNext 16 makes the note through create_delivery_with_so / create_delivery_wo_so and
+	# never calls the two functions above, so on v16 the family address was not linked ("Billing
+	# Address does not belong to the <buyer>" for an order using a site's address) and zero-qty
+	# rows were not dropped. The same two steps, on v16's functions.
+	_orig_create_delivery_with_so = getattr(_pl_module, "create_delivery_with_so", None)
+	_orig_create_delivery_wo_so = getattr(_pl_module, "create_delivery_wo_so", None)
+
+	def _patched_create_delivery_with_so(sales_dict, pl, target):
+		documents = []
+		for key in sales_dict:
+			document = _pl_module.create_delivery_from_so(pl, sales_dict[key], target)
+			if not document:
+				continue
+			document.items = [it for it in document.items if flt(it.qty) > 0]
+			if not document.items:
+				continue
+			_link_family_addresses_to_customer(document)
+			document.flags.ignore_mandatory = True
+			if target == "Sales Invoice":
+				document.update_stock = 1
+			document.save()
+			documents.append(document)
+		return documents
+
+	def _patched_create_delivery_wo_so(pl, target, target_doc=None):
+		document = _orig_create_delivery_wo_so(pl, target, target_doc)
+		if document:
+			document.items = [it for it in document.items if flt(it.qty) > 0]
+		return document
+
+	if _orig_create_delivery_with_so:
+		_pl_module.create_delivery_with_so = _patched_create_delivery_with_so
+	if _orig_create_delivery_wo_so:
+		_pl_module.create_delivery_wo_so = _patched_create_delivery_wo_so
+
 	try:
 		dn = create_delivery_note(pick_list_name)
 
@@ -969,6 +1004,10 @@ def create_delivery_note_from_pick_list(pick_list_name):
 		frappe.get_all = _original_get_all
 		_pl_module.create_dn_with_so = _orig_create_dn_with_so
 		_pl_module.create_dn_wo_so = _orig_create_dn_wo_so
+		if _orig_create_delivery_with_so:
+			_pl_module.create_delivery_with_so = _orig_create_delivery_with_so
+		if _orig_create_delivery_wo_so:
+			_pl_module.create_delivery_wo_so = _orig_create_delivery_wo_so
 
 	return dn.name
 
