@@ -529,6 +529,9 @@ doc_events = {
 		# Financial-year-wise ID (POR- / INW- / GRN- / PIV- ...).
 		"before_insert": "alpinos.purchase.naming.before_insert",
 		"before_validate": [
+			# Changing the supplier on a saved order must not keep the old supplier's
+			# address / contact, or ERPNext's party check rejects the save.
+			"alpinos.purchase.purchase_order_fields.refresh_supplier_party_fields",
 			# Before the controller's own validate(), which computes Grand Total from Rate
 			# and Discount and throws its own (confusing) error first if Discount leaves a
 			# line negative.

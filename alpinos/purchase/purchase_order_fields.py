@@ -706,6 +706,49 @@ def get_supplier_info(supplier, company=None):
 	}
 
 
+def refresh_supplier_party_fields(doc, method=None):
+	"""Re-point the order's address and contact at the NEW supplier when the supplier changes.
+
+	The entry page saves by merging its payload over the stored document, and the payload
+	carries no address or contact. So after the supplier was changed, the old supplier's
+	supplier_address / contact_person stayed on the order and ERPNext's party check threw
+	"Billing Address does not belong to the <new supplier>".
+
+	Only a change of supplier on a saved order triggers this, so nothing else is touched.
+	An address or contact is stored only when it is Dynamic-Linked to the supplier -- that
+	is exactly what the check accepts; the supplier's unlinked Primary Address still shows
+	in the display field.
+	"""
+	if doc.is_new() or not doc.get("supplier"):
+		return
+	previous = frappe.db.get_value("Purchase Order", doc.name, "supplier")
+	if not previous or previous == doc.supplier:
+		return
+
+	info = get_supplier_info(doc.supplier, doc.get("company")) or {}
+
+	def linked(doctype, name):
+		return bool(name) and bool(
+			frappe.db.exists(
+				"Dynamic Link",
+				{
+					"parenttype": doctype,
+					"parent": name,
+					"link_doctype": "Supplier",
+					"link_name": doc.supplier,
+				},
+			)
+		)
+
+	doc.supplier_address = info.get("supplier_address") if linked("Address", info.get("supplier_address")) else None
+	doc.contact_person = info.get("contact_person") if linked("Contact", info.get("contact_person")) else None
+	doc.address_display = info.get("address_display")
+	doc.contact_display = info.get("contact_display")
+	doc.contact_mobile = info.get("contact_mobile")
+	doc.contact_email = None
+	doc.supplier_name = info.get("supplier_name") or doc.supplier
+
+
 def normalize_inward_type(doc, method=None):
 	"""Store the PO Type in one canonical shape: "FG,PM".
 

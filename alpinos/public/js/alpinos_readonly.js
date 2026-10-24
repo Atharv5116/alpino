@@ -35,7 +35,9 @@ window.alpinos_set_readonly = function ($cards, locked) {
 
 	$cards.toggleClass('alpinos-readonly', locked);
 
-	$cards.find('input, select, textarea, button').each(function () {
+	// A control marked data-alpinos-keep stays live on a closed document: it changes
+	// nothing (e.g. printing a sticker), so locking it only gets in the way.
+	$cards.find('input, select, textarea, button').not('[data-alpinos-keep]').each(function () {
 		const $i = $(this);
 		if (locked) {
 			// Remembered the first time, so unlocking can never enable a field that was

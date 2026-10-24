@@ -588,7 +588,7 @@ var PurchaseQCEntry = class {
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'sample_qty' },
 				data.sample_qty, function (val) { data.sample_qty = flt(val); me.recalc_sample_rollup(); });
 			// One sticker per sample row; works before the QC is saved.
-			$(`<button class="btn btn-xs btn-light btn-print-row-sticker">
+			$(`<button class="btn btn-xs btn-light btn-print-row-sticker" data-alpinos-keep="1">
 				<i class="fa fa-print"></i> ${__('Print')}</button>`)
 				.appendTo($tr.find('.c-id'))
 				.on('click', () => me.print_sticker(data));
