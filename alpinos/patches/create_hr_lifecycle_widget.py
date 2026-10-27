@@ -13,21 +13,21 @@ HTML = """
   <div style="border-radius:14px;border:1px solid #e5e7eb;background:#f9fafb;padding:16px;min-height:90px;box-sizing:border-box;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
       <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>Probation Completion</span>
-      <span style="font-size:10px;color:#9ca3af;">Next 30 days</span>
+      <span style="font-size:10px;color:#9ca3af;">This month</span>
     </div>
     <div id="alp-probation-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
   </div>
   <div style="border-radius:14px;border:1px solid #e5e7eb;background:#f9fafb;padding:16px;min-height:90px;box-sizing:border-box;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
       <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0;"></span>Internship Completion</span>
-      <span style="font-size:10px;color:#9ca3af;">Next 30 days</span>
+      <span style="font-size:10px;color:#9ca3af;">This month</span>
     </div>
     <div id="alp-internship-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
   </div>
   <div style="border-radius:14px;border:1px solid #e5e7eb;background:#f9fafb;padding:16px;min-height:90px;box-sizing:border-box;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
       <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#111827;"><span style="width:8px;height:8px;border-radius:50%;background:#6366f1;flex-shrink:0;"></span>Salary Increment</span>
-      <span style="font-size:10px;color:#9ca3af;">Next 30 days</span>
+      <span style="font-size:10px;color:#9ca3af;">This month</span>
     </div>
     <div id="alp-increment-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
   </div>
@@ -46,7 +46,6 @@ var incList = root.querySelector("#alp-increment-list");
 
 frappe.call({
   method: "alpinos.people_events.get_upcoming_employee_lifecycle",
-  args: { days: 30 },
   freeze: false,
   callback: function (r) {
     if (r.exc) {
@@ -98,9 +97,9 @@ frappe.call({
         container.appendChild(row);
       });
     }
-    renderList(probList, data.probation || [], "No upcoming probation completions", false);
-    renderList(internList, data.internship || [], "No upcoming internship completions", false);
-    renderList(incList, data.increment || [], "No upcoming increments", true);
+    renderList(probList, data.probation || [], "No probation completions this month", false);
+    renderList(internList, data.internship || [], "No internship completions this month", false);
+    renderList(incList, data.increment || [], "No increments this month", true);
   },
 });
 """
