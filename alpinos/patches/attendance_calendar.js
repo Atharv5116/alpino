@@ -89,6 +89,23 @@ function getMinRequired(dateKey) {
   return d.getDay() === 6 ? MIN_HOURS_SATURDAY : MIN_HOURS_WEEKDAY;
 }
 
+// Changes(HP) HRMS #22: the server sends required_minutes from the employee's own Shift Type
+// (HO: 8h15m on a weekday, 3h45m on a Saturday). The fixed 4h Saturday painted Present HO
+// Saturdays of 3h59m as short. The constants remain for a shift that sets no threshold.
+//
+// Against the shift's value a minute's grace is allowed, as the Attendance Summary allows
+// it: worked minutes are rounded down here, so a day that is exactly full could otherwise
+// read one minute short.
+function fallsShort(minutes, required) {
+  return minutes + 1 < required;
+}
+
+function isShortHours(item, dateKey) {
+  if (item.worked_minutes == null) return false;
+  if (item.required_minutes != null) return fallsShort(item.worked_minutes, item.required_minutes);
+  return item.worked_minutes < getMinRequired(dateKey);
+}
+
 function isLate(item) {
   var checkInMins = timeStringToMinutes(item.check_in);
   if (checkInMins === null) return !!item.late_coming;
@@ -103,6 +120,7 @@ function isEarlyLeaving(item, dateKey) {
   var checkOutMins = timeStringToMinutes(item.check_out);
   if (checkInMins === null || checkOutMins === null) return !!item.early_leaving;
   var duration    = checkOutMins - checkInMins;
+  if (item.required_minutes != null) return fallsShort(duration, item.required_minutes);
   var isSaturday  = dateKey ? (new Date(dateKey).getDay() === 6) : false;
   var required    = isSaturday ? MIN_HOURS_SATURDAY : REQUIRED_DURATION;
   return duration < required;
@@ -111,7 +129,7 @@ function isEarlyLeaving(item, dateKey) {
 function isAllGood(status, item, dateKey) {
   if (status !== "Present" && status !== "Work From Home") return false;
   var noCheckout  = !item.check_out || item.check_out === "";
-  var shortHours  = item.worked_minutes != null && item.worked_minutes < getMinRequired(dateKey);
+  var shortHours  = isShortHours(item, dateKey);
   var late        = isLate(item);
   var early       = isEarlyLeaving(item, dateKey);
   var geo         = !!item.out_of_geo;
@@ -124,7 +142,7 @@ function getDayStyle(status, isToday, item, dateKey) {
 
   if (status === "Present") {
     var noCheckout = !item.check_out || item.check_out === "";
-    var shortHours = item.worked_minutes != null && item.worked_minutes < getMinRequired(dateKey);
+    var shortHours = isShortHours(item, dateKey);
     if (noCheckout || shortHours) {
       bg          = "#fff3e0";
       borderColor = "#ffb74d";
@@ -168,7 +186,7 @@ function getDayStyle(status, isToday, item, dateKey) {
 function getStatusIcon(status, item, dateKey) {
   if (status === "Present") {
     var noCheckout = !item.check_out || item.check_out === "";
-    var shortHours = item.worked_minutes != null && item.worked_minutes < getMinRequired(dateKey);
+    var shortHours = isShortHours(item, dateKey);
     if (noCheckout || shortHours) {
       return '<svg width="14" height="14" viewBox="0 0 14 14" fill="none">'
         + '<circle cx="7" cy="7" r="6.5" fill="#ffedd5" stroke="#fdba74" stroke-width="0.8"/>'
@@ -355,7 +373,6 @@ loadMonth(current.getFullYear(), current.getMonth() + 1);
   if (anniversariesList) anniversariesList.innerHTML = "<span style='color:#9ca3af;'>Loading...</span>";
   frappe.call({
     method: "alpinos.people_events.get_upcoming_birthdays_and_anniversaries",
-    args: { days: 30 },
     freeze: false,
     callback: function (r) {
       if (r.exc) {
@@ -407,8 +424,8 @@ loadMonth(current.getFullYear(), current.getMonth() + 1);
           container.appendChild(row);
         });
       }
-      renderList(birthdaysList,     data.birthdays     || [], "No upcoming birthdays",    false);
-      renderList(anniversariesList, data.anniversaries || [], "No upcoming anniversaries", true);
+      renderList(birthdaysList,     data.birthdays     || [], "No birthdays this month",    false);
+      renderList(anniversariesList, data.anniversaries || [], "No work anniversaries this month", true);
     },
   });
 })();
