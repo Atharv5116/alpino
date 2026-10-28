@@ -738,14 +738,14 @@ function formatDuration(ms){
   <div style="border-radius:14px;border:1px solid #e5e7eb;background:#f9fafb;padding:16px;min-height:140px;box-sizing:border-box;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
       <span style="font-size:13px;font-weight:600;color:#111827;">Upcoming Birthdays</span>
-      <span style="font-size:10px;color:#9ca3af;">Next 30 days</span>
+      <span style="font-size:10px;color:#9ca3af;">This month</span>
     </div>
     <div id="alp-birthdays-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
   </div>
   <div style="border-radius:14px;border:1px solid #e5e7eb;background:#f9fafb;padding:16px;min-height:140px;box-sizing:border-box;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
       <span style="font-size:13px;font-weight:600;color:#111827;">Work Anniversaries</span>
-      <span style="font-size:10px;color:#9ca3af;">Next 30 days</span>
+      <span style="font-size:10px;color:#9ca3af;">This month</span>
     </div>
     <div id="alp-anniversaries-list" style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:#4b5563;max-height:200px;overflow-y:auto;padding-right:4px;"></div>
   </div>
@@ -760,7 +760,6 @@ if (anniversariesList) anniversariesList.innerHTML = "<span style='color:#9ca3af
 
 frappe.call({
   method: "alpinos.people_events.get_upcoming_birthdays_and_anniversaries",
-  args: { days: 30 },
   freeze: false,
   callback: function (r) {
     if (r.exc) {
@@ -808,8 +807,8 @@ frappe.call({
         container.appendChild(row);
       });
     }
-    renderList(birthdaysList, data.birthdays || [], "No upcoming birthdays", false);
-    renderList(anniversariesList, data.anniversaries || [], "No upcoming anniversaries", true);
+    renderList(birthdaysList, data.birthdays || [], "No birthdays this month", false);
+    renderList(anniversariesList, data.anniversaries || [], "No work anniversaries this month", true);
   },
 });
 """

@@ -20,15 +20,27 @@ def _date_in_year(d, year):
 		return d.replace(month=2, day=28, year=year)
 
 
-@frappe.whitelist()
-def get_upcoming_birthdays_and_anniversaries(days=30):
-	"""Return upcoming birthdays and work anniversaries for active employees."""
-	try:
-		days = int(days)
-	except (TypeError, ValueError):
-		days = 30
+def _current_month():
+	"""(today, first day, last day) of the calendar month in progress.
+
+	Changes(HP) HRMS #21: the dashboard's five people lists -- birthdays, work anniversaries,
+	probation, internship, increment -- show the current calendar month, not a rolling 30
+	days. "Refresh on the 1st" needs no job: the window is worked out from today on every
+	load, so it moves to the new month the day the month starts.
+	"""
 	today = getdate(now_datetime())
-	end_date = add_days(today, days)
+	first = today.replace(day=1)
+	return today, first, add_days(add_months(first, 1), -1)
+
+
+@frappe.whitelist()
+def get_upcoming_birthdays_and_anniversaries(days=None):
+	"""Birthdays and work anniversaries of active employees that fall in the current month.
+
+	`days` is the old rolling window and is ignored; it stays in the signature so a browser
+	still running the previous widget script does not fail its call.
+	"""
+	today, month_start, month_end = _current_month()
 
 	employees = frappe.get_all(
 		"Employee",
@@ -44,41 +56,33 @@ def get_upcoming_birthdays_and_anniversaries(days=30):
 	for emp in employees:
 		dob = emp.get("date_of_birth")
 		if dob:
-			dob = getdate(dob)
-			next_bday_year = today.year
-			this_year = _date_in_year(dob, today.year)
-			if this_year < today:
-				next_bday_year += 1
-			next_bday = _date_in_year(dob, next_bday_year)
-			if today <= next_bday <= end_date:
+			bday = _date_in_year(getdate(dob), today.year)
+			if month_start <= bday <= month_end:
 				birthdays.append({
 					"employee_name": emp.get("employee_name"),
-					"date": next_bday.strftime("%Y-%m-%d"),
-					"day": _format_day_label(next_bday),
+					"date": bday.strftime("%Y-%m-%d"),
+					"day": _format_day_label(bday),
 					"company": emp.get("company"),
 				})
 
 		doj = emp.get("date_of_joining")
 		if doj:
 			doj = getdate(doj)
-			if doj <= today:
-				next_anniv_year = today.year
-				this_year_anniv = _date_in_year(doj, today.year)
-				if this_year_anniv < today:
-					next_anniv_year += 1
-				next_anniv = _date_in_year(doj, next_anniv_year)
-				if today <= next_anniv <= end_date:
-					years = max(next_anniv_year - doj.year, 1)
-					anniversaries.append({
-						"employee_name": emp.get("employee_name"),
-						"date": next_anniv.strftime("%Y-%m-%d"),
-						"years": years,
-						"day": _format_day_label(next_anniv),
-						"company": emp.get("company"),
-					})
+			anniv = _date_in_year(doj, today.year)
+			# Somebody who joined this month has no anniversary yet.
+			if doj.year < today.year and month_start <= anniv <= month_end:
+				anniversaries.append({
+					"employee_name": emp.get("employee_name"),
+					"date": anniv.strftime("%Y-%m-%d"),
+					"years": today.year - doj.year,
+					"day": _format_day_label(anniv),
+					"company": emp.get("company"),
+				})
 
-	birthdays = sorted(birthdays, key=lambda x: x["date"])[:10]
-	anniversaries = sorted(anniversaries, key=lambda x: x["date"])[:10]
+	# No top-10 cut any more: a month is a bounded list (October 2026 has 10 anniversaries),
+	# and the widget scrolls.
+	birthdays = sorted(birthdays, key=lambda x: x["date"])
+	anniversaries = sorted(anniversaries, key=lambda x: x["date"])
 	return {"birthdays": birthdays, "anniversaries": anniversaries}
 
 
@@ -187,20 +191,15 @@ def _format_ddmmyyyy(d):
 
 
 @frappe.whitelist()
-def get_upcoming_employee_lifecycle(days=30):
-	"""Upcoming probation/internship completions and salary increments for active employees
-	within the next `days` days (HR Manager only). Dates are DD/MM/YYYY in the `date` field."""
-	try:
-		days = int(days)
-	except (TypeError, ValueError):
-		days = 30
-
+def get_upcoming_employee_lifecycle(days=None):
+	"""Probation/internship completions and salary increments of active employees that fall
+	in the current month (HR Manager only). Dates are DD/MM/YYYY in the `date` field.
+	`days` is ignored, as in get_upcoming_birthdays_and_anniversaries."""
 	roles = frappe.get_roles()
 	if not ({"HR Manager", "System Manager", "Administrator"} & set(roles)):
 		return {"allowed": False, "probation": [], "internship": [], "increment": []}
 
-	today = getdate(now_datetime())
-	end_date = add_days(today, days)
+	today, month_start, month_end = _current_month()
 
 	# Only fetch custom fields that actually exist (robust across sites/migration order).
 	meta = frappe.get_meta("Employee")
@@ -223,11 +222,11 @@ def get_upcoming_employee_lifecycle(days=30):
 		company = emp.get("company")
 		emp_name = emp.get("employee_name")
 
-		# probation completion: explicit probation_end_date within the window
+		# probation completion: explicit probation_end_date within the month
 		pend = emp.get("probation_end_date")
 		if pend:
 			pend = getdate(pend)
-			if today <= pend <= end_date:
+			if month_start <= pend <= month_end:
 				probation.append({
 					"employee_name": emp_name,
 					"date": _format_ddmmyyyy(pend),
@@ -237,7 +236,7 @@ def get_upcoming_employee_lifecycle(days=30):
 
 		doj = emp.get("date_of_joining")
 
-		# internship completion: date_of_joining + duration (months) within the window
+		# internship completion: date_of_joining + duration (months) within the month
 		months = emp.get("custom_internship_duration")
 		if doj and months:
 			try:
@@ -246,7 +245,7 @@ def get_upcoming_employee_lifecycle(days=30):
 				months = 0
 			if months > 0:
 				iend = getdate(add_months(getdate(doj), months))
-				if today <= iend <= end_date:
+				if month_start <= iend <= month_end:
 					internship.append({
 						"employee_name": emp_name,
 						"date": _format_ddmmyyyy(iend),
@@ -254,34 +253,28 @@ def get_upcoming_employee_lifecycle(days=30):
 						"_sort": iend.strftime("%Y-%m-%d"),
 					})
 
-		# salary increment: next date_of_joining anniversary within the window
+		# salary increment: this year's date_of_joining anniversary, when it is in the month
 		if doj:
 			doj = getdate(doj)
-			if doj <= today:
-				next_year = today.year
-				this_year_anniv = _date_in_year(doj, today.year)
-				if this_year_anniv < today:
-					next_year += 1
-				next_anniv = _date_in_year(doj, next_year)
-				if today <= next_anniv <= end_date:
-					years = max(next_year - doj.year, 1)
-					increment.append({
-						"employee_name": emp_name,
-						"date": _format_ddmmyyyy(next_anniv),
-						"years": years,
-						"company": company,
-						"_sort": next_anniv.strftime("%Y-%m-%d"),
-					})
+			anniv = _date_in_year(doj, today.year)
+			if doj.year < today.year and month_start <= anniv <= month_end:
+				increment.append({
+					"employee_name": emp_name,
+					"date": _format_ddmmyyyy(anniv),
+					"years": today.year - doj.year,
+					"company": company,
+					"_sort": anniv.strftime("%Y-%m-%d"),
+				})
 
-	def _top(rows):
-		rows = sorted(rows, key=lambda x: x["_sort"])[:10]
+	def _sorted(rows):
+		rows = sorted(rows, key=lambda x: x["_sort"])
 		for r in rows:
 			r.pop("_sort", None)
 		return rows
 
 	return {
 		"allowed": True,
-		"probation": _top(probation),
-		"internship": _top(internship),
-		"increment": _top(increment),
+		"probation": _sorted(probation),
+		"internship": _sorted(internship),
+		"increment": _sorted(increment),
 	}

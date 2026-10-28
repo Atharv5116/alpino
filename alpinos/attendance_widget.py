@@ -243,6 +243,7 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 	end_date = add_days(next_month, -1)
 
 	attendance = _get_attendance_map(employee, start_date, end_date)
+	attendance_shifts = _get_attendance_shift_map(employee, start_date, end_date)
 	attendance_times = _get_attendance_times_map(employee, start_date, end_date)
 	checkins = _get_checkins_map(employee, start_date, end_date)
 	holidays = set(_get_holidays(employee, start_date, end_date))
@@ -256,6 +257,7 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 		_has_shift = False
 
 	result = {}
+	threshold_cache = {}
 	current = start_date
 	while current <= end_date:
 		date_str = current.strftime("%Y-%m-%d")
@@ -280,6 +282,7 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 		worked_minutes = None
 		late_coming = 0
 		early_leaving = 0
+		required_minutes = None
 
 		if check_in_str and check_out_str:
 			try:
@@ -295,11 +298,14 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 			except Exception:
 				pass
 
+			day_shift = attendance_shifts.get(current)
 			if _has_shift and worked_minutes is not None:
 				try:
 					# any time on that day to resolve shift
 					ts = get_datetime(f"{date_str} 12:00:00")
 					shift = get_employee_shift(employee, ts, True)
+					if not day_shift and shift and shift.get("shift_type"):
+						day_shift = shift["shift_type"].name
 					if shift and shift.get("start_datetime") and shift.get("end_datetime"):
 						s_start = shift["start_datetime"]
 						s_end = shift["end_datetime"]
@@ -312,6 +318,9 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 				except Exception:
 					pass
 
+			if worked_minutes is not None:
+				required_minutes = _full_day_minutes(day_shift, current, threshold_cache)
+
 		result[date_str] = {
 			"status": status,
 			"check_in": check_in_str,
@@ -319,6 +328,7 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 			"holiday": 1 if current in holidays else 0,
 			"wfh": 1 if current in wfh_dates else 0,
 			"worked_minutes": worked_minutes,
+			"required_minutes": required_minutes,
 			"late_coming": late_coming,
 			"early_leaving": early_leaving,
 		}
@@ -342,6 +352,46 @@ def _get_attendance_map(employee, from_date, to_date):
 		fields=["attendance_date", "status"],
 	)
 	return {getdate(d["attendance_date"]): d["status"] for d in records}
+
+
+def _get_attendance_shift_map(employee, from_date, to_date):
+	"""The shift each submitted Attendance was marked under, for the days that have one."""
+	records = frappe.get_all(
+		"Attendance",
+		filters={
+			"employee": employee,
+			"attendance_date": ["between", [from_date, to_date]],
+			"docstatus": 1,
+		},
+		fields=["attendance_date", "shift"],
+	)
+	return {getdate(d["attendance_date"]): d["shift"] for d in records if d.get("shift")}
+
+
+def _full_day_minutes(shift_name, day, cache):
+	"""Minutes of work that make `day` a full day under `shift_name`; None when unknown.
+
+	Changes(HP) HRMS #22: the calendar measured every Saturday against a fixed four hours, so
+	Reena Sheta's HO Saturdays (10 and 17 Oct: 3h59m, marked Present against HO's own
+	3.75-hour Saturday threshold) were painted as short. The line now comes from the
+	thresholds HR set on the employee's Shift Type -- the half-day and absent pair, and
+	Saturday's own pair on a Saturday, read as the Attendance Summary reads them. A day is
+	full at the higher of the two, as in attendance_summary_helpers._whs.
+
+	A shift that sets no threshold gets None, and the calendar keeps its old 8h / 4h. The
+	summary's other fallback, span x full-day percentage, is not used here: "Warehouse
+	Production - Day" is an 08:00-22:00 window with no thresholds, and 97% of it would have
+	painted ten-hour days as short.
+	"""
+	if not shift_name:
+		return None
+	from alpinos.alpinos_development.report.attendance_summary.attendance_summary_helpers import (
+		_shift_thresholds,
+	)
+
+	half_t, absent_t = _shift_thresholds(shift_name, getdate(day).weekday() == 5, cache)
+	hours = max(half_t, absent_t)
+	return int(round(hours * 60)) if hours else None
 
 
 def _get_attendance_times_map(employee, from_date, to_date):
