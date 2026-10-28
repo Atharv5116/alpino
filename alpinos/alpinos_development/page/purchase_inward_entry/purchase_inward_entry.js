@@ -970,9 +970,17 @@ var PurchaseInwardEntry = class {
 				});
 			mk('.cell-batch', { fieldtype: 'Data', fieldname: 'batch_no' },
 				row.batch_no, function (val) { me.items[idx].batch_no = val; });
-			mk('.cell-mfg', { fieldtype: 'Date', fieldname: 'manufacturing_date' },
+			mk('.cell-mfg', { fieldtype: 'Date', fieldname: 'manufacturing_date',
+					max_date: frappe.datetime.str_to_obj(frappe.datetime.get_today()) },
 				row.manufacturing_date, function (val) {
-					me.items[idx].manufacturing_date = val;
+					// A typed date bypasses the picker's max_date; refuse it here as well.
+						if (val && val > frappe.datetime.get_today()) {
+							frappe.show_alert({ message: __('Manufacturing Date cannot be a future date.'), indicator: 'red' });
+							val = '';
+							const mc = me.fields[`manufacturing_date_${idx}`];
+							if (mc) mc.set_value('');
+						}
+						me.items[idx].manufacturing_date = val;
 					me.update_expiry(idx);
 				});
 			// Expiry = Manufacturing Date + the Item's shelf life. Shown as soon as the date is

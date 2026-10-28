@@ -612,9 +612,32 @@ class PurchaseInward(Document):
 			if usp:
 				line.usp = usp
 
+	def _validate_mfg_not_future(self):
+		"""A product cannot have been made tomorrow: Manufacturing Date is today or earlier.
+
+		Forward-only: a line is checked when it is new or its date was changed, so an inward
+		saved with a future date before this rule existed can still be saved untouched.
+		"""
+		before = self.get_doc_before_save()
+		old = {r.name: r.manufacturing_date for r in (before.get("items") if before else None) or []}
+		today = getdate()
+		for line in self.get("items"):
+			if not line.manufacturing_date:
+				continue
+			if line.name in old and getdate(old[line.name]) == getdate(line.manufacturing_date):
+				continue
+			if getdate(line.manufacturing_date) > today:
+				frappe.throw(
+					_("Row {0}: Manufacturing Date {1} cannot be a future date.").format(
+						line.idx, frappe.format(line.manufacturing_date, {"fieldtype": "Date"})
+					),
+					title=_("Invalid Manufacturing Date"),
+				)
+
 	def _set_expiry_dates(self):
 		"""Expiry = Manufacturing Date + the item's shelf life (task 297)."""
 		self._validate_date_formats()
+		self._validate_mfg_not_future()
 		shelf = {}
 		for line in self.get("items"):
 			if not line.manufacturing_date:

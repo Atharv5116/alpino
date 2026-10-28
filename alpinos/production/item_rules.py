@@ -97,13 +97,9 @@ def _validate_material_category(doc):
 			doc.set(MATERIAL_CATEGORY_FIELD, None)
 		return
 
-	if not doc.get(MATERIAL_CATEGORY_FIELD):
-		frappe.throw(
-			_("Material Category is required for PM items. Choose {0}.").format(
-				" or ".join(C.PM_CATEGORIES)
-			),
-			title=_("Material Category Required"),
-		)
+	# IM-02 no longer demands a category: it is optional for a PM item (a packaging item
+	# could not be uploaded without one). When one is given, the Select field's own option
+	# list still checks it is one of C.PM_CATEGORIES.
 
 
 # --------------------------------------------------------------------- IM-04

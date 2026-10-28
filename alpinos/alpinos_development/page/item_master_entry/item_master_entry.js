@@ -193,12 +193,12 @@ var ItemMasterEntry = class {
 		const value = type === undefined ? this._val('custom_material_type') : type;
 		const is_pm = value === 'PM';
 		this.wrapper.find('.field-material-category').toggle(is_pm);
-		// Mirrors the field's own mandatory_depends_on so the asterisk appears with the
-		// field. The server enforces it either way; this only stops the save being
-		// refused for a reason the screen never showed.
+		// Material Category is optional: it is shown for a PM item but never marked required,
+		// and the server no longer requires it either, so no save is refused for a missing
+		// category.
 		const category = this.fields.custom_material_category;
-		if (category && !!category.df.reqd !== is_pm) {
-			category.df.reqd = is_pm ? 1 : 0;
+		if (category && category.df.reqd) {
+			category.df.reqd = 0; // Material Category is optional, even for packaging
 			category.refresh();
 		}
 		return is_pm;

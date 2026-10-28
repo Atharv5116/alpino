@@ -756,6 +756,21 @@ _STICKER_CSS = """
   .qsk-label td { border: 1px solid #000; padding: 0 6px; word-wrap: break-word; text-transform: uppercase; }
   .qsk-label td.l { text-align: center; width: 45%; }
   .qsk-label td.f { text-align: center; }
+  /* FG sticker: SKU banner on top, item / batch / dates on the left, sample qty large on the right. */
+  .fgk-label { width: 100mm; height: 75mm; padding: 3mm; box-sizing: border-box;
+      page-break-after: always; overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif; color: #000; }
+  .fgk-label:last-child { page-break-after: auto; }
+  .fgk-top { height: 12mm; line-height: 12mm; text-align: center; font-weight: bold; font-size: 20px;
+      font-family: "Times New Roman", Times, serif; border: 1px solid #000; background: #efe9b8;
+      white-space: nowrap; overflow: hidden; }
+  .fgk-label table { border-collapse: collapse; width: 100%; height: 53mm; table-layout: fixed; margin-top: 1.5mm; }
+  .fgk-label td { border: 1px solid #000; padding: 1mm 2mm; text-align: center; vertical-align: middle;
+      word-wrap: break-word; }
+  .fgk-label td.n { font-weight: bold; font-size: 15px; line-height: 17px; }
+  .fgk-label td.k { font-weight: bold; font-size: 12px; line-height: 14px; width: 17mm; text-transform: uppercase; }
+  .fgk-label td.v { font-size: 13px; font-weight: bold; }
+  .fgk-label td.q { font-weight: bold; font-size: 50px; line-height: 52px; width: 47%; }
 </style>
 """
 _STICKER_LABEL = """
@@ -772,11 +787,45 @@ _STICKER_LABEL = """
 """
 
 
+# FG sample sticker, same 100 x 75 mm. Banner = SKU; then item name, Batch Code (the supplier
+# batch for now), Mfg / Expiry on the left; the sample quantity with (S) on the right.
+_FG_STICKER_LABEL = """
+<div class="fgk-label">
+  <div class="fgk-top">{{ f.sku or "-" }}</div>
+  <table>
+    <colgroup><col style="width:17mm"><col><col style="width:47%"></colgroup>
+    <tr><td class="n" colspan="2">{{ f.name or f.sku or "-" }}</td>
+      <td class="q" rowspan="4">{{ ("%g"|format(f.qty) if f.qty else "-") }}(S)</td></tr>
+    <tr><td class="k">Batch Code</td><td class="v">{{ f.batch or "-" }}</td></tr>
+    <tr><td class="k">Mfg. Date</td><td class="v">{{ frappe.utils.formatdate(f.mfg, "dd/MM/yyyy") if f.mfg else "-" }}</td></tr>
+    <tr><td class="k">Expiry Date</td><td class="v">{{ frappe.utils.formatdate(f.exp, "dd/MM/yyyy") if f.exp else "-" }}</td></tr>
+  </table>
+</div>
+"""
+
+
+def sticker_kind(item_code):
+	"""'FG' for a finished-good item, else '' -- which sample sticker the item gets.
+
+	RM / PM items (and anything unclassified) keep the RMID / PMID sticker. Also a Jinja
+	method (hooks.jinja), so the QC Sample Sticker print format can ask the same question.
+	"""
+	from alpinos.production import material_type as MT
+
+	return "FG" if item_code and MT.item_type(item_code) == "FG" else ""
+
+
 def render_sample_sticker(s):
-	"""A standalone page holding one sticker (dict keys as in _STICKER_LABEL)."""
-	body = frappe.render_template(_STICKER_LABEL, {"s": frappe._dict(s)})
+	"""A standalone page holding one sticker (dict keys as in _STICKER_LABEL, or _FG_STICKER_LABEL
+	when s["kind"] == "FG")."""
+	if s.get("kind") == "FG":
+		body = frappe.render_template(_FG_STICKER_LABEL, {"f": frappe._dict(s)})
+		title = s.get("sku") or "Sample Sticker"
+	else:
+		body = frappe.render_template(_STICKER_LABEL, {"s": frappe._dict(s)})
+		title = s.get("sid") or "Sample Sticker"
 	return "<!doctype html><html><head><meta charset=utf-8><title>%s</title>%s</head><body>%s</body></html>" % (
-		frappe.utils.escape_html(s.get("sid") or "Sample Sticker"), _STICKER_CSS, body)
+		frappe.utils.escape_html(title), _STICKER_CSS, body)
 
 
 _STICKER_HTML = _STICKER_CSS + r"""
@@ -786,17 +835,24 @@ _STICKER_HTML = _STICKER_CSS + r"""
 {% for row in doc.sample_testing or [] %}
 {% if row.sample_id and (not _only or row.name == _only) %}
 {% set _ns.printed = _ns.printed + 1 %}
-{% set _line = namespace(mfg=None, exp=None, qty=None, uom=None) %}
+{% set _line = namespace(mfg=None, exp=None, qty=None, uom=None, batch=None) %}
 {% for l in doc.items or [] %}
 {% if (row.qc_item and l.name == row.qc_item) or (not row.qc_item and l.item_code == row.item_code and not _line.mfg) %}
-{% set _line.mfg = l.manufacturing_date %}{% set _line.exp = l.expiry_date %}{% set _line.qty = l.received_qty %}{% set _line.uom = l.uom %}
+{% set _line.mfg = l.manufacturing_date %}{% set _line.exp = l.expiry_date %}{% set _line.qty = l.received_qty %}{% set _line.uom = l.uom %}{% set _line.batch = l.supplier_batch_no %}
 {% endif %}
 {% endfor %}
+{% if sticker_kind(row.item_code) == "FG" %}
+{% set f = {"sku": row.item_code, "name": frappe.db.get_value("Item", row.item_code, "item_name"),
+    "batch": row.supplier_batch_no or _line.batch, "mfg": _line.mfg, "exp": _line.exp,
+    "qty": frappe.utils.flt(row.sample_qty, 3)} %}
+""" + _FG_STICKER_LABEL + r"""
+{% else %}
 {% set s = {"supplier": doc.supplier_name or (_inward.supplier_name if _inward else None) or doc.supplier,
     "sku": row.item_code, "inward_date": _inward.inward_datetime if _inward else None,
     "mfg": _line.mfg, "exp": _line.exp, "sid": row.sample_id,
     "qty": frappe.utils.flt(row.sample_qty, 3), "uom": row.uom or _line.uom} %}
 """ + _STICKER_LABEL + r"""
+{% endif %}
 {% endif %}
 {% endfor %}
 {% if not _ns.printed %}<div style="font-size:10px;">No sample sticker to print.</div>{% endif %}
@@ -1588,12 +1644,19 @@ _PO_HTML_RAW = r"""
         Email: ap.invoices@alpino.store
       </td>
       <td>
+        {# The order's own Shipping / Delivery Address, the one the Purchase Order screen shows.
+           The fixed plant block is only the fallback for an order that has none. #}
+        {% if doc.shipping_address_display %}
+        {{ doc.shipping_address_display | safe }}<br>
+        Storage Location: {{ (wh.warehouse_name if wh else "") or doc.set_warehouse or "-" }}
+        {% else %}
         Plant 1001 (Surat Central Plant)<br>
         Warehouse Receipt Dock #02<br>
         Plot No. 123-125, GIDC Industrial Area<br>
         Surat, Gujarat - 395023<br>
         Storage Location: {{ (wh.warehouse_name if wh else "") or doc.set_warehouse or "0001 (Raw Material RM01)" }}<br>
         Receiving Hours: 09:00 AM - 05:00 PM
+        {% endif %}
       </td>
     </tr>
   </table>

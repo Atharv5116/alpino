@@ -440,6 +440,7 @@ var PurchaseQCEntry = class {
 			function (val) {
 				data.item_code = val;
 				paint(val);
+					if (key === 'sample') me._refresh_sticker_kind(idx, data);
 				// Changing the item moves its quantities to a different decision line.
 				if (key === 'material') me.recalc_damage_rollup();
 				else if (key === 'sample' || key === 'control') {
@@ -497,6 +498,77 @@ var PurchaseQCEntry = class {
 		const rmpm = types.includes('RM') || types.includes('PM');
 		if (fg && rmpm) return __('Required for RM / PM');
 		return rmpm ? __('Required') : __('Optional');
+	}
+
+	/**
+	 * An Internal Batch typed on a sample row also fills that item's QC Decision line, so it is
+	 * entered once. The line is the one the sample names (Line), else the only line carrying
+	 * its SKU; an item on several lines with none chosen is left alone. A blank never clears
+	 * a value already on the decision line.
+	 */
+	_push_internal_batch(data) {
+		const batch = (data.internal_batch_no || '').trim();
+		if (!batch) return;
+		const lines = this.tables.decision || [];
+		let idx = cint(data.qc_item_idx) - 1;
+		if (!(idx >= 0 && lines[idx])) {
+			const same = [];
+			lines.forEach((r, i) => { if (data.item_code && r.item_code === data.item_code) same.push(i); });
+			if (same.length !== 1) return;
+			idx = same[0];
+		}
+		const line = lines[idx];
+		if (line.internal_batch_no === batch) return;
+		line.internal_batch_no = batch;
+		const c = this.fields[`decision_internal_batch_no_${idx}`];
+		if (c) c.set_value(batch);
+	}
+
+	/**
+	 * Two sticker columns, one used per row: an RM / PM item prints the RMID / PMID sticker
+	 * (RMID / PMID column), an FG item prints the FG sticker (FG Sticker column). The other
+	 * column shows a dash. The server picks the layout from the item's group as well
+	 * (purchase_qc.sample_sticker), so this only decides which button is offered.
+	 */
+	_add_fg_sticker($tr, data) {
+		const me = this;
+		$tr.find('.c-id').append('<span class="text-muted pqc-na" style="display:none;">&mdash;</span>');
+		$(`<button class="btn btn-xs btn-light btn-print-fg-sticker" data-alpinos-keep="1" style="display:none;">
+			<i class="fa fa-print"></i> ${__('Print')}</button>`)
+			.appendTo($tr.find('.c-fg'))
+			.on('click', () => me.print_sticker(data));
+		$tr.find('.c-fg').append('<span class="text-muted pqc-na">&mdash;</span>');
+		this._apply_sticker_kind($tr, data);
+	}
+
+	_apply_sticker_kind($tr, data) {
+		const me = this;
+		const show = (kind) => {
+			const fg = kind === 'FG';
+			$tr.find('.c-id .btn-print-row-sticker').toggle(!fg);
+			$tr.find('.c-id .pqc-na').toggle(fg);
+			$tr.find('.c-fg .btn-print-fg-sticker').toggle(fg);
+			$tr.find('.c-fg .pqc-na').toggle(!fg);
+		};
+		this._kinds = this._kinds || {};
+		const code = data.item_code;
+		if (!code) { show(''); return; }
+		if (code in this._kinds) { show(this._kinds[code]); return; }
+		show('');
+		frappe.call({
+			method: 'alpinos.alpinos_development.doctype.purchase_qc.purchase_qc.item_sticker_kind',
+			args: { item_code: code },
+			callback(r) {
+				me._kinds[code] = (r && r.message) || '';
+				// the row may have been given another item while this was in flight
+				if (data.item_code === code) show(me._kinds[code]);
+			},
+		});
+	}
+
+	_refresh_sticker_kind(idx, data) {
+		const $tr = this.wrapper.find(`.sample-table tbody tr[data-idx="${idx}"]`);
+		if ($tr.length) this._apply_sticker_kind($tr, data);
 	}
 
 	/** A sample row with no Supplier Batch takes its QC line's (fetched from the inward). */
@@ -568,14 +640,14 @@ var PurchaseQCEntry = class {
 		} else if (key === 'sample') {
 			$tr = $(`<tr data-idx="${idx}"><td class="text-muted">${idx + 1}</td>
 				<td class="c-item"></td><td class="c-line"></td><td class="c-sbatch"></td>
-				<td class="c-ibatch"></td><td class="c-qty"></td><td class="c-id"></td>
+				<td class="c-ibatch"></td><td class="c-qty"></td><td class="c-id"></td><td class="c-fg"></td>
 				<td class="c-rem"></td>${del}</tr>`);
 			$body.append($tr);
 			this._mk_item_cell($tr, key, idx, data);
 			this._mk_cell($tr, '.c-line', key, idx,
 				{ fieldtype: 'Select', fieldname: 'qc_item_idx', options: this._item_options() },
 				data.qc_item_idx, function (val) {
-					data.qc_item_idx = val;
+					data.qc_item_idx = val; setTimeout(() => me._push_internal_batch(data), 0);
 					me._match_line(key, idx, data);
 					me.recalc_sample_rollup();
 				});
@@ -584,7 +656,7 @@ var PurchaseQCEntry = class {
 			// Editable for every item; FG does not require it.
 			this._mk_cell($tr, '.c-ibatch', key, idx,
 				{ fieldtype: 'Data', fieldname: 'internal_batch_no' }, data.internal_batch_no,
-				function (val) { data.internal_batch_no = (val || '').trim(); });
+				function (val) { data.internal_batch_no = (val || '').trim(); me._push_internal_batch(data); });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'sample_qty' },
 				data.sample_qty, function (val) { data.sample_qty = flt(val); me.recalc_sample_rollup(); });
 			// One sticker per sample row; works before the QC is saved.
@@ -592,6 +664,7 @@ var PurchaseQCEntry = class {
 				<i class="fa fa-print"></i> ${__('Print')}</button>`)
 				.appendTo($tr.find('.c-id'))
 				.on('click', () => me.print_sticker(data));
+				me._add_fg_sticker($tr, data);
 			this._mk_cell($tr, '.c-rem', key, idx, { fieldtype: 'Data', fieldname: 'remarks' },
 				data.remarks, function (val) { data.remarks = val; });
 
@@ -884,6 +957,7 @@ var PurchaseQCEntry = class {
 				item_code: data.item_code,
 				sample_id: data.sample_id || '',
 				sample_qty: flt(data.sample_qty),
+					supplier_batch_no: data.supplier_batch_no || '',
 				uom: data.uom || line.uom || '',
 				manufacturing_date: line.manufacturing_date || '',
 				expiry_date: line.expiry_date || '',
@@ -892,7 +966,7 @@ var PurchaseQCEntry = class {
 			},
 			callback(r) {
 				if (!r.message) { if (win) win.close(); return; }
-				data.sample_id = r.message.sample_id;
+				if (r.message.sample_id) data.sample_id = r.message.sample_id;
 				if (!win) { frappe.msgprint(__('Allow pop-ups for this site to print the sticker.')); return; }
 				win.document.open();
 				win.document.write(r.message.html);

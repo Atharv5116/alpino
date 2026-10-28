@@ -53,6 +53,10 @@ CATEGORY_GROUPS = (
 )
 
 
+#: Sub groups created under Packaging Material when missing.
+PM_SUB_GROUPS = ("Pouch", "Box", "Bucket")
+
+
 def _norm(name):
 	return " ".join(cstr(name).lower().split())
 
@@ -150,6 +154,17 @@ def ensure_category_groups():
 			"doctype": "Item Group", "item_group_name": name, "parent_item_group": root, "is_group": 1,
 		}).insert(ignore_permissions=True)
 		existing.add(_norm(name))
+
+	# Sub groups of Packaging Material. They add no new type: an item filed under Pouch or Box
+	# is still PM, because the nearest category group above it is Packaging Material.
+	pm_parent = next((n for n in frappe.get_all("Item Group", pluck="name") if GROUP_NAMES.get(_norm(n)) == PM), None)
+	if pm_parent:
+		for name in PM_SUB_GROUPS:
+			if frappe.db.exists("Item Group", name):
+				continue
+			frappe.get_doc({
+				"doctype": "Item Group", "item_group_name": name, "parent_item_group": pm_parent, "is_group": 0,
+			}).insert(ignore_permissions=True)
 
 
 @frappe.whitelist()

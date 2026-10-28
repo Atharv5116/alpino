@@ -13,6 +13,10 @@
 .purchase-grn-view .grn-table input,
 .purchase-grn-view .grn-table .control-value { font-size: 12px; }
 .purchase-grn-view .grn-num { text-align: right; }
+/* The grid scrolls sideways only. overflow-x:auto makes the other axis auto too, which drew a
+   second, vertical scrollbar over the three rows; the Link lists are position:fixed, so
+   nothing here needs to scroll down. */
+.purchase-grn-view .alp-scroll { overflow-y: hidden; }
 
 /* Read-only values are DATA, not an input somebody failed to fill. */
 .purchase-grn-view .eso-fld .control-value.like-disabled-input {
@@ -146,7 +150,7 @@
 		<p class="text-muted grn-note field-rate-note"></p>
 		<div class="alp-scroll alp-scroll--xwide"
 			data-empty="This receipt carries no item lines.">
-			<table class="table table-bordered items-table grn-table" style="min-width:1500px;">
+			<table class="table table-bordered items-table grn-table" style="min-width:1640px;">
 				<thead><tr>
 					<th style="width:28px;">#</th>
 					<th style="min-width:160px;">Item</th>
@@ -154,8 +158,8 @@
 					<th style="width:90px;" class="grn-num">Received</th>
 					<th style="width:100px;">Accepted</th>
 					<th style="width:100px;">Rejected</th>
-					<th style="min-width:160px;">Accepted Warehouse</th>
-					<th style="min-width:160px;">Rejected Warehouse</th>
+					<th style="min-width:230px;">Accepted Warehouse</th>
+					<th style="min-width:230px;">Rejected Warehouse</th>
 					<th style="min-width:120px;">Batch</th>
 					<th style="width:110px;">Rate</th>
 					<th style="width:100px;">MRP</th>

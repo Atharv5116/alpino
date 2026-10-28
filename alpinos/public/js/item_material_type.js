@@ -3,7 +3,7 @@
 // only make sense for one type follow the group here.
 //
 //   Finished Goods      -> Filling section (Target SKU Name, Filling Categories, Pack Size)
-//   Packaging Material  -> Material Category (required; the server enforces it too)
+//   Packaging Material  -> Material Category (shown for packaging; optional)
 
 (function () {
 	const FG_FIELDS = [
@@ -16,7 +16,7 @@
 		const pm = kind === 'PM';
 		FG_FIELDS.forEach((f) => frm.toggle_display(f, fg));
 		frm.toggle_display('custom_material_category', pm);
-		frm.toggle_reqd('custom_material_category', pm);
+		frm.toggle_reqd('custom_material_category', 0);
 	}
 
 	function refresh_type(frm) {

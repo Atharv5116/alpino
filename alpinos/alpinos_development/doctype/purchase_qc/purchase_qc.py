@@ -1539,14 +1539,25 @@ def _mint_sample_id(item_code, inward_datetime, taken=()):
 
 
 @frappe.whitelist()
+def item_sticker_kind(item_code):
+	"""'FG' when the item gets the FG sample sticker, '' for the RMID / PMID one."""
+	from alpinos.purchase.print_formats import sticker_kind
+
+	return sticker_kind(item_code)
+
+
+@frappe.whitelist()
 def sample_sticker(purchase_inward, item_code, sample_id=None, sample_qty=None, uom=None,
-		manufacturing_date=None, expiry_date=None, taken=None, purchase_inward_item=None):
+		manufacturing_date=None, expiry_date=None, taken=None, purchase_inward_item=None,
+		supplier_batch_no=None):
 	"""One 100 x 75 mm sample sticker, printable before the QC is saved.
 
-	A row with no RMID / PMID gets one minted here; the screen keeps it on the row, and the
-	save stores it as is (rows that already carry an id are never re-minted).
+	RM / PM items get the RMID / PMID sticker: a row with no id gets one minted here; the
+	screen keeps it on the row, and the save stores it as is (rows that already carry an id
+	are never re-minted). FG items get the FG sticker instead: SKU, item, Batch Code (the
+	supplier batch), Mfg / Expiry and the sample quantity -- no RMID is printed or minted.
 	"""
-	from alpinos.purchase.print_formats import render_sample_sticker
+	from alpinos.purchase.print_formats import render_sample_sticker, sticker_kind
 
 	frappe.has_permission("Purchase Inward", "read", purchase_inward, throw=True)
 	if not item_code:
@@ -1559,11 +1570,25 @@ def sample_sticker(purchase_inward, item_code, sample_id=None, sample_qty=None, 
 	where.update({"name": purchase_inward_item} if purchase_inward_item else {"item_code": item_code})
 	src = frappe.db.get_value(
 		"Purchase Inward Item", where,
-		["manufacturing_date", "expiry_date", "received_qty", "uom"], as_dict=True, order_by="idx asc",
+		["manufacturing_date", "expiry_date", "received_qty", "uom", "batch_no"], as_dict=True, order_by="idx asc",
 	) or frappe._dict()
 	manufacturing_date = manufacturing_date or src.manufacturing_date
 	expiry_date = expiry_date or src.expiry_date
 	uom = uom or src.uom
+
+	if sticker_kind(item_code) == "FG":
+		html = render_sample_sticker({
+			"kind": "FG",
+			"sku": item_code,
+			"name": frappe.db.get_value("Item", item_code, "item_name"),
+			# Supplier batch for now (the inward line's Batch No. when the row has none).
+			"batch": (supplier_batch_no or "").strip() or src.batch_no,
+			"mfg": manufacturing_date,
+			"exp": expiry_date,
+			"qty": flt(sample_qty),
+		})
+		return {"sample_id": (sample_id or "").strip(), "html": html}
+
 	taken = set(frappe.parse_json(taken) or []) if taken else set()
 	sample_id = (sample_id or "").strip() or _mint_sample_id(item_code, inward.inward_datetime, taken)
 	html = render_sample_sticker({

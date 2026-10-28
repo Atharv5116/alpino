@@ -377,7 +377,13 @@ def _attach_row_extras(rows, with_actions=1):
 	for line in frappe.get_all(
 		ITEM_DOCTYPE,
 		filters={"parenttype": DOCTYPE, "parent": ["in", names]},
-		fields=["parent", "idx", "item_code", "uom", "received_qty", "target_warehouse", "quarantine", "quarantine_status"],
+		# batch_no and manufacturing_date are not shown: the Submit for QC guard reads them
+		# (workflow.receiving_incomplete_reason), and without them it reported every
+		# shelf-life line as "Manufacturing Date is required" however often it was saved.
+		fields=[
+			"parent", "idx", "item_code", "uom", "received_qty", "target_warehouse",
+			"batch_no", "manufacturing_date", "quarantine", "quarantine_status",
+		],
 		order_by="parent asc, idx asc",
 	):
 		lines_by_parent.setdefault(line.parent, []).append(line)

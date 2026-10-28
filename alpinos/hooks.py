@@ -165,6 +165,7 @@ doctype_list_js = {
 jinja = {
 	"methods": [
 		"alpinos.utils.get_combined_items",
+		"alpinos.purchase.print_formats.sticker_kind",
 		"alpinos.utils.pack_size",
 		"alpinos.utils.available_stock",
 		"alpinos.utils.sort_locations_by_sku",

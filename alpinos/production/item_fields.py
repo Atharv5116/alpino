@@ -98,12 +98,12 @@ def _custom_fields():
 				options="\n" + C.select_options(C.PM_CATEGORIES),
 				insert_after="custom_production_col_1",
 				# Shown only for items filed under Packaging Material: the Item form script
-				# (public/js/item_material_type.js) toggles it, and item_rules requires it on
+				# (public/js/item_material_type.js) toggles it, and item_rules leaves it optional on
 				# the server. No depends_on: the type is no longer a field on the form. An
 				# empty string, not omitted, so the old expression is cleared on existing sites.
 				depends_on="",
 				mandatory_depends_on="",
-				description="Required for packaging material.",
+				description="Packaging material only. Optional.",
 			),
 			# TAX_RATE_FIELD is deliberately NOT created any more -- see the note beside
 			# LEGACY_GST_PERCENT_FIELD. The GST rate lives in custom_gst_percent, which the
