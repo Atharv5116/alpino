@@ -33,12 +33,55 @@ function fetch_gst_details(frm, { silent = false } = {}) {
 			};
 			set_if("customer_business_name", d.customer_business_name);
 			set_if("gst_type", d.gst_type);
-			set_if("state", d.state);
-			set_if("city", d.city);
-			set_if("pincode", d.pincode);
-			frappe.show_alert({ message: res.message, indicator: "green" });
+			fill_address_from_gst(frm, d);
+			const missing = (res.missing || []).length;
+			frappe.show_alert({ message: res.message, indicator: missing ? "orange" : "green" }, missing ? 12 : 5);
 		},
 	});
+}
+
+// The fetched address goes into the Addresses table: the form's own Address / City / State /
+// Pincode are hidden copies of the primary row, rebuilt from it on every save. A blank primary
+// row is filled; one that holds another address is replaced only if the user says so.
+function fill_address_from_gst(frm, d) {
+	const values = {
+		address_line: d.address_line, state: d.state, pincode: d.pincode, country: d.country, city: d.city,
+	};
+	if (!values.address_line && !values.pincode) return;
+	const key = (v) => (v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+	const text = (r) => frappe.utils.escape_html(
+		[r.address_line, r.city, r.state, r.pincode].filter(Boolean).join(", "));
+
+	let row = get_primary_address_row(frm);
+	if (!row) {
+		row = frm.add_child("addresses", { is_primary: 1, site_name: frm.doc.site_name || "" });
+		frm.refresh_field("addresses");
+		if (!row.site_name) {
+			frappe.show_alert({ message: __("Address added from the GST record. Enter its Site Name."), indicator: "blue" });
+		}
+		return set_address_row(frm, row, values);
+	}
+	if (!key(row.address_line)) return set_address_row(frm, row, values);
+	if (key(row.address_line) === key(values.address_line) && key(row.pincode) === key(values.pincode)) {
+		// Same address: only fill what the row is missing.
+		const blanks = Object.fromEntries(Object.entries(values).filter(([field]) => !row[field]));
+		if (blanks.state) blanks.city = values.city || row.city;   // setting the state clears it
+		return set_address_row(frm, row, blanks);
+	}
+	frappe.confirm(
+		__("Replace the primary address{0} with the one on the GST record?", [
+			row.site_name ? ` (${frappe.utils.escape_html(row.site_name)})` : "",
+		]) + `<br><br><b>${__("Now")}:</b> ${text(row)}<br><b>${__("GST record")}:</b> ${text(values)}`,
+		() => set_address_row(frm, row, values)
+	);
+}
+
+async function set_address_row(frm, row, values) {
+	// State before City: changing a row's state clears its city.
+	for (const field of ["address_line", "state", "pincode", "country", "city"]) {
+		if (values[field]) await frappe.model.set_value(row.doctype, row.name, field, values[field]);
+	}
+	frm.refresh_field("addresses");
 }
 
 frappe.ui.form.on("Buyer Master", {

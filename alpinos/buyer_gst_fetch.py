@@ -64,22 +64,60 @@ def validate_gstin_format(gstin):
 	return True, ""
 
 
+def _key(text):
+	"""A spelling-proof key for a place name: "Jammu And Kashmir" finds "Jammu & Kashmir"."""
+	return re.sub(r"[^a-z]", "", (text or "").lower().replace("&", "and"))
+
+
+def _state_record(state, gstin=""):
+	"""The State record for the GST record's state name, else for the GST No.'s state code."""
+	names = [state]
+	try:
+		from india_compliance.gst_india.constants import STATE_NUMBERS
+
+		names += [name for name, code in STATE_NUMBERS.items() if code == (gstin or "")[:2]]
+	except ImportError:
+		pass
+	records = {_key(name): name for name in frappe.get_all("State", pluck="name")}
+	return next((records[_key(n)] for n in names if _key(n) in records), "")
+
+
+def _city_record(candidates, state):
+	"""The City record, of that state, for the first candidate that is one. The address row
+	only offers the cities of its state, so a namesake in another state would not do."""
+	if not state:
+		return ""
+	records = {_key(c.city_name): c.name for c in frappe.get_all("City", filters={"state": state}, fields=["name", "city_name"])}
+	return next((records[_key(n)] for n in candidates if _key(n) in records), "")
+
+
 def map_to_buyer_fields(info):
-	"""india_compliance's response, in the shape Buyer Master keeps its data."""
+	"""india_compliance's response, in the shape Buyer Master keeps its data. State and City
+	are links, so they come back as the State / City records they match, or blank."""
 	if not info:
 		return {}
 	address = (info.get("permanent_address") or {}) if hasattr(info, "get") else {}
 	line1 = (address.get("address_line1") or "").strip()
 	line2 = (address.get("address_line2") or "").strip()
+	# The GST record's city is the district ("Bengaluru Urban", "Mumbai Suburban"); the
+	# locality and city proper sit at the end of its second line.
+	district = (address.get("city") or "").strip()
+	candidates = [district, re.sub(r"\s+(urban|rural|suburban|city|district)$", "", district, flags=re.I)]
+	candidates += [p.strip() for p in reversed(line2.split(",")) if p.strip()]
+	registered_state = (address.get("state") or "").strip()
+	state = _state_record(registered_state, info.get("gstin")) if (registered_state or district) else ""
 	return {
 		"customer_business_name": (info.get("business_name") or "").strip(),
 		"gst_type": _GST_TYPE_BY_CATEGORY.get(info.get("gst_category") or "", ""),
 		"gst_status": (info.get("status") or "").strip(),
 		"address_line": ", ".join([p for p in (line1, line2) if p]),
-		"city": (address.get("city") or "").strip(),
-		"state": (address.get("state") or "").strip(),
+		"city": _city_record(candidates, state),
+		"state": state,
 		"pincode": (address.get("pincode") or "").strip(),
 		"country": (address.get("country") or "India").strip(),
+		# As the GST record has them, for the message when no City / State record matches.
+		"registered_city": district,
+		"registered_state": registered_state,
 	}
 
 
@@ -131,10 +169,19 @@ def fetch_gstin_details(gstin):
 		}
 
 	data = map_to_buyer_fields(info)
+	missing = []
+	if data["registered_state"] and not data["state"]:
+		missing.append(_("State {0} is not in the State list").format(data["registered_state"]))
+	elif data["registered_city"] and not data["city"]:
+		missing.append(_("City {0} is not in the City list").format(data["registered_city"]))
+	message = _("Details fetched for {0}. Everything below stays editable.").format(gstin)
+	if missing:
+		message += " " + _("{0}: pick it on the address row.").format("; ".join(missing))
 	return {
 		"ok": 1,
 		"reason": "",
-		"message": _("Details fetched for {0}. Everything below stays editable.").format(gstin),
+		"message": message,
+		"missing": missing,
 		"data": data,
 		"status": data.get("gst_status") or "",
 	}
