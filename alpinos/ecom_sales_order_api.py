@@ -25,8 +25,11 @@ from alpinos.sales_order_api import (
 )
 from alpinos.sales_order_api import get_box_conversion_factor, get_customer_item_mrp
 from alpinos.sales_order_offline_buyer import (
+	_masters_owning_site,
+	_site_master,
 	get_offline_buyer_for_customer,
 	get_offline_buyer_item_rate,
+	masters_for_customer_business,
 )
 
 # 15-char GSTIN: 2 state digits, 5 letters, 4 digits, 1 letter, 1 alnum, 'Z', 1 alnum.
@@ -262,38 +265,53 @@ def _ecom_common_populate(so, customer, order_type, company, items, freebies,
 
 
 def _write_back_addresses_to_buyer(so):
-	"""BRD Module 2 §2: a billing/shipping address edited on the e-com SO is
-	stored back into the Buyer Master as a NEW address entry. Deduped against
-	existing rows (normalized text) so repeated orders don't pile up copies."""
-	obm_name = frappe.db.get_value("Buyer Master", {"customer": so.customer}, "name")
-	if not obm_name:
+	"""BRD Module 2 section 2: an address TYPED on the e-com order is stored on the Buyer
+	Master as a new address entry, so the dropdown offers it next time.
+
+	Only a typed address. The order's text is compared with every address of the buyer
+	(parent, children and every master of the same business), tolerating the city / state /
+	pincode tail the entry page adds, so picking an existing address never copies it.
+
+	And only onto the master it belongs to: a typed shipping address to the master that owns
+	the order's site, a typed billing address to the master whose GSTIN the order bills
+	under. The order's customer is not enough -- for Amazon or Swiggy it is the parent of
+	every state, and a child state's site copied onto the parent made later orders take the
+	parent's GSTIN."""
+	family = masters_for_customer_business(so.customer) if so.customer else []
+	if not family:
 		return
-
-	def norm(s):
-		return " ".join((s or "").lower().split())
-
-	texts = []
+	known = frappe.get_all(
+		"Buyer Address",
+		filters={"parenttype": "Buyer Master", "parent": ["in", family]},
+		fields=["address_line", "city", "state", "pincode", "country"],
+	)
+	site = (so.get("custom_site_name") or "").strip()
+	additions = {}
 	for fieldname, is_shipping in (("custom_billing_address_text", 0), ("custom_shipping_address_text", 1)):
-		t = (so.get(fieldname) or "").strip()
-		if t and norm(t) not in [norm(x) for _, x in texts]:
-			texts.append((is_shipping, t))
-	if not texts:
-		return
-
-	obm = frappe.get_doc("Buyer Master", obm_name)
-	existing = {norm(r.address_line) for r in (obm.get("addresses") or [])}
-	changed = False
-	for is_shipping, t in texts:
-		if norm(t) in existing:
+		text = (so.get(fieldname) or "").strip()
+		if not text or _address_known(text, known):
 			continue
-		obm.append("addresses", {
-			"address_line": t,
-			"is_shipping": is_shipping,
-			"site_name": (so.get("custom_site_name") or "").strip(),
-		})
-		existing.add(norm(t))
-		changed = True
-	if changed:
+		master = _write_back_master(so, family, site, is_shipping)
+		if not master:
+			continue
+		rows = additions.setdefault(master, [])
+		if any(_addr_tokens(text) == _addr_tokens(t) for _s, t in rows):
+			continue
+		rows.append((is_shipping, text))
+
+	for master, rows in additions.items():
+		obm = frappe.get_doc("Buyer Master", master)
+		owns_site = bool(site) and master in _masters_owning_site([master], site)
+		for is_shipping, text in rows:
+			pins = re.findall(r"\b[1-9][0-9]{5}\b", text)
+			obm.append("addresses", {
+				"address_line": text,
+				"is_shipping": is_shipping,
+				"site_name": site if owns_site else None,
+				# A GSTIN is per state, so the master's own state is the address's state.
+				"state": obm.get("state") or None,
+				"pincode": pins[-1] if pins else None,
+			})
 		obm.flags.ignore_permissions = True
 		obm.flags.ignore_mandatory = True
 		# Best-effort: syncing the address back to the Buyer Master must NEVER block
@@ -311,6 +329,51 @@ def _write_back_addresses_to_buyer(so):
 			# over an order that saved fine. Drop what the failed buyer save queued.
 			del frappe.local.message_log[messages_before:]
 			frappe.log_error(frappe.get_traceback(), "E-com SO buyer address write-back skipped")
+
+
+def _addr_tokens(text):
+	return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
+def _address_known(text, rows):
+	"""Is `text` one of these Buyer Address rows, as the entry page shows it?
+
+	The page offers "line, city, state, pincode" (sometimes ", India"), and the city may be
+	spelt differently there than on the row (BANGALORE / Bengaluru). So: the row's line
+	followed by nothing but a short tail of its city / state / pincode / country -- or any
+	short tail that carries the row's own pincode."""
+	words = _addr_tokens(text)
+	if not words:
+		return True
+	for row in rows:
+		for line in {(row.address_line or ""), (row.address_line or "")[:240]}:
+			head = _addr_tokens(line)
+			if not head or words[: len(head)] != head:
+				continue
+			tail = [w for w in words[len(head):] if w != "india"]
+			if not tail:
+				return True
+			if len(tail) > 8:
+				continue
+			extra = set(_addr_tokens(" ".join([row.city or "", row.state or "", row.country or "", row.pincode or ""])))
+			pin = (row.pincode or "").strip()
+			if set(tail) <= extra or (pin and pin in tail):
+				return True
+	return False
+
+
+def _write_back_master(so, family, site, is_shipping):
+	"""The Buyer Master a typed address of this order belongs to."""
+	own = frappe.db.get_value("Buyer Master", {"customer": so.customer}, "name")
+	site_master = _site_master(so.customer, site)
+	if is_shipping:
+		return (site_master.name if site_master else None) or own
+	gstin = (so.get("custom_billing_gstin") or "").strip().upper()
+	if gstin:
+		billers = frappe.get_all("Buyer Master", filters={"name": ["in", family], "gst_no": gstin}, pluck="name")
+		if len(billers) == 1:
+			return billers[0]
+	return (site_master.name if site_master else None) or own
 
 
 def _apply_sticker_attachments(so, stickers):

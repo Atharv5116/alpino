@@ -300,7 +300,15 @@ def assert_import_site_requirements(customer, site_name, customer_type=None):
 	for o in owners:
 		if frappe.db.get_value("Buyer Master", o, "gst_type") == "Registered Business":
 			registered = True
-	if registered and not (_gst_for_site(site_name, "") or "").strip():
+	conflict = site_gst_conflict(customer, site_name)
+	if conflict:
+		frappe.throw(
+			_("Site '{0}' is on more than one Buyer Master of {1} with different GST numbers ({2}). Keep the site only on the master it belongs to.").format(
+				site_name, customer, ", ".join("{0}: {1}".format(m, g) for m, g in conflict)
+			),
+			title=_("Site On Two Buyer Masters"),
+		)
+	if registered and not (_gst_for_site(site_name, "", customer=customer) or "").strip():
 		missing.append("GST No")
 	if missing:
 		frappe.throw(
@@ -308,47 +316,104 @@ def assert_import_site_requirements(customer, site_name, customer_type=None):
 			title=_("Incomplete Site Data"),
 		)
 
-def _gst_for_site(site_name, fallback=""):
-	"""Site-wise GST No: the gst_no of the Buyer Master that owns an address (Buyer Address
-	child row) whose site_name matches — so the SO carries the SELECTED SITE's GSTIN, not
-	the family parent's. Falls back to `fallback` (the customer's buyer master gst) when the
-	site can't be resolved to a registered master."""
-	if site_name:
-		rows = frappe.db.sql(
-			"""
-			SELECT bm.gst_no
-			FROM `tabBuyer Address` ba
-			JOIN `tabBuyer Master` bm ON bm.name = ba.parent
-			WHERE ba.site_name = %s AND IFNULL(bm.gst_no, '') <> ''
-			LIMIT 1
-			""",
-			site_name,
-		)
-		if rows and rows[0][0]:
-			return rows[0][0]
-	return fallback or ""
+def _site_master(customer, site_name):
+	"""The Buyer Master an order for `site_name` under `customer` takes its GSTIN and site
+	flags from, or None when nothing (or nothing unambiguous) owns the site.
+
+	Only the customer's own buyer is searched (masters_for_customer_business: the parent /
+	child family plus every master of the same business). Site names are not unique --
+	"Surat", "Mumbai" or "maharashtra" are used by unrelated buyers -- and a lookup across
+	the whole table put one company's GSTIN on another company's order.
+
+	Inside the buyer, a master whose row for the site is complete (state filled) wins over a
+	bare copy of the site: the e-com address write-back used to copy a child state's site
+	onto the parent with no state, after which orders took the parent's GSTIN. If masters
+	with different GSTINs still claim the site, None: the order is left without a GSTIN for
+	the user to settle, rather than guessed."""
+	site_name = (site_name or "").strip()
+	if not (customer and site_name):
+		return None
+	owners = _masters_owning_site(masters_for_customer_business(customer), site_name)
+	if not owners:
+		return None
+	rows = frappe.db.sql(
+		"""
+		SELECT bm.name, bm.gst_no, bm.gst_exclusive_buyer,
+			(IFNULL(bm.site_name, '') = %(s)s OR EXISTS (
+				SELECT 1 FROM `tabBuyer Address` ba
+				WHERE ba.parent = bm.name AND ba.parenttype = 'Buyer Master'
+					AND ba.site_name = %(s)s AND IFNULL(ba.state, '') <> ''
+			)) AS complete
+		FROM `tabBuyer Master` bm
+		WHERE bm.name IN %(o)s
+		ORDER BY bm.name
+		""",
+		{"s": site_name, "o": tuple(owners)},
+		as_dict=True,
+	)
+	pool = [r for r in rows if r.complete] or rows
+	gstins = {(r.gst_no or "").strip().upper() for r in pool if (r.gst_no or "").strip()}
+	if len(gstins) > 1:
+		return None
+	with_gst = [r for r in pool if (r.gst_no or "").strip()]
+	return (with_gst or pool or [None])[0]
+
+
+def site_gst_conflict(customer, site_name):
+	"""[(master, GSTIN)] when masters with different GSTINs claim the site, else []."""
+	site_name = (site_name or "").strip()
+	if not (customer and site_name) or _site_master(customer, site_name):
+		return []
+	owners = _masters_owning_site(masters_for_customer_business(customer), site_name)
+	rows = frappe.get_all("Buyer Master", filters={"name": ["in", list(owners)]}, fields=["name", "gst_no"], order_by="name")
+	return [(r.name, r.gst_no) for r in rows] if len({r.gst_no for r in rows if r.gst_no}) > 1 else []
+
+
+def _gst_for_site(site_name, fallback="", customer=None):
+	"""Site-wise GST No: the GSTIN of the Buyer Master that owns the site within the
+	order's own buyer (_site_master) -- so the order carries the SELECTED SITE's GSTIN,
+	never the family parent's and never another buyer's. `fallback` when the site does not
+	resolve."""
+	master = _site_master(customer, site_name) if customer else _legacy_site_master(site_name)
+	return (master.gst_no if master and master.gst_no else None) or fallback or ""
+
+
+def _legacy_site_master(site_name):
+	"""Callers that do not know the customer: a master with a complete row for the site
+	first, so a bare write-back copy never wins. Prefer passing the customer."""
+	site_name = (site_name or "").strip()
+	if not site_name:
+		return None
+	rows = frappe.db.sql(
+		"""
+		SELECT bm.name, bm.gst_no, bm.gst_exclusive_buyer
+		FROM `tabBuyer Address` ba
+		JOIN `tabBuyer Master` bm ON bm.name = ba.parent
+		WHERE ba.site_name = %s
+		ORDER BY (IFNULL(ba.state, '') = '') ASC, (IFNULL(bm.gst_no, '') = '') ASC, bm.name
+		LIMIT 1
+		""",
+		site_name,
+		as_dict=True,
+	)
+	return rows[0] if rows else None
 
 
 # Order-behaviour flags that are read SITE-WISE (from the Buyer Master owning the chosen
 # site's address), not from the family parent. GST-Exclusive Buyer is per-site (e.g. an
 # Amazon FBF site) so it must follow the site, exactly like GST No does.
-def _flag_for_site(site_name, field, fallback=0):
-	"""Value of a Buyer Master flag for the SELECTED SITE — the master that owns a Buyer
-	Address child row whose site_name matches — falling back to `fallback` (the family
-	master's value) when the site can't be resolved. `field` is a fixed column name."""
-	if site_name:
-		rows = frappe.db.sql(
-			"""
-			SELECT bm.`{field}`
-			FROM `tabBuyer Address` ba
-			JOIN `tabBuyer Master` bm ON bm.name = ba.parent
-			WHERE ba.site_name = %s
-			LIMIT 1
-			""".format(field=field),
-			site_name,
-		)
-		if rows:
-			return int(rows[0][0] or 0)
+_SITE_FLAGS = ("gst_exclusive_buyer",)
+
+
+def _flag_for_site(site_name, field, fallback=0, customer=None):
+	"""Value of a Buyer Master flag for the SELECTED SITE -- the same master _gst_for_site
+	takes the GSTIN from -- falling back to `fallback` (the family master's value) when the
+	site can't be resolved. `field` is one of _SITE_FLAGS."""
+	if field not in _SITE_FLAGS:
+		frappe.throw(_("{0} is not a site-wise Buyer Master flag.").format(field))
+	master = _site_master(customer, site_name) if customer else _legacy_site_master(site_name)
+	if master:
+		return int(master.get(field) or 0)
 	return int(fallback or 0)
 
 
@@ -381,7 +446,7 @@ def get_party_gstin(customer, site_name=None):
 	if not row:
 		return blank
 
-	site_gst = (_gst_for_site((site_name or "").strip(), "") or "").strip().upper()
+	site_gst = (_gst_for_site((site_name or "").strip(), "", customer=customer) or "").strip().upper()
 	billing_gst = site_gst
 	if not billing_gst and not row.get("parent_buyer"):
 		billing_gst = (row.get("gst_no") or "").strip().upper()
@@ -442,7 +507,17 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 		# If the site is missing / can't be resolved to a registered site master, leave GST
 		# BLANK — never fall back to the family parent's GSTIN.
 		_site = (doc.get("custom_site_name") or "").strip() if has_site_field else ""
-		_site_gst = (_gst_for_site(_site, "") or "").strip().upper()
+		_site_gst = (_gst_for_site(_site, "", customer=doc.customer) or "").strip().upper()
+		if _site and not _site_gst:
+			_conflict = site_gst_conflict(doc.customer, _site)
+			if _conflict:
+				frappe.msgprint(
+					_("Site {0} is on more than one Buyer Master with different GST numbers ({1}), so no GST No. was filled in. Enter it, and keep the site only on the master it belongs to.").format(
+						frappe.bold(_site), ", ".join("{0}: {1}".format(m, g) for m, g in _conflict)
+					),
+					indicator="orange",
+					title=_("Site On Two Buyer Masters"),
+				)
 		doc.tax_id = _site_gst
 		# #24 Billing GST No.: the site's GST when a Site resolves; else the buyer's OWN GST
 		# but ONLY when it has no Parent Buyer; else leave blank for manual entry. NEVER the
@@ -482,7 +557,7 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 		# the family master's value only when the site can't be resolved.
 		if meta.has_field("custom_gst_exclusive_buyer"):
 			doc.custom_gst_exclusive_buyer = _flag_for_site(
-				_site, "gst_exclusive_buyer", row.get("gst_exclusive_buyer")
+				_site, "gst_exclusive_buyer", row.get("gst_exclusive_buyer"), customer=doc.customer
 			)
 		# Validate the GSTIN's state code against the bill-to state (soft flag). Only when
 		# a structured billing Address carries a state — free-text imports simply skip it.
@@ -566,6 +641,9 @@ def _find_customer_address(customer, line1: str, city: str, pincode: str):
 	if not line1:
 		return None
 
+	# A row with no city is stored with the "N/A" placeholder (_ensure_address_doc), so a
+	# blank city must find that record too. Comparing it with "" never matched, and every
+	# save of the Buyer Master created another copy of each city-less address.
 	found = frappe.db.sql(
 		"""
 		SELECT a.name
@@ -574,8 +652,9 @@ def _find_customer_address(customer, line1: str, city: str, pincode: str):
 			ON dl.parent = a.name AND dl.parenttype = 'Address'
 			AND dl.link_doctype = 'Customer' AND dl.link_name = %(cust)s
 		WHERE IFNULL(a.address_line1, '') = %(l1)s
-			AND IFNULL(a.city, '') = %(city)s
+			AND (IFNULL(a.city, '') = %(city)s OR (%(city)s = '' AND a.city = 'N/A'))
 			AND IFNULL(a.pincode, '') = %(pin)s
+		ORDER BY IFNULL(a.disabled, 0) ASC, a.creation ASC
 		LIMIT 1
 		""",
 		{"cust": customer, "l1": line1, "city": city, "pin": pincode},
@@ -1407,7 +1486,7 @@ def _address_name_for_buyer_row(customer, line1, city, pincode):
 		WHERE IFNULL(a.address_line1, '') = %(l1)s
 			AND IFNULL(a.pincode, '') = %(pin)s
 			AND (IFNULL(a.city, '') = %(city)s OR (%(city)s = '' AND a.city = 'N/A'))
-		ORDER BY a.creation ASC
+		ORDER BY IFNULL(a.disabled, 0) ASC, a.creation ASC
 		LIMIT 1
 		""",
 		{"cust": customer, "l1": line1, "city": _nz(city), "pin": _nz(pincode)},
