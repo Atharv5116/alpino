@@ -154,7 +154,7 @@ def _orders_from_rows(rows):
 	return results
 
 
-def _assert_sheet_matches_master(first, buyer, site_name):
+def _assert_sheet_matches_master(first, buyer, site_name, customer=None):
 	"""Sheet values for site/buyer-derived fields must match what the system would auto-fetch.
 
 	A blank cell just auto-fetches; a mismatch rejects the order. Address columns are exempt.
@@ -173,7 +173,7 @@ def _assert_sheet_matches_master(first, buyer, site_name):
 		problems.append(_("Customer Type '{0}' does not match the buyer's '{1}'").format(sheet_ct, master_ct))
 
 	# Billing / Shipping GSTIN vs the SITE's GST (the buyer's own GST when no site).
-	site_gst = _norm(_gst_for_site(site_name, "") if site_name else buyer.get("gst_no")).upper()
+	site_gst = _norm(_gst_for_site(site_name, "", customer=customer) if site_name else buyer.get("gst_no")).upper()
 	for col in ("Billing GSTIN", "Shipping GSTIN"):
 		sheet_gst = _norm(_get(first, col)).upper()
 		if sheet_gst and site_gst and sheet_gst != site_gst:
@@ -183,7 +183,7 @@ def _assert_sheet_matches_master(first, buyer, site_name):
 	raw_ex = _get(first, "GST-Exclusive Buyer")
 	if _norm(raw_ex):
 		if site_name:
-			site_ex = int(_flag_for_site(site_name, "gst_exclusive_buyer", buyer.get("gst_exclusive_buyer")) or 0)
+			site_ex = int(_flag_for_site(site_name, "gst_exclusive_buyer", buyer.get("gst_exclusive_buyer"), customer=customer) or 0)
 		else:
 			site_ex = int(buyer.get("gst_exclusive_buyer") or 0)
 		if _yn(raw_ex, 0) != site_ex:
@@ -249,7 +249,7 @@ def _create_one_order(cust_label, po_number, grp):
 	from alpinos.sales_order_offline_buyer import assert_import_site_requirements
 	assert_import_site_requirements(customer, site_name, customer_type or None)
 	# Point (3): sheet values must match the Buyer Master (address exempt - taken as-is).
-	_assert_sheet_matches_master(first, buyer, site_name)
+	_assert_sheet_matches_master(first, buyer, site_name, customer)
 
 	out = create_ecom_sales_order(
 		customer=customer,
