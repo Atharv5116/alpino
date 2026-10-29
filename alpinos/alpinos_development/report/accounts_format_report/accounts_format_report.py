@@ -1,5 +1,6 @@
 """Tally-style billing export, one row per Sales Order line."""
 
+import difflib
 import re
 
 import frappe
@@ -21,26 +22,131 @@ _INDIAN_STATES = sorted(
 )
 
 
+# First digits of a PIN code -> state, for an address that names no state (or a typo of one).
+_PIN_STATE = {
+	"11": "Delhi", "12": "Haryana", "13": "Haryana", "14": "Punjab", "15": "Punjab", "16": "Punjab",
+	"17": "Himachal Pradesh", "18": "Jammu and Kashmir", "19": "Jammu and Kashmir", "20": "Uttar Pradesh",
+	"21": "Uttar Pradesh", "22": "Uttar Pradesh", "23": "Uttar Pradesh", "25": "Uttar Pradesh",
+	"27": "Uttar Pradesh", "28": "Uttar Pradesh", "30": "Rajasthan", "31": "Rajasthan", "32": "Rajasthan",
+	"33": "Rajasthan", "34": "Rajasthan", "36": "Gujarat", "37": "Gujarat", "38": "Gujarat", "39": "Gujarat",
+	"40": "Maharashtra", "41": "Maharashtra", "42": "Maharashtra", "43": "Maharashtra", "44": "Maharashtra",
+	"45": "Madhya Pradesh", "46": "Madhya Pradesh", "47": "Madhya Pradesh", "48": "Madhya Pradesh",
+	"49": "Chhattisgarh", "50": "Telangana", "52": "Andhra Pradesh", "53": "Andhra Pradesh",
+	"56": "Karnataka", "57": "Karnataka", "58": "Karnataka", "59": "Karnataka", "60": "Tamil Nadu",
+	"61": "Tamil Nadu", "62": "Tamil Nadu", "63": "Tamil Nadu", "64": "Tamil Nadu", "67": "Kerala",
+	"68": "Kerala", "69": "Kerala", "70": "West Bengal", "71": "West Bengal", "72": "West Bengal",
+	"73": "West Bengal", "74": "West Bengal", "75": "Odisha", "76": "Odisha", "77": "Odisha", "78": "Assam",
+}
+# Where the first two digits are shared, more of them decide.
+_PIN_STATE_LONG = {
+	"403": "Goa", "160": "Chandigarh", "605": "Puducherry", "744": "Andaman and Nicobar Islands",
+	"39621": "Dadra and Nagar Haveli and Daman and Diu", "39623": "Dadra and Nagar Haveli and Daman and Diu",
+}
+# Short names an address uses for a state whose full name it rarely spells out.
+_STATE_ALIASES = {
+	"Dadra and Nagar Haveli": "Dadra and Nagar Haveli and Daman and Diu",
+	"Daman and Diu": "Dadra and Nagar Haveli and Daman and Diu",
+	"Pondicherry": "Puducherry",
+	"Orissa": "Odisha",
+	"New Delhi": "Delhi",
+}
+_PIN_RE = re.compile(r"(?<![0-9])[1-9][0-9]{5}(?![0-9])")
+
+
+# GSTIN state codes: a billing address with no place in it is in its GSTIN's state.
+_GST_STATE = {
+	"01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand",
+	"06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim",
+	"12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya",
+	"18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh",
+	"24": "Gujarat", "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka",
+	"30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry",
+	"35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh",
+}
+
+
+def _pin_state(pincode):
+	pincode = (pincode or "").strip()
+	if not pincode:
+		return ""
+	return _PIN_STATE_LONG.get(pincode[:5]) or _PIN_STATE_LONG.get(pincode[:3]) or _PIN_STATE.get(pincode[:2]) or ""
+
+
+def _letters(value):
+	return re.sub(r"[^a-z]", "", (value or "").lower())
+
+
+def _named_state(part):
+	"""The state a part of an address names, allowing for a misspelling ("westebengal",
+	"Maharastra"), or ""."""
+	for s in _INDIAN_STATES:
+		if re.search(r"\b" + re.escape(s) + r"\b", part, re.IGNORECASE):
+			return s
+	for alias, s in _STATE_ALIASES.items():
+		if re.search(r"\b" + re.escape(alias) + r"\b", part, re.IGNORECASE):
+			return s
+	words = _letters(part)
+	if 4 <= len(words) <= 24:
+		best = max(_INDIAN_STATES, key=lambda s: difflib.SequenceMatcher(None, words, _letters(s)).ratio())
+		if difflib.SequenceMatcher(None, words, _letters(best)).ratio() >= 0.85:
+			return best
+	return ""
+
+
 def _scp_from_free_text(text):
-	"""Best-effort {state, city, pincode} parsed from a free-text address."""
-	t = (text or "").strip()
+	"""{state, city, pincode} read from an address as it is printed.
+
+	The PIN code is the LAST six-digit number in the text. The state is the one named in the
+	last few parts of the address, where an address states it -- a state name earlier on is a
+	street ("Old Delhi Road, ... Kolkata") -- else the PIN code's. The city is the part just
+	before the state (or the PIN code)."""
+	t = " ".join((text or "").replace("\n", " ").split())
 	if not t:
 		return {"state": "", "city": "", "pincode": ""}
-	state = ""
-	for s in _INDIAN_STATES:
-		if re.search(r"\b" + re.escape(s) + r"\b", t, re.IGNORECASE):
-			state = s
-			break
-	m = re.search(r"\b(\d{6})\b", t)
-	pincode = m.group(1) if m else ""
+	pins = _PIN_RE.findall(t)
+	pincode = pins[-1] if pins else ""
+	parts = [p.strip(" .()") for p in re.split(r",| - |\n", t) if p.strip(" .()")]
+	tail = [i for i in range(len(parts) - 1, -1, -1)
+		if _letters(_PIN_RE.sub("", parts[i])) not in ("", "india")][:3]
+	pin_state = _pin_state(pincode)
+	state, at = "", None
+	for i in tail:
+		part = _PIN_RE.sub("", parts[i])
+		named = _named_state(part)
+		if not named:
+			continue
+		# "Delhi Gate Road, Surat 395003": a state name inside a longer part is a street or a
+		# landmark, so it only counts when the PIN code agrees with it.
+		rest = _letters(re.sub(r"(?i)\b" + re.escape(named) + r"\b", "", part))
+		if rest and _letters(part) != rest and pin_state and pin_state != named:
+			continue
+		state, at = named, i
+		break
+	if not state:
+		state = pin_state
+		at = next((i for i in range(len(parts) - 1, -1, -1) if pincode and pincode in parts[i]), None)
 	city = ""
-	if state:
-		parts = [p.strip() for p in t.replace(" - ", ", ").split(",") if p.strip()]
-		for i, p in enumerate(parts):
-			if re.search(r"\b" + re.escape(state) + r"\b", p, re.IGNORECASE):
-				if i > 0:
-					city = parts[i - 1]
-				break
+	if at is not None:
+		head = _PIN_RE.sub("", parts[at])
+		if state and re.search(r"(?i)\b" + re.escape(state) + r"\b", head):
+			head = re.split(r"(?i)\b" + re.escape(state) + r"\b", head)[0]
+		elif _named_state(head):
+			head = ""
+		# Only the place name: "426 & 428 JAMMU-180003" is plot numbers, then the city.
+		m = re.search(r"([A-Za-z][A-Za-z .]*?)[\s.-]*$", head.strip(" .-()"))
+		head = m.group(1).strip(" .-") if m else ""
+		if head:
+			city = head  # "Bengaluru 560102" or "Hyderabad Telangana 501401" in one part
+		else:
+			for p in reversed(parts[:at]):
+				c = _PIN_RE.sub("", p)
+				# "Teh- Rajpura Dist- Patiala", "Tiruvallur District CHENNAI": the place after it.
+				m = re.search(r"(?i)\bdist(rict)?\b[\s.:-]*([A-Za-z][A-Za-z .]*)$", c)
+				c = m.group(2) if m else re.sub(r"(?i)\bindia\b", "", c)
+				c = " ".join(c.split()).strip(" .-()")
+				if c and not c.isdigit():
+					city = c
+					break
 	return {"state": state, "city": city, "pincode": pincode}
 
 
@@ -194,20 +300,35 @@ def _combined_addr(city, state, pincode, mobile, pin_label):
 	return " , ".join(parts)
 
 
-def _scp_for_site(site_name):
-	"""{city, state, pincode} from the Buyer Master Address child row for a site (structured fallback)."""
-	if not site_name:
+def _buyer_rows(customer, cache):
+	"""The order's own buyer's address rows that carry a state (parent, children and every
+	master of the same business) -- never another buyer's, whatever its site is called."""
+	if customer not in cache:
+		from alpinos.sales_order_offline_buyer import masters_for_customer_business
+
+		masters = masters_for_customer_business(customer) if customer else []
+		cache[customer] = frappe.db.sql(
+			"""
+			SELECT parent, site_name, address_line, city, state, pincode, country
+			FROM `tabBuyer Address`
+			WHERE parenttype = 'Buyer Master' AND parent IN %(m)s AND IFNULL(state, '') <> ''
+			ORDER BY parent, idx
+			""",
+			{"m": tuple(masters) or ("",)},
+			as_dict=True,
+		) if masters else []
+	return cache[customer]
+
+
+def _scp_for_site(customer, site_name, cache):
+	"""{city, state, pincode} of the order's own buyer's row for its site, or {}."""
+	site = (site_name or "").strip().lower()
+	if not site:
 		return {}
-	rows = frappe.db.sql(
-		"""
-		SELECT city, state, pincode
-		FROM `tabBuyer Address`
-		WHERE site_name = %s AND (IFNULL(city,'') <> '' OR IFNULL(state,'') <> '')
-		LIMIT 1
-		""",
-		site_name, as_dict=True,
-	)
-	return dict(rows[0]) if rows else {}
+	for row in _buyer_rows(customer, cache):
+		if (row.site_name or "").strip().lower() == site:
+			return {"state": row.state or "", "city": row.city or "", "pincode": row.pincode or ""}
+	return {}
 
 
 def _address(name):
@@ -228,41 +349,28 @@ def _has_scp(d):
 	return bool(d.get("state") or d.get("city") or d.get("pincode"))
 
 
-def _norm_addr(text):
-	"""Normalize an address string for matching: lowercase, collapse whitespace, drop a trailing '(type)' suffix."""
-	s = " ".join((text or "").replace("\n", " ").replace("\r", " ").split()).lower()
-	if "(" in s:  # the family-dropdown label carries a "(type)" suffix
-		s = s.split("(", 1)[0]
-	return s.strip().strip(",").strip()
+def _scp_for_text(customer, text, cache):
+	"""{state, city, pincode} for an address printed on the order.
 
-
-def _resolve_scp_from_text(customer, text, cache):
-	"""Recover {state, city, pincode} for a free-text address by matching it to a family Address record."""
-	target = _norm_addr(text)
-	if not customer or not target:
-		return {}
-	if customer not in cache:
-		try:
-			from alpinos.sales_order_offline_buyer import get_customer_addresses_for_display
-			cache[customer] = get_customer_addresses_for_display(customer) or []
-		except Exception:
-			cache[customer] = []
-	for row in cache[customer]:
-		composed = _norm_addr(", ".join(
-			str(p) for p in [
-				row.get("address_line1"), row.get("address_line2"),
-				row.get("city"), row.get("state"), row.get("pincode"),
-			] if p and str(p).strip().upper() != "N/A"
-		))
-		if composed and composed == target:
-			return {
-				"state": row.get("state") or "",
-				"city": row.get("city") or "",
-				"pincode": row.get("pincode") or "",
-				# Owning Buyer Master of the matched address, so GST can follow it.
-				"buyer_master": row.get("buyer_master") or "",
-			}
-	return {}
+	The buyer's own row for that address gives the state and PIN code when it is the same
+	address -- its line followed by its city / state / PIN code, or carrying its PIN code --
+	because Sales typed them there; the city stays as the address prints it. Otherwise all
+	three are read from the printed text, so the columns always describe the address beside
+	them."""
+	parsed = _scp_from_free_text(text)
+	words = re.findall(r"[a-z0-9]+", (text or "").lower())
+	for row in _buyer_rows(customer, cache):
+		head = re.findall(r"[a-z0-9]+", (row.address_line or "").lower())
+		if not head or words[: len(head)] != head:
+			continue
+		tail = [w for w in words[len(head):] if w != "india"]
+		extra = set(re.findall(r"[a-z0-9]+", " ".join([row.city or "", row.state or "", row.country or "", row.pincode or ""]).lower()))
+		pin = (row.pincode or "").strip()
+		same = not tail or (len(tail) <= 8 and (set(tail) <= extra or (pin and pin in tail)))
+		if same and (not parsed["pincode"] or not pin or pin == parsed["pincode"]):
+			# The city as the address prints it ("Chennai"), else the row's.
+			return {"state": row.state or "", "city": parsed["city"] or row.city or "", "pincode": pin or parsed["pincode"]}
+	return parsed
 
 
 def _submitted_parts(so_name):
@@ -531,7 +639,7 @@ def _get_data(filters):
 		return ct_channel_cache[customer_type]
 
 	data = []
-	addr_cache = {}  # customer: family Address rows, for free-text scp recovery
+	addr_cache = {}  # customer: the buyer's own Buyer Address rows (_buyer_rows)
 	for so_name in so_names:
 		so = frappe.get_doc("Sales Order", so_name)
 		# Buyer-wise "Round Off Per Unit Amount".
@@ -555,31 +663,25 @@ def _get_data(filters):
 
 		bill = _address(so.get("customer_address"))
 		ship = _address(so.get("shipping_address_name"))
-		# City/State/Pincode come from the same source as the printed lines. For a free-text
-		# (e-com) address, resolve them from the text (matched back to a family Address) and let
-		# that win over the structured customer_address. Priority: family-matched, then the
-		# site's structured Buyer Master Address, then the heuristic free-text parse.
+		# City / State / PIN describe the address printed beside them. A free-text (e-com)
+		# address decides its own (_scp_for_text); the order's linked Address only stands in
+		# when there is no text. The site's row -- the order's OWN buyer's, never a stranger's
+		# with the same site name -- only fills what is still blank, and only where it is the
+		# same place: the shipping address, or an order with no billing text at all.
 		bill_free = (so.get("custom_billing_address_text") or "").strip()
 		ship_free = (so.get("custom_shipping_address_text") or "").strip()
-		site_scp = _scp_for_site(so.get("custom_site_name")) or {}
 		if bill_free:
-			bill_scp = _resolve_scp_from_text(so.customer, bill_free, addr_cache) or {}
-			free_scp = _scp_from_free_text(bill_free)
-			bill["state"] = bill_scp.get("state") or site_scp.get("state") or free_scp.get("state") or ""
-			bill["city"] = bill_scp.get("city") or site_scp.get("city") or free_scp.get("city") or ""
-			bill["pincode"] = bill_scp.get("pincode") or site_scp.get("pincode") or free_scp.get("pincode") or ""
+			bill.update(_scp_for_text(so.customer, bill_free, addr_cache))
 		if ship_free:
-			ship_scp = _resolve_scp_from_text(so.customer, ship_free, addr_cache) or {}
-			free_scp = _scp_from_free_text(ship_free)
-			ship["state"] = ship_scp.get("state") or site_scp.get("state") or free_scp.get("state") or ""
-			ship["city"] = ship_scp.get("city") or site_scp.get("city") or free_scp.get("city") or ""
-			ship["pincode"] = ship_scp.get("pincode") or site_scp.get("pincode") or free_scp.get("pincode") or ""
-		# Structured fallback for offline orders or anything still blank.
-		if site_scp:
-			for _d in (bill, ship):
-				_d["state"] = _d.get("state") or site_scp.get("state") or ""
-				_d["city"] = _d.get("city") or site_scp.get("city") or ""
-				_d["pincode"] = _d.get("pincode") or site_scp.get("pincode") or ""
+			ship.update(_scp_for_text(so.customer, ship_free, addr_cache))
+		site_scp = _scp_for_site(so.customer, so.get("custom_site_name"), addr_cache)
+		for _d, _free in ((ship, ship_free), (bill, bill_free)):
+			if site_scp and (_d is ship or not _free):
+				for _k in ("state", "city", "pincode"):
+					_d[_k] = _d.get(_k) or site_scp.get(_k) or ""
+		# A billing address that names no place is in its GSTIN's state (Place of Supply).
+		if not bill.get("state"):
+			bill["state"] = _GST_STATE.get((so.get("custom_billing_gstin") or so.get("tax_id") or "")[:2], "")
 		# No distinct shipping address: mirror the billing state/city/pincode.
 		if not _has_scp(ship):
 			ship["state"] = bill.get("state") or ""
