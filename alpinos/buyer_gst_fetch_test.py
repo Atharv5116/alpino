@@ -145,3 +145,73 @@ def _run():
 
 	check("#57 the different failures are distinguishable from one another",
 		_the_failure_reasons_are_distinguishable)
+
+	# --- the address lands on records the address row can hold (29 Oct 2026) -------------
+	tag = frappe.generate_hash(length=5).lower()
+	town = f"Gsttest{tag}"
+
+	def _city(name, state):
+		if not frappe.db.exists("City", name):
+			frappe.get_doc({"doctype": "City", "city_name": name, "state": state, "country": "India"}).insert(ignore_permissions=True)
+
+	for state in ("Karnataka", "Gujarat"):
+		if not frappe.db.exists("State", state):
+			frappe.get_doc({"doctype": "State", "state_name": state, "country": "India"}).insert(ignore_permissions=True)
+	_city(town, "Karnataka")
+	_city(f"{town} Kendra", "Karnataka")
+	_city(town.upper() + "X", "Gujarat")
+
+	def mapped(**address):
+		return G.map_to_buyer_fields(frappe._dict(gstin=address.pop("gstin", "29AAACC1206D1ZM"), permanent_address=address))
+
+	check("a state spelt differently on the GST record finds the State record",
+		lambda: _assert(G._key("Jammu And Kashmir") == G._key("Jammu & Kashmir")
+			and mapped(state="KARNATAKA", city=town)["state"] == "Karnataka", mapped(state="KARNATAKA", city=town)))
+	check("a district such as 'Bengaluru Urban' finds the city 'Bengaluru'",
+		lambda: _assert(mapped(state="Karnataka", city=f"{town} Urban")["city"] == town, mapped(state="Karnataka", city=f"{town} Urban")))
+	check("a city is matched whatever its case in the City list",
+		lambda: _assert(mapped(state="Gujarat", city=f"{town}x", gstin="24AAACC1206D1ZM")["city"] == town.upper() + "X"))
+	check("a district not in the list falls back to the city named in the address",
+		lambda: _assert(mapped(state="Karnataka", city="Nowhere District", address_line2=f"Phase 2, {town} Kendra")["city"]
+			== f"{town} Kendra", mapped(state="Karnataka", city="Nowhere District", address_line2=f"Phase 2, {town} Kendra")))
+	check("a namesake city in another state is not used",
+		lambda: _assert(mapped(state="Gujarat", city=town, gstin="24AAACC1206D1ZM")["city"] == ""))
+
+	def _missing_state_comes_from_the_gstin():
+		try:
+			import india_compliance.gst_india.constants  # noqa: F401
+		except ImportError:
+			return  # the state-code table belongs to india_compliance
+		_assert(mapped(city=town, gstin="29AAACC1206D1ZM")["state"] == "Karnataka", mapped(city=town))
+
+	check("a GST record without a state takes the GST No.'s state", _missing_state_comes_from_the_gstin)
+
+	def _the_message_names_a_city_it_could_not_place():
+		import sys
+		import types
+
+		try:
+			import india_compliance.gst_india.utils  # noqa: F401  (the lookup's own package)
+		except ImportError:
+			return
+		fake = types.ModuleType("india_compliance.gst_india.utils.gstin_info")
+		fake.get_gstin_info = lambda gstin, throw_error=True: frappe._dict(
+			gstin=gstin, business_name="Test", gst_category="Registered Regular", status="Active",
+			permanent_address={"address_line1": "Plot 1", "address_line2": "Peenya", "city": "Atlantis",
+				"state": "Karnataka", "pincode": "560058"})
+		saved_module, saved_available = sys.modules.get(fake.__name__), G.available
+		sys.modules[fake.__name__] = fake
+		G.available = lambda: True
+		try:
+			out = G.fetch_gstin_details("29AAACC1206D1ZM")
+		finally:
+			G.available = saved_available
+			if saved_module:
+				sys.modules[fake.__name__] = saved_module
+			else:
+				sys.modules.pop(fake.__name__)
+		_assert(out["ok"] == 1 and out["data"]["state"] == "Karnataka" and out["data"]["city"] == "", out)
+		_assert("Atlantis" in out["message"] and out["missing"], out["message"])
+
+	check("a city the City list does not have is left blank and named in the message",
+		_the_message_names_a_city_it_could_not_place)
