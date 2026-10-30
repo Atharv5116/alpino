@@ -688,18 +688,27 @@ def backfill_so_product_images(only_missing=1, commit=True):
 	return {"scanned": len(rows), "updated": updated, "items_with_image": len(imgs)}
 
 
-@frappe.whitelist()
-def download_sales_orders_zip(names, no_letterhead=0):
-	"""Bulk export: one PDF per Sales Order, bundled into a single ZIP download.
-	`names` is a JSON list of Sales Order names from the list page's bulk action."""
+# A Sales Order PDF takes 1 to 2.5 seconds (wkhtmltopdf) and nginx and gunicorn both stop a
+# request at 120 seconds, so more orders than this are put in a ZIP by a background job.
+SO_ZIP_INLINE_LIMIT = 25
+SO_ZIP_PREFIX = "sales-orders-"
+
+
+def _so_names(names):
 	import json
-	import zipfile
-	from io import BytesIO
 
 	if isinstance(names, str):
 		names = json.loads(names)
+	names = [n for n in (names or []) if n]
 	if not names:
 		frappe.throw(_("Please select at least one Sales Order."))
+	return names
+
+
+def _sales_orders_zip(names, no_letterhead=0):
+	"""(ZIP bytes, names that failed): one PDF per Sales Order, in its default print format."""
+	import zipfile
+	from io import BytesIO
 
 	meta = frappe.get_meta("Sales Order")
 	format_name = (meta.default_print_format or "").strip() or "Standard"
@@ -724,10 +733,108 @@ def download_sales_orders_zip(names, no_letterhead=0):
 
 	if failed and len(failed) == len(names):
 		frappe.throw(_("Could not generate PDFs for the selected Sales Orders: {0}").format(", ".join(failed)))
+	return buf.getvalue(), failed
 
+
+@frappe.whitelist()
+def download_sales_orders_zip(names, no_letterhead=0):
+	"""Bulk export: one PDF per Sales Order, bundled into a single ZIP download.
+	`names` is a JSON list of Sales Order names from the list page's bulk action. Up to
+	SO_ZIP_INLINE_LIMIT orders; the list pages send more to queue_sales_orders_zip."""
+	names = _so_names(names)
+	if len(names) > SO_ZIP_INLINE_LIMIT:
+		frappe.throw(
+			_(
+				"{0} Sales Orders are too many to download in one go. Reload the list and use "
+				"Download PDF again: it now prepares large selections in the background."
+			).format(len(names)),
+			title=_("Too Many Orders"),
+		)
+	content, _failed = _sales_orders_zip(names, no_letterhead)
 	frappe.local.response.filename = "sales-orders-{0}.zip".format(len(names))
-	frappe.local.response.filecontent = buf.getvalue()
+	frappe.local.response.filecontent = content
 	frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
+def queue_sales_orders_zip(names, no_letterhead=0):
+	"""More Sales Orders than one request can render in time: a background job builds the ZIP
+	and tells the user, on screen and in the bell, where to download it."""
+	names = _so_names(names)
+	frappe.has_permission("Sales Order", "read", throw=True)
+	frappe.enqueue(
+		"alpinos.sales_order_api.build_sales_orders_zip",
+		queue="long",
+		timeout=3600,
+		names=names,
+		no_letterhead=cint(no_letterhead),
+	)
+	return {"queued": len(names)}
+
+
+def build_sales_orders_zip(names, no_letterhead=0):
+	"""Background job, run as the user who asked: the ZIP is saved as their private File, so
+	only they (and System Managers) can open its link."""
+	from frappe.utils import now_datetime
+
+	user = frappe.session.user
+	_delete_old_sales_order_zips()
+	try:
+		content, failed = _sales_orders_zip(names, no_letterhead)
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(title="Bulk Sales Order PDF ZIP failed")
+		_tell_zip_ready(user, len(names), None, list(names), frappe.utils.strip_html(str(e))[:300])
+		return
+
+	stamp = now_datetime().strftime("%Y%m%d-%H%M%S")
+	file_doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": "{0}{1}-{2}.zip".format(SO_ZIP_PREFIX, len(names), stamp),
+		"is_private": 1,
+		"content": content,
+	}).insert(ignore_permissions=True)
+	_tell_zip_ready(user, len(names), file_doc.file_url, failed)
+
+
+def _tell_zip_ready(user, count, file_url, failed, error=None):
+	if file_url:
+		message = _("Your {0} Sales Order PDFs are ready to download.").format(count - len(failed))
+		if failed:
+			message += " " + _("These could not be made: {0}.").format(", ".join(failed))
+	else:
+		message = _("The {0} Sales Order PDFs could not be prepared: {1}").format(count, error or "")
+	frappe.get_doc({
+		"doctype": "Notification Log",
+		"for_user": user,
+		"type": "Alert",  # an Alert never emails
+		"subject": message,
+		"link": file_url or "",
+	}).insert(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.publish_realtime(
+		"alpinos_sales_orders_zip",
+		{"file_url": file_url, "message": message, "failed": failed},
+		user=user,
+	)
+
+
+def _delete_old_sales_order_zips():
+	"""The ZIPs are large (a PDF is up to ~2 MB), so they are kept for a day."""
+	from frappe.utils import add_days, now_datetime
+
+	old = frappe.get_all(
+		"File",
+		filters={
+			"file_name": ("like", SO_ZIP_PREFIX + "%-________-______.zip"),
+			"is_private": 1,
+			"attached_to_doctype": ("is", "not set"),
+			"creation": ("<", add_days(now_datetime(), -1)),
+		},
+		pluck="name",
+	)
+	for name in old:
+		frappe.delete_doc("File", name, ignore_permissions=True, force=True)
 
 
 def _invoice_file_base(name, invoice_no):
