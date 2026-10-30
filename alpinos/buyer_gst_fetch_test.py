@@ -68,6 +68,16 @@ def _run():
 	check("#57 a malformed GST No. is caught before any API call",
 		_a_malformed_number_is_caught_before_any_api_call)
 
+	def _pasted_junk_is_cleaned_off():
+		for pasted in ("24AAACC1206D1ZM\u200b", " 24 aaacc 1206 d1zm ", "24-AAACC-1206-D1ZM", "\u202a24AAACC1206D1ZM\u202c"):
+			ok, msg = G.validate_gstin_format(pasted)
+			_assert(ok, f"{pasted!r} was rejected: {msg}")
+		ok, msg = G.validate_gstin_format("24AAACC1206D1ZMX")
+		_assert(not ok and "24AAACC1206D1ZMX" in msg and "16" in msg, msg)
+
+	check("a pasted GST No. with spaces or invisible characters passes; a wrong one is shown in the message",
+		_pasted_junk_is_cleaned_off)
+
 	def _the_response_maps_onto_the_buyer_fields():
 		info = frappe._dict(
 			gstin="24AAACC1206D1ZM",
