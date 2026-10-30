@@ -536,11 +536,46 @@ var EcomSalesOrderListPage = class {
 			frappe.msgprint(__('Please select at least one Sales Order.'));
 			return;
 		}
+		// A PDF takes up to ~2.5 s and a request is cut off at 120 s, so a larger selection is
+		// put in a ZIP by a background job (sales_order_api.SO_ZIP_INLINE_LIMIT).
+		if (names.length > 25) {
+			this._listen_for_pdf_zip();
+			frappe.call({
+				method: 'alpinos.sales_order_api.queue_sales_orders_zip',
+				args: { names: JSON.stringify(names) },
+				freeze: true,
+				callback: (r) => {
+					if (r.exc) return;
+					frappe.msgprint({
+						title: __('Preparing PDFs'),
+						indicator: 'blue',
+						message: __('{0} Sales Order PDFs are being prepared. You can keep working: the download link will appear here, and in your notifications (the bell), in a few minutes.', [names.length]),
+					});
+				},
+			});
+			return;
+		}
 		const url =
 			'/api/method/alpinos.sales_order_api.download_sales_orders_zip?names=' +
 			encodeURIComponent(JSON.stringify(names));
 		const w = window.open(frappe.urllib.get_full_url(url), '_blank');
 		if (!w) frappe.msgprint(__('Please allow pop-ups to download the PDFs.'));
+	}
+
+	_listen_for_pdf_zip() {
+		// Once per browser session; the other Sales Order list page registers the same flag.
+		if (frappe.__alpinos_so_zip_listener) return;
+		frappe.__alpinos_so_zip_listener = true;
+		frappe.realtime.on('alpinos_sales_orders_zip', (d) => {
+			const esc = frappe.utils.escape_html;
+			frappe.msgprint({
+				title: d.file_url ? __('PDFs Ready') : __('PDFs Not Ready'),
+				indicator: d.file_url ? ((d.failed || []).length ? 'orange' : 'green') : 'red',
+				message: esc(d.message || '') + (d.file_url
+					? `<div style="margin-top:12px;"><a class="btn btn-primary btn-sm" href="${esc(d.file_url)}" target="_blank">${__('Download ZIP')}</a></div>`
+					: ''),
+			});
+		});
 	}
 
 	download_orders_with_invoices() {
