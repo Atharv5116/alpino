@@ -52,13 +52,19 @@ def available():
 	return "india_compliance" in frappe.get_installed_apps()
 
 
+def clean_gstin(gstin):
+	"""A GST No. is letters and digits only. One pasted from WhatsApp, Excel or a PDF often
+	brings spaces, dashes or invisible characters, which made a good number fail the check."""
+	return re.sub(r"[^0-9A-Z]", "", (gstin or "").upper())
+
+
 def validate_gstin_format(gstin):
 	"""(ok, message). Checked here so an obvious typo never costs an API call."""
-	gstin = (gstin or "").strip().upper()
+	gstin = clean_gstin(gstin)
 	if not gstin:
 		return False, _("Enter a GST No. first.")
 	if len(gstin) != 15:
-		return False, _("A GST No. is 15 characters; this one is {0}.").format(len(gstin))
+		return False, _("A GST No. is 15 characters; {0} is {1}.").format(gstin, len(gstin))
 	if not GSTIN_RE.match(gstin):
 		return False, _("{0} is not a valid GST No.").format(gstin)
 	return True, ""
@@ -128,7 +134,7 @@ def fetch_gstin_details(gstin):
 	Always returns a dict with `ok` and `message`; it never raises at the caller, because a
 	form field losing its data to a traceback is worse than being told the lookup failed.
 	"""
-	gstin = (gstin or "").strip().upper()
+	gstin = clean_gstin(gstin)
 	ok, message = validate_gstin_format(gstin)
 	if not ok:
 		return {"ok": 0, "reason": "invalid", "message": message, "data": {}}

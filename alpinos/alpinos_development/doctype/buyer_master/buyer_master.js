@@ -86,6 +86,13 @@ async function set_address_row(frm, row, values) {
 
 frappe.ui.form.on("Buyer Master", {
 	gst_no(frm) {
+		// A pasted number often brings spaces or invisible characters; a GST No. is letters
+		// and digits only. Setting the cleaned value fires this handler again.
+		const clean = (frm.doc.gst_no || "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+		if (clean !== (frm.doc.gst_no || "")) {
+			frm.set_value("gst_no", clean);
+			return;
+		}
 		// Fires on every correction, which is what the ticket asks for.
 		frm.__gst_fetched_for = null;
 		fetch_gst_details(frm);
