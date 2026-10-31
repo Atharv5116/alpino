@@ -28,7 +28,11 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
-from alpinos.alpinos_development.doctype.purchase_inward.purchase_inward import PurchaseInward
+from alpinos.alpinos_development.doctype.purchase_inward.purchase_inward import (
+	PurchaseInward,
+	may_change_purchase_rate,
+	purchase_rate_rule,
+)
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 from alpinos.purchase.roles import (
@@ -448,8 +452,10 @@ def get_purchase_order_items(
 				# Received Quantity belongs to the Store Team (BRD 2.2.1); the Purchase
 				# Team only declares which lines arrived on this invoice.
 				"received_qty": 0.0,
-				# Section 2: MRP as per the selected PO -- its Rate.
-				"mrp": po_line_mrp(row),
+				# MRP draft, section 3.1: the purchase rate starts as the PO line's; the MRP
+				# is the one printed on the goods, typed by Store at receipt.
+				"purchase_rate": po_line_mrp(row),
+				"mrp": 0.0,
 				"rate": flt(row.rate),
 				"amount": flt(row.amount),
 				"target_warehouse": row.warehouse or doc.target_warehouse,
@@ -865,6 +871,9 @@ def get_form_context(purchase_inward=None):
 		# answer separately from header_editable, which closes on submit.
 		"may_correct_invoice": bool(workflow.user_roles() & set(C.INVOICE_CORRECTION_ROLES)),
 		"merged_into": doc.get("merged_into"),
+		# MRP draft: whether this user may enter a purchase rate other than the PO's, and why not.
+		"may_change_rate": may_change_purchase_rate(),
+		"rate_rule": purchase_rate_rule(),
 	}
 
 

@@ -358,6 +358,9 @@ after_migrate = [
 	"alpinos.production.phase4_fields.run_builder_setups",
 	"alpinos.production.phase4_permissions.setup_phase4_permissions",
 	"alpinos.production.phase4_fields.setup_phase4_access",
+	# Stock by Item, Batch, MRP and Location: the MRP Batch inventory dimension (its fields
+	# land on every stock document), after every step that adds the fields it sits beside.
+	"alpinos.mrp_batch.setup",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
@@ -584,6 +587,8 @@ doc_events = {
 	"Purchase Receipt": {
 		# Financial-year-wise ID (POR- / INW- / GRN- / PIV- ...).
 		"before_insert": "alpinos.purchase.naming.before_insert",
+		# Batch / MRP of each GRN row, from the batch and MRP on it.
+		"before_validate": "alpinos.mrp_batch_hooks.purchase_receipt_before_validate",
 		"validate": "alpinos.purchase.purchase_receipt_fields.validate_grn_fields",
 		"before_update_after_submit": (
 			"alpinos.purchase.purchase_receipt_fields.validate_grn_status"
@@ -682,6 +687,8 @@ doc_events = {
 			"alpinos.production.material_issue.se_before_validate",
 			# Changes(HP) #82: a typed Batch Code becomes the Batch on receipt
 			"alpinos.stock_entry_hooks.apply_batch_codes",
+			# Batch / MRP: a receipt makes its lot, an issue or transfer takes lots by itself.
+			"alpinos.mrp_batch_hooks.stock_entry_before_validate",
 		],
 		"on_submit": "alpinos.production.material_issue.se_on_submit",
 		"before_cancel": "alpinos.production.material_issue.se_before_cancel",
@@ -701,13 +708,18 @@ doc_events = {
 		"on_cancel": "alpinos.production.material_request.on_cancel",
 	},
 	"Pick List": {
-		"before_validate": "alpinos.pick_list_hooks.before_validate_pick_list",
+		"before_validate": [
+			"alpinos.pick_list_hooks.before_validate_pick_list",
+			# Batch / MRP for every row, the Sales Order line's MRP first.
+			"alpinos.mrp_batch_hooks.pick_list_before_validate",
+		],
 		"before_update_after_submit": "alpinos.pick_list_hooks.before_update_after_submit_pick_list",
 		"validate": [
 			"alpinos.pick_list_hooks.validate_pick_list",
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
 			"alpinos.qty_flow.pick_list_qty_remarks",
 			"alpinos.partial_dispatch.validate_pick_list_partial",
+			"alpinos.mrp_batch_hooks.pick_list_validate",
 		],
 		"after_insert": [
 			"alpinos.workflow_engine.pick_list_after_insert",
@@ -735,7 +747,10 @@ doc_events = {
 		],
 	},
 	"Delivery Note": {
-		"before_validate": "alpinos.delivery_note_hooks.strip_non_batch_item_batches",
+		"before_validate": [
+			"alpinos.delivery_note_hooks.strip_non_batch_item_batches",
+			"alpinos.mrp_batch_hooks.delivery_note_before_validate",
+		],
 		"validate": [
 			"alpinos.lr_number.normalise_delivery_note_lr",
 			"alpinos.delivery_note_hooks.validate_delivery_note",
@@ -768,6 +783,10 @@ doc_events = {
 	},
 	"Batch": {
 		"before_validate": "alpinos.batch_hooks.compute_expiry_from_shelf_life",
+	},
+	# Stock with no Batch / MRP may leave only from the stock that has none (alpinos.mrp_batch).
+	"Stock Ledger Entry": {
+		"validate": "alpinos.mrp_batch.validate_outward_sle",
 	},
 	"Item": {
 		"before_insert": "alpinos.item_sequence.reorder_on_insert",

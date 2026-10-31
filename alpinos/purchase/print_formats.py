@@ -239,26 +239,36 @@ _INWARD_HTML_RAW = r"""
     </thead>
     {% set _pend = namespace(total=0) %}
     {% for row in doc.items %}
+    {# A line split by batch / MRP prints its ordered, previously received and pending once,
+       on its own row, from what all its splits received together. #}
+    {% set _split = frappe.utils.cint(row.is_split_row) %}
+    {% set _recd = (doc.items | selectattr("split_group", "equalto", row.split_group) | map(attribute="received_qty") | sum) if row.split_group else row.received_qty %}
     {# Pending = ordered - received before - received on this inward (never below 0). #}
-    {% set _left = frappe.utils.flt(row.order_qty) - frappe.utils.flt(row.previously_received_qty) - frappe.utils.flt(row.received_qty) %}
+    {% set _left = frappe.utils.flt(row.order_qty) - frappe.utils.flt(row.previously_received_qty) - frappe.utils.flt(_recd) %}
     {% set _left = _left if _left > 0 else 0 %}
-    {% set _pend.total = _pend.total + _left %}
+    {% if not _split %}{% set _pend.total = _pend.total + _left %}{% endif %}
     <tr>
       <td class="c">{{ loop.index }}</td>
       <td>
-        <span class="b">{{ txt(row.item_code) }}</span>
-        {% if row.item_name and row.item_name != row.item_code %}
+        <span class="b">{{ txt(row.item_code) }}</span>{% if _split %} <span class="tag">SPLIT</span>{% endif %}
+        {% if row.item_name and row.item_name != row.item_code and not _split %}
         <div class="sub">{{ row.item_name }}</div>{% endif %}
         {% if row.usp or row.mrp %}
         <div class="sub">
           {% if row.usp %}USP: {{ row.usp }}{% endif %}
           {% if row.mrp %}{% if row.usp %} &middot; {% endif %}MRP: {{ num(row.mrp) }}{% endif %}
         </div>{% endif %}
+        {% if frappe.utils.flt(row.purchase_rate) and frappe.utils.flt(row.purchase_rate) != frappe.utils.flt(row.rate) %}
+        <div class="sub">Rate: {{ num(row.purchase_rate) }} (PO {{ num(row.rate) }})</div>{% endif %}
       </td>
       <td class="c">{{ txt(row.uom) }}</td>
+      {% if _split %}
+      <td class="c mut" colspan="3">split of the line above</td>
+      {% else %}
       <td class="r">{{ num(row.order_qty) }}</td>
       <td class="r">{{ num(row.previously_received_qty) }}</td>
       <td class="r">{{ num(_left) }}</td>
+      {% endif %}
       <td class="r b">{{ num(row.received_qty) }}</td>
       <td class="r{% if frappe.utils.flt(row.excess_qty) > 0 %} warn{% endif %}">{{ num(row.excess_qty) }}</td>
       <td>{{ txt(row.target_warehouse) }}</td>
@@ -1025,7 +1035,8 @@ _GRN_HTML_RAW = r"""
       {%- set ns.gst = ns.gst + gst -%}
       <tr>
         <td class="c">{{ row.idx }}</td>
-        <td>{{ txt(row.item_code) }}<div class="sub">{{ txt(row.item_name) }}</div>{% if row.batch_no %}<div class="sub">Batch: {{ row.batch_no }}</div>{% endif %}</td>
+        {%- set _batch = row.custom_internal_batch_no or row.batch_no -%}
+        <td>{{ txt(row.item_code) }}<div class="sub">{{ txt(row.item_name) }}</div>{% if _batch or frappe.utils.flt(row.custom_mrp) %}<div class="sub">{% if _batch %}Batch: {{ _batch }}{% endif %}{% if frappe.utils.flt(row.custom_mrp) %}{% if _batch %} &middot; {% endif %}MRP: {{ money(row.custom_mrp) }}{% endif %}</div>{% endif %}</td>
         <td class="c">{{ txt(row.uom) }}</td>
         <td class="r">{{ num3(row.qty) }}</td>
         <td class="r">{{ num3(row.rejected_qty) }}</td>

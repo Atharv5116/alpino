@@ -337,6 +337,8 @@ class PurchaseQC(Document):
 						"purchase_inward_item": row.name,
 						# The batch Store wrote on the inward line, for every item.
 						"supplier_batch_no": row.get("batch_no") or None,
+						# A line split by batch / MRP arrives as one row per split.
+						"mrp": flt(row.get("mrp")),
 					},
 				)
 			self._fill_sample_supplier_batches()
@@ -360,6 +362,7 @@ class PurchaseQC(Document):
 			line.expiry_date = line.expiry_date or src.expiry_date
 			# Fetched, not typed: always the inward line's current batch while the QC is a draft.
 			line.supplier_batch_no = src.get("batch_no") or None
+			line.mrp = flt(src.get("mrp"))
 		self._fill_sample_supplier_batches()
 
 	def _fill_sample_supplier_batches(self):
@@ -704,11 +707,32 @@ class PurchaseQC(Document):
 		(purchase_inward._compute_previously_received), so the two now agree.
 		"""
 		inward_items = self._inward_items()
+		shares = self._split_shares()
 		per_line = {}
 		for line in self.get("items"):
 			src = inward_items.get(line.purchase_inward_item)
-			per_line[line.name] = self._ceiling_for(src)
+			per_line[line.name] = shares.get(src.name) if src and src.name in shares else self._ceiling_for(src)
 		return per_line
+
+	def _split_shares(self):
+		"""{inward row name: ceiling} for the rows of a PO line split by batch / MRP.
+
+		Every split repeats its line's pending quantity, so measured on its own no split would
+		ever look over-received. The line is over when its splits together are, and then each
+		split carries its share of the pending quantity, so all of them read as excess; a
+		line within its pending quantity keeps the plain ceiling on every split.
+		"""
+		groups = {}
+		for row in self._inward().get("items") or []:
+			if row.get("split_group"):
+				groups.setdefault(row.split_group, []).append(row)
+		out = {}
+		for rows in groups.values():
+			pending = max(self._ceiling_for(r) for r in rows)
+			total = sum(flt(r.received_qty) for r in rows)
+			for r in rows:
+				out[r.name] = flt(r.received_qty) * pending / total if _gt(total, pending) else pending
+		return out
 
 	@staticmethod
 	def _ceiling_for(src):
@@ -838,7 +862,8 @@ class PurchaseQC(Document):
 		for line in self.get("items"):
 			src = inward_items.get(line.purchase_inward_item)
 			if src:
-				seen[src.name] = self._ceiling_for(src)
+				# Per PO line: the splits of one line share its pending quantity.
+				seen[src.get("po_detail") or src.name] = self._ceiling_for(src)
 		return sum(seen.values())
 
 	def _derive_qc_result(self):

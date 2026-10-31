@@ -36,6 +36,8 @@
   "expiry_date",
   "rate_section",
   "rate",
+  "purchase_rate",
+  "rate_change_reason",
   "col_rate",
   "amount",
   "quarantine_section",
@@ -46,10 +48,18 @@
   "quarantine_date",
   "remarks_section",
   "remarks",
+  "receiving_row_remarks",
+  "row_attachment",
   "ref_section",
   "purchase_order",
   "col_ref",
-  "po_detail"
+  "po_detail",
+  "split_section",
+  "split_group",
+  "is_split_row",
+  "col_split",
+  "line_received_qty",
+  "mrp_batch"
  ],
  "fields": [
   {
@@ -151,7 +161,7 @@
   {
    "allow_on_submit": 1,
    "columns": 1,
-   "description": "Actual quantity physically received by the Store Team.",
+   "description": "On a split line: this split's quantity.",
    "fieldname": "received_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -230,7 +240,8 @@
    "allow_on_submit": 1,
    "fieldname": "mrp",
    "fieldtype": "Currency",
-   "label": "MRP"
+   "label": "Actual MRP",
+   "description": "The MRP printed on the goods, entered at receipt."
   },
   {
    "allow_on_submit": 1,
@@ -255,10 +266,25 @@
   {
    "fieldname": "rate",
    "fieldtype": "Currency",
-   "label": "Rate",
+   "label": "PO Rate (excl. GST)",
    "options": "currency",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "purchase_rate",
+   "fieldtype": "Currency",
+   "label": "Purchase Rate (excl. GST)",
+   "options": "currency",
+   "allow_on_submit": 1,
+   "description": "This line's rate. Starts as the PO rate; a different rate needs a reason."
+  },
+  {
+   "fieldname": "rate_change_reason",
+   "fieldtype": "Small Text",
+   "label": "Rate Change Reason",
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.purchase_rate && doc.rate && Math.abs(doc.purchase_rate - doc.rate) >= 0.01"
   },
   {
    "fieldname": "col_rate",
@@ -267,7 +293,7 @@
   {
    "fieldname": "amount",
    "fieldtype": "Currency",
-   "label": "Amount",
+   "label": "PO Amount",
    "options": "currency",
    "print_hide": 1,
    "read_only": 1
@@ -331,6 +357,18 @@
    "label": "Item Remarks"
   },
   {
+   "fieldname": "receiving_row_remarks",
+   "fieldtype": "Small Text",
+   "label": "Receiving Remarks",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "row_attachment",
+   "fieldtype": "Attach",
+   "label": "Attachment",
+   "allow_on_submit": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "ref_section",
    "fieldtype": "Section Break",
@@ -358,6 +396,47 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "split_section",
+   "fieldtype": "Section Break",
+   "label": "Split",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "split_group",
+   "fieldtype": "Data",
+   "label": "Split Of PO Line",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "description": "Rows with the same value are splits of one Purchase Order line (different batch / MRP)."
+  },
+  {
+   "fieldname": "is_split_row",
+   "fieldtype": "Check",
+   "label": "Added By Split",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "col_split",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "line_received_qty",
+   "fieldtype": "Float",
+   "label": "Actual Received Qty (PO Line)",
+   "allow_on_submit": 1,
+   "description": "The quantity Store counted for the whole PO line; its splits must add up to it."
+  },
+  {
+   "fieldname": "mrp_batch",
+   "fieldtype": "Link",
+   "label": "Batch / MRP",
+   "options": "MRP Batch",
+   "read_only": 1,
+   "allow_on_submit": 1
   }
  ],
  "index_web_pages_for_search": 0,

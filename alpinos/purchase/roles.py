@@ -578,6 +578,12 @@ SECTIONS = {
 					"manufacturing_date",
 					"quarantine",
 					"quarantine_reason",
+					# MRP draft: split lines, the per-line rate and Store's own row notes.
+					"line_received_qty",
+					"purchase_rate",
+					"rate_change_reason",
+					"receiving_row_remarks",
+					"row_attachment",
 				),
 				"view_roles": (),
 				"edit_roles": _STORE,
@@ -882,6 +888,39 @@ def _table_changed(new_rows, old_rows, child_doctype, fieldnames=None):
 	return bool(set(old_by_name) - seen)  # a row that was deleted
 
 
+def _split_lines(doctype, before, table):
+	"""{po_detail: the PO line's own row} in the pre-image, for a doctype that splits lines."""
+	if doctype != "Purchase Inward" or not before:
+		return {}
+	return {
+		row.get("po_detail"): row
+		for row in before.get(table) or []
+		if row.get("po_detail") and not cint(row.get("is_split_row"))
+	}
+
+
+def _is_split_of(row, lines):
+	return bool(row and cint(row.get("is_split_row")) and row.get("po_detail") in lines)
+
+
+def _split_row_diff(doctype, child_doctype, fieldnames, row, line):
+	"""What adding or removing a split touches (MRP draft, section 3.2).
+
+	A split repeats its PO line's Purchase-owned columns, so those are compared with the
+	line and stay untouched; everything else on it is Store's receipt. Adding or removing a
+	split is always a receiving edit, even before anything is typed on it, so the receiving
+	section's status gate applies to it."""
+	header = set()
+	for sec in _spec(doctype).get("sections") or ():
+		if sec["key"] == SECTION_HEADER:
+			header = set(sec["child_fields"])
+	fieldnames = set(fieldnames)
+	touched = _row_diff(child_doctype, fieldnames & header, row, line)
+	touched |= _row_diff(child_doctype, fieldnames - header, row, None)
+	touched.add("received_qty")
+	return touched
+
+
 def changed_fields(doc):
 	"""(parent fieldnames, {child_table: set(fieldnames)}) that differ from the stored doc.
 
@@ -924,11 +963,16 @@ def changed_fields(doc):
 		if not child_doctype:
 			continue
 		old_rows = _child_rows(before, table) if before else {}
+		lines = _split_lines(doc.doctype, before, table)
 		seen = set()
 		for row in doc.get(table) or []:
 			if row.get("name"):
 				seen.add(row.get("name"))
-			touched = _row_diff(child_doctype, fieldnames, row, old_rows.get(row.get("name")))
+			old = old_rows.get(row.get("name"))
+			if old is None and _is_split_of(row, lines):
+				touched = _split_row_diff(doc.doctype, child_doctype, fieldnames, row, lines[row.get("po_detail")])
+			else:
+				touched = _row_diff(child_doctype, fieldnames, row, old)
 			if touched:
 				child_changed.setdefault(table, set()).update(touched)
 
@@ -938,7 +982,11 @@ def changed_fields(doc):
 		# those fields: dropping a Purchase-authored line trips the header gate, while
 		# Purchase removing its own untouched draft line never trips the receiving gate.
 		for name in set(old_rows) - seen:
-			touched = _row_diff(child_doctype, fieldnames, None, old_rows[name])
+			old = old_rows[name]
+			if _is_split_of(old, lines):
+				touched = _split_row_diff(doc.doctype, child_doctype, fieldnames, old, lines[old.get("po_detail")])
+			else:
+				touched = _row_diff(child_doctype, fieldnames, None, old)
 			if touched:
 				child_changed.setdefault(table, set()).update(touched)
 

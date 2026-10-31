@@ -300,7 +300,14 @@ def _transfer_out_of_quarantine(q, qc, pr, pr_row, row, remarks):
 
 	stock_uom = frappe.get_cached_value("Item", row.item_code, "stock_uom")
 	batch_no = _grn_row_batch(pr_row)
-	if batch_no:
+	# The Batch / MRP the GRN received it under (alpinos.mrp_batch): released as that lot,
+	# into that lot, and only as much as the lot holds in quarantine.
+	lot = pr_row.get("mrp_batch") or None
+	if lot:
+		from alpinos import mrp_batch as MB
+
+		available = flt(MB.balances(row.item_code, store).get(lot))
+	elif batch_no:
 		from erpnext.stock.doctype.batch.batch import get_batch_qty
 
 		available = flt(get_batch_qty(batch_no=batch_no, warehouse=store))
@@ -336,6 +343,8 @@ def _transfer_out_of_quarantine(q, qc, pr, pr_row, row, remarks):
 			"t_warehouse": target,
 			"use_serial_batch_fields": 1 if batch_no else 0,
 			"batch_no": batch_no,
+			"mrp_batch": lot,
+			"to_mrp_batch": lot,
 		},
 	)
 	# The release role is the gate (release_items); Store and QC hold no Stock Entry or
@@ -537,6 +546,28 @@ def update_reminder(purchase_quarantine, reminder_days):
 	return {"reminder_days": q.reminder_days, "next_reminder_on": q.next_reminder_on}
 
 
+def line_lots(lines):
+	"""{quarantine line: {batch, mrp}} from each line's inward row, whose Actual MRP and batch
+	name the Batch / MRP the held stock sits under."""
+	inward_rows = [r.get("purchase_inward_item") for r in lines if r.get("purchase_inward_item")]
+	if not inward_rows:
+		return {}
+	src = {
+		r.name: r
+		for r in frappe.get_all(
+			"Purchase Inward Item", {"name": ("in", inward_rows)}, ["name", "batch_no", "mrp"]
+		)
+	}
+	out = {}
+	for line in lines:
+		row = src.get(line.get("purchase_inward_item"))
+		out[line.get("name")] = {
+			"batch": line.get("batch_no") or (row.batch_no if row else ""),
+			"mrp": flt(row.mrp) if row else 0,
+		}
+	return out
+
+
 @frappe.whitelist()
 def get_quarantine_context(purchase_quarantine):
 	"""What the Quarantine, QC and GRN screens may offer for one Quarantine document."""
@@ -566,6 +597,7 @@ def get_quarantine_context(purchase_quarantine):
 		"purchase_receipt": receipt,
 		"receipt_docstatus": cint(frappe.db.get_value(GRN, receipt, "docstatus")) if receipt else None,
 		"line_states": {r.purchase_qc_item: r.status for r in q.get("items") or [] if r.get("purchase_qc_item")},
+		"line_lots": line_lots(q.get("items") or []),
 		"purchase_qcs": [
 			{
 				"name": name,

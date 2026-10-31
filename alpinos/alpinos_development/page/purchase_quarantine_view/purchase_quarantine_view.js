@@ -170,7 +170,9 @@ var PurchaseQuarantineView = class {
 				<td>${esc(row.item_code)}<div class="text-muted" style="font-size:11px;">${esc(row.item_name)}</div></td>
 				<td class="pqv-num">${esc(format_number(flt(row.qty), null, 3))}</td>
 				<td>${esc(row.uom)}</td>
-				<td>${esc(row.batch_no)}</td>
+				<td>${esc(row.batch_no)}${(this.ctx.line_lots || {})[row.name] && this.ctx.line_lots[row.name].mrp
+					? `<div class="text-muted" style="font-size:11px;">${esc(__('MRP {0}', [format_number(this.ctx.line_lots[row.name].mrp, null, 2)]))}</div>`
+					: ''}</td>
 				<td>${esc(row.target_warehouse)}</td>
 				<td><span class="indicator-pill ${held ? 'red' : 'green'}">${esc(__(row.status))}</span></td>
 				<td>${row.released_on

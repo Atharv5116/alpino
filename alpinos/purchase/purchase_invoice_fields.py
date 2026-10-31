@@ -261,7 +261,34 @@ def _custom_fields():
 				allow_on_submit=1,
 				no_copy=1,
 			),
-		]
+			# MRP draft, section 9: every change to a line's rate, with who, when and why.
+			dict(
+				fieldname="custom_rate_change_section",
+				label="Rate Change Log",
+				fieldtype="Section Break",
+				insert_after="items",
+				collapsible=1,
+			),
+			dict(
+				fieldname="custom_rate_change_log",
+				label="Rate Change Log",
+				fieldtype="Table",
+				options="Purchase GRN Change Log",
+				insert_after="custom_rate_change_section",
+				read_only=1,
+				no_copy=1,
+			),
+		],
+		"Purchase Invoice Item": [
+			dict(
+				fieldname="custom_rate_change_reason",
+				label="Rate Change Reason",
+				fieldtype="Small Text",
+				insert_after="rate",
+				no_copy=1,
+				description="Needed when the rate differs from the GRN / Purchase Order.",
+			),
+		],
 	}
 
 

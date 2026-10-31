@@ -53,7 +53,7 @@ def _sync_sales_order_header(doc):
 def _pick_list_item_fields():
 	meta = frappe.get_meta("Pick List Item")
 	fields = ["batch_no", "item_code", "picked_qty", "qty"]
-	for fname in ("custom_box", "custom_mfg_date", "custom_expiry_date", "custom_batch_code"):
+	for fname in ("custom_box", "custom_mfg_date", "custom_expiry_date", "custom_batch_code", "mrp_batch"):
 		if meta.get_field(fname):
 			fields.append(fname)
 	return fields
@@ -92,6 +92,10 @@ def _sync_items_from_pick_list(doc):
 		# batch-tracked items with a real Batch master, else DN batch validation fails on submit
 		if pli.get("custom_batch_code") and meta_dn_item.get_field("custom_batch_code"):
 			row.custom_batch_code = pli.get("custom_batch_code")
+
+		# The Batch / MRP picked is the one that ships (alpinos.mrp_batch).
+		if meta_dn_item.get_field("mrp_batch") and (pli.get("mrp_batch") or row.get("mrp_batch")):
+			row.mrp_batch = pli.get("mrp_batch") or None
 
 		has_batch = row.item_code and frappe.db.get_value("Item", row.item_code, "has_batch_no")
 		if not has_batch:

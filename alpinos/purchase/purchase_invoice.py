@@ -574,6 +574,65 @@ def validate(doc, method=None):
 	_derive_payment_due_date(doc)
 	_validate_payment_rows(doc)
 	recompute_payment_state(doc)
+	if not cint(doc.get("is_return")):
+		_log_rate_changes(doc)
+
+
+def _reference_rates(doc):
+	"""{row name: the rate the line was received / ordered at} -- the GRN's, else the PO's."""
+	pr_rows = [r.pr_detail for r in doc.get("items") or [] if r.get("pr_detail")]
+	po_rows = [r.po_detail for r in doc.get("items") or [] if r.get("po_detail") and not r.get("pr_detail")]
+	pr_rate = dict(frappe.get_all("Purchase Receipt Item", {"name": ("in", pr_rows)}, ["name", "rate"], as_list=True)) if pr_rows else {}
+	po_rate = dict(frappe.get_all("Purchase Order Item", {"name": ("in", po_rows)}, ["name", "rate"], as_list=True)) if po_rows else {}
+	out = {}
+	for row in doc.get("items") or []:
+		if row.get("pr_detail") in pr_rate:
+			out[row.name] = flt(pr_rate[row.pr_detail])
+		elif row.get("po_detail") in po_rate:
+			out[row.name] = flt(po_rate[row.po_detail])
+	return out
+
+
+def _log_rate_changes(doc):
+	"""MRP draft, section 9: a rate that moves from the GRN / PO rate needs a reason, and
+	every change is kept -- original value, revised value, user, time and reason.
+
+	Only the rate: the invoice never writes back to the received quantities, batches,
+	MRPs or QC decisions, so changing it cannot rewrite them."""
+	if not doc.meta.has_field("custom_rate_change_log"):
+		return
+	before = None if doc.is_new() else doc.get_doc_before_save()
+	previous = {r.name: flt(r.rate) for r in (before.get("items") if before else None) or []}
+	reference = _reference_rates(doc)
+	now = now_datetime()
+	for row in doc.get("items") or []:
+		ref = reference.get(row.name)
+		if ref is None:
+			continue
+		rate = flt(row.rate)
+		reason = (row.get("custom_rate_change_reason") or "").strip()
+		if abs(rate - ref) >= 0.01 and not reason:
+			frappe.throw(
+				_("Row {0} ({1}): the rate {2} differs from the GRN / Purchase Order rate {3}. Please enter the Rate Change Reason.").format(
+					row.idx, row.item_code, rate, ref
+				),
+				title=_("Rate Change Reason Needed"),
+			)
+		was = previous.get(row.name, ref)
+		if abs(rate - flt(was)) < 0.01:
+			continue
+		lot = row.get("mrp_batch")
+		doc.append(
+			"custom_rate_change_log",
+			{
+				"field_label": _("Row {0}: Rate ({1}{2})").format(row.idx, row.item_code, (", " + lot) if lot else ""),
+				"old_value": "{0:g}".format(flt(was)),
+				"new_value": "{0:g}".format(rate),
+				"reason": reason or None,
+				"changed_by": frappe.session.user,
+				"changed_on": now,
+			},
+		)
 
 
 def after_insert(doc, method=None):
@@ -1263,9 +1322,12 @@ def _apply_draft_values(invoice, data):
 	if not rate_editable():
 		return
 	rates = {r.get("name"): r.get("rate") for r in (data.get("items") or []) if r.get("name")}
+	reasons = {r.get("name"): r.get("custom_rate_change_reason") for r in (data.get("items") or []) if r.get("name")}
 	for row in invoice.get("items") or []:
 		if row.name in rates and rates[row.name] is not None:
 			row.rate = flt(rates[row.name])
+		if reasons.get(row.name) is not None:
+			row.custom_rate_change_reason = (reasons[row.name] or "").strip() or None
 
 
 def _load_draft_for_edit(purchase_invoice):

@@ -38,3 +38,4 @@ alpinos.patches.v1_0.item_display_default_stock_reports
 alpinos.patches.v1_0.restate_picked_invoice_value
 alpinos.patches.v1_0.link_production_model_machine_types
 alpinos.patches.v1_0.restate_so_in_words_and_payment_schedule
+alpinos.patches.v1_0.inward_purchase_rate_and_actual_mrp

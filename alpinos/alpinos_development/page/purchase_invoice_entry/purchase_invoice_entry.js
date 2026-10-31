@@ -216,7 +216,8 @@ var PurchaseInvoiceEntry = class {
 		});
 
 		// ---- 6.2.2 items
-		this.items = (doc.items || []).map((row) => Object.assign({}, row));
+		// _loaded_rate: what the rate was when opened, so only a change asks for a reason.
+		this.items = (doc.items || []).map((row) => Object.assign({ _loaded_rate: flt(row.rate) }, row));
 		// Buying Settings "Maintain Same Rate" (Stop) makes ERPNext refuse any price that
 		// differs from the PO / GRN, so the price is only offered for editing when it may change.
 		// GST % / HSN are editable on any draft; the price only when Maintain Same Rate allows.
@@ -312,7 +313,8 @@ var PurchaseInvoiceEntry = class {
 			const $tr = $(`<tr data-idx="${idx}">
 				<td class="text-muted">${cint(row.idx) || idx + 1}</td>
 				<td>${frappe.utils.escape_html(row.item_code || '')}
-					<div class="text-muted" style="font-size:11px;">${frappe.utils.escape_html(row.item_name || '')}</div></td>
+					<div class="text-muted" style="font-size:11px;">${frappe.utils.escape_html(row.item_name || '')}</div>${row.mrp_batch
+					? `<div class="text-muted" style="font-size:11px;">${__('Batch / MRP')}: ${frappe.utils.escape_html(row.mrp_batch)}</div>` : ''}</td>
 				<td>${frappe.utils.escape_html(row.uom || '')}</td>
 				<td class="pinv-num">${format_number(row.qty, null, 3)}</td>
 				<td class="pinv-num c-rate"></td>
@@ -336,6 +338,7 @@ var PurchaseInvoiceEntry = class {
 							row.rate = flt(c.get_value());
 							me.paint_amount($tr, row);
 							me.recalc_totals();
+							me.ask_rate_reason(row, $tr);
 						},
 					},
 					parent: $tr.find('.c-rate'),
@@ -372,6 +375,31 @@ var PurchaseInvoiceEntry = class {
 			});
 		});
 		this.recalc_totals();
+	}
+
+	/**
+	 * A rate moved off the one the invoice was raised at needs a reason (MRP draft, section 9);
+	 * the server refuses the save without it and logs every change with who and when.
+	 */
+	ask_rate_reason(row, $tr) {
+		if (row._loaded_rate === undefined) return;
+		const $note = $tr.find('.c-rate .pinv-rate-reason');
+		const paint = () => {
+			const text = row.custom_rate_change_reason || '';
+			if ($note.length) $note.text(text);
+			else if (text) $tr.find('.c-rate').append(`<div class="pinv-rate-reason text-muted" style="font-size:11px; text-align:left;">${frappe.utils.escape_html(text)}</div>`);
+		};
+		if (Math.abs(flt(row.rate) - flt(row._loaded_rate)) < 0.01) {
+			paint();
+			return;
+		}
+		frappe.prompt(
+			{ fieldname: 'reason', fieldtype: 'Small Text', label: __('Reason for the rate change'), reqd: 1,
+				default: row.custom_rate_change_reason || '' },
+			(v) => { row.custom_rate_change_reason = (v.reason || '').trim(); paint(); },
+			__('Rate Change: {0}', [row.item_code]),
+			__('Save Reason')
+		);
 	}
 
 	paint_amount($tr, row) {
@@ -584,6 +612,7 @@ var PurchaseInvoiceEntry = class {
 		data.custom_include_logistics = data.custom_include_logistics || 'No';
 		data.items = this.items.map((r) => ({
 			name: r.name, rate: flt(r.rate),
+			custom_rate_change_reason: r.custom_rate_change_reason || '',
 			custom_gst_percent: flt(r.custom_gst_percent), custom_hsn_code: r.custom_hsn_code || '',
 		}));
 		return data;

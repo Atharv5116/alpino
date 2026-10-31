@@ -26,6 +26,7 @@ def _columns():
 		{"label": _("GRN Status"), "fieldname": "custom_grn_status", "fieldtype": "Data", "width": 120},
 		{"label": _("Accepted"), "fieldname": "accepted_qty", "fieldtype": "Float", "width": 100},
 		{"label": _("Rejected"), "fieldname": "rejected_qty", "fieldtype": "Float", "width": 100},
+		{"label": _("Batch / MRP"), "fieldname": "lots", "fieldtype": "Data", "width": 220},
 		{"label": _("Debit Note"), "fieldname": "custom_debit_note", "fieldtype": "Link",
 		 "options": "Purchase Invoice", "width": 145},
 		{"label": _("Submitted By"), "fieldname": "custom_final_submitted_by", "fieldtype": "Link",
@@ -52,19 +53,28 @@ def _rows(filters):
 		conditions.append("pr.custom_grn_status = %(grn_status)s")
 		values["grn_status"] = filters.grn_status
 
+	# The Batch / MRP lots the receipt's lines went into (a split line is a lot of its own).
+	# Quantities stay one sum per receipt: each split line is separate goods.
+	lots, lot_join = "''", ""
+	if frappe.get_meta("Purchase Receipt Item").has_field("mrp_batch"):
+		lots = "GROUP_CONCAT(DISTINCT IFNULL(NULLIF(mb.title, ''), pri.mrp_batch) ORDER BY pri.idx SEPARATOR ', ')"
+		lot_join = "LEFT JOIN `tabMRP Batch` mb ON mb.name = pri.mrp_batch"
+
 	return frappe.db.sql(
 		"""
 		SELECT pr.name, pr.posting_date, pr.supplier_name, pr.custom_purchase_inward,
 		       pr.custom_purchase_qc, pr.custom_grn_status, pr.custom_debit_note,
 		       pr.custom_final_submitted_by,
 		       IFNULL(SUM(pri.qty), 0)          AS accepted_qty,
-		       IFNULL(SUM(pri.rejected_qty), 0) AS rejected_qty
+		       IFNULL(SUM(pri.rejected_qty), 0) AS rejected_qty,
+		       {lots} AS lots
 		FROM `tabPurchase Receipt` pr
 		LEFT JOIN `tabPurchase Receipt Item` pri ON pri.parent = pr.name
+		{lot_join}
 		WHERE {conditions}
 		GROUP BY pr.name
 		ORDER BY pr.posting_date DESC, pr.name DESC
-		""".format(conditions=" AND ".join(conditions)),
+		""".format(conditions=" AND ".join(conditions), lots=lots, lot_join=lot_join),
 		values,
 		as_dict=True,
 	)

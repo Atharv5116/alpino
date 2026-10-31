@@ -2,6 +2,8 @@ import frappe
 import json
 from frappe.utils import add_days, flt
 
+from alpinos.mrp_batch_hooks import saved_row_lot
+
 
 def _fill_short_pick_remarks(pick_list, reason):
 	"""Put the short-pick reason onto any short row that has no remark yet."""
@@ -68,6 +70,11 @@ def get_pick_list_data(name):
 			row["custom_weight_per_box"] = item_info.get("custom_gross_weight") or 0
 		row["shelf_life_in_days"] = item_info.get("shelf_life_in_days") or 0
 		row["has_batch_no"] = item_info.get("has_batch_no") or 0
+
+	# Batch / MRP of each row and the order line's MRP (alpinos.mrp_batch).
+	from alpinos.mrp_batch_hooks import lot_display
+
+	lot_display(doc_dict.get("locations", []))
 
 	doc_dict["owner_full_name"] = frappe.utils.get_fullname(doc.owner)
 
@@ -180,6 +187,7 @@ def save_pick_list_keep_draft(name, header, items):
 			'custom_mfg_date': mfg,
 			'custom_expiry_date': exp,
 			'custom_remark': item_data.get('custom_remark') or None,
+			**saved_row_lot(item, item_data),
 		}, update_modified=False)
 
 	frappe.db.commit()
@@ -237,6 +245,7 @@ def save_pick_list_data(name, header, items, short_pick_action=None,
 				'custom_mfg_date': mfg,
 				'custom_expiry_date': exp,
 				'custom_remark': remark,
+				**saved_row_lot(item, item_data),
 			}, update_modified=False)
 
 	frappe.db.commit()

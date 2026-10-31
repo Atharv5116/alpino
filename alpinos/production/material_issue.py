@@ -382,6 +382,10 @@ def get_mi_context(stock_entry=None):
 		            "can_return": 0, "issued_by": get_fullname(frappe.session.user), "returns": []})
 		return ctx
 	doc = frappe.get_doc(SE, stock_entry)
+	from alpinos import mrp_batch as MB
+
+	# Which Batch / MRP each row moved (split per lot when the Stock Entry was saved).
+	lots = MB.titles([r.get("mrp_batch") for r in doc.items]) if MB.enabled() else {}
 	if not is_issue(doc):
 		frappe.throw(_("{0} is not a Material Issue.").format(stock_entry), title=_("Not A Material Issue"))
 	info = MC.item_info([r.item_code for r in doc.items])
@@ -411,6 +415,7 @@ def get_mi_context(stock_entry=None):
 				"available_qty": flt(r.get("custom_available_qty")),
 				"has_batch_no": cint((info.get(r.item_code) or {}).get("has_batch_no")),
 				"batch_no": r.get("batch_no"), "s_warehouse": r.s_warehouse,
+				"lot": lots.get(r.get("mrp_batch")) or "",
 				"t_warehouse": r.t_warehouse, "line_remarks": r.get("custom_line_remarks") or "",
 			} for r in doc.items],
 		},

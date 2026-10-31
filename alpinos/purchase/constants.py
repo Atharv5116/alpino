@@ -215,6 +215,10 @@ GRN_FINAL_SUBMIT_ROLES = ADMIN_ROLES
 INVOICE_CORRECTION_ROLES = ADMIN_ROLES
 # Only these roles may receive more than the pending quantity (BR-PI-13).
 EXCESS_OVERRIDE_ROLES = (ROLE_STORE_MANAGER,) + ADMIN_ROLES
+# Who may enter a purchase rate other than the PO's on an inward line (MRP draft, section 4),
+# while Buying Settings' Maintain Same Rate is off. When it is on with "Stop", its own
+# override role decides instead (purchase_inward.may_change_purchase_rate).
+RATE_CHANGE_ROLES = (ROLE_STORE_MANAGER,) + ADMIN_ROLES
 
 
 # --- Purchase Order approval (BRD 3, "Purchase Order Approval") -------------

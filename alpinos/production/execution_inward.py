@@ -310,12 +310,45 @@ def _issued_batches(sub_name, wip):
 	return out
 
 
+def _issued_lots(sub_name, wip):
+	"""Batch / MRP lots issued into WIP for this Sub PO, per item, in issue order."""
+	from alpinos import mrp_batch as MB
+
+	if not MB.enabled():
+		return {}
+	names = frappe.get_all("Stock Entry", filters={"custom_entry_kind": M.KIND_ISSUE, "docstatus": 1,
+	                                               X.SUB_FIELD: sub_name}, pluck="name", order_by="posting_date, creation")
+	out = {}
+	for name in names:
+		for r in frappe.get_all("Stock Entry Detail", filters={"parent": name, "t_warehouse": wip},
+		                        fields=["item_code", MB.TO_FIELD, MB.FIELD], order_by="idx"):
+			lot = r.get(MB.TO_FIELD) or r.get(MB.FIELD)
+			if lot and lot not in out.setdefault(r.item_code, []):
+				out[r.item_code].append(lot)
+	return out
+
+
+def _lot_parts(base, code, wip, qty, issued_lots):
+	"""One consumption row per Batch / MRP: the lots issued for this Sub PO first, then the
+	rest of WIP as mrp_batch.allocate orders it. An item with no lots in WIP stays one row."""
+	from alpinos import mrp_batch as MB
+
+	if not (MB.enabled() and MB.has_lots(code, wip)):
+		return [dict(base, qty=flt(qty, 6), transfer_qty=flt(qty, 6))]
+	plan = MB.allocate(code, wip, qty, respect_holds=False, prefer_lots=issued_lots)
+	if abs(sum(q for _l, q in plan) - qty) > 0.0000001:
+		# Short in WIP: one row, so ERPNext's own stock check reports it in its words.
+		return [dict(base, qty=flt(qty, 6), transfer_qty=flt(qty, 6))]
+	return [dict(base, qty=flt(q, 6), transfer_qty=flt(q, 6), **({MB.FIELD: lot} if lot else {})) for lot, q in plan]
+
+
 def _consumption_rows(sub_name, wip):
 	net = X.net_issued_by_item(sub_name)
 	done = _consumed_already(sub_name, wip)
 	info = MC.item_info(list(net))
 	in_wip = MC.bin_qty(list(net), wip)
 	preferred = _issued_batches(sub_name, wip)
+	issued_lots = _issued_lots(sub_name, wip)
 	rows = []
 	for code, qty in net.items():
 		qty = min(flt(qty) - flt(done.get(code)), flt(in_wip.get(code)))
@@ -325,7 +358,7 @@ def _consumption_rows(sub_name, wip):
 		base = {"item_code": code, "s_warehouse": wip, "uom": i.stock_uom, "stock_uom": i.stock_uom,
 		        "conversion_factor": 1}
 		if not cint(i.get("has_batch_no")):
-			rows.append(dict(base, qty=flt(qty, 6), transfer_qty=flt(qty, 6)))
+			rows.extend(_lot_parts(base, code, wip, qty, issued_lots.get(code)))
 			continue
 		batches = MC.batches_fefo(code, wip)
 		pref = preferred.get(code) or []

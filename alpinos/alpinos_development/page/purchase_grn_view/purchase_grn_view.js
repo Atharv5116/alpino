@@ -293,19 +293,12 @@ var GRNView = class {
 			cell('.c-batch', { fieldtype: 'Data', read_only: 1 },
 				row.batch_no ? 'batch_no' : 'custom_internal_batch_no');
 			cell('.c-rate', { fieldtype: 'Currency' }, 'rate', null, !!cint(me.ctx.rate_editable));
-			// MRP on the GRN is the rate AFTER GST. Changing the GST % re-derives it from the
-			// pre-tax figure underneath (MRP / (1 + old GST)), so it always matches the GST shown.
-			let gst_before = flt(row.custom_gst_percent);
-			const mrp_ctl = cell('.c-mrp', { fieldtype: 'Currency' }, 'custom_mrp');
+			// MRP is the Actual MRP printed on the goods; with the batch it names the Batch / MRP
+			// the stock goes into, so a GST change leaves it alone.
+			cell('.c-mrp', { fieldtype: 'Currency' }, 'custom_mrp');
 			cell('.c-usp', { fieldtype: 'Data' }, 'custom_usp');
 			// From the Purchase Inward line, editable here.
-			cell('.c-gst', { fieldtype: 'Percent' }, 'custom_gst_percent', () => {
-				const gst_now = flt(row.custom_gst_percent);
-				const base = flt(row.custom_mrp) / (1 + gst_before / 100);
-				row.custom_mrp = flt(base * (1 + gst_now / 100), 2);
-				gst_before = gst_now;
-				if (mrp_ctl) mrp_ctl.set_value(row.custom_mrp);
-			});
+			cell('.c-gst', { fieldtype: 'Percent' }, 'custom_gst_percent');
 			cell('.c-hsn', { fieldtype: 'Data' }, 'custom_hsn_code');
 			cell('.c-reason', { fieldtype: 'Data' }, 'custom_rejection_reason');
 			me.paint_received($tr, row);

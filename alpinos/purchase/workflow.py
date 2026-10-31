@@ -61,6 +61,58 @@ def receiving_incomplete_reason(doc):
 		or (doc.get("actual_driver_contact_no") or "").strip()
 	):
 		return _("Please enter the correct vehicle and driver details.")
+	return _split_incomplete_reason(doc, fg)
+
+
+def _split_incomplete_reason(doc, fg):
+	"""MRP draft, sections 3.1 and 5.2: an FG line records the MRP on its goods, and a line
+	split by batch / MRP is complete only when its splits add up to what arrived.
+
+	Per split: a quantity above zero, its own batch and MRP, and no two splits of one line
+	with the same batch and MRP (they are one lot, so one row)."""
+	from alpinos.production import material_type as MT
+
+	lines = doc.get("items") or []
+	kinds = MT.item_types([l.get("item_code") for l in lines])
+	only_fg = C.inward_types(doc.get("inward_type")) == [C.INWARD_FG]
+	# The MRP rule is asked at hand-over. An inward already past it was received when the
+	# MRP column still held the purchase rate, and a correction to it must stay possible.
+	handing_over = (doc.get("inward_status") or C.PI_PENDING_RECEIPT) == C.PI_PENDING_RECEIPT
+	groups = {}
+	for line in lines:
+		is_fg = kinds.get(line.get("item_code")) == "FG" or (only_fg and not kinds.get(line.get("item_code")))
+		if handing_over and is_fg and flt(line.get("received_qty")) > 0 and flt(line.get("mrp")) <= 0:
+			return _("Row {0} ({1}): please enter the Actual MRP printed on the goods.").format(
+				line.get("idx"), line.get("item_code")
+			)
+		if line.get("split_group"):
+			groups.setdefault(line.get("split_group"), []).append(line)
+	for rows in groups.values():
+		if len(rows) < 2:
+			continue
+		first = rows[0]
+		seen = {}
+		for row in rows:
+			if flt(row.get("received_qty")) <= 0:
+				return _("Row {0} ({1}): a split needs a received quantity above zero, or remove it.").format(
+					row.get("idx"), row.get("item_code")
+				)
+			batch = (row.get("batch_no") or "").strip()
+			if not batch and (fg or flt(row.get("mrp")) <= 0):
+				return _("Row {0} ({1}): each split needs its own Batch No.").format(row.get("idx"), row.get("item_code"))
+			key = (batch.lower(), flt(row.get("mrp"), 2))
+			if key in seen:
+				return _("Rows {0} and {1} ({2}) have the same Batch No. and MRP. Put them in one row.").format(
+					seen[key], row.get("idx"), row.get("item_code")
+				)
+			seen[key] = row.get("idx")
+		line_qty = flt(first.get("line_received_qty"))
+		total = sum(flt(r.get("received_qty")) for r in rows)
+		if line_qty > 0 and abs(total - line_qty) > 1e-6:
+			return _(
+				"Row {0} ({1}): the splits add up to {2}, but {3} was received on this line. "
+				"Correct a split or the line's received quantity."
+			).format(first.get("idx"), first.get("item_code"), flt(total), flt(line_qty))
 	return None
 
 

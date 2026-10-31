@@ -84,6 +84,8 @@ LIST_FIELDS = (
 _GUARD_FIELDS = (
 	"name",
 	"inward_status",
+	# The FG batch and MRP rules of receiving_incomplete_reason read it.
+	"inward_type",
 	"docstatus",
 	"actual_arrival_datetime",
 	"vehicle_details_verified",
@@ -383,6 +385,8 @@ def _attach_row_extras(rows, with_actions=1):
 		fields=[
 			"parent", "idx", "item_code", "uom", "received_qty", "target_warehouse",
 			"batch_no", "manufacturing_date", "quarantine", "quarantine_status",
+			# The split rules (MRP draft) read these too.
+			"mrp", "split_group", "is_split_row", "line_received_qty", "po_detail",
 		],
 		order_by="parent asc, idx asc",
 	):

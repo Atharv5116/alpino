@@ -130,7 +130,7 @@ def get_quarantine_list(
 		lines = frappe.get_all(
 			ITEM_DOCTYPE,
 			filters={"parenttype": DOCTYPE, "parent": ["in", [r.name for r in rows]]},
-			fields=["parent", "item_code", "item_name", "qty", "uom", "status"],
+			fields=["name", "parent", "item_code", "item_name", "qty", "uom", "status", "batch_no", "purchase_inward_item"],
 			order_by="parent asc, idx asc",
 		)
 		by_parent = {}
@@ -138,10 +138,14 @@ def get_quarantine_list(
 			by_parent.setdefault(line.parent, []).append(line)
 		may_release = bool(set(frappe.get_roles()).intersection(RELEASE_ROLES))
 		today = getdate()
+		from alpinos.purchase.quarantine import line_lots
+
+		lots = line_lots(lines)
 		for row in rows:
 			items = by_parent.get(row.name, [])
 			row["items"] = [
-				{"item_code": i.item_code, "item_name": i.item_name, "qty": flt(i.qty), "uom": i.uom, "status": i.status}
+				{"item_code": i.item_code, "item_name": i.item_name, "qty": flt(i.qty), "uom": i.uom, "status": i.status,
+					"batch": (lots.get(i.name) or {}).get("batch") or "", "mrp": (lots.get(i.name) or {}).get("mrp") or 0}
 				for i in items
 			]
 			row["item_count"] = len(items)

@@ -1,0 +1,414 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "",
+ "creation": "2026-10-28 12:00:00.000000",
+ "description": "One batch and printed MRP of an item, kept as its own stock balance (Inventory Dimension).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "batch_no",
+  "mrp",
+  "col_main",
+  "manufacturing_date",
+  "expiry_date",
+  "disabled",
+  "title",
+  "source_section",
+  "source",
+  "supplier",
+  "purchase_rate",
+  "col_source",
+  "purchase_inward",
+  "purchase_receipt",
+  "reference_doctype",
+  "reference_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "fetch_from": "item_code.item_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No.",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "mrp",
+   "fieldtype": "Currency",
+   "label": "MRP",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "col_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "manufacturing_date",
+   "fieldtype": "Date",
+   "label": "Manufacturing Date"
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Date",
+   "label": "Expiry Date",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "label": "Disabled",
+   "default": "0"
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_section",
+   "fieldtype": "Section Break",
+   "label": "First Received Through"
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "\nPurchase Inward\nStock Entry\nOpening\nProduction\nOther",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_rate",
+   "fieldtype": "Currency",
+   "label": "Purchase Rate (excl. GST)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "purchase_inward",
+   "fieldtype": "Link",
+   "label": "Purchase Inward",
+   "options": "Purchase Inward",
+   "read_only": 1
+  },
+  {
+   "fieldname": "purchase_receipt",
+   "fieldtype": "Link",
+   "label": "GRN",
+   "options": "Purchase Receipt",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Reference Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Reference",
+   "options": "reference_doctype",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-10-28 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "MRP Batch",
+ "naming_rule": "By script",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "share": 1,
+   "email": 1
+  },
+  {
+   "role": "Stock Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "write": 1,
+   "create": 1
+  },
+  {
+   "role": "Warehouse Admin",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "write": 1,
+   "create": 1
+  },
+  {
+   "role": "Purchase Inward Admin",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "write": 1,
+   "create": 1
+  },
+  {
+   "role": "Stock User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Warehouse Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Warehouse User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "PL Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "PL User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "DN Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "DN User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Store Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Store User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Store Receiving Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Store Receiving User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Purchase Inward Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Purchase Inward User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Purchase Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Purchase User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Purchase QC Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Purchase QC User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Purchase Accounts User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Accounts User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Sales Admin",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Sales User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Sales Officer",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Production Admin",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Production Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Production User",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Production Operator",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Store Planner",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  }
+ ],
+ "search_fields": "item_code,batch_no,mrp",
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

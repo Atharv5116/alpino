@@ -44,6 +44,12 @@ frappe.query_reports["Stock Balance Report"] = {
 			"label": __("Item"),
 			"fieldtype": "Link",
 			"options": "Item"
+		},
+		{
+			"fieldname": "batch_mrp_wise",
+			"label": __("Batch / MRP wise"),
+			"fieldtype": "Check",
+			"description": __("One row per Batch and MRP instead of one per item")
 		}
 	]
 };

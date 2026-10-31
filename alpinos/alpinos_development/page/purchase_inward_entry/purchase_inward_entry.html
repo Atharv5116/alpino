@@ -70,6 +70,15 @@
 }
 .purchase-inward-entry .piw-hint { font-size: 12px; margin-bottom: 12px; }
 .purchase-inward-entry .piw-num { text-align: right; }
+/* Split Item (MRP draft): the splits of a PO line sit under it, and a line total follows. */
+.purchase-inward-entry .piw-split-row td:nth-child(-n+2) { background: var(--subtle-fg); }
+.purchase-inward-entry .piw-split-total td { font-size: 12px; vertical-align: middle; border-top: 2px solid var(--border-color); }
+.purchase-inward-entry .piw-split-total td:nth-child(-n+2) { background: var(--subtle-fg); }
+/* Fifteen columns: scroll sideways rather than squeeze the date and money inputs. */
+.purchase-inward-entry .alp-scroll--xwide > table.receiving-table { min-width: 1320px; }
+.purchase-inward-entry .piw-row-actions { white-space: nowrap; margin-top: 4px; }
+.purchase-inward-entry .piw-row-actions .btn-link { padding: 0 6px; }
+.purchase-inward-entry .piw-row-actions .btn-row-notes.has-notes { color: var(--primary); }
 /* Same rule as the QC screen: apply_context fills these spans, and until it does
    an empty pill beside the heading reads as a broken render. */
 .purchase-inward-entry .piw-stage:empty { display: none; }
@@ -223,9 +232,10 @@
 						<th style="width: 72px;">Excess</th>
 						<th style="min-width: 120px;">Target Location</th>
 						<th style="min-width: 100px;">Batch No.</th>
-						<th style="width: 90px;">Mfg Date</th>
-						<th style="width: 90px;">Expiry</th>
-						<th style="width: 74px;">MRP</th>
+						<th style="min-width: 118px;">Mfg Date</th>
+						<th style="min-width: 96px;">Expiry</th>
+						<th style="width: 80px;" title="The MRP printed on the goods">Actual MRP</th>
+						<th style="width: 86px;" title="Excluding GST. Starts as the PO rate">Purchase Rate</th>
 						<th style="min-width: 80px;">USP</th>
 						<th style="width: 74px;">GST %</th>
 						<th style="min-width: 90px;">HSN/SAC</th>

@@ -57,7 +57,11 @@ var PQRN_COLUMNS = [
 							i.status === 'Released' ? 'green' : 'red'
 						}" style="font-size:10px;">${h.esc(__(i.status))}</span> ${h.esc(i.item_code)} <span class="text-muted">— ${h.esc(
 							format_number(i.qty, null, 2)
-						)} ${h.esc(i.uom || '')}</span></div>`
+						)} ${h.esc(i.uom || '')}${
+							i.batch || i.mrp
+								? ` · ${h.esc([i.batch, i.mrp ? __('MRP {0}', [format_number(i.mrp, null, 2)]) : ''].filter(Boolean).join(' · '))}`
+								: ''
+						}</span></div>`
 				)
 				.join('') || '—',
 	},

@@ -239,7 +239,7 @@ var MaterialReturnEntry = class {
 		let html = '<table class="table table-bordered table-condensed mm-grid"><thead><tr>';
 		html += `<th style="width:30px;">#</th><th style="width:66px;">${__('Type')}</th>`;
 		html += `<th style="width:120px;">${__('Item')}</th><th>${__('Item Name')}</th><th style="width:46px;">${__('UOM')}</th>`;
-		html += `<th style="width:100px;">${__('Batch')}</th>`;
+		html += `<th style="width:100px;">${__('Batch / MRP')}</th>`;
 		html += `<th style="width:76px;" class="mm-num">${__('Issued')}</th>`;
 		html += `<th style="width:86px;" class="mm-num">${__('Previously Returned')}</th>`;
 		html += `<th style="width:76px;" class="mm-num">${__('Balance')}</th>`;
@@ -256,7 +256,8 @@ var MaterialReturnEntry = class {
 		this.rows.forEach((row, idx) => {
 			html += `<tr data-idx="${idx}">`;
 			html += `<td>${idx + 1}</td><td>${esc(row.material_type)}</td><td>${esc(row.item_code)}</td>`;
-			html += `<td>${esc(row.item_name)}</td><td>${esc(row.uom)}</td><td>${esc(row.batch_no || '—')}</td>`;
+			html += `<td>${esc(row.item_name)}</td><td>${esc(row.uom)}</td><td>${esc(row.batch_no || (row.lot ? '' : '—'))}${
+				row.lot ? `<div class="text-muted" style="font-size:11px;">${esc(row.lot)}</div>` : ''}</td>`;
 			html += `<td class="mm-num">${num(row.issued_qty)}</td><td class="mm-num">${num(row.previously_returned)}</td>`;
 			html += `<td class="mm-num">${num(row.balance)}</td>`;
 			html += `<td class="mm-num c-qty">${ed ? '' : num(row.qty)}</td>`;

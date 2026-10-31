@@ -392,6 +392,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							<th class="col-qty">PICKED QTY</th>
 							<th class="col-box">BOX</th>
 							<th>BATCH CODE</th>
+							<th title="Batch / MRP the stock is taken from">BATCH / MRP</th>
 							<th>MFG</th>
 							<th>EXP</th>
 							<th>REMARK</th>
@@ -422,7 +423,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let box_readonly = !itemsLocked ? '' : 'readonly tabindex="-1"';
 
 			let row_html = `
-				<tr data-name="${row.name}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:rgba(124,58,237,0.08);"' : ''}>
+				<tr data-name="${row.name}" data-mrp-batch="${frappe.utils.escape_html(row.mrp_batch || '')}" data-order-mrp="${flt(row.order_mrp)}" data-warehouse="${frappe.utils.escape_html(row.warehouse || '')}" data-so-item="${frappe.utils.escape_html(row.sales_order_item || '')}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:rgba(124,58,237,0.08);"' : ''}>
 					<td>${idx + 1}</td>
 					<td class="col-sku" data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}${this_is_flipkart && row.custom_fsn_no ? `<div class="sku-fsn">(FSN - ${frappe.utils.escape_html(row.custom_fsn_no)})</div>` : ''}</td>
 					<td>${row.custom_sku_no || '-'}</td>
@@ -432,6 +433,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td>
 						<input type="text" class="form-control input-sm batch-input" list="batch-list" value="${row.custom_batch_code || row.batch_no || ''}" ${batch_lock}>
 					</td>
+					<td class="lot-cell" data-lot-title="${frappe.utils.escape_html(row.lot_title || '')}" data-lot-mrp="${flt(row.lot_mrp)}" data-lot-batch="${frappe.utils.escape_html(row.lot_batch || '')}"${itemsLocked ? ' data-locked="1"' : ''}></td>
 					<td><input type="date" class="form-control input-sm mfg-input" value="${row.custom_mfg_date || ''}" min="2000-01-01" max="9999-12-31" ${batch_lock}></td>
 					<td><input type="date" class="form-control input-sm exp-input" value="${row.custom_expiry_date || ''}" min="2000-01-01" max="9999-12-31" ${batch_lock}></td>
 					<td><input type="text" class="form-control input-sm remark-input" value="${row.custom_remark || ''}" ${batch_readonly}></td>
@@ -457,6 +459,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		create_table("Marketing Freebies", groups["Marketing Freebies"]);
 		create_table("Scheme Table", groups["Scheme Table"]);
 		create_table("Additional Units", groups["Additional Units"]);
+		container.find('.sku-table tbody tr').each(function () { page.paint_lot($(this)); });
 
 		// one row per component, each combo shaded distinctly; read-only reference showing how
 		// the exploded component qtys above pack back into combos (shades work in both themes)
@@ -727,10 +730,23 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.find('[data-fieldname="custom_total_box"]').val(flt(actual + sample, 2));
 		});
 
+		// Batch / MRP (alpinos.mrp_batch): pick the lot the stock is taken from.
+		container.on('click.alpinosRowEvents', '.lot-cell .lot-pick', function (e) {
+			e.preventDefault();
+			page.pick_lot($(this).closest('tr'), data);
+		});
+
 		// delegated so split rows fire it too
 		container.on('change.alpinosRowEvents', '.batch-input', function() {
 			let val = $(this).val();
 			let tr = $(this).closest('tr');
+			// A typed batch that is not the chosen lot's: the lot is chosen again, by this batch.
+			let $lot = tr.find('.lot-cell');
+			if (tr.attr('data-mrp-batch') && ($lot.attr('data-lot-batch') || '').toLowerCase() !== (val || '').trim().toLowerCase()) {
+				tr.attr('data-mrp-batch', '');
+				$lot.attr({ 'data-lot-title': '', 'data-lot-mrp': 0, 'data-lot-batch': '' });
+				page.paint_lot(tr);
+			}
 			let item_code = tr.find('[data-item-code]').attr('data-item-code');
 
 			if (val) {
@@ -927,7 +943,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 						let ordered_qty_text = tr.find('.ordered-qty-cell').text();
 						let table_name = tr.closest('table').attr('data-table-name');
 						let new_row_html = `
-							<tr data-name="${clone_name}" data-conversion-factor="${factor}" data-weight-per-box="${weight_per_box}" data-shelf-life="${shelf_life}" data-client-extra="1" data-source-row="${row_name}">
+							<tr data-name="${clone_name}" data-conversion-factor="${factor}" data-weight-per-box="${weight_per_box}" data-shelf-life="${shelf_life}" data-client-extra="1" data-source-row="${row_name}" data-warehouse="${tr.attr('data-warehouse') || ''}" data-so-item="${tr.attr('data-so-item') || ''}" data-order-mrp="${tr.attr('data-order-mrp') || 0}">
 								<td>${source_idx}</td>
 								<td data-item-code="${item_code}">${item_code}</td>
 								<td>${sku_no_text}</td>
@@ -935,6 +951,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 								<td><input type="number" class="form-control input-sm qty-input" value="${new_qty}" min="0"/></td>
 								<td><input type="number" class="form-control input-sm box-input" value="${split_box}" step="0.01" min="0"/></td>
 								<td><input type="text" class="form-control input-sm batch-input" list="batch-list" value=""></td>
+								<td class="lot-cell"></td>
 								<td><input type="date" class="form-control input-sm mfg-input" value="" max="9999-12-31"></td>
 								<td><input type="date" class="form-control input-sm exp-input" value="" max="9999-12-31"></td>
 								<td><input type="text" class="form-control input-sm remark-input" value="[split]"></td>
@@ -945,6 +962,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							</tr>
 						`;
 						tr.after(new_row_html);
+						page.paint_lot(tr.next());
 						tr.find('.box-input').val(remaining_box);
 						tr.find('.qty-input').val(remaining_qty);
 						page.recalculate_totals();
@@ -982,6 +1000,83 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		}
 	};
 	
+	/** The row's Batch / MRP, flagged red when its MRP is not the order line's. */
+	page.paint_lot = function (tr) {
+		const $cell = tr.find('.lot-cell');
+		if (!$cell.length) return;
+		const lot = tr.attr('data-mrp-batch');
+		const title = $cell.attr('data-lot-title') || lot || '';
+		const lot_mrp = flt($cell.attr('data-lot-mrp'));
+		const order_mrp = flt(tr.attr('data-order-mrp'));
+		const mismatch = lot && order_mrp && lot_mrp && Math.abs(lot_mrp - order_mrp) >= 0.01;
+		const locked = $cell.attr('data-locked') === '1';
+		// No lot on a submitted row is stock from before lots were kept; on a draft it is chosen at submit.
+		const label = lot ? frappe.utils.escape_html(title)
+			: `<span class="text-muted">${locked ? __('No Batch / MRP') : __('Auto')}</span>`;
+		const flag = mismatch
+			? `<div style="color: var(--red-600); font-size: 11px;">${__('Order MRP {0}', [format_currency(order_mrp)])}</div>`
+			: '';
+		$cell.html(
+			locked
+				? `${label}${flag}`
+				: `<a href="#" class="lot-pick" title="${__('Choose the Batch / MRP')}">${label}</a>${flag}`
+		);
+	};
+
+	/** Lots of the row's item with free stock in its warehouse, the order's MRP marked. */
+	page.pick_lot = function (tr, data) {
+		const item_code = tr.find('[data-item-code]').attr('data-item-code');
+		const warehouse = tr.attr('data-warehouse') || (data && data.locations && (data.locations[0] || {}).warehouse);
+		if (!item_code || !warehouse) {
+			frappe.msgprint(__('Save the Pick List first: the Batch / MRP is chosen for the warehouse the row picks from.'));
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.mrp_batch_hooks.get_lot_options',
+			args: { item_code, warehouse, pick_list: data && data.name, sales_order_item: tr.attr('data-so-item') || null },
+		}).then((r) => {
+			const m = r.message || {};
+			const lots = m.lots || [];
+			const qty = flt(tr.find('.qty-input').val());
+			const options = [{ value: '', label: __('Auto: the order MRP first, then the earliest expiry') }].concat(lots.map((l) => ({
+				value: l.lot,
+				label: `${l.title || l.lot} · ${__('free')} ${flt(l.qty)}${l.expiry_date ? ' · ' + __('exp') + ' ' + frappe.datetime.str_to_user(l.expiry_date) : ''}${l.mrp_matches ? '' : ' · ' + __('not the order MRP')}`,
+			})));
+			const d = new frappe.ui.Dialog({
+				title: __('Batch / MRP for {0}', [item_code]),
+				fields: [
+					{ fieldtype: 'HTML', options: `<p class="text-muted">${__('Order MRP: {0}. Picking {1}. Stock with no Batch / MRP: {2}.', [
+						m.order_mrp ? format_currency(m.order_mrp) : __('not set'), qty, flt(m.unassigned)])}</p>` },
+					{ fieldname: 'lot', fieldtype: 'Select', label: __('Batch / MRP'), options, default: tr.attr('data-mrp-batch') || '' },
+				],
+				primary_action_label: __('Use'),
+				primary_action(v) {
+					const chosen = lots.find((l) => l.lot === v.lot);
+					if (chosen && flt(chosen.qty) + 1e-6 < qty) {
+						frappe.msgprint(__('{0} has only {1} free. Pick less from it, or leave the row on Auto to take the rest from other Batch / MRP at submit.', [chosen.title || chosen.lot, flt(chosen.qty)]));
+						return;
+					}
+					const $cell = tr.find('.lot-cell');
+					tr.attr('data-mrp-batch', chosen ? chosen.lot : '');
+					$cell.attr({
+						'data-lot-title': chosen ? (chosen.title || chosen.lot) : '',
+						'data-lot-mrp': chosen ? flt(chosen.mrp) : 0,
+						'data-lot-batch': chosen ? (chosen.batch_no || '') : '',
+					});
+					if (chosen) {
+						// The lot is what is picked, so its batch and dates are what the row shows.
+						tr.find('.batch-input').val(chosen.batch_no || '');
+						if (chosen.manufacturing_date) tr.find('.mfg-input').val(chosen.manufacturing_date);
+						if (chosen.expiry_date) tr.find('.exp-input').val(chosen.expiry_date);
+					}
+					page.paint_lot(tr);
+					d.hide();
+				},
+			});
+			d.show();
+		});
+	};
+
 	page.save_pick_list = function() {
 		let header_data = {
 			custom_actual_box: page.main.find('[data-fieldname="custom_actual_box"]').val(),
@@ -1025,6 +1120,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_sample_quantity: 0,
 				custom_box: tr.find('.box-input').val(),
 				custom_batch_code: tr.find('.batch-input').val(),
+				mrp_batch: tr.attr('data-mrp-batch') || '',
 				batch_no: "", // standard batch_no stays empty — we're not creating real batches
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
@@ -1250,6 +1346,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				qty: flt(tr.find('.qty-input').val()),
 				custom_box: tr.find('.box-input').val(),
 				custom_batch_code: tr.find('.batch-input').val(),
+				mrp_batch: tr.attr('data-mrp-batch') || '',
 				batch_no: "",
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),
@@ -1306,6 +1403,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				custom_sample_quantity: 0,
 				custom_box: tr.find('.box-input').val(),
 				custom_batch_code: tr.find('.batch-input').val(),
+				mrp_batch: tr.attr('data-mrp-batch') || '',
 				batch_no: "",
 				custom_mfg_date: tr.find('.mfg-input').val(),
 				custom_expiry_date: tr.find('.exp-input').val(),

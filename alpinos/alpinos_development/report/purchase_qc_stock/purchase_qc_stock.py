@@ -29,6 +29,10 @@ def _columns():
 		 "width": 100},
 		{"label": _("UOM"), "fieldname": "uom", "fieldtype": "Link", "options": "UOM",
 		 "width": 80},
+		# A line received in several batches / MRPs is split on the inward, so each split is
+		# its own row here; these say which goods each row is.
+		{"label": _("Batch"), "fieldname": "batch_no", "fieldtype": "Data", "width": 110},
+		{"label": _("MRP"), "fieldname": "mrp", "fieldtype": "Currency", "width": 90, "disable_total": 1},
 		{"label": _("QC Status"), "fieldname": "qc_status", "fieldtype": "Data", "width": 130},
 		{"label": _("Purchase QC"), "fieldname": "purchase_qc", "fieldtype": "Link",
 		 "options": "Purchase QC", "width": 140},
@@ -63,6 +67,7 @@ def _rows(filters):
 	return frappe.db.sql(
 		"""
 		SELECT item.item_code, item.item_name, item.received_qty, item.uom,
+		       IFNULL(NULLIF(item.internal_batch_no, ''), item.supplier_batch_no) AS batch_no, item.mrp,
 		       qc.qc_status, qc.name AS purchase_qc, qc.purchase_inward, qc.supplier,
 		       qc.inspector, qc.creation AS since
 		FROM `tabPurchase QC Item` item

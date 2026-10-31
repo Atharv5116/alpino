@@ -232,7 +232,7 @@ var MaterialIssueEntry = class {
 		html += `<th style="width:100px;" class="mm-num">${__('Total Required')}</th>`;
 		html += `<th style="width:110px;" class="mm-num">${__('Actual Issue Qty')}</th>`;
 		html += `<th style="width:90px;" class="mm-num">${__('Available')}</th>`;
-		html += `<th style="width:150px;">${__('Batch No')}</th>`;
+		html += `<th style="width:150px;">${__('Batch / MRP')}</th>`;
 		html += `<th style="width:150px;">${__('Source Warehouse')}</th>`;
 		html += `<th style="width:130px;">${__('Target Warehouse')}</th>`;
 		html += `<th style="width:130px;">${__('Remarks')}</th>`;
@@ -248,7 +248,9 @@ var MaterialIssueEntry = class {
 			html += `<td class="mm-num">${num(row.required_qty)}</td>`;
 			html += `<td class="mm-num c-qty">${ed ? '' : num(row.qty)}</td>`;
 			html += `<td class="mm-num c-avail">${num(row.available_qty)}</td>`;
-			html += `<td class="c-batch">${ed && cint(row.has_batch_no) ? '' : esc(row.batch_no || (cint(row.has_batch_no) ? '' : '—'))}</td>`;
+			// The Batch / MRP the row moved; a row is split per lot when the issue is saved.
+			const lot = row.lot ? `<div class="text-muted" style="font-size:11px;">${esc(row.lot)}</div>` : '';
+			html += `<td class="c-batch">${ed && cint(row.has_batch_no) ? '' : esc(row.batch_no || (cint(row.has_batch_no) || row.lot ? '' : '—'))}${lot}</td>`;
 			html += `<td class="c-src">${ed ? '' : esc(row.s_warehouse)}</td>`;
 			html += `<td>${esc(row.t_warehouse)}</td>`;
 			html += `<td class="c-rem">${ed ? '' : esc(row.line_remarks)}</td>`;

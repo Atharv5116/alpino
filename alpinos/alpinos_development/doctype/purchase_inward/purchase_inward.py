@@ -31,12 +31,14 @@ class PurchaseInward(Document):
 	# ------------------------------------------------------------------ hooks
 
 	def validate(self):
+		self._prepare_splits()
 		self._assert_section_access()
 		self._validate_has_items()
 		self._validate_purchase_order()
 		self._prefill_planned_shipment()
 		self._sync_item_provenance()
 		self._validate_unique_po_detail()
+		self._validate_purchase_rates()
 		self._compute_previously_received()
 		self._validate_planned_qty()
 		self._validate_invoice_number()
@@ -139,8 +141,12 @@ class PurchaseInward(Document):
 		in-memory doc that is never written again, so every derived value was discarded
 		and the validations fired too late to block a bad receipt.
 		"""
+		# Splits first: a split row copies its PO line's Purchase-owned columns before the
+		# section guard compares them, so adding one reads as a receiving edit, not a header one.
+		self._prepare_splits()
 		self._assert_section_access()
 		self._guard_engine_owned_fields()
+		self._guard_split_changes()
 		self._validate_unique_po_detail()
 		# Re-derive order_qty and the rest of the provenance from the Purchase Order, the
 		# same as validate() does before submit. Without this an after-submit save kept
@@ -151,6 +157,7 @@ class PurchaseInward(Document):
 		# received yet, quietly stored an ordered quantity of zero. The PO owns these
 		# numbers, so they are taken from it rather than trusted from the payload.
 		self._sync_item_provenance()
+		self._validate_purchase_rates()
 		self._compute_previously_received()
 		self._apply_default_target_warehouse()
 		self._set_expiry_dates()
@@ -181,6 +188,7 @@ class PurchaseInward(Document):
 
 	def on_update_after_submit(self):
 		"""Side effects that must observe the persisted row."""
+		self._log_rate_changes()
 		self._refresh_po_progress()
 		self._resync_draft_grn()
 
@@ -382,11 +390,12 @@ class PurchaseInward(Document):
 			# the Store team set, blank included.
 			if not line.target_warehouse and src.warehouse and line.is_new():
 				line.target_warehouse = src.warehouse
-			# Section 2: MRP is the PO line's Rate (Incl. GST) until someone records otherwise.
-			if not flt(line.mrp):
+			# MRP is the one printed on the goods, typed at receipt (MRP draft, section 3.1);
+			# nothing on the Purchase Order carries it. The purchase rate starts as the PO's.
+			if not flt(line.get("purchase_rate")):
 				from alpinos.purchase.inward_api import po_line_mrp
 
-				line.mrp = po_line_mrp(src)
+				line.purchase_rate = po_line_mrp(src)
 			line.stock_qty = flt(line.received_qty) * flt(line.conversion_factor)
 
 	# ------------------------- previously received / pending (task 298) -----
@@ -407,30 +416,184 @@ class PurchaseInward(Document):
 			if not row.get("uploaded_on"):
 				row.uploaded_on = now_datetime()
 
-	def _validate_unique_po_detail(self):
-		"""One Purchase Order line may appear at most once on an inward.
+	# --------------------------------------------- split item (MRP draft, sec. 3)
 
-		Both the pending quantity and the VAL-PI-07 over-receipt check are derived per row
-		from the PO line's remaining quantity, so two rows pointing at the same po_detail
-		each see the FULL pending quantity and neither notices the other. Without this the
-		document happily accepts 100 + 100 against an order of 100, reports excess_qty 0,
-		and pushes 200 into stock through the QC/GRN chain. The Get Items dialog already
-		dedupes; this closes the manual Add Row path (and any row set predating the fix).
+	def po_line_groups(self):
+		"""[(primary row, [rows of that PO line])] in screen order.
+
+		One Purchase Order line arrives as one row, or -- when the goods carry more than one
+		batch / MRP -- as its row plus the splits Store added under it. The primary row is the
+		PO line's own row; the others are marked is_split_row."""
+		groups, order = {}, []
+		for line in self.get("items"):
+			key = line.po_detail or line.name or id(line)
+			if key not in groups:
+				groups[key] = []
+				order.append(key)
+			groups[key].append(line)
+		out = []
+		for key in order:
+			rows = groups[key]
+			primary = next((r for r in rows if not cint(r.get("is_split_row"))), rows[0])
+			out.append((primary, rows))
+		return out
+
+	def _prepare_splits(self):
+		"""Stamp split rows onto their PO line before anything compares or validates them.
+
+		A row the screen added with Split Item arrives with is_split_row and its PO line's
+		po_detail. It takes the line's Purchase-owned columns (item, planned qty, line remark)
+		so it is the same PO line, and every row of the line shares one split_group.
+		"""
+		for primary, rows in self.po_line_groups():
+			splits = [r for r in rows if r is not primary and cint(r.get("is_split_row"))]
+			if not splits:
+				if len(rows) == 1 and primary.get("split_group"):
+					# Every split was removed: the line is a plain line again.
+					primary.split_group = None
+				continue
+			group = next((r.get("split_group") for r in rows if r.get("split_group")), None)
+			group = group or frappe.generate_hash(length=10)
+			primary.split_group = group
+			primary.is_split_row = 0
+			for row in splits:
+				row.split_group = group
+				row.is_split_row = 1
+				row.item_code = primary.item_code
+				row.planned_qty = primary.planned_qty
+				row.remarks = primary.remarks
+			line_qty = max(flt(r.get("line_received_qty")) for r in rows)
+			for row in rows:
+				row.line_received_qty = line_qty
+
+	def _guard_split_changes(self):
+		"""After submit the PO lines are fixed: only splits may be added or removed.
+
+		Frappe lets rows come and go on a table that is open after submit, which the item grid
+		now is (Store adds splits during receiving). A removed PO line would drop it from
+		the receipt, and a stray new row would receive against nothing, so both are refused
+		here; Purchase changes lines on a Draft, or by amendment."""
+		before = self.get_doc_before_save()
+		if not before:
+			return
+		now = {line.name for line in self.get("items") if line.name}
+		primaries = {line.po_detail for line in before.get("items") if not cint(line.get("is_split_row"))}
+		for old in before.get("items"):
+			if old.name in now or cint(old.get("is_split_row")):
+				continue
+			frappe.throw(
+				_(
+					"Row {0} ({1}) is a Purchase Order line and cannot be removed after the "
+					"Purchase Inward is submitted. Only a split can be removed."
+				).format(old.idx, old.item_code),
+				title=_("Not Allowed"),
+			)
+		old_names = {old.name for old in before.get("items")}
+		for line in self.get("items"):
+			if line.name in old_names:
+				continue
+			if not cint(line.get("is_split_row")) or line.po_detail not in primaries:
+				frappe.throw(
+					_(
+						"Row {0} ({1}): after submission a line can only be added by splitting a "
+						"Purchase Order line already on this inward."
+					).format(line.idx, line.item_code or "?"),
+					title=_("Not Allowed"),
+				)
+
+	def _validate_unique_po_detail(self):
+		"""One Purchase Order line has one row on an inward, plus any splits of it.
+
+		Both the pending quantity and the VAL-PI-07 over-receipt check are derived from the PO
+		line's remaining quantity. Two independent rows pointing at the same po_detail would
+		each see the FULL pending quantity and neither would notice the other -- 100 + 100
+		accepted against an order of 100, excess_qty 0, and 200 pushed into stock through the
+		QC/GRN chain. Splits are different: they are measured together, as one PO line
+		(_validate_received_quantities), so they are the only rows allowed to share it.
 		"""
 		seen = {}
 		for line in self.get("items"):
-			if not line.po_detail:
+			if not line.po_detail or cint(line.get("is_split_row")):
 				continue
 			first = seen.get(line.po_detail)
 			if first:
 				frappe.throw(
 					_(
 						"Rows {0} and {1} both receive against the same Purchase Order line "
-						"for {2}. Combine them into a single row."
+						"for {2}. Combine them into a single row, or use Split Item for a "
+						"different batch / MRP."
 					).format(first, line.idx, frappe.bold(line.item_code)),
 					title=_("Duplicate Purchase Order Line"),
 				)
 			seen[line.po_detail] = line.idx
+		for line in self.get("items"):
+			if cint(line.get("is_split_row")) and line.po_detail not in seen:
+				frappe.throw(
+					_("Row {0} ({1}) is a split, but its Purchase Order line is not on this inward.").format(
+						line.idx, line.item_code
+					),
+					title=_("Split Without Its Line"),
+				)
+
+	def _validate_purchase_rates(self):
+		"""Purchase rate per line, excluding GST (MRP draft, sections 3 and 9).
+
+		It starts as the PO line's rate. A different rate -- one split billed at another
+		price -- needs a reason, and Buying Settings decides whether it is possible at all:
+		with Maintain Same Rate set to Stop, ERPNext refuses a GRN whose rate differs from
+		the PO for anyone but its override role, and the GRN is raised by whoever completes
+		QC, so the inward keeps the PO rate and a price change is made on the invoice. With
+		the setting off (or Warn), Store Manager and the admins may enter it. Each change is
+		written to the inward's timeline (old, new, user, time, reason).
+		"""
+		before = None if self.is_new() else self.get_doc_before_save()
+		old_rates = {line.name: flt(line.get("purchase_rate")) for line in (before.get("items") if before else [])}
+		changes = []
+		for line in self.get("items"):
+			po_rate = flt(line.rate)
+			rate = flt(line.get("purchase_rate")) or po_rate
+			line.purchase_rate = rate
+			differs = abs(rate - po_rate) >= 0.01
+			if not differs:
+				line.rate_change_reason = None
+			elif not (line.get("rate_change_reason") or "").strip():
+				frappe.throw(
+					_("Row {0} ({1}): the purchase rate {2} differs from the PO rate {3}. Please enter the reason.").format(
+						line.idx, line.item_code, rate, po_rate
+					),
+					title=_("Rate Change Reason Needed"),
+				)
+			was = old_rates.get(line.name) if line.name in old_rates else po_rate
+			if abs(rate - flt(was or po_rate)) >= 0.01:
+				if not may_change_purchase_rate():
+					frappe.throw(
+						_("Row {0} ({1}): you may not change the purchase rate from {2} to {3}. {4}").format(
+							line.idx, line.item_code, flt(was or po_rate), rate, purchase_rate_rule()
+						),
+						frappe.PermissionError,
+						title=_("Not Permitted"),
+					)
+				changes.append((line, flt(was or po_rate), rate))
+		self._rate_changes = changes
+
+	def _log_rate_changes(self):
+		for line, old, new in getattr(self, "_rate_changes", None) or []:
+			self.add_comment(
+				"Info",
+				_("Row {0} ({1}{2}): purchase rate {3} -> {4} by {5}. Reason: {6}").format(
+					line.idx,
+					line.item_code,
+					(", " + _("batch") + " " + line.batch_no) if line.get("batch_no") else "",
+					old,
+					new,
+					frappe.session.user,
+					(line.get("rate_change_reason") or "").strip() or "-",
+				),
+			)
+		self._rate_changes = []
+
+	def on_update(self):
+		self._log_rate_changes()
 
 	def _compute_previously_received(self):
 		"""BR-PI-11 / BR-PI-12 — cumulative receipt over other SUBMITTED inwards."""
@@ -683,27 +846,32 @@ class PurchaseInward(Document):
 		return flt(line.get("planned_qty")) or flt(line.pending_qty)
 
 	def _validate_received_quantities(self):
-		"""VAL-PI-07 / VAL-PI-08 and the over-receipt tolerance (task 300).
+		"""VAL-PI-07 / VAL-PI-08 and the over-receipt tolerance (task 300), per PO line.
 
 		Received is measured against the line's Planned Qty: more than planned is Excess and
 		needs Allow Excess Quantity (or the tolerance); less than planned, once receiving has
-		started, is a Shortage, recorded and shown in the Summary.
+		started, is a Shortage, recorded and shown in the Summary. A line split into several
+		batches / MRPs is measured as the sum of its splits, and its excess or shortage is
+		recorded once, on the line's own row, so totals never count it twice.
 		"""
 		settings = get_settings(self.company)
 		tolerance = flt(settings.get("over_receipt_tolerance_percent"))
 		block = cint(settings.get("block_over_receipt"))
 		started = self._receiving_started()
 
-		for line in self.get("items"):
-			received = flt(line.received_qty)
-			if received < 0:
-				frappe.throw(_("Row {0}: Received Qty cannot be negative.").format(line.idx))
+		for primary, rows in self.po_line_groups():
+			for line in rows:
+				if flt(line.received_qty) < 0:
+					frappe.throw(_("Row {0}: Received Qty cannot be negative.").format(line.idx))
+				line.stock_qty = flt(line.received_qty) * (flt(line.conversion_factor) or 1.0)
+				line.excess_qty = 0.0
+				line.shortage_qty = 0.0
 
-			line.stock_qty = received * (flt(line.conversion_factor) or 1.0)
-			pending = self._planned(line)
+			received = sum(flt(line.received_qty) for line in rows)
+			pending = self._planned(primary)
 			over = received - pending
-			line.excess_qty = over if over > 0 else 0.0
-			line.shortage_qty = (pending - received) if (started and over < 0) else 0.0
+			primary.excess_qty = over if over > 0 else 0.0
+			primary.shortage_qty = (pending - received) if (started and over < 0) else 0.0
 
 			if over <= 0:
 				continue
@@ -723,12 +891,12 @@ class PurchaseInward(Document):
 						"Row {0} ({1}): Received Quantity cannot be greater than the Planned "
 						"Quantity. Planned is {2}, received is {3}. Tick <b>Allow Excess "
 						"Quantity</b> to receive the excess."
-					).format(line.idx, line.item_code, pending, received),
+					).format(primary.idx, primary.item_code, pending, received),
 					title=_("VAL-PI-07"),
 				)
 			frappe.msgprint(
 				_("Row {0} ({1}): receiving {2} against a planned quantity of {3}.").format(
-					line.idx, line.item_code, received, pending
+					primary.idx, primary.item_code, received, pending
 				),
 				title=_("Excess Quantity"),
 				indicator="orange",
@@ -863,15 +1031,16 @@ class PurchaseInward(Document):
 	# ------------------------------------------------------------- roll-ups -
 
 	def _roll_up_totals(self):
-		self.total_order_qty = sum(flt(l.order_qty) for l in self.get("items"))
-		self.total_previously_received_qty = sum(
-			flt(l.previously_received_qty) for l in self.get("items")
-		)
-		self.total_pending_qty = sum(flt(l.pending_qty) for l in self.get("items"))
+		# Ordered / previously received / pending belong to the PO line, which a split
+		# repeats on every one of its rows: counted once per line, never per split.
+		lines = [primary for primary, _rows in self.po_line_groups()]
+		self.total_order_qty = sum(flt(l.order_qty) for l in lines)
+		self.total_previously_received_qty = sum(flt(l.previously_received_qty) for l in lines)
+		self.total_pending_qty = sum(flt(l.pending_qty) for l in lines)
 		self.total_received_qty = sum(flt(l.received_qty) for l in self.get("items"))
 		self.total_excess_qty = sum(flt(l.excess_qty) for l in self.get("items"))
 		self.total_shortage_qty = sum(flt(l.get("shortage_qty")) for l in self.get("items"))
-		self.total_items = len(self.get("items"))
+		self.total_items = len(lines)
 
 	def _sync_status(self):
 		if self.docstatus == 0:
@@ -899,3 +1068,32 @@ class PurchaseInward(Document):
 					self.purchase_qc
 				)
 			)
+
+
+# ------------------------------------------------- purchase rate authority
+
+
+def _rate_policy():
+	settings = frappe.get_cached_doc("Buying Settings")
+	stop = cint(settings.get("maintain_same_rate")) and (settings.get("maintain_same_rate_action") or "Stop") == "Stop"
+	return stop, settings.get("role_to_override_stop_action")
+
+
+def may_change_purchase_rate(user=None):
+	"""Whether `user` may enter a purchase rate other than the PO's on an inward line."""
+	stop, _override = _rate_policy()
+	if stop:
+		return False
+	return bool(set(frappe.get_roles(user or frappe.session.user)) & set(C.RATE_CHANGE_ROLES))
+
+
+def purchase_rate_rule():
+	stop, override = _rate_policy()
+	if stop and override:
+		return _(
+			"Buying Settings keeps the PO rate (Maintain Same Rate: Stop), so the GRN would refuse it. "
+			"{0} can change the rate on the Purchase Invoice."
+		).format(override)
+	if stop:
+		return _("Buying Settings keeps the PO rate (Maintain Same Rate: Stop), so the GRN would refuse it.")
+	return _("Only {0} may change it.").format(", ".join(C.RATE_CHANGE_ROLES))

@@ -747,16 +747,22 @@ var PurchaseInwardEntry = class {
 				manufacturing_date: '',
 				expiry_date: '',
 				mrp: 0,
+				purchase_rate: 0,
 				usp: '',
 				remarks: '',
+				is_split_row: 0,
 			},
 			data
 		);
 		this.items.push(row);
+		// A split is Store's row under its PO line (MRP draft, section 3.2); the Purchase
+		// grid lists each PO line once.
+		if (cint(row.is_split_row)) return;
+		const line_no = this.items.filter((r) => !cint(r.is_split_row)).length;
 
 		const $tr = $(`
 			<tr data-idx="${idx}">
-				<td class="text-muted">${idx + 1}</td>
+				<td class="text-muted">${line_no}</td>
 				<td class="cell-item-code"></td>
 				<td class="cell-item-name"></td>
 				<td class="cell-uom"></td>
@@ -904,31 +910,52 @@ var PurchaseInwardEntry = class {
 		});
 	}
 
+	/** Every row of `row`'s PO line: the line's own row and the splits Store added under it. */
+	_line_rows(row) {
+		return row && row.po_detail ? this.items.filter((r) => r.po_detail === row.po_detail) : [row];
+	}
+
 	render_receiving_rows() {
 		const me = this;
 		const $body = this.wrapper.find('.receiving-table tbody').empty();
+		const may_rate = !!cint((this.ctx || {}).may_change_rate);
+		let line_no = 0;
 
 		this.items.forEach((row, idx) => {
+			const group = this._line_rows(row);
+			const split = group.length > 1;
+			const is_split = cint(row.is_split_row) === 1;
+			if (!is_split) line_no += 1;
 			const $tr = $(`
-				<tr data-idx="${idx}">
-					<td class="text-muted">${idx + 1}</td>
-					<td>${frappe.utils.escape_html(row.item_code || '')}<br>
+				<tr data-idx="${idx}" class="${is_split ? 'piw-split-row' : ''}">
+					<td class="text-muted">${is_split ? '&#8627;' : line_no}</td>
+					<td>${is_split
+						? `<span class="text-muted" style="font-size:11px;">${__('Split of line {0}', [line_no])}</span>`
+						: `${frappe.utils.escape_html(row.item_code || '')}<br>
 						<span class="text-muted" style="font-size:11px;">
-							${frappe.utils.escape_html(row.item_name || '')}</span></td>
-					<td class="piw-num cell-pending">${format_number(flt(row.planned_qty) || flt(row.pending_qty), null, 2)}</td>
+							${frappe.utils.escape_html(row.item_name || '')}</span>`}
+						<div class="piw-row-actions">
+							${is_split
+								? `<button class="btn btn-xs btn-link btn-remove-split" title="${__('Remove this split')}"><i class="fa fa-trash text-danger"></i></button>`
+								: `<button class="btn btn-xs btn-default btn-split-row" title="${__('Split Item: part of this line has another batch or MRP')}">${__('Split')}</button>`}
+							<button class="btn btn-xs btn-link btn-row-notes" data-alpinos-keep="1" title="${__('Remarks and attachment')}"><i class="fa fa-paperclip"></i></button>
+						</div></td>
+					<td class="piw-num cell-pending">${is_split ? '' : format_number(flt(row.planned_qty) || flt(row.pending_qty), null, 2)}</td>
 					<td class="cell-received"></td>
-					<td class="piw-num cell-excess">0</td>
+					<td class="piw-num cell-excess">${is_split ? '' : 0}</td>
 					<td class="cell-warehouse"></td>
 					<td class="cell-batch"></td>
 					<td class="cell-mfg"></td>
 					<td class="cell-expiry"></td>
 					<td class="cell-mrp"></td>
+					<td class="cell-rate"></td>
 					<td class="cell-usp"></td>
 					<td class="cell-gst"></td>
 					<td class="cell-hsn"></td>
 				</tr>
 			`);
 			$body.append($tr);
+			this.paint_notes(idx);
 
 			const mk = (sel, df, value, onchange) => {
 				// Same rule as purchase_qc_entry._mk_cell: run the handler from Frappe's own
@@ -961,7 +988,6 @@ var PurchaseInwardEntry = class {
 			mk('.cell-received', { fieldtype: 'Float', fieldname: 'received_qty' },
 				row.received_qty, function (val) {
 					me.items[idx].received_qty = flt(val);
-					me.recalc_row(idx);
 					me.recalc_totals();
 				});
 			mk('.cell-warehouse', { fieldtype: 'Link', fieldname: 'target_warehouse', options: 'Warehouse' },
@@ -987,11 +1013,18 @@ var PurchaseInwardEntry = class {
 			// picked (update_expiry); the server derives the same on save.
 			mk('.cell-expiry', { fieldtype: 'Date', fieldname: 'expiry_date', read_only: 1 },
 				row.expiry_date);
+			// The MRP printed on the goods (MRP draft, section 3.1). Nothing on the PO carries it.
 			mk('.cell-mrp', { fieldtype: 'Currency', fieldname: 'mrp' },
 				row.mrp, function (val) {
 					me.items[idx].mrp = flt(val);
 					me.update_usp(idx);
+				});
+			// Excluding GST; the PO line's rate unless this user may change it (Buying Settings).
+			mk('.cell-rate', { fieldtype: 'Currency', fieldname: 'purchase_rate', read_only: may_rate ? 0 : 1 },
+				row.purchase_rate, function (val) {
+					me.items[idx].purchase_rate = flt(val);
 					me.render_money();
+					me.ask_rate_reason(idx);
 				});
 			mk('.cell-usp', { fieldtype: 'Data', fieldname: 'usp' },
 				row.usp, function (val) { me.items[idx].usp = val; });
@@ -1001,14 +1034,163 @@ var PurchaseInwardEntry = class {
 				row.gst_percent, function (val) { me.items[idx].gst_percent = flt(val); me.render_money(); });
 			mk('.cell-hsn', { fieldtype: 'Data', fieldname: 'hsn_code' },
 				row.hsn_code, function (val) { me.items[idx].hsn_code = (val || '').trim(); });
+
+			// After a split line's last row: what arrived on the line, against its splits.
+			if (split && group[group.length - 1] === row) {
+				const primary = group.find((r) => !cint(r.is_split_row)) || group[0];
+				const $total = $(`
+					<tr class="piw-split-total" data-po-detail="${frappe.utils.escape_html(row.po_detail || '')}">
+						<td></td>
+						<td colspan="2" class="text-muted">${__('Received on this line (all splits)')}</td>
+						<td class="cell-line-received"></td>
+						<td colspan="10" class="cell-split-status"></td>
+					</tr>
+				`);
+				$body.append($total);
+				let ready = false;
+				const lc = frappe.ui.form.make_control({
+					df: {
+						fieldname: `line_received_qty_${this.items.indexOf(primary)}`, fieldtype: 'Float',
+						change: () => {
+							if (!ready) return;
+							const v = flt(lc.get_value());
+							group.forEach((r) => { r.line_received_qty = v; });
+							me.recalc_totals();
+						},
+					},
+					parent: $total.find('.cell-line-received'),
+					render_input: true,
+				});
+				Promise.resolve(lc.set_value(flt(primary.line_received_qty))).then(() => { ready = true; });
+			}
+		});
+		this.paint_split_totals();
+		// A re-draw after the section was closed must not hand back live inputs.
+		if (this.receiving_open === false) this._lock_section(this.wrapper.find('.piw-receiving'), true);
+	}
+
+	/** Split Item: a new row under the PO line for another batch / MRP of it. */
+	split_line(idx) {
+		const row = this.items[idx];
+		if (!row || cint(row.is_split_row)) return;
+		if (!row.po_detail) {
+			frappe.msgprint(__('Save the inward first: a line can be split once it is linked to its Purchase Order line.'));
+			return;
+		}
+		const group = this._line_rows(row);
+		// The first split: what arrived on the line so far is the total the splits must add up to.
+		if (group.length === 1 || !flt(row.line_received_qty)) {
+			row.line_received_qty = group.reduce((sum, r) => sum + flt(r.received_qty), 0);
+		}
+		group.forEach((r) => { r.line_received_qty = row.line_received_qty; });
+		const keep = [
+			'item_code', 'item_name', 'description', 'uom', 'stock_uom', 'conversion_factor', 'po_detail',
+			'purchase_order', 'planned_qty', 'order_qty', 'previously_received_qty', 'pending_qty', 'rate',
+			'purchase_rate', 'target_warehouse', 'gst_percent', 'hsn_code', 'remarks', 'split_group',
+			'line_received_qty',
+		];
+		const copy = { is_split_row: 1, received_qty: 0, batch_no: '', manufacturing_date: '', expiry_date: '', mrp: 0, usp: '' };
+		keep.forEach((f) => { if (row[f] !== undefined) copy[f] = row[f]; });
+		this.items.splice(this.items.indexOf(group[group.length - 1]) + 1, 0, copy);
+		this.redraw_items();
+	}
+
+	/** The line total under each split line: green when its splits add up, red when not. */
+	paint_split_totals() {
+		this.wrapper.find('.receiving-table tr.piw-split-total').each((_i, el) => {
+			const $tr = $(el);
+			const rows = this.items.filter((r) => r.po_detail === $tr.attr('data-po-detail'));
+			const total = rows.reduce((sum, r) => sum + flt(r.received_qty), 0);
+			const line = flt((rows[0] || {}).line_received_qty);
+			const diff = flt(line - total, 6);
+			const text = !line
+				? __('Enter what arrived on this line; the splits must add up to it.')
+				: Math.abs(diff) < 1e-6
+					? __('{0} splits add up to {1}.', [rows.length, format_number(total, null, 2)])
+					: __('{0} splits add up to {1} of {2}: {3} {4}.', [
+						rows.length, format_number(total, null, 2), format_number(line, null, 2),
+						format_number(Math.abs(diff), null, 2), diff > 0 ? __('still to split') : __('too much'),
+					]);
+			$tr.find('.cell-split-status').html(
+				`<span class="${line && Math.abs(diff) < 1e-6 ? 'text-success' : 'text-danger'}">${frappe.utils.escape_html(text)}</span>`
+			);
 		});
 	}
 
+	/** A purchase rate moved off the PO's needs a reason (MRP draft, section 9). */
+	ask_rate_reason(idx) {
+		const row = this.items[idx];
+		if (!row) return;
+		if (Math.abs(flt(row.purchase_rate) - flt(row.rate)) < 0.01) {
+			row.rate_change_reason = '';
+			this.paint_notes(idx);
+			return;
+		}
+		frappe.prompt(
+			{ fieldname: 'reason', fieldtype: 'Small Text', label: __('Reason for the rate change'), reqd: 1,
+				default: row.rate_change_reason || '' },
+			(v) => { row.rate_change_reason = (v.reason || '').trim(); this.paint_notes(idx); },
+			__('Purchase Rate {0} (PO {1})', [format_currency(row.purchase_rate), format_currency(row.rate)]),
+			__('Save Reason')
+		);
+	}
+
+	/** Store's own notes on a receiving row: remarks, an attachment, the rate change reason. */
+	open_row_notes(idx) {
+		const row = this.items[idx];
+		if (!row) return;
+		const me = this;
+		const locked = this.receiving_open === false;
+		const rate_moved = Math.abs(flt(row.purchase_rate) - flt(row.rate)) >= 0.01;
+		const d = new frappe.ui.Dialog({
+			title: __('{0}: remarks and attachment', [row.item_code || '']),
+			fields: [
+				{ fieldname: 'receiving_row_remarks', fieldtype: 'Small Text', label: __('Receiving Remarks'),
+					default: row.receiving_row_remarks || '', read_only: locked ? 1 : 0 },
+				{ fieldname: 'row_attachment', fieldtype: 'Attach', label: __('Attachment'),
+					default: row.row_attachment || '', read_only: locked ? 1 : 0 },
+				{ fieldname: 'rate_change_reason', fieldtype: 'Small Text', label: __('Rate Change Reason'),
+					default: row.rate_change_reason || '', read_only: locked ? 1 : 0, hidden: rate_moved ? 0 : 1,
+					description: __('Purchase rate {0}, PO rate {1}.', [format_currency(row.purchase_rate), format_currency(row.rate)]) },
+			],
+			primary_action_label: locked ? __('Close') : __('Done'),
+			primary_action(v) {
+				if (!locked) {
+					row.receiving_row_remarks = (v.receiving_row_remarks || '').trim();
+					row.row_attachment = v.row_attachment || '';
+					if (rate_moved) row.rate_change_reason = (v.rate_change_reason || '').trim();
+					me.paint_notes(idx);
+				}
+				d.hide();
+			},
+		});
+		d.show();
+	}
+
+	paint_notes(idx) {
+		const row = this.items[idx] || {};
+		const has = !!((row.receiving_row_remarks || '').trim() || row.row_attachment || (row.rate_change_reason || '').trim());
+		this.wrapper.find(`.receiving-table tbody tr[data-idx="${idx}"] .btn-row-notes`).toggleClass('has-notes', has);
+	}
+
+	/** The Purchase Rate column opens only for those Buying Settings lets change it. */
+	_apply_rate_lock() {
+		const ro = cint((this.ctx || {}).may_change_rate) ? 0 : 1;
+		this.items.forEach((_row, idx) => {
+			const c = this.fields[`purchase_rate_${idx}`];
+			if (!c || cint(c.df.read_only) === ro) return;
+			c.df.read_only = ro;
+			c.refresh();
+		});
+		this.wrapper.find('.receiving-table thead th').filter((_i, th) => $(th).text().trim() === __('Purchase Rate'))
+			.attr('title', ro ? ((this.ctx || {}).rate_rule || '') : __('Excluding GST. Starts as the PO rate'));
+	}
+
 	/**
-	 * Section 2 values the grid can show before saving: Expiry from the Item's shelf life, MRP
-	 * from the PO line's Rate and USP = MRP ÷ product weight. Fetched once per set of rows;
-	 * the server computes the same on save (inward_api.receiving_item_info / format_usp /
-	 * po_line_mrp).
+	 * Section 2 values the grid can show before saving: Expiry from the Item's shelf life, the
+	 * purchase rate from the PO line's Rate and USP = Actual MRP ÷ product weight. Fetched once
+	 * per set of rows; the server computes the same on save (inward_api.receiving_item_info /
+	 * format_usp / po_line_mrp).
 	 */
 	load_item_info() {
 		const me = this;
@@ -1030,11 +1212,11 @@ var PurchaseInwardEntry = class {
 				me.po_rate = r.message.po_rate || {};
 				if (r.message.currency) me.currency = r.message.currency;
 				me.items.forEach((row, idx) => {
-					// A line saved without an MRP shows its PO line's Rate.
-					if (!flt(row.mrp) && flt(po_mrp[row.po_detail])) {
-						row.mrp = flt(po_mrp[row.po_detail]);
-						const c = me.fields[`mrp_${idx}`];
-						if (c) c.set_value(row.mrp);
+					// A line saved without a purchase rate shows its PO line's Rate.
+					if (!flt(row.purchase_rate) && flt(po_mrp[row.po_detail])) {
+						row.purchase_rate = flt(po_mrp[row.po_detail]);
+						const c = me.fields[`purchase_rate_${idx}`];
+						if (c) c.set_value(row.purchase_rate);
 					}
 					me.update_expiry(idx);
 					me.update_usp(idx);
@@ -1081,13 +1263,21 @@ var PurchaseInwardEntry = class {
 
 	recalc_row(idx) {
 		const row = this.items[idx];
+		const $tr = this.wrapper.find(`.receiving-table tbody tr[data-idx="${idx}"]`);
+		if (cint(row.is_split_row)) {
+			// A split's excess or shortage is its line's, shown once on the line's own row.
+			row.excess_qty = 0;
+			row.shortage_qty = 0;
+			return;
+		}
 		// Received is measured against the Planned Qty (the PO pending for an inward made
-		// before Planned Qty existed): over it is Excess, under it is a Shortage.
+		// before Planned Qty existed): over it is Excess, under it is a Shortage. A split
+		// line is measured by what its splits received together.
 		const base = flt(row.planned_qty) || flt(row.pending_qty);
-		const over = flt(row.received_qty) - base;
+		const received = this._line_rows(row).reduce((sum, r) => sum + flt(r.received_qty), 0);
+		const over = received - base;
 		row.excess_qty = over > 0 ? over : 0;
 		row.shortage_qty = over < 0 && this._receiving_entered() ? -over : 0;
-		const $tr = this.wrapper.find(`.receiving-table tbody tr[data-idx="${idx}"]`);
 		$tr.find('.cell-excess').text(format_number(row.excess_qty, null, 2));
 		$tr.toggleClass('text-danger', row.excess_qty > 0 && !cint(this._val('allow_excess_qty')));
 	}
@@ -1112,14 +1302,17 @@ var PurchaseInwardEntry = class {
 		let order = 0, received = 0, pending = 0, excess = 0, balance = 0;
 		this.items.forEach((row, idx) => {
 			this.recalc_row(idx);
-			order += flt(row.order_qty);
 			received += flt(row.received_qty);
-			pending += flt(row.pending_qty);
 			excess += flt(row.excess_qty);
+			// Ordered and pending belong to the PO line, which its splits repeat: once per line.
+			if (cint(row.is_split_row)) return;
+			order += flt(row.order_qty);
+			pending += flt(row.pending_qty);
 			// Ordered less everything received against the line, this inward included.
 			// Floored at zero: an excess receipt leaves nothing pending, it does not owe
 			// the supplier quantity back.
-			const left = flt(row.order_qty) - flt(row.previously_received_qty) - flt(row.received_qty);
+			const line_received = this._line_rows(row).reduce((sum, r) => sum + flt(r.received_qty), 0);
+			const left = flt(row.order_qty) - flt(row.previously_received_qty) - line_received;
 			balance += left > 0 ? left : 0;
 		});
 		this._set('total_order_qty', order);
@@ -1134,13 +1327,14 @@ var PurchaseInwardEntry = class {
 		// and both show only when the receipt is over on some lines and under on others.
 		this.wrapper.find('.field-total-shortage-qty').toggle(shortage > 0);
 		this.wrapper.find('.field-total-excess-qty').toggle(excess > 0 || shortage <= 0);
+		this.paint_split_totals();
 		this.render_money();
 	}
 
 	/**
 	 * Value and tax of the receipt, the same rows as the PO Summary.
 	 *
-	 * Value is received qty x the line's MRP on the receiving grid. GST is ONLY what Store has typed
+	 * Value is received qty x the line's purchase rate (excl. GST). GST is ONLY what Store has typed
 	 * in each line's GST % on the receiving grid -- nothing GST-related is taken from the
 	 * Purchase Order; a line with no GST % entered carries no tax here. A preview of what
 	 * was received -- the invoice carries the billed figures.
@@ -1155,9 +1349,9 @@ var PurchaseInwardEntry = class {
 		(this.items || []).forEach((r) => {
 			const qty = flt(r.received_qty);
 			if (!qty) return;
-			// Valued at the line's MRP as shown on the receiving grid (Store may edit it); the
-			// order's net rate only when no MRP is entered.
-			const rate = flt(r.mrp) || flt(r.rate) || flt(po_rate[r.po_detail]);
+			// Valued at the line's purchase rate; the order's net rate until one is set. The
+			// MRP is the price printed on the goods, not what the goods cost.
+			const rate = flt(r.purchase_rate) || flt(r.rate) || flt(po_rate[r.po_detail]);
 			const line = qty * rate;
 			const pct = flt(r.gst_percent);
 			if (!pct) missing = true;
@@ -1257,8 +1451,24 @@ var PurchaseInwardEntry = class {
 		// downstream (order qty, previously received, pending) could be worked out for it.
 		this.wrapper.on('click', '.btn-remove-row', function () {
 			const idx = cint($(this).closest('tr').attr('data-idx'));
+			const row = me.items[idx];
+			// The PO line goes with its splits.
+			me.items = me.items.filter((r) => r !== row && !(row.po_detail && r.po_detail === row.po_detail));
+			me.redraw_items();
+		});
+
+		// Split Item (MRP draft, section 3.2): another batch / MRP of the same PO line.
+		this.wrapper.on('click', '.btn-split-row', function () {
+			me.split_line(cint($(this).closest('tr').attr('data-idx')));
+		});
+		this.wrapper.on('click', '.btn-remove-split', function () {
+			const idx = cint($(this).closest('tr').attr('data-idx'));
+			if (!cint((me.items[idx] || {}).is_split_row)) return;
 			me.items.splice(idx, 1);
 			me.redraw_items();
+		});
+		this.wrapper.on('click', '.btn-row-notes', function () {
+			me.open_row_notes(cint($(this).closest('tr').attr('data-idx')));
 		});
 
 		this.wrapper.on('click', '.btn-add-attachment', () => {
@@ -1468,6 +1678,8 @@ var PurchaseInwardEntry = class {
 		// PO-42: no write (or create, on a new inward) means view only.
 		const can_write = alpinos_can_write('Purchase Inward', this.docname ? { name: this.docname } : null);
 		this.can_write = can_write;
+		// Before the locks below: refreshing a control draws a fresh input.
+		this._apply_rate_lock();
 		const header_open = can_write && ctx.header_editable !== false && cint(ctx.docstatus) === 0;
 		this._lock_section(this.wrapper.find('.piw-header'), !header_open);
 		this._lock_section(this.wrapper.find('.items-table').closest('.eso-card'), !header_open);
@@ -1761,9 +1973,16 @@ var PurchaseInwardEntry = class {
 					batch_no: row.batch_no,
 					manufacturing_date: row.manufacturing_date || null,
 					mrp: flt(row.mrp),
+					purchase_rate: flt(row.purchase_rate),
+					rate_change_reason: row.rate_change_reason || '',
+					receiving_row_remarks: row.receiving_row_remarks || '',
+					row_attachment: row.row_attachment || '',
 					usp: row.usp,
 					gst_percent: flt(row.gst_percent),
 					hsn_code: row.hsn_code || '',
+					// Split Item: the server stamps the line's group on save (_prepare_splits).
+					is_split_row: cint(row.is_split_row),
+					line_received_qty: flt(row.line_received_qty),
 				} : {}),
 			})),
 			...(receiving ? {
@@ -1824,14 +2043,15 @@ var PurchaseInwardEntry = class {
 			callback(g) {
 				if (!g.message) return;
 				const payload = me.collect_doc();
-				// Row identity comes from the SERVER copy, matched on po_detail -- never
-				// from whatever name this page happens to be holding. A save replaces the
-				// child rows, so a name picked up before an earlier save no longer exists,
-				// and on a SUBMITTED document frappe loads every non-new child row through
-				// BaseDocument._validate_update_after_submit -> frappe.get_doc(child, name),
-				// which then throws "Purchase Inward Item <hash> not found" and blocks the
-				// save entirely. po_detail is the stable key: _validate_unique_po_detail
-				// already guarantees one row per Purchase Order line.
+				// Row identity comes from the SERVER copy -- never from a name the server no
+				// longer has. A save replaces the child rows, so a name picked up before an
+				// earlier save may be gone, and on a SUBMITTED document frappe loads every
+				// non-new child row through BaseDocument._validate_update_after_submit ->
+				// frappe.get_doc(child, name), which then throws "Purchase Inward Item <hash>
+				// not found" and blocks the save entirely. A row the server still has keeps
+				// its name; otherwise a PO line's own row is found by po_detail (one per line,
+				// _validate_unique_po_detail). Splits share their line's po_detail, so a split
+				// is only ever matched by name, and a new one goes in as a new row.
 				//
 				// Each row is also laid OVER the server's copy instead of replacing it. This
 				// page only sends the fields it manages, so a wholesale replace wrote every
@@ -1839,12 +2059,15 @@ var PurchaseInwardEntry = class {
 				// quarantine.mark, for one -- and, on a draft, the Store Receiving values it
 				// deliberately no longer sends. idx is dropped so Frappe renumbers the rows in
 				// the order they are sent, which is the order on screen.
-				const server_rows = {};
+				const by_name = {};
+				const by_line = {};
 				(g.message.items || []).forEach((row) => {
-					if (row.po_detail) server_rows[row.po_detail] = row;
+					by_name[row.name] = row;
+					if (row.po_detail && !cint(row.is_split_row)) by_line[row.po_detail] = row;
 				});
 				payload.items = (payload.items || []).map((row) => {
-					const server = server_rows[row.po_detail];
+					const server = (row.name && by_name[row.name])
+						|| (!cint(row.is_split_row) && row.po_detail && by_line[row.po_detail]);
 					if (!server) {
 						const fresh = Object.assign({}, row);
 						delete fresh.name;

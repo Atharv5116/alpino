@@ -18,6 +18,7 @@
   "rejection_reason",
   "qc_result",
   "supplier_batch_no",
+  "mrp",
   "internal_batch_no",
   "manufacturing_date",
   "expiry_date",
@@ -117,11 +118,18 @@
    "read_only": 1
   },
   {
+   "description": "The batch Store wrote on the Purchase Inward line.",
    "fieldname": "supplier_batch_no",
    "fieldtype": "Data",
    "label": "Supplier Batch No.",
-   "read_only": 1,
-   "description": "The batch Store wrote on the Purchase Inward line."
+   "read_only": 1
+  },
+  {
+   "description": "The MRP Store recorded on the Purchase Inward line (or split).",
+   "fieldname": "mrp",
+   "fieldtype": "Currency",
+   "label": "Actual MRP",
+   "read_only": 1
   },
   {
    "description": "Generated on QC completion when blank (RM/PM: invoice + inward date; FG: supplier batch + mfg date). May be typed or changed.",
@@ -180,7 +188,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-03 16:45:00.000000",
+ "modified": "2026-10-28 22:01:42.052013",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase QC Item",

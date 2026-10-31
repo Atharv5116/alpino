@@ -857,7 +857,8 @@ var PurchaseQCEntry = class {
 				<td>${frappe.utils.escape_html(row.item_code || '')}<br>
 					<span class="text-muted" style="font-size:11px;">
 						${frappe.utils.escape_html(row.item_name || '')}</span></td>
-				<td>${frappe.utils.escape_html(row.supplier_batch_no || '')}</td>
+				<td>${frappe.utils.escape_html(row.supplier_batch_no || '')}${flt(row.mrp)
+					? `<br><span class="text-muted" style="font-size:11px;">${__('MRP')} ${format_currency(flt(row.mrp))}</span>` : ''}</td>
 				<td class="c-ibatch"></td>
 				<td class="pqc-num">${format_number(row.received_qty, null, 2)}</td>
 				<td class="pqc-num">${format_number(row.sample_qty, null, 2)}</td>

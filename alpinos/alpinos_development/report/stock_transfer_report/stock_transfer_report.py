@@ -54,6 +54,20 @@ def get_columns():
 			"options": "Warehouse",
 			"width": 150
 		},
+		# A transfer row moves one Batch / MRP (rows are split per lot when the entry is saved).
+		{
+			"label": _("Batch"),
+			"fieldname": "batch_no",
+			"fieldtype": "Data",
+			"width": 110
+		},
+		{
+			"label": _("Lot MRP"),
+			"fieldname": "lot_mrp",
+			"fieldtype": "Currency",
+			"width": 90,
+			"disable_total": 1
+		},
 		{
 			"label": _("Transferred Qty"),
 			"fieldname": "transferred_qty",
@@ -114,6 +128,12 @@ def get_data(filters):
 		values["item_code"] = item_code
 	
 	where_clause = " AND ".join(conditions)
+	lot_fields, lot_join = "", ""
+	if frappe.get_meta("Stock Entry Detail").has_field("mrp_batch"):
+		lot_fields = ",\n\t\t\tmb.batch_no as batch_no,\n\t\t\tmb.mrp as lot_mrp"
+		# The lot the stock lands in: the same as it left for a move, and the one given to
+		# old stock when the "Assign Batch / MRP" entry moves it in place.
+		lot_join = "\n\t\tLEFT JOIN `tabMRP Batch` mb ON mb.name = IFNULL(NULLIF(sed.to_mrp_batch, ''), sed.mrp_batch)"
 	
 	query = f"""
 		SELECT
@@ -125,10 +145,10 @@ def get_data(filters):
 			sed.t_warehouse as to_warehouse,
 			sed.qty as transferred_qty,
 			sed.valuation_rate as mrp,
-			sed.amount as transfer_value
+			sed.amount as transfer_value{lot_fields}
 		FROM `tabStock Entry` se
 		INNER JOIN `tabStock Entry Detail` sed ON se.name = sed.parent
-		INNER JOIN `tabItem` item ON sed.item_code = item.name
+		INNER JOIN `tabItem` item ON sed.item_code = item.name{lot_join}
 		WHERE {where_clause}
 		AND sed.s_warehouse IS NOT NULL
 		AND sed.t_warehouse IS NOT NULL
@@ -146,6 +166,8 @@ def get_data(filters):
 			"item_name": row.item_name,
 			"from_warehouse": row.from_warehouse,
 			"to_warehouse": row.to_warehouse,
+			"batch_no": row.get("batch_no") or "",
+			"lot_mrp": flt(row.get("lot_mrp"), 2) if row.get("lot_mrp") else None,
 			"transferred_qty": flt(row.transferred_qty, 0),  # No decimal places
 			"mrp": flt(row.mrp, 2),
 			"transfer_value": flt(row.transfer_value, 2)

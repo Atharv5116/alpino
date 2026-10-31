@@ -24,14 +24,53 @@ def execute(filters=None):
 		"valuation_field_type": "Currency",
 		"include_zero_stock_items": 0,
 	})
+	# One row per Batch / MRP lot (the MRP Batch inventory dimension) instead of per item.
+	lot_wise = bool(frappe.utils.cint(filters.get("batch_mrp_wise")))
+	if lot_wise:
+		core_filters["show_dimension_wise_stock"] = 1
 
 	core_report = StockBalanceReport(core_filters)
 	core_columns, core_data = core_report.run()
 
 	columns = get_columns()
 	data = transform_data(core_data, report_date)
+	if lot_wise:
+		columns, data = lot_wise_view(columns, data, core_data)
 
 	return columns, data
+
+
+def lot_wise_view(columns, data, core_data):
+	"""Batch and Actual MRP beside each lot's row. Reservations are held per item and
+	warehouse, not per lot, so Reserved and Available are left out here rather than repeated
+	on every lot; the item-wise view shows them. The rate column is the valuation rate."""
+	from alpinos import mrp_batch as MB
+
+	lots = MB.lot_details([r.get("mrp_batch") for r in core_data if r.get("mrp_batch")])
+	keep = []
+	for row, core in zip(data, [r for r in core_data if r.get("bal_qty")]):
+		lot = lots.get(core.get("mrp_batch"))
+		row["batch_no"] = lot.batch_no if lot else ""
+		row["actual_mrp"] = flt(lot.mrp) if lot else None
+		row["expiry_date"] = lot.expiry_date if lot else None
+		keep.append(row)
+	extra = [
+		{"label": _("Batch"), "fieldname": "batch_no", "fieldtype": "Data", "width": 110, "skip_total_row": 1},
+		{"label": _("MRP"), "fieldname": "actual_mrp", "fieldtype": "Currency", "width": 90, "disable_total": 1},
+		{"label": _("Expiry"), "fieldname": "expiry_date", "fieldtype": "Date", "width": 95, "skip_total_row": 1},
+	]
+	out = []
+	for col in columns:
+		if col["fieldname"] in ("reserved_qty", "available_qty"):
+			continue
+		if col["fieldname"] == "total_stock":
+			col = dict(col, label=_("Total Stock"))
+		if col["fieldname"] == "mrp":
+			col = dict(col, label=_("Valuation Rate"), disable_total=1)
+		out.append(col)
+		if col["fieldname"] == "item_name":
+			out.extend(extra)
+	return out, keep
 
 
 def get_columns():
