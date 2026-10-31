@@ -24,6 +24,7 @@
   "expiry_date",
   "target_warehouse",
   "quarantine",
+  "quarantine_qty",
   "po_detail",
   "purchase_inward_item"
  ],
@@ -166,6 +167,15 @@
    "read_only": 0
   },
   {
+   "default": "0",
+   "depends_on": "eval:doc.quarantine",
+   "description": "How much of the approved quantity is held in quarantine; blank means all of it.",
+   "fieldname": "quarantine_qty",
+   "fieldtype": "Float",
+   "label": "Quarantine Qty",
+   "non_negative": 1
+  },
+  {
    "description": "Purchase Order Item row name, mirroring Purchase Receipt Item.purchase_order_item.",
    "fieldname": "po_detail",
    "fieldtype": "Data",
@@ -188,7 +198,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-10-28 22:01:42.052013",
+ "modified": "2026-10-31 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase QC Item",

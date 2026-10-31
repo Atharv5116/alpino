@@ -225,7 +225,7 @@ var GRNView = class {
 				<td class="grn-num c-received"></td>
 				<td class="c-qty"></td><td class="c-rej"></td>
 				<td class="c-wh"></td><td class="c-rwh"></td>
-				<td class="c-batch"></td><td class="c-rate"></td>
+				<td class="c-batch"></td><td class="c-mfg"></td><td class="c-exp"></td><td class="c-rate"></td>
 				<td class="c-mrp"></td><td class="c-usp"></td>
 				<td class="c-gst"></td><td class="c-hsn"></td>
 				<td class="c-reason"></td>
@@ -292,6 +292,10 @@ var GRNView = class {
 			// the one that moves the stock.
 			cell('.c-batch', { fieldtype: 'Data', read_only: 1 },
 				row.batch_no ? 'batch_no' : 'custom_internal_batch_no');
+			// The dates Store recorded on the inward line (or the Batch / MRP's own).
+			const dates = (me.ctx.line_dates || {})[row.name] || {};
+			$tr.find('.c-mfg').text(dates.mfg ? frappe.datetime.str_to_user(dates.mfg) : '');
+			$tr.find('.c-exp').text(dates.exp ? frappe.datetime.str_to_user(dates.exp) : '');
 			cell('.c-rate', { fieldtype: 'Currency' }, 'rate', null, !!cint(me.ctx.rate_editable));
 			// MRP is the Actual MRP printed on the goods; with the batch it names the Batch / MRP
 			// the stock goes into, so a GST change leaves it alone.
@@ -322,6 +326,36 @@ var GRNView = class {
 		ro('.field-total-received', 'total_received', 'Total Received', accepted + rejected);
 		ro('.field-total-accepted', 'total_accepted', 'Total Accepted', accepted);
 		ro('.field-total-rejected', 'total_rejected', 'Total Rejected', rejected);
+		this.render_sku_totals();
+	}
+
+	render_sku_totals() {
+		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
+		const num = (v) => format_number(flt(v), null, 3);
+		const skus = [];
+		const by = {};
+		this.items.forEach((row) => {
+			if (!by[row.item_code]) {
+				by[row.item_code] = { item_code: row.item_code, item_name: row.item_name, uom: row.uom, lines: 0, accepted: 0, rejected: 0 };
+				skus.push(by[row.item_code]);
+			}
+			const t = by[row.item_code];
+			t.lines += 1;
+			t.accepted += flt(row.qty);
+			t.rejected += flt(row.rejected_qty);
+		});
+		const body = skus.map((t) => `<tr>
+			<td>${esc(t.item_code)}<div class="text-muted" style="font-size:11px;">${esc(t.item_name)}</div></td>
+			<td>${esc(t.uom)}</td>
+			<td class="grn-num">${t.lines}</td>
+			<td class="grn-num">${num(t.accepted + t.rejected)}</td>
+			<td class="grn-num">${num(t.accepted)}</td>
+			<td class="grn-num">${num(t.rejected)}</td>
+		</tr>`).join('');
+		this.wrapper.find('.grn-sku-totals').html(`<table class="table table-bordered table-sm" style="max-width:820px;">
+			<thead><tr><th>${__('Item')}</th><th>${__('UOM')}</th><th class="grn-num">${__('Lines')}</th>
+			<th class="grn-num">${__('Received')}</th><th class="grn-num">${__('Accepted')}</th><th class="grn-num">${__('Rejected')}</th></tr></thead>
+			<tbody>${body}</tbody></table>`);
 	}
 
 	render_changelog() {

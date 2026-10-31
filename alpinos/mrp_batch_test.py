@@ -12,7 +12,7 @@ Records are prefixed PITEST-MRP and stay on the site; every run makes a fresh se
 """
 
 import frappe
-from frappe.utils import add_days, flt, now_datetime, today
+from frappe.utils import add_days, cint, flt, now_datetime, today
 
 from alpinos import mrp_batch as MB
 from alpinos.purchase import constants as C
@@ -103,8 +103,9 @@ def _receive_split(inw, wh, splits, line_qty=None):
 	return inw.reload()
 
 
-def _complete_qc(inw, decisions):
-	"""QC through to completion; `decisions` {batch_no: (approved, rejected)}."""
+def _complete_qc(inw, decisions, quarantine=None):
+	"""QC through to completion; `decisions` {batch_no: (approved, rejected)}, `quarantine`
+	{batch_no: qty held}."""
 	from alpinos.alpinos_development.doctype.purchase_qc import purchase_qc as qc_mod
 	from alpinos.purchase import notifications as notif
 
@@ -118,6 +119,10 @@ def _complete_qc(inw, decisions):
 		row.approved_qty, row.rejected_qty = approved, rejected
 		if rejected:
 			row.rejection_reason = "Torn pouches"
+		if (quarantine or {}).get(row.supplier_batch_no):
+			row.quarantine, row.quarantine_qty = 1, quarantine[row.supplier_batch_no]
+	if quarantine:
+		qc.quarantine_reminder_days, qc.quarantine_reason = 3, "Seal check pending"
 	qc.append("vehicle_inspection", {"vehicle_no": "GJ01AB1234", "vehicle_condition": C.CONDITION_GOOD})
 	qc.vehicle_inspection_done = 1
 	qc.append("material_inspection", {"item_code": item_code, "material_condition": C.CONDITION_GOOD})
@@ -408,6 +413,12 @@ def run():
 	except Exception as e:
 		R.append(("ERROR", "Purchase return", f"{type(e).__name__}: {e}"))
 
+	# --- QC holds part of a split in quarantine ------------------------------
+	try:
+		_partial_quarantine(wh)
+	except Exception as e:
+		R.append(("ERROR", "Partial quarantine", f"{type(e).__name__}: {e}"))
+
 	# --- sales: the Pick List takes the order's MRP, the Delivery Note ships it
 	try:
 		_pick_list_leg()
@@ -550,6 +561,69 @@ def _reports(inw, pr, item, wh):
 	got = line_lots([frappe._dict(name="q1", purchase_inward_item=first, batch_no=None)])
 	check("a quarantine line shows its inward line's batch and MRP", lambda: _assert(
 		got == {"q1": {"batch": "B101", "mrp": 199}}, got))
+
+
+def _partial_quarantine(wh):
+	"""MRP draft, sections 6 and 7: QC holds 10 of a 40 split; the GRN keeps the two parts."""
+	from alpinos.purchase import grn as G
+	from alpinos.purchase import grn_edit as GE
+	from alpinos.purchase import quarantine as Q
+
+	store = Q.warehouse_name(H.COMPANY)
+	if not store:
+		R.append(("ERROR", "Partial quarantine", "no Quarantine warehouse in Purchase Inward Settings"))
+		return
+	seq = H.SEQ + "Q"
+	item = _fg_item(f"PITEST-MRPQ-{seq}")
+	po = H.make_po(H.ensure_supplier(), [(item, 60, 80)], inward_type=C.INWARD_FG)
+	inw = H.make_inward(po, po.items, invoice_no=f"PITEST-MRPQ-{seq}")
+	inw.submit()
+	mfg_q1 = add_days(today(), -30)
+	inw = _receive_split(inw, wh, [(40, "Q101", 199, mfg_q1), (20, "Q102", 210, add_days(today(), -10))], line_qty=60)
+	expect_throw("QC cannot hold more than it approved", lambda: Q.apply_qc_selection(frappe._dict(
+		docstatus=0, items=[frappe._dict(idx=1, item_code=item, quarantine=1, approved_qty=40, quarantine_qty=45)])),
+		"more than")
+	whole = frappe._dict(docstatus=0, items=[frappe._dict(idx=1, item_code=item, quarantine=1, approved_qty=40, quarantine_qty=0)])
+	Q.apply_qc_selection(whole)
+	check("a tick with no quantity holds the whole approved quantity, as before", lambda: _assert(
+		flt(whole["items"][0].quarantine_qty) == 40 and Q.held_qty(whole["items"][0]) == 40, whole))
+	qc = _complete_qc(inw, {"Q101": (40, 0), "Q102": (18, 2)}, quarantine={"Q101": 10})
+	q101 = next(r for r in qc.items if r.supplier_batch_no == "Q101")
+	check("QC records how much of the split it holds", lambda: _assert(
+		cint(q101.quarantine) and flt(q101.quarantine_qty) == 10, (q101.quarantine, q101.quarantine_qty)))
+
+	pr = frappe.get_doc("Purchase Receipt", frappe.db.get_value(
+		"Purchase Receipt", {"custom_purchase_inward": inw.name, "docstatus": 0}, "name"))
+	parts = sorted((r.custom_internal_batch_no, flt(r.qty), flt(r.rejected_qty), r.warehouse, r.custom_quarantine_status or "")
+		for r in pr.items)
+	check("the GRN keeps the held part and the rest as two lines, the rejected quantity on the rest", lambda: _assert(
+		parts == sorted([("Q101", 10, 0, store, C.QUARANTINE_HELD), ("Q101", 30, 0, wh, ""), ("Q102", 18, 2, wh, "")]), parts))
+	q_lots = {r.mrp_batch for r in pr.items if r.custom_internal_batch_no == "Q101"}
+	check("both parts are the same Batch / MRP", lambda: _assert(len(q_lots) == 1 and None not in q_lots, q_lots))
+	qdoc = frappe.db.get_value("Purchase QC", qc.name, "quarantine_document")
+	check("the Quarantine document holds only the held part", lambda: _assert(
+		qdoc and [flt(r.qty) for r in frappe.get_doc("Purchase Quarantine", qdoc).items] == [10], qdoc))
+
+	res = G._sync_from_inward(frappe.get_doc("Purchase Receipt", pr.name))
+	check("re-syncing the draft GRN keeps the two parts apart and adds nothing", lambda: _assert(
+		(res or {}).get("added_rows", 0) == 0 and len(frappe.get_doc("Purchase Receipt", pr.name).items) == 3, res))
+
+	dates = GE.get_grn_context(pr.name)["line_dates"]
+	check("the GRN screen shows each line's Mfg and Expiry", lambda: _assert(
+		all(dates[r.name]["mfg"] and dates[r.name]["exp"] for r in pr.items)
+		and str(dates[pr.items[0].name]["mfg"]) in (str(mfg_q1), str(add_days(today(), -10))), dates))
+
+	pr = frappe.get_doc("Purchase Receipt", pr.name)
+	pr.submit()
+	lot = q_lots.pop()
+	check("after the GRN, 10 sit in Quarantine and 30 in the store, same lot", lambda: _assert(
+		(_lot_qty(item, store, lot), _lot_qty(item, wh, lot)) == (10, 30), (MB.balances(item, store), MB.balances(item, wh))))
+	Q.release_items(qdoc, rows=frappe.as_json([r.name for r in frappe.get_doc("Purchase Quarantine", qdoc).items]))
+	check("releasing moves just the held 10 into the store, under its lot", lambda: _assert(
+		(_lot_qty(item, store, lot), _lot_qty(item, wh, lot)) == (0, 40), (MB.balances(item, store), MB.balances(item, wh))))
+	check("only the held line is marked released", lambda: _assert(
+		sorted(r.custom_quarantine_status or "" for r in frappe.get_doc("Purchase Receipt", pr.name).items)
+		== sorted(["", "", C.QUARANTINE_RELEASED])))
 
 
 def _purchase_return(pr, item, wh):

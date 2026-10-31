@@ -65,8 +65,12 @@ def warehouse_name(company=None):
 
 
 def held_qty(line):
-	"""What a quarantined QC line holds: its whole approved quantity (samples move no stock)."""
-	return flt(line.get("approved_qty"))
+	"""What a quarantined QC line holds (samples move no stock): its Quarantine Qty, or the
+	whole approved quantity when that is blank. MRP draft, section 6: QC may hold part of a
+	split and approve the rest, and the two parts keep their own balances."""
+	approved = flt(line.get("approved_qty"))
+	part = flt(line.get("quarantine_qty"))
+	return min(part, approved) if part > 0 else approved
 
 
 def apply_qc_selection(qc):
@@ -78,6 +82,20 @@ def apply_qc_selection(qc):
 	if cint(qc.get("docstatus")) != 0:
 		return
 	lines = qc.get("items") or []
+	for line in lines:
+		if not cint(line.get("quarantine")):
+			line.quarantine_qty = 0
+			continue
+		approved = flt(line.get("approved_qty"))
+		if flt(line.get("quarantine_qty")) <= 0:
+			line.quarantine_qty = approved
+		elif flt(line.quarantine_qty) > approved + 1e-6:
+			frappe.throw(
+				_("Row {0} ({1}): the Quarantine Qty {2} is more than the {3} approved.").format(
+					line.idx, line.item_code, flt(line.quarantine_qty), approved
+				),
+				title=_("Quarantine"),
+			)
 	qc.quarantine_all_items = 0
 	qc.quarantine_items = 1 if any(cint(line.quarantine) for line in lines) else 0
 
@@ -248,7 +266,15 @@ def _release_from_qc(q, targets, remarks):
 			title=_("No GRN"),
 		)
 	pr = frappe.get_doc(GRN, receipt)
-	by_inward_item = {r.get("custom_purchase_inward_item"): r for r in pr.get("items") or []}
+	# A split QC held only part of has two GRN lines (grn._grn_rows); the held one carries
+	# the quarantine status, and only it is released.
+	by_inward_item = {}
+	for r in pr.get("items") or []:
+		key = r.get("custom_purchase_inward_item")
+		if key and (key not in by_inward_item or (
+			r.get("custom_quarantine_status") and not by_inward_item[key].get("custom_quarantine_status")
+		)):
+			by_inward_item[key] = r
 	pairs = []
 	for row in targets:
 		pr_row = by_inward_item.get(row.purchase_inward_item)

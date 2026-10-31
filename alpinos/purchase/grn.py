@@ -270,21 +270,34 @@ def _sync_from_inward(pr):
 	for fieldname, value, label in _header_values(inward, qc):
 		_assign(pr, fieldname, value, protected_parent, changed, label)
 
+	# A split QC held only part of has two lines (held and free, see _grn_rows): a line is
+	# matched by its inward row AND whether it is the held part, and no line twice.
+	by_part = {}
 	by_inward_item = {}
 	by_po_detail = {}
 	for row in pr.get("items") or []:
 		if row.get("custom_purchase_inward_item"):
-			by_inward_item[row.custom_purchase_inward_item] = row
+			by_part.setdefault((row.custom_purchase_inward_item, bool(row.get("custom_quarantine_status"))), row)
+			by_inward_item.setdefault(row.custom_purchase_inward_item, row)
 		if row.get("purchase_order_item"):
 			by_po_detail.setdefault(row.purchase_order_item, row)
 
 	added = 0
+	used = set()
 	sources = _grn_rows(inward, qc)
 	_stamp_inward_lots(sources)
 	for source in sources:
-		row = by_inward_item.get(source["purchase_inward_item"]) or by_po_detail.get(
-			source["po_detail"]
-		)
+		row = None
+		for candidate in (
+			by_part.get((source["purchase_inward_item"], bool(source["quarantine_status"]))),
+			by_inward_item.get(source["purchase_inward_item"]),
+			by_po_detail.get(source["po_detail"]),
+		):
+			if candidate is not None and id(candidate) not in used:
+				row = candidate
+				break
+		if row is not None:
+			used.add(id(row))
 		if not row:
 			# QC approved a line the draft has no row for (a re-decision, or a row deleted
 			# before this module owned the sync). Add it rather than silently under-receive.
@@ -564,6 +577,12 @@ def _grn_rows(inward, qc):
 		# QC quarantined the line: its approved quantity is received into the Quarantine
 		# warehouse and moves to `warehouse` only when the Quarantine document releases it.
 		hold = quarantine.qc_line_state(qc, decision) if decision else None
+		# MRP draft, section 6: QC may hold only part of a split. The held part and the rest
+		# become two GRN lines (one warehouse each), under the same Batch / MRP; the
+		# quarantine status marks the held one, and only it is ever released.
+		held = quarantine.held_qty(decision) if hold else 0.0
+		part = bool(hold) and 0 < held < approved
+		free_warehouse = quarantine.target_for_line(line, warehouse)
 		release_warehouse = warehouse if hold else None
 		if hold == C.QUARANTINE_HELD and approved > 0:
 			store = quarantine.warehouse_name(inward.company)
@@ -584,7 +603,7 @@ def _grn_rows(inward, qc):
 						"so the rejected quantity has nowhere to go."
 					).format(line.idx)
 				)
-			if rejected_warehouse == warehouse:
+			if rejected_warehouse == (free_warehouse if part else warehouse):
 				frappe.throw(
 					_("Row {0}: Accepted Warehouse and Rejected Warehouse cannot be the same.").format(
 						line.idx
@@ -632,7 +651,17 @@ def _grn_rows(inward, qc):
 				),
 			}
 		)
-		out[-1]["mrp_batch"] = _lot_for(inward, line, out[-1])
+		lot = _lot_for(inward, line, out[-1])
+		out[-1]["mrp_batch"] = lot
+		if part:
+			whole = out.pop()
+			out.append(dict(
+				whole, qty=held, rejected_qty=0.0, rejected_warehouse=None, rejection_reason=None,
+			))
+			out.append(dict(
+				whole, qty=approved - held, warehouse=free_warehouse,
+				quarantine_status=None, release_warehouse=None,
+			))
 	return out
 
 

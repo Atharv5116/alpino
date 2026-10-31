@@ -150,7 +150,7 @@
 		<p class="text-muted grn-note field-rate-note"></p>
 		<div class="alp-scroll alp-scroll--xwide"
 			data-empty="This receipt carries no item lines.">
-			<table class="table table-bordered items-table grn-table" style="min-width:1640px;">
+			<table class="table table-bordered items-table grn-table" style="min-width:1830px;">
 				<thead><tr>
 					<th style="width:28px;">#</th>
 					<th style="min-width:160px;">Item</th>
@@ -161,6 +161,8 @@
 					<th style="min-width:230px;">Accepted Warehouse</th>
 					<th style="min-width:230px;">Rejected Warehouse</th>
 					<th style="min-width:120px;">Batch</th>
+					<th style="width:95px;">Mfg Date</th>
+					<th style="width:95px;">Expiry</th>
 					<th style="width:110px;">Rate</th>
 					<th style="width:100px;">MRP</th>
 					<th style="min-width:90px;">USP</th>
@@ -179,6 +181,10 @@
 			<div class="eso-fld field-total-accepted"></div>
 			<div class="eso-fld field-total-rejected"></div>
 		</div>
+		<!-- MRP draft, section 7: a line split by batch / MRP is several GRN lines; this adds
+		     them up per SKU. -->
+		<div class="eso-subtitle">Total Qty SKU wise</div>
+		<div class="alp-scroll grn-sku-totals"></div>
 	</div>
 
 	<!-- ==================== BR-GRN-07 final submission ==================== -->

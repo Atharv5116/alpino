@@ -888,15 +888,32 @@ var PurchaseQCEntry = class {
 				{ fieldtype: 'Data', fieldname: 'rejection_reason', read_only: locked ? 1 : 0 },
 				row.rejection_reason,
 				function (val) { row.rejection_reason = val; });
+			// MRP draft, section 6: QC may hold only part of a split. Ticking holds the whole
+			// approved quantity; the Qty under the tick can lower it (quarantine.held_qty).
+			const held = cint(row.quarantine)
+				? (flt(row.quarantine_qty) > 0 ? Math.min(flt(row.quarantine_qty), flt(row.approved_qty)) : flt(row.approved_qty))
+				: 0;
 			if (!locked) {
 				me._mk_cell($tr, '.c-quar', 'decision', idx,
 					{ fieldtype: 'Check', fieldname: 'quarantine' }, row.quarantine,
-					function (val) { row.quarantine = cint(val); me.apply_quarantine_ui(); });
+					function (val) {
+						row.quarantine = cint(val);
+						row.quarantine_qty = row.quarantine ? flt(row.approved_qty) : 0;
+						me.render_decision();
+					});
+				if (cint(row.quarantine)) {
+					me._mk_cell($tr, '.c-quar', 'decision', idx,
+						{ fieldtype: 'Float', fieldname: 'quarantine_qty', placeholder: __('Qty') }, held,
+						function (val) { row.quarantine_qty = flt(val); });
+				}
 			} else if (cint(row.quarantine)) {
 				// Completed QC: where the held quantity stands on the Quarantine document.
 				const state = (me.quarantine_states || {})[row.name] || 'Quarantined';
+				const part = held < flt(row.approved_qty)
+					? `<div class="text-muted" style="font-size:11px;">${__('{0} of {1}', [format_number(held, null, 2), format_number(row.approved_qty, null, 2)])}</div>`
+					: '';
 				$tr.find('.c-quar').html(
-					`<span class="indicator-pill ${state === 'Released' ? 'green' : 'red'}" style="font-size:10px;">${frappe.utils.escape_html(__(state))}</span>`
+					`<span class="indicator-pill ${state === 'Released' ? 'green' : 'red'}" style="font-size:10px;">${frappe.utils.escape_html(__(state))}</span>${part}`
 				);
 			}
 		});
@@ -1255,6 +1272,7 @@ var PurchaseQCEntry = class {
 					row.rejected_qty = flt(edited.rejected_qty);
 					row.rejection_reason = edited.rejection_reason;
 					row.quarantine = cint(edited.quarantine);
+					row.quarantine_qty = cint(edited.quarantine) ? flt(edited.quarantine_qty) : 0;
 					row.internal_batch_no = (edited.internal_batch_no || '').trim() || null;
 				});
 				frappe.call({

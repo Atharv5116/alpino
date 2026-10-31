@@ -89,6 +89,34 @@ def _amendment_of(name):
 	return frappe.db.get_value(DOCTYPE, {"amended_from": name, "docstatus": ("<", 2)}, "name")
 
 
+def _line_dates(pr):
+	"""{GRN line: {mfg, exp}}: the dates Store recorded on the inward line, else those of the
+	line's Batch / MRP (MRP draft, section 7: the GRN shows them per line)."""
+	rows = pr.get("items") or []
+	inward = {
+		r.name: r
+		for r in frappe.get_all(
+			"Purchase Inward Item",
+			{"name": ("in", [r.get("custom_purchase_inward_item") for r in rows if r.get("custom_purchase_inward_item")] or [""])},
+			["name", "manufacturing_date", "expiry_date"],
+		)
+	}
+	lots = {}
+	if frappe.get_meta("Purchase Receipt Item").has_field("mrp_batch"):
+		from alpinos import mrp_batch as MB
+
+		lots = MB.lot_details([r.get("mrp_batch") for r in rows])
+	out = {}
+	for r in rows:
+		src = inward.get(r.get("custom_purchase_inward_item")) or frappe._dict()
+		lot = lots.get(r.get("mrp_batch")) or frappe._dict()
+		out[r.name] = {
+			"mfg": src.manufacturing_date or lot.manufacturing_date,
+			"exp": src.expiry_date or lot.expiry_date,
+		}
+	return out
+
+
 @frappe.whitelist()
 def get_grn_context(purchase_receipt):
 	"""What the GRN screen may offer, decided on the server."""
@@ -109,6 +137,7 @@ def get_grn_context(purchase_receipt):
 	live_note = note_docstatus is not None and note_docstatus != 2
 	rejected = any(flt(row.rejected_qty) > 0 for row in pr.get("items") or [])
 	return {
+		"line_dates": _line_dates(pr),
 		"docstatus": docstatus,
 		# PO-42: the role AND write permission on this GRN.
 		"can_edit": docstatus == 0
