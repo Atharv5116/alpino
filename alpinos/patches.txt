@@ -40,3 +40,4 @@ alpinos.patches.v1_0.link_production_model_machine_types
 alpinos.patches.v1_0.restate_so_in_words_and_payment_schedule
 alpinos.patches.v1_0.inward_purchase_rate_and_actual_mrp
 alpinos.patches.v1_0.item_mrp_opening
+alpinos.patches.v2_0.company_scope_backfill

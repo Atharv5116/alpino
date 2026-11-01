@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "run_process",
+  "company",
   "machine",
   "col_1",
   "planned_date",
@@ -29,6 +30,14 @@
    "label": "Process",
    "options": "Process Master",
    "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "search_index": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "machine",
@@ -107,7 +116,7 @@
  "is_submittable": 0,
  "istable": 0,
  "links": [],
- "modified": "2026-09-26 10:00:00.000000",
+ "modified": "2026-11-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Machine Run",

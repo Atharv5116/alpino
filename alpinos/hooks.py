@@ -91,6 +91,9 @@ app_include_js = [
 	# same cache-busting the content hash did.
 	_asset("js/production_desk.bundle.js"),
 	_asset("js/alpinos_desk_links.js"),
+	# Company-wise access: the company chip / switcher, the "switch to open" screen and the
+	# company of a new document (alpinos.company_scope).
+	_asset("js/company_switcher.js"),
 ]
 
 # include js, css files in header of web template
@@ -105,7 +108,8 @@ app_include_js = [
 # webform_include_css = {"doctype": "public/css/doctype.css"}
 
 # include js in page
-# page_js = {"screening": "public/js/screening.js"}
+# Role Permissions Manager gets a Company Access button and a "Company-wise role" switch.
+page_js = {"permission-manager": "public/js/permission_manager_company.js"}
 
 # include js in doctype views
 # HRMS doctypes (Job Applicant, Interview, Employee Onboarding) use Client Scripts instead.
@@ -219,6 +223,8 @@ after_migrate = [
 	"alpinos.core_customizations.keep_hand_made_trees",
 	"alpinos.purchase.naming.setup",
 	"alpinos.custom_fields.setup_custom_fields",
+	# Company-wise access: Role / Company / tag fields and the starting role classification.
+	"alpinos.company_scope.setup.setup",
 	"alpinos.default_present.setup_default_present_field",
 	"alpinos.employee_suspension.setup_suspension_date_field",
 	"alpinos.employee_onboarding_custom_fields.setup_employee_onboarding_custom_fields",
@@ -420,6 +426,8 @@ permission_query_conditions = {
 		"alpinos.channel_access.delivery_note_query_conditions",
 	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_query_conditions",
+	# Company-wise access: rows of the companies the user may see (alpinos.company_scope).
+	"*": "alpinos.company_scope.permissions.query_conditions",
 }
 
 has_permission = {
@@ -438,6 +446,8 @@ has_permission = {
 		"alpinos.channel_access.delivery_note_has_permission",
 	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_has_permission",
+	# Company-wise access: the user's roles in the document's company decide (deny-only).
+	"*": "alpinos.company_scope.permissions.has_permission",
 }
 
 # Raven permissions (override from Alpinos, without touching raven app)
@@ -464,6 +474,8 @@ override_whitelisted_methods = {
 	"erpnext.stock.get_item_details.get_item_tax_template": "alpinos.item_details.get_item_tax_template",
 	# HRMS 16 Employee form: offer only the assignments the user may read (see hrms_compat).
 	"hrms.overrides.employee_master.get_assignable_masters": "alpinos.hrms_compat.get_assignable_masters",
+	# Workflow buttons offer only transitions whose role the user holds in the document's company.
+	"frappe.model.workflow.get_transitions": "alpinos.company_scope.api.get_transitions",
 }
 
 override_doctype_class = {
@@ -947,6 +959,13 @@ doc_events = {
 	}
 }
 
+# Company-wise access (alpinos.company_scope): the write guard on every document, numbering
+# per company, company tags on masters and the syncs that keep roles and User Permissions in
+# step with Company Membership. Added to the entries above rather than replacing them.
+from alpinos.company_scope.wiring import add_doc_events as _add_company_scope_events
+
+_add_company_scope_events(doc_events)
+
 # Scheduled Tasks
 # ---------------
 
@@ -957,7 +976,9 @@ scheduler_events = {
 		"alpinos.workflow_engine.refresh_todays_dispatch",
 		"alpinos.so_notifications.run_daily_so_notifications",
 		# Quarantine documents remind the Store / QC teams on their own interval.
-		"alpinos.purchase.quarantine.send_quarantine_reminders"
+		"alpinos.purchase.quarantine.send_quarantine_reminders",
+		# Company-wise access: undo ERPNext's Company User Permission drift.
+		"alpinos.company_scope.sync.reconcile_all"
 	],
 	"cron": {
 		"*/5 * * * *": [
@@ -986,7 +1007,12 @@ extend_bootinfo = [
 	"alpinos.desk_shells.extend_bootinfo",
 	"alpinos.customize_expense_claim.extend_bootinfo",
 	"alpinos.item_display_config.extend_bootinfo",
+	# Company-wise access: the switcher's companies and the active one (not cached with boot).
+	"alpinos.company_scope.api.extend_bootinfo",
 ]
+
+# Company-wise access: the `company` default follows the active company after a login.
+on_session_creation = ["alpinos.company_scope.active.on_session_creation"]
 
 # Testing
 # -------
@@ -1023,9 +1049,11 @@ before_request = [
 	"alpinos.overrides.oauth_override.patch_oauth_server",
 	# Batch No. on the standard Stock Ledger report's ordinary rows (read-only wrapper).
 	"alpinos.stock_ledger_batch.patch",
+	# Company-wise access: reports refuse other companies and drop their rows.
+	"alpinos.company_scope.reports.patch",
 ]
 # A large Stock Ledger runs as a prepared report in a background worker.
-before_job = ["alpinos.stock_ledger_batch.patch"]
+before_job = ["alpinos.stock_ledger_batch.patch", "alpinos.company_scope.reports.patch"]
 # after_request = ["alpinos.utils.after_request"]
 
 # Job Events

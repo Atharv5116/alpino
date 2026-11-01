@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "creation": "2026-11-01 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "seed_key",
+  "document_type",
+  "role",
+  "permlevel",
+  "if_owner"
+ ],
+ "fields": [
+  {
+   "fieldname": "seed_key",
+   "fieldtype": "Data",
+   "label": "Seed Key",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Data",
+   "label": "Document Type",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Data",
+   "label": "Role",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "permlevel",
+   "fieldtype": "Int",
+   "label": "Level"
+  },
+  {
+   "fieldname": "if_owner",
+   "fieldtype": "Check",
+   "label": "Only If Creator"
+  }
+ ],
+ "autoname": "field:seed_key",
+ "read_only": 1,
+ "description": "A permission row alpinos seeded once. It is never seeded again, so a change made in Role Permissions Manager stays.",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-01 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Alpinos Permission Seed",
+ "owner": "Administrator",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

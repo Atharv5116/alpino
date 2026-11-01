@@ -6,7 +6,13 @@ from frappe.core.doctype.user.user import User
 
 
 class CustomUser(User):
-	pass
+	def on_update(self):
+		super().on_update()
+		# Company-wise access: a company-wise role ticked or unticked here goes to / leaves
+		# the user's memberships (alpinos.company_scope.sync).
+		from alpinos.company_scope import sync
+
+		sync.on_user_update(self)
 
 
 @frappe.whitelist(methods=["POST"])

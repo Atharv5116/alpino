@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "item_code",
+  "company",
   "item_name",
   "qty",
   "expected_inward_date"
@@ -22,6 +23,14 @@
    "reqd": 1,
    "search_index": 1,
    "columns": 3
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "search_index": 1,
+   "in_standard_filter": 1
   },
   {
    "fetch_from": "item_code.item_name",
@@ -51,7 +60,7 @@
   }
  ],
  "links": [],
- "modified": "2026-05-26 00:00:00.000000",
+ "modified": "2026-11-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Inward Planning",

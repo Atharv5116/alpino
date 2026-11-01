@@ -10,6 +10,7 @@
   "machine_run",
   "member_sub_orders",
   "parent_production_order",
+  "company",
   "col_1",
   "process_master",
   "machine",
@@ -65,6 +66,16 @@
    "label": "Parent Production Order",
    "options": "Production Order",
    "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "search_index": 1,
+   "in_standard_filter": 1,
+   "fetch_from": "parent_production_order.company",
    "read_only": 1
   },
   {
@@ -236,7 +247,7 @@
  "is_submittable": 0,
  "istable": 0,
  "links": [],
- "modified": "2026-10-04 12:00:00.000000",
+ "modified": "2026-11-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Production Run",

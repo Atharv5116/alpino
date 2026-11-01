@@ -7,6 +7,7 @@
  "field_order": [
   "details_section",
   "sales_order",
+  "company",
   "delivery_note",
   "customer",
   "customer_po_no",
@@ -69,6 +70,16 @@
    "options": "Sales Order",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "search_index": 1,
+   "in_standard_filter": 1,
+   "fetch_from": "sales_order.company",
+   "read_only": 1
   },
   {
    "fieldname": "delivery_note",
@@ -314,7 +325,7 @@
    "label": "Dispatch Summary"
   },
   {
-   "description": "(Total Dispatched Qty across all DNs ÷ Total PO Qty) × 100",
+   "description": "(Total Dispatched Qty across all DNs \u00f7 Total PO Qty) \u00d7 100",
    "fieldname": "fill_rate",
    "fieldtype": "Percent",
    "label": "Fill Rate (%)",
@@ -350,7 +361,7 @@
    "read_only": 1
   },
   {
-   "description": "(Total GRN Qty ÷ Total Dispatched Qty) × 100",
+   "description": "(Total GRN Qty \u00f7 Total Dispatched Qty) \u00d7 100",
    "fieldname": "overall_grn_fill_rate",
    "fieldtype": "Percent",
    "label": "Overall GRN Fill Rate (%)",
@@ -359,7 +370,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-22 13:00:00.000000",
+ "modified": "2026-11-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Post Dispatch",

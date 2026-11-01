@@ -18,6 +18,7 @@
   "filling_inward",
   "sub_order",
   "parent_po",
+  "company",
   "section_tests",
   "tests",
   "section_qty",
@@ -126,6 +127,16 @@
    "fieldtype": "Link",
    "label": "Parent PO",
    "options": "Production Order",
+   "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "search_index": 1,
+   "in_standard_filter": 1,
+   "fetch_from": "parent_po.company",
    "read_only": 1
   },
   {
@@ -315,7 +326,7 @@
  "is_submittable": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-10-04 10:00:00.000000",
+ "modified": "2026-11-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Final QC",
