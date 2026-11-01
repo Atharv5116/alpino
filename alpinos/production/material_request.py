@@ -26,6 +26,7 @@ from alpinos.company_scope.helpers import (
 	has_company_role,
 	restrict_company,
 	scope_companies,
+	tagged_names,
 	users_with_roles,
 )
 from alpinos.query_compat import agg
@@ -411,6 +412,17 @@ def before_validate(doc, method=None):
 		frappe.throw(_("The Required Date cannot be in the past."), title=_("Invalid Required Date"))
 
 	doc.set("custom_mr_status", compute_status(doc))
+	_clear_foreign_price_list(doc)
+
+
+def _clear_foreign_price_list(doc):
+	"""A production MR is an internal transfer and needs no buying price list. frappe.new_doc
+	fills in the site's default one, which is tagged to the default company, and the company
+	guard then refuses the MR in any other company -- so it is dropped when not usable there."""
+	price_list = doc.get("buying_price_list")
+	if price_list and doc.company and scope_companies() is not None \
+			and not tagged_names("Price List", [price_list], doc.company):
+		doc.buying_price_list = None
 
 
 def before_update_after_submit(doc, method=None):

@@ -42,6 +42,21 @@ SALES_ORDER_PF_REWRITES = [
 		"{% set obm_doc = frappe.get_doc('Buyer Master', doc.custom_offline_buyer_master) if doc.get('custom_offline_buyer_master') else None %}",
 		"{% set obm_doc = site_buyer_master(doc.get('custom_site_name'), doc.get('custom_offline_buyer_master')) %}",
 	),
+	# Company-wise access: GSTIN, bank details and jurisdiction come from the order's company
+	# (Company > Print Details), filled for the default company with exactly these values.
+	(
+		"{% set company_gst = '24AASCA1881A1ZV' %}",
+		"{% set co_print = frappe.db.get_value('Company', doc.company, ['custom_print_gstin', 'custom_bank_name', 'custom_bank_branch', 'custom_bank_account_name', 'custom_bank_account_no', 'custom_bank_ifsc', 'custom_jurisdiction'], as_dict=True) or {} %}{% set company_gst = co_print.custom_print_gstin or '' %}",
+	),
+	("<td>Axis Bank Ltd.</td>", "<td>{{ co_print.custom_bank_name or '' }}</td>"),
+	("Branch</td><td>Surat</td>", "Branch</td><td>{{ co_print.custom_bank_branch or '' }}</td>"),
+	("Account Name</td><td>Alpino Health Foods Pvt. Ltd.</td>", "Account Name</td><td>{{ co_print.custom_bank_account_name or '' }}</td>"),
+	("<td>919020040914629</td>", "<td>{{ co_print.custom_bank_account_no or '' }}</td>"),
+	("<td>UTIB0000047</td>", "<td>{{ co_print.custom_bank_ifsc or '' }}</td>"),
+	(
+		"<tr><td class='center'>Subject to Surat Jurisdiction only.</td></tr>",
+		"{% if co_print.custom_jurisdiction %}<tr><td class='center'>Subject to {{ co_print.custom_jurisdiction }} Jurisdiction only.</td></tr>{% endif %}",
+	),
 	(
 		"{{ frappe.utils.fmt_money(doc.grand_total or 0, currency=doc.currency) }}",
 		"{{ frappe.utils.fmt_money(doc.rounded_total or doc.grand_total or 0, currency=doc.currency) }}",

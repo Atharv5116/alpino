@@ -24,15 +24,26 @@ _TERMINAL = ("Completed", "Forced Completed", "Cancelled")
 # ---------------------------------------------------------------------------
 # Low-level send
 # ---------------------------------------------------------------------------
-def _role_users(roles):
-	"""Deduped enabled users holding any of the given role(s)."""
+def _role_users(roles, company=None):
+	"""Deduped enabled users holding any of the given role(s); with `company`, only those
+	holding it there (company-wise roles: a role held in another company does not count)."""
 	from alpinos.raven_notifications import _role_users as ru
+	roles = list(roles) if isinstance(roles, (list, tuple, set)) else [roles]
 	out = []
-	for r in (roles if isinstance(roles, (list, tuple, set)) else [roles]):
+	for r in roles:
 		for u in ru(r) or []:
 			if u not in out:
 				out.append(u)
+	if company:
+		from alpinos.company_scope.helpers import users_with_roles
+
+		holders = set(users_with_roles(roles, company))
+		out = [u for u in out if u in holders]
 	return out
+
+
+def _company(doctype, name):
+	return frappe.db.get_value(doctype, name, "company") if name else None
 
 
 def _send(recipients, subject, doctype=None, docname=None, doc=None, priority="medium"):
@@ -86,25 +97,25 @@ def _so_creator(so_name):
 # Event-driven notifications
 # ===========================================================================
 def n01_so_submitted(doc):
-	_send(_role_users(WAREHOUSE),
+	_send(_role_users(WAREHOUSE, doc.get("company")),
 		_("New Sales Order {0} submitted for {1}. Please review and approve.").format(doc.name, doc.get("customer_name") or doc.customer),
 		doc=doc, priority="high")
 
 
 def n03_pl_created(so, pl_name):
-	_send(_role_users(SALES),
+	_send(_role_users(SALES, _company("Sales Order", so)),
 		_("Sales Order {0} approved. Pick List {1} has been created.").format(so, pl_name),
 		doctype="Sales Order", docname=so, priority="medium")
 
 
 def n04_future_dispatch(so):
-	_send(_role_users(SALES),
+	_send(_role_users(SALES, _company("Sales Order", so)),
 		_("Sales Order {0} moved to Future Dispatch. Stock not currently available.").format(so),
 		doctype="Sales Order", docname=so, priority="high")
 
 
 def n05_pl_from_future_dispatch(so, pl_name):
-	_send(_role_users(SALES),
+	_send(_role_users(SALES, _company("Sales Order", so)),
 		_("Stock available! Pick List {1} created for Future Dispatch Order {0}.").format(so, pl_name),
 		doctype="Sales Order", docname=so, priority="medium")
 
@@ -119,19 +130,20 @@ def n06_pl_assigned(doc):
 
 
 def n07_sticker_pending(doc):
-	_send(_role_users(WAREHOUSE),
+	_send(_role_users(WAREHOUSE, doc.get("company")),
 		_("Pick List {0} is fully picked and awaiting sticker. Please print and apply.").format(doc.name),
 		doc=doc, priority="medium")
 
 
 def n08_submission_pending(doc):
-	_send(_role_users(WAREHOUSE),
+	_send(_role_users(WAREHOUSE, doc.get("company")),
 		_("Sticker applied on Pick List {0}. Ready for your submission.").format(doc.name),
 		doc=doc, priority="low")
 
 
 def n09_pl_submitted(doc, so):
-	_send(_role_users(SALES) + _role_users(DN_USERS),
+	company = doc.get("company")
+	_send(_role_users(SALES, company) + _role_users(DN_USERS, company),
 		_("Pick List {0} submitted. Please create the Delivery Note for {1}.").format(doc.name, doc.get("custom_customer_name") or ""),
 		doctype="Sales Order", docname=so or "", priority="high")
 
@@ -139,7 +151,8 @@ def n09_pl_submitted(doc, so):
 def n11_dn_dispatched(doc, so):
 	lr = doc.get("custom_lr_gr_no") or ""
 	transporter = doc.get("custom_transporter_name") or ""
-	_send(_role_users(SALES) + _role_users(ECOM_COORD),
+	company = doc.get("company")
+	_send(_role_users(SALES, company) + _role_users(ECOM_COORD, company),
 		_("Order {0} dispatched via {1}. LR/AWB: {2}.").format(so or doc.name, transporter, lr),
 		doctype="Sales Order", docname=so or "", priority="medium")
 	# N10: warn the creator if the dispatch date had already passed.
@@ -151,14 +164,14 @@ def n11_dn_dispatched(doc, so):
 
 
 def n12_completed(so):
-	_send(_role_users(WAREHOUSE),
+	_send(_role_users(WAREHOUSE, _company("Sales Order", so)),
 		_("Sales Order {0} marked as Completed.").format(so),
 		doctype="Sales Order", docname=so, priority="low")
 
 
 def n13_partial_initiated(so, future_date=None):
 	extra = _(" Remaining qty scheduled for Future Dispatch on {0}.").format(future_date) if future_date else ""
-	_send(_role_users(SALES),
+	_send(_role_users(SALES, _company("Sales Order", so)),
 		_("Partial dispatch initiated for {0}.").format(so) + extra,
 		doctype="Sales Order", docname=so, priority="high")
 
@@ -175,37 +188,42 @@ def _dispatch_detail(doc):
 
 
 def n15_partial_dn_submitted(so, doc=None):
-	_send(_role_users(SALES) + _role_users(ECOM_COORD),
+	company = _company("Sales Order", so)
+	_send(_role_users(SALES, company) + _role_users(ECOM_COORD, company),
 		_("Partial dispatch completed for {0}.").format(so) + _dispatch_detail(doc),
 		doctype="Sales Order", docname=so, priority="medium")
 
 
 def n16_auto_completed(so, doc=None):
-	_send(_role_users(SALES) + _role_users(WAREHOUSE) + _role_users(ECOM_COORD),
+	company = _company("Sales Order", so)
+	_send(_role_users(SALES, company) + _role_users(WAREHOUSE, company) + _role_users(ECOM_COORD, company),
 		_("Sales Order {0} fully fulfilled across all partial terms. Status auto-updated to Completed.").format(so) + _dispatch_detail(doc),
 		doctype="Sales Order", docname=so, priority="medium")
 
 
 def n17_forced_close(so, reason):
-	_send(_role_users(SALES),
+	_send(_role_users(SALES, _company("Sales Order", so)),
 		_("Force Close initiated for {0}. Reason: {1}. Remaining qty abandoned.").format(so, reason or ""),
 		doctype="Sales Order", docname=so, priority="high")
 
 
 def n18_forced_dn_submitted(so, doc=None):
-	_send(_role_users(SALES) + _role_users(ECOM_COORD),
+	company = _company("Sales Order", so)
+	_send(_role_users(SALES, company) + _role_users(ECOM_COORD, company),
 		_("Forced dispatch completed for {0}. Order is now closed.").format(so) + _dispatch_detail(doc),
 		doctype="Sales Order", docname=so, priority="high")
 
 
 def n19_asn_rejected(pd):
-	_send(_role_users(ECOM_COORD) + _role_users(ECOM_MGR),
+	company = pd.get("company")
+	_send(_role_users(ECOM_COORD, company) + _role_users(ECOM_MGR, company),
 		_("ASN for {0} (DN {1}) has been rejected. Please review and re-upload.").format(pd.sales_order, pd.delivery_note),
 		doctype="Post Dispatch", docname=pd.name, priority="high")
 
 
 def n20_grn_rejected(pd, rejected_qty):
-	_send(_role_users(SALES) + _role_users(ECOM_MGR),
+	company = pd.get("company")
+	_send(_role_users(SALES, company) + _role_users(ECOM_MGR, company),
 		_("GRN rejection received for {0} (DN {1}). Rejected Qty: {2}. Action required.").format(pd.sales_order, pd.delivery_note, rejected_qty),
 		doctype="Post Dispatch", docname=pd.name, priority="high")
 
@@ -225,12 +243,15 @@ def _n02_sla_pending_approval():
 	rows = frappe.get_all(
 		"Sales Order",
 		filters={"custom_workflow_status": "Warehouse Approval Pending", "docstatus": 1, "creation": ["<", cutoff]},
-		fields=["name", "customer_name"],
+		fields=["name", "customer_name", "company"],
 	)
 	if not rows:
 		return
-	recipients = _role_users(["Warehouse Manager"]) + _role_users(ECOM_MGR)
+	by_company = {}
 	for r in rows:
+		if r.company not in by_company:
+			by_company[r.company] = _role_users(["Warehouse Manager"], r.company) + _role_users(ECOM_MGR, r.company)
+		recipients = by_company[r.company]
 		_send(recipients,
 			_("Reminder: Sales Order {0} has been pending warehouse approval for over {1} hours.").format(r.name, SLA_APPROVAL_HOURS),
 			doctype="Sales Order", docname=r.name, priority="medium")
@@ -245,12 +266,15 @@ def _n14_future_dispatch_due():
 			"custom_force_closed": 0,
 			"custom_dispatch_date": ["<=", limit],
 		},
-		fields=["name", "custom_dispatch_date"],
+		fields=["name", "custom_dispatch_date", "company"],
 	)
 	if not rows:
 		return
-	recipients = _role_users(WAREHOUSE)
+	by_company = {}
 	for r in rows:
+		if r.company not in by_company:
+			by_company[r.company] = _role_users(WAREHOUSE, r.company)
+		recipients = by_company[r.company]
 		_send(recipients,
 			_("Reminder: remaining qty of {0} is scheduled for dispatch on {1}. Please create the Pick List.").format(r.name, r.custom_dispatch_date),
 			doctype="Sales Order", docname=r.name, priority="high")
@@ -263,12 +287,15 @@ def _n21_grn_pending():
 	rows = frappe.get_all(
 		"Post Dispatch",
 		filters={"grn_available": 1, "grn_status": "Pending", "dispatch_date": ["<=", cutoff]},
-		fields=["name", "sales_order", "dispatch_date"],
+		fields=["name", "sales_order", "dispatch_date", "company"],
 	)
 	if not rows:
 		return
-	recipients = _role_users(ECOM_COORD) + _role_users(ECOM_MGR)
+	by_company = {}
 	for r in rows:
+		if r.company not in by_company:
+			by_company[r.company] = _role_users(ECOM_COORD, r.company) + _role_users(ECOM_MGR, r.company)
+		recipients = by_company[r.company]
 		_send(recipients,
 			_("Reminder: GRN for {0} has been pending since {1}. Please follow up.").format(r.sales_order, r.dispatch_date),
 			doctype="Post Dispatch", docname=r.name, priority="medium")
@@ -284,16 +311,19 @@ def _n22_23_po_expiry():
 			# NULL expiry dates never satisfy "<=", so this also excludes blank ones.
 			"custom_po_expiry_date": ["<=", limit],
 		},
-		fields=["name", "customer_name", "custom_po_expiry_date", "custom_workflow_status"],
+		fields=["name", "customer_name", "custom_po_expiry_date", "custom_workflow_status", "company"],
 	)
 	if not rows:
 		return
-	recipients = _role_users(SALES)
 	td = getdate(today())
+	by_company = {}
 	for r in rows:
 		# Legacy zero-dates ('0000-00-00') match the SQL filter but read as None.
 		if not r.custom_po_expiry_date:
 			continue
+		if r.company not in by_company:
+			by_company[r.company] = _role_users(SALES, r.company)
+		recipients = by_company[r.company]
 		expired = getdate(r.custom_po_expiry_date) < td
 		if expired:
 			msg = _("Expired PO: Sales Order {0} PO expired on {1}. Still in {2}. Immediate action required.").format(

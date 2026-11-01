@@ -220,12 +220,22 @@ def _run_invoice_sync(mapping):
 	folder_cache = {}
 
 	from alpinos.alpinos_development.doctype.invoice_sync_log.invoice_sync_log import log_invoice_sync
+	from alpinos.company_scope.helpers import scope_companies
+
+	# The job runs as the uploader: only orders of the companies they work in are stamped.
+	companies = scope_companies("Sales Order", narrow=False)
 
 	updated, fetched, missing, skipped = 0, 0, [], []
 	for so_id, invoice_no in mapping.items():
-		if not frappe.db.exists("Sales Order", so_id):
+		so_company = frappe.db.get_value("Sales Order", so_id, "company")
+		if not so_company:
 			skipped.append(f"{so_id} (not found)")
 			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order not found")
+			frappe.db.commit()
+			continue
+		if companies is not None and so_company not in companies:
+			skipped.append(f"{so_id} (another company)")
+			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order belongs to a company you do not work in")
 			frappe.db.commit()
 			continue
 		# Each SO update is its own short transaction, so the row lock isn't held during

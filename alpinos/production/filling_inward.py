@@ -209,7 +209,7 @@ def on_submit_inward(doc):
 	row = _plan_row(plan, doc.plan_row)
 	sub = F.sub_info(doc.sub_order)
 	settings = F.S()
-	baked = settings.baked_wip_warehouse()
+	baked = settings.baked_wip_warehouse(sub.company)
 	pcs, wastage, filled = cint(doc.input_pcs), flt(doc.wastage_kg), flt(doc.filled_kg)
 	is_final = doc.submission_type == F.SUB_FINAL
 	common = dict(company=sub.company, posting_date=doc.posting_date, sub=sub.name,
@@ -217,14 +217,14 @@ def on_submit_inward(doc):
 
 	fg_batch, seq, stock_entry, writeoff = None, 0, None, None
 	if pcs > 0:
-		fg_hold = settings.fg_hold_warehouse()
+		fg_hold = settings.fg_hold_warehouse(sub.company)
 		fg_batch, seq = _make_fg_batch(doc, sub)
 		# default pending BA confirmation: the wastage is consumed in the same Repack (normal
 		# loss absorbed into the FG cost) rather than written off separately.
 		rows = F.draw_rows(sub.production_item, filled + wastage, [baked], prefer_sub=sub.name)
 		per = F.pm_per_pack(doc.target_sku) or {}
 		for item, q in per.items():
-			rows += F.draw_rows(item, q * pcs, F.pm_warehouses())
+			rows += F.draw_rows(item, q * pcs, F.pm_warehouses(sub.company))
 		rows.append({"item_code": doc.target_sku, "qty": pcs, "t_warehouse": fg_hold,
 		             "batch_no": fg_batch, "is_finished_item": 1})
 		stock_entry = F.make_stock_entry("Repack", rows, remarks=_("Filling Inward {0}").format(doc.name),
@@ -290,14 +290,14 @@ def on_submit_inward(doc):
 		from alpinos.production.filling_yield import check_parent_completion
 		check_parent_completion(sub.get(F.PARENT_FIELD))
 
-	_notify_after_submit(doc, plan, fg_batch, is_final)
+	_notify_after_submit(doc, plan, fg_batch, is_final, sub.company)
 	F.audit(F.INWARD, doc.name, "Filling Inward",
 	        _("{0} pcs of {1} ({2} KG), wastage {3} KG, loss {4} KG ({5}%), batch {6}").format(
 		        pcs, doc.target_sku, filled, wastage, doc.process_loss_kg, doc.process_loss_pct,
 		        fg_batch or "-"))
 
 
-def _notify_after_submit(doc, plan, fg_batch, is_final):
+def _notify_after_submit(doc, plan, fg_batch, is_final, company=None):
 	if is_final:
 		# Spam rule: QC is told once, on the Final Inward, about every FG-Hold batch of the run.
 		batches = frappe.get_all(F.INWARD, filters={"filling_plan": plan.name, "plan_row": doc.plan_row,
@@ -307,7 +307,7 @@ def _notify_after_submit(doc, plan, fg_batch, is_final):
 			batches.append(fg_batch)
 		if batches:
 			F.notify(F.QC_ROLES[:2], _("New Batch {0} ready for QC").format(", ".join(batches)),
-			         "Batch", batches[-1])
+			         "Batch", batches[-1], company=company)
 	if cint(doc.needs_approval):
 		F.notify((F.C.ROLE_PRODUCTION_MANAGER, F.ROLE_PLANT_HEAD),
 		         _("Abnormal filling wastage on {0}: {1} KG for {2} pcs of {3}. Approval required.").format(

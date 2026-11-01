@@ -743,6 +743,15 @@ def _batch_no(item_code, batch_id, line=None, inward=None):
 def _apply_header(pr, inward, qc):
 	pr.company = inward.company
 	pr.supplier = inward.supplier
+	# The order's price list, as ERPNext's own order -> receipt mapping carries it. A receipt
+	# built from scratch took the site default instead, which another company may not use.
+	price_list = (
+		frappe.db.get_value("Purchase Order", inward.purchase_order, "buying_price_list")
+		if inward.get("purchase_order")
+		else None
+	)
+	if price_list:
+		pr.buying_price_list = price_list
 	# Posting date can never be in the future (purchase_receipt.py:267), so the GRN is
 	# stamped now rather than carrying the inward's arrival timestamp forward.
 	pr.posting_date = nowdate()

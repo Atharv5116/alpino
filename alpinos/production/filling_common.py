@@ -334,13 +334,13 @@ def pm_per_pack(sku):
 	return out
 
 
-def pm_warehouses():
+def pm_warehouses(company=None):
 	"""default pending BA confirmation: PM is taken from the WIP (shop floor) first, then
-	from the Main store."""
+	from the Main store -- of `company` (the document's; else the user's current one)."""
 	out = []
 	for fn in ("wip_warehouse", "main_warehouse"):
 		try:
-			wh = getattr(S(), fn)()
+			wh = getattr(S(), fn)(company)
 		except Exception:
 			wh = None
 		if wh and wh not in out:
@@ -348,11 +348,11 @@ def pm_warehouses():
 	return out
 
 
-def pm_stock(item):
-	return sum(bin_qty(item, wh) for wh in pm_warehouses())
+def pm_stock(item, company=None):
+	return sum(bin_qty(item, wh) for wh in pm_warehouses(company))
 
 
-def available_pm_packs(sku):
+def available_pm_packs(sku, company=None):
 	"""Packs the current PM stock can make, or None when the SKU has no BOM / no PM rows."""
 	per = pm_per_pack(sku)
 	if not per:
@@ -361,16 +361,23 @@ def available_pm_packs(sku):
 	for item, q in per.items():
 		if q <= 0:
 			continue
-		can = int(pm_stock(item) // q)
+		can = int(pm_stock(item, company) // q)
 		packs = can if packs is None else min(packs, can)
 	return packs
 
 
 # -------------------------------------------------------------------- notify / audit
 
-def notify(roles, subject, doctype=None, name=None, email=False):
+def notify(roles, subject, doctype=None, name=None, email=False, company=None):
+	"""`company`: the role holders of that company only (for a document that has none of its
+	own, such as a Batch)."""
 	try:
 		from alpinos.production.notify import notify as _notify
+		if company:
+			from alpinos.company_scope.helpers import users_with_roles
+
+			users = [u for u in users_with_roles(list(roles), company) if u not in ("Administrator", "Guest")]
+			return _notify([], subject, doctype=doctype, name=name, email=email, users=users)
 		return _notify(list(roles), subject, doctype=doctype, name=name, email=email)
 	except ImportError:
 		from alpinos.production.material_common import notify as _mc_notify

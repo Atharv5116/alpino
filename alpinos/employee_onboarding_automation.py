@@ -583,11 +583,14 @@ def send_pre_onboarding_email(doc, applicant_email):
 			company_name = frappe.db.get_value("Company", company, "company_name") or company
 
 		# Fetch HR Manager details (name, phone, email, designation)
-		hr_name = "Khushi Doshi"
 		# The company's own HR mailbox (Company > Print Details > HR Email); the default
-		# company's is hr@alpinohealthfoods.com.
-		hr_email = (company and frappe.db.get_value("Company", company, "custom_hr_email")) or "hr@alpinohealthfoods.com"
-		hr_phone = "+91 6359474000"
+		# company's is hr@alpinohealthfoods.com. Alpino's HR contact is only the default
+		# company's fallback.
+		mailbox = company and frappe.db.get_value("Company", company, "custom_hr_email")
+		hr_email = mailbox or "hr@alpinohealthfoods.com"
+		own_company = not company or company == frappe.db.get_single_value("Global Defaults", "default_company")
+		hr_name = "Khushi Doshi" if own_company else "HR Team"
+		hr_phone = "+91 6359474000" if own_company else ""
 		hr_designation = "HR Manager"
 		try:
 			# Prioritize the HR mailbox user's details if active
@@ -606,7 +609,10 @@ def send_pre_onboarding_email(doc, applicant_email):
 				# Otherwise an active HR Manager of the onboarding's company
 				from alpinos.company_scope.helpers import users_with_roles
 
-				hr_users = [frappe._dict(parent=u) for u in users_with_roles(["HR Manager"], company or None)]
+				hr_users = [
+					frappe._dict(parent=u) for u in users_with_roles(["HR Manager"], company or None)
+					if u not in ("Administrator", "Guest")
+				]
 				for hr_user in hr_users:
 					ud = frappe.db.get_value(
 						"User",
@@ -616,7 +622,8 @@ def send_pre_onboarding_email(doc, applicant_email):
 					)
 					if ud and ud.enabled:
 						hr_name = ud.full_name or hr_user.parent or hr_name
-						hr_email = ud.email or hr_email
+						# A company's own mailbox stays the contact address.
+						hr_email = (not mailbox and ud.email) or hr_email
 						hr_phone = ud.phone or hr_phone
 						employee_designation = frappe.db.get_value("Employee", {"user_id": hr_user.parent}, "designation", order_by="name asc")
 						hr_designation = employee_designation or hr_designation

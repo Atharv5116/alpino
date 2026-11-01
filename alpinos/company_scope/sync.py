@@ -40,6 +40,8 @@ def sync_user(user):
 	access.clear_cache(user)
 	if not frappe.db.exists(MEMBERSHIP, {"user": user}):
 		return
+	_sync_approver_memberships(user)
+	access.clear_cache(user)
 	_sync_roles(user)
 	sync_user_permissions(user)
 	access.clear_cache(user)
@@ -119,6 +121,43 @@ def sync_user_permissions(user):
 # --- memberships ---------------------------------------------------------------------------
 
 
+#: Employee fields naming a user who approves for that employee.
+APPROVER_FIELDS = ("leave_approver", "expense_approver", "shift_request_approver")
+
+
+def approver_companies(user):
+	"""Companies of the active employees this user manages (reports_to) or approves for.
+
+	A manager's approver roles are global, but Company User Permissions would still keep them
+	out of a team member's company they are not a member of (7 Hospitality employees report to
+	Health Foods managers); a membership with no roles lets them in.
+	"""
+	companies = set()
+	own = frappe.db.get_value("Employee", {"user_id": user, "status": ["!=", "Left"]}, "name")
+	if own:
+		companies |= set(frappe.get_all("Employee", {"reports_to": own, "status": "Active"}, pluck="company", distinct=True))
+	meta = frappe.get_meta("Employee")
+	for field in APPROVER_FIELDS:
+		if meta.has_field(field):
+			companies |= set(frappe.get_all("Employee", {field: user, "status": "Active"}, pluck="company", distinct=True))
+	return {c for c in companies if c}
+
+
+def _sync_approver_memberships(user):
+	"""Approver memberships (no roles) follow approver_companies(); other memberships stay."""
+	wanted = approver_companies(user)
+	rows = frappe.get_all(MEMBERSHIP, {"user": user}, ["name", "company", "source"])
+	have = {r.company for r in rows}
+	for company in sorted(wanted - have):
+		ensure_membership(user, company, source="Approver", is_default=False)
+	for r in rows:
+		if r.source == "Approver" and r.company not in wanted and not frappe.get_all(
+			"Company Membership Role", {"parent": r.name}, limit=1
+		):
+			frappe.delete_doc(MEMBERSHIP, r.name, ignore_permissions=True, force=True,
+				flags={"alpinos_skip_user_sync": True})
+
+
 def home_company(user):
 	"""The company a role ticked on the User form belongs to."""
 	company = frappe.db.get_value("Employee", {"user_id": user, "status": ["!=", "Left"]}, "company")
@@ -179,24 +218,42 @@ def on_user_update(user_doc):
 
 
 def on_employee_update(doc, method=None):
-	"""Employee.on_update: a user is always a member of their own Employee's company.
+	"""Employee.on_update: a user is always a member of their own Employee's company, and their
+	manager and approvers are members (no roles) of it too.
 
-	The automatic membership has no roles; it lets global roles (Employee self-service, a
+	The automatic memberships have no roles; they let global roles (Employee self-service, a
 	manager's approvals) reach that company. When the Employee moves company, an automatic
 	membership left empty in the old company is removed.
 	"""
-	if not enabled() or not doc.user_id or doc.status == "Left":
+	if not enabled():
 		return
-	if not frappe.db.exists("User", doc.user_id):
+	before = doc.get_doc_before_save()
+	_sync_approvers_of(doc, before)
+	if not doc.user_id or doc.status == "Left" or not frappe.db.exists("User", doc.user_id):
 		return
 	ensure_membership(doc.user_id, doc.company, source="Employee", is_default=None)
-	before = doc.get_doc_before_save()
 	old = before.company if before else None
 	if old and old != doc.company:
 		name = frappe.db.get_value(MEMBERSHIP, {"user": doc.user_id, "company": old, "source": "Employee"})
 		if name and not frappe.get_all("Company Membership Role", {"parent": name}, limit=1):
 			frappe.delete_doc(MEMBERSHIP, name, ignore_permissions=True, flags={"alpinos_skip_user_sync": True})
 	sync_user(doc.user_id)
+
+
+def _sync_approvers_of(doc, before):
+	"""The employee's manager and approvers (before and after the save) may have gained or lost
+	a company to approve in."""
+	approvers = set()
+	for d in (doc, before):
+		if not d:
+			continue
+		if d.get("reports_to"):
+			approvers.add(frappe.db.get_value("Employee", d.get("reports_to"), "user_id"))
+		for field in APPROVER_FIELDS:
+			approvers.add(d.get(field))
+	for approver in approvers - {None, "", doc.get("user_id")}:
+		if frappe.db.exists(MEMBERSHIP, {"user": approver}):
+			sync_user(approver)
 
 
 def on_user_delete(doc, method=None):

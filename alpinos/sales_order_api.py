@@ -41,6 +41,29 @@ def _resolve_company(preferred=None):
 	return frappe.db.get_value("Company", {"name": ("!=", "")}, "name", order_by="creation asc")
 
 
+def _price_list_for_company(company, customer=None, current=None):
+	"""A selling Price List the order may carry in its company (Price List is tagged).
+
+	The global default (Selling Settings) is kept while it is usable there; otherwise the
+	customer's default, else the first enabled selling list tagged for the company or untagged.
+	"""
+
+	def usable(pl):
+		return bool(pl) and bool(frappe.db.get_value("Price List", pl, "enabled")) and bool(
+			tagged_names("Price List", [pl], company)
+		)
+
+	if not company or usable(current):
+		return current
+	default = frappe.db.get_value("Customer", customer, "default_price_list") if customer else None
+	if usable(default):
+		return default
+	for pl in frappe.get_all("Price List", {"enabled": 1, "selling": 1}, pluck="name", order_by="name"):
+		if usable(pl):
+			return pl
+	return current
+
+
 def _resolve_default_warehouse(company):
 	"""Pick a default stock warehouse for the selected company."""
 	if not company:
@@ -1530,6 +1553,7 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 	so.customer = customer
 	so.order_type = order_type
 	so.company = _resolve_company(company)
+	so.selling_price_list = _price_list_for_company(so.company, customer, so.get("selling_price_list"))
 	default_warehouse = _resolve_default_warehouse(so.company)
 	so.delivery_date = delivery_date
 	if po_no:

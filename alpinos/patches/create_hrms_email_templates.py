@@ -283,7 +283,7 @@ def _onboarding_document_reminder_body():
 <li>Offer Letter/Appointment Letter of the previous employer</li>
 </ul>
 <p>Kindly ensure that all details are accurate and documents are clearly readable. This will help us complete the onboarding process smoothly before your date of joining: <strong>{{ (doc or {}).get('joining_date') or (doc or {}).get('date_of_joining_onboarding') or '-' }}</strong>.</p>
-<p>If you face any issues while accessing the portal or uploading documents, kindly contact us at <strong>{{ (doc or {}).get('hr_email') or (doc or {}).get('hr_email_address') or '' }}</strong>{% if (doc or {}).get('hr_email') or (doc or {}).get('hr_email_address') %} or {% endif %}<strong>{{ (doc or {}).get('hr_phone') or (doc or {}).get('hr_phone_number') or '' }}</strong>.</p>
+<p>If you face any issues while accessing the portal or uploading documents, kindly contact us at <strong>{{ (doc or {}).get('hr_email') or (doc or {}).get('hr_email_address') or '' }}</strong>{% if ((doc or {}).get('hr_email') or (doc or {}).get('hr_email_address')) and ((doc or {}).get('hr_phone') or (doc or {}).get('hr_phone_number')) %} or {% endif %}<strong>{{ (doc or {}).get('hr_phone') or (doc or {}).get('hr_phone_number') or '' }}</strong>.</p>
 <p>We look forward to welcoming you to <strong>{{ (doc or {}).get('company_name') or (doc or {}).get('company') or 'Alpino Health Foods' }}</strong>.</p>
 <p>Warm regards,<br/>
 <strong>{{ (doc or {}).get('hr_name') or 'HR Team' }}</strong><br/>
@@ -302,7 +302,13 @@ def _with_alpino_layout(content_html):
 {{% set _co = (doc or {{}}).get('company') or _default_co %}}
 <div style="text-align:center;background:#15803d;padding:16px 12px;border-radius:8px 8px 0 0;">
 {{% set logo_url = (doc or {{}}).get('company_logo') or ('{alpino_logo_url}' if _co == _default_co else frappe.db.get_value('Company', _co, 'company_logo')) %}}
+{{% if _co == _default_co %}}
 <img src="{{{{ logo_url }}}}" alt="Alpino" style="max-height:72px;max-width:260px;height:auto;" />
+{{% elif logo_url %}}
+<img src="{{{{ logo_url }}}}" alt="{{{{ _co }}}}" style="max-height:72px;max-width:260px;height:auto;" />
+{{% else %}}
+<span style="color:#ffffff;font-size:20px;font-weight:600;">{{{{ _co }}}}</span>
+{{% endif %}}
 </div>
 <div style="padding:18px 16px;background:#ffffff;border:1px solid #e5e7eb;border-top:0;">
 {content_html}

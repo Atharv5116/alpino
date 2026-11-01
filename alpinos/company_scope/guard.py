@@ -104,6 +104,7 @@ def _check(doc, ptype):
 		)
 	authorized.add(company)
 	if ptype in ("create", "write") and doc.doctype not in _NO_LINK_CHECK:
+		_swap_default_price_lists(doc, company)
 		_check_tagged_links(doc, company)
 	if ptype in ("create", "write") and not doc.flags.ignore_permissions:
 		_check_workflow(doc, before, company)
@@ -193,6 +194,34 @@ def _tagged_links(doc):
 		for row in doc.get(df.fieldname) or []:
 			collect(row, child_meta)
 	return out
+
+
+_PRICE_LIST_FIELDS = {"buying_price_list": "buying", "selling_price_list": "selling"}
+
+
+def _swap_default_price_lists(doc, company):
+	"""The site's default price list (Buying / Selling Settings) is filled in by ERPNext on its
+	own, e.g. Material Request.set_buying_price_list. When it is not usable in the document's
+	company, use that company's own list of the same kind instead (blank when there is none
+	and the field is optional). A price list someone picked is never changed: the link check
+	below refuses it as before."""
+	defaults = frappe.defaults.get_defaults()
+	for field, kind in _PRICE_LIST_FIELDS.items():
+		value = doc.get(field)
+		if not value or value != defaults.get(field) or not doc.meta.get_field(field):
+			continue
+		scope = _tag_scope("Price List", [value]).get(value) or ""
+		if not scope or f"|{company}|" in scope:
+			continue
+		filters = {kind: 1, "enabled": 1}
+		if doc.get("currency"):
+			filters["currency"] = doc.get("currency")
+		candidates = frappe.get_all("Price List", filters=filters, fields=["name", registry.SCOPE_FIELD], order_by="name asc")
+		tagged = [c.name for c in candidates if f"|{company}|" in (c.get(registry.SCOPE_FIELD) or "")]
+		untagged = [c.name for c in candidates if not c.get(registry.SCOPE_FIELD)]
+		replacement = (tagged or untagged or [None])[0]
+		if replacement or not doc.meta.get_field(field).reqd:
+			doc.set(field, replacement)
 
 
 def _check_tagged_links(doc, company):

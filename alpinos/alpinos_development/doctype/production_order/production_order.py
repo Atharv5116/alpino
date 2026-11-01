@@ -574,13 +574,11 @@ class ProductionOrder(Document):
 			frappe.format_value(batches, {"fieldtype": "Float"}) if batches else _("batches not set"),
 		)
 
-		users = set()
-		for role in _C.STORE_ROLES:
-			if frappe.db.exists("Role", role):
-				users.update(frappe.get_all(
-					"Has Role", filters={"role": role, "parenttype": "User"}, pluck="parent"))
-		users = {u for u in users if u and u not in ("Administrator", "Guest")
-		         and frappe.db.get_value("User", u, "enabled")}
+		from alpinos.company_scope.helpers import users_with_roles
+
+		# The store team of this order's company only.
+		users = {u for u in users_with_roles(list(_C.STORE_ROLES), self.company)
+		         if u and u not in ("Administrator", "Guest")}
 
 		for user in users:
 			try:

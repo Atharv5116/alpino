@@ -168,13 +168,32 @@ def active_processes():
 	                      order_by="process_sequence asc, name asc")
 
 
+def process_peers(process):
+	"""The active processes that run in the same company as `process`: untagged ones and
+	those tagged for one of its companies. Sequences are only compared among these, so a
+	second company's processes do not sit "before" or "after" the first company's."""
+	from alpinos.company_scope import registry
+
+	field = registry.SCOPE_FIELD
+	if not frappe.get_meta(PROCESS_MASTER).has_field(field):
+		return active_processes()
+	mine = {c for c in (frappe.db.get_value(PROCESS_MASTER, process, field) or "").split("|") if c}
+	if not mine:
+		return active_processes()
+	rows = frappe.get_all(PROCESS_MASTER, filters={"is_active": 1},
+	                      fields=["name", "process_code", "process_name", "process_sequence",
+	                              "qc_required", "allow_inward_entry", field],
+	                      order_by="process_sequence asc, name asc")
+	return [p for p in rows if not p.get(field) or mine & set(p.get(field).split("|"))]
+
+
 def previous_process(process):
 	"""The active process immediately before this one in sequence, or None."""
 	row = process_row(process)
 	if not row:
 		return None
 	seq = cint(row.process_sequence)
-	earlier = [p for p in active_processes() if cint(p.process_sequence) < seq]
+	earlier = [p for p in process_peers(process) if cint(p.process_sequence) < seq]
 	return earlier[-1] if earlier else None
 
 
@@ -191,7 +210,7 @@ def is_output_stage(process):
 	if not row or is_filling_process(process):
 		return False
 	seq = cint(row.process_sequence)
-	later = [p for p in active_processes() if cint(p.process_sequence) > seq]
+	later = [p for p in process_peers(process) if cint(p.process_sequence) > seq]
 	return not later or is_filling_process(later[0].name)
 
 
@@ -385,24 +404,25 @@ def current_shift():
 	return _cs()
 
 
-def wip_warehouse():
+def wip_warehouse(company=None):
+	"""`company`: the document's (else the company the user works in)."""
 	from alpinos.production.production_settings import wip_warehouse as _w
 
-	return _w()
+	return _w(company)
 
 
-def baked_wip_warehouse():
+def baked_wip_warehouse(company=None):
 	from alpinos.production import production_settings as PS
 
 	fn = getattr(PS, "baked_wip_warehouse", None)
-	return fn() if fn else PS.wip_warehouse()
+	return fn(company) if fn else PS.wip_warehouse(company)
 
 
-def rejected_warehouse():
+def rejected_warehouse(company=None):
 	from alpinos.production import production_settings as PS
 
 	fn = getattr(PS, "rejected_warehouse", None)
 	if fn:
-		return fn()
+		return fn(company)
 	frappe.throw(_("Set the Rejected Warehouse in Production Settings."),
 	             title=_("Rejected Warehouse Not Set"))

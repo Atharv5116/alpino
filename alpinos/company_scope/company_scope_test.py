@@ -645,3 +645,91 @@ def run_seed():
 		frappe.clear_cache(doctype="Purchase Inward")
 		frappe.clear_cache(doctype="Purchase QC")
 	return _report()
+
+
+def run_extra():
+	"""Managers of another company's staff, and the site's default price list in another company."""
+	from frappe.utils import nowdate
+
+	from alpinos.company_scope import access
+	from alpinos.company_scope.testing import as_user, cleanup_user, companies, make_user
+
+	R.clear()
+	frappe.set_user("Administrator")
+	A, B, C = companies()
+	HH = "Hire Hunt" if frappe.db.exists("Company", "Hire Hunt") else C
+	MGR, BOTH = "cs.extra.mgr@example.com", "cs.extra.both@example.com"
+	made = []
+	try:
+		# 1. A manager in A whose report is in HH becomes a member of HH (no roles).
+		make_user(MGR, {A: []}, global_roles=["Employee"])
+		gender = frappe.db.get_value("Gender", {}, "name")
+
+		def employee(name, company, user=None, reports_to=None):
+			doc = frappe.get_doc({"doctype": "Employee", "first_name": name, "gender": gender,
+				"date_of_birth": "1990-01-01", "date_of_joining": "2024-01-01", "company": company,
+				"user_id": user, "status": "Active", "reports_to": reports_to, "create_user_permission": 0})
+			doc.flags.ignore_mandatory = True
+			doc.flags.ignore_links = True
+			doc.insert(ignore_permissions=True, set_name=f"CS-EXTRA-{name}")
+			made.append(doc.name)
+			return doc
+
+		mgr_emp = employee("MGR", A, user=MGR)
+		report = employee("REPORT", HH, reports_to=mgr_emp.name)
+		access.clear_cache(MGR)
+		check("manager becomes a member of the report's company", lambda: _assert(
+			HH in access.member_companies(MGR), access.member_companies(MGR)))
+		check("...with no roles there", lambda: _assert(not access.company_roles(MGR, HH)))
+		check("...and a Company User Permission for it", lambda: _assert(
+			HH in frappe.get_all("User Permission", {"user": MGR, "allow": "Company"}, pluck="for_value")))
+		check("...membership marked Approver", lambda: _assert(
+			frappe.db.get_value("Company Membership", {"user": MGR, "company": HH}, "source") == "Approver"))
+		doc = frappe.get_doc("Employee", report.name)
+		doc.reports_to = None
+		doc.flags.ignore_mandatory = True
+		doc.save(ignore_permissions=True)
+		access.clear_cache(MGR)
+		check("no longer managing anyone there: the membership goes", lambda: _assert(
+			HH not in access.member_companies(MGR), access.member_companies(MGR)))
+
+		# 2. A user in A and B raises a Material Request in B; ERPNext fills the site's default
+		#    buying price list (tagged to A), which must not block it.
+		default_pl = frappe.defaults.get_defaults().get("buying_price_list")
+		roles = [r for r in ("Stock User", "Stock Manager", "Purchase User") if frappe.db.exists("Role", r)]
+		make_user(BOTH, {A: roles, B: roles})
+		item = frappe.db.get_value("Item", {"is_stock_item": 1, "disabled": 0, "custom_company_scope": ["in", ["", None]]}, "name") \
+			or frappe.db.get_value("Item", {"is_stock_item": 1, "disabled": 0}, "name")
+		untag = False
+		if frappe.db.get_value("Item", item, "custom_company_scope"):
+			untag = frappe.db.get_value("Item", item, "custom_company_scope")
+			frappe.db.set_value("Item", item, "custom_company_scope", "", update_modified=False)
+		warehouse = frappe.db.get_value("Warehouse", {"company": B, "is_group": 0, "name": ["like", "Stores%"]}, "name")
+
+		def raise_mr():
+			mr = frappe.get_doc({"doctype": "Material Request", "material_request_type": "Purchase", "company": B,
+				"transaction_date": nowdate(), "schedule_date": nowdate(),
+				"items": [{"item_code": item, "qty": 1, "schedule_date": nowdate(), "warehouse": warehouse,
+					"uom": frappe.db.get_value("Item", item, "stock_uom")}]})
+			mr.insert()
+			return mr.name, mr.buying_price_list
+
+		try:
+			name, pl = as_user(BOTH, raise_mr)
+			made.append(("Material Request", name))
+			check("Material Request in B by a user of A and B is saved", lambda: _assert(name))
+			check("...without the default company's price list", lambda: _assert(pl != default_pl or not default_pl, pl))
+		finally:
+			if untag:
+				frappe.db.set_value("Item", item, "custom_company_scope", untag, update_modified=False)
+	finally:
+		for m in made:
+			if isinstance(m, tuple):
+				frappe.db.delete("Material Request Item", {"parent": m[1]})
+				frappe.db.delete(m[0], {"name": m[1]})
+			else:
+				frappe.db.delete("Employee", {"name": m})
+		for u in (MGR, BOTH):
+			cleanup_user(u)
+		frappe.db.commit()
+	return _report()

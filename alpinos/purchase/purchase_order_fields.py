@@ -719,6 +719,7 @@ def refresh_supplier_party_fields(doc, method=None):
 	is exactly what the check accepts; the supplier's unlinked Primary Address still shows
 	in the display field.
 	"""
+	_buying_price_list_for_company(doc)
 	if doc.is_new() or not doc.get("supplier"):
 		return
 	previous = frappe.db.get_value("Purchase Order", doc.name, "supplier")
@@ -747,6 +748,33 @@ def refresh_supplier_party_fields(doc, method=None):
 	doc.contact_mobile = info.get("contact_mobile")
 	doc.contact_email = None
 	doc.supplier_name = info.get("supplier_name") or doc.supplier
+
+
+def _buying_price_list_for_company(doc):
+	"""Company-wise access: a price list not tagged for the order's company is refused on save.
+
+	The entry page sends no price list, so an order took the site's default buying price list,
+	which is tagged to the default company, and no order could be saved in another company.
+	Only that case is changed: the supplier's own price list when it may be used in the
+	company (what the desk form takes from the supplier), else the first buying price list
+	that may.
+	"""
+	from alpinos.company_scope.helpers import scope_companies, tagged_names
+
+	company = doc.get("company")
+	current = doc.get("buying_price_list")
+	if not company or scope_companies() is None:
+		return
+	if current and tagged_names("Price List", [current], company):
+		return
+	candidates = frappe.get_all("Price List", {"buying": 1, "enabled": 1}, pluck="name", order_by="name asc")
+	default = frappe.db.get_value("Supplier", doc.supplier, "default_price_list") if doc.get("supplier") else None
+	if default in candidates:
+		candidates.insert(0, default)
+	usable = set(tagged_names("Price List", candidates, company))
+	pick = next((c for c in candidates if c in usable), None)
+	if pick:
+		doc.buying_price_list = pick
 
 
 def normalize_inward_type(doc, method=None):

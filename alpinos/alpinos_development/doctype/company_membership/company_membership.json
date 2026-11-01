@@ -87,9 +87,10 @@
    "fieldname": "source",
    "fieldtype": "Select",
    "label": "Source",
-   "options": "Manual\nEmployee\nSeed\nUser Form",
+   "options": "Manual\nEmployee\nApprover\nSeed\nUser Form",
    "default": "Manual",
-   "read_only": 1
+   "read_only": 1,
+   "description": "Employee: the user's own Employee is in this company. Approver: they manage or approve for someone in this company. Both have no roles of their own."
   }
  ],
  "autoname": "format:{user}::{company}",
@@ -111,7 +112,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-01 10:00:00.000000",
+ "modified": "2026-11-01 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Company Membership",

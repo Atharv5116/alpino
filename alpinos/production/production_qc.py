@@ -104,8 +104,8 @@ def _split_by_output(total, allocations):
 
 def _move_rejected(doc, inward, alloc, qty):
 	sub = X.sub_info(alloc.sub_order)
-	baked = X.baked_wip_warehouse()
-	rejected = X.rejected_warehouse()
+	baked = X.baked_wip_warehouse(sub.company)
+	rejected = X.rejected_warehouse(sub.company)
 	item = sub.production_item
 	stock_uom = frappe.db.get_value("Item", item, "stock_uom")
 	if alloc.batch_no:

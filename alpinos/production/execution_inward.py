@@ -58,8 +58,8 @@ def _run(name):
 	return frappe.get_doc(RUN, name)
 
 
-def _baking_process():
-	for p in X.active_processes():
+def _baking_process(run_process=None):
+	for p in (X.process_peers(run_process) if run_process else X.active_processes()):
 		if (p.process_code or "").upper() == "PRC-BAK" or "bak" in (p.process_name or "").lower():
 			return p.name
 	return None
@@ -67,7 +67,7 @@ def _baking_process():
 
 def oven_options(run_process=None):
 	"""Active machines whose type is linked to the Baking process (else the run's process)."""
-	process = _baking_process() or run_process
+	process = _baking_process(run_process) or run_process
 	if not process:
 		return []
 	types = frappe.get_all("Process Machine Type", filters={"parent": process, "parenttype": "Process Master"},
@@ -424,8 +424,8 @@ def _build_entry(inward, sub, purpose, consumption, fg_row):
 def post_output(inward, alloc):
 	"""Post one Sub PO's share of the output. Returns (stock entry, batch)."""
 	sub = X.sub_info(alloc.sub_order)
-	wip = X.wip_warehouse()
-	baked = X.baked_wip_warehouse()
+	wip = X.wip_warehouse(sub.company)
+	baked = X.baked_wip_warehouse(sub.company)
 	consumption = _consumption_rows(sub.name, wip)
 	if not consumption:
 		frappe.throw(_("{0} has no issued material left in {1} to consume. Check its Material "

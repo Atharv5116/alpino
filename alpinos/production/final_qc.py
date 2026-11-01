@@ -49,9 +49,9 @@ def _batch_company(batch_no):
 	return frappe.db.get_value(F.WORK_ORDER, sub, "company") if sub else None
 
 
-def hold_qty(batch_no, item=None):
+def hold_qty(batch_no, item=None, company=None):
 	try:
-		wh = F.S().fg_hold_warehouse()
+		wh = F.S().fg_hold_warehouse(company or _batch_company(batch_no))
 	except Exception:
 		return 0
 	return cint(round(F.batch_qty(batch_no, wh, item)))
@@ -191,18 +191,18 @@ def before_submit_qc(doc):
 
 def on_submit_qc(doc):
 	settings = F.S()
-	hold = settings.fg_hold_warehouse()
 	approved, rejected, sample = cint(doc.approved_pcs), cint(doc.rejected_pcs), cint(doc.sample_size)
 	company = frappe.db.get_value(F.WORK_ORDER, doc.sub_order, "company") if doc.sub_order else None
+	hold = settings.fg_hold_warehouse(company)
 	common = dict(company=company, posting_date=nowdate(), sub=doc.sub_order, parent=doc.parent_po,
 	              fg_item=doc.target_sku)
 	rows = []
 	if approved:
 		rows.append({"item_code": doc.target_sku, "qty": approved, "s_warehouse": hold,
-		             "t_warehouse": settings.fg_warehouse(), "batch_no": doc.fg_batch})
+		             "t_warehouse": settings.fg_warehouse(company), "batch_no": doc.fg_batch})
 	if rejected:
 		rows.append({"item_code": doc.target_sku, "qty": rejected, "s_warehouse": hold,
-		             "t_warehouse": settings.rejected_warehouse(), "batch_no": doc.fg_batch})
+		             "t_warehouse": settings.rejected_warehouse(company), "batch_no": doc.fg_batch})
 	transfer = F.make_stock_entry("Material Transfer", rows, remarks=_("Final QC {0}").format(doc.name),
 	                              **common) if rows else None
 	sample_entry = None
@@ -229,7 +229,7 @@ def on_submit_qc(doc):
 		F.notify((F.ROLE_QC_MANAGER, F.C.ROLE_PRODUCTION_MANAGER, F.ROLE_PLANT_HEAD, "Store Manager"),
 		         _("{0} Batch {1} cleared by {2} at {3}").format(doc.sku_name or doc.target_sku,
 		                                                         doc.fg_batch, user, at),
-		         "Batch", doc.fg_batch)
+		         "Batch", doc.fg_batch, company=company)
 	if rejected:
 		F.notify((F.ROLE_PLANT_HEAD, F.C.ROLE_PRODUCTION_MANAGER),
 		         _("Material Review Required: {0} pcs of batch {1} ({2}) rejected in Final QC {3} - {4}").format(

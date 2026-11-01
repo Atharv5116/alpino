@@ -202,12 +202,12 @@ def validate_plan(doc):
 			row.row_status = F.ROW_OPEN
 		row.equivalent_kg = flt(row.planned_pcs * flt(row.size_kg), 3)
 		row.pending_pcs = row_pending(row)
-		packs = F.available_pm_packs(row.target_sku)
+		packs = F.available_pm_packs(row.target_sku, sub.company)
 		row.available_pm_stock = packs if packs is not None else 0
 
 	if not counters_only:
 		_check_capacity(doc, rows)
-		_check_pm(rows)
+		_check_pm(rows, sub.company)
 
 	doc.total_planned_pcs = sum(cint(r.planned_pcs) for r in rows)
 	doc.total_planned_kg = flt(sum(flt(r.equivalent_kg) for r in rows), 3)
@@ -228,7 +228,7 @@ def _check_capacity(doc, rows):
 				need, avail, doc.sub_order), title=_("Exceeds Available WIP"))
 
 
-def _check_pm(rows):
+def _check_pm(rows, company=None):
 	"""FRD 6.2 Edge Case 3 (PM blind spot): Planned Qty may not exceed Available PM Stock."""
 	need = {}
 	no_bom = []
@@ -243,7 +243,7 @@ def _check_pm(rows):
 			need[item] = need.get(item, 0) + q * cint(row.pending_pcs)
 	short = []
 	for item, qty in need.items():
-		have = F.pm_stock(item)
+		have = F.pm_stock(item, company)
 		if qty > have + F.EPS:
 			short.append(_("{0}: needs {1}, stock {2}").format(item, flt(qty, 3), flt(have, 3)))
 	if short:
