@@ -242,6 +242,41 @@ def apply_settings_warehouses(company, warehouses):
 	return changed
 
 
+COMPANY_ROWS = "Purchase Inward Company Warehouses"
+
+
+def apply_company_row_warehouses(company, warehouses):
+	"""Write provisioned warehouses into `company`'s Warehouses by Company row.
+
+	Same rules as apply_settings_warehouses: only empty or dangling fields are filled, an
+	admin's own choice is kept, and the Single itself is never saved.
+	"""
+	if not frappe.db.table_exists(COMPANY_ROWS) or not _is_single():
+		return {}
+	filters = {"parent": SETTINGS_DOCTYPE, "parenttype": SETTINGS_DOCTYPE, "company": company}
+	name = frappe.db.get_value(COMPANY_ROWS, filters, "name")
+	if not name:
+		idx = (frappe.db.sql(
+			f"select coalesce(max(idx), 0) from `tab{COMPANY_ROWS}` where parent = %s", SETTINGS_DOCTYPE
+		)[0][0]) + 1
+		row = frappe.get_doc({"doctype": COMPANY_ROWS, "parent": SETTINGS_DOCTYPE, "parenttype": SETTINGS_DOCTYPE,
+			"parentfield": "company_warehouses", "company": company, "idx": idx})
+		row.db_insert()
+		name = row.name
+	stored = frappe.db.get_value(COMPANY_ROWS, name, list(WAREHOUSE_FIELDS), as_dict=True) or {}
+	changed = {}
+	for field, label in WAREHOUSE_FIELDS.items():
+		wanted = warehouses.get(label)
+		current = stored.get(field)
+		if not wanted or current == wanted or (current and frappe.db.exists("Warehouse", current)):
+			continue
+		changed[field] = wanted
+	if changed:
+		frappe.db.set_value(COMPANY_ROWS, name, changed, update_modified=False)
+		_log("{0}: {1} -> {2}".format(company, COMPANY_ROWS, changed))
+	return changed
+
+
 # --- Stock Settings tolerance ----------------------------------------------
 
 
@@ -453,10 +488,14 @@ def setup_purchase_warehouses():
 		target = _settings_target_company(companies)
 		for company in companies:
 			if target and company != target:
-				_log(
-					"{0}: warehouses created but not stored -- {1} is a Single and holds "
-					"{2}".format(company, SETTINGS_DOCTYPE, target)
-				)
+				# The Single's own fields hold the target company's warehouses; every other
+				# company keeps its own in a Warehouses by Company row.
+				try:
+					summary["settings"][company] = apply_company_row_warehouses(
+						company, summary["warehouses"].get(company) or {}
+					)
+				except Exception:
+					frappe.log_error(frappe.get_traceback(), "purchase warehouses: company row")
 				continue
 			try:
 				summary["settings"][company] = apply_settings_warehouses(

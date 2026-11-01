@@ -979,7 +979,7 @@ _GRN_HTML_RAW = r"""
   <table class="avoid hdr">
     <colgroup><col style="width:22%"><col style="width:31%"><col style="width:23%"><col style="width:24%"></colgroup>
     <tr>
-      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="c" style="vertical-align:middle;">{%- set co_logo = "__ALPINO_LOGO__" if doc.company == frappe.db.get_single_value("Global Defaults", "default_company") else frappe.db.get_value("Company", doc.company, "company_logo") -%}{% if co_logo %}<img src="{{ co_logo }}" style="width:100%; max-height:52px;">{% endif %}</td>
       <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
       <td><div class="sub">GRN #</div>{{ txt(doc.name) }}</td>
       <td><div class="sub">POSTING DATE</div>{{ dte(doc.posting_date) }}</td>
@@ -1190,7 +1190,7 @@ _INVOICE_HTML_RAW = r"""
   <table class="avoid hdr">
     <colgroup><col style="width:22%"><col style="width:31%"><col style="width:23%"><col style="width:24%"></colgroup>
     <tr>
-      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="c" style="vertical-align:middle;">{%- set co_logo = "__ALPINO_LOGO__" if doc.company == frappe.db.get_single_value("Global Defaults", "default_company") else frappe.db.get_value("Company", doc.company, "company_logo") -%}{% if co_logo %}<img src="{{ co_logo }}" style="width:100%; max-height:52px;">{% endif %}</td>
       <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
       <td><div class="sub">PURCHASE INVOICE #</div>{{ txt(doc.name) }}</td>
       <td><div class="sub">POSTING DATE</div>{{ dte(doc.posting_date) }}</td>
@@ -1430,7 +1430,7 @@ _DEBIT_NOTE_HTML_RAW = r"""
   <table class="avoid">
     <colgroup><col style="width:22%"><col style="width:31%"><col style="width:23%"><col style="width:24%"></colgroup>
     <tr>
-      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="c" style="vertical-align:middle;">{%- set co_logo = "__ALPINO_LOGO__" if doc.company == frappe.db.get_single_value("Global Defaults", "default_company") else frappe.db.get_value("Company", doc.company, "company_logo") -%}{% if co_logo %}<img src="{{ co_logo }}" style="width:100%; max-height:52px;">{% endif %}</td>
       <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
       <td><div class="sub">DEBIT NOTE #</div>{{ txt(doc.name) }}</td>
       <td><div class="sub">DATE</div>{{ dte(doc.posting_date) }}</td>
@@ -1550,6 +1550,7 @@ _PO_HTML_RAW = r"""
 {%- set ds = frappe.utils.cint(doc.docstatus) -%}
 {%- set co = frappe.db.get_value("Company", doc.company, ["company_logo", "email", "phone_no", "tax_id"], as_dict=True) or {} -%}
 {%- set co_gstin = doc.custom_company_gstin or co.tax_id or "" -%}
+{%- set co_print = frappe.db.get_value("Company", doc.company, ["custom_print_address", "custom_print_tax_block", "custom_print_bill_to", "custom_print_delivery"], as_dict=True) or {} -%}
 {%- set bill = frappe.db.get_value("Address", doc.billing_address, ["address_line1", "address_line2", "city", "state", "pincode", "email_id", "phone"], as_dict=True) if doc.billing_address else None -%}
 {%- set sup = frappe.db.get_value("Supplier", doc.supplier, ["tax_id", "supplier_primary_address", "email_id", "mobile_no"], as_dict=True) or {} -%}
 {%- set sup_addr_name = doc.supplier_address or sup.supplier_primary_address -%}
@@ -1608,17 +1609,18 @@ _PO_HTML_RAW = r"""
   <table class="avoid">
     <colgroup><col style="width:19%"><col style="width:31%"><col style="width:25%"><col style="width:25%"></colgroup>
     <tr>
-      <td class="c" style="vertical-align:middle;"><img src="__ALPINO_LOGO__" style="width:100%; max-height:52px;"></td>
+      <td class="c" style="vertical-align:middle;">{%- set co_logo = "__ALPINO_LOGO__" if doc.company == frappe.db.get_single_value("Global Defaults", "default_company") else frappe.db.get_value("Company", doc.company, "company_logo") -%}{% if co_logo %}<img src="{{ co_logo }}" style="width:100%; max-height:52px;">{% endif %}</td>
       <td class="b" style="font-size:11px;">{{ txt(doc.company) }}</td>
       <td><div class="sub">PO Number / Rev</div>{{ txt(doc.name) }} / {{ rev }}</td>
       <td><div class="sub">PO Date</div>{{ frappe.utils.formatdate(doc.transaction_date, "dd.MM.yyyy") if doc.transaction_date else "-" }}</td>
     </tr>
     <!-- Fixed company block, as on the format the business supplied. -->
     <tr>
-      <td><div class="sub">Company Address</div>Plot No. 123-125, GIDC<br>Industrial Estate, Sachana<br>Surat, Gujarat - 395023, India</td>
-      <td>GSTIN: 24AAACA1234A1Z1<br>CIN: U15400GJ2020PTC112233<br>State / Code: Gujarat / 24<br>PAN: AAACA1234A</td>
-      <td><div class="sub">Purchasing Org / Group</div>1000 (India) / P01 (RM-PM)
-        <div class="sub">Company Code</div>1000 (Alpino India)</td>
+      <td><div class="sub">Company Address</div>{{ (co_print.custom_print_address or "") | replace("\n", "<br>") }}</td>
+      <td>{{ (co_print.custom_print_tax_block or "") | replace("\n", "<br>") }}</td>
+      {% set is_default_company = doc.company == frappe.db.get_single_value("Global Defaults", "default_company") -%}
+      <td><div class="sub">Purchasing Org / Group</div>{% if is_default_company %}1000 (India) / P01 (RM-PM){% else %}-{% endif %}
+        <div class="sub">Company Code</div>{% if is_default_company %}1000 (Alpino India){% else %}{{ doc.company }}{% endif %}</td>
       <td><div class="sub">Payment Terms</div>{{ doc.payment_terms_template or "Z030 (Net 30 Days)" }}
         <div class="sub">Incoterms</div>{% if doc.incoterm %}{{ doc.incoterm }}{% if doc.named_place %} ({{ doc.named_place }}){% endif %}{% else %}FOR Destination (Freight Paid){% endif %}</td>
     </tr>
@@ -1647,12 +1649,7 @@ _PO_HTML_RAW = r"""
         {% if sup_contact %}<br>Contact: {{ sup_contact }}{% endif %}
       </td>
       <td>
-        ALPINO HEALTH FOODS PVT. LTD.<br>
-        Finance &amp; Procurement Central Desk<br>
-        Plot No. 123-125, GIDC Industrial Estate<br>
-        Surat, Gujarat - 395023<br>
-        GSTIN: 24AAACA1234A1Z1<br>
-        Email: ap.invoices@alpino.store
+        {{ (co_print.custom_print_bill_to or doc.company) | replace("\n", "<br>\n        ") }}
       </td>
       <td>
         {# The order's own Shipping / Delivery Address, the one the Purchase Order screen shows.
@@ -1661,10 +1658,7 @@ _PO_HTML_RAW = r"""
         {{ doc.shipping_address_display | safe }}<br>
         Storage Location: {{ (wh.warehouse_name if wh else "") or doc.set_warehouse or "-" }}
         {% else %}
-        Plant 1001 (Surat Central Plant)<br>
-        Warehouse Receipt Dock #02<br>
-        Plot No. 123-125, GIDC Industrial Area<br>
-        Surat, Gujarat - 395023<br>
+        {% if co_print.custom_print_delivery %}{{ co_print.custom_print_delivery | replace("\n", "<br>\n        ") }}<br>{% endif %}
         Storage Location: {{ (wh.warehouse_name if wh else "") or doc.set_warehouse or "0001 (Raw Material RM01)" }}<br>
         Receiving Hours: 09:00 AM - 05:00 PM
         {% endif %}
@@ -1759,7 +1753,7 @@ _PO_HTML_RAW = r"""
     <tr>
       <td>Prepared By: PURCHASE SPECIALIST<br>System Generated (Workflow Approved)<div class="sign"></div></td>
       <td>Verified By: PLANT HEAD / MATERIALS<br>Electronic Approval Stamp<div class="sign"></div></td>
-      <td>For ALPINO HEALTH FOODS PVT. LTD.<br><br>AUTHORIZED SIGNATORY<div class="sign"></div></td>
+      <td>For {{ doc.company | upper }}<br><br>AUTHORIZED SIGNATORY<div class="sign"></div></td>
     </tr>
   </table>
   <div class="foot">System ID: ALPINOS-ERP | Program: Purchase Order | User: {{ (frappe.db.get_value("User", doc.owner, "username") or doc.owner.split("@")[0]) | upper }} | {{ doc.name }}</div>

@@ -295,15 +295,22 @@ def _onboarding_document_reminder_body():
 def _with_alpino_layout(content_html):
 	alpino_logo_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR0cfjJi3U8tgoX4Jk3zp07AXjRNveFA-jxLA&s"
 	
+	# The Alpino logo, website, address and social links belong to the default company; a
+	# mail about another company's applicant or joinee shows that company instead.
 	return f"""<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.6;">
+{{% set _default_co = frappe.db.get_single_value('Global Defaults', 'default_company') %}}
+{{% set _co = (doc or {{}}).get('company') or _default_co %}}
 <div style="text-align:center;background:#15803d;padding:16px 12px;border-radius:8px 8px 0 0;">
-{{% set logo_url = (doc or {{}}).get('company_logo') or '{alpino_logo_url}' %}}
+{{% set logo_url = (doc or {{}}).get('company_logo') or ('{alpino_logo_url}' if _co == _default_co else frappe.db.get_value('Company', _co, 'company_logo')) %}}
 <img src="{{{{ logo_url }}}}" alt="Alpino" style="max-height:72px;max-width:260px;height:auto;" />
 </div>
 <div style="padding:18px 16px;background:#ffffff;border:1px solid #e5e7eb;border-top:0;">
 {content_html}
 </div>
 <div style="padding:14px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 8px 8px;font-size:13px;color:#374151;">
+{{% if _co != _default_co %}}
+<p style="margin:0;"><strong>{{{{ _co }}}}</strong>{{% set _addr = frappe.db.get_value('Company', _co, 'custom_print_address') %}}{{% if _addr %}}<br/>{{{{ _addr | replace('\n', ', ') }}}}{{% endif %}}</p>
+{{% else %}}
 <p style="margin:0 0 8px 0;"><strong>Website:</strong> <a href="https://alpino.store/" target="_blank">https://alpino.store/</a></p>
 <p style="margin:0 0 8px 0;"><strong>Address:</strong> Alpino Health Foods, Bungalow No.7, Napoleon Estate, Near VR Mall, Udhana-Magdalla Road, New Magdalla, Dumas, Surat, Gujarat - 395007, India</p>
 <p style="margin:0;"><strong>Social:</strong>
@@ -311,5 +318,6 @@ def _with_alpino_layout(content_html):
 <a href="https://www.instagram.com/alpinohealthfoods" target="_blank">Instagram</a> |
 <a href="https://www.facebook.com/alpinohealthfoods" target="_blank">Facebook</a>
 </p>
+{{% endif %}}
 </div>
 </div>"""

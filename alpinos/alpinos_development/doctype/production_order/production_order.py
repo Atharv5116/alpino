@@ -43,8 +43,9 @@ class ProductionOrder(Document):
 		self.creation_date = self.creation_date or nowdate()
 		self.po_level = "Parent"
 		if not self.company:
-			self.company = frappe.defaults.get_user_default("Company") or \
-				frappe.db.get_single_value("Global Defaults", "default_company")
+			from alpinos.company_scope.helpers import current_company
+
+			self.company = current_company()
 		if not self.status:
 			self.status = C.PO_DRAFT
 
@@ -234,7 +235,7 @@ class ProductionOrder(Document):
 		rows = frappe.get_all(
 			"BOM",
 			filters={"item": self.fg_item, "is_active": 1, "is_default": 1,
-			         "docstatus": ("<", 2)},
+			         "docstatus": ("<", 2), "company": self.company},
 			pluck="name",
 			order_by="modified desc",
 			limit=1,
@@ -608,8 +609,11 @@ class ProductionOrder(Document):
 		System Manager is included because it administers this site and is how the module
 		was set up in the first place.
 		"""
+		from alpinos.company_scope.helpers import has_company_role
+
 		approvers = {C.ROLE_PRODUCTION_ADMIN, C.ROLE_PRODUCTION_MANAGER, "System Manager"}
-		return bool(approvers & set(frappe.get_roles()))
+		# The approver role must be held in this order's company (company-wise access).
+		return has_company_role(list(approvers), self.company)
 
 	def on_cancel(self):
 		"""PPO-06 -- whether cancelling cascades to the Sub POs is still open, so nothing

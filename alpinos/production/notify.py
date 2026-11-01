@@ -45,7 +45,12 @@ def notify(roles, subject, doctype=None, name=None, email=False, users=None):
 	one of `roles`, plus `users`. With email=True also emails them when an outgoing email
 	account exists. Returns the list of users notified; never raises."""
 	try:
-		recipients = _enabled(list(_users_with_roles(roles)) + list(users or []))
+		from alpinos.company_scope.helpers import filter_recipients
+
+		# Role holders who can read the document in its company; named users always.
+		recipients = _enabled(
+			filter_recipients(list(_users_with_roles(roles)), doctype, name) + list(users or [])
+		)
 		if not recipients:
 			return []
 		sender = frappe.session.user if frappe.session else None

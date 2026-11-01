@@ -15,6 +15,7 @@ EVENTS = {
 		"before_naming": "alpinos.company_scope.numbering.before_naming",
 	},
 	"Employee": {"on_update": f"{_SYNC}.on_employee_update"},
+	"User": {"after_delete": f"{_SYNC}.on_user_delete"},
 	"Role": {"on_update": f"{_SYNC}.on_role_update"},
 	"Role Profile": {"on_update": f"{_SYNC}.on_role_profile_update"},
 	"Company": {

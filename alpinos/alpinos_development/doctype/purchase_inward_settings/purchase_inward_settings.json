@@ -13,6 +13,8 @@
   "rejected_warehouse",
   "quarantine_warehouse",
   "control_sample_warehouse",
+  "company_warehouses_section",
+  "company_warehouses",
   "tolerance_section",
   "block_over_receipt",
   "over_receipt_tolerance_percent",
@@ -80,6 +82,18 @@
    "fieldtype": "Link",
    "label": "Control Sample Warehouse",
    "options": "Warehouse"
+  },
+  {
+   "fieldname": "company_warehouses_section",
+   "fieldtype": "Section Break",
+   "label": "Warehouses by Company"
+  },
+  {
+   "fieldname": "company_warehouses",
+   "fieldtype": "Table",
+   "options": "Purchase Inward Company Warehouses",
+   "label": "Warehouses by Company",
+   "description": "One row per company. A company's row decides its QC, quarantine and rejected warehouses; the fields above are the default company's."
   },
   {
    "fieldname": "tolerance_section",
@@ -189,7 +203,7 @@
  "index_web_pages_for_search": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-09-03 10:00:00.000000",
+ "modified": "2026-11-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase Inward Settings",

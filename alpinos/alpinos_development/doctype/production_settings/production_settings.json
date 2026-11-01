@@ -12,6 +12,8 @@
   "wip_warehouse",
   "excluded_section",
   "excluded_warehouses",
+  "company_warehouses_section",
+  "company_warehouses",
   "planning_section",
   "merge_capacity_check",
   "standard_batch_size_kg",
@@ -61,6 +63,18 @@
    "fieldtype": "Table MultiSelect",
    "label": "Excluded Warehouses",
    "options": "Production Excluded Warehouse"
+  },
+  {
+   "fieldname": "company_warehouses_section",
+   "fieldtype": "Section Break",
+   "label": "Warehouses by Company"
+  },
+  {
+   "fieldname": "company_warehouses",
+   "fieldtype": "Table",
+   "options": "Production Company Warehouses",
+   "label": "Warehouses by Company",
+   "description": "One row per company. A company's row decides its production warehouses; the fields above are used for the company they belong to."
   },
   {
    "fieldname": "planning_section",
@@ -147,7 +161,7 @@
  "issingle": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-10-05 10:00:00.000000",
+ "modified": "2026-11-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Production Settings",

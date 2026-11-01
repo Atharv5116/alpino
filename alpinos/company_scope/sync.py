@@ -199,6 +199,15 @@ def on_employee_update(doc, method=None):
 	sync_user(doc.user_id)
 
 
+def on_user_delete(doc, method=None):
+	"""User deleted: their memberships go too (other apps may save the User while it is being
+	deleted, which would otherwise leave a membership pointing at nobody)."""
+	for name in frappe.get_all(MEMBERSHIP, {"user": doc.name}, pluck="name"):
+		frappe.delete_doc(MEMBERSHIP, name, ignore_permissions=True, force=True,
+			flags={"alpinos_skip_user_sync": True})
+	access.clear_cache(doc.name)
+
+
 def on_role_update(doc, method=None):
 	"""Role saved: a role newly ticked 'Company-wise role' keeps every holder's access by
 	putting it into each of their memberships; unticked, it simply becomes global again."""

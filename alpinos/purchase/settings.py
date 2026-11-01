@@ -30,10 +30,9 @@ SETTINGS_DOCTYPE = "Purchase Inward Settings"
 def get_settings(company=None):
 	"""Settings for `company`, falling back to BRD defaults for anything unset.
 
-	Purchase Inward Settings is a Single, so `company` currently only picks the
-	company whose warehouses the record points at; it is accepted so callers read
-	naturally and so this can grow a per-company child table without a signature
-	change.
+	Purchase Inward Settings is a Single; its warehouse fields are the default company's.
+	Every other company has a row in "Warehouses by Company" (company_warehouses), and for
+	`company` that row's warehouses replace the Single's.
 
 	Returns a plain dict, never a Document, so no caller holds a stale Single
 	across a commit.
@@ -48,7 +47,22 @@ def get_settings(company=None):
 		if got not in (None, ""):
 			values[key] = got
 	values["name"] = SETTINGS_DOCTYPE
+	if company:
+		values.update(_company_row(company))
 	return values
+
+
+def _company_row(company):
+	"""The warehouse fields of `company`'s row in Warehouses by Company (set ones only)."""
+	if not frappe.db.table_exists("Purchase Inward Company Warehouses"):
+		return {}
+	row = frappe.db.get_value(
+		"Purchase Inward Company Warehouses",
+		{"parent": SETTINGS_DOCTYPE, "parenttype": SETTINGS_DOCTYPE, "company": company},
+		list(WAREHOUSE_KEYS.values()),
+		as_dict=True,
+	)
+	return {k: v for k, v in (row or {}).items() if v}
 
 
 def notification_roles(company=None):

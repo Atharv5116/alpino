@@ -191,6 +191,36 @@ def current_company(user=None):
 	)
 
 
+def document_company(doctype, name):
+	"""The company a document belongs to (None when the doctype is not company-wise)."""
+	mode, field = registry.mode(doctype)
+	if mode != registry.STRICT or not name:
+		return None
+	return frappe.db.get_value(doctype, name, field)
+
+
+def filter_recipients(users, doctype=None, name=None, company=None):
+	"""Keep only the users who may read the document in its company: a notification about a
+	company's document goes to people working in that company. Users the feature does not
+	manage (and everyone, while it is off) are kept."""
+	if not enabled() or not users:
+		return list(users or [])
+	company = company or (document_company(doctype, name) if doctype and name else None)
+	if not company:
+		return list(users)
+	out = []
+	for user in users:
+		if not user or exempt_user(user) or not access.is_managed(user):
+			out.append(user)
+			continue
+		if doctype:
+			if company in access.allowed_companies(doctype, "read", user):
+				out.append(user)
+		elif company in access.member_companies(user):
+			out.append(user)
+	return out
+
+
 def listing():
 	"""Context manager: queries inside count as a person's list (narrowed to the active company)."""
 	import contextlib

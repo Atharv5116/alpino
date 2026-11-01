@@ -144,8 +144,9 @@ def S():
 
 
 def default_company():
-	return (frappe.defaults.get_user_default("Company")
-	        or frappe.db.get_single_value("Global Defaults", "default_company"))
+	from alpinos.company_scope.helpers import current_company
+
+	return current_company()
 
 
 # ------------------------------------------------------------------------ sub orders

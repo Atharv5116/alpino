@@ -227,11 +227,19 @@ def _notify_hr_webform_submitted(onboarding_doc):
 	"""Email HR Managers that a joinee has submitted their onboarding details web form."""
 	try:
 		from frappe.utils import get_url
-		from alpinos.attendance_alerts import _get_hr_manager_recipients
 
-		recipients = _get_hr_manager_recipients() or []
-		if "hr@alpinohealthfoods.com" not in recipients:
-			recipients.append("hr@alpinohealthfoods.com")
+		from alpinos.company_scope.helpers import users_with_roles
+
+		# HR Managers of the joinee's company, plus that company's HR mailbox.
+		company = onboarding_doc.get("company")
+		recipients = [
+			e for e in frappe.get_all(
+				"User", {"name": ["in", users_with_roles(["HR Manager"], company or None) or ["-"]], "enabled": 1}, pluck="email"
+			) if e
+		]
+		hr_mailbox = (company and frappe.db.get_value("Company", company, "custom_hr_email")) or "hr@alpinohealthfoods.com"
+		if hr_mailbox not in recipients:
+			recipients.append(hr_mailbox)
 		recipients = [r for r in recipients if r]
 		if not recipients:
 			return

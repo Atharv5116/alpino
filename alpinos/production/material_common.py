@@ -223,7 +223,9 @@ def users_with_roles(roles):
 def notify(roles, subject, doctype, name):
 	"""A desk notification to every enabled user with one of these roles. Never fails the
 	caller: a notification is a courtesy, the document is the fact."""
-	users = users_with_roles(roles)
+	from alpinos.company_scope.helpers import filter_recipients
+
+	users = filter_recipients(users_with_roles(roles), doctype, name)
 	for user in users:
 		try:
 			frappe.get_doc({

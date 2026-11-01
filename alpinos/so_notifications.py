@@ -38,11 +38,15 @@ def _role_users(roles):
 def _send(recipients, subject, doctype=None, docname=None, doc=None, priority="medium"):
 	"""Create an in-app Notification Log per recipient (+ Raven DM if available)."""
 	users = [u for u in dict.fromkeys(recipients or []) if u and u not in ("Administrator", "Guest")]
+	dt = doctype or (doc.doctype if doc else None) or ""
+	dn = docname or (doc.name if doc else None) or ""
+	# Only people who can read the document in its company hear about it.
+	from alpinos.company_scope.helpers import filter_recipients
+
+	users = filter_recipients(users, dt or None, dn or None, company=doc.get("company") if doc else None)
 	if not users:
 		return
 	subject = f"{_PRIORITY_ICON.get(priority, '')} {subject}".strip()
-	dt = doctype or (doc.doctype if doc else None) or ""
-	dn = docname or (doc.name if doc else None) or ""
 	for u in users:
 		try:
 			frappe.get_doc({

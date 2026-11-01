@@ -149,6 +149,18 @@ def effective_roles(user, company):
 	return global_roles(user) | company_roles(user, company)
 
 
+def roles_for(user=None, company=None):
+	"""The roles to check before acting on a document of `company`: the user's roles in that
+	company, or simply frappe.get_roles() when there is no company / the feature is off /
+	the user is not managed."""
+	user = user or frappe.session.user
+	from alpinos.company_scope import enabled
+
+	if company and enabled() and user != "Administrator" and is_managed(user):
+		return effective_roles(user, company)
+	return set(frappe.get_roles(user))
+
+
 def has_company_role(roles, company, user=None):
 	"""True if the user holds any of `roles` in `company` (global roles count everywhere).
 
@@ -302,7 +314,6 @@ def users_with_roles(roles, company=None, enabled_only=True):
 
 	if not company or not enabled():
 		return sorted(holders)
-	scoped = scoped_roles()
 	out = []
 	for user in sorted(holders):
 		if user == "Administrator" or not is_managed(user):

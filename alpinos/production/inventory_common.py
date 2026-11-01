@@ -106,21 +106,28 @@ def assert_roles(roles, what):
 
 # ======================================================================== settings
 
-def setting(fieldname):
-	"""A Production Settings value, or None -- never throws (dashboards, dispatch rules)."""
+def setting(fieldname, company=None):
+	"""A Production Settings value, or None -- never throws (dashboards, dispatch rules).
+
+	Warehouses are per company (production_settings.warehouse_for): `company`, or the
+	company the user works in."""
 	try:
 		if not frappe.db.exists("DocType", "Production Settings"):
 			return None
 		meta = frappe.get_meta("Production Settings")
 		if not meta.has_field(fieldname):
 			return None
+		if fieldname.endswith("_warehouse"):
+			from alpinos.production.production_settings import warehouse_for
+
+			return warehouse_for(fieldname, company) or None
 		return frappe.get_cached_doc("Production Settings").get(fieldname) or None
 	except Exception:
 		return None
 
 
-def baked_wip_wh():
-	return setting("baked_wip_warehouse") or setting("wip_warehouse")
+def baked_wip_wh(company=None):
+	return setting("baked_wip_warehouse", company) or setting("wip_warehouse", company)
 
 
 def approval_threshold_kg():

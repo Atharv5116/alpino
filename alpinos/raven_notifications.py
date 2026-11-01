@@ -106,7 +106,12 @@ def _approvers_for_state(doc, state):
 	if "hod" in s:
 		return _hod_users(doc)
 	if "hr approval" in s or "pending hr" in s:
-		return _role_users("HR Manager")
+		# HR Managers of the applicant's company (company-wise access).
+		from alpinos.company_scope.access import users_with_roles
+
+		company = doc.get("company") if hasattr(doc, "get") else None
+		hr = set(_role_users("HR Manager"))
+		return [u for u in users_with_roles(["HR Manager"], company) if u in hr]
 	return []
 
 

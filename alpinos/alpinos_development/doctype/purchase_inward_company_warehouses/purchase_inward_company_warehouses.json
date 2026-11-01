@@ -1,0 +1,71 @@
+{
+ "actions": [],
+ "creation": "2026-11-01 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "company",
+  "qc_hold_warehouse",
+  "qc_sample_warehouse",
+  "rejected_warehouse",
+  "quarantine_warehouse",
+  "control_sample_warehouse"
+ ],
+ "fields": [
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "options": "Company",
+   "label": "Company",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "qc_hold_warehouse",
+   "fieldtype": "Link",
+   "options": "Warehouse",
+   "label": "QC Hold",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "qc_sample_warehouse",
+   "fieldtype": "Link",
+   "options": "Warehouse",
+   "label": "QC Sample",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "rejected_warehouse",
+   "fieldtype": "Link",
+   "options": "Warehouse",
+   "label": "Rejected",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "quarantine_warehouse",
+   "fieldtype": "Link",
+   "options": "Warehouse",
+   "label": "Quarantine",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "control_sample_warehouse",
+   "fieldtype": "Link",
+   "options": "Warehouse",
+   "label": "Control Sample",
+   "in_list_view": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-01 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Purchase Inward Company Warehouses",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -64,11 +64,10 @@ def switch_company(company: str):
 
 @frappe.whitelist()
 def doctype_access(doctype: str):
-	"""Per company, what the current user may do on a doctype (forms use it for New)."""
+	"""Per member company, what the current user may do on a doctype (lists hide New with it)."""
 	user = frappe.session.user
 	if not enabled() or not access.is_managed(user):
 		return None
-	frappe.has_permission(doctype, "read", throw=False)
 	out = {}
 	for company, (full, owner) in access.company_rights(doctype, user).items():
 		if company in access.member_companies(user):

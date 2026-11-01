@@ -242,8 +242,11 @@ VIEW_ACTION_ROLES = {
 # ------------------------------------------------------------------ resolution
 
 
-def user_roles(user=None):
-	return set(frappe.get_roles(user or frappe.session.user))
+def user_roles(user=None, doc=None):
+	"""The user's roles; with a document, only those held in its company (company-wise access)."""
+	from alpinos.company_scope.access import roles_for
+
+	return roles_for(user or frappe.session.user, doc.get("company") if doc is not None else None)
 
 
 def _may(roles, user_role_set):
@@ -333,7 +336,7 @@ def available_actions(doc, user=None):
 	if isinstance(doc, str):
 		doc = frappe.get_doc("Purchase Inward", doc)
 
-	roles = user_roles(user)
+	roles = user_roles(user, doc)
 	status = doc.get("inward_status") or C.PI_DRAFT
 	out = []
 
@@ -375,7 +378,7 @@ def available_actions(doc, user=None):
 	# Admin overrides: a submitted inward can be Force Closed, or moved to any status, at any
 	# point. `kind` is "admin" -- neither a workflow transition nor a plain view -- so the
 	# screens draw them separately (with a reason prompt) and the list rows leave them out.
-	if cint(doc.get("docstatus")) == 1 and may_override_status(user):
+	if cint(doc.get("docstatus")) == 1 and may_override_status(user, doc):
 		already = status == C.PI_FORCE_CLOSED
 		out.append(
 			{
@@ -401,10 +404,11 @@ def available_actions(doc, user=None):
 	return out
 
 
-def may_override_status(user=None):
-	"""Admin: the Purchase Inward Admin role, System Manager, or the Administrator."""
+def may_override_status(user=None, doc=None):
+	"""Admin: the Purchase Inward Admin role, System Manager, or the Administrator (with a
+	document: held in its company)."""
 	user = user or frappe.session.user
-	return user == "Administrator" or bool(set(C.ADMIN_ROLES) & user_roles(user))
+	return user == "Administrator" or bool(set(C.ADMIN_ROLES) & user_roles(user, doc))
 
 
 def override_status(doc, status, reason, user=None):
@@ -417,7 +421,7 @@ def override_status(doc, status, reason, user=None):
 	"""
 	if isinstance(doc, str):
 		doc = frappe.get_doc("Purchase Inward", doc)
-	if not may_override_status(user):
+	if not may_override_status(user, doc):
 		frappe.throw(_("Only an Admin may change the status of a Purchase Inward."), frappe.PermissionError)
 	if cint(doc.get("docstatus")) != 1:
 		frappe.throw(
@@ -454,7 +458,7 @@ def assert_transition(doc, action, user=None):
 	for t in INWARD_TRANSITIONS.get(status, []):
 		if t["action"] != action:
 			continue
-		if not _may(t["roles"], user_roles(user)):
+		if not _may(t["roles"], user_roles(user, doc)):
 			frappe.throw(
 				_("You do not have permission to perform this action."),
 				frappe.PermissionError,

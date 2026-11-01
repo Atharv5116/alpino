@@ -584,14 +584,16 @@ def send_pre_onboarding_email(doc, applicant_email):
 
 		# Fetch HR Manager details (name, phone, email, designation)
 		hr_name = "Khushi Doshi"
-		hr_email = "hr@alpinohealthfoods.com"
+		# The company's own HR mailbox (Company > Print Details > HR Email); the default
+		# company's is hr@alpinohealthfoods.com.
+		hr_email = (company and frappe.db.get_value("Company", company, "custom_hr_email")) or "hr@alpinohealthfoods.com"
 		hr_phone = "+91 6359474000"
 		hr_designation = "HR Manager"
 		try:
-			# Prioritize the hr@alpinohealthfoods.com user details if active
+			# Prioritize the HR mailbox user's details if active
 			user_details = frappe.db.get_value(
 				"User",
-				{"email": "hr@alpinohealthfoods.com", "enabled": 1},
+				{"email": hr_email, "enabled": 1},
 				["full_name", "phone", "name"],
 				as_dict=True
 			)
@@ -601,12 +603,10 @@ def send_pre_onboarding_email(doc, applicant_email):
 				employee_designation = frappe.db.get_value("Employee", {"user_id": user_details.name}, "designation", order_by="name asc")
 				hr_designation = employee_designation or hr_designation
 			else:
-				# Otherwise look for any active user with HR Manager role
-				hr_users = frappe.get_all(
-					"Has Role",
-					filters={"role": "HR Manager", "parenttype": "User"},
-					fields=["parent"],
-				)
+				# Otherwise an active HR Manager of the onboarding's company
+				from alpinos.company_scope.helpers import users_with_roles
+
+				hr_users = [frappe._dict(parent=u) for u in users_with_roles(["HR Manager"], company or None)]
 				for hr_user in hr_users:
 					ud = frappe.db.get_value(
 						"User",

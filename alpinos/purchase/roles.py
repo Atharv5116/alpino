@@ -694,8 +694,11 @@ def _section(doctype, key):
 	frappe.throw(_("Unknown Purchase section: {0}").format(key))
 
 
-def _roles(user=None):
-	return set(frappe.get_roles(user or frappe.session.user))
+def _roles(user=None, doc=None):
+	"""The user's roles; with a document, only those held in its company (company-wise access)."""
+	from alpinos.company_scope.access import roles_for
+
+	return roles_for(user or frappe.session.user, doc.get("company") if doc is not None else None)
 
 
 def _has_any(required, held):
@@ -724,7 +727,7 @@ def _bypasses_gates(doc, user=None):
 	if user == "Administrator":
 		return True
 	# BRD "Admin: Full Access" — and BR-PI-19 needs the Admin to reopen a frozen header.
-	return bool(set(C.ADMIN_ROLES) & _roles(user))
+	return bool(set(C.ADMIN_ROLES) & _roles(user, doc))
 
 
 def can_edit_section(doc, section, user=None):
@@ -757,7 +760,7 @@ def can_edit_section(doc, section, user=None):
 				return False, closed
 		return True, None
 
-	held = _roles(user)
+	held = _roles(user, doc)
 
 	if sec["view_roles"] and not _has_any(sec["view_roles"], held):
 		return False, _("The {0} section is not visible to your role.").format(_(sec["label"]))
@@ -1023,7 +1026,7 @@ def assert_section_edits_allowed(doc, user=None):
 	admin = _bypasses_gates(doc, user)
 
 	parent_changed, child_changed = changed_fields(doc)
-	held = _roles(user)
+	held = _roles(user, doc)
 
 	for sec in _spec(doc.doctype).get("sections") or ():
 		if admin and not sec.get("status_gate_binds_admin"):
@@ -1066,7 +1069,7 @@ def assert_can_submit_inward(doc, method=None, user=None):
 	"""
 	if _bypasses_gates(doc, user):
 		return
-	if not _has_any(INWARD_SUBMIT_ROLES, _roles(user)):
+	if not _has_any(INWARD_SUBMIT_ROLES, _roles(user, doc)):
 		frappe.throw(
 			_("Only {0} may submit a Purchase Inward.").format(", ".join(INWARD_SUBMIT_ROLES)),
 			frappe.PermissionError,
@@ -1093,7 +1096,7 @@ def assert_can_submit_grn(doc, method=None, user=None):
 	user = user or frappe.session.user
 	if user == "Administrator" or frappe.flags.in_migrate or frappe.flags.in_patch:
 		return
-	if not _has_any(C.GRN_FINAL_SUBMIT_ROLES, _roles(user)):
+	if not _has_any(C.GRN_FINAL_SUBMIT_ROLES, _roles(user, doc)):
 		frappe.throw(
 			_("Only {0} may submit a GRN.").format(", ".join(C.GRN_FINAL_SUBMIT_ROLES)),
 			frappe.PermissionError,
@@ -1115,7 +1118,7 @@ def get_section_access(doctype, name=None):
 	else:
 		doc = frappe.new_doc(doctype)
 
-	held = _roles()
+	held = _roles(None, doc)
 	out = {}
 	for sec in SECTIONS[doctype]["sections"]:
 		allowed, reason = can_edit_section(doc, sec["key"])

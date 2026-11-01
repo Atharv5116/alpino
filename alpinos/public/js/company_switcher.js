@@ -223,6 +223,37 @@ $.extend(alpinos.company, {
 		Factory.prototype.__alpinos_company = true;
 	},
 
+	// --- New on lists -------------------------------------------------------------------
+	// A list hides New when the user cannot create that document in the company they work
+	// in (they may still create it in another of their companies after switching).
+	_rights: {},
+	rights(doctype) {
+		if (!this._rights[doctype]) {
+			this._rights[doctype] = frappe
+				.xcall("alpinos.company_scope.api.doctype_access", { doctype })
+				.catch(() => null);
+		}
+		return this._rights[doctype];
+	},
+	patch_list_view() {
+		const ListView = frappe.views && frappe.views.ListView;
+		if (!ListView || ListView.prototype.__alpinos_company) return;
+		const set_primary_action = ListView.prototype.set_primary_action;
+		ListView.prototype.set_primary_action = function () {
+			set_primary_action.call(this);
+			const company = alpinos.company;
+			if (!company.enabled() || company.is_all() || !this.can_create) return;
+			const df = frappe.meta.get_docfield(this.doctype, "company");
+			if (!df || df.options !== "Company") return;
+			company.rights(this.doctype).then((rights) => {
+				if (!rights) return;
+				const here = rights[company.active()] || [];
+				if (!here.includes("create")) this.page.clear_primary_action();
+			});
+		};
+		ListView.prototype.__alpinos_company = true;
+	},
+
 	// --- realtime -----------------------------------------------------------------------
 	listen() {
 		if (this._listening || !frappe.realtime) return;
@@ -259,6 +290,7 @@ frappe.ui.form.on("*", {
 
 $(document).on("app_ready", () => {
 	alpinos.company.patch_form_factory();
+	alpinos.company.patch_list_view();
 	alpinos.company.listen();
 	alpinos.company.render_row();
 });
@@ -266,5 +298,6 @@ $(document).on("sidebar_setup", () => setTimeout(() => alpinos.company.render_ro
 // The views load lazily on some routes; patch as soon as the form factory exists.
 $(document).on("page-change", () => {
 	alpinos.company.patch_form_factory();
+	alpinos.company.patch_list_view();
 	alpinos.company.render_row();
 });

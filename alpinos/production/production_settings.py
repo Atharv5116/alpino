@@ -3,6 +3,11 @@
 The one place that answers "which warehouses count as available stock", so the Store
 Planning board, the Material Request screen and the Parent PO stock check can never
 disagree about it.
+
+Warehouses are per company: a company's row in "Warehouses by Company" decides its
+warehouses; the Single's own warehouse fields count only for the company they belong to.
+Every warehouse accessor takes the company (the document's); without one it is the
+company the user works in (company_scope.helpers.current_company).
 """
 
 import frappe
@@ -31,21 +36,50 @@ def _value(fieldname):
 	return get_settings().get(fieldname)
 
 
-def main_warehouse():
+def _company(company=None):
+	if company:
+		return company
+	from alpinos.company_scope.helpers import current_company
+
+	return current_company()
+
+
+def warehouse_for(fieldname, company=None):
+	"""A warehouse setting for `company`: its Warehouses by Company row, else the Single's
+	value when that warehouse belongs to the company. None when neither is set."""
+	if not _installed():
+		return None
+	company = _company(company)
+	if company:
+		for row in get_settings().get("company_warehouses") or []:
+			if row.company == company and row.get(fieldname):
+				return row.get(fieldname)
+	value = _value(fieldname)
+	if value and company and frappe.db.get_value("Warehouse", value, "company") != company:
+		return None
+	return value
+
+
+def _missing(label, company):
+	company = _company(company)
+	where = _(" for {0}").format(company) if company else ""
+	frappe.throw(_("Set the {0}{1} in Production Settings.").format(_(label), where),
+	             title=_("{0} Not Set").format(_(label)))
+
+
+def main_warehouse(company=None):
 	"""The RM Store: default source for Material Requests and Material Issues."""
-	warehouse = _value("main_warehouse")
+	warehouse = warehouse_for("main_warehouse", company)
 	if not warehouse:
-		frappe.throw(_("Set the Main warehouse in Production Settings."),
-		             title=_("Main Warehouse Not Set"))
+		_missing("Main warehouse", company)
 	return warehouse
 
 
-def wip_warehouse():
+def wip_warehouse(company=None):
 	"""The shop floor: where Material Issues deliver and Material Returns collect from."""
-	warehouse = _value("wip_warehouse")
+	warehouse = warehouse_for("wip_warehouse", company)
 	if not warehouse:
-		frappe.throw(_("Set the WIP warehouse in Production Settings."),
-		             title=_("WIP Warehouse Not Set"))
+		_missing("WIP warehouse", company)
 	return warehouse
 
 
@@ -61,8 +95,7 @@ def capacity_check_enabled():
 
 
 def _default_company():
-	return (frappe.defaults.get_user_default("Company")
-	        or frappe.db.get_single_value("Global Defaults", "default_company"))
+	return _company()
 
 
 def usable_warehouses(company=None):
@@ -82,7 +115,7 @@ def usable_warehouses(company=None):
 		fields.append("is_rejected_warehouse")
 
 	skip = set(excluded_warehouses())
-	wip = _value("wip_warehouse")
+	wip = warehouse_for("wip_warehouse", company)
 	if wip:
 		skip.add(wip)
 
@@ -105,32 +138,31 @@ DEFAULT_WASTAGE_TOLERANCE_PCT = 5.0
 DEFAULT_ADJUSTMENT_APPROVAL_KG = 500.0
 
 
-def _required(fieldname, label):
-	warehouse = _value(fieldname)
+def _required(fieldname, label, company=None):
+	warehouse = warehouse_for(fieldname, company)
 	if not warehouse:
-		frappe.throw(_("Set the {0} in Production Settings.").format(_(label)),
-		             title=_("{0} Not Set").format(_(label)))
+		_missing(label, company)
 	return warehouse
 
 
-def baked_wip_warehouse():
+def baked_wip_warehouse(company=None):
 	"""Where approved baked bulk waits for Filling. Falls back to the WIP warehouse."""
-	return _value("baked_wip_warehouse") or wip_warehouse()
+	return warehouse_for("baked_wip_warehouse", company) or wip_warehouse(company)
 
 
-def fg_hold_warehouse():
+def fg_hold_warehouse(company=None):
 	"""Filled FG before Final QC clears it."""
-	return _required("fg_hold_warehouse", "FG Hold Warehouse")
+	return _required("fg_hold_warehouse", "FG Hold Warehouse", company)
 
 
-def fg_warehouse():
+def fg_warehouse(company=None):
 	"""FG-Cleared stock (available for dispatch)."""
-	return _required("fg_warehouse", "FG Warehouse")
+	return _required("fg_warehouse", "FG Warehouse", company)
 
 
-def rejected_warehouse():
+def rejected_warehouse(company=None):
 	"""QC-rejected baked bulk and FG."""
-	return _required("rejected_warehouse", "Rejected Warehouse")
+	return _required("rejected_warehouse", "Rejected Warehouse", company)
 
 
 def wastage_tolerance_pct():
