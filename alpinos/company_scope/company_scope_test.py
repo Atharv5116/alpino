@@ -586,3 +586,62 @@ def _report():
 	print(f"{sum(1 for r in R if r[0] == 'PASS')}/{len(R)} passed")
 	frappe.db.commit()
 	return R
+
+
+def run_seed():
+	"""Role Permissions Manager edits survive a migrate's role matrices.
+
+	Edits two seeded rows the purchase matrix owns (as if in Role Permissions Manager), runs
+	the matrix inside perm_seed start/finish like a migrate does, checks the edits held, and
+	puts the rows back.
+	"""
+	from frappe.permissions import update_permission_property
+
+	from alpinos.company_scope import perm_seed
+	from alpinos.purchase import constants as C
+	from alpinos.purchase.roles import setup_purchase_roles
+
+	R.clear()
+	frappe.set_user("Administrator")
+	role = C.ROLE_PURCHASE_USER
+	edit = {"parent": "Purchase Inward", "role": role, "permlevel": 0, "if_owner": 0}
+	gone = {"parent": "Purchase QC", "role": role, "permlevel": 0, "if_owner": 0}
+	check("rows are seeded", lambda: _assert(
+		frappe.db.exists(perm_seed.SEED, f"Purchase Inward|{role}|0|0") and frappe.db.exists(perm_seed.SEED, f"Purchase QC|{role}|0|0")))
+	write_before = frappe.db.get_value("Custom DocPerm", edit, "write")
+	gone_row = frappe.db.get_value("Custom DocPerm", gone, "*", as_dict=True)
+	try:
+		# what someone does in Role Permissions Manager
+		update_permission_property("Purchase Inward", role, 0, "write", 0 if write_before else 1, validate=False)
+		frappe.db.delete("Custom DocPerm", gone)
+		changed_to = frappe.db.get_value("Custom DocPerm", edit, "write")
+		# what a migrate does
+		perm_seed.start()
+		setup_purchase_roles()
+		mid = frappe.db.get_value("Custom DocPerm", edit, "write")
+		perm_seed.finish()
+		check("the matrix tried to put the old value back", lambda: _assert(mid == write_before, (mid, write_before)))
+		check("Role Permissions Manager's change is kept", lambda: _assert(
+			frappe.db.get_value("Custom DocPerm", edit, "write") == changed_to))
+		check("a row removed in Role Permissions Manager stays removed", lambda: _assert(
+			not frappe.db.exists("Custom DocPerm", gone)))
+		# a new row the code adds for the first time is created and recorded
+		new_key = f"Purchase Quarantine|{role}|0|0"
+		new_filters = {"parent": "Purchase Quarantine", "role": role, "permlevel": 0, "if_owner": 0}
+		saved = frappe.db.get_value("Custom DocPerm", new_filters, "*", as_dict=True)
+		frappe.db.delete("Custom DocPerm", new_filters)
+		frappe.db.delete(perm_seed.SEED, {"seed_key": new_key})
+		perm_seed.start()
+		setup_purchase_roles()
+		perm_seed.finish()
+		check("a permission code adds for the first time is created",
+			lambda: _assert(frappe.db.exists("Custom DocPerm", new_filters) and frappe.db.exists(perm_seed.SEED, new_key)))
+		if saved and not frappe.db.exists("Custom DocPerm", new_filters):
+			frappe.get_doc(dict(saved, doctype="Custom DocPerm")).db_insert()
+	finally:
+		frappe.db.set_value("Custom DocPerm", edit, "write", write_before)
+		if gone_row and not frappe.db.exists("Custom DocPerm", gone):
+			frappe.get_doc(dict(gone_row, doctype="Custom DocPerm")).db_insert()
+		frappe.clear_cache(doctype="Purchase Inward")
+		frappe.clear_cache(doctype="Purchase QC")
+	return _report()

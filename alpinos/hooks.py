@@ -217,6 +217,9 @@ patches = [
 ]
 
 after_migrate = [
+	# Role Permissions Manager owns permissions once they are seeded: remember them before
+	# the role matrices below run (alpinos.company_scope.perm_seed; finish() is the last step).
+	"alpinos.company_scope.perm_seed.start",
 	# First: a dead workspace link makes Home unsavable and stops the steps below.
 	"alpinos.workspace_links.prune_dead_links",
 	"alpinos.permission_compat.grant_account_select",
@@ -374,6 +377,9 @@ after_migrate = [
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
 	"alpinos.core_customizations.keep_v15_silent_notifications",
 	"alpinos.core_customizations.keep_v15_optional_expense_payable",
+	# Last: permissions seeded by an earlier migrate go back to what Role Permissions Manager
+	# had; only rows seen for the first time keep what the matrices above wrote.
+	"alpinos.company_scope.perm_seed.finish",
 ]
 
 # Uninstallation
