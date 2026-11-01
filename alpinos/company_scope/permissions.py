@@ -182,3 +182,61 @@ def query_conditions(user=None, doctype=None, **kwargs):
 			"({0} and {1}.`owner` = {2})".format(_in_list(column, owner_only), table, frappe.db.escape(user))
 		)
 	return "(" + " or ".join(parts) + ")"
+
+
+# --- what the form is told it may do --------------------------------------------------------
+
+
+def patch_docinfo(*args, **kwargs):
+	"""The desk form decides read-only / Save / Submit from docinfo.permissions, which
+	frappe.desk.form.load builds with get_doc_permissions(doc) - a call that asks the hooks
+	with no right in particular, so a hook cannot say "read, but not write". Wrapped here so
+	each right follows the user's roles in the document's company: a document of a company
+	where the user only reads opens read-only. Applied from before_request; idempotent."""
+	try:
+		import frappe.desk.form.load as load
+	except Exception:
+		return
+	if getattr(load.get_doc_permissions, "_alpinos_cs", False):
+		return
+	original = load.get_doc_permissions
+
+	def get_doc_permissions(doc, user=None, ptype=None, debug=False):
+		perms = original(doc, user=user, ptype=ptype, debug=debug)
+		try:
+			return narrow_doc_permissions(doc, perms, user or frappe.session.user)
+		except Exception:
+			frappe.log_error(title="Company-wise access: form permissions")
+			return perms
+
+	get_doc_permissions._alpinos_cs = True
+	load.get_doc_permissions = get_doc_permissions
+
+
+def narrow_doc_permissions(doc, perms, user):
+	if _skip(user) or not perms:
+		return perms
+	mode, field = registry.mode(doc.doctype)
+	if mode == registry.GLOBAL:
+		return perms
+	companies = _doc_companies(doc, mode, field)
+	if not companies:
+		return perms
+	rights = access.company_rights(doc.doctype, user)
+	is_owner = _is_owner(doc, user)
+
+	def allowed_in(company, ptype):
+		full, owner = rights.get(company, (set(), set()))
+		return access._wants(ptype, full, owner, is_owner)
+
+	out = dict(perms)
+	for ptype, value in perms.items():
+		if not value or not isinstance(value, int) or ptype in ("if_owner", "has_if_owner_enabled"):
+			continue
+		if mode == registry.TAGGED and ptype in ("read", "select", "print", "email", "report", "export", "share"):
+			ok = any(allowed_in(c, ptype) for c in companies)
+		else:
+			ok = all(allowed_in(c, ptype) for c in companies)
+		if not ok:
+			out[ptype] = 0
+	return out

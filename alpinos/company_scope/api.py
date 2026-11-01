@@ -33,6 +33,8 @@ def context(user=None):
 		"all_mode": selection == ALL,
 		"default": access.default_company(user),
 		"companies": rows,
+		# Doctypes with a company field that are not company-wise (the form does not block them).
+		"global_doctypes": sorted(registry.GLOBAL_DOCTYPES),
 	}
 
 

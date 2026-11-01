@@ -6,7 +6,7 @@ frappe.ui.form.on("Company Membership", {
 	},
 	refresh(frm) {
 		frm.add_custom_button(__("Company Access Manager"), () =>
-			frappe.set_route("company-access-manager", { user: frm.doc.user })
+			frappe.set_route("company_access_manager", { user: frm.doc.user })
 		);
 	},
 });

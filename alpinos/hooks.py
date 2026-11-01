@@ -1049,8 +1049,10 @@ before_request = [
 	"alpinos.overrides.oauth_override.patch_oauth_server",
 	# Batch No. on the standard Stock Ledger report's ordinary rows (read-only wrapper).
 	"alpinos.stock_ledger_batch.patch",
-	# Company-wise access: reports refuse other companies and drop their rows.
+	# Company-wise access: reports refuse other companies and drop their rows; a form opens
+	# read-only in a company where the user only reads.
 	"alpinos.company_scope.reports.patch",
+	"alpinos.company_scope.permissions.patch_docinfo",
 ]
 # A large Stock Ledger runs as a prepared report in a background worker.
 before_job = ["alpinos.stock_ledger_batch.patch", "alpinos.company_scope.reports.patch"]

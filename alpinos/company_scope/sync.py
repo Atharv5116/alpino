@@ -208,6 +208,10 @@ def on_role_update(doc, method=None):
 	before = doc.get_doc_before_save()
 	was = bool(before and before.get("custom_company_scoped"))
 	now = bool(doc.get("custom_company_scoped"))
+	if was and not now:
+		# Global again: it now lives on the User and applies everywhere, so it leaves the
+		# memberships (whose roles must be company-wise).
+		frappe.db.delete("Company Membership Role", {"role": doc.name})
 	if now and not was:
 		holders = frappe.get_all("Has Role", {"parenttype": "User", "role": doc.name}, pluck="parent")
 		for user in holders:
