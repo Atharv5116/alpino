@@ -12,6 +12,7 @@ the total row adds the quantities up.
 import frappe
 from frappe import _
 
+from alpinos.company_scope.helpers import company_sql
 from alpinos.purchase import constants as C
 
 
@@ -63,6 +64,10 @@ def _rows(filters):
 	if filters.get("qc_status"):
 		conditions.append("qc.qc_status = %(qc_status)s")
 		values["qc_status"] = filters.qc_status
+	if filters.get("company"):
+		conditions.append("qc.company = %(company)s")
+		values["company"] = filters.company
+	company = "" if filters.get("company") else company_sql("Purchase QC", "qc")
 
 	return frappe.db.sql(
 		"""
@@ -72,9 +77,9 @@ def _rows(filters):
 		       qc.inspector, qc.creation AS since
 		FROM `tabPurchase QC Item` item
 		INNER JOIN `tabPurchase QC` qc ON qc.name = item.parent
-		WHERE {conditions}
+		WHERE {conditions}{company}
 		ORDER BY qc.creation ASC, item.idx ASC
-		""".format(conditions=" AND ".join(conditions)),
+		""".format(conditions=" AND ".join(conditions), company=company),
 		values,
 		as_dict=True,
 	)

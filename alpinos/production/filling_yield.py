@@ -15,6 +15,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
+from alpinos.company_scope.helpers import has_company_role
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
@@ -98,7 +99,12 @@ def check_parent_completion(parent_po):
 
 @frappe.whitelist()
 def recompute_yield(parent_po):
-	F.require(F.PLANNER_ROLES + (F.ROLE_PLANT_HEAD,), _("recompute the yield"))
+	roles = F.PLANNER_ROLES + (F.ROLE_PLANT_HEAD,)
+	F.require(roles, _("recompute the yield"))
+	company = frappe.db.get_value("Production Order", parent_po, "company") if parent_po else None
+	if not has_company_role(roles, company):
+		frappe.throw(_("You are not allowed to {0} in {1}.").format(_("recompute the yield"), company),
+		             frappe.PermissionError, title=_("Not Permitted"))
 	name = compute_yield(parent_po)
 	frappe.db.commit()
 	return {"name": name}

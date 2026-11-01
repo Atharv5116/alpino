@@ -2,6 +2,13 @@ import frappe
 import json
 from frappe.utils import add_days, flt
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+)
 from alpinos.mrp_batch_hooks import saved_row_lot
 
 
@@ -43,6 +50,7 @@ def _compute_expiry_from_shelf_life(item_code, mfg_date):
 def get_pick_list_data(name):
 	doc = frappe.get_doc('Pick List', name)
 	doc.check_permission('read')
+	assert_open(doc)
 
 	from alpinos.sales_order_api import get_box_conversion_factor
 	doc_dict = doc.as_dict()
@@ -115,11 +123,20 @@ def get_pick_list_data(name):
 
 @frappe.whitelist()
 def get_active_batches():
+	# company-scope: n/a (Batch is a GLOBAL master, it has no company)
 	return frappe.get_all("Batch", pluck="name")
 
 @frappe.whitelist()
 def get_active_users():
+	# company-scope: n/a (reads only User names, a GLOBAL list; no page calls it)
 	return frappe.get_all("User", filters={"enabled": 1, "user_type": "System User"}, pluck="name")
+
+
+def _assert_pick_list_write(doc, header):
+	"""These saves write straight to the DB (no guard), so check the company here."""
+	assert_company(doc, ptype="write")
+	if (header or {}).get("company") and header["company"] != doc.company:
+		assert_company(header["company"], "Pick List", "write")
 
 def create_custom_batch_field():
 	if not frappe.db.exists("Custom Field", "Pick List Item-custom_batch_code"):
@@ -159,6 +176,7 @@ def save_pick_list_keep_draft(name, header, items):
 
 	doc = frappe.get_doc('Pick List', name)
 	doc.check_permission('write')
+	_assert_pick_list_write(doc, header)
 	if doc.docstatus != 0:
 		frappe.throw("Only draft Pick Lists can be saved with this action.")
 
@@ -202,6 +220,8 @@ def save_pick_list_data(name, header, items, short_pick_action=None,
 
 	doc = frappe.get_doc('Pick List', name)
 	doc.check_permission('write')
+	_assert_pick_list_write(doc, header)
+	assert_company(doc, ptype="submit")
 	
 	# Write header directly to the Pick List document in DB
 	frappe.db.set_value('Pick List', name, {
@@ -285,6 +305,7 @@ def get_pick_list_entry_list(
 		filters["custom_workflow_status"] = status
 	if company:
 		filters["company"] = company
+	filters = restrict_company(filters, "Pick List")
 	if sales_order:
 		filters["custom_sales_order_id"] = sales_order
 	if delivery_note:
@@ -298,9 +319,17 @@ def get_pick_list_entry_list(
 		filters["name"] = ["in", pls or ["__no_match__"]]
 
 	# A dedicated PL User only sees Pick Lists assigned to them; admins/managers see all.
-	_roles = set(frappe.get_roles())
 	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "DN Manager"}
-	if "PL User" in _roles and not (_roles & _override):
+	_companies = scope_companies("Pick List")
+	if _companies is None:
+		_roles = set(frappe.get_roles())
+		_pl_user_only = "PL User" in _roles and not (_roles & _override)
+	else:
+		# company-wise roles: a PL User (without an override role) in any company listed
+		_pl_user_only = any(
+			has_company_role(["PL User"], c) and not has_company_role(_override, c) for c in _companies
+		)
+	if _pl_user_only:
 		filters["custom_assigned_to"] = frappe.session.user
 
 	# Changes(HP) #22: only Pick Lists of orders in the user's channels. frappe.get_all skips
@@ -517,6 +546,7 @@ def create_pick_list_as_draft(so_name, header, items, removed_rows=None, remaini
 	# _build_pick_list_from_mapping inserts with ignore_permissions, so gate here.
 	if not frappe.has_permission("Pick List", "create"):
 		frappe.throw(frappe._("You are not permitted to create Pick Lists."), frappe.PermissionError)
+	assert_company(frappe.db.get_value("Sales Order", so_name, "company") or "", "Pick List", "create")
 	pick_list = _build_pick_list_from_mapping(so_name, header, items, removed_rows, remaining_only)
 	frappe.db.commit()
 	return pick_list.name
@@ -530,6 +560,9 @@ def create_and_submit_pick_list(so_name, header, items, removed_rows=None,
 		frappe.throw(frappe._("You are not permitted to create Pick Lists."), frappe.PermissionError)
 	if not frappe.has_permission("Pick List", "submit"):
 		frappe.throw(frappe._("You are not permitted to submit Pick Lists."), frappe.PermissionError)
+	_so_company = frappe.db.get_value("Sales Order", so_name, "company") or ""
+	assert_company(_so_company, "Pick List", "create")
+	assert_company(_so_company, "Pick List", "submit")
 	# Dispatch Date mirrors the SO, so a user-set date must go to the SO first, else
 	# the new Pick List validates back to the SO's old date (as in save_pick_list_data).
 	_hdr = json.loads(header) if isinstance(header, str) else (header or {})

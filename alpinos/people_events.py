@@ -3,6 +3,10 @@
 import frappe
 from frappe.utils import add_days, add_months, getdate, now_datetime
 
+from alpinos.company_scope.helpers import company_sql, has_company_role, restrict_company, scope_companies
+
+HR_ROLES = ("HR Manager", "System Manager", "Administrator")
+
 
 def _format_day_label(d):
 	if d is None:
@@ -44,7 +48,8 @@ def get_upcoming_birthdays_and_anniversaries(days=None):
 
 	employees = frappe.get_all(
 		"Employee",
-		filters={"status": "Active"},
+		# The people of the companies the user works in now.
+		filters=restrict_company({"status": "Active"}),
 		fields=["name", "employee_name", "date_of_birth", "date_of_joining", "company"],
 		# ERPNext 16 changed Employee's default sort to creation; keep v15's order for ties
 		order_by="modified desc",
@@ -109,12 +114,12 @@ def get_on_leave_and_wfh_today():
 	allowed_employee_ids = None
 
 	# On leave today: Leave Application, Approved, today between from_date and to_date
-	leave_filters = [
+	leave_filters = restrict_company([
 		["docstatus", "=", 1],
 		["status", "=", "Approved"],
 		["from_date", "<=", today],
 		["to_date", ">=", today],
-	]
+	])
 	leave_list = frappe.get_all(
 		"Leave Application",
 		filters=leave_filters,
@@ -163,19 +168,19 @@ def get_on_leave_and_wfh_today():
 			SELECT employee, employee_name
 			FROM `tabWork From Home Request`
 			WHERE IFNULL(status, '') = 'Approved'
-				AND `date` <= %(today)s AND IFNULL(to_date, `date`) >= %(today)s
-			""",
+				AND `date` <= %(today)s AND IFNULL(to_date, `date`) >= %(today)s{0}
+			""".format(company_sql()),
 			{"today": today}, as_dict=True,
 		):
 			_add_wfh(req.get("employee"), req.get("employee_name"), "request")
 
 	for att in frappe.get_all(
 		"Attendance",
-		filters=[
+		filters=restrict_company([
 			["docstatus", "=", 1],
 			["attendance_date", "=", today],
 			["status", "=", "Work From Home"],
-		],
+		]),
 		fields=["employee", "employee_name", "attendance_date"],
 		ignore_permissions=True,
 	):
@@ -196,7 +201,7 @@ def get_upcoming_employee_lifecycle(days=None):
 	in the current month (HR Manager only). Dates are DD/MM/YYYY in the `date` field.
 	`days` is ignored, as in get_upcoming_birthdays_and_anniversaries."""
 	roles = frappe.get_roles()
-	if not ({"HR Manager", "System Manager", "Administrator"} & set(roles)):
+	if not (set(HR_ROLES) & set(roles)):
 		return {"allowed": False, "probation": [], "internship": [], "increment": []}
 
 	today, month_start, month_end = _current_month()
@@ -212,7 +217,12 @@ def get_upcoming_employee_lifecycle(days=None):
 	if has_internship:
 		fields.append("custom_internship_duration")
 
-	employees = frappe.get_all("Employee", filters={"status": "Active"}, fields=fields, order_by="modified desc")
+	filters = {"status": "Active"}
+	# HR of the companies the user works in now.
+	visible = scope_companies()
+	if visible is not None:
+		filters["company"] = ["in", [c for c in visible if has_company_role(HR_ROLES, c)] or ["__none__"]]
+	employees = frappe.get_all("Employee", filters=filters, fields=fields, order_by="modified desc")
 
 	probation = []
 	internship = []

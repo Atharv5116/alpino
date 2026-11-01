@@ -25,6 +25,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, now_datetime, nowdate
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role, tag_or_filters
 from alpinos.production import execution_common as X
 from alpinos.production import material_common as MC
 from alpinos.production import material_constants as M
@@ -74,7 +75,8 @@ def oven_options(run_process=None):
 	if not types:
 		return []
 	return frappe.get_all("Machine", filters={"machine_type": ("in", types), "status": "Active"},
-	                      fields=["name", "machine_name"], order_by="machine_name asc")
+	                      or_filters=tag_or_filters("Machine"), fields=["name", "machine_name"],
+	                      order_by="machine_name asc")
 
 
 def _existing_inward(run_name, exclude=None):
@@ -126,6 +128,8 @@ def _copy_header(doc, run):
 	doc.batch_number = run.batch_number
 	doc.run_start = run.started_on
 	doc.run_end = run.completed_on
+	if run.get("company"):
+		doc.company = run.company
 
 
 def validate_inward(doc):
@@ -549,13 +553,16 @@ def _doc_payload(doc):
 @frappe.whitelist()
 def get_inward_context(name=None, production_run=None):
 	X.assert_roles(X.FLOOR_READ_ROLES, _("open the Inward Entry"))
-	may_write = X.may(X.FLOOR_WRITE_ROLES)
 	if not name and production_run:
 		name = _existing_inward(production_run)
 	if name:
 		doc = frappe.get_doc(INWARD, name)
+		assert_open(doc)
+		company = doc.company
 	else:
 		run = _run(production_run)
+		assert_open(run)
+		company = run.company
 		if run.status != X.RUN_COMPLETED:
 			frappe.throw(_("The Inward Entry can only be created after Complete Production ({0} is "
 			               "{1}).").format(run.name, run.status), title=_("Production Not Completed"))
@@ -573,6 +580,7 @@ def get_inward_context(name=None, production_run=None):
 			doc.append("allocations", {"sub_order": a.sub_order, "planned_qty": a.planned_qty,
 			                           "share_pct": flt(a.share * 100, 2), "issued_rm_kg": a.issued_rm_kg})
 	draft = cint(doc.docstatus) == 0
+	may_write = has_company_role(X.FLOOR_WRITE_ROLES, company)
 	qc_required = cint((X.process_row(doc.process_master) or {}).get("qc_required"))
 	return {
 		"doc": _doc_payload(doc),
@@ -584,7 +592,7 @@ def get_inward_context(name=None, production_run=None):
 		"can_write": int(draft and may_write),
 		"can_submit": int(draft and may_write),
 		"can_send_qc": int(cint(doc.docstatus) == 1 and doc.status == IN_LOGGED and may_write),
-		"can_reverse": int(cint(doc.docstatus) == 1 and X.may(X.REVERSE_ROLES)
+		"can_reverse": int(cint(doc.docstatus) == 1 and has_company_role(X.REVERSE_ROLES, company)
 		                   and doc.status in (IN_LOGGED, IN_PENDING_QC, IN_READY_NEXT)),
 		"submitted_by_name": frappe.utils.get_fullname(doc.submitted_by) if doc.submitted_by else None,
 	}
@@ -602,11 +610,13 @@ def save_inward(payload):
 	p = X.parse(payload)
 	if p.get("name"):
 		doc = frappe.get_doc(INWARD, p.name)
+		assert_company(doc)
 		if cint(doc.docstatus) != 0:
 			frappe.throw(_("{0} is submitted and locked.").format(doc.name), title=_("Locked"))
 	else:
 		doc = frappe.new_doc(INWARD)
 		doc.production_run = p.get("production_run")
+		assert_company(frappe.db.get_value(RUN, doc.production_run, "company"), INWARD, "create")
 	for f in EDITABLE:
 		if f in p:
 			doc.set(f, p.get(f) if p.get(f) not in ("",) else None)
@@ -627,6 +637,7 @@ def save_inward(payload):
 def submit_inward(name, send_for_qc=0):
 	X.assert_roles(X.FLOOR_WRITE_ROLES, _("submit an Inward Entry"))
 	doc = frappe.get_doc(INWARD, name)
+	assert_company(doc, ptype="submit")
 	if cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} is already submitted.").format(name), title=_("Already Submitted"))
 	doc.send_for_qc = 1 if cint(send_for_qc) else 0
@@ -642,6 +653,7 @@ def send_inward_for_qc(name):
 	"""An inward that was only Submitted (Inward Logged) is sent for QC afterwards."""
 	X.assert_roles(X.FLOOR_WRITE_ROLES, _("send an Inward Entry for QC"))
 	doc = frappe.get_doc(INWARD, name)
+	assert_company(doc)
 	if cint(doc.docstatus) != 1 or doc.status != IN_LOGGED:
 		frappe.throw(_("Only a submitted Inward Entry that is Inward Logged can be sent for QC."),
 		             title=_("Cannot Send For QC"))
@@ -666,6 +678,9 @@ def reverse_inward(name, reason=None):
 		frappe.throw(_("Please enter the reason for reversing this Inward Entry."),
 		             title=_("Reason Required"))
 	doc = frappe.get_doc(INWARD, name)
+	if not has_company_role(X.REVERSE_ROLES, doc.company):
+		frappe.throw(_("You are not permitted to {0} in {1}.").format(_("reverse an Inward Entry"), doc.company),
+		             frappe.PermissionError, title=_("Not Permitted"))
 	if cint(doc.docstatus) != 1:
 		frappe.throw(_("Only a submitted Inward Entry can be reversed."), title=_("Not Submitted"))
 	doc.db_set("reversal_reason", reason.strip())

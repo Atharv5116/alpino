@@ -4,6 +4,23 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
+from alpinos.company_scope.helpers import scope_companies
+
+
+def _within_my_companies(users):
+	"""With company-wise access, only users whose every company is one of the impersonator's:
+	acting as anyone else would open another company's documents."""
+	mine = scope_companies(narrow=False)
+	if mine is None:
+		return users
+	from alpinos.company_scope import access
+
+	mine = set(mine)
+	return [
+		u for u in users
+		if access.is_managed(u) and set(access.member_companies(u)) <= mine
+	]
+
 
 @frappe.whitelist()
 def get_users_for_impersonation():
@@ -22,8 +39,8 @@ def get_users_for_impersonation():
 		fields=["name", "full_name", "user_image", "email"],
 		order_by="full_name"
 	)
-	
-	return users
+	allowed = set(_within_my_companies([u.name for u in users]))
+	return [u for u in users if u.name in allowed]
 
 
 @frappe.whitelist()
@@ -44,6 +61,9 @@ def start_impersonation(target_user):
 	
 	if not frappe.db.get_value("User", target_user, "enabled"):
 		frappe.throw(_("Cannot impersonate disabled user"))
+
+	if not _within_my_companies([target_user]):
+		frappe.throw(_("{0} works in a company you are not a member of.").format(target_user), frappe.PermissionError)
 	
 	original_user = frappe.session.user
 	log_impersonation(original_user, target_user, "start")

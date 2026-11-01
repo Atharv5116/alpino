@@ -14,6 +14,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from alpinos.company_scope.helpers import tag_or_filters, tagged_names
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
@@ -56,6 +57,8 @@ def check_compatibility(machine, item_code):
 
 	if not row:
 		return {"ok": False, "reason": _("Machine {0} does not exist.").format(machine)}
+	if not tagged_names("Machine", [row.name]):
+		return {"ok": False, "reason": _("Machine {0} is not used in your company.").format(machine)}
 
 	# 8.4.4: an unavailable machine never reaches planning or production at all.
 	if row.status not in C.MACHINE_ASSIGNABLE_STATUSES:
@@ -169,6 +172,7 @@ def get_category_list(search=None, is_active=None, limit=200):
 	for row in frappe.get_all(
 		"Machine",
 		filters={"filling_process_category": ("in", ids)},
+		or_filters=tag_or_filters("Machine"),
 		fields=["filling_process_category", "status", agg("count", "name", "qty")],
 		group_by="filling_process_category, status",
 	):
@@ -181,13 +185,16 @@ def get_category_list(search=None, is_active=None, limit=200):
 	# row it holds, which is the same number only by accident.
 	# Distinct pairs, counted here: v16 has no string form of count(distinct ...).
 	skus = {}
-	for row in frappe.get_all(
+	pairs = frappe.get_all(
 		"Item Filling Category",
 		filters={"filling_process_category": ("in", ids), "parenttype": "Item"},
 		fields=["filling_process_category", "parent"],
 		distinct=True,
-	):
-		skus[row.filling_process_category] = skus.get(row.filling_process_category, 0) + 1
+	)
+	usable = set(tagged_names("Item", list({r.parent for r in pairs})))
+	for row in pairs:
+		if row.parent in usable:
+			skus[row.filling_process_category] = skus.get(row.filling_process_category, 0) + 1
 
 	for row in rows:
 		bucket = machines.get(row["name"], {"total": 0, "active": 0})
@@ -212,6 +219,13 @@ def get_category_form_context(category=None):
 		can_write = frappe.has_permission(CATEGORY_DOCTYPE, "create")
 		can_delete = False
 
+	skus = frappe.get_all(
+		"Item Filling Category",
+		filters={"filling_process_category": category, "parenttype": "Item"},
+		fields=["parent as item_code"],
+		order_by="parent asc",
+	) if category else []
+	usable = set(tagged_names("Item", list({r.item_code for r in skus})))
 	return {
 		"doc": data,
 		"can_write": bool(can_write),
@@ -219,15 +233,11 @@ def get_category_form_context(category=None):
 		"machines": frappe.get_all(
 			"Machine",
 			filters={"filling_process_category": category} if category else {"name": ("is", "not set")},
+			or_filters=tag_or_filters("Machine"),
 			fields=["name", "machine_name", "machine_type", "status"],
 			order_by="machine_name asc",
 		) if category else [],
-		"skus": frappe.get_all(
-			"Item Filling Category",
-			filters={"filling_process_category": category, "parenttype": "Item"},
-			fields=["parent as item_code"],
-			order_by="parent asc",
-		) if category else [],
+		"skus": [r for r in skus if r.item_code in usable],
 	}
 
 
@@ -263,6 +273,8 @@ def delete_category(category):
 	pointing at nothing -- and the FRD 8.4 handshake reads exactly those two fields, so the
 	failure would surface on the shop floor rather than here. Frappe's own link check covers
 	the Machine field; the SKU side is a child table, which that check does not reach."""
+	# company-scope: n/a (the category is global; the in-use check must see every company's
+	# machines and SKUs, or a delete here would break another company's lines)
 	doc = frappe.get_doc(CATEGORY_DOCTYPE, category)
 	doc.check_permission("delete")
 
@@ -314,6 +326,7 @@ def machines_for_category(category=None, item_code=None):
 	return frappe.get_all(
 		"Machine",
 		filters=filters,
+		or_filters=tag_or_filters("Machine"),
 		fields=["name", "machine_name", "machine_type", "filling_process_category",
 		        "max_capacity", "capacity_uom", "status"],
 		order_by="machine_name asc",

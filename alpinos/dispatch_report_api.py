@@ -20,6 +20,8 @@ from math import ceil
 import frappe
 from frappe.utils import add_days, cint, flt, getdate, today
 
+from alpinos.company_scope.helpers import company_sql, tagged_condition
+
 # An approved order stops waiting for dispatch once it reaches one of these. Draft and
 # Warehouse Approval Pending have not been approved yet; the forced statuses close the
 # order at whatever went out, so their remainder will never be dispatched.
@@ -261,8 +263,9 @@ def _get_sequenced_items():
 		FROM `tabItem`
 		WHERE disabled = 0
 		  AND COALESCE(custom_sequence, 0) > 0
+		  {scope}
 		ORDER BY custom_sequence ASC, name ASC
-		""",
+		""".format(scope=tagged_condition("Item")),
 		as_dict=True,
 	)
 
@@ -278,7 +281,7 @@ def _delivery_notes_dispatched_on(date):
 		SELECT name FROM `tabDelivery Note`
 		WHERE docstatus = 1 AND IFNULL(is_return, 0) = 0
 		  AND custom_dispatch_date >= %(start)s AND custom_dispatch_date < %(end)s
-		""",
+		""" + company_sql("Delivery Note"),
 		{"start": f"{day} 00:00:00", "end": f"{add_days(day, 1)} 00:00:00"},
 	)
 
@@ -286,7 +289,8 @@ def _delivery_notes_dispatched_on(date):
 def _pick_lists_dispatched_on(date):
 	"""Submitted Pick Lists whose Dispatch Date is `date` (Changes(HP) #87)."""
 	return frappe.db.sql_list(
-		"SELECT name FROM `tabPick List` WHERE docstatus = 1 AND custom_dispatch_date = %(date)s",
+		"SELECT name FROM `tabPick List` WHERE docstatus = 1 AND custom_dispatch_date = %(date)s"
+		+ company_sql("Pick List"),
 		{"date": getdate(date)},
 	)
 
@@ -430,6 +434,7 @@ def _get_material_issue_data(date, group_by_parent=0):
 		WHERE se.posting_date = %(date)s
 		  AND se.docstatus = 1
 		  AND se.purpose = 'Material Issue'
+		  {company_sql("Stock Entry", "se")}
 		GROUP BY sed.item_code, {key}
 		""",
 		{"date": date},
@@ -467,6 +472,7 @@ def _get_pending_data(date, group_by_parent=0, collect=None, basis="pick_list"):
 		  AND IFNULL(so.custom_workflow_status, '') NOT IN %(done)s
 		  AND IFNULL(so.custom_force_closed, 0) = 0
 		  AND so.status NOT IN ('Closed', 'Cancelled')
+		  {company_sql("Sales Order", "so")}
 		""",
 		{"done": _NOT_PENDING},
 		as_dict=True,
@@ -633,6 +639,7 @@ def _get_stock_data(warehouse, date):
 		WHERE is_cancelled = 0
 		  AND posting_date <= %(date)s
 		  {wh_cond}
+		  {company_sql("Stock Ledger Entry")}
 		GROUP BY item_code
 		""",
 		params,
@@ -648,8 +655,9 @@ def _get_inward_data():
 		SELECT item_code, MIN(expected_inward_date) AS inward_date
 		FROM `tabInward Planning`
 		WHERE expected_inward_date >= CURDATE()
+		{scope}
 		GROUP BY item_code
-		""",
+		""".format(scope=company_sql("Inward Planning")),
 		as_dict=True,
 	)
 	return {r["item_code"]: r["inward_date"] for r in rows}

@@ -17,6 +17,8 @@ import frappe
 from frappe import _
 from frappe.utils import getdate
 
+from alpinos.company_scope.helpers import assert_company
+
 #: Leave Applications that still occupy the day.
 _ACTIVE_LEAVE = ("Open", "Approved")
 
@@ -104,6 +106,10 @@ def block_leave_when_wfh_exists(doc, method=None):
 @frappe.whitelist()
 def find_clashes(employee, from_date, to_date=None):
 	"""What already occupies these days for this employee. For a pre-submit warning."""
+	emp = frappe.db.get_value("Employee", employee, ["company", "user_id"], as_dict=True) if employee else None
+	# Somebody else's leave follows their company; the user's own does not.
+	if emp and emp.user_id != frappe.session.user:
+		assert_company(emp.company, "Leave Application", "read")
 	to_date = to_date or from_date
 	leaves = frappe.db.sql(
 		"""

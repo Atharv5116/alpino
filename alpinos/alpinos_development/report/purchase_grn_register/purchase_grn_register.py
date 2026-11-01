@@ -7,6 +7,8 @@ out of it, and who finally submitted it (BR-GRN-07).
 import frappe
 from frappe import _
 
+from alpinos.company_scope.helpers import company_sql
+
 
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
@@ -52,6 +54,10 @@ def _rows(filters):
 	if filters.get("grn_status"):
 		conditions.append("pr.custom_grn_status = %(grn_status)s")
 		values["grn_status"] = filters.grn_status
+	if filters.get("company"):
+		conditions.append("pr.company = %(company)s")
+		values["company"] = filters.company
+	company = "" if filters.get("company") else company_sql("Purchase Receipt", "pr")
 
 	# The Batch / MRP lots the receipt's lines went into (a split line is a lot of its own).
 	# Quantities stay one sum per receipt: each split line is separate goods.
@@ -71,10 +77,10 @@ def _rows(filters):
 		FROM `tabPurchase Receipt` pr
 		LEFT JOIN `tabPurchase Receipt Item` pri ON pri.parent = pr.name
 		{lot_join}
-		WHERE {conditions}
+		WHERE {conditions}{company}
 		GROUP BY pr.name
 		ORDER BY pr.posting_date DESC, pr.name DESC
-		""".format(conditions=" AND ".join(conditions), lots=lots, lot_join=lot_join),
+		""".format(conditions=" AND ".join(conditions), company=company, lots=lots, lot_join=lot_join),
 		values,
 		as_dict=True,
 	)

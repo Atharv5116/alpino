@@ -35,6 +35,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate, nowtime
 
+from alpinos.company_scope.helpers import assert_company, has_company_role
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 from alpinos.purchase import quarantine
@@ -132,6 +133,8 @@ def generate_grn(purchase_inward):
 	"""Workflow action behind the "Generate GRN" button (BRD 2.3, BR-GRN-03)."""
 	inward = frappe.get_doc("Purchase Inward", purchase_inward)
 	inward.check_permission("read")
+	# The GRN is raised in the inward's company.
+	assert_company(inward.company, DOCTYPE, "create")
 	workflow.assert_transition(inward, "generate_grn", frappe.session.user)
 
 	pr = make_purchase_receipt(inward)
@@ -488,6 +491,7 @@ def generate_debit_note(purchase_receipt):
 
 	pr = frappe.get_doc(DOCTYPE, purchase_receipt)
 	pr.check_permission("read")
+	assert_company(pr, ptype="read")
 
 	# assert_can_submit_grn is a before_submit doc_event: it returns SILENTLY for any
 	# receipt that is not one of this module's GRNs. Without this marker check the only
@@ -503,6 +507,12 @@ def generate_debit_note(purchase_receipt):
 		)
 
 	assert_can_submit_grn(pr)
+	# That authority must be held in the GRN's own company.
+	if not has_company_role(C.GRN_FINAL_SUBMIT_ROLES, pr.company):
+		frappe.throw(
+			_("Only {0} may submit a GRN.").format(", ".join(C.GRN_FINAL_SUBMIT_ROLES)),
+			frappe.PermissionError,
+		)
 	note = make_debit_note(pr)
 	return {"debit_note": note.name if note else None}
 

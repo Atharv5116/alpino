@@ -68,6 +68,7 @@ class FillingProcessCategory(Document):
 @frappe.whitelist()
 def active_categories():
 	"""The categories any dropdown may offer (8.1: inactive ones are hidden)."""
+	# company-scope: n/a (Filling Process Category is a GLOBAL master)
 	frappe.has_permission("Filling Process Category", "read", throw=True)
 	return frappe.get_all(
 		"Filling Process Category",

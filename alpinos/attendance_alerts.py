@@ -1,14 +1,17 @@
 """Scheduled alert: employees with no check-in by 11:30 AM and no approved leave.
 
 Runs daily at 11:30 (see scheduler_events in hooks.py). Sends a digest to HR Managers
-and a per-team email to each direct manager. Exempt: holiday/weekly-off, a full-day
-approved leave, or a first-half half-day leave (no morning check-in expected).
+(each about the companies they are HR Manager of) and a per-team email to each direct
+manager. Exempt: holiday/weekly-off, a full-day approved leave, or a first-half half-day
+leave (no morning check-in expected).
 
 Manual run: bench --site <site> execute alpinos.attendance_alerts.notify_missing_checkins
 """
 
 import frappe
 from frappe.utils import escape_html, format_date, get_datetime, getdate, now_datetime
+
+from alpinos.company_scope.helpers import has_company_role, scope_companies, users_with_roles
 
 CHECKIN_CUTOFF = "11:30:00"
 
@@ -51,13 +54,19 @@ def notify_missing_checkins():
 
 @frappe.whitelist()
 def get_missing_checkins_today():
-	"""Live data for the workspace widget. HR Manager sees every flagged employee; a
-	reporting manager sees only their direct reports; everyone else gets allowed=False.
+	"""Live data for the workspace widget. HR Manager sees every flagged employee of the
+	companies they work in now; a reporting manager sees their direct reports, whatever their
+	company; everyone else gets allowed=False.
 	"""
 	from alpinos.people_events import _get_employee_for_user
 
 	roles = frappe.get_roles()
 	is_hr_manager = "HR Manager" in roles
+	hr_companies = None
+	visible = scope_companies()
+	if visible is not None:
+		hr_companies = {c for c in visible if has_company_role("HR Manager", c)}
+		is_hr_manager = bool(hr_companies)
 	employee = _get_employee_for_user(frappe.session.user)
 	direct_reports = []
 	if employee:
@@ -81,12 +90,13 @@ def get_missing_checkins_today():
 		}
 
 	today, flagged = get_flagged_employees()
-	allowed_ids = None if is_hr_manager else set(direct_reports)
+	team = set(direct_reports)
 	date_str = format_date(today)
 
 	rows = []
 	for emp in flagged:
-		if allowed_ids is not None and emp.name not in allowed_ids:
+		as_hr = is_hr_manager and (hr_companies is None or emp.get("company") in hr_companies)
+		if not as_hr and emp.name not in team:
 			continue
 		rows.append({
 			"employee": emp.name,
@@ -180,13 +190,8 @@ def _valid_user_emails(users):
 	return emails
 
 
-def _get_hr_manager_recipients():
-	users = frappe.get_all(
-		"Has Role",
-		filters={"role": "HR Manager", "parenttype": "User"},
-		pluck="parent",
-	)
-	return _valid_user_emails(users)
+def _get_hr_manager_recipients(company=None):
+	return _valid_user_emails(users_with_roles(["HR Manager"], company))
 
 
 def _table_html(flagged, today):
@@ -235,17 +240,29 @@ def _send(recipients, subject, message):
 
 
 def _send_hr_digest(flagged, today):
-	msg = (
-		f"<p>The following <b>{len(flagged)}</b> employee(s) had <b>no check-in by 11:30 AM</b> "
-		f"on <b>{format_date(today)}</b> and have no approved leave for the day:</p>"
-		+ _table_html(flagged, today)
-		+ _footer()
-	)
-	_send(
-		_get_hr_manager_recipients(),
-		f"Attendance Alert: {len(flagged)} employee(s) with no check-in by 11:30 AM ({format_date(today)})",
-		msg,
-	)
+	# Each HR Manager hears about the companies they are HR Manager of, in one email; with
+	# company-wise access off every HR Manager holds every company, so one digest of all.
+	companies_of = {}
+	for company in {emp.get("company") for emp in flagged}:
+		for email in _get_hr_manager_recipients(company):
+			companies_of.setdefault(email, set()).add(company)
+	recipients_by_scope = {}
+	for email, companies in companies_of.items():
+		recipients_by_scope.setdefault(frozenset(companies), []).append(email)
+
+	for companies, recipients in recipients_by_scope.items():
+		rows = [emp for emp in flagged if emp.get("company") in companies]
+		msg = (
+			f"<p>The following <b>{len(rows)}</b> employee(s) had <b>no check-in by 11:30 AM</b> "
+			f"on <b>{format_date(today)}</b> and have no approved leave for the day:</p>"
+			+ _table_html(rows, today)
+			+ _footer()
+		)
+		_send(
+			sorted(recipients),
+			f"Attendance Alert: {len(rows)} employee(s) with no check-in by 11:30 AM ({format_date(today)})",
+			msg,
+		)
 
 
 def _send_manager_emails(flagged, today):

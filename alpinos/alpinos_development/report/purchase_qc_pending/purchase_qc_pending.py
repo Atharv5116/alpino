@@ -9,6 +9,7 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, time_diff_in_hours
 
+from alpinos.company_scope.helpers import company_sql
 from alpinos.purchase import constants as C
 
 
@@ -44,15 +45,19 @@ def _rows(filters):
 		values["supplier"] = filters.supplier
 	if filters.get("only_breached"):
 		conditions.append("qc.sla_due IS NOT NULL AND qc.sla_due < NOW()")
+	if filters.get("company"):
+		conditions.append("qc.company = %(company)s")
+		values["company"] = filters.company
+	company = "" if filters.get("company") else company_sql("Purchase QC", "qc")
 
 	rows = frappe.db.sql(
 		"""
 		SELECT qc.name, qc.purchase_inward, qc.supplier, qc.qc_status, qc.inspector,
 		       qc.sla_due, qc.received_qty
 		FROM `tabPurchase QC` qc
-		WHERE {conditions}
+		WHERE {conditions}{company}
 		ORDER BY qc.sla_due IS NULL, qc.sla_due ASC, qc.name ASC
-		""".format(conditions=" AND ".join(conditions)),
+		""".format(conditions=" AND ".join(conditions), company=company),
 		values,
 		as_dict=True,
 	)

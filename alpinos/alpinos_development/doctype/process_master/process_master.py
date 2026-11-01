@@ -17,6 +17,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
+from alpinos.company_scope.helpers import tag_or_filters
 from alpinos.production import constants as C
 
 
@@ -113,6 +114,7 @@ def active_processes():
 	return frappe.get_all(
 		"Process Master",
 		filters={"is_active": 1},
+		or_filters=tag_or_filters("Process Master"),
 		fields=[
 			"name",
 			"process_code",
@@ -147,6 +149,7 @@ def machines_for_process(process_master):
 			"machine_type": ("in", types),
 			"status": ("in", list(C.MACHINE_ASSIGNABLE_STATUSES)),
 		},
+		or_filters=tag_or_filters("Machine"),
 		fields=["name", "machine_name", "machine_type", "max_capacity", "capacity_uom"],
 		order_by="machine_type asc, machine_name asc",
 	)

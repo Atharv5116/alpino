@@ -43,6 +43,7 @@ from frappe.model.document import Document
 from frappe.model.naming import make_autoname, set_new_name
 from frappe.utils import add_to_date, cint, flt, get_datetime, get_link_to_form, getdate, now_datetime
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 from alpinos.purchase.settings import get_settings, sla_hours
@@ -1356,9 +1357,9 @@ def _render(fmt, context):
 # ------------------------------------------------------------- whitelisted API
 
 
-def _assert_qc_role():
+def _assert_qc_role(company=None):
 	"""The QC workflow's own role rule, for a QC that does not run on the inward's workflow."""
-	if not set(frappe.get_roles()).intersection(workflow.QC):
+	if not has_company_role(workflow.QC, company):
 		frappe.throw(_("You do not have permission to perform this action."), frappe.PermissionError)
 
 
@@ -1381,6 +1382,7 @@ def start_qc(purchase_qc):
 	"""BRD 4.7 — Pending QC -> QC In Progress, gated by the inward workflow."""
 	qc = frappe.get_doc("Purchase QC", purchase_qc)
 	qc.check_permission("write")
+	assert_company(qc, ptype="write")
 
 	inward = frappe.get_doc("Purchase Inward", qc.purchase_inward)
 	if not inward.purchase_qc:
@@ -1390,7 +1392,7 @@ def start_qc(purchase_qc):
 	if qc.is_side_qc(inward):
 		# Items released from quarantine: the inward's workflow belongs to its first QC, so
 		# only the role and the QC's own state are checked here.
-		_assert_qc_role()
+		_assert_qc_role(qc.company)
 		if cint(qc.docstatus) != 0:
 			frappe.throw(_("Purchase QC {0} is not open.").format(qc.name))
 	else:
@@ -1414,10 +1416,11 @@ def complete_qc(purchase_qc):
 	"""BRD 4.7 — record the decision and submit; the rest happens in on_submit."""
 	qc = frappe.get_doc("Purchase QC", purchase_qc)
 	qc.check_permission("submit")
+	assert_company(qc, ptype="submit")
 
 	inward = frappe.get_doc("Purchase Inward", qc.purchase_inward)
 	if qc.is_side_qc(inward):
-		_assert_qc_role()
+		_assert_qc_role(qc.company)
 	else:
 		workflow.assert_transition(inward, "complete_qc")
 
@@ -1440,7 +1443,7 @@ def override_qc_result(purchase_qc, result, reason=None):
 
 	qc = frappe.get_doc("Purchase QC", purchase_qc)
 	qc.check_permission("write")
-	if not set(frappe.get_roles()) & set(C.QC_ROLES + C.ADMIN_ROLES):
+	if not has_company_role(C.QC_ROLES + C.ADMIN_ROLES, qc.company):
 		frappe.throw(
 			_("You do not have permission to override the QC Result."), frappe.PermissionError
 		)
@@ -1519,6 +1522,7 @@ def get_inward_batches(purchase_inward):
 	"""{inward line name: supplier batch} so a draft QC saved before the Supplier Batch
 	column existed still shows it on screen without a save."""
 	frappe.has_permission("Purchase Inward", "read", purchase_inward, throw=True)
+	assert_open(frappe.db.get_value("Purchase Inward", purchase_inward, "company") or "", "Purchase Inward")
 	return {
 		r.name: r.batch_no
 		for r in frappe.get_all(
@@ -1614,6 +1618,7 @@ def get_unreceived_lines(purchase_inward):
 	"""Inward lines with no received quantity. They are not on the QC (nothing arrived to
 	inspect), so the QC screen names them instead of silently showing fewer rows."""
 	frappe.has_permission("Purchase Inward", "read", purchase_inward, throw=True)
+	assert_open(frappe.db.get_value("Purchase Inward", purchase_inward, "company") or "", "Purchase Inward")
 	return frappe.get_all(
 		"Purchase Inward Item",
 		filters={"parent": purchase_inward, "parenttype": "Purchase Inward", "received_qty": ["<=", 0]},

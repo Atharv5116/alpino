@@ -36,6 +36,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import company_sql, scope_companies
+
 DOCTYPE = "Sales Order"
 
 # The role -> channel rule is shared with the Sales Order / Pick List / Delivery Note
@@ -84,6 +86,7 @@ def can_open_page():
 @frappe.whitelist()
 def get_access():
 	"""What the page needs to draw and lock its Channel filter."""
+	# company-scope: n/a (reads only the GLOBAL Channel master; rows follow the company in _build)
 	_assert_can_read()
 	access = resolve_access()
 	if access["locked"]:
@@ -139,15 +142,23 @@ def assert_orders_in_channel(names):
 	that did not come from the queue's own rows: a hand-edited download URL.
 	"""
 	allowed = resolve_access()["channels"]
-	if allowed is None or not names:
+	companies = scope_companies(DOCTYPE, narrow=False)
+	if (allowed is None and companies is None) or not names:
 		return
-	outside = [
-		r.name
-		for r in frappe.get_all(
-			DOCTYPE, filters={"name": ("in", list(names))}, fields=["name", "custom_channel"]
+	rows = frappe.get_all(
+		DOCTYPE, filters={"name": ("in", list(names))}, fields=["name", "custom_channel", "company"]
+	)
+	foreign = [r.name for r in rows if companies is not None and r.company not in companies]
+	if foreign:
+		frappe.throw(
+			_("{0} belongs to a company you do not work in, so it cannot be downloaded.").format(
+				", ".join(foreign[:5]) + (" ..." if len(foreign) > 5 else "")
+			),
+			frappe.PermissionError,
 		)
-		if r.custom_channel not in allowed
-	]
+	if allowed is None:
+		return
+	outside = [r.name for r in rows if r.custom_channel not in allowed]
 	if outside:
 		frappe.throw(
 			_("You do not have access to the channel of {0}, so it cannot be downloaded.").format(
@@ -498,6 +509,8 @@ def _build(filters, columns, sort_field, sort_dir):
 	chan_sql, chan_params = _channel_condition((filters.get("channel") or "").strip() or None)
 	conditions.append(chan_sql)
 	params.update(chan_params)
+	# Only the companies the user works in (the active one, or all of theirs in All mode).
+	conditions.append("1 = 1" + company_sql(DOCTYPE, "so"))
 
 	for key, spec in _FILTERS.items():
 		if not spec:
@@ -828,6 +841,7 @@ PAGE_ROUTE = "invoice-download-queue"
 @frappe.whitelist()
 def list_views():
 	"""This user's saved views for this page, the default first."""
+	# company-scope: n/a (reads only the current user's own saved views)
 	_assert_can_read()
 	rows = frappe.get_all(
 		VIEW_DOCTYPE,

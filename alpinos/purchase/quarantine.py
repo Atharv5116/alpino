@@ -36,6 +36,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, escape_html, flt, get_url_to_form, getdate, now_datetime
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role, users_with_roles
 from alpinos.purchase import constants as C
 
 INWARD = "Purchase Inward"
@@ -389,8 +390,8 @@ def _transfer_out_of_quarantine(q, qc, pr, pr_row, row, remarks):
 # ================================================================ release (both)
 
 
-def _assert_role(roles, what):
-	if set(frappe.get_roles(frappe.session.user)).intersection(roles):
+def _assert_role(roles, what, company=None):
+	if has_company_role(roles, company):
 		return
 	frappe.throw(
 		_("Only the Store, QC or Admin team may {0}.").format(what),
@@ -408,9 +409,10 @@ def _parse_rows(rows):
 @frappe.whitelist()
 def release_items(purchase_quarantine, rows=None, remarks=None):
 	"""Release the selected quarantined lines into their warehouse."""
-	_assert_role(RELEASE_ROLES, _("release quarantined items"))
 	q = frappe.get_doc(QUARANTINE, purchase_quarantine)
 	q.check_permission("read")
+	assert_company(q, ptype="read")
+	_assert_role(RELEASE_ROLES, _("release quarantined items"), q.company)
 
 	wanted = set(_parse_rows(rows))
 	if not wanted:
@@ -563,9 +565,10 @@ def revert_release(qc):
 @frappe.whitelist()
 def update_reminder(purchase_quarantine, reminder_days):
 	"""Change after how many days the Quarantine document reminds the teams."""
-	_assert_role(RELEASE_ROLES, _("change the quarantine reminder"))
 	q = frappe.get_doc(QUARANTINE, purchase_quarantine)
 	q.check_permission("read")
+	assert_company(q, ptype="read")
+	_assert_role(RELEASE_ROLES, _("change the quarantine reminder"), q.company)
 	q.reminder_days = cint(reminder_days)
 	q.flags.ignore_permissions = True
 	q.save()
@@ -599,7 +602,8 @@ def get_quarantine_context(purchase_quarantine):
 	"""What the Quarantine, QC and GRN screens may offer for one Quarantine document."""
 	q = frappe.get_doc(QUARANTINE, purchase_quarantine)
 	q.check_permission("read")
-	may = bool(set(frappe.get_roles()).intersection(RELEASE_ROLES))
+	assert_open(q)
+	may = has_company_role(RELEASE_ROLES, q.company)
 	held = [r.name for r in q.get("items") or [] if r.status == C.QUARANTINE_HELD]
 	receipt = frappe.db.get_value(QC, q.purchase_qc, "purchase_receipt") if q.get("purchase_qc") else None
 
@@ -643,11 +647,10 @@ def status(purchase_inward):
 	"""Quarantine state of an inward, for its screen."""
 	doc = frappe.get_doc(INWARD, purchase_inward)
 	doc.check_permission("read")
-	roles = set(frappe.get_roles(frappe.session.user))
 	return {
 		"purchase_quarantine": doc.get("purchase_quarantine"),
-		"may_mark": bool(roles.intersection(MARK_ROLES)),
-		"may_release": bool(roles.intersection(RELEASE_ROLES)),
+		"may_mark": has_company_role(MARK_ROLES, doc.get("company")),
+		"may_release": has_company_role(RELEASE_ROLES, doc.get("company")),
 		"warehouse": warehouse_name(doc.get("company")),
 	}
 
@@ -658,10 +661,12 @@ def status(purchase_inward):
 def _recipients(q):
 	from alpinos.raven_notifications import _role_users
 
+	# The Store / QC / Admin people of the quarantine's own company.
+	in_company = set(users_with_roles(RELEASE_ROLES, q.get("company")))
 	users = []
 	for role in RELEASE_ROLES:
 		for user in _role_users(role) or []:
-			if user not in users:
+			if user not in users and user in in_company:
 				users.append(user)
 	if q.get("quarantined_by") and q.quarantined_by not in users:
 		users.append(q.quarantined_by)

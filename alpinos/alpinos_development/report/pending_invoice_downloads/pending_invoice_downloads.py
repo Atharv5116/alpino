@@ -5,6 +5,8 @@
 import frappe
 from frappe import _
 
+from alpinos.company_scope.helpers import company_sql
+
 
 def execute(filters=None):
 	filters = filters or {}
@@ -35,6 +37,12 @@ def execute(filters=None):
 		"so.docstatus < 2",
 	]
 	params = {}
+	# The report's Company (checked by the report wrapper), else the companies in view.
+	if filters.get("company"):
+		conditions.append("so.company = %(company)s")
+		params["company"] = filters["company"]
+	else:
+		conditions.append("1 = 1" + company_sql("Sales Order", "so"))
 	if filters.get("sales_order"):
 		conditions.append("so.name LIKE %(sales_order)s")
 		params["sales_order"] = "%" + filters["sales_order"] + "%"

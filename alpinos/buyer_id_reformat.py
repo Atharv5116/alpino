@@ -61,6 +61,8 @@ def run(apply=0, sample=25, only=None):
 	only: a list of buyer ids to act on instead of every one, for a staged run or to retry
 	the ones a run reported under "failed".
 	"""
+	# company-scope: n/a (System Manager one-off migration renaming every Buyer Master)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	sample = int(sample)
 

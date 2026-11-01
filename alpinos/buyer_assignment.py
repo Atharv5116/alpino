@@ -22,6 +22,8 @@ column keeps its values.
 import frappe
 from frappe import _
 
+from alpinos.company_scope.helpers import scope_companies, users_with_roles
+
 SALES_OFFICER_ROLE = "Sales Officer"
 SALES_MANAGER_ROLE = "Sales Manager"
 SALES_ADMIN_ROLE = "Sales Admin"
@@ -76,9 +78,30 @@ def setup_assignment_roles():
 	frappe.db.commit()
 
 
-def employees_with_roles(roles, txt="", start=0, page_len=20):
-	"""Active employees whose linked User holds any of `roles`, as (name, employee_name) rows."""
+def _role_holders(roles, company=None):
+	"""Users holding `roles` in `company` (else in the companies in view); None = anyone."""
+	companies = scope_companies()
+	if companies is None:
+		return None
+	if company and company in companies:
+		companies = [company]
+	elif company:
+		return set()
+	users = set()
+	for c in companies:
+		users.update(users_with_roles(list(roles), c))
+	return users
+
+
+def employees_with_roles(roles, txt="", start=0, page_len=20, company=None):
+	"""Active employees whose linked User holds any of `roles`, as (name, employee_name) rows.
+
+	With company-wise roles the role must be held in `company` (else a company in view).
+	"""
 	if not roles:
+		return []
+	holders = _role_holders(roles, company)
+	if holders is not None and not holders:
 		return []
 	return frappe.db.sql(
 		"""
@@ -89,34 +112,40 @@ def employees_with_roles(roles, txt="", start=0, page_len=20):
 		WHERE hr.role IN %(roles)s
 			AND IFNULL(e.status, 'Active') = 'Active'
 			AND (e.name LIKE %(txt)s OR IFNULL(e.employee_name, '') LIKE %(txt)s)
+			{users}
 		ORDER BY e.employee_name ASC
 		LIMIT %(page_len)s OFFSET %(start)s
-		""",
+		""".format(users="AND u.name IN %(users)s" if holders is not None else ""),
 		{
 			"roles": tuple(roles),
 			"txt": f"%{txt or ''}%",
 			"start": int(start or 0),
 			"page_len": int(page_len or 20),
+			"users": tuple(holders or ()),
 		},
 	)
+
+
+def _query_company(filters):
+	return (filters or {}).get("company") if isinstance(filters, dict) else None
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def sales_officer_query(doctype, txt, searchfield, start, page_len, filters):
-	return employees_with_roles((SALES_OFFICER_ROLE,), txt, start, page_len)
+	return employees_with_roles((SALES_OFFICER_ROLE,), txt, start, page_len, _query_company(filters))
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def primary_poc_query(doctype, txt, searchfield, start, page_len, filters):
-	return employees_with_roles(PRIMARY_POC_ROLES, txt, start, page_len)
+	return employees_with_roles(PRIMARY_POC_ROLES, txt, start, page_len, _query_company(filters))
 
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def secondary_poc_query(doctype, txt, searchfield, start, page_len, filters):
-	return employees_with_roles(SECONDARY_POC_ROLES, txt, start, page_len)
+	return employees_with_roles(SECONDARY_POC_ROLES, txt, start, page_len, _query_company(filters))
 
 
 def employee_for_user(user=None):
@@ -213,6 +242,8 @@ def migrate_legacy_pocs(apply=0, sample=15):
 	  bench --site SITE execute alpinos.buyer_assignment.migrate_legacy_pocs
 	  bench --site SITE execute alpinos.buyer_assignment.migrate_legacy_pocs --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off migration over every Buyer Master)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	rows = frappe.db.sql(
 		"""

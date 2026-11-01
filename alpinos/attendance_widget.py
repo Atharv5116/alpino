@@ -8,6 +8,8 @@ from frappe.utils import add_days, flt, get_datetime, getdate, now_datetime
 
 from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
 
+from alpinos.company_scope.helpers import assert_company
+
 
 def _get_employee_for_user(user):
     return frappe.db.get_value("Employee", {"user_id": user}, "name", order_by="name asc")
@@ -162,6 +164,7 @@ def _get_today_last_dashboard_log(employee):
 
 @frappe.whitelist()
 def get_status():
+    # company-scope: n/a (own records)
     employee = _get_employee_for_user(frappe.session.user)
     no_bio = _employee_no_biometric(employee)
     web_rules = _web_checkin_rules_active(employee)
@@ -213,6 +216,7 @@ def get_status():
 def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = None):
 	"""Monthly attendance summary for the logged-in employee: per-day status, check-in/out
 	times, holiday/WFH flags, worked minutes, and late/early flags vs shift."""
+	# company-scope: n/a (own records)
 	employee = _get_employee_for_user(frappe.session.user)
 	if not employee:
 		return {"days": {}}
@@ -487,6 +491,7 @@ def _get_wfh_dates(employee, from_date, to_date):
 
 @frappe.whitelist()
 def check_in(latitude=None, longitude=None, image=None, checkin_type=None, checkin_reason=None):
+    # company-scope: n/a (own records)
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check In.")
 
@@ -545,6 +550,7 @@ def check_in(latitude=None, longitude=None, image=None, checkin_type=None, check
 
 @frappe.whitelist()
 def is_within_shift_location(latitude, longitude):
+    # company-scope: n/a (own records)
     employee = _get_employee_for_user(frappe.session.user)
     if not employee:
         return {"within_location": False}
@@ -569,6 +575,7 @@ def is_within_shift_location(latitude, longitude):
 
 @frappe.whitelist()
 def get_today_wfh_request():
+	# company-scope: n/a (own records)
 	employee = _get_employee_for_user(frappe.session.user)
 	if not employee:
 		return None
@@ -595,6 +602,7 @@ def get_today_wfh_request():
 def save_wfh_tasks(wfh_request, tasks):
 	tasks = frappe.parse_json(tasks)
 	doc = frappe.get_doc("Work From Home Request", wfh_request)
+	assert_company(doc, ptype="write")
 	doc.tasks = []
 	for t in tasks:
 		doc.append("tasks", {"task_name": t.get("task_name"), "status": t.get("status")})
@@ -604,6 +612,7 @@ def save_wfh_tasks(wfh_request, tasks):
 
 @frappe.whitelist()
 def check_out(latitude=None, longitude=None, checkout_reason=None, outside_reason=None, outside_remarks=None, image=None):
+    # company-scope: n/a (own records)
     if not frappe.has_permission("Employee Checkin", "create"):
         frappe.throw("You do not have permission to Check Out.")
 

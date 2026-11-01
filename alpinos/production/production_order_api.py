@@ -16,6 +16,14 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	company_sql,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+)
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
@@ -104,6 +112,7 @@ def get_list(search=None, production_type=None, fg_item=None, status=None, clien
 		like = f"%{search}%"
 		or_filters = {"name": ("like", like), "fg_item": ("like", like),
 		              "fg_item_name": ("like", like), "batch_number": ("like", like)}
+	restrict_company(filters, DOCTYPE)
 
 	sf = (sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "desc").lower() == "asc" else "desc"
@@ -135,13 +144,16 @@ def get_list(search=None, production_type=None, fg_item=None, status=None, clien
 	}
 
 
-def _user_may_approve():
+def _user_may_approve(company=None):
 	"""Task 25: Admin / Production Manager approve; a User does not.
 
 	The same set the doctype enforces -- this only decides whether the screen DRAWS the
-	button, and the refusal itself lives on ProductionOrder.approve().
+	button, and the refusal itself lives on ProductionOrder.approve(). With a company: the
+	role must be held in that company.
 	"""
 	approvers = {C.ROLE_PRODUCTION_ADMIN, C.ROLE_PRODUCTION_MANAGER, "System Manager"}
+	if company:
+		return has_company_role(approvers, company)
 	return bool(approvers & set(frappe.get_roles()))
 
 
@@ -193,6 +205,7 @@ def get_form_context(production_order=None):
 	if production_order and frappe.db.exists(DOCTYPE, production_order):
 		doc = frappe.get_doc(DOCTYPE, production_order)
 		doc.check_permission("read")
+		assert_open(doc)
 		data = doc.as_dict()
 		# Editable only while the order is still a draft. Which fields stay editable after
 		# approval (PPO-05) is one of the open decisions, so for now approval closes the
@@ -209,6 +222,7 @@ def get_form_context(production_order=None):
 		frappe.has_permission(DOCTYPE, "read", throw=True)
 		can_write = frappe.has_permission(DOCTYPE, "create")
 		sub_orders = []
+	may_approve = _user_may_approve(doc.company if doc else None)
 
 	return {
 		"doc": data,
@@ -228,19 +242,19 @@ def get_form_context(production_order=None):
 			and frappe.has_permission(DOCTYPE, "submit", doc=doc)
 		),
 		"can_approve_order": bool(
-			doc and doc.status == C.PO_PENDING_APPROVAL and _user_may_approve()
+			doc and doc.status == C.PO_PENDING_APPROVAL and may_approve
 		),
 		"can_reject_order": bool(
-			doc and doc.status == C.PO_PENDING_APPROVAL and _user_may_approve()
+			doc and doc.status == C.PO_PENDING_APPROVAL and may_approve
 		),
 		"can_send_to_store": bool(
-			doc and doc.status == C.PO_APPROVED and _user_may_approve()
+			doc and doc.status == C.PO_APPROVED and may_approve
 		),
 		"can_cancel_order": bool(
-			doc and _user_may_approve()
+			doc and may_approve
 			and doc.status in (C.PO_DRAFT, C.PO_PENDING_APPROVAL, C.PO_APPROVED, C.PO_REJECTED)
 		),
-		"is_approver": _user_may_approve(),
+		"is_approver": may_approve,
 	}
 
 
@@ -275,11 +289,12 @@ def default_bom(fg_item):
 
 	rows = frappe.get_all(
 		"BOM",
-		filters={"item": fg_item, "is_active": 1, "is_default": 1, "docstatus": ("<", 2)},
+		filters=restrict_company({"item": fg_item, "is_active": 1, "is_default": 1, "docstatus": ("<", 2)}, "BOM"),
 		pluck="name", order_by="modified desc", limit=1,
 	)
 	if not rows:
-		has_active = frappe.db.exists("BOM", {"item": fg_item, "is_active": 1, "docstatus": ("<", 2)})
+		has_active = frappe.db.exists(
+			"BOM", restrict_company({"item": fg_item, "is_active": 1, "docstatus": ("<", 2)}, "BOM"))
 		if has_active:
 			# An item may have no default BOM; the planner picks one in the BOM No box.
 			return {"error": _("{0} has no default BOM. Choose one in the BOM No box.").format(fg_item)}
@@ -294,6 +309,7 @@ def bom_details(fg_item, bom_no):
 	frappe.has_permission("BOM", "read", throw=True)
 	if not (fg_item and bom_no):
 		return {}
+	assert_open(frappe.db.get_value("BOM", bom_no, "company"), "BOM")
 	from alpinos.alpinos_development.doctype.production_order.production_order import bom_selection_problem
 
 	problem = bom_selection_problem(fg_item, bom_no)
@@ -312,14 +328,21 @@ def bom_for_item_query(doctype, txt, searchfield, start, page_len, filters):
 	fg_item = filters.get("fg_item")
 	if not fg_item:
 		return []
+	# The order's own company when the screen passes it (and the user sees it), else every
+	# company the user sees.
+	company = filters.get("company")
+	visible = scope_companies("BOM")
+	cond = " and company = %(company)s" if company and (visible is None or company in visible) else company_sql("BOM")
 	return frappe.db.sql(
 		"""select name, ifnull(custom_bom_variation_name, ''), if(is_default = 1, 'Default', '')
 		from `tabBOM`
 		where item = %(fg)s and is_active = 1 and docstatus < 2
-		  and (name like %(txt)s or ifnull(custom_bom_variation_name, '') like %(txt)s)
+		  and (name like %(txt)s or ifnull(custom_bom_variation_name, '') like %(txt)s)"""
+		+ cond + """
 		order by is_default desc, modified desc
 		limit %(start)s, %(page_len)s""",
-		{"fg": fg_item, "txt": "%{}%".format(txt or ""), "start": int(start or 0), "page_len": int(page_len or 20)},
+		{"fg": fg_item, "txt": "%{}%".format(txt or ""), "start": int(start or 0), "page_len": int(page_len or 20),
+		 "company": company},
 	)
 
 
@@ -357,6 +380,7 @@ def save_production_order(payload):
 	if name:
 		doc = frappe.get_doc(DOCTYPE, name)
 		doc.check_permission("write")
+		assert_company(doc)
 		if cint(doc.docstatus) != 0:
 			frappe.throw(_("Only a draft Production Order can be changed."),
 			             title=_("Not Editable"))
@@ -398,10 +422,21 @@ def save_production_order(payload):
 	return {"name": doc.name, "status": doc.status}
 
 
+def _assert_approver(doc):
+	"""The approver roles, held in the order's company (the doctype checks them site-wide)."""
+	assert_company(doc, ptype="read")
+	if not _user_may_approve(doc.company):
+		frappe.throw(
+			_("Only a {0} or {1} of {2} may do this.").format(
+				C.ROLE_PRODUCTION_MANAGER, C.ROLE_PRODUCTION_ADMIN, doc.company),
+			frappe.PermissionError, title=_("Not An Approver"))
+
+
 @frappe.whitelist()
 def submit_production_order(production_order):
 	"""Hand the order to its approver. Task 26: Draft / Rejected -> Pending Approval."""
 	doc = frappe.get_doc(DOCTYPE, production_order)
+	assert_company(doc, ptype="submit")
 	doc.submit_for_approval()
 	frappe.db.commit()
 	return {"name": doc.name, "status": doc.status}
@@ -411,6 +446,7 @@ def submit_production_order(production_order):
 def reject_production_order(production_order, reason):
 	"""Task 25 / 26: Pending Approval -> Rejected, with a reason, back to the planner."""
 	doc = frappe.get_doc(DOCTYPE, production_order)
+	_assert_approver(doc)
 	doc.reject(reason)
 	frappe.db.commit()
 	return {"name": doc.name, "status": doc.status, "rejection_reason": doc.rejection_reason}
@@ -420,6 +456,7 @@ def reject_production_order(production_order, reason):
 def cancel_production_order(production_order, reason):
 	"""PPO-06: cancel the order and, with it, its draft sub orders."""
 	doc = frappe.get_doc(DOCTYPE, production_order)
+	_assert_approver(doc)
 	out = doc.cancel_order(reason)
 	frappe.db.commit()
 	out["name"] = doc.name
@@ -430,6 +467,7 @@ def cancel_production_order(production_order, reason):
 def send_to_store(production_order):
 	"""Task D: Approved -> Sent To Store, and the sub orders come off the lock."""
 	doc = frappe.get_doc(DOCTYPE, production_order)
+	_assert_approver(doc)
 	out = doc.send_to_store()
 	frappe.db.commit()
 	out["name"] = doc.name
@@ -440,6 +478,7 @@ def send_to_store(production_order):
 def approve_production_order(production_order):
 	"""SPO-01: approving a Parent is what creates its first Sub PO."""
 	doc = frappe.get_doc(DOCTYPE, production_order)
+	_assert_approver(doc)
 	sub_orders = doc.approve()
 	frappe.db.commit()
 	return {"name": doc.name, "status": doc.status, "sub_orders": sub_orders}
@@ -449,6 +488,7 @@ def approve_production_order(production_order):
 def get_sub_orders(production_order):
 	"""The Sub POs of a Parent, for the screen to list."""
 	frappe.has_permission(DOCTYPE, "read", throw=True)
+	assert_open(frappe.db.get_value(DOCTYPE, production_order, "company"), DOCTYPE)
 	from alpinos.production.sub_order import existing_sub_orders
 
 	return existing_sub_orders(production_order)
@@ -482,6 +522,7 @@ def merge_eligibility(production_orders):
 		production_orders = json.loads(production_orders or "[]")
 	out = {}
 	for name in production_orders or []:
+		assert_company(frappe.db.get_value(DOCTYPE, name, "company"), DOCTYPE, "read")
 		out[name] = _merge_blockers(name)
 	return out
 
@@ -520,9 +561,17 @@ def merge_view(production_orders, warehouse=None):
 	orders = []
 	materials = {}
 	total_kg = total_pcs = total_batches = 0.0
+	companies = set()
 	for name in names:
 		doc = frappe.get_doc(DOCTYPE, name)
 		doc.check_permission("read")
+		assert_open(doc)
+		if not _user_may_approve(doc.company):
+			frappe.throw(
+				_("Only a {0} or {1} of {2} may merge its Production Orders.").format(
+					C.ROLE_PRODUCTION_MANAGER, C.ROLE_PRODUCTION_ADMIN, doc.company),
+				title=_("Not An Approver"))
+		companies.add(doc.company)
 		orders.append({
 			"name": doc.name, "fg_item": doc.fg_item, "fg_item_name": doc.fg_item_name,
 			"production_qty_kg": flt(doc.production_qty_kg),
@@ -543,7 +592,7 @@ def merge_view(production_orders, warehouse=None):
 			})
 			bucket["required_qty"] += flt(row.total_required_qty)
 
-	available = _available_stock(sorted(materials), warehouse)
+	available = _available_stock(sorted(materials), warehouse, companies)
 	rows = []
 	for code in sorted(materials):
 		row = dict(materials[code])
@@ -579,6 +628,7 @@ def material_shortage(production_order, warehouse=None):
 	"""
 	doc = frappe.get_doc(DOCTYPE, production_order)
 	doc.check_permission("read")
+	assert_open(doc)
 
 	rows = doc.get("items") or []
 	if not rows:
@@ -593,7 +643,7 @@ def material_shortage(production_order, warehouse=None):
 		from alpinos.production.stock_allocation import usable_stock_by_item
 		available = usable_stock_by_item(codes, doc.get("company"))
 	if available is None:
-		available = _available_stock(codes, warehouse)
+		available = _available_stock(codes, warehouse, [doc.get("company")])
 
 	out = []
 	short_count = 0
@@ -632,8 +682,9 @@ def material_shortage(production_order, warehouse=None):
 	}
 
 
-def _available_stock(item_codes, warehouse=None):
-	"""actual_qty per item, summed across warehouses unless one is named.
+def _available_stock(item_codes, warehouse=None, companies=None):
+	"""actual_qty per item, summed across warehouses unless one is named, in the orders'
+	companies (when known).
 
 	Read off Bin, which is ERPNext's own running total, rather than summing Stock Ledger
 	Entry -- the ledger is the audit trail and summing it here would disagree with every
@@ -644,6 +695,9 @@ def _available_stock(item_codes, warehouse=None):
 	filters = {"item_code": ("in", list(item_codes))}
 	if warehouse:
 		filters["warehouse"] = warehouse
+	companies = [c for c in (companies or []) if c]
+	if companies:
+		filters["company"] = ("in", companies)
 	out = {}
 	for row in frappe.get_all(
 		"Bin", filters=filters,

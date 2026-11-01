@@ -14,6 +14,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import current_company, listing, tagged_names
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
@@ -88,9 +89,7 @@ LIST_FIELDS = (
 
 
 def _default_company():
-	return frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
-		"Global Defaults", "default_company"
-	)
+	return current_company()
 
 
 def _defaults_row(doc, company):
@@ -158,25 +157,27 @@ def get_list(
 	sd = "asc" if str(sort_dir or "asc").lower() == "asc" else "desc"
 	order_by = f"{sf} {sd}" if sf in _SORTABLE else "item_code asc"
 
-	count_rows = frappe.get_list(
-		DOCTYPE,
-		fields=[agg("count", "name", "total")],
-		filters=filters or None,
-		or_filters=or_filters,
-		limit_page_length=0,
-	)
-	total = cint(count_rows[0].get("total")) if count_rows else 0
+	# listing(): the permission query narrows a tagged master to the active company
+	with listing():
+		count_rows = frappe.get_list(
+			DOCTYPE,
+			fields=[agg("count", "name", "total")],
+			filters=filters or None,
+			or_filters=or_filters,
+			limit_page_length=0,
+		)
+		total = cint(count_rows[0].get("total")) if count_rows else 0
 
-	# One more than asked for, so "is there another page" needs no second query.
-	rows = frappe.get_list(
-		DOCTYPE,
-		filters=filters or None,
-		or_filters=or_filters,
-		fields=list(LIST_FIELDS),
-		order_by=order_by,
-		limit_start=start,
-		limit_page_length=page_length + 1,
-	)
+		# One more than asked for, so "is there another page" needs no second query.
+		rows = frappe.get_list(
+			DOCTYPE,
+			filters=filters or None,
+			or_filters=or_filters,
+			fields=list(LIST_FIELDS),
+			order_by=order_by,
+			limit_start=start,
+			limit_page_length=page_length + 1,
+		)
 	has_more = len(rows) > page_length
 	rows = rows[:page_length]
 
@@ -196,6 +197,9 @@ def get_form_context(item=None):
 	if item and frappe.db.exists(DOCTYPE, item):
 		doc = frappe.get_doc(DOCTYPE, item)
 		doc.check_permission("read")
+		if not tagged_names(DOCTYPE, [doc.name]):
+			frappe.throw(_("{0} is not used in the company you are working in.").format(doc.name),
+			             frappe.PermissionError, title=_("Not In This Company"))
 		row = None
 		for default in doc.get("item_defaults") or []:
 			if default.company == company:

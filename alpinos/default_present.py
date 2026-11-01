@@ -164,6 +164,8 @@ def run_daily():
 @frappe.whitelist()
 def backfill(from_date, to_date, employee=None, apply=0):
 	"""One-off backfill for a date range. Dry-run by default; apply=1 writes."""
+	# company-scope: n/a (System Manager one-off backfill across every company)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	start, end = getdate(from_date), getdate(to_date)
 	filters = {"custom_default_present": 1, "status": "Active"}

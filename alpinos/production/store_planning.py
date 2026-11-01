@@ -29,6 +29,16 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+	tag_or_filters,
+	tagged_names,
+	users_with_roles,
+)
 from alpinos.production import constants as C
 from alpinos.production import sub_order as SO
 from alpinos.production import stock_allocation as SA
@@ -115,7 +125,10 @@ def _roles():
 	return set(frappe.get_roles())
 
 
-def _may_plan():
+def _may_plan(company=None):
+	"""A planner -- in `company` when the sub order's company is known."""
+	if company:
+		return has_company_role(PLANNER_ROLES, company)
 	return bool(PLANNER_ROLES & _roles())
 
 
@@ -125,8 +138,10 @@ def _assert_can_view():
 	frappe.has_permission(WORK_ORDER, "read", throw=True)
 
 
-def _assert_can_plan():
-	if not _may_plan():
+def _assert_can_plan(company=None):
+	if company:
+		assert_company(company)  # a member of the sub order's company
+	if not _may_plan(company):
 		frappe.throw(
 			_("Only a Store Planner, Production Manager or Production Admin may change the planning."),
 			title=_("Not A Planner"),
@@ -263,6 +278,7 @@ def _processes():
 	if frappe.get_meta("Process Master").has_field(PROCESS_COLOR_FIELD):
 		fields.append(PROCESS_COLOR_FIELD)
 	rows = frappe.get_all("Process Master", filters={"is_active": 1}, fields=fields,
+	                      or_filters=tag_or_filters("Process Master"),
 	                      order_by="process_sequence asc, name asc")
 	for row in rows:
 		row["color"] = process_colour(row)
@@ -306,8 +322,9 @@ def _next_process(sub, processes):
 	return later[0].name if later else None
 
 
-def _machines(process):
-	"""sub_order.machines_for_process, plus each machine's capacity for the Merge Center."""
+def _machines(process, company=None):
+	"""sub_order.machines_for_process, plus each machine's capacity for the Merge Center.
+	With `company` (the sub order's), only machines tagged for it."""
 	if not process:
 		return []
 	if frappe.has_permission("Machine", "read"):
@@ -319,7 +336,11 @@ def _machines(process):
 		                       pluck="machine_type")
 		rows = frappe.get_all(
 			"Machine", filters={"machine_type": ("in", types or [""]), "status": C.MACHINE_ACTIVE},
+			or_filters=tag_or_filters("Machine"),
 			fields=["name", "machine_name", "machine_type"], order_by="machine_name asc")
+	if company and scope_companies() is not None:
+		usable = set(tagged_names("Machine", [r["name"] for r in rows], company))
+		rows = [r for r in rows if r["name"] in usable]
 	names = [r["name"] for r in rows]
 	caps = {}
 	if names:
@@ -337,7 +358,7 @@ def _machines(process):
 	return out
 
 
-def _validate_process_machine(process, machine):
+def _validate_process_machine(process, machine, company=None):
 	"""The same checks sub_order.assign_process makes, done once up front so a merge never
 	fails half-way through its members."""
 	if not process:
@@ -350,7 +371,7 @@ def _validate_process_machine(process, machine):
 		frappe.throw(_("Process {0} is inactive, so it cannot be assigned (PR-03).").format(process),
 		             title=_("Inactive Process"))
 	if machine:
-		if machine not in {m["name"] for m in _machines(process)}:
+		if machine not in {m["name"] for m in _machines(process, company)}:
 			frappe.throw(
 				_("{0} cannot run {1}: its machine type is not linked to that process, or it "
 				  "is not Active.").format(machine, row.process_name or process),
@@ -380,7 +401,7 @@ def _apply_plan(sub_name, process, machine, planned_date):
 			values[EXECUTION_STATUS_FIELD] = STATUS_ASSIGNED
 		frappe.db.set_value(WORK_ORDER, doc.name, values)
 		return {"name": doc.name}
-	if SO._user_may_plan():
+	if SO._user_may_plan(doc.company):
 		return SO.assign_process(sub_name, process, machine or None, planned_date)
 	doc.flags.alpinos_sub_order = True
 	doc.set(ASSIGNED_PROCESS_FIELD, process)
@@ -420,9 +441,11 @@ def _stamp_run(sub_names, run):
 
 def _save_run(run, members, process, machine, planned_date):
 	rows = frappe.get_all(WORK_ORDER, filters={"name": ("in", members)},
-	                      fields=["name", "production_item", "qty"])
+	                      fields=["name", "production_item", "qty", "company"])
 	by_name = {r.name: r for r in rows}
 	doc = frappe.get_doc(MACHINE_RUN, run) if run else frappe.new_doc(MACHINE_RUN)
+	if members[0] in by_name:
+		doc.company = by_name[members[0]].company
 	doc.run_process = process
 	doc.machine = machine or None
 	doc.planned_date = planned_date
@@ -477,6 +500,7 @@ def _unplanned_rows(extra_filters=None):
 		"docstatus": ("<", 2),
 	}
 	filters.update(extra_filters or {})
+	filters = restrict_company(filters, WORK_ORDER)
 	rows = frappe.get_all(WORK_ORDER, filters=filters, fields=_sub_fields(),
 	                      order_by="planned_start_date asc, name asc",
 	                      limit_page_length=UNPLANNED_LIMIT)
@@ -506,7 +530,7 @@ def _merge_candidates(sub, process, processes=None, exclude=None):
 	processes = processes if processes is not None else _processes()
 	exclude = set(exclude or []) | {sub.name}
 	out = []
-	for row in _unplanned_rows({"production_item": sub.production_item}):
+	for row in _unplanned_rows({"production_item": sub.production_item, "company": sub.company}):
 		if row.name in exclude:
 			continue
 		if _is_next_stage(row) != _is_next_stage(sub):
@@ -569,8 +593,9 @@ def _alert_scope():
 	"""Unplanned + planned-but-not-yet-issued Sub POs, and their stock rows."""
 	planned = frappe.get_all(
 		WORK_ORDER,
-		filters={PARENT_FIELD: ("is", "set"), "docstatus": ("<", 2),
-		         EXECUTION_STATUS_FIELD: ("in", (STATUS_ASSIGNED, STATUS_PENDING_STORE_ISSUE))},
+		filters=restrict_company({PARENT_FIELD: ("is", "set"), "docstatus": ("<", 2),
+		                          EXECUTION_STATUS_FIELD: ("in", (STATUS_ASSIGNED, STATUS_PENDING_STORE_ISSUE))},
+		                         WORK_ORDER),
 		fields=_sub_fields())
 	unplanned = _unplanned_rows()
 	# Next-stage Sub POs already have their material issued: no shortage to alert on.
@@ -594,6 +619,7 @@ def get_board(year=None, month=None, process=None, machine=None):
 		filters[ASSIGNED_PROCESS_FIELD] = process
 	if machine:
 		filters[ASSIGNED_MACHINE_FIELD] = machine
+	filters = restrict_company(filters, WORK_ORDER)
 	cards = frappe.get_all(WORK_ORDER, filters=filters, fields=_sub_fields(),
 	                       order_by=PLANNED_DATE_FIELD + " asc, name asc")
 
@@ -680,6 +706,9 @@ def get_board(year=None, month=None, process=None, machine=None):
 def get_sub_order_stock(sub_order, planned_date=None):
 	"""The mini stock table (👁) and the stock section of the popups."""
 	_assert_can_view()
+	company = frappe.db.get_value(WORK_ORDER, sub_order, "company")
+	if company:
+		assert_open(company, WORK_ORDER)
 	return SA.sub_order_stock(sub_order, as_of_date=planned_date or None)
 
 
@@ -694,6 +723,7 @@ def get_planning_context(sub_order, planned_date=None, process=None):
 	"""What the Process Assignment popup needs."""
 	_assert_can_view()
 	sub = _load(sub_order)
+	assert_open(sub, WORK_ORDER)
 	processes = _processes()
 	completed = _completed_processes(sub, processes)
 	current = sub.get(ASSIGNED_PROCESS_FIELD) if (
@@ -715,7 +745,7 @@ def get_planning_context(sub_order, planned_date=None, process=None):
 		"completed_processes": [p.process_name or p.name for p in completed],
 		"default_process": default_process,
 		"assigned_machine": sub.get(ASSIGNED_MACHINE_FIELD),
-		"machines": _machines(default_process),
+		"machines": _machines(default_process, sub.company),
 		"merge_candidates": _merge_candidates(sub, default_process, processes, exclude=run_members),
 		"machine_run": run,
 		"run_members": [{"name": r.name, "qty": flt(r.qty)} for r in frappe.get_all(
@@ -725,7 +755,7 @@ def get_planning_context(sub_order, planned_date=None, process=None):
 		# opens the popup, so a next-stage Sub PO must not report its old MR's lock here.
 		"plan_locked": int(_plan_locked(sub) and not _planned_on_issued_material(sub)),
 		"capacity_check": int(_capacity_check_enabled()),
-		"can_plan": int(_may_plan()),
+		"can_plan": int(_may_plan(sub.company)),
 	}
 
 
@@ -733,6 +763,7 @@ def get_planning_context(sub_order, planned_date=None, process=None):
 def get_merge_candidates(sub_order, process):
 	_assert_can_view()
 	sub = _load(sub_order)
+	assert_open(sub, WORK_ORDER)
 	run_members = _run_members(_active_run(sub))
 	return _merge_candidates(sub, process, exclude=run_members)
 
@@ -761,8 +792,9 @@ def save_planning(sub_order, process, machine=None, planned_date=None, merge_wit
 	merge_with = _as_list(merge_with)
 
 	sub = _load(sub_order)
+	_assert_can_plan(sub.company)
 	_assert_replannable(sub)
-	_validate_process_machine(process, machine)
+	_validate_process_machine(process, machine, sub.company)
 
 	processes = _processes()
 	run = _active_run(sub)
@@ -777,6 +809,9 @@ def save_planning(sub_order, process, machine=None, planned_date=None, merge_wit
 	new_merges = [m for m in merge_with if m not in members]
 	for name in new_merges:
 		other = _load(name)
+		if other.company != sub.company:
+			frappe.throw(_("{0} belongs to {1}, so it cannot be merged with {2}.").format(
+				name, other.company, sub.name), title=_("Cannot Merge"))
 		_assert_replannable(other)
 		if _is_next_stage(sub) or _is_next_stage(other):
 			if not (_is_next_stage(sub) and _is_next_stage(other)) or other.get(ASSIGNED_PROCESS_FIELD):
@@ -816,6 +851,7 @@ def reschedule_planning(sub_order, planned_date):
 	"""Dragging a planned card to another day. A merged card moves with its whole run."""
 	_assert_can_plan()
 	sub = _load(sub_order)
+	_assert_can_plan(sub.company)
 	if _is_next_stage(sub) and sub.get(ASSIGNED_PROCESS_FIELD):
 		pass  # a next-stage plan moves like any other
 	elif sub.get(EXECUTION_STATUS_FIELD) != STATUS_ASSIGNED or not sub.get(ASSIGNED_PROCESS_FIELD):
@@ -836,6 +872,7 @@ def cancel_planning(sub_order, reason=None):
 	if not reason:
 		frappe.throw(_(MSG_REASON), title=_("Reason Required"))
 	sub = _load(sub_order)
+	_assert_can_plan(sub.company)
 	if sub.get(EXECUTION_STATUS_FIELD) in (STATUS_UNASSIGNED, STATUS_READY_NEXT) 			and not sub.get(ASSIGNED_PROCESS_FIELD):
 		frappe.throw(_("{0} is not planned, so there is nothing to cancel.").format(sub.name),
 		             title=_("Not Planned"))
@@ -871,6 +908,7 @@ def get_sub_order_summary(sub_order):
 	"""The card summary modal."""
 	_assert_can_view()
 	sub = _load(sub_order)
+	assert_open(sub, WORK_ORDER)
 	process_label = frappe.db.get_value("Process Master", sub.get(ASSIGNED_PROCESS_FIELD), "process_name") \
 		if sub.get(ASSIGNED_PROCESS_FIELD) else None
 	machine_label = frappe.db.get_value("Machine", sub.get(ASSIGNED_MACHINE_FIELD), "machine_name") \
@@ -891,7 +929,7 @@ def get_sub_order_summary(sub_order):
 	status = sub.get(EXECUTION_STATUS_FIELD)
 	locked = _plan_locked(sub)
 	material_request = sub.get(MATERIAL_REQUEST_FIELD) or _open_material_request(sub.name)
-	may_plan = _may_plan()
+	may_plan = _may_plan(sub.company)
 	editable = (may_plan and not locked and not material_request and cint(sub.docstatus) < 2
 	            and not cint(sub.get(IS_LOCKED_FIELD)) and status in (STATUS_UNASSIGNED, STATUS_ASSIGNED))
 	return {
@@ -945,9 +983,9 @@ def week_mr_candidates(date=None):
 	end = start + datetime.timedelta(days=6)
 	rows = frappe.get_all(
 		WORK_ORDER,
-		filters={PARENT_FIELD: ("is", "set"), "docstatus": ("<", 2),
-		         EXECUTION_STATUS_FIELD: STATUS_ASSIGNED,
-		         PLANNED_DATE_FIELD: ("between", [start, end])},
+		filters=restrict_company({PARENT_FIELD: ("is", "set"), "docstatus": ("<", 2),
+		                          EXECUTION_STATUS_FIELD: STATUS_ASSIGNED,
+		                          PLANNED_DATE_FIELD: ("between", [start, end])}, WORK_ORDER),
 		fields=_sub_fields(), order_by=PLANNED_DATE_FIELD + " asc, name asc")
 	return {
 		"from": str(start), "to": str(end),
@@ -993,13 +1031,11 @@ def notify_purchase():
 	body = ("<table border='1' cellpadding='4' style='border-collapse:collapse'>"
 	        "<tr><th>Item</th><th>Name</th><th>Short By</th><th>Sub POs</th></tr>" + lines + "</table>")
 
+	# Purchase people of the companies the short Sub POs belong to.
 	users = set()
-	for role in PURCHASE_NOTIFY_ROLES:
-		if frappe.db.exists("Role", role):
-			users.update(frappe.get_all("Has Role", filters={"role": role, "parenttype": "User"},
-			                            pluck="parent"))
-	users = {u for u in users if u and u not in ("Administrator", "Guest")
-	         and frappe.db.get_value("User", u, "enabled")}
+	for company in {subs[a["sub_order"]].get("company") for a in alerts}:
+		users.update(users_with_roles(list(PURCHASE_NOTIFY_ROLES), company))
+	users = {u for u in users if u and u not in ("Administrator", "Guest")}
 	first_sub = alerts[0]["sub_order"]
 	for user in users:
 		try:

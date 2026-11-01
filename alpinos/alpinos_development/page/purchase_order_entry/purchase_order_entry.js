@@ -252,6 +252,15 @@ var PurchaseOrderEntry = class {
 
 	_val(f) { const c = this.fields[f]; return c ? c.get_value() : null; }
 
+	// An open order keeps its own company; a new one is raised in the company the user
+	// works in (company-wise access), else the session default as before.
+	_company() {
+		return (this.doc && this.doc.company)
+			|| (window.alpinos && alpinos.company ? alpinos.company.current() : frappe.defaults.get_user_default('Company'))
+			|| frappe.defaults.get_default('company')
+			|| undefined;
+	}
+
 	_set(f, v) {
 		const c = this.fields[f];
 		if (!c) return;
@@ -380,7 +389,7 @@ var PurchaseOrderEntry = class {
 		const me = this;
 		frappe.call({
 			method: 'alpinos.purchase.purchase_order_fields.get_supplier_info',
-			args: { supplier: supplier, company: frappe.defaults.get_default('company') || null },
+			args: { supplier: supplier, company: this._company() || null },
 			callback(r) {
 				const d = (r && r.message) || {};
 				me._set('supplier_name', d.supplier_name);
@@ -558,7 +567,7 @@ var PurchaseOrderEntry = class {
 				// are NULL.
 				get_query: () => ({
 					query: 'alpinos.purchase.inward_api.po_type_item_query',
-					filters: { po_types: (me._val('custom_inward_type') || []).join(',') },
+					filters: { po_types: (me._val('custom_inward_type') || []).join(','), company: me._company() },
 				}),
 			},
 				row.item_code, (val) => {
@@ -1083,7 +1092,7 @@ var PurchaseOrderEntry = class {
 		const not_past = (d) => (d && String(d).slice(0, 10) >= today ? d : today);
 		const doc = {
 			doctype: 'Purchase Order',
-			company: src.company || frappe.defaults.get_default('company') || undefined,
+			company: src.company || this._company(),
 			custom_inward_type: src.custom_inward_type,
 			supplier: src.supplier,
 			transaction_date: today,
@@ -1254,7 +1263,7 @@ var PurchaseOrderEntry = class {
 			// for any user who had no Company default of their own. Reading it from
 			// frappe.defaults picks up the session default, which falls back to
 			// Global Defaults, so it no longer depends on per-user setup.
-			company: frappe.defaults.get_default('company') || undefined,
+			company: this._company(),
 			custom_inward_type: this._val('custom_inward_type'),
 			supplier: this._val('supplier'),
 			transaction_date: this._val('transaction_date'),

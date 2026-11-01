@@ -3,6 +3,7 @@
 import frappe
 from frappe.utils import getdate
 
+from alpinos.company_scope.helpers import has_company_role, scope_companies
 
 HR_ROLES = ("HR Manager", "HR User", "System Manager")
 
@@ -19,12 +20,18 @@ def get_outside_geo_checkins(from_date=None, to_date=None):
 	from_date = getdate(from_date) if from_date else getdate()
 	to_date = getdate(to_date) if to_date else getdate()
 
+	filters = {
+		"custom_outside_location": 1,
+		"time": ["between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]],
+	}
+	# HR of the companies the user works in now.
+	visible = scope_companies()
+	if visible is not None:
+		filters["company"] = ["in", [c for c in visible if has_company_role(HR_ROLES, c)] or ["__none__"]]
+
 	rows = frappe.get_all(
 		"Employee Checkin",
-		filters={
-			"custom_outside_location": 1,
-			"time": ["between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]],
-		},
+		filters=filters,
 		fields=[
 			"employee",
 			"employee_name",

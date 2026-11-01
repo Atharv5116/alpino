@@ -5,6 +5,8 @@ from typing import Optional
 import frappe
 from frappe.utils import cint, flt, now_datetime
 
+from alpinos.company_scope.helpers import assert_company, has_company_role, scope_companies, users_with_roles
+
 
 def _link_family_addresses_to_customer(dn):
 	"""Add the DN's customer to a family-shared Address so validate_party_address passes."""
@@ -505,9 +507,12 @@ def update_pick_list_assignment(pick_list, assigned_to):
 	if not frappe.db.exists("Pick List", pick_list):
 		frappe.throw(f"Pick List {pick_list} not found.")
 	frappe.has_permission("Pick List", "write", doc=pick_list, throw=True)
-	# A PL User cannot reassign; only the warehouse manages assignment.
-	_roles = set(frappe.get_roles())
-	if "PL User" in _roles and not (_roles & {"Warehouse Admin", "Warehouse Manager", "System Manager", "DN Manager"}):
+	company = frappe.db.get_value("Pick List", pick_list, "company")
+	assert_company(company or "", "Pick List", "write")
+	# A PL User cannot reassign; only the warehouse manages assignment (roles held in the PL's company).
+	if has_company_role(["PL User"], company) and not has_company_role(
+		["Warehouse Admin", "Warehouse Manager", "System Manager", "DN Manager"], company
+	):
 		frappe.throw(frappe._("You are not permitted to change the assigned picker."))
 	value = (assigned_to or "").strip() or None
 	frappe.db.set_value("Pick List", pick_list, "custom_assigned_to", value)
@@ -616,6 +621,10 @@ def split_pick_list_row(pick_list, row_name, split_box):
 @frappe.whitelist()
 def resolve_batch_dates_for_row(batch_no=None, serial_and_batch_bundle=None):
 	"""Return resolved batch + manufacturing / expiry for a Pick List Item row."""
+	if serial_and_batch_bundle and not batch_no:
+		bundle_company = frappe.db.get_value("Serial and Batch Bundle", serial_and_batch_bundle, "company")
+		if bundle_company:
+			assert_company(bundle_company, "Serial and Batch Bundle", "read")
 	bn = resolve_batch_no_from_args(batch_no=batch_no, serial_and_batch_bundle=serial_and_batch_bundle)
 	if not bn:
 		return {"batch_no": None, "manufacturing_date": None, "expiry_date": None}
@@ -685,6 +694,8 @@ def create_delivery_note_from_pick_list(pick_list_name):
 	import json
 
 	pick_list = frappe.get_doc("Pick List", pick_list_name)
+	# The note is made with ignore_permissions, as before; only from a company the user works in.
+	assert_company(pick_list, ptype="read")
 
 	if pick_list.docstatus != 1:
 		frappe.throw("Pick List must be submitted to create a Delivery Note.")
@@ -1016,8 +1027,24 @@ def create_delivery_note_from_pick_list(pick_list_name):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def warehouse_user_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Link query for Pick List 'Assigned To': enabled PL User / PL Manager users."""
+	"""Link query for Pick List 'Assigned To': enabled PL User / PL Manager users.
+
+	With company-wise roles: holders in the Pick List's company (filters.company), else in
+	the companies in view.
+	"""
 	txt = txt or ""
+	roles = ["PL User", "PL Manager"]
+	companies = scope_companies()
+	holders = None
+	if companies is not None:
+		company = (filters or {}).get("company") if isinstance(filters, dict) else None
+		if company:
+			companies = [company] if company in companies else []
+		holders = set()
+		for c in companies:
+			holders.update(users_with_roles(roles, c))
+		if not holders:
+			return []
 	return frappe.db.sql(
 		"""
 		SELECT DISTINCT u.name, u.full_name
@@ -1026,14 +1053,16 @@ def warehouse_user_query(doctype, txt, searchfield, start, page_len, filters):
 		WHERE IFNULL(u.enabled, 0) = 1
 			AND u.name NOT IN ('Administrator', 'Guest')
 			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+			{users}
 		ORDER BY u.full_name ASC
 		LIMIT %(page_len)s OFFSET %(start)s
-		""",
+		""".format(users="AND u.name IN %(users)s" if holders is not None else ""),
 		{
 			"role1": "PL User",
 			"role2": "PL Manager",
 			"txt": f"%{txt}%",
 			"start": int(start or 0),
 			"page_len": int(page_len or 20),
+			"users": tuple(holders or ()),
 		},
 	)

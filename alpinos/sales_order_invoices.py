@@ -20,6 +20,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import assert_company, assert_open, company_sql
+
 INVOICE_TABLE = "custom_invoices"
 
 
@@ -47,11 +49,12 @@ def get_sales_order_invoices(sales_order):
 	so = frappe.db.get_value(
 		"Sales Order", sales_order,
 		["name", "custom_invoice_no", "custom_invoice_pdf", "custom_total_invoice_value",
-		 "custom_partial_order_allowed"],
+		 "custom_partial_order_allowed", "company"],
 		as_dict=True,
 	)
 	if not so:
 		return {"sales_order": sales_order, "invoices": [], "count": 0, "multiple": 0}
+	assert_open(so, "Sales Order")
 
 	parts = _parts_for(sales_order)
 	rows = frappe.get_all(
@@ -110,6 +113,8 @@ def set_part_invoice(sales_order, invoice_no, pick_list=None, invoice_date=None,
 		frappe.throw(_("Invoice No is required."))
 	if not frappe.db.exists("Sales Order", sales_order):
 		frappe.throw(_("No such Sales Order."))
+	# No role gate here before; the order's company has to be one the user works in.
+	assert_company(frappe.db.get_value("Sales Order", sales_order, "company") or "", "Sales Order", "read")
 	if pick_list:
 		owner_so = frappe.db.get_value("Pick List", pick_list, "custom_sales_order_id")
 		if owner_so != sales_order:
@@ -168,6 +173,13 @@ def invoice_counts(sales_orders):
 	if isinstance(sales_orders, str):
 		sales_orders = json.loads(sales_orders) if sales_orders.startswith("[") else [sales_orders]
 	names = [str(s).strip() for s in (sales_orders or []) if str(s).strip()]
+	if not names:
+		return {}
+	# Only orders of the companies the user sees.
+	names = frappe.db.sql_list(
+		"SELECT name FROM `tabSales Order` WHERE name IN %(names)s" + company_sql("Sales Order"),
+		{"names": tuple(names)},
+	)
 	if not names:
 		return {}
 

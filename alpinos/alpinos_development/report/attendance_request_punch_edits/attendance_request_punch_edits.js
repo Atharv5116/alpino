@@ -28,7 +28,10 @@ frappe.query_reports["Attendance Request Punch Edits"] = {
 			label: __("Company"),
 			fieldtype: "Link",
 			options: "Company",
-			default: frappe.defaults.get_user_default("Company"),
+			default:
+				window.alpinos && alpinos.company
+					? alpinos.company.current()
+					: frappe.defaults.get_user_default("Company"),
 		},
 	],
 };

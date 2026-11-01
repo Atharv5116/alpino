@@ -9,6 +9,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate
 
+from alpinos.company_scope.helpers import has_company_role, restrict_company
 from alpinos.query_compat import agg
 
 from alpinos.purchase import constants as C
@@ -40,6 +41,7 @@ LIST_FIELDS = (
 	"held_qty",
 	"released_qty",
 	"modified",
+	"company",
 )
 
 _SORTABLE = frozenset(
@@ -108,6 +110,7 @@ def get_quarantine_list(
 			distinct=True,
 		)
 		filters.append(["name", "in", parents or ["__none__"]])
+	filters = restrict_company(filters, DOCTYPE)
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
@@ -136,7 +139,7 @@ def get_quarantine_list(
 		by_parent = {}
 		for line in lines:
 			by_parent.setdefault(line.parent, []).append(line)
-		may_release = bool(set(frappe.get_roles()).intersection(RELEASE_ROLES))
+		may_release = {}
 		today = getdate()
 		from alpinos.purchase.quarantine import line_lots
 
@@ -154,7 +157,9 @@ def get_quarantine_list(
 				row.next_reminder_on and getdate(row.next_reminder_on) <= today and row.status != C.QRN_RELEASED
 			)
 			actions = [{"action": "view", "label": _("View"), "kind": "view"}]
-			if may_release and row["held_items"]:
+			if row.company not in may_release:
+				may_release[row.company] = has_company_role(RELEASE_ROLES, row.company)
+			if may_release[row.company] and row["held_items"]:
 				actions.append({"action": "release", "label": _("Release"), "kind": "transition"})
 			row["actions"] = actions
 

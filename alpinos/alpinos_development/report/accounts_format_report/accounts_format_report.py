@@ -6,6 +6,8 @@ import re
 import frappe
 from frappe.utils import cint, flt, formatdate, getdate
 
+from alpinos.company_scope.helpers import restrict_company
+
 
 # Indian States + UTs, longest-first so "Uttar Pradesh" wins over a bare "Pradesh".
 _INDIAN_STATES = sorted(
@@ -537,6 +539,11 @@ def _get_data(filters):
 		so_filters["customer"] = filters.customer
 	if filters.get("sales_order"):
 		so_filters["name"] = ["like", "%" + filters.get("sales_order") + "%"]
+	# The report's Company (checked by the report wrapper), else the companies in view.
+	if filters.get("company"):
+		so_filters["company"] = filters.company
+	else:
+		so_filters = restrict_company(so_filters, "Sales Order")
 
 	# Buyer Master parent / site scoping restricts the SO scan to matching customers.
 	allowed_customers = _buyer_master_scope_customers(filters)

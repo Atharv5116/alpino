@@ -442,6 +442,20 @@ def assign_existing_stock(rows, posting_date=None, remarks=None):
 		need[key] = flt(need.get(key)) + qty
 		company = frappe.get_cached_value("Warehouse", row.warehouse, "company")
 		by_company.setdefault(company, []).append(row)
+
+	from alpinos.company_scope.helpers import assert_company, has_company_role
+
+	for company in by_company:
+		# The role, and the right to make the Stock Entry, in each company the rows are in.
+		if not has_company_role(ASSIGN_ROLES, company):
+			frappe.throw(
+				_("Only {0} may assign Batch / MRP to existing stock in {1}.").format(
+					", ".join(ASSIGN_ROLES), frappe.bold(company)
+				),
+				frappe.PermissionError,
+			)
+		assert_company(company, "Stock Entry", "create")
+
 	for (item_code, warehouse), qty in need.items():
 		free = flt(balances(item_code, warehouse).get(None))
 		if qty - free > _EPS:

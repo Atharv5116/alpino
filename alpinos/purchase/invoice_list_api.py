@@ -18,6 +18,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate
 
+from alpinos.company_scope.helpers import company_sql, has_company_role, restrict_company
 from alpinos.query_compat import agg
 
 from alpinos.purchase import constants as C
@@ -60,6 +61,7 @@ LIST_FIELDS = (
 	"custom_total_paid_amount",
 	"docstatus",
 	"modified",
+	"company",
 )
 
 # Sort columns arrive as raw strings and are interpolated into order_by, so only these
@@ -203,6 +205,7 @@ def get_invoice_list(
 
 	_status_filter(filters, status)
 	_doc_state_filter(filters, doc_state)
+	filters = restrict_company(filters, DOCTYPE)
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
@@ -277,13 +280,21 @@ def _attach_row_extras(rows, with_actions=1):
 
 
 def _action_context():
-	roles = set(frappe.get_roles())
 	return {
 		"write": bool(frappe.has_permission(DOCTYPE, "write")),
 		"submit": bool(frappe.has_permission(DOCTYPE, "submit")),
-		"may_create": bool(roles & set(C.UNF_CREATE_ROLES)),
-		"may_pay": bool(roles & set(C.UNF_PAYMENT_ROLES)),
+		"roles": {},
 	}
+
+
+def _company_roles(ctx, company):
+	"""(may create, may pay) in the row's company, worked out once per company."""
+	if company not in ctx["roles"]:
+		ctx["roles"][company] = (
+			has_company_role(C.UNF_CREATE_ROLES, company),
+			has_company_role(C.UNF_PAYMENT_ROLES, company),
+		)
+	return ctx["roles"][company]
 
 
 def _act(action, label, kind="view"):
@@ -293,8 +304,9 @@ def _act(action, label, kind="view"):
 def _row_actions(row, ctx):
 	"""BRD 6.1.2: View always; Edit / Submit on a Draft; Add Payment while money is owed."""
 	docstatus = cint(row.get("docstatus"))
+	may_create, may_pay = _company_roles(ctx, row.get("company"))
 	actions = [_act("view", _("View"))]
-	if docstatus == 0 and ctx["may_create"]:
+	if docstatus == 0 and may_create:
 		if ctx["write"]:
 			actions.append(_act("edit", _("Edit")))
 		if ctx["submit"]:
@@ -302,7 +314,7 @@ def _row_actions(row, ctx):
 	if (
 		docstatus == 1
 		and row.get("status") in (C.UNF_PENDING_PAYMENT, C.UNF_PARTIALLY_PAID)
-		and ctx["may_pay"]
+		and may_pay
 		and ctx["write"]
 	):
 		actions.append(_act("add_payment", _("Add Payment"), kind="transition"))
@@ -340,6 +352,16 @@ def _assert_can_create():
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 
+def _company_condition(doctype, alias, filters):
+	"""(company, SQL) for a picker: the companies the user works in, narrowed to the one the
+	caller passes in `filters` when it passes one."""
+	company = (filters or {}).get("company") if isinstance(filters, dict) else None
+	cond = company_sql(doctype, alias)
+	if company:
+		cond += f" AND `{alias}`.`company` = %(company)s"
+	return company, cond
+
+
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def eligible_grn_query(doctype, txt, searchfield, start, page_len, filters):
@@ -350,6 +372,7 @@ def eligible_grn_query(doctype, txt, searchfield, start, page_len, filters):
 	"""
 	_assert_can_create()
 	like = f"%{txt or ''}%"
+	company, company_cond = _company_condition("Purchase Receipt", "pr", filters)
 	return frappe.db.sql(
 		"""
 		SELECT pr.name, pr.supplier_name, pr.custom_purchase_inward, pr.posting_date
@@ -362,11 +385,11 @@ def eligible_grn_query(doctype, txt, searchfield, start, page_len, filters):
 		  AND NOT EXISTS (
 		      SELECT 1 FROM `tabPurchase Invoice` pi
 		      WHERE pi.custom_grn = pr.name AND pi.docstatus < 2
-		  )
+		  ){company_cond}
 		ORDER BY pr.posting_date DESC, pr.name DESC
 		LIMIT %(start)s, %(page_len)s
-		""",
-		{"txt": like, "start": cint(start), "page_len": cint(page_len)},
+		""".format(company_cond=company_cond),
+		{"txt": like, "start": cint(start), "page_len": cint(page_len), "company": company},
 	)
 
 
@@ -381,6 +404,7 @@ def eligible_direct_po_query(doctype, txt, searchfield, start, page_len, filters
 	"""
 	_assert_can_create()
 	like = f"%{txt or ''}%"
+	company, company_cond = _company_condition("Purchase Order", "po", filters)
 	return frappe.db.sql(
 		"""
 		SELECT po.name, po.supplier_name, po.transaction_date
@@ -395,16 +419,17 @@ def eligible_direct_po_query(doctype, txt, searchfield, start, page_len, filters
 		      JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
 		      WHERE pii.purchase_order = po.name AND pi.docstatus < 2
 		        AND pi.custom_invoice_type = %(direct)s
-		  )
+		  ){company_cond}
 		ORDER BY po.transaction_date DESC, po.name DESC
 		LIMIT %(start)s, %(page_len)s
-		""",
+		""".format(company_cond=company_cond),
 		{
 			"txt": like,
 			"live": tuple(C.PO_LIVE_STATUSES),
 			"direct": C.UNF_TYPE_DIRECT,
 			"start": cint(start),
 			"page_len": cint(page_len),
+			"company": company,
 		},
 	)
 

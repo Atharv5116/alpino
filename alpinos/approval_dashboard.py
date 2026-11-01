@@ -3,6 +3,8 @@
 import frappe
 from frappe.utils import get_first_day, get_last_day, getdate
 
+from alpinos.company_scope.helpers import has_company_role, scope_companies
+
 HR_ROLES = ("HR Manager", "HR User")
 
 
@@ -34,6 +36,15 @@ def get_pending_approvals(from_date=None, to_date=None):
 
 	# Filter by creation date, not the event date, so a still-pending request isn't hidden.
 	created_range = [["creation", ">=", str(from_date)], ["creation", "<=", str(to_date) + " 23:59:59"]]
+
+	# HR steps follow the company: HR of the companies the user works in now. The reporting
+	# manager and HOD steps follow the team, whatever company the employee is in.
+	visible = scope_companies()
+
+	def hr_for(company):
+		if visible is None:
+			return is_hr
+		return company in visible and has_company_role(HR_ROLES, company)
 
 	allowed = is_hr or is_hod or is_rm
 	result = {
@@ -77,7 +88,7 @@ def get_pending_approvals(from_date=None, to_date=None):
 				[sf, "in", ["Pending Reporting Manager Approval", "Pending HR Approval"]],
 				["docstatus", "<", 2],
 			] + created_range,
-			fields=["name", "employee", "from_date", sf],
+			fields=["name", "employee", "from_date", "company", sf],
 			order_by="modified desc", limit=200,
 		):
 			state = r.get(sf)
@@ -87,7 +98,7 @@ def get_pending_approvals(from_date=None, to_date=None):
 				(state == "Pending Reporting Manager Approval"
 					and _user_is_rm_of(r.employee, user)
 					and "Reporting Manager" in roles)
-				or is_hr
+				or hr_for(r.company)
 			)
 			if pending_me:
 				add("Leave Application", "Leave", r.name, r.employee, r.from_date, "leave-application")
@@ -99,11 +110,11 @@ def get_pending_approvals(from_date=None, to_date=None):
 		for r in frappe.get_all(
 			"Expense Claim",
 			filters=[["approval_status", "=", "Pending RM Approval"], ["docstatus", "<", 2]] + created_range,
-			fields=["name", "employee", "posting_date", "expense_approver"],
+			fields=["name", "employee", "posting_date", "expense_approver", "company"],
 			order_by="modified desc", limit=200,
 		):
 			# RM stage: the employee's own reporting manager with the Reporting Manager role.
-			if (_user_is_rm_of(r.employee, user) and "Reporting Manager" in roles) or is_hr:
+			if (_user_is_rm_of(r.employee, user) and "Reporting Manager" in roles) or hr_for(r.company):
 				add("Expense Claim", "Expense", r.name, r.employee, r.posting_date, "expense-claim")
 
 	# --- Attendance Request: RM step -> reporting_person; HR step -> HR ---
@@ -116,12 +127,12 @@ def get_pending_approvals(from_date=None, to_date=None):
 				["docstatus", "=", 0],
 				["workflow_state", "in", ["Pending RM Approval", "Pending HR Approval"]],
 			] + created_range,
-			fields=["name", "employee", "from_date", "workflow_state", "reporting_person"],
+			fields=["name", "employee", "from_date", "workflow_state", "reporting_person", "company"],
 			order_by="modified desc", limit=200,
 		):
 			pending_me = (
 				(r.workflow_state == "Pending RM Approval" and r.reporting_person == user)
-				or (r.workflow_state == "Pending HR Approval" and is_hr)
+				or (r.workflow_state == "Pending HR Approval" and hr_for(r.company))
 			)
 			if pending_me:
 				add("Attendance Request", "Attendance", r.name, r.employee, r.from_date, "attendance-request")
@@ -135,13 +146,13 @@ def get_pending_approvals(from_date=None, to_date=None):
 			filters=[
 				["status", "in", ["Pending Reporting Manager Approval", "Pending HOD Approval", "Pending HR Approval"]],
 			] + created_range,
-			fields=["name", "employee", "date", "status", "leave_approver"],
+			fields=["name", "employee", "date", "status", "leave_approver", "company"],
 			order_by="modified desc", limit=200,
 		):
 			pending_me = (
 				(r.status == "Pending Reporting Manager Approval" and r.leave_approver == user)
 				or (r.status == "Pending HOD Approval" and is_hod)
-				or (r.status == "Pending HR Approval" and is_hr)
+				or (r.status == "Pending HR Approval" and hr_for(r.company))
 			)
 			if pending_me:
 				add("Work From Home Request", "WFH", r.name, r.employee, r.date, "work-from-home-request")

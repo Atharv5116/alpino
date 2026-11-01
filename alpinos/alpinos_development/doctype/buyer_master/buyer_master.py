@@ -443,6 +443,8 @@ def backfill_search_alias(apply=0, sample=10):
 	  bench --site SITE execute alpinos.alpinos_development.doctype.buyer_master.buyer_master.backfill_search_alias
 	  bench --site SITE execute alpinos.alpinos_development.doctype.buyer_master.buyer_master.backfill_search_alias --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off backfill over every Buyer Master)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	sample = int(sample)
 	rows = frappe.get_all(

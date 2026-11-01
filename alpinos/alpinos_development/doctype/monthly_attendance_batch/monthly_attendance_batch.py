@@ -10,6 +10,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import get_first_day, getdate, now_datetime
 
+from alpinos.company_scope.helpers import assert_company
+
 ENGINE_ABBR = {
 	"HO/Admin": "HO",
 	"WH ESSL": "WH",
@@ -19,10 +21,16 @@ ENGINE_ABBR = {
 
 class MonthlyAttendanceBatch(Document):
 	def autoname(self):
-		"""ATT-BATCH-YYYY-MM-<engine>, e.g. ATT-BATCH-2026-07-HO."""
+		"""ATT-BATCH-YYYY-MM-<engine>, e.g. ATT-BATCH-2026-07-HO; another company than the
+		default one carries its abbreviation: ATT-BATCH-HH-2026-07-HO."""
 		month = getdate(self.payroll_month)
 		abbr = ENGINE_ABBR.get(self.rule_engine, "XX")
-		self.name = f"ATT-BATCH-{month.year}-{month.month:02d}-{abbr}"
+		prefix = "ATT-BATCH"
+		if self.company and self.company != frappe.db.get_single_value("Global Defaults", "default_company"):
+			company_abbr = frappe.get_cached_value("Company", self.company, "abbr")
+			if company_abbr:
+				prefix = f"{prefix}-{company_abbr}"
+		self.name = f"{prefix}-{month.year}-{month.month:02d}-{abbr}"
 
 	def validate(self):
 		self._normalize_month()
@@ -36,20 +44,20 @@ class MonthlyAttendanceBatch(Document):
 
 	def _check_duplicate(self):
 		"""One live batch per engine + month + company."""
-		dup = frappe.db.exists(
-			"Monthly Attendance Batch",
-			{
-				"rule_engine": self.rule_engine,
-				"payroll_month": self.payroll_month,
-				"company": self.company,
-				"docstatus": ["!=", 2],
-				"name": ["!=", self.name],
-			},
-		)
+		filters = {
+			"rule_engine": self.rule_engine,
+			"payroll_month": self.payroll_month,
+			"company": self.company,
+			"docstatus": ["!=", 2],
+		}
+		# A new batch already carries the name it would share with the live one.
+		if not self.is_new():
+			filters["name"] = ["!=", self.name]
+		dup = frappe.db.exists("Monthly Attendance Batch", filters)
 		if dup:
 			frappe.throw(
-				_("Batch {0} already exists for {1} — {2}. Edit that batch instead.").format(
-					frappe.bold(dup), self.rule_engine, self.month_title
+				_("Batch {0} already exists for {1} — {2} in {3}. Edit that batch instead.").format(
+					frappe.bold(dup), self.rule_engine, self.month_title, self.company
 				)
 			)
 
@@ -72,6 +80,7 @@ class MonthlyAttendanceBatch(Document):
 		Throws if any active employee in the company has no Salary Category with a
 		rule engine, so nobody silently drops out of payroll.
 		"""
+		assert_company(self, ptype="write")
 		if self.docstatus != 0 or (self.workflow_state or "Draft") not in ("Draft",):
 			frappe.throw(_("Rows can only be generated while the batch is in Draft."))
 

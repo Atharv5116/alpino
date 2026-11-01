@@ -16,9 +16,51 @@ import frappe
 from frappe import _
 from frappe.utils import cint, date_diff, flt, get_fullname, getdate, now_datetime, nowdate
 
+from alpinos.company_scope.helpers import (
+	assert_open,
+	company_filters,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+	tag_or_filters,
+	tagged_condition,
+	users_with_roles,
+)
 from alpinos.production import inventory_common as IC
 
 WORK_ORDER = "Work Order"
+
+
+def _assert_in_company(roles, company, what):
+	"""IC.assert_roles for a document of `company`: the role must be held in that company."""
+	if company and not has_company_role(roles, company):
+		frappe.throw(_("You are not permitted to {0} in {1}.").format(what, frappe.bold(company)),
+		             frappe.PermissionError, title=_("Not Permitted"))
+
+
+def _visible_warehouses(names=None):
+	"""The warehouses among `names` (all when None) that belong to a company the user sees;
+	None when nothing restricts and no names were given."""
+	companies = scope_companies()
+	if companies is None:
+		return None if names is None else [n for n in names if n]
+	filters = {"company": ("in", companies or ["__none__"])}
+	if names is not None:
+		filters["name"] = ("in", [n for n in names if n] or ["__none__"])
+	return frappe.get_all("Warehouse", filters=filters, pluck="name")
+
+
+def _setting_warehouses(fieldname, fallback=None):
+	"""A Production Settings warehouse for each company the user sees (the Single's value
+	when nothing restricts)."""
+	companies = scope_companies()
+	if companies is None:
+		return [w for w in [IC.setting(fieldname) or (IC.setting(fallback) if fallback else None)] if w]
+	from alpinos.production.production_settings import warehouse_for
+
+	return [w for w in dict.fromkeys(
+		warehouse_for(fieldname, c) or (warehouse_for(fallback, c) if fallback else None)
+		for c in companies) if w]
 
 
 # =================================================================== stock entries
@@ -255,11 +297,15 @@ def _post_adjustment(doc):
 def on_submit_adjustment(doc):
 	if cint(doc.requires_approval):
 		doc.db_set("approval_status", IC.ADJ_PENDING)
-		IC.notify(IC.ADJUSTMENT_NOTIFY_ROLES,
-		          _("Approval Required: Inventory Adjustment {0} deducts {1} KG from {2} ({3}). "
-		            "Click to review.").format(doc.name, flt(doc.total_kg, 3), doc.warehouse,
-		                                       doc.reason_code),
-		          doctype=doc.doctype, name=doc.name, email=True)
+		from alpinos.production.notify import notify as _notify
+
+		# The Plant Heads of the adjustment's company only.
+		_notify([], _("Approval Required: Inventory Adjustment {0} deducts {1} KG from {2} ({3}). "
+		              "Click to review.").format(doc.name, flt(doc.total_kg, 3), doc.warehouse,
+		                                         doc.reason_code),
+		        doctype=doc.doctype, name=doc.name, email=True,
+		        users=[u for u in users_with_roles(list(IC.ADJUSTMENT_NOTIFY_ROLES), doc.company)
+		               if u not in ("Administrator", "Guest")])
 		IC.audit(doc.doctype, doc.name, "Sent For Approval",
 		         _("{0} KG deduction exceeds the {1} KG threshold").format(
 			         flt(doc.total_kg, 3), IC.approval_threshold_kg()))
@@ -307,9 +353,10 @@ def _assert_read():
 def get_wip_dashboard(item=None, category=None, warehouse=None):
 	"""10.1 (1) Production (WIP) Inventory: RM / PM / Additive and baked bulk on the floor."""
 	_assert_read()
-	floor = [w for w in dict.fromkeys([IC.setting("wip_warehouse"), IC.baked_wip_wh()]) if w]
+	baked_whs = _setting_warehouses("baked_wip_warehouse", "wip_warehouse")
+	floor = list(dict.fromkeys(_setting_warehouses("wip_warehouse") + baked_whs))
 	if warehouse:
-		floor = [w for w in floor if w == warehouse] or [warehouse]
+		floor = [w for w in floor if w == warehouse] or _visible_warehouses([warehouse])
 	out = {"warehouses": floor, "stock": [], "baked": [], "message": ""}
 	if not floor:
 		out["message"] = _("Set the WIP warehouse in Production Settings.")
@@ -329,12 +376,11 @@ def get_wip_dashboard(item=None, category=None, warehouse=None):
 			                     "custom_parent_production_order": ("is", "set")},
 			pluck="production_item", distinct=True)) if IC.has_field(
 			WORK_ORDER, "custom_parent_production_order") else set()
-	baked_wh = IC.baked_wip_wh()
 	for b in bins:
 		meta = info.get(b.item_code) or frappe._dict()
 		cat = meta.get("material_type") or ""
 		if cat not in ("RM", "PM", "Additive"):
-			cat = "Baked / Semi-finished" if (b.item_code in bulk_items or b.warehouse == baked_wh) \
+			cat = "Baked / Semi-finished" if (b.item_code in bulk_items or b.warehouse in baked_whs) \
 				else (cat or "Other")
 		if category and category != cat:
 			continue
@@ -348,7 +394,7 @@ def get_wip_dashboard(item=None, category=None, warehouse=None):
 		subs = frappe.get_all(
 			WORK_ORDER,
 			filters={"custom_wip_qty": (">", 0), "docstatus": ("<", 2),
-			         "custom_parent_production_order": ("is", "set")},
+			         "custom_parent_production_order": ("is", "set"), **company_filters(WORK_ORDER)},
 			fields=["name", "custom_parent_production_order as parent", "custom_batch_number as batch",
 			        "production_item", "item_name", "custom_wip_qty as wip_qty",
 			        "custom_execution_status as status"],
@@ -380,8 +426,9 @@ def get_fg_dashboard(status=None, item=None, warehouse=None, batch=None):
 	"""10.1 (2) FG Inventory by SKU / batch. Only FG-Cleared stock in the FG warehouse
 	counts as Available for Dispatch."""
 	_assert_read()
+	fg_whs = _setting_warehouses("fg_warehouse")
 	out = {"rows": [], "totals": {}, "tracked": int(IC.batch_fg_tracked()), "message": "",
-	       "fg_warehouse": IC.setting("fg_warehouse")}
+	       "fg_warehouse": fg_whs[0] if fg_whs else None}
 	from alpinos.production import material_type as MT
 
 	fg_groups = MT.groups_of_type(MT.FG)
@@ -391,24 +438,26 @@ def get_fg_dashboard(status=None, item=None, warehouse=None, batch=None):
 	item_filters = {"item_group": ("in", fg_groups), "is_stock_item": 1}
 	if item:
 		item_filters["name"] = item
-	fg_items = frappe.get_all("Item", filters=item_filters, pluck="name", limit_page_length=0)
+	fg_items = frappe.get_all("Item", filters=item_filters, or_filters=tag_or_filters("Item"),
+	                          pluck="name", limit_page_length=0)
 	if not fg_items:
 		return out
 	info = IC.item_meta(fg_items)
 	batched = [i for i in fg_items if info.get(i) and info[i].has_batch_no]
 	plain = [i for i in fg_items if i not in set(batched)]
-	whs = [warehouse] if warehouse else None
+	whs = _visible_warehouses([warehouse] if warehouse else None)
+	if whs is not None and not whs:
+		whs = ["__none__"]
 	rows = IC.batch_stock(batched, whs, [batch] if batch else None) if batched else []
 	if plain and not batch:
 		bf = {"item_code": ("in", plain), "actual_qty": ("!=", 0)}
-		if warehouse:
-			bf["warehouse"] = warehouse
+		if whs is not None:
+			bf["warehouse"] = ("in", whs)
 		for b in frappe.get_all("Bin", filters=bf, fields=["item_code", "warehouse", "actual_qty"],
 		                        limit_page_length=0):
 			rows.append(frappe._dict(item_code=b.item_code, batch_no="", warehouse=b.warehouse,
 			                         qty=b.actual_qty))
 	status_map = IC.fg_status_map([r.batch_no for r in rows if r.batch_no])
-	fg_wh = out["fg_warehouse"]
 	totals = {}
 	for r in rows:
 		st = status_map.get(r.batch_no) or frappe._dict()
@@ -416,7 +465,7 @@ def get_fg_dashboard(status=None, item=None, warehouse=None, batch=None):
 		if status and fg_status != status:
 			continue
 		qty = flt(r.qty)
-		available = qty if (fg_status == IC.FG_CLEARED and fg_wh and r.warehouse == fg_wh and qty > 0) else 0
+		available = qty if (fg_status == IC.FG_CLEARED and r.warehouse in fg_whs and qty > 0) else 0
 		meta = info.get(r.item_code) or frappe._dict()
 		out["rows"].append({
 			"item_code": r.item_code, "item_name": meta.get("item_name"), "batch_no": r.batch_no,
@@ -439,7 +488,7 @@ def source_batches(item_code, warehouse):
 	"""Batches of this item that actually exist at the source (FRD 10.2 'Crucial Link'),
 	earliest expiry first, with their FG status."""
 	_assert_read()
-	if not (item_code and warehouse):
+	if not (item_code and warehouse) or not _visible_warehouses([warehouse]):
 		return []
 	rows = IC.batch_stock([item_code], [warehouse])
 	status = IC.fg_status_map([r.batch_no for r in rows])
@@ -461,7 +510,7 @@ def batch_query(doctype, txt, searchfield, start, page_len, filters):
 	filters.warehouse (any batch of the item when filters.any_batch is set -- Add Stock)."""
 	filters = filters or {}
 	item_code, warehouse = filters.get("item_code"), filters.get("warehouse")
-	if not item_code:
+	if not item_code or (warehouse and not _visible_warehouses([warehouse])):
 		return []
 	if cint(filters.get("any_batch")) or not warehouse:
 		return frappe.db.sql(
@@ -478,6 +527,9 @@ def batch_query(doctype, txt, searchfield, start, page_len, filters):
 @frappe.whitelist()
 def item_stock(item_code, warehouse, batch_no=None):
 	_assert_read()
+	if warehouse and not _visible_warehouses([warehouse]):
+		frappe.throw(_("Warehouse {0} is not in the company you are working in.").format(warehouse),
+		             frappe.PermissionError, title=_("Not In This Company"))
 	info = IC.item_meta([item_code]).get(item_code) or frappe._dict()
 	return {"item_name": info.get("item_name"), "uom": info.get("stock_uom"),
 	        "has_batch_no": cint(info.get("has_batch_no")),
@@ -492,14 +544,17 @@ def items_at_warehouse(doctype, txt, searchfield, start, page_len, filters):
 	warehouse = (filters or {}).get("warehouse")
 	if not warehouse:
 		return frappe.db.sql(
-			"""select name, item_name from `tabItem` where disabled = 0 and is_stock_item = 1
-			   and (name like %(t)s or item_name like %(t)s) order by name limit %(s)s, %(p)s""",
+			f"""select name, item_name from `tabItem` where disabled = 0 and is_stock_item = 1
+			   and (name like %(t)s or item_name like %(t)s) {tagged_condition("Item")}
+			   order by name limit %(s)s, %(p)s""",
 			{"t": f"%{txt or ''}%", "s": cint(start), "p": cint(page_len) or 20})
+	if not _visible_warehouses([warehouse]):
+		return []
 	return frappe.db.sql(
-		"""select b.item_code, i.item_name, b.actual_qty from `tabBin` b
+		f"""select b.item_code, i.item_name, b.actual_qty from `tabBin` b
 		   join `tabItem` i on i.name = b.item_code
 		   where b.warehouse = %(w)s and b.actual_qty > 0
-		     and (b.item_code like %(t)s or i.item_name like %(t)s)
+		     and (b.item_code like %(t)s or i.item_name like %(t)s) {tagged_condition("Item", "i")}
 		   order by b.item_code limit %(s)s, %(p)s""",
 		{"w": warehouse, "t": f"%{txt or ''}%", "s": cint(start), "p": cint(page_len) or 20})
 
@@ -519,6 +574,7 @@ def get_transfer_list(search=None, status=None, transfer_type=None, source_wareh
 		if v:
 			filters[k] = v
 	_date_filter(filters, "posting_date", date_from, date_to)
+	filters = restrict_company(filters, IC.TRANSFER)
 	or_filters = {"name": ("like", f"%{search}%"), "remarks": ("like", f"%{search}%")} if search else None
 	rows = frappe.get_all(IC.TRANSFER, filters=filters, or_filters=or_filters,
 	                      fields=["name", "posting_date", "transfer_type", "transfer_reason",
@@ -559,9 +615,10 @@ def get_transfer_context(name=None):
 	       "can_cancel": 0, "doc": None}
 	if name:
 		doc = frappe.get_doc(IC.TRANSFER, name)
+		assert_open(doc)
 		ctx["doc"] = _transfer_payload(doc)
-		ctx["can_cancel"] = int(cint(doc.docstatus) == 1 and IC.has_any(IC.TRANSFER_MANAGE_ROLES))
-		ctx["can_write"] = int(cint(doc.docstatus) == 0 and ctx["can_write"])
+		ctx["can_cancel"] = int(cint(doc.docstatus) == 1 and has_company_role(IC.TRANSFER_MANAGE_ROLES, doc.company))
+		ctx["can_write"] = int(cint(doc.docstatus) == 0 and has_company_role(IC.TRANSFER_WRITE_ROLES, doc.company))
 	return ctx
 
 
@@ -573,8 +630,11 @@ def save_transfer(payload, submit=0):
 		doc = frappe.get_doc(IC.TRANSFER, p.name)
 		if cint(doc.docstatus) != 0:
 			frappe.throw(_("{0} is already submitted.").format(p.name), title=_("Not A Draft"))
+		_assert_in_company(IC.TRANSFER_WRITE_ROLES, doc.company, _("change {0}").format(doc.name))
 	else:
 		doc = frappe.new_doc(IC.TRANSFER)
+	_assert_in_company(IC.TRANSFER_WRITE_ROLES, IC.company_of_warehouse(p.get("source_warehouse")),
+	                   _("create a Production Transfer"))
 	for f in ("posting_date", "transfer_type", "transfer_reason", "source_warehouse",
 	          "target_warehouse", "remarks"):
 		doc.set(f, p.get(f))
@@ -600,6 +660,7 @@ def submit_transfer(name):
 	doc = frappe.get_doc(IC.TRANSFER, name)
 	if cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} is not a draft.").format(name), title=_("Not A Draft"))
+	_assert_in_company(IC.TRANSFER_WRITE_ROLES, doc.company, _("submit a Production Transfer"))
 	doc.flags.ignore_permissions = True
 	doc.submit()
 	frappe.db.commit()
@@ -612,6 +673,7 @@ def cancel_transfer(name):
 	doc = frappe.get_doc(IC.TRANSFER, name)
 	if cint(doc.docstatus) != 1:
 		frappe.throw(_("{0} is not submitted.").format(name), title=_("Not Submitted"))
+	_assert_in_company(IC.TRANSFER_MANAGE_ROLES, doc.company, _("cancel a Production Transfer"))
 	doc.flags.ignore_permissions = True
 	doc.cancel()
 	frappe.db.commit()
@@ -621,6 +683,8 @@ def cancel_transfer(name):
 @frappe.whitelist()
 def delete_transfer(name):
 	IC.assert_roles(IC.TRANSFER_WRITE_ROLES, _("delete a Production Transfer"))
+	_assert_in_company(IC.TRANSFER_WRITE_ROLES, frappe.db.get_value(IC.TRANSFER, name, "company"),
+	                   _("delete a Production Transfer"))
 	if cint(frappe.db.get_value(IC.TRANSFER, name, "docstatus")) != 0:
 		frappe.throw(_("Only a draft can be deleted."), title=_("Not A Draft"))
 	frappe.delete_doc(IC.TRANSFER, name, ignore_permissions=True)
@@ -641,6 +705,7 @@ def get_adjustment_list(search=None, approval_status=None, adjustment_type=None,
 		if v:
 			filters[k] = v
 	_date_filter(filters, "posting_date", date_from, date_to)
+	filters = restrict_company(filters, IC.ADJUSTMENT)
 	or_filters = {"name": ("like", f"%{search}%"), "admin_remarks": ("like", f"%{search}%")} \
 		if search else None
 	rows = frappe.get_all(IC.ADJUSTMENT, filters=filters, or_filters=or_filters,
@@ -667,6 +732,7 @@ def get_adjustment_context(name=None):
 	       "can_cancel": 0, "doc": None}
 	if name:
 		doc = frappe.get_doc(IC.ADJUSTMENT, name)
+		assert_open(doc)
 		ctx["doc"] = {
 			"name": doc.name, "posting_date": doc.posting_date, "adjustment_type": doc.adjustment_type,
 			"reason_code": doc.reason_code, "warehouse": doc.warehouse, "company": doc.company,
@@ -682,10 +748,11 @@ def get_adjustment_context(name=None):
 			          for r in doc.items],
 		}
 		pending = cint(doc.docstatus) == 1 and doc.approval_status == IC.ADJ_PENDING
-		ctx["can_approve"] = int(pending and IC.has_any(IC.ADJUSTMENT_APPROVE_ROLES))
+		may_write = has_company_role(IC.ADJUSTMENT_WRITE_ROLES, doc.company)
+		ctx["can_approve"] = int(pending and has_company_role(IC.ADJUSTMENT_APPROVE_ROLES, doc.company))
 		ctx["can_cancel"] = int(cint(doc.docstatus) == 1 and doc.approval_status in (IC.ADJ_PENDING, IC.ADJ_POSTED)
-		                        and IC.has_any(IC.ADJUSTMENT_WRITE_ROLES))
-		ctx["can_write"] = int(cint(doc.docstatus) == 0 and ctx["can_write"])
+		                        and may_write)
+		ctx["can_write"] = int(cint(doc.docstatus) == 0 and may_write)
 	return ctx
 
 
@@ -697,8 +764,11 @@ def save_adjustment(payload, submit=0):
 		doc = frappe.get_doc(IC.ADJUSTMENT, p.name)
 		if cint(doc.docstatus) != 0:
 			frappe.throw(_("{0} is already submitted.").format(p.name), title=_("Not A Draft"))
+		_assert_in_company(IC.ADJUSTMENT_WRITE_ROLES, doc.company, _("change {0}").format(doc.name))
 	else:
 		doc = frappe.new_doc(IC.ADJUSTMENT)
+	_assert_in_company(IC.ADJUSTMENT_WRITE_ROLES, IC.company_of_warehouse(p.get("warehouse")),
+	                   _("create an Inventory Adjustment"))
 	for f in ("posting_date", "adjustment_type", "reason_code", "warehouse", "admin_remarks"):
 		doc.set(f, p.get(f))
 	doc.posting_date = doc.posting_date or nowdate()
@@ -723,6 +793,7 @@ def submit_adjustment(name):
 	doc = frappe.get_doc(IC.ADJUSTMENT, name)
 	if cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} is not a draft.").format(name), title=_("Not A Draft"))
+	_assert_in_company(IC.ADJUSTMENT_WRITE_ROLES, doc.company, _("submit an Inventory Adjustment"))
 	doc.flags.ignore_permissions = True
 	doc.submit()
 	frappe.db.commit()
@@ -741,6 +812,7 @@ def approve_adjustment(name):
 	"""Plant Head approves: the Stock Entry is posted now (stock is re-checked)."""
 	IC.assert_roles(IC.ADJUSTMENT_APPROVE_ROLES, _("approve an Inventory Adjustment"))
 	doc = _pending(name)
+	_assert_in_company(IC.ADJUSTMENT_APPROVE_ROLES, doc.company, _("approve an Inventory Adjustment"))
 	se = _post_adjustment(doc)
 	doc.db_set("approved_by", frappe.session.user)
 	doc.db_set("approved_on", now_datetime())
@@ -762,6 +834,7 @@ def reject_adjustment(name, reason=None):
 	if not (reason or "").strip():
 		frappe.throw(_("Please give a reason for rejecting."), title=_("Reason Required"))
 	doc = _pending(name)
+	_assert_in_company(IC.ADJUSTMENT_APPROVE_ROLES, doc.company, _("reject an Inventory Adjustment"))
 	doc.db_set("approval_status", IC.ADJ_REJECTED)
 	doc.db_set("rejected_by", frappe.session.user)
 	doc.db_set("rejected_on", now_datetime())
@@ -784,6 +857,7 @@ def cancel_adjustment(name):
 	doc = frappe.get_doc(IC.ADJUSTMENT, name)
 	if cint(doc.docstatus) != 1:
 		frappe.throw(_("{0} is not submitted.").format(name), title=_("Not Submitted"))
+	_assert_in_company(IC.ADJUSTMENT_WRITE_ROLES, doc.company, _("cancel an Inventory Adjustment"))
 	doc.flags.ignore_permissions = True
 	doc.cancel()
 	frappe.db.commit()
@@ -793,6 +867,8 @@ def cancel_adjustment(name):
 @frappe.whitelist()
 def delete_adjustment(name):
 	IC.assert_roles(IC.ADJUSTMENT_WRITE_ROLES, _("delete an Inventory Adjustment"))
+	_assert_in_company(IC.ADJUSTMENT_WRITE_ROLES, frappe.db.get_value(IC.ADJUSTMENT, name, "company"),
+	                   _("delete an Inventory Adjustment"))
 	if cint(frappe.db.get_value(IC.ADJUSTMENT, name, "docstatus")) != 0:
 		frappe.throw(_("Only a draft can be deleted."), title=_("Not A Draft"))
 	frappe.delete_doc(IC.ADJUSTMENT, name, ignore_permissions=True)

@@ -19,6 +19,15 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_fullname, getdate, nowdate
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	company_sql,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+	users_with_roles,
+)
 from alpinos.query_compat import agg
 
 from alpinos.production import material_common as MC
@@ -48,6 +57,23 @@ LIST_FIELDS = (
 
 def is_production_mr(doc):
 	return bool(doc.get(SUB_FIELD))
+
+
+def assert_store_role(roles, company, action=None):
+	"""MC's role gates for a document of `company`: the role must be held in that company."""
+	if company and not has_company_role(roles, company):
+		frappe.throw(
+			_("You may not {0} in {1}: you do not have the store role there.").format(
+				action or _("do this"), frappe.bold(company)),
+			frappe.PermissionError, title=_("Not Permitted"))
+
+
+def notify(roles, company, subject, doctype, name):
+	"""MC.notify, to the holders of `roles` in the document's company only."""
+	from alpinos.production.notify import notify as _notify
+
+	users = [u for u in users_with_roles(list(roles), company) if u not in ("Administrator", "Guest")]
+	return _notify([], subject, doctype=doctype, name=name, users=users)
 
 
 # ======================================================================== status
@@ -204,6 +230,7 @@ def _open_mr(sub_name):
 def _generate_mr(sub_order):
 	sub_doc = frappe.get_doc(WORK_ORDER, sub_order)
 	sub = MC.sub_order_header(sub_order)       # Parent Sent To Store, not locked, not cancelled
+	assert_store_role(M.STORE_PLAN_ROLES, sub.company, _("generate a Material Request"))
 
 	status = sub_doc.get(EXECUTION_STATUS_FIELD)
 	if status != "Assigned":
@@ -224,7 +251,7 @@ def _generate_mr(sub_order):
 		frappe.throw(_("Material Request {0} already exists for {1}.").format(existing, sub_order),
 		             title=_("Material Request Exists"))
 
-	source, wip = main_warehouse(), wip_warehouse()
+	source, wip = main_warehouse(sub.company), wip_warehouse(sub.company)
 	rows = _suggested_rows(sub, source)
 	if not rows:
 		frappe.throw(_("{0} has no materials left to request.").format(sub_order),
@@ -267,8 +294,8 @@ def _generate_mr(sub_order):
 
 	frappe.db.set_value(WORK_ORDER, sub_order, MATERIAL_REQUEST_FIELD, mr.name)
 
-	MC.notify(
-		M.MR_NOTIFY_ROLES,
+	notify(
+		M.MR_NOTIFY_ROLES, sub.company,
 		_("Material Request {0} raised for {1} ({2}), required by {3}.").format(
 			mr.name, sub_order, sub.production_item, frappe.format_value(schedule_date, {"fieldtype": "Date"})),
 		MR, mr.name)
@@ -454,6 +481,7 @@ def get_mr_list(search=None, status=None, sub_order=None, parent=None, fg_item=N
 	if source:
 		filters["custom_mr_source"] = source
 	MC.date_range(filters, "transaction_date", date_from, date_to)
+	filters = restrict_company(filters, MR)
 
 	or_filters = None
 	if search:
@@ -501,11 +529,11 @@ def _row_out(r):
 	}
 
 
-def _warehouses():
+def _warehouses(company=None):
 	out = {"main_warehouse": None, "wip_warehouse": None}
 	try:
-		out["main_warehouse"] = main_warehouse()
-		out["wip_warehouse"] = wip_warehouse()
+		out["main_warehouse"] = main_warehouse(company)
+		out["wip_warehouse"] = wip_warehouse(company)
 	except frappe.ValidationError:
 		frappe.local.message_log = []
 	return out
@@ -527,6 +555,10 @@ def get_mr_context(material_request=None):
 	if not is_production_mr(doc):
 		frappe.throw(_("{0} is not a production Material Request.").format(material_request),
 		             title=_("Not A Production MR"))
+	assert_open(doc)
+	ctx.update(_warehouses(doc.company))
+	may_write = has_company_role(M.STORE_WRITE_ROLES, doc.company)
+	may_manage = has_company_role(M.STORE_MANAGE_ROLES, doc.company)
 	status = doc.get("custom_mr_status") or compute_status(doc)
 	draft = cint(doc.docstatus) == 0
 	issues = frappe.get_all(
@@ -563,7 +595,8 @@ def sub_order_materials(sub_order, source_warehouse=None):
 	"""The header and suggested rows for a manual MR on this Sub PO."""
 	MC.assert_may_read()
 	sub = MC.sub_order_header(sub_order)
-	source = source_warehouse or main_warehouse()
+	assert_open(sub, WORK_ORDER)
+	source = source_warehouse or main_warehouse(sub.company)
 	return {
 		"sub_order": sub.name, "parent": sub.get(PARENT_FIELD), "fg_item": sub.production_item,
 		"fg_item_name": sub.item_name, "production_type": sub.get(PRODUCTION_TYPE_FIELD),
@@ -575,6 +608,8 @@ def sub_order_materials(sub_order, source_warehouse=None):
 def item_row_info(item_code, warehouse=None):
 	"""Type, name, UOM and stock for one item typed into the manual grid."""
 	MC.assert_may_read()
+	if warehouse:
+		assert_company(frappe.db.get_value("Warehouse", warehouse, "company"))  # a member of its company
 	i = (MC.item_info([item_code]) or {}).get(item_code) or frappe._dict()
 	return {
 		"item_code": item_code, "item_name": i.get("item_name"), "uom": i.get("stock_uom"),
@@ -595,6 +630,7 @@ def save_mr(payload):
 			             title=_("Not A Draft"))
 		if not is_production_mr(doc):
 			frappe.throw(_("{0} is not a production Material Request.").format(doc.name))
+		assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("change {0}").format(doc.name))
 	else:
 		doc = frappe.new_doc(MR)
 		doc.naming_series = M.MR_NAMING_SERIES
@@ -605,11 +641,12 @@ def save_mr(payload):
 	sub_name = p.get("sub_order") if doc.get("custom_mr_source") != M.MR_SOURCE_AUTO \
 		else doc.get(SUB_FIELD)
 	sub = MC.sub_order_header(sub_name)
+	assert_store_role(M.STORE_WRITE_ROLES, sub.company, _("raise a Material Request"))
 	_apply_header(doc, sub)
 	if not p.get("schedule_date"):
 		frappe.throw(_("Please enter the Required Date."), title=_("Required Date Missing"))
 	doc.schedule_date = p.schedule_date
-	wip = wip_warehouse()
+	wip = wip_warehouse(sub.company)
 	doc.set_warehouse = wip
 	doc.set("custom_remarks", p.get("remarks") or "")
 	rows = [r for r in (p.get("items") or []) if (r or {}).get("item_code")]
@@ -626,6 +663,7 @@ def submit_mr(material_request):
 	doc = frappe.get_doc(MR, material_request)
 	if not is_production_mr(doc) or cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} is not a draft production Material Request.").format(material_request))
+	assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("submit {0}").format(doc.name))
 	doc.flags.alpinos_material = True
 	doc.submit()
 	frappe.db.commit()
@@ -638,6 +676,7 @@ def cancel_mr(material_request):
 	doc = frappe.get_doc(MR, material_request)
 	if not is_production_mr(doc) or cint(doc.docstatus) != 1:
 		frappe.throw(_("{0} is not a submitted production Material Request.").format(material_request))
+	assert_store_role(M.STORE_MANAGE_ROLES, doc.company, _("cancel {0}").format(doc.name))
 	doc.flags.alpinos_material = True
 	doc.flags.ignore_permissions = True
 	doc.cancel()
@@ -651,6 +690,7 @@ def delete_mr(material_request):
 	doc = frappe.get_doc(MR, material_request)
 	if not is_production_mr(doc) or cint(doc.docstatus) != 0:
 		frappe.throw(_("Only a draft production Material Request can be deleted."))
+	assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("delete {0}").format(doc.name))
 	frappe.delete_doc(MR, doc.name, ignore_permissions=True)
 	frappe.db.commit()
 	return {"deleted": material_request}
@@ -662,6 +702,12 @@ def sub_order_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Sub POs a manual MR may be raised for: Parent Sent To Store, unlocked, not cancelled,
 	not completed."""
 	from alpinos.production import constants as C
+	company = (filters or {}).get("company")
+	companies = scope_companies(WORK_ORDER)
+	if company and (companies is None or company in companies):
+		in_company = " and wo.company = {0}".format(frappe.db.escape(company))
+	else:
+		in_company = company_sql(WORK_ORDER, "wo")
 	return frappe.db.sql(
 		f"""
 		select wo.name, wo.production_item, wo.{PARENT_FIELD}
@@ -671,7 +717,7 @@ def sub_order_query(doctype, txt, searchfield, start, page_len, filters):
 		  and ifnull(wo.{IS_LOCKED_FIELD}, 0) = 0
 		  and wo.docstatus < 2
 		  and ifnull(wo.{EXECUTION_STATUS_FIELD}, '') != 'Completed'
-		  and (wo.name like %(txt)s or wo.production_item like %(txt)s)
+		  and (wo.name like %(txt)s or wo.production_item like %(txt)s) {in_company}
 		order by wo.name asc
 		limit %(start)s, %(page_len)s
 		""",

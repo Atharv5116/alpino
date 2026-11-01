@@ -97,6 +97,8 @@ def repair(from_date=None, to_date=None, employee=None, apply=0):
 
 	  bench --site SITE execute alpinos.attendance_request_punch_repair.repair --kwargs "{'from_date':'2026-08-01','to_date':'2026-08-31'}"
 	"""
+	# company-scope: n/a (System Manager one-off repair across every company)
+	frappe.only_for("System Manager")
 	from alpinos.attendance_request_automation import get_assigned_shift_times, update_attendance_times
 
 	apply = int(apply)

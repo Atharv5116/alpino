@@ -9,6 +9,8 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, get_first_day, get_last_day, get_datetime, get_time
 
+from alpinos.company_scope.helpers import company_sql
+
 
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
@@ -74,6 +76,8 @@ def get_data(filters):
 		params["company"] = filters.company
 
 	where_clause = " AND ".join(conditions)
+	if not filters.get("company"):
+		where_clause += company_sql("Attendance Request", "ar")
 
 	rows = frappe.db.sql(
 		f"""

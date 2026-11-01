@@ -7,7 +7,10 @@ standard endpoints, so `ProcessMaster.validate` stays the single place the rules
 """
 
 import frappe
+from frappe import _
 from frappe.utils import cint
+
+from alpinos.company_scope.helpers import listing, tagged_names
 
 DOCTYPE = "Process Master"
 
@@ -55,14 +58,16 @@ def get_list(search=None, machine_type=None, is_active=None, limit=200):
 			return []
 		filters["name"] = ("in", parents)
 
-	rows = frappe.get_list(
-		DOCTYPE,
-		filters=filters,
-		or_filters=or_filters,
-		fields=list(LIST_FIELDS),
-		order_by="process_sequence asc, process_name asc",
-		limit_page_length=cint(limit) or 200,
-	)
+	# listing(): the permission query narrows a tagged master to the active company
+	with listing():
+		rows = frappe.get_list(
+			DOCTYPE,
+			filters=filters,
+			or_filters=or_filters,
+			fields=list(LIST_FIELDS),
+			order_by="process_sequence asc, process_name asc",
+			limit_page_length=cint(limit) or 200,
+		)
 	if not rows:
 		return []
 
@@ -99,6 +104,7 @@ def get_list(search=None, machine_type=None, is_active=None, limit=200):
 @frappe.whitelist()
 def get_machine_types():
 	"""The Machine Types a process may be linked to, for the screen's pickers."""
+	# company-scope: n/a (Machine Type is a GLOBAL master)
 	frappe.has_permission("Machine Type", "read", throw=True)
 	return frappe.get_all(
 		"Machine Type",
@@ -114,6 +120,9 @@ def get_form_context(process_master=None):
 	if process_master and frappe.db.exists(DOCTYPE, process_master):
 		doc = frappe.get_doc(DOCTYPE, process_master)
 		doc.check_permission("read")
+		if not tagged_names(DOCTYPE, [doc.name]):
+			frappe.throw(_("{0} is not used in the company you are working in.").format(doc.name),
+			             frappe.PermissionError, title=_("Not In This Company"))
 		can_write = frappe.has_permission(DOCTYPE, "write", doc=doc)
 	else:
 		frappe.has_permission(DOCTYPE, "read", throw=True)

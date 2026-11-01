@@ -22,6 +22,13 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	current_company,
+	restrict_company,
+	tagged_condition,
+)
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
@@ -75,6 +82,7 @@ def get_list(search=None, fg_item=None, is_active=None, start=0,
 		filters["item"] = fg_item
 	if is_active not in (None, "", "All"):
 		filters["is_active"] = cint(is_active)
+	filters = restrict_company(filters, DOCTYPE)
 
 	or_filters = None
 	if search:
@@ -136,6 +144,7 @@ def get_form_context(bom=None):
 	if bom and frappe.db.exists(DOCTYPE, bom):
 		doc = frappe.get_doc(DOCTYPE, bom)
 		doc.check_permission("read")
+		assert_open(doc)
 		data = doc.as_dict()
 		can_write = frappe.has_permission(DOCTYPE, "write", doc=doc) and cint(doc.docstatus) == 0
 		# Is Default stays editable after submit (and on an inactive BOM), unlike the rest.
@@ -223,6 +232,7 @@ def _item_query_by_type(txt, start, page_len, material_type, include_fg):
 		  and ({kind} {comparison} %(mt)s
 		       or {kind} = '')
 		  and (i.name like %(txt)s or i.item_name like %(txt)s)
+		  {tagged_condition("Item", "i")}
 		order by
 			case when {kind} != '' and {kind} {comparison} %(mt)s then 0 else 1 end,
 			i.name asc
@@ -270,9 +280,8 @@ def save_bom(payload):
 	doc.is_active = cint(payload.get("is_active", 1))
 	doc.is_default = cint(payload.get("is_default", 0))
 	if not doc.company:
-		doc.company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
-			"Global Defaults", "default_company"
-		)
+		doc.company = current_company()
+	assert_company(doc, ptype="write" if name else "create")
 
 	rows = payload.get("items") or []
 	if not rows:

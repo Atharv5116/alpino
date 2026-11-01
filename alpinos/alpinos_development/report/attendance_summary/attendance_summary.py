@@ -10,6 +10,7 @@ from alpinos.alpinos_development.report.attendance_summary.attendance_summary_he
 	SUNDAY,
 	calculate_attendance_stats,
 )
+from alpinos.company_scope.helpers import company_sql
 
 
 def _display_end_date(from_date, to_date):
@@ -127,12 +128,15 @@ def get_employees(filters, from_date, to_date):
 	drop off from the next month onward.
 	"""
 	conditions = []
+	params = {}
 
 	if filters.get("employee"):
-		conditions.append(f"name = '{filters.employee}'")
+		conditions.append("name = %(employee)s")
+		params["employee"] = filters.employee
 
 	if filters.get("company"):
-		conditions.append(f"company = '{filters.company}'")
+		conditions.append("company = %(company)s")
+		params["company"] = filters.company
 
 	conditions.append(f"date_of_joining IS NOT NULL AND date_of_joining <= '{getdate(to_date)}'")
 	conditions.append(f"(relieving_date IS NULL OR relieving_date >= '{getdate(from_date)}')")
@@ -141,6 +145,8 @@ def get_employees(filters, from_date, to_date):
 	)
 
 	where_clause = " AND ".join(conditions) if conditions else "1=1"
+	if not filters.get("company"):
+		where_clause += company_sql("Attendance")
 
 	query = f"""
 		SELECT
@@ -157,7 +163,7 @@ def get_employees(filters, from_date, to_date):
 		ORDER BY employee_name
 	"""
 	
-	return frappe.db.sql(query, as_dict=True)
+	return frappe.db.sql(query, params, as_dict=True)
 
 
 def get_employee_monthly_attendance(emp, from_date, to_date):

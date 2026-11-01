@@ -1,7 +1,7 @@
 frappe.query_reports["Stock by Batch and MRP"] = {
 	filters: [
 		{ fieldname: "company", label: __("Company"), fieldtype: "Link", options: "Company",
-			default: frappe.defaults.get_user_default("Company") },
+			default: window.alpinos && alpinos.company ? alpinos.company.current() : frappe.defaults.get_user_default("Company") },
 		{ fieldname: "to_date", label: __("As On"), fieldtype: "Date", default: frappe.datetime.get_today() },
 		{ fieldname: "warehouse", label: __("Warehouse"), fieldtype: "Link", options: "Warehouse" },
 		{ fieldname: "item_code", label: __("Item"), fieldtype: "Link", options: "Item" },

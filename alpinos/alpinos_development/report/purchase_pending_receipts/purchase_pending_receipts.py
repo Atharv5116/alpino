@@ -8,6 +8,8 @@ the inward tables, so the report and the Purchase Order list can never disagree.
 import frappe
 from frappe import _
 
+from alpinos.company_scope.helpers import company_sql
+
 
 def execute(filters=None):
 	filters = frappe._dict(filters or {})
@@ -38,6 +40,7 @@ def _rows(filters):
 	if filters.get("company"):
 		conditions.append("po.company = %(company)s")
 		values["company"] = filters.company
+	company = "" if filters.get("company") else company_sql("Purchase Order", "po")
 	if filters.get("supplier"):
 		conditions.append("po.supplier = %(supplier)s")
 		values["supplier"] = filters.supplier
@@ -54,9 +57,9 @@ def _rows(filters):
 		       IFNULL(po.custom_pending_inward_qty, po.total_qty) AS custom_pending_inward_qty,
 		       GREATEST(DATEDIFF(CURDATE(), po.schedule_date), 0) AS days_overdue
 		FROM `tabPurchase Order` po
-		WHERE {conditions}
+		WHERE {conditions}{company}
 		ORDER BY po.schedule_date ASC, po.name ASC
-		""".format(conditions=" AND ".join(conditions)),
+		""".format(conditions=" AND ".join(conditions), company=company),
 		values,
 		as_dict=True,
 	)

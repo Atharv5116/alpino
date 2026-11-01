@@ -8,6 +8,8 @@ sent when at least one configuration is enabled; nothing is added otherwise.
 import frappe
 from frappe.utils import cint
 
+from alpinos.company_scope.helpers import tagged_condition
+
 CACHE_KEY = "alpinos_item_display_rules"
 
 
@@ -50,7 +52,8 @@ def get_item_meta():
 		SELECT name, IFNULL(custom_color, '') AS color, IFNULL(custom_sequence, 0) AS seq
 		FROM `tabItem`
 		WHERE disabled = 0 AND (IFNULL(custom_color, '') <> '' OR IFNULL(custom_sequence, 0) > 0)
-		""",
+		{scope}
+		""".format(scope=tagged_condition("Item")),
 		as_dict=True,
 	)
 	return {r.name: [r.color, cint(r.seq)] for r in rows}

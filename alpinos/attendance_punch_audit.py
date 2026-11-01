@@ -16,6 +16,8 @@ Read-only: nothing here writes.
 import frappe
 from frappe.utils import cint
 
+from alpinos.company_scope.helpers import assert_open, company_sql, restrict_company
+
 # A row written and never touched again has modified within a second or so of creation.
 # Beyond that, something came back and changed it: for these rows, the approval.
 _EDIT_GAP_SECONDS = 5
@@ -39,7 +41,7 @@ def touched_by_requests(from_date=None, to_date=None, limit=200):
 		       ec.creation, ec.modified, ec.owner,
 		       TIMESTAMPDIFF(SECOND, ec.creation, ec.modified) AS changed_after_seconds
 		FROM `tabEmployee Checkin` ec
-		WHERE {" AND ".join(conds)}
+		WHERE {" AND ".join(conds)}{company_sql("Employee Checkin", "ec")}
 		ORDER BY ec.time DESC
 		""",
 		params,
@@ -113,6 +115,7 @@ def recoverable_history(from_date=None, to_date=None):
 	frappe.db.set_value writes no Version, so this is expected to be empty -- it is worth
 	confirming on the site itself before telling anybody the old times are gone.
 	"""
+	# company-scope: n/a (debug tool: counts Version rows per doctype, no company data)
 	conds = ["v.ref_doctype IN ('Employee Checkin', 'Attendance')"]
 	params = {}
 	if from_date:
@@ -162,7 +165,7 @@ def explain_day(employee, date):
 	if not emp:
 		matches = frappe.get_all(
 			"Employee",
-			filters=[["employee_name", "like", f"%{employee}%"]],
+			filters=restrict_company([["employee_name", "like", f"%{employee}%"]], "Employee"),
 			fields=["name", "employee_name"],
 			limit=10,
 		)
@@ -171,6 +174,7 @@ def explain_day(employee, date):
 		if len(matches) > 1:
 			return {"error": "more than one Employee matches; pass the id", "matches": matches}
 		emp = matches[0].name
+	assert_open(frappe.db.get_value("Employee", emp, "company"), "Employee")
 
 	day_start, day_end = f"{date} 00:00:00", f"{date} 23:59:59"
 	punches = frappe.db.sql(

@@ -73,4 +73,5 @@ def current_shift(at=None):
 @frappe.whitelist()
 def get_current_shift():
 	"""For pages: the current shift as a dict, or None."""
+	# company-scope: n/a (Shift Type / Production Shift are GLOBAL masters)
 	return current_shift()

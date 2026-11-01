@@ -49,6 +49,8 @@ def backfill(apply=0):
 
 	  bench --site SITE execute alpinos.employee_suspension.backfill --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off backfill across every company)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	names = frappe.get_all(
 		"Employee",

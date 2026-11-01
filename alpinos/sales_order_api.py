@@ -5,8 +5,15 @@ from frappe import _
 from frappe.utils import cint, flt, getdate
 from math import ceil, floor
 
-
-DEFAULT_SO_COMPANY = "Alpino Health Foods Pvt. Ltd."
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	current_company,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+	tagged_names,
+)
 
 # Freebies in this Item Group (promo inserts, discount cards) are exempt from the
 # "freebie must be an ordered item" rule.
@@ -22,14 +29,13 @@ def _norm_state(value):
 
 
 def _resolve_company(preferred=None):
+	"""The company the page asked for, if the user works in it; else the active company."""
 	company = (preferred or "").strip()
 	if company:
-		return company
-	if DEFAULT_SO_COMPANY and frappe.db.exists("Company", DEFAULT_SO_COMPANY):
-		return DEFAULT_SO_COMPANY
-	company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
-		"Global Defaults", "default_company"
-	)
+		members = scope_companies(narrow=False)
+		if members is None or company in members:
+			return company
+	company = current_company()
 	if company:
 		return company
 	return frappe.db.get_value("Company", {"name": ("!=", "")}, "name", order_by="creation asc")
@@ -657,6 +663,7 @@ def backfill_so_product_images(only_missing=1, commit=True):
 
 	Run: bench --site <site> execute alpinos.sales_order_api.backfill_so_product_images
 	"""
+	# company-scope: n/a (System Manager one-off backfill of Item images on every order line)
 	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
 		frappe.throw(_("Only an Administrator / System Manager can run this."), frappe.PermissionError)
 	only_missing = cint(only_missing)
@@ -1250,6 +1257,9 @@ def get_opportunity_line_pricing(opportunity_from, party_name, item_code):
 	}
 	if not opportunity_from or not party_name or not item_code:
 		return out
+	# A party not tagged to the user's companies has no pricing to show.
+	if opportunity_from in ("Buyer Master", "Customer") and not tagged_names(opportunity_from, [party_name]):
+		return out
 
 	if opportunity_from == "Buyer Master":
 		cust = frappe.db.get_value("Buyer Master", party_name, "customer")
@@ -1363,6 +1373,8 @@ def get_box_rounding_mode(customer=None, site_name=None, customer_type=None):
 
 	Precedence: Box Conversion Exclusion -> 'exclude'; else the Alpino Customer Type's
 	Round Up / Round Down (Round Up wins); else 'decimal'."""
+	if customer and not tagged_names("Customer", [customer]):
+		customer = None
 	# 'exclude' behaves like decimal but also skips the whole-box qty-multiple rule
 	if _buyer_excludes_box_conversion(customer, site_name):
 		return "exclude"
@@ -1723,6 +1735,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	assert_company(so.company, "Sales Order", "create")
 	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
 		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	_apply_rl_no_invoice(so, rl_no_invoice)
@@ -1767,6 +1780,7 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 	)
 	so = frappe.get_doc("Sales Order", name)
 	so.check_permission("write")
+	assert_company(so, ptype="write")
 	if so.docstatus != 0:
 		frappe.throw(_("Only draft Sales Orders can be edited from the entry page."))
 
@@ -1781,6 +1795,7 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 		billing_address, shipping_address, taxes_and_charges, po_no, po_expiry_date, site_name,
 		from_quotation, po_no_for_pdf,
 	)
+	assert_company(so, ptype="write")
 	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
 		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	_apply_rl_no_invoice(so, rl_no_invoice)
@@ -1810,6 +1825,7 @@ def get_so_entry_payload(sales_order):
 	"""Prefill payload for the entry page from an existing Sales Order (Edit / Duplicate)."""
 	doc = frappe.get_doc("Sales Order", sales_order)
 	doc.check_permission("read")
+	assert_open(doc)
 
 	items = []
 	for row in doc.items or []:
@@ -1960,6 +1976,7 @@ def get_sales_order_entry_view_payload(sales_order):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 	doc = frappe.get_doc("Sales Order", sales_order)
+	assert_open(doc)
 	meta_so = frappe.get_meta("Sales Order")
 	permitted_parent = set(meta_so.get_permitted_fieldnames(permission_type="read") or [])
 	parent_src = doc.as_dict()
@@ -2129,6 +2146,7 @@ def get_sales_order_entry_list(
 		filters["custom_workflow_status"] = str(workflow_status).strip()
 	if company:
 		filters["company"] = str(company).strip()
+	filters = restrict_company(filters, "Sales Order")
 	if customer:
 		filters["customer"] = str(customer).strip()
 
@@ -2162,7 +2180,6 @@ def get_sales_order_entry_list(
 	# finished orders (Dispatched, Forced Dispatched, Completed, Forced Completed) and
 	# Cancelled / Rejected ones are hidden unless "Show All" (Changes(HP) #17, #37). An
 	# explicit UI status filter is respected.
-	_roles = set(frappe.get_roles())
 	_warehouse_roles = {"Warehouse Manager", "Warehouse Admin"}
 	_override_roles = {
 		"System Manager",
@@ -2171,7 +2188,17 @@ def get_sales_order_entry_list(
 		"Sales Manager",
 		"Sales User",
 	}
-	if (_roles & _warehouse_roles) and not (_roles & _override_roles):
+	_companies = scope_companies("Sales Order")
+	if _companies is None:
+		_roles = set(frappe.get_roles())
+		_warehouse_only = bool(_roles & _warehouse_roles) and not (_roles & _override_roles)
+	else:
+		# company-wise roles: warehouse-only in any company listed
+		_warehouse_only = any(
+			has_company_role(_warehouse_roles, c) and not has_company_role(_override_roles, c)
+			for c in _companies
+		)
+	if _warehouse_only:
 		if "custom_workflow_status" not in filters:  # respect an explicit UI status filter
 			_hidden = ["Draft"]  # Draft is never shown to the warehouse
 			if not show_all:
@@ -2345,7 +2372,9 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	"""Build the Pick List skeleton for a Sales Order.
 	remaining_only=1 reduces each location's qty by what's already committed on existing
 	Pick Lists and drops fully-covered rows (the "Create PL for Remaining Qty" flow)."""
-	so = _ensure_so_packed_items(frappe.get_doc("Sales Order", sales_order))
+	so = frappe.get_doc("Sales Order", sales_order)
+	assert_open(so)
+	so = _ensure_so_packed_items(so)
 
 	_ct = (so.get("order_type") or "")
 	pick_list = frappe._dict({
@@ -2513,6 +2542,7 @@ def get_so_pick_list_status(sales_order):
 		return {"fully_picked": False, "has_draft": False, "draft_name": None}
 		
 	so = frappe.get_doc("Sales Order", sales_order)
+	assert_open(so)
 	
 	# 1. Calculate ordered qtys
 	ordered_qtys = {}

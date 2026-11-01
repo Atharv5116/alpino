@@ -147,6 +147,9 @@ def explain(user=None):
 
 	  bench --site SITE execute alpinos.buyer_assignment_visibility.explain --kwargs "{'user':'x@y.com'}"
 	"""
+	# company-scope: n/a (debug tool: one user's own Buyer assignment; another user's needs System Manager)
+	if user and user != frappe.session.user:
+		frappe.only_for(("System Manager", "Administrator"))
 	user = user or frappe.session.user
 	roles = sorted(set(frappe.get_roles(user)))
 	employee = _employee_for(user)

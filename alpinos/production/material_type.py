@@ -24,6 +24,8 @@ turn the same answer into a condition on `item_group`.
 import frappe
 from frappe.utils import cstr
 
+from alpinos.company_scope.helpers import tagged_condition
+
 RM = "RM"
 PM = "PM"
 ADDITIVE = "Additive"
@@ -170,6 +172,7 @@ def ensure_category_groups():
 @frappe.whitelist()
 def get_group_type(item_group=None):
 	"""For the Item form: which category does this Item Group belong to?"""
+	# company-scope: n/a (reads only Item Group, a GLOBAL master)
 	return type_of_group(item_group)
 
 
@@ -190,7 +193,7 @@ def item_query(doctype, txt, searchfield, start, page_len, filters):
 	return frappe.db.sql(
 		"""select name, item_name from `tabItem`
 		where disabled = 0 and item_group in %(groups)s
-		  and (name like %(txt)s or item_name like %(txt)s)
-		order by name limit %(start)s, %(page_len)s""",
+		  and (name like %(txt)s or item_name like %(txt)s) {tagged}
+		order by name limit %(start)s, %(page_len)s""".format(tagged=tagged_condition("Item")),
 		{"groups": tuple(groups), "txt": txt, "start": int(start or 0), "page_len": int(page_len or 20)},
 	)

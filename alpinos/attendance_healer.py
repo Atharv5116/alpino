@@ -260,6 +260,8 @@ def backfill(apply=0, from_date=None, to_date=None, limit=None):
 
 	  bench --site SITE execute alpinos.attendance_healer.backfill --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off backfill across every company)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	# Two shapes of broken day: an out-time behind the last punch, and a day marked Absent
 	# that its own punches contradict. Both are repaired the same way, from the punches.
@@ -307,6 +309,8 @@ def create_checkins_from_attendance(from_date=None, to_date=None, apply=0):
 
 	  bench --site SITE execute alpinos.attendance_healer.create_checkins_from_attendance --kwargs '{"from_date": "2026-07-07", "to_date": "2026-07-08", "apply": 1}'
 	"""
+	# company-scope: n/a (System Manager one-off backfill across every company)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 
 	conditions = [

@@ -10,6 +10,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import has_company_role, restrict_company
 from alpinos.purchase import constants as C
 
 DOCTYPE = "Purchase Receipt"
@@ -100,6 +101,7 @@ def get_grn_list(
 		filters.append([DOCTYPE, "name", "in", _receipts_for_purchase_order(purchase_order)])
 	if target_location:
 		filters.append([DOCTYPE, "name", "in", _receipts_for_location(target_location)])
+	filters = restrict_company(filters, DOCTYPE)
 
 	order_by = "{0} {1}".format(
 		SORTABLE.get(sort_field or "modified", "modified"),
@@ -110,7 +112,7 @@ def get_grn_list(
 		DOCTYPE,
 		filters=filters,
 		fields=[
-			"name", "posting_date", "supplier", "supplier_name", "docstatus", "set_warehouse",
+			"name", "posting_date", "supplier", "supplier_name", "docstatus", "set_warehouse", "company",
 			"custom_grn_status", "custom_purchase_inward", "custom_purchase_qc",
 			"custom_debit_note", "custom_final_submitted_by", "custom_final_submission_datetime",
 		],
@@ -149,10 +151,13 @@ def _attach_actions(rows):
 	"""
 	from alpinos.purchase.grn_edit import EDIT_ROLES
 
-	may_edit = bool(set(frappe.get_roles()) & set(EDIT_ROLES))
+	may_edit = {}
 	for row in rows:
 		row["actions"] = [{"action": "view", "label": _("View"), "kind": "view"}]
-		if cint(row.get("docstatus")) == 0 and may_edit:
+		company = row.get("company")
+		if company not in may_edit:
+			may_edit[company] = has_company_role(EDIT_ROLES, company)
+		if cint(row.get("docstatus")) == 0 and may_edit[company]:
 			row["actions"].append({"action": "edit", "label": _("Edit"), "kind": "transition"})
 
 

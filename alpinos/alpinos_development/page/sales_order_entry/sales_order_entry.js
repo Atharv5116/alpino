@@ -42,10 +42,9 @@ var SalesOrderEntry = class {
 	}
 
 	_get_default_company() {
-		const preferred = 'Alpino Health Foods Pvt. Ltd.';
-		if (preferred) return preferred;
-		// Frappe default key is usually "Company" (capital C); fallbacks for older setups
+		// The active company (company-wise access); the user default when that is off.
 		return (
+			(window.alpinos && alpinos.company ? alpinos.company.current() : frappe.defaults.get_user_default('Company')) ||
 			frappe.defaults.get_user_default('Company') ||
 			frappe.defaults.get_user_default('company') ||
 			(frappe.boot && frappe.boot.sysdefaults && frappe.boot.sysdefaults.company) ||

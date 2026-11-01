@@ -151,9 +151,11 @@ def get_assignable_masters(company: str) -> dict[str, bool]:
 	Structure, Shift Schedule) through a permission-checked get_list, so anyone allowed to open
 	an Employee but not to read one of those masters got "Insufficient Permission for Leave
 	Policy" instead of the form. Offer only the assignments the user can read; grant nothing."""
+	from alpinos.company_scope.helpers import restrict_company
+
 	masters = {
 		"Leave Policy": {"docstatus": 1},
-		"Salary Structure": {"docstatus": 1, "is_active": "Yes", "company": company},
+		"Salary Structure": restrict_company({"docstatus": 1, "is_active": "Yes", "company": company}, "Salary Structure"),
 		"Shift Schedule": {"docstatus": 1},
 	}
 	return {

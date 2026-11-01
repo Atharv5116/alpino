@@ -20,7 +20,11 @@ class ProductionReports {
 	constructor(page) {
 		this.page = page;
 		this.$w = $(page.main);
-		this.f = {};
+		// Every report follows the company: the one the user works in, unless they pick another.
+		this.f = {
+			company: window.alpinos && alpinos.company && alpinos.company.current
+				? alpinos.company.current() : frappe.defaults.get_user_default('Company'),
+		};
 		this.controls = {};
 		this.$w.html(`<div class="prep">
 			<style>
@@ -78,6 +82,7 @@ class ProductionReports {
 		const me = this, $fl = this.$w.find('.fl').empty();
 		const statuses = (this.index.statuses || {})[this.report.key];
 		const defs = {
+			company: { label: __('Company'), fieldtype: 'Link', options: 'Company' },
 			from_date: { label: __('From Date'), fieldtype: 'Date' },
 			to_date: { label: __('To Date'), fieldtype: 'Date' },
 			parent_po: { label: __('Parent PO'), fieldtype: 'Link', options: 'Production Order' },
@@ -176,7 +181,7 @@ class ProductionReports {
 
 	print_summary() {
 		const f = {};
-		['from_date', 'to_date', 'shift'].forEach((k) => { if (this.f[k]) f[k] = this.f[k]; });
+		['company', 'from_date', 'to_date', 'shift'].forEach((k) => { if (this.f[k]) f[k] = this.f[k]; });
 		if (!f.from_date && !f.to_date) { f.from_date = f.to_date = frappe.datetime.get_today(); }
 		frappe.call({ method: 'alpinos.production.production_reports.production_summary_html', args: { filters: f } })
 			.then((r) => {

@@ -14,6 +14,7 @@ from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 
 from alpinos.alpinos_development.report.attendance_summary import attendance_summary as rpt
+from alpinos.company_scope.helpers import assert_company
 
 # colours (mirror attendance_summary.js)
 RED = "FFC00000"
@@ -57,6 +58,8 @@ def download_final_format(month, employee=None, company=None):
 	if employee:
 		filters["employee"] = employee
 	if company:
+		# execute() runs here outside the report's own company check.
+		assert_company(company, "Attendance", "read")
 		filters["company"] = company
 
 	columns, data = rpt.execute(filters)

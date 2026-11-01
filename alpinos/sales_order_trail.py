@@ -25,6 +25,7 @@ from alpinos.alpinos_development.doctype.field_change_log.field_change_log impor
 	acting_role,
 	log_field_change,
 )
+from alpinos.company_scope.helpers import assert_open, restrict_company
 
 #: Header fields worth a trail entry, with the label a reader will recognise.
 TRACKED_HEADER_FIELDS = {
@@ -121,6 +122,9 @@ def record_changes(doc, method=None):
 @frappe.whitelist()
 def get_activity_trail(sales_order, limit=200):
 	"""The trail for one Sales Order, newest first. Backs the panel on the order page."""
+	so = frappe.db.get_value("Sales Order", sales_order, ["name", "company"], as_dict=True)
+	if so:
+		assert_open(so, "Sales Order")
 	rows = frappe.get_all(
 		"Field Change Log",
 		filters={"reference_doctype": "Sales Order", "reference_name": sales_order},
@@ -149,11 +153,12 @@ def get_previous_sales_orders(sales_order, limit=20):
 	they must not be mixed.
 	"""
 	row = frappe.db.get_value(
-		"Sales Order", sales_order, ["customer", "custom_offline_buyer_master"], as_dict=True
+		"Sales Order", sales_order, ["customer", "custom_offline_buyer_master", "company"], as_dict=True
 	)
 	if not row:
 		return []
-	filters = {"name": ["!=", sales_order], "docstatus": ["<", 2]}
+	assert_open(row, "Sales Order")
+	filters = restrict_company({"name": ["!=", sales_order], "docstatus": ["<", 2]}, "Sales Order")
 	if row.custom_offline_buyer_master:
 		filters["custom_offline_buyer_master"] = row.custom_offline_buyer_master
 	else:

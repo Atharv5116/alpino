@@ -507,8 +507,24 @@ def _setup_status_fields():
 	create_custom_fields(custom_fields, ignore_validate=True, update=True)
 
 
+def _company_role_holders(roles, company=None):
+	"""Holders of `roles` in `company` (else in the companies in view), by company-wise
+	roles; None when nothing restricts (feature off, Administrator, unmanaged user)."""
+	from alpinos.company_scope.helpers import scope_companies, users_with_roles
+
+	companies = scope_companies()
+	if companies is None:
+		return None
+	if company:
+		companies = [company] if company in companies else []
+	users = set()
+	for c in companies:
+		users.update(users_with_roles(list(roles), c))
+	return users
+
+
 @frappe.whitelist()
-def get_workflow_team_users(doctype, include_users=None):
+def get_workflow_team_users(doctype, include_users=None, company=None):
 	"""Enabled System Users holding a workflow role for the doctype, for the Assign To / QC dropdowns (include_users are always appended)."""
 	# only roles that can act on the doc (write/create/submit) are assignable, not VIEW-only observers
 	role_levels = PERMISSION_MATRIX.get(doctype) or {}
@@ -530,6 +546,9 @@ def get_workflow_team_users(doctype, include_users=None):
 			pluck="name",
 			order_by="full_name asc",
 		)
+	holders = _company_role_holders(roles, company)
+	if holders is not None:
+		users = [u for u in users if u in holders]
 
 	if isinstance(include_users, str):
 		include_users = frappe.parse_json(include_users) or []
@@ -544,7 +563,7 @@ DN_ASSIGN_ROLES = ["DN User", "DN Manager"]
 
 
 @frappe.whitelist()
-def get_dn_assignable_users(include_users=None):
+def get_dn_assignable_users(include_users=None, company=None):
 	"""Enabled System Users holding DN User / DN Manager, for the Delivery Note 'Assigned To' dropdown (include_users are always appended)."""
 	role_holders = frappe.get_all(
 		"Has Role",
@@ -560,6 +579,9 @@ def get_dn_assignable_users(include_users=None):
 			pluck="name",
 			order_by="full_name asc",
 		)
+	holders = _company_role_holders(DN_ASSIGN_ROLES, company)
+	if holders is not None:
+		users = [u for u in users if u in holders]
 	if isinstance(include_users, str):
 		include_users = frappe.parse_json(include_users) or []
 	for extra in include_users or []:
@@ -571,8 +593,13 @@ def get_dn_assignable_users(include_users=None):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def dn_assigned_to_query(doctype, txt, searchfield, start, page_len, filters):
-	"""Link-field query for Delivery Note.custom_assigned_to, limited to DN User / DN Manager holders."""
+	"""Link-field query for Delivery Note.custom_assigned_to, limited to DN User / DN Manager holders
+	(of the note's company, filters.company, when company-wise roles apply)."""
 	txt = txt or ""
+	company = (filters or {}).get("company") if isinstance(filters, dict) else None
+	holders = _company_role_holders(DN_ASSIGN_ROLES, company)
+	if holders is not None and not holders:
+		return []
 	return frappe.db.sql(
 		"""
 		SELECT DISTINCT u.name, u.full_name
@@ -582,15 +609,17 @@ def dn_assigned_to_query(doctype, txt, searchfield, start, page_len, filters):
 			AND u.user_type = 'System User'
 			AND u.name NOT IN ('Administrator', 'Guest')
 			AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+			{users}
 		ORDER BY u.full_name ASC
 		LIMIT %(page_len)s OFFSET %(start)s
-		""",
+		""".format(users="AND u.name IN %(users)s" if holders is not None else ""),
 		{
 			"role1": "DN User",
 			"role2": "DN Manager",
 			"txt": f"%{txt}%",
 			"start": int(start or 0),
 			"page_len": int(page_len or 20),
+			"users": tuple(holders or ()),
 		},
 	)
 

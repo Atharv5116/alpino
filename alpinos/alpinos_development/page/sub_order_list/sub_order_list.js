@@ -366,7 +366,7 @@ var SubOrderList = class {
 					get_query() {
 						return {
 							query: 'alpinos.production.sub_order.machine_query_for_process',
-							filters: { process: d.get_value('process') || '' },
+							filters: { process: d.get_value('process') || '', sub_order: ctx.sub_order },
 						};
 					},
 				},

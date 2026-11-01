@@ -18,6 +18,8 @@ documents.
 import frappe
 from frappe.utils import cint, flt, get_datetime, getdate
 
+from alpinos.company_scope.helpers import assert_company
+
 
 def _day_bounds(date):
 	return f"{getdate(date)} 00:00:00", f"{getdate(date)} 23:59:59"
@@ -55,10 +57,11 @@ def set_log_type(checkin, log_type, apply=0):
 		frappe.throw("log_type must be IN or OUT.")
 
 	punch = frappe.db.get_value(
-		"Employee Checkin", checkin, ["name", "employee", "log_type", "time", "device_id"], as_dict=True
+		"Employee Checkin", checkin, ["name", "employee", "log_type", "time", "device_id", "company"], as_dict=True
 	)
 	if not punch:
 		return {"error": f"no Employee Checkin named {checkin!r}"}
+	assert_company(punch.company, "Employee Checkin", "write" if apply else "read")
 	if punch.log_type == log_type:
 		return {"error": f"{checkin} is already {log_type}"}
 
@@ -168,11 +171,12 @@ def remark_day(employee, date, apply=0):
 	att = frappe.db.get_value(
 		"Attendance",
 		{"employee": employee, "attendance_date": date, "docstatus": 1},
-		["name", "status", "shift", "in_time", "out_time", "working_hours", "attendance_request"],
+		["name", "status", "shift", "in_time", "out_time", "working_hours", "attendance_request", "company"],
 		as_dict=True,
 	)
 	if not att:
 		return {"error": f"no submitted Attendance for {employee} on {date}"}
+	assert_company(att.company, "Attendance", "write" if apply else "read")
 	if not att.shift:
 		return {"error": f"{att.name} has no shift, so the day cannot be re-marked from punches"}
 

@@ -6,6 +6,14 @@ import frappe
 from frappe import _
 from frappe.utils import flt, now_datetime
 
+from alpinos.company_scope.helpers import (
+	company_sql,
+	scope_companies,
+	tagged_condition,
+	tagged_names,
+	users_with_roles,
+)
+
 ALLOWED_OFFLINE_BUYER_ITEM_GROUPS = [
 	"Super Vital",
 	"SuperOne",
@@ -54,8 +62,9 @@ def get_all_records():
 		FROM `tabBuyer Items` obi
 		LEFT JOIN `tabCustomer` bcust ON bcust.name = obi.buyer
 		LEFT JOIN `tabBuyer Master` obm ON obm.customer = obi.buyer
+		WHERE 1 = 1 {scope}
 		ORDER BY obi.modified DESC
-		""",
+		""".format(scope=tagged_condition("Customer", "bcust")),
 		as_dict=True,
 	)
 	return records
@@ -76,12 +85,16 @@ def get_buyer_items(record_name):
 		fields=["name", "item_name", "item_group", "valuation_rate", "variant_of"],
 		order_by="item_group, item_name",
 	)
+	usable = set(tagged_names("Item", [i.name for i in items]))
+	items = [i for i in items if i.name in usable]
 
 	saved: dict = {}
 	buyer = None
 	if frappe.db.exists("Buyer Items", record_name):
 		doc = frappe.get_doc("Buyer Items", record_name)
 		buyer = doc.buyer
+		if buyer and not tagged_names("Customer", [buyer]):
+			frappe.throw(_("{0} is not a customer of your company.").format(buyer), frappe.PermissionError)
 		for row in doc.get("items") or []:
 			if row.item_code:
 				saved.setdefault(row.item_code, []).append(row)
@@ -244,6 +257,7 @@ def create_record(title, buyer=None, offline_buyer_master=None, description=None
 @frappe.whitelist()
 def get_parent_group_filter_data(item_groups):
 	"""Return parent Item Groups and each parent's descendant group names."""
+	# company-scope: n/a (reads only the GLOBAL Item Group tree)
 	if isinstance(item_groups, str):
 		item_groups = json.loads(item_groups)
 	item_groups = list({g for g in item_groups if g})
@@ -332,7 +346,7 @@ def get_variant_items_for_group(item_group):
 	if not group_names:
 		return []
 
-	return frappe.get_all(
+	items = frappe.get_all(
 		"Item",
 		filters={
 			"disabled": 0,
@@ -344,6 +358,8 @@ def get_variant_items_for_group(item_group):
 		order_by="item_group asc, item_name asc",
 		limit_page_length=2000,
 	)
+	usable = set(tagged_names("Item", [i.name for i in items]))
+	return [i for i in items if i.name in usable]
 
 
 @frappe.whitelist()
@@ -380,6 +396,7 @@ def sellable_item_link_query(doctype, txt, searchfield, start, page_len, filters
 			AND (IFNULL(i.variant_of, '') != '' OR IFNULL(i.custom_is_bundle, 0) = 1)
 			AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
 			{ct_clause}
+			{tagged_condition("Item", "i")}
 		ORDER BY i.name
 		LIMIT %(start)s, %(page_len)s
 		""",
@@ -391,6 +408,7 @@ def sellable_item_link_query(doctype, txt, searchfield, start, page_len, filters
 def get_item_channel_tree():
 	"""Channels with their Alpino Customer Types (for the Item 'Allowed Customer Types' widget).
 	A trailing group with channel='' holds customer types that have no channel assigned."""
+	# company-scope: n/a (reads only GLOBAL masters: Channel, Alpino Customer Type)
 	channels = frappe.get_all("Channel", pluck="name", order_by="name")
 	types = frappe.get_all("Alpino Customer Type", fields=["name", "channel"], order_by="name")
 	by_channel = {}
@@ -410,6 +428,7 @@ def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
 	txt = txt or ""
 
 	if frappe.db.exists("DocType", "Sales Person") and frappe.db.exists("DocType", "Employee"):
+		# Sales people of the companies in view (their Employee's company)
 		rows = frappe.db.sql(
 			"""
 			SELECT DISTINCT u.name, u.full_name
@@ -421,14 +440,18 @@ def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
 			WHERE IFNULL(u.enabled, 0) = 1
 				AND IFNULL(u.user_type, 'System User') = 'System User'
 				AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+				{scope}
 			ORDER BY u.full_name ASC
 			LIMIT %(page_len)s OFFSET %(start)s
-			""",
+			""".format(scope=company_sql("Employee", "e")),
 			{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
 		)
 		if rows:
 			return rows
 
+	holders = _role_holders(("Sales User", "Sales Manager"))
+	if holders is not None and not holders:
+		return []
 	return frappe.db.sql(
 		"""
 		SELECT DISTINCT u.name, u.full_name
@@ -437,11 +460,23 @@ def party_owner_user_query(doctype, txt, searchfield, start, page_len, filters):
 	WHERE hr.role IN ('Sales User', 'Sales Manager')
 		AND IFNULL(u.enabled, 0) = 1
 		AND (u.name LIKE %(txt)s OR IFNULL(u.full_name, '') LIKE %(txt)s)
+		{users}
 	ORDER BY u.full_name ASC
 	LIMIT %(page_len)s OFFSET %(start)s
-	""",
-	{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len)},
+	""".format(users="AND u.name IN %(users)s" if holders is not None else ""),
+	{"txt": f"%{txt}%", "start": int(start), "page_len": int(page_len), "users": tuple(holders or ())},
 )
+
+
+def _role_holders(roles):
+	"""Users holding `roles` in a company in view (company-wise roles); None = anyone."""
+	companies = scope_companies()
+	if companies is None:
+		return None
+	users = set()
+	for company in companies:
+		users.update(users_with_roles(list(roles), company))
+	return users
 
 
 POC_ECOM_ROLES = ("E-Commerce Admin", "E-Commerce Coordinator", "E-Commerce Manager")
@@ -456,6 +491,15 @@ def poc_employee_query(doctype, txt, searchfield, start, page_len, filters):
 	roles = list(POC_ECOM_ROLES if channel == "E-com" else POC_SALES_ROLES)
 	txt = txt or ""
 	placeholders = ", ".join(["%s"] * len(roles))
+	# With company-wise roles, only people holding the role in a company in view.
+	holders = _role_holders(roles)
+	if holders is not None and not holders:
+		return []
+	users_clause = ""
+	user_args = []
+	if holders is not None:
+		users_clause = "AND e.user_id IN ({0})".format(", ".join(["%s"] * len(holders)))
+		user_args = sorted(holders)
 	return frappe.db.sql(
 		f"""
 		SELECT DISTINCT e.name, e.employee_name
@@ -465,10 +509,11 @@ def poc_employee_query(doctype, txt, searchfield, start, page_len, filters):
 			AND IFNULL(e.user_id, '') <> ''
 			AND hr.role IN ({placeholders})
 			AND (e.name LIKE %s OR IFNULL(e.employee_name, '') LIKE %s)
+			{users_clause}
 		ORDER BY e.employee_name ASC
 		LIMIT %s OFFSET %s
 		""",
-		roles + [f"%{txt}%", f"%{txt}%", int(page_len), int(start)],
+		roles + [f"%{txt}%", f"%{txt}%"] + user_args + [int(page_len), int(start)],
 	)
 
 

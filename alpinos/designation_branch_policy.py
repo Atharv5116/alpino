@@ -53,6 +53,7 @@ def _add_designation_table_field():
 @frappe.whitelist()
 def get_branch_policy(designation, branch):
 	"""Policy fields from the Designation's Branch Policy Access row matching branch, else {}."""
+	# company-scope: n/a (reads only the GLOBAL Designation's child rows)
 	if not designation or not branch:
 		return {}
 	rows = frappe.get_all(

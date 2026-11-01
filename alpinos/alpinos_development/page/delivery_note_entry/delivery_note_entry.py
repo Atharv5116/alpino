@@ -3,12 +3,22 @@ import json
 import frappe
 from frappe.utils import cint, formatdate, getdate
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	company_filters,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+)
+
 
 @frappe.whitelist()
 def get_delivery_note_data(name):
 	"""Return Delivery Note header + items for the custom page."""
 	dn = frappe.get_doc("Delivery Note", name)
 	dn.check_permission("read")
+	assert_open(dn)
 
 	# Pick List name from the first item that carries one
 	pick_list_name = ""
@@ -153,6 +163,7 @@ def save_delivery_note_data(name, header, items=None, dispatch_to=None):
 
 	dn = frappe.get_doc("Delivery Note", name)
 	dn.check_permission("write")
+	assert_company(dn, ptype="write")
 
 	if dn.docstatus != 0:
 		frappe.throw("Submitted Delivery Note cannot be edited.")
@@ -248,6 +259,7 @@ def submit_delivery_note(name, header=None, items=None, dispatch_to=None):
 
 	dn = frappe.get_doc("Delivery Note", name)
 	dn.check_permission("submit")
+	assert_company(dn, ptype="submit")
 	if dn.docstatus == 0:
 		if _backfill_item_dates_from_pick_list(dn):
 			dn.flags.ignore_mandatory = True
@@ -316,9 +328,18 @@ def get_delivery_note_list(
 		filters["custom_sales_order_id"] = ["in", sorted(_so_ids) or ["__no_match__"]]
 
 	# A dedicated DN User only sees DNs assigned to them; admins/managers see all.
-	_roles = set(frappe.get_roles())
 	_override = {"System Manager", "Administrator", "Warehouse Admin", "Warehouse Manager", "PL Manager"}
-	if "DN User" in _roles and not (_roles & _override):
+	filters = restrict_company(filters, "Delivery Note")
+	_companies = scope_companies("Delivery Note")
+	if _companies is None:
+		_roles = set(frappe.get_roles())
+		_dn_user_only = "DN User" in _roles and not (_roles & _override)
+	else:
+		# company-wise roles: a DN User (without an override role) in any company listed
+		_dn_user_only = any(
+			has_company_role(["DN User"], c) and not has_company_role(_override, c) for c in _companies
+		)
+	if _dn_user_only:
 		filters["custom_assigned_to"] = frappe.session.user
 
 	# Changes(HP) #22: only notes of orders in the user's channels (frappe.get_all skips the
@@ -408,6 +429,14 @@ def _require_lr_roles():
 		frappe.throw(frappe._("Only Warehouse Admin / Manager can bulk-update LR No."))
 
 
+def _lr_companies():
+	"""Companies in view where the user holds an LR role (None = no restriction)."""
+	companies = scope_companies("Delivery Note")
+	if companies is None:
+		return None
+	return [c for c in companies if has_company_role(_LR_BULK_ROLES, c)]
+
+
 def _so_po_invoice(so_id):
 	"""(Customer PO, Invoice No) for a Sales Order — PO prefers the e-com PO number."""
 	if not so_id:
@@ -472,13 +501,17 @@ def _lr_pick_lists(dn_names):
 def _lr_rows_for_today():
 	"""Draft Delivery Notes dispatching today, as the sheet's rows."""
 	today = frappe.utils.today()
-	# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
+	filters = {
+		"docstatus": 0,
+		# custom_dispatch_date is a Datetime, so match a full-day range, not "= today".
+		"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
+	}
+	companies = _lr_companies()
+	if companies is not None:
+		filters["company"] = ["in", companies or ["__none__"]]
 	dns = frappe.get_all(
 		"Delivery Note",
-		filters={
-			"docstatus": 0,
-			"custom_dispatch_date": ["between", [f"{today} 00:00:00", f"{today} 23:59:59"]],
-		},
+		filters=filters,
 		fields=[
 			"name", "posting_date", "custom_sales_order_id", "custom_dn_so_customer_name",
 			"vehicle_no", "custom_dispatch_date", "custom_transporter_name", "custom_lr_gr_no",
@@ -637,7 +670,9 @@ def upload_lr_excel(file_url):
 			})
 			continue
 		dns = frappe.get_all(
-			"Delivery Note", filters={"docstatus": 0, "custom_sales_order_id": so_id}, pluck="name"
+			"Delivery Note",
+			filters={"docstatus": 0, "custom_sales_order_id": so_id, **company_filters("Delivery Note")},
+			pluck="name",
 		)
 		if not dns:
 			failed.append({"row": idx, "sales_order": so_id, "reason": "No draft Delivery Note found"})
@@ -647,6 +682,10 @@ def upload_lr_excel(file_url):
 			continue
 		try:
 			dn = frappe.get_doc("Delivery Note", dns[0])
+			# The sheet submits with ignore_permissions on the LR role: that role, in this company.
+			assert_company(dn, ptype="read")
+			if not has_company_role(_LR_BULK_ROLES, dn.company):
+				frappe.throw(frappe._("Only Warehouse Admin / Manager can bulk-update LR No."))
 			if dispatch_date:
 				# A Datetime on the note, a date in the sheet: change the day, keep the time.
 				from alpinos.dispatch_date_sync import _stored

@@ -20,6 +20,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, now_datetime, nowdate
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role, restrict_company
 from alpinos.production import filling_common as F
 from alpinos.production.filling_plan import row_pending
 
@@ -121,6 +122,8 @@ def validate_inward(doc):
 	doc.filling_line = plan.filling_line
 	doc.line_category = plan.line_category
 	doc.parent_po = plan.parent_po
+	if plan.get("company"):
+		doc.company = plan.company
 	doc.sub_order = plan.sub_order
 	doc.bulk_item = sub.production_item
 	doc.target_sku = row.target_sku
@@ -363,6 +366,13 @@ def on_cancel_inward(doc):
 	        doc.reversal_reason or "")
 
 
+def _require_in(roles, company, action):
+	"""The screen's role gate, in the document's company."""
+	if not has_company_role(roles, company):
+		frappe.throw(_("You are not allowed to {0} in {1}.").format(action, company), frappe.PermissionError,
+		             title=_("Not Permitted"))
+
+
 def _plan_has_pending(plan, exclude=None):
 	filters = {"filling_plan": plan, "docstatus": 1, "approval_status": F.APPROVAL_PENDING}
 	if exclude:
@@ -379,6 +389,7 @@ def submit_inward(payload):
 	p = F.parse(payload)
 	if not p.get("filling_plan") or not p.get("plan_row"):
 		frappe.throw(_("Choose the plan row you are filling."), title=_("Plan Required"))
+	assert_company(frappe.db.get_value(F.PLAN, p.filling_plan, "company"), F.INWARD, "create")
 	_lock_plan(p.filling_plan)
 	doc = frappe.new_doc(F.INWARD)
 	doc.filling_plan = p.filling_plan
@@ -408,6 +419,7 @@ def preview_inward(payload):
 	F.require(F.OPERATOR_ROLES, _("record a Filling Inward"))
 	p = F.parse(payload)
 	plan = frappe.get_doc(F.PLAN, p.filling_plan)
+	assert_open(plan)
 	row = _plan_row(plan, p.plan_row)
 	sub = F.sub_info(plan.sub_order)
 	size = flt(row.size_kg)
@@ -431,6 +443,7 @@ def reverse_inward(inward, reason):
 	if not (reason or "").strip():
 		frappe.throw(_("Please give the reason for the reversal."), title=_("Reason Required"))
 	doc = frappe.get_doc(F.INWARD, inward)
+	_require_in(F.REVERSE_ROLES, doc.company, _("reverse a Filling Inward"))
 	if cint(doc.docstatus) != 1:
 		frappe.throw(_("{0} is not a submitted inward.").format(inward), title=_("Cannot Reverse"))
 	if frappe.db.get_value(F.PLAN, doc.filling_plan, "status") == F.PLAN_REROUTED:
@@ -462,6 +475,7 @@ def approve_wastage(inward, remarks=None):
 	"""Abnormal-wastage override (FRD 7.1, replaces the Supervisor PIN)."""
 	F.require(F.APPROVER_ROLES, _("approve abnormal filling wastage"))
 	doc = frappe.get_doc(F.INWARD, inward)
+	_require_in(F.APPROVER_ROLES, doc.company, _("approve abnormal filling wastage"))
 	if cint(doc.docstatus) != 1 or doc.approval_status != F.APPROVAL_PENDING:
 		frappe.throw(_("{0} is not awaiting approval.").format(inward), title=_("Nothing To Approve"))
 	doc.db_set({"approval_status": F.APPROVAL_APPROVED, "approved_by": frappe.session.user,
@@ -479,7 +493,7 @@ def approve_wastage(inward, remarks=None):
 def get_entry_context():
 	"""Filling Entry: the open plan rows an operator can fill, recent inwards, approvals."""
 	F.require(F.FILLING_READ_ROLES, _("open Filling Entry"))
-	plans = frappe.get_all(F.PLAN, filters={"status": ("in", F.PLAN_OPEN_STATUSES)},
+	plans = frappe.get_all(F.PLAN, filters=restrict_company({"status": ("in", F.PLAN_OPEN_STATUSES)}, F.PLAN),
 	                       fields=["name", "plan_date", "parent_po", "sub_order", "filling_line",
 	                               "line_category", "status"],
 	                       order_by="plan_date asc, name asc", limit_page_length=500)
@@ -509,7 +523,7 @@ def get_entry_context():
 				"size_kg": r.size_kg, "planned_pcs": r.planned_pcs, "completed_pcs": r.completed_pcs,
 				"pending_pcs": r.pending_pcs, "wip_qty": flt(sub.get("wip_qty"), 3),
 			})
-	recent = frappe.get_all(F.INWARD, filters={"docstatus": ("<", 2)},
+	recent = frappe.get_all(F.INWARD, filters=restrict_company({"docstatus": ("<", 2)}, F.INWARD),
 	                        fields=["name", "posting_date", "filling_plan", "filling_line", "sub_order",
 	                                "target_sku", "input_pcs", "wastage_kg", "process_loss_kg",
 	                                "process_loss_pct", "submission_type", "fg_batch",

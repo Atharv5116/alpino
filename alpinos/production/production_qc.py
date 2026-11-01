@@ -21,6 +21,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_fullname, now_datetime, nowdate
 
+from alpinos.company_scope.helpers import assert_company, has_company_role, restrict_company
 from alpinos.production import execution_common as X
 from alpinos.production import material_common as MC
 
@@ -57,6 +58,8 @@ def validate_qc(doc):
 		          "parent_production_order", "process_master", "production_item", "item_name",
 		          "batch_number"):
 			doc.set(f, inward.get(f))
+		if inward.get("company"):
+			doc.company = inward.company
 		doc.total_baked_output_kg = flt(inward.actual_output_kg, 3)
 		doc.status = QC_DRAFT
 
@@ -209,6 +212,7 @@ def get_qc_list(status=None, search=None, date_from=None, date_to=None, start=0,
 		or_filters = {"name": ("like", like), "sub_order": ("like", like), "batch_number": ("like", like),
 		              "production_item": ("like", like), "process_inward": ("like", like),
 		              "member_sub_orders": ("like", like)}
+	restrict_company(filters, QC)
 	rows = frappe.get_all(QC, filters=filters, or_filters=or_filters, fields=LIST_FIELDS,
 	                      order_by="docstatus asc, creation desc", limit_start=start,
 	                      limit_page_length=page_length + 1)
@@ -224,9 +228,14 @@ def get_qc_list(status=None, search=None, date_from=None, date_to=None, start=0,
 def get_qc_context(name):
 	X.assert_roles(X.QC_READ_ROLES, _("open Production QC"))
 	doc = frappe.get_doc(QC, name)
+	# Opened only in its company, by someone holding a QC screen role there.
+	assert_company(doc.company, ptype="read", active=True)
+	if not has_company_role(X.QC_READ_ROLES, doc.company):
+		frappe.throw(_("You are not permitted to {0}.").format(_("open Production QC")), frappe.PermissionError,
+		             title=_("Not Permitted"))
 	inward = frappe.get_doc(INWARD, doc.process_inward) if doc.process_inward else None
 	draft = cint(doc.docstatus) == 0
-	may_write = X.may(X.QC_WRITE_ROLES)
+	may_write = has_company_role(X.QC_WRITE_ROLES, doc.company)
 	return {
 		"doc": {f: doc.get(f) for f in LIST_FIELDS + [
 			"production_run", "process_master", "observations", "approval_remarks",
@@ -259,6 +268,7 @@ def save_qc(payload):
 	X.assert_roles(X.QC_WRITE_ROLES, _("save a Production QC"))
 	p = X.parse(payload)
 	doc = frappe.get_doc(QC, p.get("name"))
+	assert_company(doc)
 	if cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} has been sent and is locked.").format(doc.name), title=_("Locked"))
 	_apply(doc, p)
@@ -274,6 +284,7 @@ def send_for_filling(payload):
 	X.assert_roles(X.QC_WRITE_ROLES, _("send a Production QC for filling"))
 	p = X.parse(payload)
 	doc = frappe.get_doc(QC, p.get("name"))
+	assert_company(doc, ptype="submit")
 	if cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} has already been sent.").format(doc.name), title=_("Already Sent"))
 	_apply(doc, p)

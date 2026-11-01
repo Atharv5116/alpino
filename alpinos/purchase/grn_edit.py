@@ -23,6 +23,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate, nowtime
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 
@@ -60,8 +61,9 @@ ITEM_FIELDS = (
 _NUMERIC = {"qty", "rejected_qty", "rate", "custom_mrp", "custom_gst_percent"}
 
 
-def _has_role(roles):
-	return bool(set(frappe.get_roles()) & set(roles))
+def _has_role(roles, company=None):
+	"""The user holds one of `roles` (in `company`, the document's, when given)."""
+	return has_company_role(roles, company)
 
 
 def _load_grn(purchase_receipt):
@@ -76,8 +78,8 @@ def _load_grn(purchase_receipt):
 	return pr
 
 
-def _assert_edit_role():
-	if not _has_role(EDIT_ROLES):
+def _assert_edit_role(company=None):
+	if not _has_role(EDIT_ROLES, company):
 		frappe.throw(
 			_("Only the Purchase Team or an Admin can change a Draft GRN."),
 			frappe.PermissionError,
@@ -123,9 +125,10 @@ def get_grn_context(purchase_receipt):
 	from alpinos.purchase.purchase_invoice import rate_editable
 
 	pr = _load_grn(purchase_receipt)
+	assert_open(pr)
 	docstatus = cint(pr.docstatus)
-	may_edit = _has_role(EDIT_ROLES)
-	may_submit = _has_role(C.GRN_FINAL_SUBMIT_ROLES)
+	may_edit = _has_role(EDIT_ROLES, pr.company)
+	may_submit = _has_role(C.GRN_FINAL_SUBMIT_ROLES, pr.company)
 	amended_to = _amendment_of(pr.name) if docstatus == 2 else None
 
 	note = pr.get("custom_debit_note")
@@ -223,7 +226,8 @@ def save_grn(purchase_receipt, data=None):
 	pr = _load_grn(purchase_receipt)
 	if cint(pr.docstatus) != 0:
 		frappe.throw(_("Completed GRN cannot be edited."), title=_("VAL-GRN-07"))
-	_assert_edit_role()
+	assert_company(pr, ptype="write")
+	_assert_edit_role(pr.company)
 	_apply(pr, data)
 	pr.flags.ignore_permissions = True
 	pr.save()
@@ -240,7 +244,8 @@ def submit_grn(purchase_receipt, data=None):
 	pr = _load_grn(purchase_receipt)
 	if cint(pr.docstatus) != 0:
 		frappe.throw(_("This GRN is already submitted."))
-	if not _has_role(C.GRN_FINAL_SUBMIT_ROLES):
+	assert_company(pr, ptype="read")
+	if not _has_role(C.GRN_FINAL_SUBMIT_ROLES, pr.company):
 		frappe.throw(
 			_("Only {0} may submit a GRN.").format(", ".join(C.GRN_FINAL_SUBMIT_ROLES)),
 			frappe.PermissionError,
@@ -285,9 +290,10 @@ def cancel_grn(purchase_receipt, reason=None):
 
 	if docstatus == 2:
 		frappe.throw(_("{0} is already cancelled.").format(pr.name))
+	assert_company(pr, ptype="read")
 
 	if docstatus == 1:
-		if not _has_role(C.GRN_FINAL_SUBMIT_ROLES):
+		if not _has_role(C.GRN_FINAL_SUBMIT_ROLES, pr.company):
 			frappe.throw(
 				_("Only {0} may cancel a submitted GRN.").format(", ".join(C.GRN_FINAL_SUBMIT_ROLES)),
 				frappe.PermissionError,
@@ -295,7 +301,7 @@ def cancel_grn(purchase_receipt, reason=None):
 		pr.flags.ignore_permissions = True
 		pr.cancel()
 	else:
-		_assert_edit_role()
+		_assert_edit_role(pr.company)
 		_mark_draft_cancelled(pr)
 		G.mark_cancelled(pr)
 
@@ -349,6 +355,7 @@ def cancel_debit_note(purchase_receipt=None, debit_note=None, reason=None):
 
 	note = frappe.get_doc(DEBIT_NOTE, debit_note)
 	note.check_permission("read")
+	assert_company(note, ptype="read")
 	grn = _grn_of_debit_note(note) if cint(note.is_return) else None
 	if not grn:
 		frappe.throw(_("{0} is not a Debit Note raised from a GRN.").format(note.name))
@@ -360,7 +367,7 @@ def cancel_debit_note(purchase_receipt=None, debit_note=None, reason=None):
 	if docstatus == 2:
 		frappe.throw(_("{0} is already cancelled.").format(note.name))
 	if docstatus == 1:
-		if not _has_role(C.GRN_FINAL_SUBMIT_ROLES):
+		if not _has_role(C.GRN_FINAL_SUBMIT_ROLES, note.company):
 			frappe.throw(
 				_("Only {0} may cancel a submitted Debit Note.").format(", ".join(C.GRN_FINAL_SUBMIT_ROLES)),
 				frappe.PermissionError,
@@ -368,7 +375,7 @@ def cancel_debit_note(purchase_receipt=None, debit_note=None, reason=None):
 		note.flags.ignore_permissions = True
 		note.cancel()
 	else:
-		_assert_edit_role()
+		_assert_edit_role(note.company)
 		_mark_draft_cancelled(note)
 
 	message = _("{0} Debit Note {1} cancelled by {2}.{3}").format(
@@ -392,7 +399,8 @@ def amend_grn(purchase_receipt):
 	pr = _load_grn(purchase_receipt)
 	if cint(pr.docstatus) != 2:
 		frappe.throw(_("Only a cancelled GRN can be amended."))
-	_assert_edit_role()
+	assert_company(pr, ptype="create")
+	_assert_edit_role(pr.company)
 	existing = _amendment_of(pr.name)
 	if existing:
 		frappe.throw(

@@ -17,7 +17,15 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, now_datetime, nowdate
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	company_sql,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+)
 from alpinos.production import filling_common as F
+from alpinos.production.filling_plan import open_in_company
 
 
 # ------------------------------------------------------------------------ helpers
@@ -31,6 +39,14 @@ def _batch(batch_no):
 	if not row:
 		frappe.throw(_("Batch {0} does not exist.").format(batch_no), title=_("Unknown Batch"))
 	return row
+
+
+def _batch_company(batch_no):
+	"""An FG batch's company: its Sub PO's."""
+	if not batch_no or not F.has_field("Batch", F.B_SUB):
+		return None
+	sub = frappe.db.get_value("Batch", batch_no, F.B_SUB)
+	return frappe.db.get_value(F.WORK_ORDER, sub, "company") if sub else None
 
 
 def hold_qty(batch_no, item=None):
@@ -102,6 +118,9 @@ def validate_qc(doc):
 	for key in ("target_sku", "sku_name", "filling_line", "production_date", "filling_inward",
 	            "sub_order", "parent_po", "size_kg", "total_inward_pcs"):
 		doc.set(key, details[key])
+	company = frappe.db.get_value("Production Order", doc.parent_po, "company") if doc.parent_po else None
+	if company:
+		doc.company = company
 
 	if not doc.get("tests"):
 		for test in F.STANDARD_TESTS:
@@ -310,11 +329,13 @@ def _apply(doc, p):
 def _load(p):
 	if p.get("name"):
 		doc = frappe.get_doc(F.FINAL_QC, p.name)
+		assert_company(doc)
 		if cint(doc.docstatus) != 0:
 			frappe.throw(_("{0} is already decided.").format(doc.name), title=_("Not A Draft"))
 	else:
 		doc = frappe.new_doc(F.FINAL_QC)
 		doc.fg_batch = p.get("fg_batch")
+		assert_company(_batch_company(doc.fg_batch), F.FINAL_QC, "create")
 	return doc
 
 
@@ -355,6 +376,7 @@ def revoke_qc(final_qc, reason):
 	if not (reason or "").strip():
 		frappe.throw(_("Please give the reason for revoking."), title=_("Reason Required"))
 	doc = frappe.get_doc(F.FINAL_QC, final_qc)
+	assert_company(doc, ptype="cancel")
 	if cint(doc.docstatus) != 1:
 		frappe.throw(_("{0} is not a decided Final QC.").format(final_qc), title=_("Cannot Revoke"))
 	dns = batch_on_active_dn(doc.fg_batch)
@@ -382,10 +404,14 @@ def hold_batch_query(doctype, txt, searchfield, start, page_len, filters):
 	"""FRD 9.1: only FG batches in FG-Hold."""
 	if not F.has_field("Batch", F.B_STATUS):
 		return []
+	cond = company_sql(F.WORK_ORDER, "wo")
+	if cond:
+		# A batch follows its Sub PO's company.
+		cond = f" and exists (select 1 from `tabWork Order` wo where wo.name = `tabBatch`.{F.B_SUB}{cond})"
 	return frappe.db.sql(
 		f"""
 		select name, item, manufacturing_date from `tabBatch`
-		where {F.B_STATUS} = %(hold)s and disabled = 0 and (name like %(txt)s or item like %(txt)s)
+		where {F.B_STATUS} = %(hold)s and disabled = 0 and (name like %(txt)s or item like %(txt)s){cond}
 		order by creation desc limit %(start)s, %(page_len)s
 		""", {"hold": F.FG_HOLD, "txt": f"%{txt or ''}%", "start": cint(start),
 		      "page_len": cint(page_len) or 20})
@@ -393,7 +419,10 @@ def hold_batch_query(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def get_batch_info(fg_batch):
+	# company-scope: n/a (reads only this batch and its Final QC; open_in_company checks the
+	# batch's company first)
 	F.require(F.FILLING_READ_ROLES, _("view Final QC"))
+	open_in_company(_batch_company(fg_batch), F.FILLING_READ_ROLES, _("view Final QC"))
 	out = batch_details(fg_batch)
 	out["existing_qc"] = (frappe.get_all(F.FINAL_QC, filters={"fg_batch": fg_batch, "docstatus": 0},
 	                                     pluck="name", limit=1) or [None])[0]
@@ -413,6 +442,7 @@ def get_qc_list(search=None, qc_status=None, sku=None, date_from=None, date_to=N
 		filters["target_sku"] = sku
 	if date_from and date_to:
 		filters["production_date"] = ("between", [date_from, date_to])
+	restrict_company(filters, F.FINAL_QC)
 	or_filters = {"name": ("like", f"%{search}%"), "fg_batch": ("like", f"%{search}%")} if search else None
 	start, page_length = max(cint(start), 0), min(max(cint(page_length) or 50, 1), 200)
 	rows = frappe.get_all(F.FINAL_QC, filters=filters, or_filters=or_filters,
@@ -423,10 +453,18 @@ def get_qc_list(search=None, qc_status=None, sku=None, date_from=None, date_to=N
 	has_more = len(rows) > page_length
 	awaiting = []
 	if F.has_field("Batch", F.B_STATUS):
-		in_qc = set(frappe.get_all(F.FINAL_QC, filters={"docstatus": 0}, pluck="fg_batch"))
-		for b in frappe.get_all("Batch", filters={F.B_STATUS: F.FG_HOLD, "disabled": 0},
-		                        fields=["name", "item", "manufacturing_date", F.B_LINE, F.B_SUB, F.B_INWARD],
-		                        order_by="creation asc", limit_page_length=200):
+		in_qc = set(frappe.get_all(F.FINAL_QC, filters=restrict_company({"docstatus": 0}, F.FINAL_QC),
+		                           pluck="fg_batch"))
+		batches = frappe.get_all("Batch", filters={F.B_STATUS: F.FG_HOLD, "disabled": 0},
+		                         fields=["name", "item", "manufacturing_date", F.B_LINE, F.B_SUB, F.B_INWARD],
+		                         order_by="creation asc", limit_page_length=200)
+		if scope_companies(F.WORK_ORDER) is not None:
+			# A batch follows its Sub PO's company.
+			subs = [b.get(F.B_SUB) for b in batches if b.get(F.B_SUB)]
+			keep = set(frappe.get_all(F.WORK_ORDER, filters=restrict_company({"name": ("in", subs or [""])},
+			                                                                  F.WORK_ORDER), pluck="name"))
+			batches = [b for b in batches if b.get(F.B_SUB) in keep]
+		for b in batches:
 			qty = hold_qty(b.name, b.item)
 			if qty <= 0:
 				continue
@@ -453,7 +491,8 @@ def get_qc_context(final_qc=None):
 		base["doc"] = None
 		return base
 	doc = frappe.get_doc(F.FINAL_QC, final_qc)
+	open_in_company(doc.company, F.FILLING_READ_ROLES, _("view Final QC"))
 	base["doc"] = doc.as_dict()
-	base["can_write"] = int(F.has_any(F.QC_ROLES) and cint(doc.docstatus) == 0)
-	base["can_revoke"] = int(F.has_any(F.QC_MANAGER_ROLES) and cint(doc.docstatus) == 1)
+	base["can_write"] = int(has_company_role(F.QC_ROLES, doc.company) and cint(doc.docstatus) == 0)
+	base["can_revoke"] = int(has_company_role(F.QC_MANAGER_ROLES, doc.company) and cint(doc.docstatus) == 1)
 	return base

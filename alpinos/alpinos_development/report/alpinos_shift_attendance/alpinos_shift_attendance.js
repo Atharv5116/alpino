@@ -40,7 +40,10 @@ frappe.query_reports["Alpinos Shift Attendance"] = {
 			fieldtype: "Link",
 			options: "Company",
 			reqd: 1,
-			default: frappe.defaults.get_user_default("Company"),
+			default:
+				window.alpinos && alpinos.company
+					? alpinos.company.current()
+					: frappe.defaults.get_user_default("Company"),
 		},
 		{
 			fieldname: "late_entry",

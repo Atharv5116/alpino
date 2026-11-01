@@ -17,6 +17,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alpinos.company_scope.helpers import assert_company, assert_open, company_filters
 from alpinos.ecom_sales_order_custom_fields import CHANNEL_ECOM, is_modern_trade
 from alpinos.sales_order_api import (
 	_parse_so_entry_args,
@@ -153,8 +154,11 @@ def backfill_ecom_flags_from_buyer_master():
 		("custom_partial_order_allowed", "partial_order_allowed"),
 		("custom_gst_exclusive_buyer", "gst_exclusive_buyer"),
 	]
+	# Only orders of the companies the user may write in (narrowed to the active one).
 	names = frappe.get_all(
-		"Sales Order", filters={"custom_channel": "E-com", "docstatus": ["<", 2]}, pluck="name"
+		"Sales Order",
+		filters={"custom_channel": "E-com", "docstatus": ["<", 2], **company_filters("Sales Order", ptype="write")},
+		pluck="name",
 	)
 	changed = 0
 	for name in names:
@@ -443,6 +447,7 @@ def create_ecom_sales_order(customer, order_type, company, items, flags=None,
 		dispatch_date, delivery_by_date, po_number, po_expiry_date,
 		site_name, billing_address, shipping_address, taxes_and_charges,
 	)
+	assert_company(so.company, "Sales Order", "create")
 	_apply_sticker_attachments(so, sticker_attachments)
 	_apply_rl_no_invoice(so, rl_no_invoice)
 	so.insert()
@@ -467,6 +472,7 @@ def update_ecom_sales_order(name, customer, order_type, company, items, flags=No
 
 	so = frappe.get_doc("Sales Order", name)
 	so.check_permission("write")
+	assert_company(so, ptype="write")
 	if so.docstatus != 0:
 		frappe.throw(_("Only draft Sales Orders can be edited from the entry page."))
 
@@ -483,6 +489,7 @@ def update_ecom_sales_order(name, customer, order_type, company, items, flags=No
 		dispatch_date, delivery_by_date, po_number, po_expiry_date,
 		site_name, billing_address, shipping_address, taxes_and_charges,
 	)
+	assert_company(so, ptype="write")
 	_apply_sticker_attachments(so, sticker_attachments)
 	_apply_rl_no_invoice(so, rl_no_invoice)
 	so.save()
@@ -496,6 +503,7 @@ def get_ecom_so_entry_payload(sales_order):
 	"""Prefill payload for the e-com entry page (Edit drafts / Duplicate)."""
 	doc = frappe.get_doc("Sales Order", sales_order)
 	doc.check_permission("read")
+	assert_open(doc)
 
 	items = []
 	for row in doc.items or []:

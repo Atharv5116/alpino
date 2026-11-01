@@ -18,12 +18,21 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_fullname, getdate, nowdate
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	company_sql,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+)
 from alpinos.query_compat import agg
 
 from alpinos.production import material_common as MC
 from alpinos.production import material_constants as M
 from alpinos.production.material_request import (
 	SUB_FIELD,
+	assert_store_role,
 	issued_by_row,
 	refresh_issue_status,
 )
@@ -70,6 +79,7 @@ def _check_mr(mr_name, submitting=False):
 			_("Material Request {0} is {1}. Materials can only be issued against a Pending Issue "
 			  "or Partially Issued request.").format(mr_name, mr.custom_mr_status or _("a draft")),
 			title=_("Request Not Open"))
+	assert_company(mr.company)  # a member of the request's company
 	return mr
 
 
@@ -252,6 +262,7 @@ def _entry_list(kind, fields, search, status, sub_order, parent, fg_item, date_f
 	for k, v in (extra or {}).items():
 		filters[k] = v
 	MC.date_range(filters, "posting_date", date_from, date_to)
+	filters = restrict_company(filters, SE)
 	or_filters = None
 	if search:
 		like = f"%{search}%"
@@ -281,6 +292,12 @@ def _entry_list(kind, fields, search, status, sub_order, parent, fg_item, date_f
 @frappe.validate_and_sanitize_search_inputs
 def mr_query(doctype, txt, searchfield, start, page_len, filters):
 	"""The MR picker: open production MRs only. A Fully Issued one drops out."""
+	company = (filters or {}).get("company")
+	companies = scope_companies(MR)
+	if company and (companies is None or company in companies):
+		in_company = " and company = {0}".format(frappe.db.escape(company))
+	else:
+		in_company = company_sql(MR)
 	return frappe.db.sql(
 		f"""
 		select name, {SUB_FIELD}, custom_target_fg_item, custom_mr_status
@@ -289,6 +306,7 @@ def mr_query(doctype, txt, searchfield, start, page_len, filters):
 		  and ifnull({SUB_FIELD}, '') != ''
 		  and custom_mr_status in %(statuses)s
 		  and (name like %(txt)s or {SUB_FIELD} like %(txt)s or custom_target_fg_item like %(txt)s)
+		  {in_company}
 		order by schedule_date asc, name asc
 		limit %(start)s, %(page_len)s
 		""",
@@ -301,6 +319,7 @@ def mr_query(doctype, txt, searchfield, start, page_len, filters):
 def item_batches(item_code, warehouse):
 	"""FEFO batch list for the Batch picker."""
 	MC.assert_may_read()
+	assert_company(frappe.db.get_value("Warehouse", warehouse, "company"))  # a member of its company
 	return MC.batches_fefo(item_code, warehouse)
 
 
@@ -317,9 +336,10 @@ def mr_pending_rows(material_request, source_warehouse=None):
 	"""Header and grid for a new MI: the MR's rows that still have something pending."""
 	MC.assert_may_read()
 	mr = _check_mr(material_request)
+	assert_open(mr.company, MR)
 	issued = issued_by_row(mr.name)
-	wip = _safe(wip_warehouse)
-	default_source = source_warehouse or _safe(main_warehouse)
+	wip = _safe(lambda: wip_warehouse(mr.company))
+	default_source = source_warehouse or _safe(lambda: main_warehouse(mr.company))
 	src_rows = frappe.get_all(
 		"Material Request Item", filters={"parent": mr.name, "parenttype": MR},
 		fields=["name", "item_code", "item_name", "qty", "uom", "stock_uom", "from_warehouse",
@@ -382,6 +402,11 @@ def get_mi_context(stock_entry=None):
 		            "can_return": 0, "issued_by": get_fullname(frappe.session.user), "returns": []})
 		return ctx
 	doc = frappe.get_doc(SE, stock_entry)
+	assert_open(doc)
+	ctx.update({"main_warehouse": _safe(lambda: main_warehouse(doc.company)),
+	            "wip_warehouse": _safe(lambda: wip_warehouse(doc.company))})
+	may_write = has_company_role(M.STORE_WRITE_ROLES, doc.company)
+	may_manage = has_company_role(M.STORE_MANAGE_ROLES, doc.company)
 	from alpinos import mrp_batch as MB
 
 	# Which Batch / MRP each row moved (split per lot when the Stock Entry was saved).
@@ -438,12 +463,14 @@ def save_mi(payload):
 		doc = frappe.get_doc(SE, p.name)
 		if not is_issue(doc) or cint(doc.docstatus) != 0:
 			frappe.throw(_("{0} is not a draft Material Issue.").format(p.name), title=_("Not A Draft"))
+		assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("change {0}").format(doc.name))
 	else:
 		doc = frappe.new_doc(SE)
 		doc.naming_series = M.MI_NAMING_SERIES
 		doc.set("custom_entry_kind", M.KIND_ISSUE)
 
 	mr = _check_mr(p.get("material_request") or doc.get("custom_material_request"))
+	assert_store_role(M.STORE_WRITE_ROLES, mr.company, _("issue materials"))
 	doc.set("custom_material_request", mr.name)
 	doc.purpose = M.ISSUE_PURPOSE
 	doc.stock_entry_type = M.ISSUE_PURPOSE
@@ -454,7 +481,7 @@ def save_mi(payload):
 	doc.posting_date = posting_date
 	doc.set_posting_time = 1 if getdate(posting_date) != getdate(nowdate()) else 0
 	doc.remarks = p.get("remarks") or ""
-	wip = wip_warehouse()
+	wip = wip_warehouse(mr.company)
 	doc.to_warehouse = wip
 
 	# Zero rows are dropped here, before anything is validated: "not issuing this one today"
@@ -501,6 +528,7 @@ def submit_mi(stock_entry):
 	doc = frappe.get_doc(SE, stock_entry)
 	if not is_issue(doc) or cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} is not a draft Material Issue.").format(stock_entry))
+	assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("submit {0}").format(doc.name))
 	doc.flags.alpinos_material = True
 	doc.flags.ignore_permissions = True
 	doc.submit()
@@ -514,6 +542,7 @@ def cancel_mi(stock_entry):
 	doc = frappe.get_doc(SE, stock_entry)
 	if not is_issue(doc) or cint(doc.docstatus) != 1:
 		frappe.throw(_("{0} is not a submitted Material Issue.").format(stock_entry))
+	assert_store_role(M.STORE_MANAGE_ROLES, doc.company, _("cancel {0}").format(doc.name))
 	doc.flags.alpinos_material = True
 	doc.flags.ignore_permissions = True
 	doc.cancel()
@@ -528,6 +557,7 @@ def delete_entry(stock_entry):
 	doc = frappe.get_doc(SE, stock_entry)
 	if not doc.get("custom_entry_kind") or cint(doc.docstatus) != 0:
 		frappe.throw(_("Only a draft Material Issue or Material Return can be deleted."))
+	assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("delete {0}").format(doc.name))
 	frappe.delete_doc(SE, doc.name, ignore_permissions=True)
 	frappe.db.commit()
 	return {"deleted": stock_entry}

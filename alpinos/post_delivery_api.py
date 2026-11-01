@@ -9,6 +9,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate
 
+from alpinos.company_scope.helpers import assert_company, company_sql
+
 # The customer's own PO number: the e-com / modern-trade field first, then the standard
 # ERPNext one the offline orders carry.
 _CUSTOMER_PO = "COALESCE(NULLIF(so.custom_po_number, ''), so.po_no)"
@@ -37,6 +39,8 @@ def get_post_delivery_queue(
 	page_length = min(max(cint(page_length) or 20, 1), 100)
 
 	conds = ["dn.docstatus < 2", "IFNULL(so.custom_appointment_required, 0) = 1"]
+	# Notes of the companies where the user may read Post Dispatch (the active one).
+	conds.append("1 = 1" + company_sql("Post Dispatch", "dn"))
 	params = {}
 
 	# Only rows whose post-delivery isn't finished.
@@ -150,6 +154,7 @@ def start_post_delivery(delivery_note):
 		return {"name": existing, "created": 0}
 
 	dn = frappe.get_doc("Delivery Note", delivery_note)
+	assert_company(dn.company, "Post Dispatch", "create")
 	sales_order = dn.get("custom_sales_order_id")
 	if not sales_order:
 		frappe.throw(_("Delivery Note {0} has no linked Sales Order.").format(delivery_note))

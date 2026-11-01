@@ -14,6 +14,7 @@ from frappe import _
 from frappe.utils import flt, getdate, today
 
 from alpinos import mrp_batch as MB
+from alpinos.company_scope.helpers import company_sql
 from alpinos.purchase import constants as C
 from alpinos.purchase.settings import warehouse as settings_warehouse
 
@@ -68,6 +69,9 @@ def _rows(filters):
 		values["mrp"] = flt(filters.mrp, 2)
 	if filters.get("only_unassigned"):
 		conditions.append(f"IFNULL(sle.`{MB.FIELD}`, '') = ''")
+	# No company picked: the companies the user works in (the report's roles need not read
+	# Stock Ledger Entry itself).
+	company = "" if filters.get("company") else company_sql(None, "sle")
 
 	rows = frappe.db.sql(
 		f"""
@@ -78,7 +82,7 @@ def _rows(filters):
 		FROM `tabStock Ledger Entry` sle
 		JOIN `tabItem` item ON item.name = sle.item_code
 		LEFT JOIN `tabMRP Batch` lot ON lot.name = sle.`{MB.FIELD}`
-		WHERE {" AND ".join(conditions)}
+		WHERE {" AND ".join(conditions)}{company}
 		GROUP BY sle.item_code, sle.warehouse, sle.`{MB.FIELD}`
 		HAVING ABS(SUM(sle.actual_qty)) > 0.000001
 		ORDER BY sle.item_code, sle.warehouse, lot.expiry_date IS NULL, lot.expiry_date, lot.mrp

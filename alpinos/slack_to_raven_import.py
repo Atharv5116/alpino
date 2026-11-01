@@ -23,6 +23,7 @@ def run_slack_to_raven_import(docname: str) -> dict:
 @frappe.whitelist()
 def add_current_user_to_slack_workspace(workspace_name: str = "Slack") -> dict:
 	"""Add the current user to a Raven workspace and all its channels, to recover visibility without re-running the import."""
+	# company-scope: n/a (reads only Raven plumbing: workspace and channels)
 	workspace_name = (workspace_name or "Slack").strip()
 	# Raven Workspace autonames from workspace_name, so resolve to the doc name
 	workspace_docname = frappe.db.get_value(
@@ -112,6 +113,7 @@ def import_slack_export(file_url: str, workspace_name: Optional[str] = None) -> 
 	file_url may be an absolute site path or a bare filename (assumed in /private/files).
 	workspace_name defaults to "Slack". Lives in Alpinos so the Raven app stays untouched.
 	"""
+	# company-scope: n/a (reads only Slack/Raven import plumbing)
 
 	if not file_url:
 		frappe.throw(_("file_url is required"))

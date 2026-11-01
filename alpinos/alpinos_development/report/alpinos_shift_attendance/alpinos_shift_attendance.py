@@ -8,6 +8,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, format_datetime, format_duration
 
+from alpinos.company_scope.helpers import scope_companies
+
 
 def execute(filters=None):
 	# Script Report and unit tests may pass a plain dict.
@@ -274,6 +276,11 @@ def get_query(filters):
 			)
 		elif filter_key not in ("late_entry", "early_exit"):
 			query = query.where(attendance[filter_key] == filters[filter_key])
+
+	if not filters.get("company"):
+		companies = scope_companies("Attendance")
+		if companies is not None:
+			query = query.where(attendance.company.isin(companies or ["__none__"]))
 
 	return query
 

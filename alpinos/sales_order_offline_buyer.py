@@ -7,6 +7,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import tagged_condition, tagged_names
+
 
 def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None, parents_only=False):
 	"""Customers that have a row in Buyer Master (same pool for Sales Order + Catalog).
@@ -58,6 +60,8 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		WHERE IFNULL(c.disabled, 0) = 0
 			{parent_clause}
 			{channel_clause}
+			{tagged_condition("Customer", "c")}
+			{tagged_condition("Buyer Master", "m")}
 			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s OR m.gst_no LIKE %(txt)s
 				OR REGEXP_REPLACE(c.customer_name, '[^0-9A-Za-z]', '') LIKE %(norm)s
 				OR REGEXP_REPLACE(c.name, '[^0-9A-Za-z]', '') LIKE %(norm)s)
@@ -125,6 +129,9 @@ def get_offline_buyer_item_rate(customer, item_code, mrp=None):
 	With `mrp` (the line's MRP, from the Item's MRP table): the catalogue row for that SKU +
 	MRP only, never another MRP's price (Multiple MRP FRD, BR-06 / BR-07)."""
 	if not customer or not item_code:
+		return None
+	# A customer outside the user's companies has no pricing to show.
+	if not tagged_names("Customer", [customer]):
 		return None
 
 	obm_name = frappe.db.get_value(
@@ -489,7 +496,7 @@ def get_party_gstin(customer, site_name=None):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 	blank = {"billing_gstin": "", "shipping_gstin": "", "site_gstin": ""}
-	if not customer:
+	if not customer or not tagged_names("Customer", [customer]):
 		return blank
 
 	row = frappe.db.get_value(
@@ -1184,6 +1191,7 @@ def sync_single_offline_buyer_master(offline_buyer_master):
 
 	Administrator only — backs the "Sync to Customer" button on the OBM form.
 	"""
+	# company-scope: n/a (Administrator-only repair of one Buyer Master)
 
 	if frappe.session.user != "Administrator":
 		frappe.throw(_("Only the Administrator can run this action."), frappe.PermissionError)
@@ -1207,6 +1215,8 @@ def report_duplicate_buyer_masters(customer=None):
 	  bench --site <site> execute alpinos.sales_order_offline_buyer.report_duplicate_buyer_masters
 	Pass customer='<name>' to check a single customer.
 	"""
+	# company-scope: n/a (System Manager read-only debug report over every Buyer Master)
+	frappe.only_for("System Manager")
 	params = {}
 	cond = ""
 	if customer:
@@ -1244,6 +1254,7 @@ def clean_customer_names_strip_gst(commit=True):
 	Idempotent and safe to re-run. Run with:
 	  bench --site <site> execute alpinos.sales_order_offline_buyer.clean_customer_names_strip_gst
 	"""
+	# company-scope: n/a (System Manager one-off cleanup over every Customer)
 	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles():
 		frappe.throw(_("Only an Administrator / System Manager can run this."), frappe.PermissionError)
 
@@ -1300,6 +1311,8 @@ def report_offline_buyers_missing_customer_party():
 	  bench --site <site> execute \
 	    alpinos.sales_order_offline_buyer.report_offline_buyers_missing_customer_party
 	"""
+	# company-scope: n/a (System Manager maintenance report over every Buyer Master)
+	frappe.only_for("System Manager")
 
 	masters = frappe.get_all(
 		"Buyer Master",
@@ -1372,6 +1385,8 @@ def backfill_offline_buyer_addresses_and_contacts():
 	  bench --site <site> execute \
 	    alpinos.sales_order_offline_buyer.backfill_offline_buyer_addresses_and_contacts
 	"""
+	# company-scope: n/a (System Manager one-off backfill over every Buyer Master)
+	frappe.only_for("System Manager")
 
 	names = frappe.get_all(
 		"Buyer Master",
@@ -1401,6 +1416,8 @@ def sync_offline_buyer_master_addresses(customer):
 
 	Desk Sales Order Entry uses this as default Billing/Shipping picks; Address Link fields stay a full customer list.
 	"""
+	if customer and not tagged_names("Customer", [customer]):
+		return {"default_billing": None, "default_shipping": None}
 	return _offline_buyer_address_sync(customer)
 
 
@@ -1501,9 +1518,11 @@ def get_customer_family_sites(customer):
 	Sites live in TWO places on the Buyer Master(s): the master's own site_name AND
 	each Buyer Address row's site_name (a master can host several sites). Union both
 	straight from the masters so every site the family has is offered."""
-	if not customer:
+	if not customer or not tagged_names("Customer", [customer]):
 		return []
 	masters = buyer_family_masters(customer)
+	usable = set(tagged_names("Buyer Master", [m.name for m in masters]))
+	masters = [m for m in masters if m.name in usable]
 	if not masters:
 		return []
 	master_names = [m.name for m in masters]
@@ -1663,10 +1682,12 @@ def get_customer_addresses_for_display(customer, site_name=None):
 	created (so GST can follow the billing address); a row without a materialised
 	Address yet is skipped. Return rows keep the Address component fields
 	(address_line1/2, city, state, pincode) other callers rely on."""
-	if not customer:
+	if not customer or not tagged_names("Customer", [customer]):
 		return []
 	site_name = (site_name or "").strip()
 	masters = buyer_family_masters(customer)
+	usable = set(tagged_names("Buyer Master", [m.name for m in masters]))
+	masters = [m for m in masters if m.name in usable]
 	if not masters:
 		return []
 

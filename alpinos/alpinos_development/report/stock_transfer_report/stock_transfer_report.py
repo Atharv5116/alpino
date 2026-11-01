@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate
 
+from alpinos.company_scope.helpers import company_sql
+
 
 def execute(filters=None):
 	columns = get_columns()
@@ -114,6 +116,8 @@ def get_data(filters):
 	if company:
 		conditions.append("se.company = %(company)s")
 		values["company"] = company
+	# No company picked: the companies the user works in.
+	company_cond = "" if company else company_sql(None, "se")
 	
 	if from_warehouse:
 		conditions.append("sed.s_warehouse = %(from_warehouse)s")
@@ -149,7 +153,7 @@ def get_data(filters):
 		FROM `tabStock Entry` se
 		INNER JOIN `tabStock Entry Detail` sed ON se.name = sed.parent
 		INNER JOIN `tabItem` item ON sed.item_code = item.name{lot_join}
-		WHERE {where_clause}
+		WHERE {where_clause}{company_cond}
 		AND sed.s_warehouse IS NOT NULL
 		AND sed.t_warehouse IS NOT NULL
 		ORDER BY se.posting_date DESC, se.company, sed.item_code

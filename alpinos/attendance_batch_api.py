@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.utils import get_first_day
 
+from alpinos.company_scope.helpers import assert_company, assert_open, company_sql, current_company, restrict_company
+
 
 @frappe.whitelist()
 def get_batches(rule_engine=None, status=None, start=0, page_length=20):
@@ -16,6 +18,7 @@ def get_batches(rule_engine=None, status=None, start=0, page_length=20):
 		filters["rule_engine"] = rule_engine
 	if status:
 		filters["workflow_state"] = status
+	restrict_company(filters, "Monthly Attendance Batch")
 
 	batches = frappe.get_all(
 		"Monthly Attendance Batch",
@@ -44,7 +47,11 @@ def get_batches(rule_engine=None, status=None, start=0, page_length=20):
 		)
 
 	counts = dict(
-		frappe.db.sql("SELECT rule_engine, COUNT(*) FROM `tabMonthly Attendance Batch` GROUP BY rule_engine")
+		frappe.db.sql(
+			"SELECT rule_engine, COUNT(*) FROM `tabMonthly Attendance Batch` WHERE 1=1{0} GROUP BY rule_engine".format(
+				company_sql("Monthly Attendance Batch")
+			)
+		)
 	)
 	counts["All"] = sum(counts.values())
 
@@ -55,7 +62,8 @@ def get_batches(rule_engine=None, status=None, start=0, page_length=20):
 def create_batch(rule_engine, payroll_month, company=None):
 	"""Create New Entry: one Draft batch per engine + month (+ company)."""
 	if not company:
-		company = frappe.defaults.get_user_default("Company") or frappe.get_all("Company", limit=1)[0].name
+		company = current_company() or frappe.get_all("Company", limit=1)[0].name
+	assert_company(company, "Monthly Attendance Batch", "create")
 
 	batch = frappe.get_doc(
 		{
@@ -74,6 +82,7 @@ def get_batch(name):
 	"""Full batch payload for the entry page: doc + rows + workflow transitions."""
 	doc = frappe.get_doc("Monthly Attendance Batch", name)
 	doc.check_permission("read")
+	assert_open(doc)
 
 	from frappe.model.workflow import get_transitions
 
@@ -103,5 +112,6 @@ def apply_batch_action(name, action):
 	from frappe.model.workflow import apply_workflow
 
 	doc = frappe.get_doc("Monthly Attendance Batch", name)
+	assert_company(doc, ptype="write")
 	updated = apply_workflow(doc, action)
 	return {"workflow_state": updated.get("workflow_state")}

@@ -3,6 +3,24 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, add_months, cint, date_diff, formatdate, get_datetime, getdate
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role
+
+
+def _other_employee_company(employee):
+	"""The employee's company, or None for the user's own Employee (own records are not
+	company-scoped)."""
+	emp = frappe.db.get_value("Employee", employee, ["company", "user_id"], as_dict=True) if employee else None
+	if not emp or (emp.user_id and emp.user_id == frappe.session.user):
+		return None
+	return emp.company
+
+
+def _check_employee(employee, doctype, ptype):
+	"""Acting on somebody else's attendance needs the right in their company."""
+	company = _other_employee_company(employee)
+	if company:
+		assert_company(company, doctype, ptype)
+
 
 def set_reporting_person(doc, method=None):
 	if not doc or not getattr(doc, "employee", None):
@@ -24,6 +42,9 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 	"""Employee Checkin IN/OUT + attendance for every date in the range, keyed by date."""
 	if not employee or not from_date or not to_date:
 		return {}
+	company = _other_employee_company(employee)
+	if company:
+		assert_open(company, "Employee Checkin")
 
 	from_date_obj = getdate(from_date)
 	to_date_obj = getdate(to_date)
@@ -98,6 +119,9 @@ def get_checkin_data_for_dates(employee, from_date, to_date):
 @frappe.whitelist()
 def create_or_update_checkin(employee, date, log_type, time, checkin_name=None, attendance_request=None):
 	"""Create a new Employee Checkin or update an existing one."""
+	_check_employee(employee, "Employee Checkin", "create")
+	if checkin_name:
+		_check_employee(frappe.db.get_value("Employee Checkin", checkin_name, "employee"), "Employee Checkin", "write")
 
 	# Reject future-dated check-ins.
 	checkin_datetime = get_datetime(time)
@@ -212,6 +236,7 @@ def update_attendance_times(employee, date, preserve_in=0, preserve_out=0):
 	"""
 	if not employee or not date:
 		return
+	_check_employee(employee, "Attendance", "write")
 
 	attendance = get_attendance_for_date(employee, date)
 	if not attendance:
@@ -292,6 +317,7 @@ def update_reason_field(attendance_request, reason):
 	valid_reasons = ["Work From Home", "Office", "On Duty", "Other"]
 	if reason not in valid_reasons:
 		frappe.throw(_("Reason must be one of: {0}").format(", ".join(valid_reasons)))
+	_check_employee(frappe.db.get_value("Attendance Request", attendance_request, "employee"), "Attendance Request", "write")
 	
 	try:
 		current_reason = frappe.db.get_value("Attendance Request", attendance_request, "reason")
@@ -313,6 +339,7 @@ def update_attendance_status(employee, date, reason, attendance_request=None):
 	"""Update/create the Attendance for the date; status derived from the action value."""
 	if not employee or not date or not reason:
 		frappe.throw(_("Employee, date, and reason are required"))
+	_check_employee(employee, "Attendance", "write")
 
 	reason_to_status_map = {
 		"Work From Home": "Work From Home",
@@ -567,6 +594,7 @@ def get_monthly_request_status(employee, on_date=None, current=None):
 	month_start = on_date.replace(day=1)
 	next_month = add_months(month_start, 1)
 
+	_check_employee(employee, "Attendance Request", "read")
 	user = frappe.db.get_value("Employee", employee, "user_id")
 	exempt = bool(user) and "HR Manager" in frappe.get_roles(user)
 
@@ -1138,7 +1166,8 @@ def gather_day_info(employee, date):
 @frappe.whitelist()
 def build_attendance_request_details(employee, from_date, to_date, reason=None):
 	"""Read-only rows for the two Attendance Request tables (editable details + existing logs)."""
-	if "HR Manager" not in frappe.get_roles():
+	company = frappe.db.get_value("Employee", employee, "company") if employee else None
+	if not has_company_role("HR Manager", company):
 		employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name", order_by="name asc")
 	if not (employee and from_date and to_date):
 		return {"details": [], "logs": []}
@@ -1180,6 +1209,8 @@ def backfill_raised_by_hr(apply=0, sample=25):
 	  bench --site SITE execute alpinos.attendance_request_automation.backfill_raised_by_hr
 	  bench --site SITE execute alpinos.attendance_request_automation.backfill_raised_by_hr --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off backfill across every company)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	sample = int(sample)
 	if not frappe.get_meta("Attendance Request").has_field("custom_raised_by_hr"):

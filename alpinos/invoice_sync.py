@@ -304,6 +304,21 @@ def can_resync_invoices():
 	return bool(_INVOICE_RESYNC_ROLES & set(frappe.get_roles()))
 
 
+def _assert_resync_companies(sales_orders):
+	"""The resync role must be held in each order's company (company-wise roles)."""
+	from alpinos.company_scope.helpers import has_company_role
+
+	companies = dict(
+		frappe.get_all("Sales Order", filters={"name": ["in", list(sales_orders)]}, fields=["name", "company"], as_list=True)
+	)
+	refused = [so for so in sales_orders if so in companies and not has_company_role(_INVOICE_RESYNC_ROLES, companies[so])]
+	if refused:
+		frappe.throw(
+			_("You are not permitted to resync invoice PDFs of {0}.").format(", ".join(refused[:5])),
+			frappe.PermissionError,
+		)
+
+
 #: Above this many orders the work goes to a background job instead of the request.
 #: One order is a couple of seconds; the gateway gives up long before a full selection is
 #: through, so anything that is not a quick handful is queued.
@@ -328,6 +343,7 @@ def resync_invoices_bulk(sales_orders):
 		frappe.throw(_("You are not permitted to resync invoice PDFs."), frappe.PermissionError)
 	if not sales_orders:
 		frappe.throw(_("No Sales Orders selected."))
+	_assert_resync_companies(sales_orders)
 
 	if len(sales_orders) > RESYNC_INLINE_LIMIT:
 		frappe.enqueue(
@@ -395,6 +411,7 @@ def resync_invoice_pdf(sales_order):
 	"""Re-fetch a single Sales Order's invoice PDF from Drive, replacing any attached copy."""
 	if not (_INVOICE_RESYNC_ROLES & set(frappe.get_roles())):
 		frappe.throw(_("You are not permitted to resync invoice PDFs."), frappe.PermissionError)
+	_assert_resync_companies([sales_order])
 	s = _settings()
 	if not _drive_enabled(s):
 		frappe.throw(_("Invoice Drive sync is not enabled/configured in Invoice Sync Settings."))

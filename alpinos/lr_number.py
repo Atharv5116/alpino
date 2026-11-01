@@ -55,6 +55,8 @@ def clean_existing_lr_numbers(apply=0, limit=500):
 	  bench --site SITE execute alpinos.lr_number.clean_existing_lr_numbers
 	  bench --site SITE execute alpinos.lr_number.clean_existing_lr_numbers --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off repair over every Delivery Note)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	rows = frappe.db.sql(
 		"""

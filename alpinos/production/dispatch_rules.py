@@ -20,6 +20,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import assert_open, restrict_company
 from alpinos.production import inventory_common as IC
 
 DN = "Delivery Note"
@@ -50,7 +51,7 @@ def validate_delivery_note(doc, method=None):
 	if not rows:
 		return
 	status = IC.fg_status_map([b for _r, bs in rows for b in bs])
-	blocked_wh = {w for w in (IC.setting("fg_hold_warehouse"), IC.setting("rejected_warehouse")) if w}
+	blocked_wh = {w for w in (IC.setting("fg_hold_warehouse", doc.get("company")), IC.setting("rejected_warehouse", doc.get("company"))) if w}
 	info = IC.item_meta([r.item_code for r, _b in rows])
 	for row, batches in rows:
 		for batch in batches:
@@ -114,6 +115,7 @@ def get_dispatch_list(search=None, customer=None, status=None, date_from=None, d
 		if not parents:
 			return {"rows": [], "has_more": 0, "start": start, "page_length": page_length}
 		filters["name"] = ("in", list(parents))
+	filters = restrict_company(filters, DN)
 	fields = ["name", "posting_date", "customer", "customer_name", "total_qty", "status",
 	          "docstatus"]
 	for f in ("vehicle_no", "workflow_state", "custom_dispatch_date", "custom_lr_gr_no",
@@ -141,6 +143,7 @@ def get_dispatch_detail(name):
 		frappe.throw(_("You do not have access to {0}.").format(name), frappe.PermissionError,
 		             title=_("Not Permitted"))
 	dn = frappe.get_doc(DN, name)
+	assert_open(dn)
 	out_rows = []
 	all_batches = []
 	for r in dn.items:

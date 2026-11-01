@@ -20,6 +20,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, date_diff, flt, get_fullname, getdate, nowdate
 
+from alpinos.company_scope.helpers import current_company, has_company_role, scope_companies, tagged_names
 from alpinos.production import inventory_common as IC
 
 WO = "Work Order"
@@ -29,7 +30,7 @@ EXEC_FIELD = "custom_execution_status"
 DEFAULT_DAYS = 30
 
 ALL_FILTERS = ("from_date", "to_date", "parent_po", "sub_order", "sku", "batch", "line",
-               "status", "shift")
+               "status", "shift", "company")
 
 
 # ========================================================================== helpers
@@ -59,6 +60,38 @@ def _pick(doctype, *candidates):
 	return IC.first_field(doctype, candidates)
 
 
+def _companies(f):
+	"""Companies a report covers (None = no restriction): the company picked on the page when
+	the user sees it, else every company the user sees now and holds a report role in."""
+	if "_companies" not in f:
+		visible = scope_companies()
+		if visible is not None:
+			visible = [c for c in visible if has_company_role(IC.REPORT_ROLES, c)]
+		picked = f.get("company")
+		if picked:
+			f["_companies"] = [picked] if visible is None or picked in visible else []
+		else:
+			f["_companies"] = visible
+	return f["_companies"]
+
+
+def _company_filter(f, filters, fieldname="company"):
+	companies = _companies(f)
+	if companies is not None:
+		filters[fieldname] = ("in", companies or ["__none__"])
+	return filters
+
+
+def _company_cond(f, alias):
+	"""' and <alias>.company in (...)' for the raw SQL reports."""
+	companies = _companies(f)
+	if companies is None:
+		return ""
+	if not companies:
+		return " and 1=0"
+	return " and `{0}`.`company` in ({1})".format(alias, ", ".join(frappe.db.escape(c) for c in companies))
+
+
 def _sub_filters(f):
 	filters = {PARENT_FIELD: ("is", "set"), "docstatus": ("<", 2)}
 	if f.get("parent_po"):
@@ -67,7 +100,7 @@ def _sub_filters(f):
 		filters["name"] = f.sub_order
 	if f.get("sku"):
 		filters["production_item"] = f.sku
-	return filters
+	return _company_filter(f, filters)
 
 
 def _net_issued_kg(sub_names, kinds=("RM", "Additive")):
@@ -190,6 +223,7 @@ def report_parent_po(f):
 	if f.get("from_date") or f.get("to_date"):
 		a, b = _range(f, 3650)
 		filters["creation_date"] = ("between", [a, b])
+	_company_filter(f, filters)
 	pos = frappe.get_all(PO, filters=filters,
 	                     fields=["name", "creation_date", "fg_item", "fg_item_name", "production_qty_kg",
 	                             "production_qty_pcs", "status"],
@@ -362,6 +396,7 @@ def report_production_order(f):
 	for key, fld in (("sku", sku_f), ("line", line_f), ("sub_order", sub_f)):
 		if f.get(key) and fld:
 			filters[fld] = f.get(key)
+	_company_filter(f, filters)
 	rows = []
 	for r in frappe.get_all(dt, filters=filters, fields=fields, order_by="creation desc", limit_page_length=3000):
 		status = r.get(st_f) if st_f else {0: "Draft", 1: "Submitted"}.get(cint(r.docstatus))
@@ -446,10 +481,24 @@ def report_material_availability(f):
 	if f.get("sku"):
 		item_filters["name"] = f.sku
 	items = frappe.get_all("Item", filters=item_filters, pluck="name", limit_page_length=0)
+	companies = _companies(f)
+	if companies is not None:
+		usable = set()
+		for company in companies:
+			usable.update(tagged_names("Item", items, company))
+		items = [i for i in items if i in usable]
 	if not items:
 		return columns, []
 	from alpinos.production.stock_allocation import projected_stock
-	proj = projected_stock(items)
+	if companies is None:
+		proj = projected_stock(items)
+	else:
+		proj = {}
+		for company in companies:
+			for item, p in projected_stock(items, company).items():
+				total = proj.setdefault(item, {"physical": 0.0, "allocated": 0.0, "projected": 0.0})
+				for k in total:
+					total[k] += flt(p.get(k))
 	info = IC.item_meta(items)
 	rows = []
 	for item in sorted(items):
@@ -492,7 +541,7 @@ def _consumption(f, kinds=None):
 		           sed.transfer_qty as qty, sed.stock_uom as uom, {sub_expr} as sub_order,
 		           se.name as stock_entry, se.purpose
 		    from `tabStock Entry Detail` sed join `tabStock Entry` se on se.name = sed.parent
-		    where {" and ".join(cond)}
+		    where {" and ".join(cond)}{_company_cond(f, "se")}
 		    order by se.posting_date desc, se.name desc limit 20000""", values, as_dict=True)
 	info = IC.item_meta([r.item_code for r in rows])
 	parents = {}
@@ -578,7 +627,7 @@ def report_category_stock(f):
 		f"""select b.item_code, {MT.sql_type_expr("i")} as category,
 		          sum(b.actual_qty) as qty, sum(b.stock_value) as value
 		   from `tabBin` b join `tabItem` i on i.name = b.item_code
-		   where b.actual_qty > 0 group by b.item_code, category""", as_dict=True)
+		   where b.actual_qty > 0{_company_cond(f, "b")} group by b.item_code, category""", as_dict=True)
 	info = IC.item_meta([b.item_code for b in bins])
 	groups = {}
 	for b in bins:
@@ -625,6 +674,7 @@ def report_yield(f):
 		filters = {}
 		if f.get("parent_po") and pf:
 			filters[pf] = f.parent_po
+		_company_filter(f, filters)
 		for r in frappe.get_all(yr, filters=filters, fields=fields, limit_page_length=3000):
 			inp, out = flt(r.get("issued_rm_kg")), flt(r.get("filled_kg"))
 			y = flt(out / inp * 100, 2) if inp else 0
@@ -644,6 +694,7 @@ def report_yield(f):
 	if f.get("from_date") or f.get("to_date"):
 		a, b = _range(f, 3650)
 		po_filters["creation_date"] = ("between", [a, b])
+	_company_filter(f, po_filters)
 	if _exists(PO):
 		pos = [p for p in frappe.get_all(PO, filters=po_filters, fields=["name", "fg_item"],
 		                                 limit_page_length=1000) if p.name not in done]
@@ -689,6 +740,7 @@ def _loss_rows(f):
 			[x for x in (shift_f, by_f, sub_f) if x]
 		filters = {"docstatus": 1, date_f: ("between", [a, b])}
 		filters.update(extra_filter or {})
+		_company_filter(f, filters)
 		if f.get("sub_order") and sub_f:
 			filters[sub_f] = f.sub_order
 		for r in frappe.get_all(doctype, filters=filters, fields=list(dict.fromkeys(fields)),
@@ -743,7 +795,7 @@ def summary_data(f):
 		          ifnull(sed.s_warehouse, '') as s_wh, ifnull(sed.t_warehouse, '') as t_wh
 		   from `tabStock Entry Detail` sed join `tabStock Entry` se on se.name = sed.parent
 		   where se.docstatus = 1 and se.purpose in ('Manufacture', 'Repack')
-		     and se.posting_date between %(a)s and %(b)s""", {"a": a, "b": b}, as_dict=True)
+		     and se.posting_date between %(a)s and %(b)s""" + _company_cond(f, "se"), {"a": a, "b": b}, as_dict=True)
 	info = IC.item_meta([r.item_code for r in rows])
 	for r in rows:
 		meta = info.get(r.item_code) or frappe._dict()
@@ -758,12 +810,12 @@ def summary_data(f):
 			bucket["baked_kg"] += IC.qty_in_kg(r.qty, meta)
 	if _exists("Production Run") and IC.has_field("Production Run", "downtime_minutes"):
 		for r in frappe.get_all("Production Run",
-		                        filters={"started_on": ("between", [f"{a} 00:00:00", f"{b} 23:59:59"])},
+		                        filters=_company_filter(f, {"started_on": ("between", [f"{a} 00:00:00", f"{b} 23:59:59"])}),
 		                        fields=["started_on", "downtime_minutes"], limit_page_length=0):
 			if not r.started_on:
 				continue
 			g(r.started_on, shift_of(_time_of(r.started_on)))["downtime_min"] += flt(r.downtime_minutes)
-	for r in _loss_rows(frappe._dict(from_date=a, to_date=b)):
+	for r in _loss_rows(frappe._dict(from_date=a, to_date=b, _companies=_companies(f))):
 		if r["date"]:
 			g(r["date"], r["shift"])["wastage_kg"] += flt(r["qty_kg"])
 	out = []
@@ -870,6 +922,15 @@ def report_audit_trail(f):
 		                              pluck="name"))
 	rows = [r for r in rows if (r["ref_doctype"] != WO or r["ref_name"] in sub_names)
 	        and (r["ref_doctype"] != "Stock Entry" or r["ref_name"] in se_names)]
+	if _companies(f) is not None:
+		# Only documents of the companies the report covers (every audited doctype has one).
+		by_doctype, keep = {}, set()
+		for r in rows:
+			by_doctype.setdefault(r["ref_doctype"], set()).add(r["ref_name"])
+		for dt, refs in by_doctype.items():
+			for name in frappe.get_all(dt, filters=_company_filter(f, {"name": ("in", list(refs))}), pluck="name"):
+				keep.add((dt, name))
+		rows = [r for r in rows if (r["ref_doctype"], r["ref_name"]) in keep]
 	rows.sort(key=lambda r: str(r["at"]), reverse=True)
 	return columns, rows[:2000]
 
@@ -901,7 +962,8 @@ REPORTS = {
 def get_report_index():
 	_assert_access()
 	return {
-		"reports": [{"key": k, "label": _(v[0]), "group": _(v[1]), "filters": list(v[2])} for k, v in REPORTS.items()],
+		"reports": [{"key": k, "label": _(v[0]), "group": _(v[1]), "filters": ["company", *v[2]]}
+		            for k, v in REPORTS.items()],
 		"audit_doctypes": [d for d in AUDIT_DOCTYPES if _exists(d)],
 		"shifts": __import__("alpinos.production.shifts", fromlist=["shift_names"]).shift_names(),
 		"statuses": {
@@ -945,15 +1007,15 @@ def production_summary_html(filters=None):
 	Print Format "Production Summary" template (editable in the desk)."""
 	_assert_access()
 	f = IC.parse(filters)
-	rows = summary_data(frappe._dict({k: v for k, v in f.items() if k in ALL_FILTERS and v}))
-	a, b = _range(frappe._dict(f))
+	f = frappe._dict({k: v for k, v in f.items() if k in ALL_FILTERS and v})
+	rows = summary_data(f)
+	a, b = _range(f)
 	totals = {k: flt(sum(flt(r.get(k)) for r in rows), 3)
 	          for k in ("rm_kg", "baked_kg", "fg_pcs", "fg_kg", "downtime_min", "wastage_kg")}
 	totals["yield_pct"] = flt(totals["fg_kg"] / totals["rm_kg"] * 100, 2) if totals["rm_kg"] else None
 	from alpinos.production.inventory_setup import SUMMARY_PF_NAME, summary_template
 	template = frappe.db.get_value("Print Format", SUMMARY_PF_NAME, "html") or summary_template()
-	company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
-		"Global Defaults", "default_company")
+	company = f.get("company") or current_company()
 	return frappe.render_template(template, {
 		"rows": rows, "totals": totals, "from_date": a, "to_date": b, "shift": f.get("shift") or "",
 		"company": company, "printed_by": get_fullname(), "printed_on": frappe.utils.now_datetime(),

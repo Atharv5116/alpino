@@ -13,10 +13,26 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	company_sql,
+	has_company_role,
+	restrict_company,
+	tagged_condition,
+)
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
 from alpinos.production import filling_common as F
+
+
+def open_in_company(company, roles, action):
+	"""A screen about to show one document of `company`: the user works in that company and
+	holds one of the screen's roles there (the screen's gate, per company)."""
+	assert_company(company, ptype="read", active=True)
+	if not has_company_role(roles, company):
+		frappe.throw(_("You are not allowed to {0} in {1}.").format(action, company), frappe.PermissionError,
+		             title=_("Not Permitted"))
 
 
 # ------------------------------------------------------------------ reservations
@@ -269,6 +285,7 @@ def get_plan_list(search=None, status=None, parent_po=None, sub_order=None, fill
 	if search:
 		like = f"%{search}%"
 		or_filters = {"name": ("like", like), "sub_order": ("like", like), "parent_po": ("like", like)}
+	restrict_company(filters, F.PLAN)
 	start, page_length = max(cint(start), 0), min(max(cint(page_length) or 50, 1), 200)
 	total = frappe.db.count(F.PLAN, filters) if not or_filters else len(
 		frappe.get_all(F.PLAN, filters=filters, or_filters=or_filters, pluck="name"))
@@ -307,6 +324,8 @@ def get_plan_context(plan=None):
 	if not plan:
 		return {"doc": None, "can_write": int(can_plan), "statuses": list(F.PLAN_STATUSES)}
 	doc = frappe.get_doc(F.PLAN, plan)
+	open_in_company(doc.company, F.FILLING_READ_ROLES, _("view Filling Plans"))
+	can_plan = has_company_role(F.PLANNER_ROLES, doc.company)
 	data = doc.as_dict()
 	data["line_label"] = frappe.db.get_value("Machine", doc.filling_line, "machine_name")
 	data["parent_available_kg"] = flt(parent_available(doc.parent_po), 3)
@@ -330,6 +349,10 @@ def get_plan_context(plan=None):
 def get_wip_info(parent_po=None, sub_order=None, plan=None):
 	"""Available WIP (KG) for the header (FRD 6.1 WIP lock)."""
 	F.require(F.FILLING_READ_ROLES, _("view Filling Plans"))
+	for doctype, name in (("Production Order", parent_po), (F.WORK_ORDER, sub_order)):
+		if name:
+			open_in_company(frappe.db.get_value(doctype, name, "company"), F.FILLING_READ_ROLES,
+			                _("view Filling Plans"))
 	out = {"parent_available_kg": flt(parent_available(parent_po), 3) if parent_po else 0}
 	if sub_order:
 		sub = F.sub_info(sub_order) or {}
@@ -369,7 +392,7 @@ def sub_order_query(doctype, txt, searchfield, start, page_len, filters):
 		select name, {F.BATCH_FIELD}, {F.WIP_QTY_FIELD}
 		from `tabWork Order`
 		where {F.PARENT_FIELD} = %(parent)s and docstatus < 2 and {F.WIP_QTY_FIELD} > 0
-		  and name like %(txt)s
+		  and name like %(txt)s {company_sql(F.WORK_ORDER)}
 		order by name asc limit %(start)s, %(page_len)s
 		""", {"parent": parent, "txt": f"%{txt or ''}%", "start": cint(start),
 		      "page_len": cint(page_len) or 20})
@@ -386,7 +409,7 @@ def parent_query(doctype, txt, searchfield, start, page_len, filters):
 		select distinct {F.PARENT_FIELD}
 		from `tabWork Order`
 		where {F.PARENT_FIELD} is not null and {F.PARENT_FIELD} like %(txt)s and docstatus < 2
-		  and {F.WIP_QTY_FIELD} > 0
+		  and {F.WIP_QTY_FIELD} > 0 {company_sql(F.WORK_ORDER)}
 		order by {F.PARENT_FIELD} desc limit %(start)s, %(page_len)s
 		""", {"txt": f"%{txt or ''}%", "start": cint(start), "page_len": cint(page_len) or 20})
 
@@ -397,11 +420,12 @@ def line_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Active filling machines (with a Filling Process Category), FRD 8.4.4."""
 	exclude = (filters or {}).get("exclude") or ""
 	return frappe.db.sql(
-		"""
+		f"""
 		select name, machine_name, filling_process_category
 		from `tabMachine`
 		where status = %(active)s and ifnull(filling_process_category, '') != ''
 		  and name != %(exclude)s and (name like %(txt)s or machine_name like %(txt)s)
+		  {tagged_condition("Machine")}
 		order by machine_name asc limit %(start)s, %(page_len)s
 		""", {"active": C.MACHINE_ACTIVE, "exclude": exclude, "txt": f"%{txt or ''}%",
 		      "start": cint(start), "page_len": cint(page_len) or 20})
@@ -424,6 +448,7 @@ def sku_query(doctype, txt, searchfield, start, page_len, filters):
 	from alpinos.production import material_type as MT
 
 	cond += " and {} in ('', 'FG')".format(MT.sql_type_expr("i"))
+	cond += tagged_condition("Item", "i")
 	return frappe.db.sql(
 		f"""
 		select i.name, i.item_name, i.{F.PACK_SIZE_FIELD}
@@ -440,12 +465,15 @@ def save_plan(payload):
 	p = F.parse(payload)
 	if p.get("name"):
 		doc = frappe.get_doc(F.PLAN, p.name)
+		assert_company(doc)
 	else:
 		doc = frappe.new_doc(F.PLAN)
 		doc.status = F.PLAN_PLANNED
 	for field in ("plan_date", "parent_po", "sub_order", "filling_line", "remarks"):
 		if field in p:
 			doc.set(field, p.get(field))
+	if doc.is_new() and doc.parent_po:
+		assert_company(frappe.db.get_value("Production Order", doc.parent_po, "company"), F.PLAN, "create")
 	old = {r.name: r for r in (doc.get("rows") or [])}
 	counters = ("completed_pcs", "written_off_pcs", "rerouted_pcs", "consumed_kg", "filled_kg",
 	            "wastage_kg", "row_status")
@@ -476,6 +504,7 @@ def save_plan(payload):
 def delete_plan(plan):
 	F.require(F.PLANNER_ROLES, _("delete Filling Plans"))
 	doc = frappe.get_doc(F.PLAN, plan)
+	assert_company(doc, ptype="delete")
 	if doc.status != F.PLAN_PLANNED or frappe.get_all(F.INWARD, filters={"filling_plan": plan}, limit=1):
 		frappe.throw(_("Only a plan with no filling recorded can be deleted."), title=_("Cannot Delete"))
 	doc.flags.alpinos_filling = True
@@ -492,6 +521,7 @@ def reroute_plan(plan, filling_line, plan_date=None, reason=None):
 	original as Re-Routed."""
 	F.require(F.PLANNER_ROLES, _("re-route Filling Plans"))
 	orig = frappe.get_doc(F.PLAN, plan)
+	assert_company(orig)
 	if orig.status not in F.PLAN_OPEN_STATUSES:
 		frappe.throw(_("{0} is {1}; only an open plan can be re-routed.").format(plan, orig.status),
 		             title=_("Cannot Re-Route"))
@@ -547,6 +577,7 @@ def get_calendar(date_from, date_to, filling_line=None, sku=None, status=None):
 		filters["filling_line"] = filling_line
 	if status:
 		filters["status"] = status
+	restrict_company(filters, F.PLAN)
 	plans = frappe.get_all(F.PLAN, filters=filters, fields=LIST_FIELDS + ["total_wastage_kg"],
 	                       order_by="plan_date asc, name asc", limit_page_length=1000)
 	if not plans:

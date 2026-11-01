@@ -10,8 +10,10 @@ Writes are NOT here. Insert, save and delete go through the standard endpoints s
 """
 
 import frappe
+from frappe import _
 from frappe.utils import cint
 
+from alpinos.company_scope.helpers import listing, tag_or_filters, tagged_names
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
@@ -56,6 +58,13 @@ def _type_names(type_ids):
 	}
 
 
+def _assert_tagged(doctype, name):
+	"""A tagged master opened on a screen must be usable in the company the user works in."""
+	if not tagged_names(doctype, [name]):
+		frappe.throw(_("{0} is not used in the company you are working in.").format(name),
+		             frappe.PermissionError, title=_("Not In This Company"))
+
+
 # --- Machine -----------------------------------------------------------------
 
 
@@ -95,22 +104,24 @@ def get_machine_list(search=None, machine_type=None, status=None,
 		like = f"%{search}%"
 		or_filters = {"name": ("like", like), "machine_name": ("like", like)}
 
-	count_rows = frappe.get_list(
-		MACHINE, fields=[agg("count", "name", "total")], filters=filters,
-		or_filters=or_filters, limit_page_length=0,
-	)
-	total = cint(count_rows[0].get("total")) if count_rows else 0
+	# listing(): the permission query narrows a tagged master to the active company
+	with listing():
+		count_rows = frappe.get_list(
+			MACHINE, fields=[agg("count", "name", "total")], filters=filters,
+			or_filters=or_filters, limit_page_length=0,
+		)
+		total = cint(count_rows[0].get("total")) if count_rows else 0
 
-	# One more than asked for, so "is there another page" needs no second query.
-	rows = frappe.get_list(
-		MACHINE,
-		filters=filters,
-		or_filters=or_filters,
-		fields=list(MACHINE_LIST_FIELDS),
-		order_by="machine_name asc",
-		limit_start=start,
-		limit_page_length=page_length + 1,
-	)
+		# One more than asked for, so "is there another page" needs no second query.
+		rows = frappe.get_list(
+			MACHINE,
+			filters=filters,
+			or_filters=or_filters,
+			fields=list(MACHINE_LIST_FIELDS),
+			order_by="machine_name asc",
+			limit_start=start,
+			limit_page_length=page_length + 1,
+		)
 	has_more = len(rows) > page_length
 	rows = rows[:page_length]
 
@@ -133,6 +144,7 @@ def get_machine_form_context(machine=None):
 	if machine and frappe.db.exists(MACHINE, machine):
 		doc = frappe.get_doc(MACHINE, machine)
 		doc.check_permission("read")
+		_assert_tagged(MACHINE, doc.name)
 		can_write = frappe.has_permission(MACHINE, "write", doc=doc)
 	else:
 		frappe.has_permission(MACHINE, "read", throw=True)
@@ -159,6 +171,7 @@ def get_machine_types(include_inactive=0):
 	Inactive types are offered only when one is already selected on the document being
 	edited -- otherwise editing an old machine would silently blank its type.
 	"""
+	# company-scope: n/a (Machine Type is a GLOBAL master)
 	frappe.has_permission(MACHINE_TYPE, "read", throw=True)
 	filters = {} if cint(include_inactive) else {"is_active": 1}
 	return frappe.get_all(
@@ -189,12 +202,19 @@ def processes_for_machine(machine_type):
 	return frappe.get_all(
 		"Process Master",
 		filters={"name": ("in", parents), "is_active": 1},
+		or_filters=tag_or_filters("Process Master"),
 		fields=["name", "process_code", "process_name", "process_sequence"],
 		order_by="process_sequence asc",
 	)
 
 
 # --- Machine Type ------------------------------------------------------------
+
+
+def _visible_processes():
+	"""Process Masters usable in the companies the user sees ([""] when none)."""
+	return frappe.get_all("Process Master", or_filters=tag_or_filters("Process Master"),
+	                      pluck="name") or [""]
 
 
 @frappe.whitelist()
@@ -227,6 +247,7 @@ def get_machine_type_list(search=None, is_active=None, limit=200):
 	for row in frappe.get_all(
 		MACHINE,
 		filters={"machine_type": ("in", ids)},
+		or_filters=tag_or_filters(MACHINE),
 		fields=["machine_type", "status", agg("count", "name", "qty")],
 		group_by="machine_type, status",
 	):
@@ -240,7 +261,8 @@ def get_machine_type_list(search=None, is_active=None, limit=200):
 	process_parents = {}
 	for row in frappe.get_all(
 		"Process Machine Type",
-		filters={"machine_type": ("in", ids), "parenttype": "Process Master"},
+		filters={"machine_type": ("in", ids), "parenttype": "Process Master",
+		         "parent": ("in", _visible_processes())},
 		fields=["machine_type", "parent"],
 	):
 		process_parents.setdefault(row.machine_type, set()).add(row.parent)
@@ -276,6 +298,7 @@ def get_machine_type_form_context(machine_type=None):
 		machines = frappe.get_all(
 			MACHINE,
 			filters={"machine_type": doc.name},
+			or_filters=tag_or_filters(MACHINE),
 			fields=["name", "machine_name", "max_capacity", "capacity_uom", "status"],
 			order_by="machine_name asc",
 		)
@@ -299,10 +322,11 @@ def machine_types_without_process():
 	than blocked, since a type may legitimately be set up before its process is written.
 	"""
 	frappe.has_permission("Machine Type", "read", throw=True)
+	# Linked by a process of the company the user works in.
 	linked = set(
 		frappe.get_all(
 			"Process Machine Type",
-			filters={"parenttype": "Process Master"},
+			filters={"parenttype": "Process Master", "parent": ("in", _visible_processes())},
 			pluck="machine_type",
 		)
 	)

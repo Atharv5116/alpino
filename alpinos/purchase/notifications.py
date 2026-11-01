@@ -37,6 +37,7 @@ from frappe.utils import (
 	time_diff_in_seconds,
 )
 
+from alpinos.company_scope.helpers import assert_company, users_with_roles
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 from alpinos.purchase.settings import escalation_minutes, get_settings, notification_roles, sla_hours
@@ -60,6 +61,7 @@ def submit_for_qc(purchase_inward):
 	"""
 	inward = frappe.get_doc("Purchase Inward", purchase_inward)
 	inward.check_permission("write")
+	assert_company(inward, ptype="write")
 	workflow.assert_transition(inward, "submit_for_qc", frappe.session.user)
 
 	if inward.docstatus != 1:
@@ -205,13 +207,15 @@ def _hours(company=None):
 
 
 def qc_recipients(company=None):
-	"""Enabled users holding any of the configured QC notification roles."""
+	"""Enabled users holding any of the configured QC notification roles (in `company`)."""
 	from alpinos.raven_notifications import _role_users
 
+	roles = notification_roles(company)
+	in_company = set(users_with_roles(roles, company))
 	out = []
-	for role in notification_roles(company):
+	for role in roles:
 		for user in _role_users(role) or []:
-			if user not in out:
+			if user not in out and user in in_company:
 				out.append(user)
 	return out
 

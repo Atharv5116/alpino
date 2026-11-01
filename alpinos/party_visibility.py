@@ -16,6 +16,8 @@ Read-only: it reports, it never repairs.
 import frappe
 from frappe.utils import cint
 
+from alpinos.company_scope.helpers import tagged_condition
+
 # The dropdown a Sales role uses; E-com roles get the e-com one, which differs only by channel.
 _OFFLINE_CHANNELS = ("", "Offline")
 
@@ -27,10 +29,11 @@ def _buyer_rows(term):
 		SELECT m.name, m.customer_business_name, m.site_name, m.channel, m.customer,
 		       IFNULL(m.is_parent, 0) AS is_parent, IFNULL(m.parent_buyer, '') AS parent_buyer
 		FROM `tabBuyer Master` m
-		WHERE m.customer_business_name LIKE %(like)s OR m.name LIKE %(like)s
-		   OR IFNULL(m.customer, '') LIKE %(like)s OR IFNULL(m.tally_buyer_name, '') LIKE %(like)s
+		WHERE (m.customer_business_name LIKE %(like)s OR m.name LIKE %(like)s
+		   OR IFNULL(m.customer, '') LIKE %(like)s OR IFNULL(m.tally_buyer_name, '') LIKE %(like)s)
+		   {scope}
 		ORDER BY m.customer_business_name
-		""",
+		""".format(scope=tagged_condition("Buyer Master", "m")),
 		{"like": like},
 		as_dict=True,
 	)
@@ -43,9 +46,10 @@ def _customer_rows(term):
 		SELECT c.name, c.customer_name, IFNULL(c.disabled, 0) AS disabled,
 		       (SELECT COUNT(*) FROM `tabBuyer Master` b WHERE b.customer = c.name) AS buyer_rows
 		FROM `tabCustomer` c
-		WHERE c.customer_name LIKE %(like)s OR c.name LIKE %(like)s
+		WHERE (c.customer_name LIKE %(like)s OR c.name LIKE %(like)s)
+		   {scope}
 		ORDER BY c.customer_name
-		""",
+		""".format(scope=tagged_condition("Customer", "c")),
 		{"like": like},
 		as_dict=True,
 	)
@@ -175,6 +179,7 @@ def explain(term, user=None):
 @frappe.whitelist()
 def broken_customer_links(limit=50):
 	"""Buyer Masters whose Customer is gone -- renamed away, or deleted. Read-only."""
+	# company-scope: n/a (System Manager read-only debug tool over every Buyer Master)
 	frappe.only_for(("System Manager", "Administrator"))
 	rows = frappe.db.sql(
 		"""

@@ -134,6 +134,7 @@ def fetch_gstin_details(gstin):
 	Always returns a dict with `ok` and `message`; it never raises at the caller, because a
 	form field losing its data to a traceback is worse than being told the lookup failed.
 	"""
+	# company-scope: n/a (reads only GLOBAL masters: State, City)
 	gstin = clean_gstin(gstin)
 	ok, message = validate_gstin_format(gstin)
 	if not ok:

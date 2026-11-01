@@ -10,6 +10,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import tag_or_filters
 from alpinos.production import constants as C
 
 
@@ -101,6 +102,7 @@ def assignable_machines(machine_type=None):
 	return frappe.get_all(
 		"Machine",
 		filters=filters,
+		or_filters=tag_or_filters("Machine"),
 		fields=["name", "machine_name", "machine_type", "max_capacity", "capacity_uom"],
 		order_by="machine_name asc",
 	)

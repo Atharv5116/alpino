@@ -17,6 +17,13 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, now_datetime, time_diff_in_seconds
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	has_company_role,
+	restrict_company,
+	tagged_names,
+)
 from alpinos.production import execution_common as X
 from alpinos.production.work_order_fields import (
 	ASSIGNED_MACHINE_FIELD,
@@ -108,8 +115,8 @@ def _closed_run_exists(members, process, machine_run=None):
 # ======================================================================== floor data
 
 def _floor_subs(process=None, machine=None, date_from=None, date_to=None, search=None):
-	fields = ["name", "production_item", "item_name", "qty", "docstatus", PARENT_FIELD, BATCH_FIELD,
-	          EXECUTION_STATUS_FIELD, ASSIGNED_PROCESS_FIELD, ASSIGNED_MACHINE_FIELD,
+	fields = ["name", "production_item", "item_name", "qty", "docstatus", "company", PARENT_FIELD,
+	          BATCH_FIELD, EXECUTION_STATUS_FIELD, ASSIGNED_PROCESS_FIELD, ASSIGNED_MACHINE_FIELD,
 	          PLANNED_DATE_FIELD]
 	for f in (X.MACHINE_RUN_FIELD, X.CURRENT_RUN_FIELD):
 		if X.wo_has(f):
@@ -127,6 +134,7 @@ def _floor_subs(process=None, machine=None, date_from=None, date_to=None, search
 		filters[PLANNED_DATE_FIELD] = (">=", date_from)
 	elif date_to:
 		filters[PLANNED_DATE_FIELD] = ("<=", date_to)
+	restrict_company(filters, X.WORK_ORDER)
 	or_filters = None
 	if search:
 		like = f"%{search}%"
@@ -221,7 +229,9 @@ def get_floor(process=None, machine=None, date_from=None, date_to=None, status=N
 		frappe.throw(_("The Shop Floor is not installed yet. Ask the administrator to run the "
 		               "site migration."), title=_("Not Installed"))
 	may_write = X.may(X.FLOOR_WRITE_ROLES)
-	processes = {p.name: p for p in X.active_processes()}
+	active = X.active_processes()
+	usable = set(tagged_names(X.PROCESS_MASTER, [p.name for p in active]))
+	processes = {p.name: p for p in active if p.name in usable}
 	groups, order = {}, []
 	for row in _floor_subs(process, machine, date_from, date_to, search):
 		if X.is_filling_process(row.get(ASSIGNED_PROCESS_FIELD)):
@@ -236,7 +246,8 @@ def get_floor(process=None, machine=None, date_from=None, date_to=None, status=N
 	cards = []
 	for key in order:
 		g = groups[key]
-		card = _card(key, g["rows"], g["machine_run"], processes, may_write)
+		card_write = may_write and has_company_role(X.FLOOR_WRITE_ROLES, g["rows"][0].get("company"))
+		card = _card(key, g["rows"], g["machine_run"], processes, card_write)
 		if status and card["display_status"] != status and card["sub_status"] != status:
 			continue
 		cards.append(card)
@@ -294,6 +305,7 @@ def start_production(sub_order):
 	"""4.5: Start Production on a Sub PO, or on the Machine Run it is merged into."""
 	X.assert_roles(X.FLOOR_WRITE_ROLES, _("start production"))
 	sub = X.sub_info(sub_order)
+	assert_company(sub.company, X.RUN_DOCTYPE)
 	machine_run = X.planned_machine_run(sub)
 	members = X.machine_run_members(machine_run) if machine_run else [sub.name]
 	members = members or [sub.name]
@@ -377,6 +389,7 @@ def pause_production(production_run, reason=None, remarks=None):
 	"""4.6: Pause with a mandatory reason; Other needs remarks."""
 	X.assert_roles(X.FLOOR_WRITE_ROLES, _("pause production"))
 	run = _load_run(production_run)
+	assert_company(run)
 	if run.status != X.RUN_RUNNING:
 		frappe.throw(_("Only running production can be paused ({0} is {1}).").format(run.name, run.status),
 		             title=_("Not Running"))
@@ -402,6 +415,7 @@ def resume_production(production_run):
 	"""4.6.5: Resume logs the recovery time and adds the pause to the downtime ledger."""
 	X.assert_roles(X.FLOOR_WRITE_ROLES, _("resume production"))
 	run = _load_run(production_run)
+	assert_company(run)
 	if run.status != X.RUN_PAUSED:
 		frappe.throw(_("Only paused production can be resumed ({0} is {1}).").format(run.name, run.status),
 		             title=_("Not Paused"))
@@ -423,6 +437,7 @@ def complete_production(production_run):
 	"""4.7: Running -> Process Completed. No inventory is created here (BR-CMP-03)."""
 	X.assert_roles(X.FLOOR_WRITE_ROLES, _("complete production"))
 	run = _load_run(production_run)
+	assert_company(run)
 	if run.status != X.RUN_RUNNING:
 		frappe.throw(_("Production can only be completed if it is currently in Running status "
 		               "(BR-CMP-01). {0} is {1}.").format(run.name, run.status), title=_("Not Running"))
@@ -454,6 +469,8 @@ def complete_production(production_run):
 @frappe.whitelist()
 def get_run(production_run):
 	X.assert_roles(X.FLOOR_READ_ROLES, _("view a Production Run"))
+	if production_run:
+		assert_open(frappe.db.get_value(X.RUN_DOCTYPE, production_run, "company"), X.RUN_DOCTYPE)
 	payload = _run_payload(production_run)
 	payload["server_time"] = now_datetime()
 	return payload

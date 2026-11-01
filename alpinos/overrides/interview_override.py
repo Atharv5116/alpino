@@ -144,6 +144,8 @@ def debug_submit_via_savedocs(name: str) -> dict:
 @frappe.whitelist()
 def debug_find_interview_custom_scripts() -> list[dict]:
 	"""List Client Scripts for Interview."""
+	# company-scope: n/a (System Manager debug tool; Client Scripts are global)
+	frappe.only_for("System Manager")
 	return frappe.get_all(
 		"Client Script",
 		filters={"dt": "Interview"},
@@ -154,6 +156,8 @@ def debug_find_interview_custom_scripts() -> list[dict]:
 @frappe.whitelist()
 def debug_find_server_scripts_with_message() -> list[dict]:
 	"""Find Server Scripts containing the submit validation message."""
+	# company-scope: n/a (System Manager debug tool; Server Scripts are global)
+	frappe.only_for("System Manager")
 	return frappe.db.get_all(
 		"Server Script",
 		filters={"script": ["like", "%Cleared or Rejected%"]},

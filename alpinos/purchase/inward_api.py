@@ -33,6 +33,16 @@ from alpinos.alpinos_development.doctype.purchase_inward.purchase_inward import 
 	may_change_purchase_rate,
 	purchase_rate_rule,
 )
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	company_sql,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+	tagged_condition,
+	tagged_names,
+)
 from alpinos.purchase import constants as C
 from alpinos.purchase import workflow
 from alpinos.purchase.roles import (
@@ -200,6 +210,8 @@ def format_usp(mrp, info, symbol=""):
 def get_item_receiving_info(item_codes, company=None, po_details=None):
 	"""What the receiving grid needs to show Expiry, MRP and USP before anything is saved."""
 	frappe.has_permission(DOCTYPE, "read", throw=True)
+	if company:
+		assert_company(company, DOCTYPE, "read")
 	if isinstance(item_codes, str):
 		item_codes = frappe.parse_json(item_codes)
 	if isinstance(po_details, str):
@@ -208,10 +220,16 @@ def get_item_receiving_info(item_codes, company=None, po_details=None):
 	names = [name for name in (po_details or []) if name]
 	if names:
 		# An inward saved before its MRP was defaulted still shows the PO's on screen.
-		for row in frappe.get_all(
-			PO_ITEM,
-			filters={"name": ("in", names)},
-			fields=["name", "rate", "price_list_rate", "custom_rate_incl_gst"],
+		# Only lines of orders in a company the user may read.
+		for row in frappe.db.sql(
+			"""
+			select poi.name, poi.rate, poi.price_list_rate, poi.custom_rate_incl_gst
+			from `tabPurchase Order Item` poi
+			join `tabPurchase Order` po on po.name = poi.parent
+			where poi.name in %(names)s{company}
+			""".format(company=company_sql("Purchase Order", "po", narrow=False)),
+			{"names": tuple(names)},
+			as_dict=True,
 		):
 			po_mrp[row.name] = po_line_mrp(row)
 			# The Summary values the receipt at the order's net rate. Its GST comes only from
@@ -314,6 +332,9 @@ def validate_creation(
 	)
 
 	checks = [_check("VAL-PI-01/02", "purchase_order", doc._validate_purchase_order)]
+	# The order resolved above sets the company: one the user may not read says nothing more.
+	if doc.company:
+		assert_company(doc.company, "Purchase Order", "read")
 	# The invoice and challan checks are per-vendor, and the vendor is only known once
 	# the Purchase Order has been resolved above.
 	checks.append(_check("VAL-PI-13/15", "invoice_number", doc._validate_invoice_number))
@@ -378,6 +399,7 @@ def get_purchase_order_items(
 	assert_can_edit_section(doc, SECTION_HEADER)
 	# VAL-PI-01 / 02 and the PO gates, and it stamps supplier / company / inward type.
 	doc._validate_purchase_order()
+	assert_company(doc.company, "Purchase Order", "read")
 
 	wanted = doc.inward_type or None
 	rows = frappe.get_all(
@@ -576,6 +598,7 @@ def get_merge_candidates(supplier, invoice_number=None, challan_no=None, exclude
 		filters = {"supplier": supplier, field: value, "docstatus": ("<", 2)}
 		if exclude:
 			filters["name"] = ("!=", exclude)
+		filters = restrict_company(filters, DOCTYPE)
 		for row in frappe.get_list(
 			DOCTYPE,
 			filters=filters,
@@ -854,6 +877,7 @@ def get_form_context(purchase_inward=None):
 	if name:
 		doc = frappe.get_doc(DOCTYPE, name)
 		doc.check_permission("read")
+		assert_open(doc)
 	else:
 		frappe.has_permission(DOCTYPE, "read", throw=True)
 		doc = frappe.new_doc(DOCTYPE)
@@ -869,7 +893,7 @@ def get_form_context(purchase_inward=None):
 		"header_reason": reason,
 		# BR-PI-19: the correction is offered at any status, so the screen needs the role
 		# answer separately from header_editable, which closes on submit.
-		"may_correct_invoice": bool(workflow.user_roles() & set(C.INVOICE_CORRECTION_ROLES)),
+		"may_correct_invoice": has_company_role(C.INVOICE_CORRECTION_ROLES, doc.get("company")),
 		"merged_into": doc.get("merged_into"),
 		# MRP draft: whether this user may enter a purchase rate other than the PO's, and why not.
 		"may_change_rate": may_change_purchase_rate(),
@@ -897,9 +921,10 @@ def correct_invoice_number(purchase_inward, new_invoice_number, reason=None):
 
 	doc = frappe.get_doc(DOCTYPE, purchase_inward)
 	doc.check_permission("read")
+	assert_company(doc, ptype="read")
 
 	# VAL-PI-18: only an authorised Admin, whatever their DocPerm write access says.
-	if not (workflow.user_roles() & set(C.INVOICE_CORRECTION_ROLES)):
+	if not has_company_role(C.INVOICE_CORRECTION_ROLES, doc.company):
 		frappe.throw(
 			_("Invoice Number can only be updated by an authorized Admin."),
 			frappe.PermissionError,
@@ -1010,12 +1035,12 @@ def po_type_item_query(doctype, txt, searchfield, start, page_len, filters):
 		  and ifnull(custom_is_bundle, 0) = 0
 		  -- Item Templates (WB, SP, MN) are not stock: only their variants can be bought.
 		  and ifnull(has_variants, 0) = 0
-		  and (name like %(txt)s or ifnull(item_name, '') like %(txt)s)
+		  and (name like %(txt)s or ifnull(item_name, '') like %(txt)s){tagged}
 		order by
 			case when name like %(head)s then 0 else 1 end,
 			name
 		limit %(limit)s
-		""",
+		""".format(tagged=tagged_condition("Item")),
 		{
 			"txt": "%%%s%%" % (txt or ""),
 			"head": "%s%%" % (txt or ""),
@@ -1023,6 +1048,11 @@ def po_type_item_query(doctype, txt, searchfield, start, page_len, filters):
 			"limit": start + (page_len * 10) + 50,
 		},
 	)
+	# The order's own company, when the page passes it: only items tagged for it (or untagged).
+	company = filters.get("company")
+	if company and rows and scope_companies() is not None:
+		usable = set(tagged_names("Item", [r[0] for r in rows], company))
+		rows = [r for r in rows if r[0] in usable]
 
 	if not wanted:
 		return rows[start : start + page_len]
@@ -1049,6 +1079,10 @@ def inward_po_query(doctype, txt, searchfield, start, page_len, filters):
 	from alpinos.purchase.purchase_order_force_close import FORCE_CLOSED_FIELD
 
 	txt = "%%%s%%" % (txt or "")
+	company = (filters or {}).get("company") if isinstance(filters, dict) else None
+	company_cond = company_sql("Purchase Order")
+	if company:
+		company_cond += " and company = %(company)s"
 	return frappe.db.sql(
 		"""
 		select name, supplier, transaction_date
@@ -1058,9 +1092,9 @@ def inward_po_query(doctype, txt, searchfield, start, page_len, filters):
 		  and status not in ('Closed', 'On Hold')
 		  and ifnull(`{force}`, 0) = 0
 		  and (name like %(txt)s or ifnull(supplier, '') like %(txt)s
-		       or ifnull(supplier_name, '') like %(txt)s)
+		       or ifnull(supplier_name, '') like %(txt)s){company}
 		order by custom_approval_datetime desc, modified desc
 		limit %(start)s, %(page_len)s
-		""".format(force=FORCE_CLOSED_FIELD),
-		{"txt": txt, "start": cint(start), "page_len": cint(page_len) or 20},
+		""".format(force=FORCE_CLOSED_FIELD, company=company_cond),
+		{"txt": txt, "start": cint(start), "page_len": cint(page_len) or 20, "company": company},
 	)

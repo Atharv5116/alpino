@@ -1,6 +1,13 @@
 frappe.query_reports["Accounts Format Report"] = {
 	filters: [
 		{
+			fieldname: "company",
+			label: "Company",
+			fieldtype: "Link",
+			options: "Company",
+			default: window.alpinos && alpinos.company ? alpinos.company.current() : frappe.defaults.get_user_default("Company"),
+		},
+		{
 			fieldname: "from_date",
 			label: "Dispatch Date From",
 			fieldtype: "Date",

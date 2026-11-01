@@ -23,6 +23,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_fullname, getdate
 
+from alpinos.company_scope.helpers import restrict_company
 from alpinos.query_compat import agg, sort_by_expression
 
 from alpinos.purchase import constants as C
@@ -312,6 +313,8 @@ def get_purchase_inward_list(
 			limit=5000,
 		)
 		_restrict_names(filters, vehicle_names)
+
+	filters = restrict_company(filters, DOCTYPE)
 
 	or_filters = None
 	search_like = _like(search)

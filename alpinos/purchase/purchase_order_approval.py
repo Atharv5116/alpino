@@ -47,6 +47,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.utils import cint, flt, now_datetime
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role
 from alpinos.purchase import constants as C
 
 PO = "Purchase Order"
@@ -234,7 +235,8 @@ def available_actions(doc, user=None):
 	status = _current_status(doc)
 	out = []
 	for label, to_status, allowed in TRANSITIONS.get(status, ()):
-		if roles.intersection(allowed):
+		# The role must also be one the user holds in the order's company.
+		if roles.intersection(allowed) and has_company_role(allowed, doc.get("company"), user):
 			out.append({"action": label, "to_status": to_status})
 	return out
 
@@ -244,6 +246,7 @@ def get_available_actions(purchase_order):
 	"""Client entry point: the form asks rather than re-deriving the table."""
 	doc = frappe.get_doc(PO, purchase_order)
 	doc.check_permission("read")
+	assert_open(doc)
 	inwards = frappe.get_all(
 		"Purchase Inward",
 		filters={"purchase_order": doc.name, "docstatus": ("<", 2)},
@@ -343,6 +346,7 @@ def get_cancel_blockers(purchase_order):
 	"""Client entry point: what stands between this order and being cancelled right now."""
 	doc = frappe.get_doc(PO, purchase_order)
 	doc.check_permission("read")
+	assert_open(doc)
 	return _cancel_blockers(purchase_order)
 
 
@@ -376,7 +380,8 @@ def cancel_purchase_order(purchase_order, reason=None):
 	"""
 	doc = frappe.get_doc(PO, purchase_order)
 	doc.check_permission("cancel")
-	if not (set(PO_CANCEL_ROLES) & _user_roles()):
+	assert_company(doc, ptype="cancel")
+	if not has_company_role(PO_CANCEL_ROLES, doc.company):
 		frappe.throw(
 			_("Only {0} may cancel a Purchase Order.").format(", ".join(PO_CANCEL_ROLES)),
 			frappe.PermissionError,
@@ -410,7 +415,8 @@ def cancel_purchase_order_chain(purchase_order, reason=None):
 	"""
 	doc = frappe.get_doc(PO, purchase_order)
 	doc.check_permission("cancel")
-	if not (set(PO_CANCEL_CHAIN_ROLES) & _user_roles()):
+	assert_company(doc, ptype="cancel")
+	if not has_company_role(PO_CANCEL_CHAIN_ROLES, doc.company):
 		frappe.throw(
 			_("Only {0} may cancel a Purchase Order's linked documents.").format(
 				", ".join(PO_CANCEL_CHAIN_ROLES)
@@ -493,6 +499,7 @@ def perform_action(purchase_order, action, remarks=None):
 	"""
 	doc = frappe.get_doc(PO, purchase_order)
 	doc.check_permission("write")
+	assert_company(doc, ptype="write")
 
 	previous = _current_status(doc)
 	allowed = {a["action"]: a["to_status"] for a in available_actions(doc)}
@@ -584,7 +591,7 @@ def assert_may_approve(doc, method=None):
 	user: ERPNext ships `submit` on Purchase Order to core "Purchase User" as well,
 	and a Purchase User is deliberately NOT an approver here.
 	"""
-	if set(_user_roles()).intersection(C.PO_APPROVER_ROLES):
+	if has_company_role(C.PO_APPROVER_ROLES, doc.get("company")):
 		return
 	frappe.throw(
 		_(

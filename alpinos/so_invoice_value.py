@@ -262,6 +262,8 @@ def backfill(from_date=None, to_date=None, apply=0, sample=25):
 
 	  bench --site SITE execute alpinos.so_invoice_value.backfill --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off backfill over every Sales Order)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	sample = int(sample)
 	conditions = ["so.docstatus < 2"]
@@ -327,6 +329,8 @@ def backfill_post_dispatch(apply=0):
 
 	  bench --site SITE execute alpinos.so_invoice_value.backfill_post_dispatch --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off backfill over every Post Dispatch)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	rows = frappe.db.sql(
 		"""

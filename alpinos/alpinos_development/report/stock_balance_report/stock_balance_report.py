@@ -7,6 +7,8 @@ from frappe.utils import flt, getdate
 
 from erpnext.stock.report.stock_balance.stock_balance import StockBalanceReport
 
+from alpinos.company_scope.helpers import scope_companies
+
 
 def execute(filters=None):
 	if not filters:
@@ -31,6 +33,10 @@ def execute(filters=None):
 
 	core_report = StockBalanceReport(core_filters)
 	core_columns, core_data = core_report.run()
+	# No company picked: only the companies the user works in.
+	visible = None if filters.get("company") else scope_companies()
+	if visible is not None:
+		core_data = [r for r in core_data if r.get("company") in visible]
 
 	columns = get_columns()
 	data = transform_data(core_data, report_date)

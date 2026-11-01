@@ -16,6 +16,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import assert_open, has_company_role
 from alpinos.production import material_common as MC
 from alpinos.production import material_constants as M
 from alpinos.production.work_order_fields import (
@@ -113,6 +114,7 @@ def get_sub_order_view(sub_order):
 		             title=_("Not Found"))
 	frappe.has_permission(WORK_ORDER, "read", doc=sub_order, throw=True)
 	sub = frappe.get_doc(WORK_ORDER, sub_order)
+	assert_open(sub)
 	parent = sub.get(PARENT_FIELD)
 	if not parent:
 		frappe.throw(_("{0} is not a Sub Production Order.").format(sub_order),
@@ -165,13 +167,15 @@ def get_sub_order_view(sub_order):
 	from alpinos.production import constants as C
 	from alpinos.production.sub_order import _user_may_plan, activity_blockers
 	not_cancelled = cint(sub.docstatus) < 2
-	can_assign = bool(_user_may_plan() and not is_locked and not plan_locked and not_cancelled)
+	may_plan = _user_may_plan(sub.company)
+	can_assign = bool(may_plan and not is_locked and not plan_locked and not_cancelled)
 	# The same test split_context makes, so the button only shows when Split would work.
-	can_split = bool(_user_may_plan() and not plan_locked and not_cancelled
+	can_split = bool(may_plan and not plan_locked and not_cancelled
 	                 and parent_status in C.PO_PLANNABLE_STATUSES
 	                 and not activity_blockers(sub.name))
 	# generate_mr's own checks: planned (process + date), Parent Sent To Store, no open MR.
-	can_generate_mr = bool(MC.may_plan() and status == "Assigned" and not is_locked
+	can_generate_mr = bool(has_company_role(M.STORE_PLAN_ROLES, sub.company)
+	                       and status == "Assigned" and not is_locked
 	                       and not plan_locked and not open_mr and not_cancelled
 	                       and process and sub.get(PLANNED_DATE_FIELD)
 	                       and parent_status == C.PO_SENT_TO_STORE)

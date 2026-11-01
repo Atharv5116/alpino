@@ -3,6 +3,8 @@
 import frappe
 from frappe.utils import flt
 
+from alpinos.company_scope.helpers import restrict_company
+
 STAGES = {
 	"opp_quo": {
 		"up_doctype": "Opportunity",
@@ -61,8 +63,16 @@ def _date_conditions(filters, fieldname):
 	return out
 
 
+def _company_conditions(filters, doctype):
+	"""The report's Company (checked by the report wrapper), else the companies in view."""
+	if filters.get("company"):
+		return [["company", "=", filters["company"]]]
+	return restrict_company([], doctype)
+
+
 def _pairs_opp_quo(filters):
 	conds = [["docstatus", "<", 2]] + _date_conditions(filters, "transaction_date")
+	conds += _company_conditions(filters, "Quotation")
 	if filters.get("down_id"):
 		conds.append(["name", "=", filters["down_id"]])
 	for quo in frappe.get_all(
@@ -82,6 +92,7 @@ def _pairs_opp_quo(filters):
 
 def _pairs_quo_so(filters):
 	conds = [["docstatus", "<", 2]] + _date_conditions(filters, "transaction_date")
+	conds += _company_conditions(filters, "Sales Order")
 	if filters.get("down_id"):
 		conds.append(["name", "=", filters["down_id"]])
 	for so in frappe.get_all(
@@ -123,6 +134,7 @@ def _exploded_so_qty(so):
 def _pairs_so_pl(filters):
 	conds = [["docstatus", "<", 2], ["custom_sales_order_id", "is", "set"]]
 	conds += _date_conditions(filters, "creation")
+	conds += _company_conditions(filters, "Pick List")
 	if filters.get("down_id"):
 		conds.append(["name", "=", filters["down_id"]])
 	if filters.get("up_id"):
@@ -146,6 +158,7 @@ def _pairs_so_pl(filters):
 def _pairs_pl_dn(filters):
 	conds = [["docstatus", "<", 2], ["is_return", "=", 0]]
 	conds += _date_conditions(filters, "posting_date")
+	conds += _company_conditions(filters, "Delivery Note")
 	if filters.get("down_id"):
 		conds.append(["name", "=", filters["down_id"]])
 	for dn in frappe.get_all(

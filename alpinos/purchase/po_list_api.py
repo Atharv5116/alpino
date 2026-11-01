@@ -41,6 +41,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from alpinos.company_scope.helpers import restrict_company
 from alpinos.query_compat import agg, sort_by_expression
 
 from alpinos.purchase import constants as C
@@ -326,6 +327,8 @@ def get_purchase_order_list(
 		_restrict_names_keeping_like(filters, _names_where(_receiving_condition(value)))
 	elif receiving_status:
 		_restrict_names_keeping_like(filters, [])
+
+	filters = restrict_company(filters, DOCTYPE)
 
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"

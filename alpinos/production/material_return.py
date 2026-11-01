@@ -13,9 +13,16 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_fullname, getdate, nowdate
 
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	company_sql,
+	has_company_role,
+	scope_companies,
+)
 from alpinos.production import material_common as MC
 from alpinos.production import material_constants as M
-from alpinos.production.material_request import SUB_FIELD
+from alpinos.production.material_request import SUB_FIELD, assert_store_role
 from alpinos.production.production_settings import main_warehouse, wip_warehouse
 
 SE = M.SE_DOCTYPE
@@ -63,6 +70,7 @@ def _check_issue(issue_name):
 	if cint(mi.docstatus) != 1:
 		frappe.throw(_("Material Issue {0} is not submitted, so nothing can be returned against it.").format(
 			issue_name), title=_("Issue Not Submitted"))
+	assert_company(mi.company)  # a member of the issue's company
 	return mi
 
 
@@ -164,6 +172,12 @@ def get_mrt_list(search=None, status=None, material_issue=None, sub_order=None, 
 @frappe.validate_and_sanitize_search_inputs
 def mi_query(doctype, txt, searchfield, start, page_len, filters):
 	"""Submitted Material Issues that still have something left to return."""
+	company = (filters or {}).get("company")
+	companies = scope_companies(SE)
+	if company and (companies is None or company in companies):
+		in_company = " and se.company = {0}".format(frappe.db.escape(company))
+	else:
+		in_company = company_sql(SE, "se")
 	rows = frappe.db.sql(
 		f"""
 		select se.name, se.{SUB_FIELD}, se.custom_target_fg_item,
@@ -175,7 +189,7 @@ def mi_query(doctype, txt, searchfield, start, page_len, filters):
 		from `tabStock Entry` se
 		join `tabStock Entry Detail` sed on sed.parent = se.name
 		where se.docstatus = 1 and se.custom_entry_kind = %(iss)s
-		  and (se.name like %(txt)s or se.{SUB_FIELD} like %(txt)s)
+		  and (se.name like %(txt)s or se.{SUB_FIELD} like %(txt)s) {in_company}
 		group by se.name
 		having issued > returned
 		order by se.posting_date desc, se.name desc
@@ -200,9 +214,10 @@ def issue_balance_rows(material_issue):
 	"""Header and grid for a new MRT: the issue's rows that still have a balance."""
 	MC.assert_may_read()
 	mi = _check_issue(material_issue)
+	assert_open(mi.company, SE)
 	returned = returned_by_row(mi.name)
-	main = _safe(main_warehouse)
-	wip = _safe(wip_warehouse)
+	main = _safe(lambda: main_warehouse(mi.company))
+	wip = _safe(lambda: wip_warehouse(mi.company))
 	rows = []
 	for r in _mi_rows(mi.name).values():
 		already = flt(returned.get(r.name))
@@ -237,6 +252,11 @@ def get_mrt_context(stock_entry=None):
 		            "returned_by": get_fullname(frappe.session.user)})
 		return ctx
 	doc = frappe.get_doc(SE, stock_entry)
+	assert_open(doc)
+	ctx.update({"main_warehouse": _safe(lambda: main_warehouse(doc.company)),
+	            "wip_warehouse": _safe(lambda: wip_warehouse(doc.company))})
+	may_write = has_company_role(M.STORE_WRITE_ROLES, doc.company)
+	may_manage = has_company_role(M.STORE_MANAGE_ROLES, doc.company)
 	from alpinos import mrp_batch as MB
 
 	# Which Batch / MRP each row moved (split per lot when the Stock Entry was saved).
@@ -285,12 +305,14 @@ def save_mrt(payload):
 		doc = frappe.get_doc(SE, p.name)
 		if not is_return(doc) or cint(doc.docstatus) != 0:
 			frappe.throw(_("{0} is not a draft Material Return.").format(p.name), title=_("Not A Draft"))
+		assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("change {0}").format(doc.name))
 	else:
 		doc = frappe.new_doc(SE)
 		doc.naming_series = M.MRT_NAMING_SERIES
 		doc.set("custom_entry_kind", M.KIND_RETURN)
 
 	mi = _check_issue(p.get("material_issue") or doc.get("custom_material_issue"))
+	assert_store_role(M.STORE_WRITE_ROLES, mi.company, _("return materials"))
 	doc.set("custom_material_issue", mi.name)
 	doc.purpose = M.RETURN_PURPOSE
 	doc.stock_entry_type = M.RETURN_PURPOSE
@@ -344,6 +366,7 @@ def submit_mrt(stock_entry):
 	doc = frappe.get_doc(SE, stock_entry)
 	if not is_return(doc) or cint(doc.docstatus) != 0:
 		frappe.throw(_("{0} is not a draft Material Return.").format(stock_entry))
+	assert_store_role(M.STORE_WRITE_ROLES, doc.company, _("submit {0}").format(doc.name))
 	doc.flags.alpinos_material = True
 	doc.flags.ignore_permissions = True
 	doc.submit()
@@ -357,6 +380,7 @@ def cancel_mrt(stock_entry):
 	doc = frappe.get_doc(SE, stock_entry)
 	if not is_return(doc) or cint(doc.docstatus) != 1:
 		frappe.throw(_("{0} is not a submitted Material Return.").format(stock_entry))
+	assert_store_role(M.STORE_MANAGE_ROLES, doc.company, _("cancel {0}").format(doc.name))
 	doc.flags.alpinos_material = True
 	doc.flags.ignore_permissions = True
 	doc.cancel()

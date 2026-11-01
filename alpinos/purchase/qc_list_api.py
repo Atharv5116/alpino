@@ -26,6 +26,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime, get_fullname, getdate, now_datetime, time_diff_in_seconds
 
+from alpinos.company_scope.helpers import has_company_role, restrict_company
 from alpinos.query_compat import agg
 
 from alpinos.purchase import constants as C
@@ -292,6 +293,8 @@ def get_purchase_qc_list(
 		else:
 			filters.append(["name", "not in", names or ["__no_sla_match__"]])
 
+	filters = restrict_company(filters, DOCTYPE)
+
 	sf = str(sort_field or "").strip()
 	sd = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
 	order_by = f"{sf} {sd}" if sf in _SORTABLE else "modified desc"
@@ -453,7 +456,7 @@ def _row_actions(row, inward, perms):
 		# Items released from quarantine, inspected on a QC of their own: the inward's workflow
 		# belongs to its first QC, so this QC's own state decides (purchase_qc.start_qc does
 		# the same).
-		if not (workflow.user_roles() & set(workflow.QC)):
+		if not has_company_role(workflow.QC, row.get("company")):
 			return []
 		if not row.get("inspector"):
 			actions = [

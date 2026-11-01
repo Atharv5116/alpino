@@ -27,6 +27,7 @@ def ensure_allow_import():
 @frappe.whitelist()
 def get_or_create_data_import(reference_doctype):
 	"""Return a pre-filled Data Import for the doctype, reusing the user's own pending file-less one."""
+	# company-scope: n/a (reads only import plumbing: the user's own Data Import; the guard checks each imported row)
 	if reference_doctype not in ALLOWED_DOCTYPES:
 		frappe.throw(frappe._("No import shortcut is defined for {0}.").format(reference_doctype))
 	if not frappe.has_permission("Data Import", "create"):

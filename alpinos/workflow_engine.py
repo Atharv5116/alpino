@@ -3,6 +3,8 @@
 import frappe
 from frappe.utils import flt, getdate, now_datetime, today
 
+from alpinos.company_scope.helpers import has_company_role, users_with_roles
+
 
 # --- SO / PL status vocab ---------------------------------------------------
 
@@ -83,9 +85,18 @@ def _set_status(doctype, name, status):
 	frappe.db.set_value(doctype, name, "custom_workflow_status", status, update_modified=False)
 
 
-def _require_roles(roles):
-	if not (set(frappe.get_roles()) & set(roles)):
+def _require_roles(roles, company=None):
+	"""company: the document's company, where a company-wise role has to be held."""
+	if company:
+		allowed = has_company_role(list(roles), company)
+	else:
+		allowed = bool(set(frappe.get_roles()) & set(roles))
+	if not allowed:
 		frappe.throw(frappe._("You are not permitted to perform this action."))
+
+
+def _company_of(doctype, name):
+	return frappe.db.get_value(doctype, name, "company") if name else None
 
 
 # --- relationship lookups ---------------------------------------------------
@@ -513,7 +524,7 @@ def submit_sales_order(sales_order):
 @frappe.whitelist()
 def approve_sales_order(sales_order):
 	"""Warehouse approves a pending order into the dispatch queue (Today's or Future Dispatch)."""
-	_require_roles(WAREHOUSE_ROLES)
+	_require_roles(WAREHOUSE_ROLES, _company_of("Sales Order", sales_order))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
 	if cur != SO_WAREHOUSE_PENDING:
 		frappe.throw(frappe._("Only an order Pending Warehouse Approval can be approved."))
@@ -531,7 +542,7 @@ def reject_sales_order(sales_order, reason=None):
 	Changes(HP) #21: the reason is mandatory and is kept on the order (with who rejected it
 	and when) for future reference. Refused without one, whatever the caller sends.
 	"""
-	_require_roles(WAREHOUSE_ROLES)
+	_require_roles(WAREHOUSE_ROLES, _company_of("Sales Order", sales_order))
 	reason = (reason or "").strip()
 	if not reason:
 		frappe.throw(frappe._("Enter the reason for rejection."), title=frappe._("Reason Required"))
@@ -561,7 +572,7 @@ def reject_sales_order(sales_order, reason=None):
 @frappe.whitelist()
 def mark_future_dispatch(sales_order, expected_date):
 	"""Warehouse parks an order awaiting stock, with an expected dispatch date."""
-	_require_roles(WAREHOUSE_ROLES)
+	_require_roles(WAREHOUSE_ROLES, _company_of("Sales Order", sales_order))
 	if not expected_date:
 		frappe.throw(frappe._("Expected Dispatch Date is mandatory for Future Dispatch."))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
@@ -594,7 +605,7 @@ def mark_future_dispatch(sales_order, expected_date):
 @frappe.whitelist()
 def mark_delivered(sales_order):
 	"""Sales confirms the customer received the order -> Completed (final)."""
-	_require_roles(SALES_ROLES)
+	_require_roles(SALES_ROLES, _company_of("Sales Order", sales_order))
 	cur = frappe.db.get_value("Sales Order", sales_order, "custom_workflow_status")
 	if cur != SO_DISPATCHED:
 		frappe.throw(frappe._("Only a Dispatched order can be marked Completed."))
@@ -613,7 +624,7 @@ def mark_delivered(sales_order):
 @frappe.whitelist()
 def start_picking(pick_list):
 	"""Assigned picker starts collecting items -> Picking In Progress."""
-	_require_roles(PICKER_ROLES)
+	_require_roles(PICKER_ROLES, _company_of("Pick List", pick_list))
 	doc = frappe.get_doc("Pick List", pick_list)
 	if doc.docstatus != 0:
 		frappe.throw(frappe._("Picking can only start on a draft Pick List."))
@@ -632,7 +643,7 @@ def start_picking(pick_list):
 @frappe.whitelist()
 def stop_picking(pick_list):
 	"""Picker presses Stop at the sticker point -> Submission Pending (ready to submit)."""
-	_require_roles(PICKER_ROLES)
+	_require_roles(PICKER_ROLES, _company_of("Pick List", pick_list))
 	if frappe.db.get_value("Pick List", pick_list, "docstatus") != 0:
 		frappe.throw(frappe._("Picking can only be stopped on a draft Pick List."))
 	if not frappe.db.get_value("Pick List", pick_list, "custom_picking_started"):
@@ -671,10 +682,13 @@ def _dm_roles(roles, text, doc=None):
 	bot = _get_bot()
 	if not bot:
 		return
+	# Only the role holders of the document's company hear about it.
+	company = doc.get("company") if doc is not None and hasattr(doc, "get") else None
+	allowed = set(users_with_roles(list(roles), company)) if company else None
 	seen = set()
 	for role in roles:
 		for user in _role_users(role) or []:
-			if user in seen:
+			if user in seen or (allowed is not None and user not in allowed):
 				continue
 			seen.add(user)
 			_send_dm(bot, user, text, doc)

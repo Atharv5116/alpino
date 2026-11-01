@@ -4,19 +4,19 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
-def _ensure_company_default():
-	"""Set a default on the hidden+mandatory Sales Order Company field (site default company)."""
-	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+def _drop_company_default():
+	"""No fixed default on the hidden Sales Order Company field (company-wise access).
 
-	default_company = (
-		frappe.db.get_default("company")
-		or frappe.db.get_value("Company", {}, "name", order_by="creation asc")
-	)
-	if default_company:
-		make_property_setter(
-			"Sales Order", "company", "default", default_company, "Text",
-			validate_fields_for_doctype=False,
+	A docfield default outranks the user's Company default on the desk form, which now
+	follows the active company; a blank company is filled on validate
+	(sales_order_api.validate_sales_order_pricing -> current company)."""
+	if frappe.db.exists(
+		"Property Setter", {"doc_type": "Sales Order", "field_name": "company", "property": "default"}
+	):
+		frappe.db.delete(
+			"Property Setter", {"doc_type": "Sales Order", "field_name": "company", "property": "default"}
 		)
+		frappe.clear_cache(doctype="Sales Order")
 
 
 def setup_sales_order_custom_fields():
@@ -25,9 +25,10 @@ def setup_sales_order_custom_fields():
 	_force_fieldtype_sync()
 	# Delete obsolete fields
 	_delete_obsolete_sales_order_custom_fields()
-	# Company is hidden + mandatory on the SO form; give it a default BEFORE create_custom_fields
-	# (which saves the doctype) or the save fails with HiddenAndMandatoryWithoutDefaultError.
-	_ensure_company_default()
+	# Company is hidden + mandatory on the SO form and no longer has a fixed default, so the
+	# fields below are created without the doctype-wide re-validation that would refuse that
+	# (HiddenAndMandatoryWithoutDefaultError; a migrate skips that check anyway).
+	_drop_company_default()
 
 	custom_fields = {
 		# Item: GST % (stored on item master)
@@ -334,7 +335,7 @@ def setup_sales_order_custom_fields():
 		# Selling Price stays on Order Items; removed from the child tables in _delete_obsolete_sales_order_custom_fields.
 	}
 
-	create_custom_fields(custom_fields, update=True)
+	create_custom_fields(custom_fields, ignore_validate=True, update=True)
 	print("✅ Sales Order custom fields created")
 
 	# Set Property Setters for label changes and Order Type options
@@ -436,15 +437,8 @@ def _setup_property_setters():
 			"value": "",
 			"property_type": "Text",
 		},
-		# Hide Company on standard Sales Order form.
-		{
-			"doctype_or_field": "DocField",
-			"doc_type": "Sales Order",
-			"field_name": "company",
-			"property": "hidden",
-			"value": "1",
-			"property_type": "Check",
-		},
+		# Company is no longer hidden: with company-wise access an order says whose it is
+		# (company_scope.setup.show_sales_order_company).
 		# Hide Total Quantity on standard Sales Order form.
 		{
 			"doctype_or_field": "DocField",

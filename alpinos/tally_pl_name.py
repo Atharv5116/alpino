@@ -85,6 +85,8 @@ def backfill(apply=0, sample=15):
 	  bench --site SITE execute alpinos.tally_pl_name.backfill
 	  bench --site SITE execute alpinos.tally_pl_name.backfill --kwargs "{'apply':1}"
 	"""
+	# company-scope: n/a (System Manager one-off backfill over every Offline Buyer Master)
+	frappe.only_for("System Manager")
 	apply = int(apply)
 	rows = frappe.db.sql(
 		"""

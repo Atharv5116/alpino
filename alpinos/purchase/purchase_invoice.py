@@ -36,6 +36,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, now_datetime
 
+from alpinos.company_scope.helpers import assert_company, assert_open, has_company_role
 from alpinos.purchase import constants as C
 from alpinos.purchase.purchase_invoice_fields import (
 	PURCHASE_OWNED_FIELDS,
@@ -76,8 +77,9 @@ def is_module_invoice(doc):
 	return bool(doc.get("custom_grn") or doc.get("custom_purchase_inward") or _is_direct(doc))
 
 
-def _has_role(roles):
-	return bool(set(frappe.get_roles()) & set(roles))
+def _has_role(roles, company=None):
+	"""The user holds one of `roles` (in `company`, the invoice's, when given)."""
+	return has_company_role(roles, company)
 
 
 def rate_editable():
@@ -468,7 +470,7 @@ def _guard_payment_rows(doc):
 	"""
 	before = doc.get_doc_before_save()
 	old = {r.name: r for r in ((before.get("custom_payment_references") or []) if before else [])}
-	is_admin = _has_role(C.ADMIN_ROLES)
+	is_admin = _has_role(C.ADMIN_ROLES, doc.get("company"))
 	kept = set()
 
 	for row in doc.get("custom_payment_references") or []:
@@ -493,7 +495,7 @@ def _guard_payment_rows(doc):
 					title=_("Payment Locked"),
 				)
 			continue
-		if not _has_role(C.UNF_PAYMENT_ROLES):
+		if not _has_role(C.UNF_PAYMENT_ROLES, doc.get("company")):
 			frappe.throw(
 				_("Only the Accounts Team can record a payment."),
 				frappe.PermissionError,
@@ -718,6 +720,8 @@ def create_from_grn(purchase_receipt):
 
 	grn = frappe.get_doc(GRN, purchase_receipt)
 	grn.check_permission("read")
+	# The invoice is raised in the GRN's company.
+	assert_company(grn.company, PI, "create")
 
 	if cint(grn.docstatus) != 1:
 		frappe.throw(
@@ -884,6 +888,7 @@ def create_direct_from_po(purchase_order):
 
 	order = frappe.get_doc(PO, purchase_order)
 	order.check_permission("read")
+	assert_company(order.company, PI, "create")
 
 	if cint(order.docstatus) != 1:
 		frappe.throw(
@@ -926,6 +931,7 @@ def create_purchase_invoice(purchase_inward):
 	"""
 	inward = frappe.get_doc(INWARD, purchase_inward)
 	inward.check_permission("read")
+	assert_company(inward.company, PI, "create")
 
 	if not inward.get("purchase_receipt"):
 		frappe.throw(
@@ -959,7 +965,8 @@ def add_payment(
 	"""
 	invoice = frappe.get_doc(PI, purchase_invoice)
 	invoice.check_permission("write")
-	if not _has_role(C.UNF_PAYMENT_ROLES):
+	assert_company(invoice, ptype="write")
+	if not _has_role(C.UNF_PAYMENT_ROLES, invoice.company):
 		frappe.throw(
 			_("Only the Accounts Team can record a payment."),
 			frappe.PermissionError,
@@ -1197,10 +1204,10 @@ def get_invoice_context(purchase_invoice):
 	"""What the screen needs to draw its buttons and sections, decided on the server."""
 	invoice = frappe.get_doc(PI, purchase_invoice)
 	invoice.check_permission("read")
-	roles = set(frappe.get_roles())
+	assert_open(invoice)
 	status = invoice_status(invoice)
 	docstatus = cint(invoice.docstatus)
-	may_create = bool(roles.intersection(C.UNF_CREATE_ROLES))
+	may_create = _has_role(C.UNF_CREATE_ROLES, invoice.company)
 	orders = []
 	for row in invoice.get("items") or []:
 		if row.purchase_order and row.purchase_order not in orders:
@@ -1237,7 +1244,7 @@ def get_invoice_context(purchase_invoice):
 		and bool(frappe.has_permission(PI, "submit", doc=invoice)),
 		"can_add_payment": docstatus == 1
 		and status in (C.UNF_PENDING_PAYMENT, C.UNF_PARTIALLY_PAID)
-		and bool(roles.intersection(C.UNF_PAYMENT_ROLES))
+		and _has_role(C.UNF_PAYMENT_ROLES, invoice.company)
 		and bool(frappe.has_permission(PI, "write", doc=invoice)),
 	}
 
@@ -1333,6 +1340,7 @@ def _apply_draft_values(invoice, data):
 def _load_draft_for_edit(purchase_invoice):
 	invoice = frappe.get_doc(PI, purchase_invoice)
 	invoice.check_permission("write")
+	assert_company(invoice, ptype="write")
 	if not is_module_invoice(invoice):
 		frappe.throw(_("{0} was not raised by the Purchase Inward module.").format(invoice.name))
 	if cint(invoice.docstatus) != 0:
@@ -1342,7 +1350,7 @@ def _load_draft_for_edit(purchase_invoice):
 			),
 			title=_("Submitted Invoice Is Locked"),
 		)
-	if not _has_role(C.UNF_CREATE_ROLES):
+	if not _has_role(C.UNF_CREATE_ROLES, invoice.company):
 		frappe.throw(
 			_("Only the Purchase Team can edit the supplier bill."),
 			frappe.PermissionError,
@@ -1369,6 +1377,7 @@ def submit_invoice(purchase_invoice, data=None):
 	"""
 	invoice = _load_draft_for_edit(purchase_invoice)
 	invoice.check_permission("submit")
+	assert_company(invoice, ptype="submit")
 	if data:
 		_apply_draft_values(invoice, data)
 		invoice.save()

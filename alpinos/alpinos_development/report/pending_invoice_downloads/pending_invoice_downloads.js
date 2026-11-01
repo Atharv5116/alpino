@@ -1,5 +1,7 @@
 frappe.query_reports["Pending Invoice Downloads"] = {
 	filters: [
+		{ fieldname: "company", label: __("Company"), fieldtype: "Link", options: "Company",
+			default: window.alpinos && alpinos.company ? alpinos.company.current() : frappe.defaults.get_user_default("Company") },
 		{ fieldname: "sales_order", label: __("Sales Order ID"), fieldtype: "Data" },
 		{ fieldname: "order_date", label: __("Order Date"), fieldtype: "Date" },
 		{ fieldname: "dispatch_date", label: __("Dispatch Date"), fieldtype: "Date" },

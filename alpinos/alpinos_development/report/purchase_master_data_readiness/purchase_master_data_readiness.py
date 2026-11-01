@@ -14,6 +14,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from alpinos.company_scope.helpers import company_sql, tagged_condition
+
 SEVERITY_BLOCK = "Blocks receiving"
 SEVERITY_WARN = "Degrades the flow"
 
@@ -50,6 +52,13 @@ def _open_po_condition():
 	"""
 
 
+def _company_condition(filters):
+	"""Open orders of the company asked for, else of the companies the user works in."""
+	if filters.get("company"):
+		return " AND po.company = %(company)s"
+	return company_sql("Purchase Order", "po")
+
+
 def _item_rows(filters):
 	items = frappe.db.sql(
 		"""
@@ -58,9 +67,14 @@ def _item_rows(filters):
 		FROM `tabPurchase Order Item` poi
 		JOIN `tabPurchase Order` po ON po.name = poi.parent
 		JOIN `tabItem` i ON i.name = poi.item_code
-		WHERE {cond}
+		WHERE {cond}{company}{tagged}
 		GROUP BY poi.item_code
-		""".format(cond=_open_po_condition()),
+		""".format(
+			cond=_open_po_condition(),
+			company=_company_condition(filters),
+			tagged=tagged_condition("Item", "i", narrow=not filters.get("company")),
+		),
+		{"company": filters.get("company")},
 		as_dict=True,
 	)
 
@@ -100,9 +114,15 @@ def _vendor_rows(filters):
 		"""
 		SELECT po.supplier, po.supplier_name, COUNT(DISTINCT po.name) AS open_pos
 		FROM `tabPurchase Order` po
-		WHERE {cond}
+		JOIN `tabSupplier` s ON s.name = po.supplier
+		WHERE {cond}{company}{tagged}
 		GROUP BY po.supplier
-		""".format(cond=_open_po_condition()),
+		""".format(
+			cond=_open_po_condition(),
+			company=_company_condition(filters),
+			tagged=tagged_condition("Supplier", "s", narrow=not filters.get("company")),
+		),
+		{"company": filters.get("company")},
 		as_dict=True,
 	)
 

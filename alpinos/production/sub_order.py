@@ -25,6 +25,18 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alpinos.company_scope import registry
+from alpinos.company_scope.helpers import (
+	assert_company,
+	assert_open,
+	current_company,
+	has_company_role,
+	restrict_company,
+	scope_companies,
+	tag_or_filters,
+	tagged_condition,
+	tagged_names,
+)
 from alpinos.query_compat import agg
 
 from alpinos.production import constants as C
@@ -190,8 +202,7 @@ def create_sub_orders(parent):
 	sub.production_item = parent.fg_item
 	sub.bom_no = parent.bom_no
 	sub.qty = flt(parent.production_qty_kg)
-	sub.company = parent.company or frappe.defaults.get_user_default("Company") or \
-		frappe.db.get_single_value("Global Defaults", "default_company")
+	sub.company = parent.company or current_company()
 	sub.planned_start_date = parent.production_start_date or nowdate()
 	sub.expected_delivery_date = parent.delivery_date or None
 	sub.fg_warehouse = _resolve_fg_warehouse(parent.fg_item, sub.company)
@@ -271,6 +282,7 @@ def get_sub_order_list(search=None, parent=None, batch=None, item=None, process=
 		filters[PLANNED_DATE_FIELD] = (">=", planned_from)
 	elif planned_to:
 		filters[PLANNED_DATE_FIELD] = ("<=", planned_to)
+	filters = restrict_company(filters, WORK_ORDER)
 
 	or_filters = None
 	if search:
@@ -322,6 +334,7 @@ def split_context(sub_order):
 	"""What the Split dialog shows before anything is typed, including why it cannot."""
 	frappe.has_permission(WORK_ORDER, "read", throw=True)
 	sub = frappe.get_doc(WORK_ORDER, sub_order)
+	assert_open(sub)
 	parent_status = frappe.db.get_value("Production Order", sub.get(PARENT_FIELD), "status")
 	blockers = [message for _code, message in activity_blockers(sub.name)]
 	if parent_status not in C.PO_PLANNABLE_STATUSES:
@@ -333,7 +346,7 @@ def split_context(sub_order):
 		"item": sub.production_item,
 		"qty": flt(sub.qty),
 		"blockers": blockers,
-		"can_split": bool(not blockers and _user_may_plan()),
+		"can_split": bool(not blockers and _user_may_plan(sub.company)),
 	}
 
 
@@ -429,6 +442,7 @@ def split_sub_order(sub_name, split_qty, reason=None):
 	"""
 	sub = frappe.get_doc(WORK_ORDER, sub_name)
 	sub.check_permission("write")
+	assert_company(sub, ptype="write")
 
 	parent_name = sub.get(PARENT_FIELD)
 	if not parent_name:
@@ -506,8 +520,11 @@ def _assert_sub_orders_match_parent(parent):
 
 # --------------------------------------------------------- Assign Process
 
-def _user_may_plan():
+def _user_may_plan(company=None):
+	"""A Production Manager / Admin -- in `company` when the sub order's company is known."""
 	approvers = {C.ROLE_PRODUCTION_ADMIN, C.ROLE_PRODUCTION_MANAGER, "System Manager"}
+	if company:
+		return has_company_role(approvers, company)
 	return bool(approvers & set(frappe.get_roles()))
 
 
@@ -520,9 +537,10 @@ def assign_process_context(sub_order):
 	"""
 	frappe.has_permission(WORK_ORDER, "read", throw=True)
 	sub = frappe.get_doc(WORK_ORDER, sub_order)
+	assert_open(sub)
 
 	processes = frappe.get_all(
-		"Process Master", filters={"is_active": 1},
+		"Process Master", filters={"is_active": 1}, or_filters=tag_or_filters("Process Master"),
 		fields=["name", "process_name", "process_sequence", "allow_machine_assignment"],
 		order_by="process_sequence asc, name asc")
 
@@ -547,16 +565,17 @@ def assign_process_context(sub_order):
 		"planned_date": sub.get(PLANNED_DATE_FIELD),
 		"processes": processes,
 		"default_process": default,
-		"can_assign": bool(_user_may_plan()),
+		"can_assign": bool(_user_may_plan(sub.company)),
 	}
 
 
 @frappe.whitelist()
-def machines_for_process(process):
+def machines_for_process(process, company=None):
 	"""PR-04 / PR-06: Active machines whose TYPE is linked to this process.
 
 	A live query, not a stored list -- a machine added under a linked type is available at
-	once, with nothing to re-save (PR-06).
+	once, with nothing to re-save (PR-06). With `company` (the sub order's), only machines
+	tagged for that company.
 	"""
 	frappe.has_permission("Machine", "read", throw=True)
 	if not process:
@@ -566,11 +585,27 @@ def machines_for_process(process):
 	                       pluck="machine_type")
 	if not types:
 		return []
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Machine",
 		filters={"machine_type": ("in", types), "status": C.MACHINE_ACTIVE},
+		or_filters=tag_or_filters("Machine"),
 		fields=["name", "machine_name", "machine_type", "filling_process_category"],
 		order_by="machine_name asc")
+	if company and scope_companies() is not None:
+		usable = set(tagged_names("Machine", [r.name for r in rows], company))
+		rows = [r for r in rows if r.name in usable]
+	return rows
+
+
+def _machine_tag_sql(company=None):
+	"""SQL: a Machine tagged for `company` (the sub order's) when the user sees it, else for
+	any company the user sees."""
+	companies = scope_companies()
+	if company and companies and company in companies:
+		column = f"`{registry.SCOPE_FIELD}`"
+		return " and (ifnull({0}, '') = '' or {0} like {1})".format(
+			column, frappe.db.escape(f"%|{company}|%"))
+	return tagged_condition("Machine")
 
 
 @frappe.whitelist()
@@ -581,7 +616,8 @@ def machine_query_for_process(doctype, txt, searchfield, start, page_len, filter
 	The same rule as `machines_for_process`, expressed as a Link query so the dialog can use
 	it directly: Active machines whose type is linked to the chosen process.
 	"""
-	process = (filters or {}).get("process")
+	filters = filters or {}
+	process = filters.get("process")
 	if not process:
 		return []
 	types = frappe.get_all("Process Machine Type",
@@ -589,14 +625,16 @@ def machine_query_for_process(doctype, txt, searchfield, start, page_len, filter
 	                       pluck="machine_type")
 	if not types:
 		return []
+	company = filters.get("company") or (
+		frappe.db.get_value(WORK_ORDER, filters.get("sub_order"), "company") if filters.get("sub_order") else None)
 	like = f"%{txt or ''}%"
 	return frappe.db.sql(
-		"""
+		f"""
 		select name, machine_name
 		from `tabMachine`
 		where status = %(active)s
 		  and machine_type in %(types)s
-		  and (name like %(txt)s or machine_name like %(txt)s)
+		  and (name like %(txt)s or machine_name like %(txt)s) {_machine_tag_sql(company)}
 		order by machine_name asc
 		limit %(start)s, %(page_len)s
 		""",
@@ -610,8 +648,9 @@ def assign_process(sub_order, process, machine=None, planned_date=None):
 	"""Task 31. Put a sub order on a process, and optionally a machine and a date."""
 	sub = frappe.get_doc(WORK_ORDER, sub_order)
 	sub.check_permission("write")
+	assert_company(sub, ptype="write")
 
-	if not _user_may_plan():
+	if not _user_may_plan(sub.company):
 		frappe.throw(
 			_("Only a {0} or {1} may assign a process.").format(
 				C.ROLE_PRODUCTION_MANAGER, C.ROLE_PRODUCTION_ADMIN),
@@ -635,7 +674,7 @@ def assign_process(sub_order, process, machine=None, planned_date=None):
 		             title=_("Inactive Process"))
 
 	if machine:
-		allowed = {m["name"] for m in machines_for_process(process)}
+		allowed = {m["name"] for m in machines_for_process(process, sub.company)}
 		if machine not in allowed:
 			frappe.throw(
 				_("{0} cannot run {1}: its machine type is not linked to that process, or it "
