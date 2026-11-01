@@ -47,6 +47,43 @@ def company_filter_list(doctype=None, ptype="read", fieldname="company", narrow=
 	return [[k, v[0], v[1]] for k, v in f.items()]
 
 
+def restrict_company(filters, doctype=None, fieldname="company", ptype="read", narrow=True):
+	"""Add the company restriction to a page's filters (dict or list), keeping a company the
+	user picked on the page if it is one they may see, and matching nothing if it is not.
+
+	    filters = restrict_company(filters, "Delivery Note")
+	"""
+	companies = access.scope(doctype, ptype, narrow=narrow)
+	if companies is None:
+		return filters
+	if isinstance(filters, dict):
+		picked = filters.get(fieldname)
+		if isinstance(picked, str) and picked:
+			if picked not in companies:
+				filters[fieldname] = ["in", ["__none__"]]
+			return filters
+		if isinstance(picked, list | tuple) and len(picked) == 2 and str(picked[0]).lower() == "in":
+			keep = [c for c in (picked[1] or []) if c in companies]
+			filters[fieldname] = ["in", keep or ["__none__"]]
+			return filters
+		filters[fieldname] = ["in", companies or ["__none__"]]
+		return filters
+	filters = list(filters or [])
+	filters.append([fieldname, "in", companies or ["__none__"]])
+	return filters
+
+
+def tag_or_filters(doctype=None, narrow=True):
+	"""or_filters for frappe.get_all on a TAGGED master: untagged, or tagged for a company the
+	user sees. None when nothing restricts. Use: frappe.get_all(dt, filters=..., or_filters=...)"""
+	companies = access.scope(None, narrow=narrow)
+	if companies is None:
+		return None
+	out = [[registry.SCOPE_FIELD, "is", "not set"]]
+	out += [[registry.SCOPE_FIELD, "like", f"%|{c}|%"] for c in companies]
+	return out
+
+
 def company_sql(doctype=None, alias=None, fieldname="company", ptype="read", narrow=True, blank=False):
 	"""' and <alias>.company in (...)' for raw SQL, '' when nothing restricts.
 
@@ -88,8 +125,13 @@ def tagged_names(doctype, names, company=None):
 	return [n for n, s in scopes.items() if not s or any(f"|{c}|" in s for c in companies)]
 
 
-def assert_company(doc_or_company, doctype=None, ptype="write", user=None):
-	"""Throw unless the user may `ptype` a `doctype` in that company."""
+def assert_company(doc_or_company, doctype=None, ptype="write", user=None, active=False):
+	"""Throw unless the user may `ptype` a `doctype` in that company.
+
+	active=True also asks the user to switch first when the document belongs to another of
+	their companies while they work in one (the rule forms follow; use it where a page opens
+	one document).
+	"""
 	user = user or frappe.session.user
 	if not enabled() or exempt_user(user) or not access.is_managed(user):
 		return True
@@ -102,6 +144,21 @@ def assert_company(doc_or_company, doctype=None, ptype="write", user=None):
 	if not company:
 		return True
 	allowed = access.allowed_companies(doctype, ptype, user) if doctype else access.member_companies(user)
+	if active:
+		selection = access.active_selection(user)
+		if selection and selection != ALL and company != selection and company in access.member_companies(user):
+			frappe.throw(
+				_("This belongs to {0}. You are working in {1}; switch company to open it.").format(
+					frappe.bold(company), frappe.bold(selection)
+				),
+				frappe.PermissionError,
+				title=_("Belongs to another company"),
+				primary_action={
+					"label": _("Switch to {0}").format(company),
+					"client_action": "alpinos.company_switch",
+					"args": company,
+				},
+			)
 	if company not in allowed:
 		frappe.throw(
 			_("You do not have {0} access to {1} in {2}.").format(_(ptype), _(doctype or _("documents")), frappe.bold(company)),
@@ -109,6 +166,11 @@ def assert_company(doc_or_company, doctype=None, ptype="write", user=None):
 			title=_("Not permitted in this company"),
 		)
 	return True
+
+
+def assert_open(doc, doctype=None, user=None):
+	"""A page about to show one document: the user may read it, and works in its company."""
+	return assert_company(doc, doctype, "read", user=user, active=True)
 
 
 def current_company(user=None):

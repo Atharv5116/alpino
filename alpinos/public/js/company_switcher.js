@@ -238,6 +238,9 @@ $.extend(alpinos.company, {
 	},
 });
 
+// The "Switch to <company>" button of a server message (helpers.assert_open) calls this.
+alpinos.company_switch = (company) => alpinos.company.switch_to(company);
+
 // A new document in "All my companies" says where it is being created.
 frappe.ui.form.on("*", {
 	refresh(frm) {
