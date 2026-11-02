@@ -587,8 +587,12 @@ doc_events = {
 	"Purchase Receipt": {
 		# Financial-year-wise ID (POR- / INW- / GRN- / PIV- ...).
 		"before_insert": "alpinos.purchase.naming.before_insert",
-		# Batch / MRP of each GRN row, from the batch and MRP on it.
-		"before_validate": "alpinos.mrp_batch_hooks.purchase_receipt_before_validate",
+		# A batch-tracked GRN row links the Batch its code names (made when missing), then the
+		# Batch / MRP of each GRN row comes from the batch and MRP on it.
+		"before_validate": [
+			"alpinos.purchase.batches.fill_grn_batches",
+			"alpinos.mrp_batch_hooks.purchase_receipt_before_validate",
+		],
 		"validate": "alpinos.purchase.purchase_receipt_fields.validate_grn_fields",
 		"before_update_after_submit": (
 			"alpinos.purchase.purchase_receipt_fields.validate_grn_status"

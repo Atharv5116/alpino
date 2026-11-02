@@ -648,6 +648,8 @@ def _grn_rows(inward, qc):
 				"batch_no": _batch_no(
 					line.item_code,
 					(decision.internal_batch_no if decision else None) or line.batch_no,
+					line,
+					inward,
 				),
 			}
 		)
@@ -703,21 +705,26 @@ def _rejected_warehouse(inward):
 	return settings_warehouse(C.WH_REJECTED, inward.company)
 
 
-def _batch_no(item_code, batch_id):
-	"""The Batch to link, or None.
+def _batch_no(item_code, batch_id, line=None, inward=None):
+	"""The Batch to link for a batch-tracked item, made when it is missing, or None.
 
-	batch_no is a Link to Batch, so writing a batch id that has no Batch document fails link
-	validation on save. Purchase QC mints that Batch at submit (BR-QC-11 / BR-QC-12,
-	PurchaseQC._mint_internal_batches), which is what lets this line carry the SAME id the QC
-	document and the QC report show. A code with no Batch behind it — an item that is not
-	batch tracked, or one whose expiry date could not be derived — still falls through to
-	None and ERPNext auto-mints an id of its own at submit.
+	batch_no is a Link to Batch. Purchase QC makes the Batch for an Internal Batch Code
+	(BR-QC-11 / BR-QC-12); a finished-goods line has none and carries the supplier batch
+	Store typed on the inward, so its Batch is made here from that code, with the line's
+	manufacturing / expiry dates (alpinos.purchase.batches.ensure_batch). An item that is not
+	batch tracked, or one whose expiry cannot be worked out, gets None.
 	"""
-	if not (item_code and batch_id):
-		return None
-	if not cint(frappe.db.get_value("Item", item_code, "has_batch_no")):
-		return None
-	return batch_id if frappe.db.exists("Batch", batch_id) else None
+	from alpinos.purchase.batches import ensure_batch
+
+	return ensure_batch(
+		item_code,
+		batch_id,
+		supplier=inward.supplier if inward else None,
+		manufacturing_date=line.get("manufacturing_date") if line else None,
+		expiry_date=line.get("expiry_date") if line else None,
+		reference_doctype="Purchase Inward" if inward else None,
+		reference_name=inward.name if inward else None,
+	)
 
 
 # ------------------------------------------------------------------ mapping

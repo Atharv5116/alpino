@@ -658,7 +658,11 @@ def validate_grn_completeness(doc, method=None):
 		# batch field on the receipt, so nothing else can be asserted here without inventing
 		# a requirement the document cannot satisfy.
 		if cint(frappe.get_cached_value("Item", row.item_code, "has_batch_no")) and not row.get("batch_no"):
-			missing.append(_("Row #{0} ({1}): Batch Number").format(row.idx, row.item_code))
+			missing.append(
+				_("Row #{0} ({1}): Batch Number (type the batch in the Batch column)").format(
+					row.idx, row.item_code
+				)
+			)
 
 	if not missing:
 		return

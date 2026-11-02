@@ -161,8 +161,9 @@ def _naming_series(fmt, fallback):
 
 def _clean(value):
 	"""Batch codes go on stickers and into the stock ledger — keep them tame."""
-	value = re.sub(r"[^A-Za-z0-9_\-/]+", "-", (value or "").strip())
-	return re.sub(r"-{2,}", "-", value).strip("-")
+	from alpinos.purchase.batches import clean
+
+	return clean(value)
 
 
 def _date_code(value):
@@ -1115,33 +1116,12 @@ class PurchaseQC(Document):
 		reads it when batch_id is blank, and this names the batch explicitly, exactly as a user
 		typing it on the receipt would.
 		"""
-		has_expiry, shelf_life = frappe.get_cached_value(
-			"Item", line.item_code, ["has_expiry_date", "shelf_life_in_days"]
-		)
-		mfg = line.manufacturing_date
-		if cint(has_expiry) and not line.expiry_date and not (cint(shelf_life) and mfg):
-			# Batch.set_expiry_date() would throw and take the whole QC submission with it;
-			# leave the code as plain Data and let the GRN report that item misconfiguration.
-			return None
+		from alpinos.purchase.batches import ensure_batch
 
-		for batch_id in (code, _clean(code + "-" + line.item_code)):
-			owner = frappe.db.get_value("Batch", batch_id, "item")
-			if owner == line.item_code:
-				return batch_id
-			if owner:
-				continue
-			batch = frappe.new_doc("Batch")
-			batch.batch_id = batch_id
-			batch.item = line.item_code
-			batch.supplier = self.supplier
-			batch.manufacturing_date = mfg
-			batch.expiry_date = line.expiry_date
-			batch.reference_doctype = self.doctype
-			batch.reference_name = self.name
-			batch.flags.ignore_permissions = True
-			batch.insert()
-			return batch.name
-		return None
+		return ensure_batch(
+			line.item_code, code, supplier=self.supplier, manufacturing_date=line.manufacturing_date,
+			expiry_date=line.expiry_date, reference_doctype=self.doctype, reference_name=self.name,
+		)
 
 	def _generate_sample_ids(self):
 		"""RMID / PMID for every sample row with a quantity: SKU / 2 random letters / inward day.

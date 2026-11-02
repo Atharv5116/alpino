@@ -200,6 +200,12 @@ def _apply(pr, data):
 			if fieldname == "rate" and not allow_rate:
 				continue
 			value = values.get(fieldname)
+			if fieldname == "batch_no" and value and not frappe.db.exists("Batch", value):
+				# A batch typed here for a batch-tracked item is made, like the inward's
+				# batches; anything else is left for the Batch link check to refuse.
+				from alpinos.purchase.batches import grn_row_batch
+
+				value = grn_row_batch(pr, row, value) or value
 			row.set(fieldname, flt(value) if fieldname in _NUMERIC else (value or None))
 		# Accepted + Rejected IS what was received (BuyingController refuses anything else),
 		# so an edited split moves the received quantity with it.
