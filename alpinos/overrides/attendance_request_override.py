@@ -2,7 +2,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, add_months, cint, date_diff, formatdate, get_datetime, get_time, getdate, now_datetime
+from frappe.utils import add_days, add_months, cint, date_diff, flt, formatdate, get_datetime, get_time, getdate, now_datetime
 from hrms.hr.doctype.attendance_request.attendance_request import AttendanceRequest as HRMSAttendanceRequest
 from alpinos.attendance_request_automation import (
 	RESERVED_EDIT_STATES,
@@ -427,6 +427,28 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 				checkin.shift = self.shift
 			checkin.insert(ignore_permissions=True)
 
+	def _status_for_hours(self, shift, date, working_hours, status):
+		"""Present / Half Day / Absent for `working_hours` on `date` by the shift's thresholds
+		(halved on a half holiday, as HRMS does), then the Saturday thresholds on a Saturday.
+		A shift with no thresholds leaves `status` as it is."""
+		from alpinos.attendance_healer import _apply_saturday_override
+
+		shift_doc = frappe.get_cached_doc("Shift Type", shift)
+		for_absent = flt(shift_doc.working_hours_threshold_for_absent)
+		for_half_day = flt(shift_doc.working_hours_threshold_for_half_day)
+		if hasattr(shift_doc, "is_half_holiday") and shift_doc.is_half_holiday(self.employee, date):
+			for_absent /= 2
+			for_half_day /= 2
+		if for_absent or for_half_day:
+			if for_absent and working_hours < for_absent:
+				status = "Absent"
+			elif for_half_day and working_hours < for_half_day:
+				status = "Half Day"
+			else:
+				status = "Present"
+		status, _half_day_status = _apply_saturday_override(date, shift, status, working_hours, None)
+		return status
+
 	def get_attendance_status(self, attendance_date: str) -> str:
 		"""Map the reason field to an attendance status (core handled only Half Day / WFH)."""
 		# Half Day first
@@ -623,6 +645,23 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 		# working_hours is a NOT NULL column; only a check-in (no check-out) leaves it None.
 		working_hours = working_hours or 0
 
+		# The status follows the hours the day ends up with. The shift's calculation above ran
+		# on the punches, but a one-sided edit then takes the requested side and keeps the
+		# other as the day had it, so the hours can differ from the ones that status was
+		# worked out on; and on a Saturday the Saturday thresholds decide, as they do when the
+		# day is auto-marked or healed. A submitted Attendance is written straight to the
+		# database below, past its validate, so this is the only place they can apply.
+		on_leave = doc and (doc.get("leave_application") or doc.get("leave_type"))
+		if (
+			shift_for_times
+			and status in ("Present", "Half Day", "Absent")
+			and self.reason != "Work From Home"
+			and not is_half_day
+			and not on_leave
+			and not (in_time and not out_time)
+		):
+			status = self._status_for_hours(shift_for_times, date, working_hours, status)
+
 		if doc:
 			was_submitted = doc.docstatus == 1
 			needs_update = False
@@ -631,6 +670,8 @@ class CustomAttendanceRequest(HRMSAttendanceRequest):
 			if doc.status != status:
 				doc.status = status
 				updates["status"] = status
+				if status != "Half Day" and doc.get("half_day_status"):
+					updates["half_day_status"] = None
 				needs_update = True
 			if doc.attendance_request != self.name:
 				doc.attendance_request = self.name
