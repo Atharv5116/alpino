@@ -486,6 +486,51 @@ def _pick_list_leg():
 	# --- a sales return goes back into the lot it left --------------------------
 	_sales_return(dn, item, wh, lot_249, lot_199)
 
+	# --- a saved draft, saved and submitted again from the Pick List screen ------------
+	_draft_saved_from_screen(f, item, tag, lot_199)
+
+
+def _draft_saved_from_screen(f, item, tag, lot_199):
+	"""UAT STO-PICK-2026-00211: a draft Pick List whose row has a typed batch and Batch / MRP
+	left on "Auto" failed on Save and on Submit with "Column 'custom_lot_mrp' cannot be null"
+	(the screen writes rows straight to the database, and Batch MRP is a NOT NULL column)."""
+	from alpinos import e2e_ecom_test as E
+	from alpinos.alpinos_development.page.pick_list_entry import pick_list_entry as P
+	from alpinos.sales_order_api import get_pick_list_mapping_data
+
+	so = E._mk_ecom_so(f, f["cust_partial"], f"PO-{tag}-D", [(item, 10, 249, 10)])
+	header = frappe.as_json({
+		"custom_qc_attended_by": "Administrator", "custom_dispatch_date": E.DISPATCH(),
+		"custom_transporter": "ECOMTEST Transport", "custom_po_no": "ECOMTEST-PO",
+	})
+	blank = {"custom_box": 0, "batch_no": "", "custom_mfg_date": "", "custom_expiry_date": ""}
+	rows = [dict(blank, name=loc.get("name"), item_code=item, qty=10, custom_batch_code="", custom_source_table="Items")
+		for loc in get_pick_list_mapping_data(so)["locations"] if loc.get("item_code") == item]
+	name = P.create_pick_list_as_draft(so, header, frappe.as_json(rows))
+	saved = frappe.get_all("Pick List Item", {"parent": name, "item_code": item}, ["name", "qty"])
+	# Store types the batch; Batch / MRP stays on "Auto" (sent empty).
+	edits = frappe.as_json([dict(blank, name=r.name, qty=flt(r.qty), custom_batch_code="S1", mrp_batch="") for r in saved])
+
+	def attempt(fn):
+		try:
+			fn()
+			return True
+		except Exception as e:
+			frappe.db.rollback()
+			return f"{type(e).__name__}: {e}"
+
+	def lots():
+		return frappe.get_all("Pick List Item", {"parent": name, "item_code": item}, ["mrp_batch", "custom_lot_mrp", "qty"])
+
+	saved_ok = attempt(lambda: P.save_pick_list_keep_draft(name, header, edits))
+	check("Save on a draft, Batch / MRP on Auto: no 'custom_lot_mrp cannot be null'", lambda: _assert(saved_ok is True, saved_ok))
+	check("...the row keeps no lot until submit", lambda: _assert(
+		all(not r.mrp_batch and flt(r.custom_lot_mrp) == 0 for r in lots()), lots()))
+	submitted = attempt(lambda: P.save_pick_list_data(name, header, edits))
+	check("Submit on that saved draft goes through", lambda: _assert(submitted is True, submitted))
+	check("...and takes the lot of the typed batch, with its MRP", lambda: _assert(
+		[(r.mrp_batch, flt(r.custom_lot_mrp)) for r in lots()] == [(lot_199, 199)], lots()))
+
 
 def _production_lots(item, wh, wip, issue, lot_b, lot_c):
 	"""`issue` moved lot_c into `wip`; another lot (lot_b, earlier expiry) is put there too."""

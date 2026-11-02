@@ -302,7 +302,9 @@ def saved_row_lot(item, item_data):
 	if details and lot == item.get(MB.FIELD) and flt(item_data.get("qty")) - flt(item.qty) > 1e-6:
 		# More than the lot was chosen for, and nobody chose again: let submit decide.
 		details = None
-	return {MB.FIELD: details.name if details else None, "custom_lot_mrp": flt(details.mrp) if details else None}
+	# Batch MRP is a Currency column, NOT NULL in the database: no lot is 0, never None, or
+	# the screen's row write fails ("Column 'custom_lot_mrp' cannot be null").
+	return {MB.FIELD: details.name if details else None, "custom_lot_mrp": flt(details.mrp) if details else 0}
 
 
 def lot_display(rows):
