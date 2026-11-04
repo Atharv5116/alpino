@@ -84,8 +84,12 @@ def get_ecom_buyer_for_customer(customer):
 
 
 @frappe.whitelist()
-def get_ecom_item_defaults(customer, item_code):
-	"""SKU defaults for an e-com order row: MRP, box factor, GST %, margin, name."""
+def get_ecom_item_defaults(customer, item_code, mrp=None):
+	"""SKU defaults for an e-com order row: MRP, box factor, GST %, margin, name.
+
+	A SKU in the Item MRP table (Multiple MRP FRD 4): the MRP comes only from that table (its
+	one MRP, or `mrp` once the user picks one) and the margin only from the buyer's catalogue
+	row for that MRP; with none, margin and selling price stay blank (price_found = 0)."""
 	# Buyer-specific pricing — restrict to order creators (avoid RPC price leak).
 	if not frappe.has_permission("Sales Order", "create"):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
@@ -94,6 +98,24 @@ def get_ecom_item_defaults(customer, item_code):
 	item = frappe.db.get_value(
 		"Item", item_code, ["item_name", "custom_gst_percent"], as_dict=True
 	) or {}
+	from alpinos import item_mrp as IM
+
+	if IM.applicable(item_code).tracked:
+		options = IM.get_sales_mrp_options(item_code)
+		chosen = IM.q(mrp) if mrp not in (None, "") else flt(options.get("default"))
+		rate = (get_offline_buyer_item_rate(customer, item_code, mrp=chosen) if (customer and chosen) else None) or {}
+		found = rate.get("rate") is not None
+		return {
+			"item_code": item_code,
+			"item_name": item.get("item_name") or "",
+			"mrp": chosen,
+			"margin_percent": flt(rate.get("margin_percent")) if found else 0,
+			"selling_price": flt(rate.get("rate")) if found else 0,
+			"price_found": 1 if found else 0,
+			"mrp_options": options,
+			"gst_percent": flt(item.get("custom_gst_percent")),
+			"box_factor": flt(get_box_conversion_factor(item_code, strict=1)),
+		}
 	rate = get_offline_buyer_item_rate(customer, item_code) or {}
 	mrp = flt(rate.get("mrp"))
 	margin = flt(rate.get("margin_percent"))

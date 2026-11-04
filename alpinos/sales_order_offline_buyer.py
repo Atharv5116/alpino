@@ -119,8 +119,11 @@ def catalog_customer_query(doctype, txt, searchfield, start, page_len, filters):
 
 
 @frappe.whitelist()
-def get_offline_buyer_item_rate(customer, item_code):
-	"""Return MRP + buyer margin from Offline Buyer catalog/master for a Customer SKU."""
+def get_offline_buyer_item_rate(customer, item_code, mrp=None):
+	"""Return MRP + buyer margin from Offline Buyer catalog/master for a Customer SKU.
+
+	With `mrp` (the line's MRP, from the Item's MRP table): the catalogue row for that SKU +
+	MRP only, never another MRP's price (Multiple MRP FRD, BR-06 / BR-07)."""
 	if not customer or not item_code:
 		return None
 
@@ -132,6 +135,11 @@ def get_offline_buyer_item_rate(customer, item_code):
 	)
 	if not obm_name:
 		return None
+
+	from alpinos import item_mrp as IM
+
+	if mrp not in (None, "") and IM.applicable(item_code).tracked:
+		return _buyer_rate_for_mrp(customer, item_code, IM.q(mrp), obm_name)
 
 	catalog = frappe.db.sql(
 		"""
@@ -180,6 +188,50 @@ def get_offline_buyer_item_rate(customer, item_code):
 		"offline_buyer_master": obm_name,
 		"source": "offline_buyer_margin",
 	}
+
+
+def _buyer_rate_for_mrp(customer, item_code, mrp, obm_name):
+	"""Catalogue price of `item_code` at exactly `mrp` for `customer`.
+
+	No row at that MRP: for a SKU with one applicable MRP the buyer's SKU margin (Buyer
+	Master > Margins) still applies to it; for a Multiple MRP SKU the price is left blank for
+	the user to enter (FRD 4.1 Scenario B)."""
+	from alpinos import item_mrp as IM
+
+	row = frappe.db.sql(
+		"""
+		SELECT IFNULL(obil.margin_percent, 0) AS margin_percent, IFNULL(obil.selling_rate, 0) AS selling_rate
+		FROM `tabBuyer Item` obil
+		INNER JOIN `tabBuyer Items` obi
+			ON obi.name = obil.parent AND obil.parenttype = 'Buyer Items'
+		WHERE IFNULL(obi.docstatus, 0) < 2
+			AND obi.buyer = %(customer)s
+			AND obil.item_code = %(item_code)s
+			AND ROUND(IFNULL(obil.mrp, 0), 2) = %(mrp)s
+		ORDER BY obi.modified DESC, obil.idx DESC
+		LIMIT 1
+		""",
+		{"customer": customer, "item_code": item_code, "mrp": mrp},
+		as_dict=True,
+	)
+	if row:
+		pct = flt(row[0].margin_percent)
+		rate = flt(row[0].selling_rate) if flt(row[0].selling_rate) > 0 else flt(mrp * (1 - pct / 100), 2)
+		return {"rate": rate, "margin_percent": pct, "mrp": mrp, "offline_buyer_master": obm_name, "source": "offline_buyer_items"}
+	if not IM.applicable(item_code).multiple:
+		pct = frappe.db.get_value(
+			"Buyer Margin", {"parent": obm_name, "parenttype": "Buyer Master", "sku": item_code}, "margin_percent"
+		)
+		if pct is not None:
+			pct = flt(pct)
+			return {
+				"rate": flt(mrp * (1 - pct / 100), 2),
+				"margin_percent": pct,
+				"mrp": mrp,
+				"offline_buyer_master": obm_name,
+				"source": "offline_buyer_margin",
+			}
+	return {"rate": None, "margin_percent": None, "mrp": mrp, "offline_buyer_master": obm_name, "source": "no_price_for_mrp"}
 
 
 @frappe.whitelist()
@@ -1727,9 +1779,16 @@ def upsert_buyer_catalog_selling_rate(customer, item_code, selling_rate, mrp=Non
 		)
 		doc.buyer = customer
 
+	from alpinos import item_mrp as IM
+
 	mrp = flt(mrp)
 	margin = flt((1 - selling_rate / mrp) * 100, 2) if mrp > 0 else 0.0
-	row = next((r for r in doc.get("items") or [] if r.item_code == item_code), None)
+	if mrp > 0 and IM.applicable(item_code).tracked:
+		# One catalogue row per SKU + MRP: a new MRP gets its own row and the price of
+		# another MRP is never overwritten (Multiple MRP FRD 6.1 / 6.2).
+		row = next((r for r in doc.get("items") or [] if r.item_code == item_code and IM.q(r.mrp) == IM.q(mrp)), None)
+	else:
+		row = next((r for r in doc.get("items") or [] if r.item_code == item_code), None)
 	if row:
 		if flt(row.selling_rate, 2) == selling_rate and (not mrp or flt(row.mrp, 2) == mrp):
 			return  # unchanged — don't churn the catalogue's modified stamp
@@ -1753,7 +1812,7 @@ def upsert_buyer_catalog_selling_rate(customer, item_code, selling_rate, mrp=Non
 		doc.save()
 
 
-def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
+def update_offline_buyer_margin_if_changed(customer, item_code, new_margin, mrp=None):
 	"""If the Flat Disc % on the Sales Order differs from the Buyer Margin/Catalog, update the master."""
 	new_margin = flt(new_margin, 2)
 	if new_margin <= 0:
@@ -1762,14 +1821,26 @@ def update_offline_buyer_margin_if_changed(customer, item_code, new_margin):
 	if not obm_name:
 		return
 
-	# 1. Update in Buyer Items (Catalog)
+	from alpinos import item_mrp as IM
+
+	info = IM.applicable(item_code)
+	by_mrp = bool(info.tracked and flt(mrp) > 0)
+
+	# 1. Update in Buyer Items (Catalog): for an SKU in the MRP table only the row of this
+	# MRP, so another MRP's margin is never touched (Multiple MRP FRD 6.2).
 	obi_list = frappe.db.get_all("Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, order_by="modified desc")
 	for obi in obi_list:
-		frappe.db.sql("""
+		frappe.db.sql(f"""
 			UPDATE `tabBuyer Item`
 			SET margin_percent = %s
 			WHERE parent = %s AND item_code = %s AND IFNULL(margin_percent, 0) != %s
-		""", (new_margin, obi.name, item_code, new_margin))
+			{"AND ROUND(IFNULL(mrp, 0), 2) = %s" if by_mrp else ""}
+		""", (new_margin, obi.name, item_code, new_margin, *((IM.q(mrp),) if by_mrp else ())))
+
+	# 2. The Buyer Master's Margins table is per SKU, not per MRP: a Multiple MRP SKU's
+	# margin lives only on its catalogue rows.
+	if info.multiple:
+		return
 
 	# 2. Update in Buyer Master (Margin table)
 	doc = frappe.get_doc("Buyer Master", obm_name)

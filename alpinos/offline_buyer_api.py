@@ -84,7 +84,7 @@ def get_buyer_items(record_name):
 		buyer = doc.buyer
 		for row in doc.get("items") or []:
 			if row.item_code:
-				saved[row.item_code] = row
+				saved.setdefault(row.item_code, []).append(row)
 
 	obm_margin_by_sku: dict = {}
 	if buyer:
@@ -103,29 +103,47 @@ def get_buyer_items(record_name):
 	if obm_margin_by_sku:
 		allowed_skus = set(obm_margin_by_sku.keys()) | set(saved.keys())
 
-	result = []
-	for item in items:
-		if allowed_skus is not None and item.name not in allowed_skus:
-			continue
-		row = saved.get(item.name)
-		mrp = flt(row.mrp if row else item.valuation_rate)
-		if row:
-			margin_pct = flt(row.margin_percent)
-		else:
-			margin_pct = flt(obm_margin_by_sku.get(item.name, 0))
-		selling_rate = flt(mrp * (1 - margin_pct / 100), 2) if mrp else 0
+	from alpinos import item_mrp as IM
 
-		result.append(
+	def grid_row(item, row, mrp, margin_pct, **extra):
+		return dict(
 			{
 				"item_code": item.name,
 				"item_name": item.item_name,
 				"item_group": item.item_group or "",
 				"mrp": mrp,
 				"margin_percent": margin_pct,
-				"selling_rate": selling_rate,
+				"selling_rate": flt(mrp * (1 - margin_pct / 100), 2) if mrp else 0,
 				"selected": bool(row),
-			}
+				"row_key": item.name,
+			},
+			**extra,
 		)
+
+	result = []
+	for item in items:
+		if allowed_skus is not None and item.name not in allowed_skus:
+			continue
+		rows = saved.get(item.name) or []
+		info = IM.applicable(item.name)
+		if not info.tracked:
+			# Not in the Item MRP table yet: one row per SKU, MRP typed (as before).
+			row = rows[0] if rows else None
+			mrp = flt(row.mrp if row else item.valuation_rate)
+			margin_pct = flt(row.margin_percent) if row else flt(obm_margin_by_sku.get(item.name, 0))
+			result.append(grid_row(item, row, mrp, margin_pct))
+			continue
+		# Multiple MRP FRD 3: one row per SKU + MRP, the MRP fixed from the Item MRP table. A
+		# saved row at an MRP no longer applicable stays listed so its price is kept (3.3).
+		by_mrp = {IM.q(r.mrp): r for r in rows}
+		for mrp in list(info.mrps) + [m for m in by_mrp if m not in info.mrps]:
+			row = by_mrp.get(mrp)
+			margin_pct = flt(row.margin_percent) if row else (0 if info.multiple else flt(obm_margin_by_sku.get(item.name, 0)))
+			result.append(grid_row(
+				item, row, mrp, margin_pct,
+				row_key=f"{item.name}::{mrp:.2f}", mrp_fixed=1, multiple=int(info.multiple),
+				mrp_active=int(mrp in info.mrps),
+			))
 
 	return result
 
@@ -139,14 +157,34 @@ def save_buyer_items(record_name, items):
 	if not frappe.db.exists("Buyer Items", record_name):
 		frappe.throw(f"Record {record_name} not found")
 
+	from alpinos import item_mrp as IM
+
 	doc = frappe.get_doc("Buyer Items", record_name)
+	before = {(r.item_code, IM.q(r.mrp)) for r in doc.get("items") or [] if r.item_code}
 	doc.set("items", [])
 
+	seen = set()
 	for item in items:
 		if not item.get("selected"):
 			continue
 		mrp = flt(item.get("mrp", 0))
 		margin_pct = flt(item.get("margin_percent", 0))
+		# Multiple MRP FRD 3.4: one row per Buyer + SKU + MRP, and only an MRP from the Item MRP
+		# table (a row already saved at a retired MRP is kept as it is).
+		info = IM.applicable(item["item_code"])
+		key = (item["item_code"], IM.q(mrp)) if info.tracked else (item["item_code"], None)
+		if key in seen:
+			frappe.throw(
+				_("SKU {0} at MRP {1} is in the catalogue twice.").format(item["item_code"], IM.money(mrp))
+				if info.tracked else _("SKU {0} is in the catalogue twice.").format(item["item_code"])
+			)
+		seen.add(key)
+		if info.tracked and IM.q(mrp) not in info.mrps and (item["item_code"], IM.q(mrp)) not in before:
+			frappe.throw(
+				_("MRP {0} is not an applicable MRP for SKU {1}. Applicable MRPs: {2}.").format(
+					IM.money(mrp), item["item_code"], ", ".join(IM.money(m) for m in info.mrps) or _("none")
+				)
+			)
 		selling_rate = flt(mrp * (1 - margin_pct / 100), 2) if mrp else 0
 
 		doc.append(

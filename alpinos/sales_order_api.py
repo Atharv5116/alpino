@@ -1611,20 +1611,8 @@ def _populate_so_from_entry(so, customer, order_type, company, items, cash_disco
 			}
 		)
 
-		flat_discount = flt(calc.get("flat_discount"))
-		if customer and item_code:
-			from alpinos.sales_order_offline_buyer import (
-				update_offline_buyer_margin_if_changed,
-				upsert_buyer_catalog_selling_rate,
-			)
-			update_offline_buyer_margin_if_changed(customer, item_code, flat_discount)
-			# keep the buyer catalogue in sync with the line's Selling Price
-			# (creating it when the buyer has none, else the price falls back to MRP)
-			upsert_buyer_catalog_selling_rate(
-				customer, item_code,
-				flt(item.get("custom_selling_price") or item.get("selling_price") or calc.get("selling_price") or 0, 2),
-				mrp=flt(item.get("custom_customer_mrp")),
-			)
+		# The buyer catalogue follows the line's price per SKU + MRP once the order is
+		# submitted (alpinos.sales_mrp.update_buyer_catalog_on_submit), never on a draft save.
 
 		row = {
 			"item_code": item_code,
@@ -2423,6 +2411,9 @@ def get_pick_list_mapping_data(sales_order, remaining_only=0):
 			"custom_source_table": source_table,
 			"custom_conversion_factor": factor,
 			"custom_bundle_parent": bundle_parent or "",
+			# Multiple MRP: the order line's MRP shows under the SKU from the first draw of a
+			# new Pick List (a bundle component's line is the bundle's, so it has none).
+			"order_mrp": 0 if (bundle_parent or source_table != "Items") else flt(item_row.get("custom_customer_mrp")),
 			"custom_sku_no": item_info.get("custom_sku_no") or "",
 			# Changes(HP) #55: the FSN rides from the moment the Pick List is being built,
 			# not only once it exists. This mapping is what the entry page draws a NEW pick

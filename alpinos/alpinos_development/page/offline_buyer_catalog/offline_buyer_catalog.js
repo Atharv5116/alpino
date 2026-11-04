@@ -485,16 +485,21 @@ var OfflineBuyerCatalogPage = class {
 			const mrgn = row.margin_percent > 0 ? row.margin_percent : '';
 			const rate = row.selling_rate  > 0 ? flt(row.selling_rate, 2) : '';
 
+			// Multiple MRP (FRD 3): one row per SKU + MRP; the MRP comes from the Item MRP table.
+			const fixed = row.mrp_fixed ? `readonly title="${__('From the Item MRP table')}"` : '';
+			const tag = row.mrp_fixed && !row.mrp_active
+				? `<div class="text-muted" style="font-size:11px;">${__('MRP not active, price kept')}</div>`
+				: (row.multiple ? `<div style="font-size:11px;color:var(--orange-600);">${__('Multiple MRP')}</div>` : '');
 			tbody.append(`
-<tr data-code="${row.item_code}" class="${sel}">
+<tr data-code="${frappe.utils.escape_html(row.row_key || row.item_code)}" class="${sel}">
   <td class="col-chk"><input type="checkbox" class="obi-row-chk" ${chk} /></td>
   <td class="col-no text-muted">${idx + 1}</td>
-  <td class="col-code">${row.item_code}</td>
+  <td class="col-code">${row.item_code}${tag}</td>
   <td class="col-name">${row.item_name}</td>
   <td class="col-group">${row.item_group || ''}</td>
   <td class="col-mrp">
     <input type="number" class="form-control obi-mrp"
-           value="${mrp}" min="0" step="0.01" placeholder="0.00" />
+           value="${mrp}" min="0" step="0.01" placeholder="0.00" ${fixed} />
   </td>
   <td class="col-margin">
     <input type="number" class="form-control obi-margin"
@@ -638,7 +643,8 @@ var OfflineBuyerCatalogPage = class {
 				let mrp    = flt($tr.find('.obi-mrp').val());
 				let margin = flt($tr.find('.obi-margin').val());
 
-				if (bulk_mrp    !== '') { mrp    = flt(bulk_mrp);    $tr.find('.obi-mrp').val(mrp); }
+				// an MRP from the Item MRP table is never overwritten in bulk
+				if (bulk_mrp    !== '' && !$tr.find('.obi-mrp').prop('readonly')) { mrp = flt(bulk_mrp); $tr.find('.obi-mrp').val(mrp); }
 				if (bulk_margin !== '') { margin = flt(bulk_margin);  $tr.find('.obi-margin').val(margin); }
 
 				const rate = this._calc_rate(mrp, margin);
@@ -982,8 +988,8 @@ var OfflineBuyerCatalogPage = class {
 		});
 	}
 
-	_patch_model(item_code, patch) {
-		const row = this.all_rows.find(r => r.item_code === item_code);
+	_patch_model(key, patch) {
+		const row = this.all_rows.find(r => (r.row_key || r.item_code) === key);
 		if (row) Object.assign(row, patch);
 	}
 

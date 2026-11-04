@@ -299,7 +299,7 @@ def available(item_code, warehouse, exclude_pick_lists=(), respect_holds=True):
 
 
 def allocate(item_code, warehouse, qty, prefer_mrp=None, prefer_batch=None, exclude_pick_lists=(), respect_holds=True,
-	prefer_lots=()):
+	prefer_lots=(), only_mrp=None, allow_unassigned=True):
 	"""[(lot or None, qty)] covering `qty` stock units out of `warehouse`.
 
 	Order: the lots named in `prefer_lots`, in that order (production consumes the lots issued
@@ -308,11 +308,18 @@ def allocate(item_code, warehouse, qty, prefer_mrp=None, prefer_batch=None, excl
 	exists); then stock with no lot, which came in before lots existed and is the oldest;
 	then every other lot, earliest expiry first. Returns what it could cover; the caller
 	decides what a shortfall means (ERPNext's own stock check still has the last word).
+
+	`only_mrp` (sales-side Multiple MRP, FRD 8): nothing but lots at that MRP, and stock with
+	no lot only when `allow_unassigned` (a SKU with a single MRP, whose old stock is that MRP).
 	"""
 	need = flt(qty)
 	if need <= _EPS:
 		return []
 	lots, unassigned = available(item_code, warehouse, exclude_pick_lists, respect_holds)
+	if only_mrp:
+		lots = [d for d in lots if flt(d.mrp, 2) == flt(only_mrp, 2)]
+		if not allow_unassigned:
+			unassigned = 0.0
 	batch = clean_batch(prefer_batch).lower()
 	mrp = flt(prefer_mrp, 2)
 

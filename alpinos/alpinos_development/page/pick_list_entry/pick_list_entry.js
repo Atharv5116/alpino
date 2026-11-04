@@ -425,7 +425,7 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			let row_html = `
 				<tr data-name="${row.name}" data-mrp-batch="${frappe.utils.escape_html(row.mrp_batch || '')}" data-order-mrp="${flt(row.order_mrp)}" data-warehouse="${frappe.utils.escape_html(row.warehouse || '')}" data-so-item="${frappe.utils.escape_html(row.sales_order_item || '')}" data-conversion-factor="${row.custom_conversion_factor || 1}" data-weight-per-box="${row.custom_weight_per_box || 0}" data-shelf-life="${row.shelf_life_in_days || 0}"${is_bundle_comp ? ' style="background:rgba(124,58,237,0.08);"' : ''}>
 					<td>${idx + 1}</td>
-					<td class="col-sku" data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}${this_is_flipkart && row.custom_fsn_no ? `<div class="sku-fsn">(FSN - ${frappe.utils.escape_html(row.custom_fsn_no)})</div>` : ''}</td>
+					<td class="col-sku" data-item-code="${row.item_code}">${row.item_code}${is_bundle_comp ? `<div style="font-size:11px;color:#8b5cf6;">&#8627; ${frappe.utils.escape_html(row.custom_bundle_parent)}</div>` : ''}${this_is_flipkart && row.custom_fsn_no ? `<div class="sku-fsn">(FSN - ${frappe.utils.escape_html(row.custom_fsn_no)})</div>` : ''}${!is_bundle_comp && flt(row.order_mrp) > 0 ? `<div class="sku-order-mrp" style="font-size:11px;font-weight:600;">${__('MRP')}: ${format_currency(row.order_mrp)}</div>` : ''}</td>
 					<td>${row.custom_sku_no || '-'}</td>
 					<td class="ordered-qty-cell">${row.custom_ordered_qty !== undefined && row.custom_ordered_qty !== null ? row.custom_ordered_qty : (row.qty || 0)}</td>
 					<td><input type="number" class="form-control input-sm qty-input" value="${row.qty !== undefined && row.qty !== null ? row.qty : ''}" min="0" ${input_disabled}/></td>
@@ -789,17 +789,25 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			}
 		});
 
-		frappe.call({
-			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.get_active_batches',
-			callback: function(res) {
-				if(res.message) {
-					let list = page.main.find('#batch-list');
-					list.empty();
-					res.message.forEach(b => {
-						list.append(`<option value="${b}">`);
-					});
-				}
-			}
+		// Batch suggestions follow the row (Multiple MRP FRD 7.2): the batches of its SKU, and
+		// only those at the order MRP when the SKU is in the Item MRP table.
+		container.off('focus.alpinosBatchList').on('focus.alpinosBatchList', '.batch-input', function() {
+			const tr = $(this).closest('tr');
+			const item_code = tr.find('[data-item-code]').attr('data-item-code');
+			const list = page.main.find('#batch-list');
+			if (!item_code) return;
+			frappe.call({
+				method: 'alpinos.mrp_batch_hooks.get_batch_code_options',
+				args: {
+					item_code,
+					warehouse: tr.attr('data-warehouse') || (data && data.locations && (data.locations[0] || {}).warehouse) || null,
+					pick_list: data && data.name,
+					sales_order_item: tr.attr('data-so-item') || null,
+				},
+			}).then((res) => {
+				list.empty();
+				(res.message || []).forEach((b) => list.append($('<option>').attr('value', b)));
+			});
 		});
 
 		// only the warehouse/sales workflow team (Pick List permission matrix), plus any already-saved assignee
@@ -1038,7 +1046,10 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			const m = r.message || {};
 			const lots = m.lots || [];
 			const qty = flt(tr.find('.qty-input').val());
-			const options = [{ value: '', label: __('Auto: the order MRP first, then the earliest expiry') }].concat(lots.map((l) => ({
+			const auto_label = cint(m.strict)
+				? __('Auto: batches at the order MRP, earliest expiry first')
+				: __('Auto: the order MRP first, then the earliest expiry');
+			const options = [{ value: '', label: auto_label }].concat(lots.map((l) => ({
 				value: l.lot,
 				label: `${l.title || l.lot} · ${__('free')} ${flt(l.qty)}${l.expiry_date ? ' · ' + __('exp') + ' ' + frappe.datetime.str_to_user(l.expiry_date) : ''}${l.mrp_matches ? '' : ' · ' + __('not the order MRP')}`,
 			})));

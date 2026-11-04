@@ -361,6 +361,8 @@ after_migrate = [
 	# Stock by Item, Batch, MRP and Location: the MRP Batch inventory dimension (its fields
 	# land on every stock document), after every step that adds the fields it sits beside.
 	"alpinos.mrp_batch.setup",
+	# The Item's MRPs tab (sales-side Multiple MRP).
+	"alpinos.item_mrp.setup",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
@@ -791,6 +793,8 @@ doc_events = {
 	# Stock with no Batch / MRP may leave only from the stock that has none (alpinos.mrp_batch).
 	"Stock Ledger Entry": {
 		"validate": "alpinos.mrp_batch.validate_outward_sle",
+		# Stock received with a new MRP adds it to the Item's MRP table (alpinos.item_mrp).
+		"on_submit": "alpinos.item_mrp.stock_ledger_on_submit",
 	},
 	"Item": {
 		"before_insert": "alpinos.item_sequence.reorder_on_insert",
@@ -800,6 +804,7 @@ doc_events = {
 			# IM-01..IM-10. Server-side because depends_on / mandatory_depends_on are
 			# client-only, so the API and imports would otherwise walk straight past them.
 			"alpinos.production.item_rules.apply_item_rules",
+			"alpinos.item_mrp.item_validate",
 		],
 		"on_update": "alpinos.product_bundle_sync.sync_item_product_bundle",
 	},
@@ -848,6 +853,8 @@ doc_events = {
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			"alpinos.sales_order_api.validate_so_row_quantities",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
+			# Multiple MRP: one MRP per SKU, and the MRP from the Item's MRP table on submit / import.
+			"alpinos.sales_mrp.validate_sales_order_mrps",
 			"alpinos.sales_order_api.validate_so_freebies_and_box_multiples",
 			"alpinos.ecom_sales_order_api.validate_ecom_sales_order",
 			"alpinos.dispatch_date_utils.validate_dispatch_date_on_save",
@@ -857,6 +864,7 @@ doc_events = {
 		"on_submit": [
 			"alpinos.workflow_engine.sales_order_on_submit",
 			"alpinos.sales_order_trail.record_submission",
+			"alpinos.sales_mrp.update_buyer_catalog_on_submit",
 		],
 		"before_cancel": "alpinos.workflow_engine.sales_order_before_cancel",
 		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",

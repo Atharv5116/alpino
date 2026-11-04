@@ -463,28 +463,51 @@ def _pick_list_leg():
 	])
 	lot_199, lot_249 = f"{item}:S1:199", f"{item}:S2:249"
 
-	so = E._mk_ecom_so(f, f["cust_partial"], f"PO-{tag}", [(item, 350, 249, 10)])
-	pl = E._mk_pl(so, f, {item: 350})
+	# The lots put the item at MRPs 199 and 249 (Item MRP table, Multiple MRP): an order at 249
+	# may only be picked from 249 stock (sales-side Multiple MRP FRD 8). The second item has one
+	# MRP, so its stock from before lots still picks.
+	from alpinos import item_mrp as IM
+
+	single = f["items"][1]
+	IM.register(single, 100, "Manual")
+	short_so = E._mk_ecom_so(f, f["cust_partial"], f"PO-{tag}-S", [(item, 350, 249, 10)])
+	sp = "mrp_short"
+	frappe.db.savepoint(sp)
+	try:
+		E._mk_pl(short_so, f, {item: 350})
+		short = ""
+	except Exception as e:
+		short = str(e)
+		frappe.db.rollback(save_point=sp)
+	check("350 at MRP 249 with 300 there: refused, never topped up from 199 or old stock", lambda: _assert(
+		"Insufficient stock for SKU" in short and "Available Qty: 300" in short, short))
+
+	so = E._mk_ecom_so(f, f["cust_partial"], f"PO-{tag}", [(item, 300, 249, 10), (single, 50, 100, 10)])
+	pl = E._mk_pl(so, f, {item: 300, single: 50})
 	pl_name = pl.get("name") if isinstance(pl, dict) else getattr(pl, "name", pl)
 	rows = frappe.get_all("Pick List Item", {"parent": pl_name, "item_code": item},
 		["mrp_batch", "qty", "custom_batch_code", "custom_expiry_date"], order_by="idx")
-	check("the Pick List takes the order's MRP first, then stock with no lot", lambda: _assert(
-		[(r.mrp_batch, flt(r.qty)) for r in rows] == [(lot_249, 300), (None, 50)], rows))
+	free_rows = frappe.get_all("Pick List Item", {"parent": pl_name, "item_code": single},
+		["mrp_batch", "qty", "custom_batch_code", "custom_expiry_date"], order_by="idx")
+	check("the Pick List takes the order's MRP only", lambda: _assert(
+		[(r.mrp_batch, flt(r.qty)) for r in rows] == [(lot_249, 300)], rows))
+	check("a one-MRP item still picks its stock with no lot", lambda: _assert(
+		[(r.mrp_batch, flt(r.qty)) for r in free_rows] == [(None, 50)], free_rows))
 	check("the picked lot's batch is the row's batch code", lambda: _assert(rows[0].custom_batch_code == "S2", rows))
-	check("the part with no lot does not borrow that lot's batch or expiry", lambda: _assert(
-		not rows[1].custom_batch_code and not rows[1].custom_expiry_date, rows))
+	check("the part with no lot does not borrow a lot's batch or expiry", lambda: _assert(
+		not free_rows[0].custom_batch_code and not free_rows[0].custom_expiry_date, free_rows))
 	check("a submitted Pick List holds its lot from the next one", lambda: _assert(
 		not any(d.lot == lot_249 for d in MB.available(item, wh)[0]), MB.available(item, wh)))
 
 	dn = E._mk_dn(pl_name)
-	dn_rows = frappe.get_all("Delivery Note Item", {"parent": dn, "item_code": item}, ["mrp_batch", "qty"], order_by="idx")
+	dn_rows = frappe.get_all("Delivery Note Item", {"parent": dn, "item_code": ("in", [item, single])}, ["mrp_batch", "qty"], order_by="idx")
 	check("the Delivery Note ships the lots the Pick List chose", lambda: _assert(
 		sorted((r.mrp_batch or "", flt(r.qty)) for r in dn_rows) == sorted([(lot_249, 300), ("", 50)]), dn_rows))
 	check("the shipped lot is empty and the other untouched", lambda: _assert(
 		_lot_qty(item, wh, lot_249) == 0 and _lot_qty(item, wh, lot_199) == 300, MB.balances(item, wh)))
 
 	# --- a sales return goes back into the lot it left --------------------------
-	_sales_return(dn, item, wh, lot_249, lot_199)
+	_sales_return(dn, item, wh, lot_249, lot_199, free_item=single)
 
 	# --- a saved draft, saved and submitted again from the Pick List screen ------------
 	_draft_saved_from_screen(f, item, tag, lot_199)
@@ -498,7 +521,8 @@ def _draft_saved_from_screen(f, item, tag, lot_199):
 	from alpinos.alpinos_development.page.pick_list_entry import pick_list_entry as P
 	from alpinos.sales_order_api import get_pick_list_mapping_data
 
-	so = E._mk_ecom_so(f, f["cust_partial"], f"PO-{tag}-D", [(item, 10, 249, 10)])
+	# Ordered at 199, the MRP of the typed batch S1 (Multiple MRP: a batch at another MRP is refused).
+	so = E._mk_ecom_so(f, f["cust_partial"], f"PO-{tag}-D", [(item, 10, 199, 10)])
 	header = frappe.as_json({
 		"custom_qc_attended_by": "Administrator", "custom_dispatch_date": E.DISPATCH(),
 		"custom_transporter": "ECOMTEST Transport", "custom_po_no": "ECOMTEST-PO",
@@ -713,13 +737,14 @@ def _purchase_return(pr, item, wh):
 		(before, MB.balances(item, wh))))
 
 
-def _sales_return(dn, item, wh, lot_shipped, lot_other):
+def _sales_return(dn, item, wh, lot_shipped, lot_other, free_item=None):
 	from erpnext.stock.doctype.delivery_note.delivery_note import make_sales_return
 
-	before = (_lot_qty(item, wh, lot_shipped), _lot_qty(item, wh, lot_other), _free_qty(item, wh))
+	free_item = free_item or item
+	before = (_lot_qty(item, wh, lot_shipped), _lot_qty(item, wh, lot_other), _free_qty(free_item, wh))
 	ret = make_sales_return(dn)
 	lot_row = next((r for r in ret.items if r.item_code == item and r.mrp_batch == lot_shipped), None)
-	free_row = next((r for r in ret.items if r.item_code == item and not r.mrp_batch), None)
+	free_row = next((r for r in ret.items if r.item_code == free_item and not r.mrp_batch), None)
 	check("Create Return copies the shipped Batch / MRP", lambda: _assert(lot_row and free_row, [(r.item_code, r.mrp_batch) for r in ret.items]))
 	if not (lot_row and free_row):
 		return
@@ -733,9 +758,9 @@ def _sales_return(dn, item, wh, lot_shipped, lot_other):
 	check("a sales return row keeps the lot it was shipped from", lambda: _assert(
 		got.get(lot_row.dn_detail) == lot_shipped and not got.get(free_row.dn_detail), got))
 	check("the returned stock is back in that lot, and stock shipped with no lot comes back with none", lambda: _assert(
-		(_lot_qty(item, wh, lot_shipped), _lot_qty(item, wh, lot_other), _free_qty(item, wh))
+		(_lot_qty(item, wh, lot_shipped), _lot_qty(item, wh, lot_other), _free_qty(free_item, wh))
 		== (before[0] + 100, before[1], before[2] + 20),
-		(before, MB.balances(item, wh), _free_qty(item, wh))))
+		(before, MB.balances(item, wh), _free_qty(free_item, wh))))
 
 
 def _rate_log(pr):

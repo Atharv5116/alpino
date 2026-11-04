@@ -1194,6 +1194,9 @@ var SalesOrderEntry = class {
 			// recompute from the loaded price fields so a stale stored amount (e.g. an old MRP-based
 			// value on a Flat 100% line) is corrected on load instead of painted over
 			this.calc_row_amount(idx, $row, true);
+			// Multiple MRP: show the saved MRP in the SKU's MRP list, prices as saved
+			row_data.item_code = data.item_code;
+			this._load_mrp_options(idx, $row, flt(data.mrp) || null, null);
 		}
 	}
 
@@ -1276,6 +1279,7 @@ var SalesOrderEntry = class {
 			clear_extra_discounts_and_recalc();
 		};
 
+		const legacy_pricing = () => {
 		if (customer) {
 			frappe.call({
 				method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_item_rate',
@@ -1306,6 +1310,11 @@ var SalesOrderEntry = class {
 				apply_mrp_only(ir && ir.valuation_rate);
 			});
 		}
+		};
+
+		// Multiple MRP: a SKU in the Item MRP table takes its MRP only from there, never the
+		// Item valuation rate; an SKU not set up yet keeps the pricing above.
+		me._load_mrp_options(idx, $row, null, legacy_pricing);
 
 		frappe.call({
 			method: 'alpinos.sales_order_api.get_box_conversion_factor',
@@ -1319,6 +1328,147 @@ var SalesOrderEntry = class {
 				}
 			}
 		});
+	}
+
+	/** Multiple MRP (FRD 4): the SKU's MRPs from its Item MRP table. `keep_mrp` is the MRP a
+	 * saved line already has (edit / duplicate): kept with its prices, never re-fetched. */
+	_load_mrp_options(idx, $row, keep_mrp, untracked) {
+		const me = this;
+		const it = me.items[idx];
+		if (!it || !it.item_code) return;
+		const item_code = it.item_code;
+		frappe.call({
+			method: 'alpinos.item_mrp.get_sales_mrp_options',
+			args: { item_code: item_code },
+			callback: function(r) {
+				if (!me.items[idx] || me.items[idx].item_code !== item_code) return;
+				const opts = r.message || {};
+				me._remove_mrp_select(idx, $row);
+				if (!cint(opts.tracked)) {
+					me.items[idx]._mrp_options = null;
+					if (untracked) untracked();
+					return;
+				}
+				me.items[idx]._mrp_options = opts;
+				// a saved draft at an MRP that no longer applies gets the list, so it can be changed
+				const stale = keep_mrp && flt(keep_mrp) !== flt(opts.default);
+				if (!cint(opts.multiple) && !stale) {
+					// one MRP: filled in and locked (the MRP field is read-only)
+					if (keep_mrp) return;
+					me._price_for_mrp(idx, $row, flt(opts.default));
+					return;
+				}
+				me._render_mrp_select(idx, $row, opts, keep_mrp);
+				if (!keep_mrp) {
+					me._set_line_mrp(idx, 0);
+					me._blank_line_price(idx, $row);
+				}
+			},
+		});
+	}
+
+	_remove_mrp_select(idx, $row) {
+		$row.find('.item-mrp .mrp-select').remove();
+		const f = this.items[idx] && this.items[idx]._mrp_field;
+		if (f && f.$wrapper) f.$wrapper.show();
+	}
+
+	_render_mrp_select(idx, $row, opts, keep_mrp) {
+		const me = this;
+		const f = me.items[idx]._mrp_field;
+		if (f && f.$wrapper) f.$wrapper.hide();
+		const $sel = $('<select class="form-control input-xs mrp-select" title="' + __('MRP from the Item MRP table') + '" style="min-width: 112px; font-size: 12px; padding-left: 4px; padding-right: 4px;"></select>');
+		$sel.append(`<option value="">${__('Select')}</option>`);
+		const listed = (opts.mrps || []).map((o) => flt(o.mrp));
+		(opts.mrps || []).forEach((o) => {
+			$sel.append(`<option value="${flt(o.mrp)}">${format_currency(o.mrp)} (${flt(o.stock_qty)})</option>`);
+		});
+		if (keep_mrp && !listed.includes(flt(keep_mrp))) {
+			$sel.append(`<option value="${flt(keep_mrp)}">${format_currency(keep_mrp)} (${__('not active')})</option>`);
+		}
+		if (keep_mrp) $sel.val(String(flt(keep_mrp)));
+		$row.find('.item-mrp').append($sel);
+		$sel.on('change', function() {
+			const v = flt($sel.val());
+			if (!v) {
+				me._set_line_mrp(idx, 0);
+				me._blank_line_price(idx, $row);
+				return;
+			}
+			me._price_for_mrp(idx, $row, v);
+		});
+	}
+
+	_set_line_mrp(idx, mrp) {
+		const it = this.items[idx];
+		it.mrp = flt(mrp);
+		if (it._mrp_field) it._mrp_field.set_value(it.mrp || '');
+	}
+
+	/** FRD 4.1: the Buyer Catalog price of exactly this SKU + MRP; none = blank for entry. */
+	_price_for_mrp(idx, $row, mrp) {
+		const me = this;
+		const it = me.items[idx];
+		me._set_line_mrp(idx, mrp);
+		const customer = me.customer_field.get_value();
+		if (!customer) {
+			me._blank_line_price(idx, $row);
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.sales_order_offline_buyer.get_offline_buyer_item_rate',
+			args: { customer: customer, item_code: it.item_code, mrp: mrp },
+			callback: function(r) {
+				if (!me.items[idx] || flt(me.items[idx].mrp) !== flt(mrp)) return;
+				const msg = r.message;
+				if (!msg || msg.rate === null || msg.rate === undefined) {
+					me._blank_line_price(idx, $row);
+					return;
+				}
+				const m = flt(msg.margin_percent || 0);
+				it.flat_discount = m;
+				it._flat_disc_field.set_value(m > 0 ? m : '');
+				it.offer = '';
+				it._offer_field.set_value('');
+				it.additional_discount = 0;
+				it._add_disc_field.set_value('');
+				it.custom_selling_price = flt(msg.rate);
+				if (it._selling_price_field) it._selling_price_field.set_value(it.custom_selling_price);
+				me.calc_row_amount(idx, $row, true);
+			},
+		});
+	}
+
+	/** FRD 4.1 Scenario B: no price for this MRP, so Flat Discount and Selling Price stay blank. */
+	_blank_line_price(idx, $row) {
+		const it = this.items[idx];
+		it.flat_discount = 0;
+		it._flat_disc_field.set_value('');
+		it.offer = '';
+		it._offer_field.set_value('');
+		it.additional_discount = 0;
+		it._add_disc_field.set_value('');
+		it.custom_selling_price = 0;
+		if (it._selling_price_field) it._selling_price_field.set_value('');
+		this.calc_row_amount(idx, $row, true);
+	}
+
+	/** Lines the MRP table rules stop before saving: no MRP chosen, or no price entered. */
+	_mrp_line_problems(items) {
+		const out = [];
+		items.forEach((it) => {
+			const opts = it._mrp_options;
+			if (!opts) return;
+			if (!flt(it.mrp)) {
+				out.push(__('Select the MRP for SKU {0}.', [it.item_code]));
+				return;
+			}
+			const sp = flt((it._selling_price_field && it._selling_price_field.get_value()) || it.custom_selling_price);
+			if (!sp && flt(it.flat_discount) !== 100) {
+				out.push(__('Enter the Flat Discount or Selling Price for SKU {0} at MRP {1}: the Buyer Catalog has no price for this MRP yet.', [it.item_code, format_currency(it.mrp)]));
+			}
+		});
+		return out;
 	}
 
 	// mode comes from the Alpino Customer Type (Round Up / Round Down), unless the Buyer Master excludes it
@@ -1931,6 +2081,10 @@ var SalesOrderEntry = class {
 
 		let valid_items = this.items.filter(i => i.item_code && flt(i.qty) > 0);
 		if (!valid_items.length) return frappe.throw('Please add at least one item');
+		const mrp_problems = this._mrp_line_problems(valid_items);
+		if (mrp_problems.length) {
+			return frappe.throw({ title: __('MRP'), message: mrp_problems.join('<br>') });
+		}
 
 		let items = valid_items.map(item => ({
 			item_code: item.item_code,

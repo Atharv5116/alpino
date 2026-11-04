@@ -223,7 +223,10 @@ def _create_one_order(cust_label, po_number, grp):
 		"gst_exclusive_buyer": _yn(_get(first, "GST-Exclusive Buyer"), buyer.get("gst_exclusive_buyer")),
 	}
 
+	from alpinos import item_mrp as IM
+
 	items = []
+	mrp_problems = []
 	for row in grp:
 		sku = str(_get(row, "SKU") or "").strip()
 		qty = flt(_get(row, "Qty"))
@@ -231,6 +234,11 @@ def _create_one_order(cust_label, po_number, grp):
 			continue
 		mrp = 0.0 if is_freebie else flt(_get(row, "MRP"))
 		margin = 0.0 if is_freebie else flt(_get(row, "Margin %"))
+		# Multiple MRP FRD 5: the sheet's MRP must be an applicable MRP of the SKU; a blank or
+		# unknown one is refused, never replaced.
+		error = None if is_freebie else IM.line_mrp_error(sku, mrp, imported=True)
+		if error:
+			mrp_problems.append(error)
 		items.append({
 			"item_code": sku,
 			"qty": qty,
@@ -239,6 +247,8 @@ def _create_one_order(cust_label, po_number, grp):
 			"margin_percent": margin,
 			"custom_gst_percent": flt(frappe.db.get_value("Item", sku, "custom_gst_percent")),
 		})
+	if mrp_problems:
+		frappe.throw("<br>".join(mrp_problems), title=_("MRP"))
 	if not items:
 		frappe.throw(_("No valid SKU lines."))
 

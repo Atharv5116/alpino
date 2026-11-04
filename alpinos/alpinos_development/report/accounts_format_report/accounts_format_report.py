@@ -902,6 +902,17 @@ def _get_data(filters):
 
 			def _component_price(item_code):
 				"""(mrp, flat%, selling price) for an exploded component from the buyer catalog."""
+				from alpinos import item_mrp as IM
+
+				info = IM.applicable(item_code)
+				if info.tracked and len(info.mrps) == 1:
+					# Multiple MRP: a component with one applicable MRP is priced at that MRP,
+					# from the catalogue row of that MRP only, never the Item valuation rate.
+					mrp = info.mrps[0]
+					res = get_offline_buyer_item_rate(so.customer, item_code, mrp=mrp) or {}
+					if res.get("rate") is not None:
+						return mrp, flt(res.get("margin_percent")), flt(res.get("rate"))
+					return mrp, 0.0, mrp
 				res = get_offline_buyer_item_rate(so.customer, item_code)
 				if res and flt(res.get("mrp")) > 0:
 					return flt(res.get("mrp")), flt(res.get("margin_percent")), flt(res.get("rate"))

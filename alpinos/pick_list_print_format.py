@@ -39,6 +39,7 @@ _HTML = r"""
   .plps .bundle { font-size: 12px; font-weight: normal; }
   /* Changes(HP) #55: the FSN under the SKU, quieter than the code above it. */
   .plps .fsn { font-size: 11px; font-weight: normal; color: #555; }
+  .plps .mrp { font-size: 12px; font-weight: bold; }
 </style>
 <div class="plps">
   <!-- ===== header block: label | value | label | value (as the reference sheet) ===== -->
@@ -126,7 +127,10 @@ _HTML = r"""
     {% set _fsn = frappe.db.get_value("Item", row.item_code, "custom_fsn_no") if _is_flipkart else "" %}
     <tr>
       <td>{{ loop.index }}</td>
-      <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div class="bundle">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}{% if _fsn %}<div class="fsn">(FSN - {{ _fsn }})</div>{% endif %}</td>
+    {#- Multiple MRP FRD 7.1: the Sales Order MRP under the SKU (not for a bundle component,
+        whose order line is the bundle's). -#}
+    {% set _mrp = (frappe.db.get_value("Sales Order Item", row.sales_order_item, "custom_customer_mrp") or 0) if (row.sales_order_item and not row.custom_bundle_parent) else 0 %}
+      <td class="sku">{{ row.item_code }}{% if row.custom_bundle_parent %}<div class="bundle">&#8627; {{ row.custom_bundle_parent }}</div>{% endif %}{% if _fsn %}<div class="fsn">(FSN - {{ _fsn }})</div>{% endif %}{% if _mrp | float > 0 %}<div class="mrp">MRP: {{ frappe.utils.fmt_money(_mrp, 2, "INR") }}</div>{% endif %}</td>
       <td class="sku">{{ frappe.db.get_value("Item", row.item_code, "custom_sku_no") or "" }}</td>
       <td>{{ (row.qty | round | int) if (row.qty and not _is_sample) else "" }}</td>
       <td>{{ boxes(row.custom_box) if row.custom_box else "" }}</td>

@@ -456,6 +456,8 @@ var EcomSalesOrderEntry = class {
 		if (data) {
 			if (data.item_name) $row.find('.cell-name').html(frappe.utils.escape_html(data.item_name)).removeClass('text-muted');
 			if (data.item_code) sku_field.set_value(data.item_code);
+			// Multiple MRP: a saved line keeps its MRP and prices; the list just shows it.
+			if (data.item_code) me._load_mrp_ui(row, flt(data.mrp) || null);
 		}
 		this._paint_row(row);
 		return row;
@@ -480,6 +482,16 @@ var EcomSalesOrderEntry = class {
 				// Only auto-convert when Box is still empty — never clobber a Box
 				// already typed by the user or loaded from a saved order.
 				if (!flt(row.box)) me._recalc_box(row);
+				// Multiple MRP: the MRP only from the SKU's MRP table; no price for it = blank.
+				me._apply_mrp_ui(row, d.mrp_options, null);
+				row._price_blank = !!d.mrp_options && !cint(d.price_found);
+				if (row._price_blank) {
+					row.selling_price = 0;
+					row._selling.val('');
+					me._paint_row(row);
+					me.render_total();
+					return;
+				}
 				me.recalc_row(row);
 			},
 		});
@@ -517,9 +529,103 @@ var EcomSalesOrderEntry = class {
 		}
 	}
 
+	/** Multiple MRP (FRD 4): one MRP = filled and locked; several = a list, blank until
+	 * chosen; untracked SKU = the MRP stays typed by hand. `keep_mrp`: a saved line's MRP. */
+	_apply_mrp_ui(row, opts, keep_mrp) {
+		const me = this;
+		row._mrp_opts = opts && cint(opts.tracked) ? opts : null;
+		row._$row.find('.cell-mrp .eso-mrp-select').remove();
+		row._mrp.show().prop('readonly', false);
+		if (!row._mrp_opts) return;
+		// a saved draft at an MRP that no longer applies gets the list, so it can be changed
+		const stale = keep_mrp && flt(keep_mrp) !== flt(opts.default);
+		if (!cint(opts.multiple) && !stale) {
+			row._mrp.prop('readonly', true);
+			return;
+		}
+		row._mrp.hide();
+		const $sel = $('<select class="form-control input-xs eso-mrp-select" title="' + __('MRP from the Item MRP table') + '" style="min-width: 112px; font-size: 12px; padding-left: 4px; padding-right: 4px;"></select>');
+		$sel.append(`<option value="">${__('Select')}</option>`);
+		const listed = (opts.mrps || []).map((o) => flt(o.mrp));
+		(opts.mrps || []).forEach((o) => {
+			$sel.append(`<option value="${flt(o.mrp)}">${format_currency(o.mrp)} (${flt(o.stock_qty)})</option>`);
+		});
+		if (keep_mrp && !listed.includes(flt(keep_mrp))) {
+			$sel.append(`<option value="${flt(keep_mrp)}">${format_currency(keep_mrp)} (${__('not active')})</option>`);
+		}
+		$sel.val(keep_mrp ? String(flt(keep_mrp)) : '');
+		row._$row.find('.cell-mrp').append($sel);
+		$sel.on('change', () => me._reprice_for_mrp(row, flt($sel.val())));
+	}
+
+	_reprice_for_mrp(row, mrp) {
+		const me = this;
+		row.mrp = flt(mrp);
+		row._mrp.val(row.mrp || '');
+		if (!row.mrp) {
+			row._price_blank = true;
+			row.margin_percent = 0;
+			row._margin.val('');
+			me.recalc_row(row);
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.ecom_sales_order_api.get_ecom_item_defaults',
+			args: { customer: this.f_customer.get_value() || '', item_code: row.item_code, mrp: row.mrp },
+			callback: (r) => {
+				const d = r.message || {};
+				if (flt(row.mrp) !== flt(mrp)) return;
+				row._price_blank = !cint(d.price_found);
+				row.margin_percent = flt(d.margin_percent);
+				row._margin.val(row._price_blank ? '' : (flt(row.margin_percent) || ''));
+				if (row._price_blank) {
+					me.recalc_row(row);
+					return;
+				}
+				row.selling_price = flt(d.selling_price);
+				row._selling.val(flt(row.selling_price) || '');
+				me._paint_row(row);
+				me.render_total();
+			},
+		});
+	}
+
+	_load_mrp_ui(row, keep_mrp) {
+		const me = this;
+		if (!row.item_code) return;
+		frappe.call({
+			method: 'alpinos.item_mrp.get_sales_mrp_options',
+			args: { item_code: row.item_code },
+			callback: (r) => me._apply_mrp_ui(row, r.message || null, keep_mrp),
+		});
+	}
+
+	_mrp_problems() {
+		const out = [];
+		this._valid_items().forEach((r) => {
+			if (!r._mrp_opts) return;
+			if (!flt(r.mrp)) {
+				out.push(__('Select the MRP for SKU {0}', [r.item_code]));
+			} else if (!flt(r.selling_price) && flt(r.margin_percent) !== 100) {
+				out.push(__('Enter the Margin % or Selling Price for SKU {0} at MRP {1}: the Buyer Catalog has no price for this MRP yet', [r.item_code, format_currency(r.mrp)]));
+			}
+		});
+		return out;
+	}
+
 	// Driven by MRP / Margin / Qty edits: recompute selling price from margin and
 	// reflect it into the (editable) selling-price input.
 	recalc_row(row) {
+		if (row._price_blank && row._margin && row._margin.val() === '') {
+			// FRD 4.1 Scenario B: no price for this MRP yet, so the price stays blank until
+			// the user types a margin or a selling price.
+			row.selling_price = 0;
+			if (row._selling) row._selling.val('');
+			this._paint_row(row);
+			this.render_total();
+			return;
+		}
+		row._price_blank = false;
 		row.selling_price = flt(flt(row.mrp) * (1 - flt(row.margin_percent) / 100), 2);
 		if (row._selling) row._selling.val(flt(row.selling_price) || '');
 		this._paint_row(row);
@@ -529,6 +635,7 @@ var EcomSalesOrderEntry = class {
 	// Driven by a direct Selling Price edit: keep the typed price and back-fill
 	// Margin % from it so margin stays truthful (no recompute of selling here).
 	on_selling_edited(row) {
+		row._price_blank = false;
 		const mrp = flt(row.mrp);
 		if (mrp > 0) {
 			row.margin_percent = flt((1 - flt(row.selling_price) / mrp) * 100, 2);
@@ -799,6 +906,7 @@ var EcomSalesOrderEntry = class {
 		const freebie_po = cint(this.f_freebie_po.get_value());
 		if (freebie_po && !this._valid_freebies().length) errs.push(__('Add at least one freebie item'));
 		if (!freebie_po && !this._valid_items().length) errs.push(__('Add at least one SKU'));
+		if (!freebie_po) errs.push(...this._mrp_problems());
 		return errs;
 	}
 

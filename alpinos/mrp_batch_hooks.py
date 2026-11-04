@@ -189,6 +189,62 @@ def _so_line_mrp(row):
 	return flt(frappe.db.get_value("Sales Order Item", row.sales_order_item, "custom_customer_mrp"))
 
 
+def pick_rule(item_code, sales_order_item):
+	"""How strictly a Pick List row follows its Sales Order line's MRP (Multiple MRP FRD 7-8).
+
+	{mrp, allow_unassigned} when only stock at the order MRP may be picked: the row is the
+	order line's own SKU (a bundle component's line is the bundle's), the line has an MRP and
+	the SKU is in the Item MRP table. Stock with no Batch / MRP counts only for a SKU with one
+	applicable MRP, which is then the order MRP. None: the old preference order applies."""
+	if not item_code or not sales_order_item:
+		return None
+	line = frappe.db.get_value("Sales Order Item", sales_order_item, ["item_code", "custom_customer_mrp"], as_dict=True)
+	if not line or line.item_code != item_code:
+		return None
+	from alpinos import item_mrp as IM
+
+	mrp = IM.q(line.custom_customer_mrp)
+	info = IM.applicable(item_code)
+	if mrp <= 0 or not info.tracked:
+		return None
+	return frappe._dict(mrp=mrp, allow_unassigned=(not info.multiple and mrp in info.mrps))
+
+
+def _mrp_mismatch(item_code, batch, batch_mrps, rule):
+	from alpinos import item_mrp as IM
+
+	return _("Batch {0} has MRP {1}, but the Sales Order MRP for SKU {2} is {3}. Choose a batch with MRP {3}.").format(
+		frappe.bold(batch), ", ".join(IM.money(m) for m in sorted(batch_mrps)), item_code, IM.money(rule.mrp)
+	)
+
+
+def row_mrp_error(item_code, rule, lot=None, typed_batch=None):
+	"""Why a lot chosen, or a batch typed, on a Pick List row breaks the order MRP, or None."""
+	if not rule:
+		return None
+	if lot:
+		details = MB.lot_details([lot]).get(lot)
+		if details and flt(details.mrp, 2) != rule.mrp:
+			return _mrp_mismatch(item_code, details.batch_no or details.name, {flt(details.mrp, 2)}, rule)
+	typed = MB.clean_batch(typed_batch)
+	if typed:
+		mrps = {
+			flt(m, 2)
+			for m in frappe.get_all(MB.DOCTYPE, filters={"item_code": item_code, "batch_no": typed}, pluck="mrp")
+		}
+		if mrps and rule.mrp not in mrps:
+			return _mrp_mismatch(item_code, typed, mrps, rule)
+	return None
+
+
+def short_at_mrp_message(item_code, rule, required, available):
+	from alpinos import item_mrp as IM
+
+	return _("Insufficient stock for SKU {0} with MRP {1}. Required Qty: {2}. Available Qty: {3}. Batch allocation cannot be completed.").format(
+		item_code, IM.money(rule.mrp), flt(required), flt(available)
+	)
+
+
 def pick_list_before_validate(doc, method=None):
 	if not MB.enabled() or cint(doc.docstatus) == 2:
 		return
@@ -202,7 +258,12 @@ def pick_list_before_validate(doc, method=None):
 	for row in list(doc.get("locations") or []):
 		if not row.item_code or not row.get("warehouse") or not flt(row.get("qty")):
 			continue
+		# Multiple MRP: only batches at the order line's MRP, even when typed by hand.
+		rule = pick_rule(row.item_code, row.get("sales_order_item"))
 		lot = row.get(MB.FIELD)
+		error = row_mrp_error(row.item_code, rule, lot=lot, typed_batch=None if lot else row.get("custom_batch_code"))
+		if error:
+			frappe.throw(_("Row #{0}: {1}").format(row.idx, error), title=_("Batch MRP"))
 		if lot:
 			details = _assert_lot_item(row, lot, _("Pick List"))
 			_fill_pick_list_text(row, details)
@@ -217,8 +278,14 @@ def pick_list_before_validate(doc, method=None):
 			prefer_mrp=_so_line_mrp(row),
 			prefer_batch=row.get("custom_batch_code"),
 			exclude_pick_lists=[doc.name] if doc.name else [],
+			only_mrp=rule.mrp if rule else None,
+			allow_unassigned=rule.allow_unassigned if rule else True,
 		)
-		if not plan or abs(sum(q for _l, q in plan) - stock_qty) > 1e-6:
+		covered = sum(q for _l, q in plan or [])
+		if rule and covered + 1e-6 < stock_qty:
+			frappe.throw(_("Row #{0}: {1}").format(row.idx, short_at_mrp_message(row.item_code, rule, stock_qty, covered)),
+				title=_("Insufficient Stock at the Order MRP"))
+		if not plan or abs(covered - stock_qty) > 1e-6:
 			continue
 		if len(plan) == 1 and plan[0][0] is None:
 			continue
@@ -302,6 +369,15 @@ def saved_row_lot(item, item_data):
 	if details and lot == item.get(MB.FIELD) and flt(item_data.get("qty")) - flt(item.qty) > 1e-6:
 		# More than the lot was chosen for, and nobody chose again: let submit decide.
 		details = None
+	# Multiple MRP: a batch at another MRP is refused on save too, typed or chosen.
+	error = row_mrp_error(
+		item.item_code,
+		pick_rule(item.item_code, item.get("sales_order_item")),
+		lot=chosen or None,
+		typed_batch=item_data.get("custom_batch_code") or item_data.get("batch_no"),
+	)
+	if error:
+		frappe.throw(_("Row #{0}: {1}").format(item.idx, error), title=_("Batch MRP"))
 	# Batch MRP is a Currency column, NOT NULL in the database: no lot is 0, never None, or
 	# the screen's row write fails ("Column 'custom_lot_mrp' cannot be null").
 	return {MB.FIELD: details.name if details else None, "custom_lot_mrp": flt(details.mrp) if details else 0}
@@ -330,8 +406,15 @@ def get_lot_options(item_code, warehouse, pick_list=None, sales_order_item=None)
 	frappe.has_permission("Pick List", "read", throw=True)
 	lots, unassigned = MB.available(item_code, warehouse, exclude_pick_lists=[pick_list] if pick_list else [])
 	order_mrp = flt(frappe.db.get_value("Sales Order Item", sales_order_item, "custom_customer_mrp")) if sales_order_item else 0.0
+	rule = pick_rule(item_code, sales_order_item)
+	if rule:
+		# Multiple MRP: batches at another MRP are not offered at all.
+		lots = [d for d in lots if flt(d.mrp, 2) == rule.mrp]
+		if not rule.allow_unassigned:
+			unassigned = 0.0
 	return {
 		"order_mrp": order_mrp,
+		"strict": 1 if rule else 0,
 		"unassigned": unassigned,
 		"lots": [
 			{
@@ -347,6 +430,24 @@ def get_lot_options(item_code, warehouse, pick_list=None, sales_order_item=None)
 			for d in lots
 		],
 	}
+
+
+@frappe.whitelist()
+def get_batch_code_options(item_code, warehouse=None, pick_list=None, sales_order_item=None):
+	"""Batch codes to suggest on a Pick List row (Multiple MRP FRD 7.2): the batches with free
+	stock at the order line's MRP when the SKU is in the Item MRP table, else the item's
+	batches (lots and Batch records)."""
+	frappe.has_permission("Pick List", "read", throw=True)
+	if not item_code:
+		return []
+	rule = pick_rule(item_code, sales_order_item)
+	codes = []
+	if warehouse and MB.enabled():
+		lots, _free = MB.available(item_code, warehouse, exclude_pick_lists=[pick_list] if pick_list else [])
+		codes = [d.batch_no for d in lots if d.batch_no and (not rule or flt(d.mrp, 2) == rule.mrp)]
+	if not rule:
+		codes += frappe.get_all("Batch", filters={"item": item_code, "disabled": 0}, pluck="name", order_by="creation desc", limit=200)
+	return list(dict.fromkeys(codes))
 
 
 # ----------------------------------------------------------- Delivery Note
