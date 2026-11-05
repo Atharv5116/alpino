@@ -194,8 +194,10 @@ def pick_rule(item_code, sales_order_item):
 
 	{mrp, allow_unassigned} when only stock at the order MRP may be picked: the row is the
 	order line's own SKU (a bundle component's line is the bundle's), the line has an MRP and
-	the SKU is in the Item MRP table. Stock with no Batch / MRP counts only for a SKU with one
-	applicable MRP, which is then the order MRP. None: the old preference order applies."""
+	the SKU is in the Item MRP table. Stock with no Batch / MRP (received before MRPs were kept)
+	counts for a SKU with one applicable MRP, whatever MRP an older order carries, since its MRP
+	is unknown, not another MRP's; for a Multiple MRP SKU it has to be given an MRP first.
+	None: the old preference order applies."""
 	if not item_code or not sales_order_item:
 		return None
 	line = frappe.db.get_value("Sales Order Item", sales_order_item, ["item_code", "custom_customer_mrp"], as_dict=True)
@@ -207,7 +209,7 @@ def pick_rule(item_code, sales_order_item):
 	info = IM.applicable(item_code)
 	if mrp <= 0 or not info.tracked:
 		return None
-	return frappe._dict(mrp=mrp, allow_unassigned=(not info.multiple and mrp in info.mrps))
+	return frappe._dict(mrp=mrp, allow_unassigned=not info.multiple)
 
 
 def _mrp_mismatch(item_code, batch, batch_mrps, rule):

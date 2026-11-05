@@ -38,7 +38,11 @@ def refused(fn):
 	try:
 		fn()
 	except Exception as e:
-		frappe.db.rollback(save_point=sp)
+		try:
+			frappe.db.rollback(save_point=sp)
+		except Exception:
+			# fn committed part of its work before it was refused: undo the rest.
+			frappe.db.rollback()
 		frappe.clear_messages()
 		return frappe.utils.strip_html(str(e)) or type(e).__name__
 	return ""
