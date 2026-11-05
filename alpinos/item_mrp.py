@@ -111,10 +111,17 @@ def applicable(item_code):
 	return frappe._dict(tracked=bool(rows), multiple=len(mrps) > 1, mrps=mrps)
 
 
-def stock_by_mrp(item_code, warehouse=None):
-	"""{mrp: qty} of the Item's lot stock in usable warehouses (or in `warehouse`)."""
+def stock_by_mrp(item_code, warehouse=None, scoped=False):
+	"""{mrp: qty} of the Item's lot stock in usable warehouses (or in `warehouse`).
+
+	scoped=True counts only the warehouses of the companies the user works in (the stock a
+	Sales Order screen shows beside each MRP)."""
 	held = held_warehouses()
 	cond, values = "", {"item_code": item_code}
+	if scoped:
+		from alpinos.company_scope.helpers import company_sql
+
+		cond += company_sql("Stock Ledger Entry", "sle")
 	if warehouse:
 		cond += " AND sle.warehouse = %(warehouse)s"
 		values["warehouse"] = warehouse
@@ -159,7 +166,7 @@ def get_sales_mrp_options(item_code):
 	if not (frappe.has_permission("Sales Order", "create") or frappe.has_permission("Sales Order", "write")):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	info = applicable(item_code)
-	stock = stock_by_mrp(item_code) if info.tracked else {}
+	stock = stock_by_mrp(item_code, scoped=True) if info.tracked else {}
 	return {
 		"tracked": int(info.tracked),
 		"multiple": int(info.multiple),

@@ -402,10 +402,19 @@ def lot_display(rows):
 		row["order_mrp"] = flt(order_mrp.get(row.get("sales_order_item")))
 
 
+def _assert_warehouse_company(warehouse):
+	"""A Pick List screen asks about a warehouse: it has to be one of the user's companies."""
+	if warehouse:
+		from alpinos.company_scope.helpers import assert_company
+
+		assert_company(frappe.db.get_value("Warehouse", warehouse, "company") or "", "Pick List", "read")
+
+
 @frappe.whitelist()
 def get_lot_options(item_code, warehouse, pick_list=None, sales_order_item=None):
 	"""Lots of `item_code` with free stock in `warehouse`, for the Pick List's Batch / MRP pick."""
 	frappe.has_permission("Pick List", "read", throw=True)
+	_assert_warehouse_company(warehouse)
 	lots, unassigned = MB.available(item_code, warehouse, exclude_pick_lists=[pick_list] if pick_list else [])
 	order_mrp = flt(frappe.db.get_value("Sales Order Item", sales_order_item, "custom_customer_mrp")) if sales_order_item else 0.0
 	rule = pick_rule(item_code, sales_order_item)
@@ -440,6 +449,7 @@ def get_batch_code_options(item_code, warehouse=None, pick_list=None, sales_orde
 	stock at the order line's MRP when the SKU is in the Item MRP table, else the item's
 	batches (lots and Batch records)."""
 	frappe.has_permission("Pick List", "read", throw=True)
+	_assert_warehouse_company(warehouse)
 	if not item_code:
 		return []
 	rule = pick_rule(item_code, sales_order_item)
