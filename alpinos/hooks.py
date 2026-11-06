@@ -390,6 +390,8 @@ after_migrate = [
 	"alpinos.offline_sales.setup.execute",
 	# Changes(HP) #110: Pick List Submitted On.
 	"alpinos.afr_export.setup",
+	# Goods Return (FSD Document 1): roles and permissions, inside the perm_seed window.
+	"alpinos.goods_return.setup.execute",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
@@ -453,6 +455,8 @@ permission_query_conditions = {
 		"alpinos.buyer_assignment_visibility.delivery_note_query_conditions",
 	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_query_conditions",
+	# Goods Return: a Coordinator sees the requests of their channels, an Executive all.
+	"Goods Return Request": "alpinos.goods_return.access.query_conditions",
 	# Company-wise access: rows of the companies the user may see (alpinos.company_scope).
 	"*": "alpinos.company_scope.permissions.query_conditions",
 }
@@ -476,6 +480,7 @@ has_permission = {
 		"alpinos.buyer_assignment_visibility.delivery_note_has_permission",
 	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_has_permission",
+	"Goods Return Request": "alpinos.goods_return.access.has_permission",
 	# Company-wise access: the user's roles in the document's company decide (deny-only).
 	"*": "alpinos.company_scope.permissions.has_permission",
 }

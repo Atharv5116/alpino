@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-11-06 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "batch_code",
+  "mrp",
+  "expected_qty",
+  "uom",
+  "return_reason",
+  "remarks",
+  "section_ref",
+  "delivery_note_item",
+  "mrp_batch"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item (SKU)",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "batch_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Batch"
+  },
+  {
+   "columns": 1,
+   "fieldname": "mrp",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "MRP",
+   "options": "INR"
+  },
+  {
+   "columns": 1,
+   "fieldname": "expected_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Expected Return Qty",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "item_code.stock_uom",
+   "fetch_if_empty": 1,
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM"
+  },
+  {
+   "columns": 2,
+   "fieldname": "return_reason",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Return Reason",
+   "options": "Goods Return Reason",
+   "reqd": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_ref",
+   "fieldtype": "Section Break",
+   "label": "Delivery Reference"
+  },
+  {
+   "fieldname": "delivery_note_item",
+   "fieldtype": "Data",
+   "label": "Delivery Note Item",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "mrp_batch",
+   "fieldtype": "Link",
+   "label": "MRP Lot",
+   "no_copy": 1,
+   "options": "MRP Batch",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-06 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Goods Return Request Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

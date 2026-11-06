@@ -1,0 +1,315 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "naming_series:",
+ "creation": "2026-11-06 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "channel",
+  "customer",
+  "customer_name",
+  "buyer_master",
+  "col_head_1",
+  "return_handling_type",
+  "destination_customer",
+  "destination_customer_name",
+  "request_type",
+  "col_head_2",
+  "posting_date",
+  "company",
+  "status",
+  "section_refs",
+  "sales_order",
+  "col_refs",
+  "delivery_note",
+  "col_refs_2",
+  "invoice_no",
+  "section_items",
+  "items",
+  "total_expected_qty",
+  "section_logistics",
+  "transporter",
+  "docket_no",
+  "col_log_1",
+  "pickup_date",
+  "dispatch_date",
+  "col_log_2",
+  "expected_delivery_date",
+  "logistics_remarks",
+  "section_more",
+  "remarks",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "GRR-.FYS.-.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "no_copy": 1,
+   "options": "GRR-.FYS.-.#####",
+   "print_hide": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "channel",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Channel",
+   "options": "Channel",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Returning Party",
+   "options": "Customer",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "customer.customer_name",
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Returning Party Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "buyer_master",
+   "fieldtype": "Link",
+   "label": "Buyer Master",
+   "options": "Buyer Master",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_head_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "return_handling_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Return Handling Type",
+   "options": "\nReturn to AHFPL\nCustomer-Site Disposal\nCustomer-to-Customer Redistribution",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.return_handling_type=='Customer-to-Customer Redistribution'",
+   "fieldname": "destination_customer",
+   "fieldtype": "Link",
+   "label": "Destination Customer",
+   "mandatory_depends_on": "eval:doc.return_handling_type=='Customer-to-Customer Redistribution'",
+   "options": "Customer"
+  },
+  {
+   "depends_on": "eval:doc.return_handling_type=='Customer-to-Customer Redistribution'",
+   "fetch_from": "destination_customer.customer_name",
+   "fieldname": "destination_customer_name",
+   "fieldtype": "Data",
+   "label": "Destination Customer Name",
+   "read_only": 1
+  },
+  {
+   "default": "Normal",
+   "fieldname": "request_type",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Request Type",
+   "options": "Normal\nSupplementary",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_head_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Request Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "remember_last_selected_value": 1,
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Status",
+   "no_copy": 1,
+   "options": "Draft\nSubmitted\nCancelled",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.sales_order || doc.delivery_note || doc.invoice_no",
+   "fieldname": "section_refs",
+   "fieldtype": "Section Break",
+   "label": "Original Sales References"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "col_refs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "delivery_note",
+   "fieldtype": "Link",
+   "label": "Delivery Note",
+   "options": "Delivery Note"
+  },
+  {
+   "fieldname": "col_refs_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "label": "Invoice No (Tally)"
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Goods Return Request Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "total_expected_qty",
+   "fieldtype": "Float",
+   "label": "Total Expected Return Qty",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.docstatus == 1 || doc.transporter || doc.docket_no || doc.pickup_date",
+   "fieldname": "section_logistics",
+   "fieldtype": "Section Break",
+   "label": "Reverse Logistics"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "transporter",
+   "fieldtype": "Data",
+   "label": "Transporter"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "docket_no",
+   "fieldtype": "Data",
+   "label": "LR / AWB / Docket No"
+  },
+  {
+   "fieldname": "col_log_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "pickup_date",
+   "fieldtype": "Date",
+   "label": "Pickup Date"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "dispatch_date",
+   "fieldtype": "Date",
+   "label": "Dispatch Date"
+  },
+  {
+   "fieldname": "col_log_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "expected_delivery_date",
+   "fieldtype": "Date",
+   "label": "Expected Delivery Date"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "logistics_remarks",
+   "fieldtype": "Small Text",
+   "label": "Logistics Remarks"
+  },
+  {
+   "fieldname": "section_more",
+   "fieldtype": "Section Break",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Goods Return Request",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-11-06 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Goods Return Request",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "customer_name,channel,return_handling_type,status",
+ "show_title_field_in_link": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "customer_name",
+ "track_changes": 1
+}
