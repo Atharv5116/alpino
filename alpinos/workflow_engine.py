@@ -243,7 +243,14 @@ def sales_order_validate(doc, method=None):
 def sales_order_before_cancel(doc, method=None):
 	"""Changes(HP) #100: no Sales Order is cancelled without a reason. cancel_document (the
 	Sales Order View's Cancel) asks for one; the desk form and bulk cancel do not, so they
-	are sent there."""
+	are sent there.
+
+	Changes(HP) #103: a Rejected order is closed; only Duplicate is left for it."""
+	if (doc.get("custom_workflow_status") or "") == SO_REJECTED:
+		frappe.throw(
+			frappe._("Sales Order {0} is Rejected. A rejected order cannot be cancelled; duplicate it to start again.").format(doc.name),
+			title=frappe._("Order Rejected"),
+		)
 	if not (doc.flags.get("cancellation_reason") or "").strip():
 		frappe.throw(
 			frappe._("Cancel this Sales Order from its Sales Order View, which asks for the reason for cancellation."),

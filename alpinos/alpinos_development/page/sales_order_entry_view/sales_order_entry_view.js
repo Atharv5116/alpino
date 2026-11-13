@@ -246,6 +246,15 @@ var SalesOrderEntryView = class {
 				me.page.clear_indicator();
 			}
 
+			// Changes(HP) #103: a Rejected or Cancelled order takes no further action except
+			// Duplicate (PDF, print and the list stay, they change nothing).
+			if (['Rejected', 'Cancelled'].includes(status) || docstatus === 2) {
+				[me.btn_edit_so, me.btn_cancel_so, me.btn_reject_so, me.btn_force_close, me.btn_future_dispatch]
+					.forEach((b) => b && b.hide());
+				me.page.clear_primary_action();
+				return;
+			}
+
 			const isWarehouse = me._has_any_role(['Warehouse Admin', 'Warehouse Manager', 'System Manager']);
 			// E-Commerce roles are the sales side for E-com orders; server re-checks permission, this only affects visibility
 			const isSales = me._has_any_role([
