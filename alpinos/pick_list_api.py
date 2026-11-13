@@ -3,6 +3,7 @@
 from typing import Optional
 
 import frappe
+from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
 
@@ -541,6 +542,10 @@ def remove_pick_list_row_with_reason(pick_list, row_name, reason):
 			"reason": reason,
 			"removed_by": frappe.session.user,
 			"removed_on": now_datetime(),
+			# Changes(HP) #109: enough to put the row back on its Sales Order line
+			"mrp": flt(row.get("custom_lot_mrp")) or None,
+			"sales_order_item": row.get("sales_order_item"),
+			"source_table": row.get("custom_source_table"),
 		},
 	)
 	doc.locations = [r for r in doc.locations if r.name != row_name]
@@ -1037,3 +1042,123 @@ def warehouse_user_query(doctype, txt, searchfield, start, page_len, filters):
 			"page_len": int(page_len or 20),
 		},
 	)
+
+
+# --------------------------------------------------------------------- Changes(HP) #109
+
+
+def _restorable(doc):
+	return [r for r in doc.get("custom_removed_items") or [] if not frappe.utils.cint(r.get("restored"))]
+
+
+@frappe.whitelist()
+def get_restorable_rows(pick_list):
+	"""Removed rows of a Draft Pick List that can still be put back, with their MRP."""
+	doc = frappe.get_doc("Pick List", pick_list)
+	doc.check_permission("read")
+	if doc.docstatus != 0:
+		return []
+	mapping = _so_mapping(doc)
+	out = []
+	for r in _restorable(doc):
+		m = _mapping_row(mapping, r)
+		out.append({
+			"name": r.name,
+			"item_code": r.item_code,
+			"item_name": r.item_name,
+			"mrp": flt(r.get("mrp")) or flt((m or {}).get("order_mrp")),
+			"removed_qty": flt(r.removed_qty),
+			"removed_box": flt(r.removed_box),
+			"reason": r.reason,
+		})
+	return out
+
+
+def _so_mapping(doc):
+	from alpinos.sales_order_api import get_pick_list_mapping_data
+
+	if not doc.get("custom_sales_order_id"):
+		frappe.throw(_("This Pick List has no Sales Order to restore rows from."))
+	return get_pick_list_mapping_data(doc.custom_sales_order_id).locations or []
+
+
+def _mapping_row(mapping, removed):
+	"""The Sales Order line a removed row came from: its line if recorded, else its SKU."""
+	if removed.get("sales_order_item"):
+		row = next((m for m in mapping if m.get("sales_order_item") == removed.sales_order_item), None)
+		if row:
+			return row
+	same = [m for m in mapping if m.get("item_code") == removed.item_code]
+	if removed.get("source_table"):
+		same = [m for m in same if m.get("custom_source_table") == removed.source_table] or same
+	return same[0] if same else None
+
+
+@frappe.whitelist()
+def restore_pick_list_rows(pick_list, removed_rows):
+	"""Put removed rows back on a Draft Pick List (Changes(HP) #109).
+
+	Each row goes back on its own Sales Order line, with that line's SKU, warehouse, MRP and
+	source table. The quantity is what was removed, but never more than the line still needs
+	on this Pick List: a line already on it gets the quantity added (no second row) up to the
+	ordered quantity. The Pick List then saves through its usual checks, so batches must match
+	the line's MRP and the stock must be there, or nothing is restored.
+	"""
+	removed_rows = frappe.parse_json(removed_rows) if isinstance(removed_rows, str) else (removed_rows or [])
+	doc = frappe.get_doc("Pick List", pick_list)
+	doc.check_permission("write")
+	if doc.docstatus != 0:
+		frappe.throw(_("Rows can be restored only while the Pick List is a Draft."))
+	mapping = _so_mapping(doc)
+	wanted = set(removed_rows or [])
+	done, skipped = [], []
+	for r in _restorable(doc):
+		if r.name not in wanted:
+			continue
+		m = _mapping_row(mapping, r)
+		if not m:
+			skipped.append(_("{0}: no longer on Sales Order {1}").format(r.item_code, doc.custom_sales_order_id))
+			continue
+		line = m.get("sales_order_item")
+		on_list = [
+			loc for loc in doc.locations
+			if (loc.get("sales_order_item") == line if line else loc.item_code == r.item_code)
+			and (loc.get("custom_source_table") or "Items") == (m.get("custom_source_table") or "Items")
+		]
+		ordered = flt(m.get("custom_ordered_qty") or m.get("qty"))
+		room = ordered - sum(flt(loc.qty) for loc in on_list)
+		qty = min(flt(r.removed_qty), room)
+		if qty <= 0:
+			skipped.append(_("{0}: the Sales Order quantity is already on the Pick List").format(r.item_code))
+			continue
+		factor = flt(get_box_conversion_factor(r.item_code)) or 0
+		if on_list:
+			target = on_list[0]
+			target.qty = flt(target.qty) + qty
+			target.stock_qty = flt(target.qty) * flt(target.get("conversion_factor") or 1)
+			if factor:
+				target.custom_box = flt(target.qty) / factor
+		else:
+			doc.append("locations", {
+				"item_code": m.get("item_code"),
+				"warehouse": m.get("warehouse"),
+				"qty": qty,
+				"stock_qty": qty,
+				"conversion_factor": 1,
+				"custom_box": (qty / factor) if factor else flt(r.removed_box),
+				"custom_ordered_qty": ordered,
+				"custom_source_table": m.get("custom_source_table") or "Items",
+				"custom_bundle_parent": m.get("custom_bundle_parent") or None,
+				"custom_weight_per_box": m.get("custom_weight_per_box"),
+				"sales_order": doc.custom_sales_order_id,
+				"sales_order_item": line,
+				"custom_batch_code": r.get("batch_no") or None,
+			})
+		r.restored = 1
+		r.restored_by = frappe.session.user
+		r.restored_on = now_datetime()
+		done.append(f"{r.item_code} x {flt(qty)}")
+	if done:
+		doc.flags.ignore_mandatory = True
+		doc.save()
+	return {"restored": done, "skipped": skipped}

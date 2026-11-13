@@ -554,9 +554,9 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				return;
 			}
 			let rows_html = removed.map((r, idx) => `
-				<tr ${r.is_pending ? 'style="background:rgba(245,158,11,0.14);"' : ''}>
+				<tr ${r.is_pending ? 'style="background:rgba(245,158,11,0.14);"' : (cint(r.restored) ? 'style="opacity:0.55;"' : '')}>
 					<td>${idx + 1}</td>
-					<td>${frappe.utils.escape_html(r.item_code || '')}</td>
+					<td>${frappe.utils.escape_html(r.item_code || '')}${cint(r.restored) ? ` <span class="indicator-pill green" title="${frappe.utils.escape_html(__('Restored by {0} on {1}', [r.restored_by || '', r.restored_on || '']))}">${__('Restored')}</span>` : ''}</td>
 					<td>${frappe.utils.escape_html(r.item_name || '')}</td>
 					<td>${flt(r.removed_qty || 0)}</td>
 					<td>${cint(r.removed_box || 0)}</td>
@@ -566,9 +566,15 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 					<td>${frappe.utils.escape_html(String(r.removed_on || ''))}</td>
 				</tr>
 			`).join('');
+			// Changes(HP) #109: removed rows can be put back while the Pick List is a Draft
+			const is_draft = !data.name || data.name === 'New Pick List' || cint(data.docstatus) === 0;
+			const restorable = removed.filter((r) => !cint(r.restored)).length;
+			const restore_btn = (is_draft && restorable && frappe.model.can_write('Pick List'))
+				? `<button type="button" class="btn btn-xs btn-default btn-restore-removed" style="margin-left:8px;">${__('Restore Removed Items')}</button>`
+				: '';
 			let html = `
 				<div id="removed-items-section">
-					<div class="table-section-title">Removed Items</div>
+					<div class="table-section-title">Removed Items${restore_btn}</div>
 					<div class="sku-table-wrapper alp-scroll alp-scroll--wide">
 					<table class="sku-table">
 						<thead>
@@ -594,6 +600,89 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			} else {
 				container.append(html);
 			}
+			container.find('#removed-items-section .btn-restore-removed').on('click', () => page.restore_removed_dialog());
+		};
+
+		// Changes(HP) #109: choose removed rows and put them back. On a saved Draft the server
+		// rebuilds them from the Sales Order line (alpinos.pick_list_api.restore_pick_list_rows);
+		// on a new, unsaved Pick List the removed rows are simply put back where they were.
+		page.restore_removed_dialog = function() {
+			const unsaved = !data.name || data.name === 'New Pick List' || page.pick_list_name === 'New Pick List';
+			const show = (rows) => {
+				if (!rows.length) {
+					frappe.msgprint(__('There is nothing left to restore.'));
+					return;
+				}
+				const esc = frappe.utils.escape_html;
+				const d = new frappe.ui.Dialog({
+					title: __('Restore Removed Items'),
+					size: 'large',
+					fields: [{ fieldtype: 'HTML', fieldname: 'rows' }],
+					primary_action_label: __('Restore Selected'),
+					primary_action() {
+						const picked = d.$wrapper.find('.restore-pick:checked').map((i, el) => $(el).data('key')).get();
+						if (!picked.length) {
+							frappe.msgprint(__('Select at least one item.'));
+							return;
+						}
+						d.hide();
+						if (unsaved) {
+							page.restore_pending(picked);
+							return;
+						}
+						frappe.call({
+							method: 'alpinos.pick_list_api.restore_pick_list_rows',
+							args: { pick_list: data.name, removed_rows: picked },
+							freeze: true,
+							freeze_message: __('Restoring...'),
+							callback: (r) => {
+								if (r.exc || !r.message) return;
+								const m = r.message;
+								let msg = m.restored.length ? __('Restored: {0}', [m.restored.join(', ')]) : '';
+								if (m.skipped.length) msg += (msg ? '<br>' : '') + __('Not restored: {0}', [m.skipped.join('; ')]);
+								frappe.msgprint({ title: __('Restore Removed Items'), message: msg, indicator: m.skipped.length ? 'orange' : 'green' });
+								page.load_data();
+							},
+						});
+					},
+				});
+				d.fields_dict.rows.$wrapper.html(`
+					<table class="table table-sm table-bordered">
+						<thead><tr>
+							<th style="width:32px;"><input type="checkbox" class="restore-all"></th>
+							<th>${__('SKU')}</th><th>${__('Item Name')}</th><th>${__('MRP')}</th><th>${__('Removed Qty')}</th>
+						</tr></thead>
+						<tbody>${rows.map((r) => `<tr>
+							<td><input type="checkbox" class="restore-pick" data-key="${esc(r.key)}"></td>
+							<td>${esc(r.item_code)}</td><td>${esc(r.item_name || '')}</td>
+							<td>${r.mrp ? format_currency(r.mrp) : '—'}</td><td>${flt(r.removed_qty)}</td>
+						</tr>`).join('')}</tbody>
+					</table>`);
+				d.$wrapper.find('.restore-all').on('change', (e) => d.$wrapper.find('.restore-pick').prop('checked', $(e.target).prop('checked')));
+				d.show();
+			};
+			if (unsaved) {
+				show((page._pending_removals || []).map((r, i) => ({
+					key: String(i), item_code: r.item_code, item_name: r.item_name, mrp: r.mrp, removed_qty: r.removed_qty,
+				})));
+			} else {
+				frappe.xcall('alpinos.pick_list_api.get_restorable_rows', { pick_list: data.name })
+					.then((rows) => show((rows || []).map((r) => Object.assign({ key: r.name }, r))));
+			}
+		};
+
+		// a new, unsaved Pick List: the removed rows go back into the table as they were
+		page.restore_pending = function(keys) {
+			const idx = keys.map((k) => cint(k)).sort((a, b) => b - a);
+			idx.forEach((i) => {
+				const r = (page._pending_removals || [])[i];
+				if (!r) return;
+				if (r._tr && r._tbody) r._tbody.append(r._tr);
+				page._pending_removals.splice(i, 1);
+			});
+			page.recalculate_totals();
+			page.render_removed_items();
+			frappe.show_alert({ message: __('{0} item(s) restored.', [idx.length]), indicator: 'green' }, 4);
 		};
 		page.render_removed_items();
 
@@ -874,8 +963,11 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 							removed_box: cint(tr.find('.box-input').val()),
 							batch_no: tr.find('.batch-input').val() || null,
 							reason: values.reason,
+							// Changes(HP) #109: kept, so the row can be put back unchanged
+							_tbody: tr.parent(),
+							_tr: tr,
 						});
-						tr.remove();
+						tr.detach();
 						page.recalculate_totals();
 						if (page.render_removed_items) page.render_removed_items();
 						frappe.show_alert({ message: `Row removed (${item_code}).`, indicator: 'orange' }, 4);
@@ -1043,7 +1135,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			return;
 		}
 
-		let removed_rows = page._pending_removals || [];
+		// the kept table rows (Changes(HP) #109) are not sent to the server
+		let removed_rows = (page._pending_removals || []).map(({ _tr, _tbody, ...r }) => r);
 		// a removed SKU also leaves the order short for this round
 		if (removed_rows && removed_rows.length) is_short_pick = true;
 
@@ -1319,7 +1412,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 				source_row: tr.attr('data-source-row') || null
 			});
 		});
-		let removed_rows = page._pending_removals || [];
+		// the kept table rows (Changes(HP) #109) are not sent to the server
+		let removed_rows = (page._pending_removals || []).map(({ _tr, _tbody, ...r }) => r);
 		frappe.call({
 			method: 'alpinos.alpinos_development.page.pick_list_entry.pick_list_entry.create_pick_list_as_draft',
 			args: { so_name: page.so_name, header: header_data, items: items, removed_rows: removed_rows, remaining_only: page.remaining_only || 0 },
