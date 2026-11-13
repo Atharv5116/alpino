@@ -12,7 +12,13 @@
   "batch_no",
   "reason",
   "removed_by",
-  "removed_on"
+  "removed_on",
+  "mrp",
+  "sales_order_item",
+  "source_table",
+  "restored",
+  "restored_by",
+  "restored_on"
  ],
  "fields": [
   {
@@ -69,11 +75,52 @@
    "fieldtype": "Datetime",
    "label": "Removed On",
    "read_only": 1
+  },
+  {
+   "fieldname": "mrp",
+   "fieldtype": "Currency",
+   "label": "MRP",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sales_order_item",
+   "fieldtype": "Data",
+   "label": "Sales Order Item",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "source_table",
+   "fieldtype": "Data",
+   "label": "Source Table",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "restored",
+   "fieldtype": "Check",
+   "label": "Restored",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "restored_by",
+   "fieldtype": "Link",
+   "label": "Restored By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "restored_on",
+   "fieldtype": "Datetime",
+   "label": "Restored On",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-05-30 12:00:00.000000",
+ "modified": "2026-11-13 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Alpinos Removed Pick List Item",

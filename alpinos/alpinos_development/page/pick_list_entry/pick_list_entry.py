@@ -519,6 +519,10 @@ def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, rem
 			"reason": removed.get("reason"),
 			"removed_by": frappe.session.user,
 			"removed_on": frappe.utils.now_datetime(),
+			# Changes(HP) #109: the Sales Order line it came from, so it can be restored
+			"sales_order_item": (mapping_by_name.get(removed.get("row_name")) or {}).get("sales_order_item"),
+			"source_table": (mapping_by_name.get(removed.get("row_name")) or {}).get("custom_source_table"),
+			"mrp": (mapping_by_name.get(removed.get("row_name")) or {}).get("order_mrp") or None,
 		})
 
 	pick_list.flags.ignore_mandatory = True
