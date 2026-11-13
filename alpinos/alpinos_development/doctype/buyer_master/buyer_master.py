@@ -183,6 +183,17 @@ def _ensure_customer_for_obm(doc):
 
 
 class BuyerMaster(Document):
+	def onload(self):
+		# Changes(HP) #76: the form shows the names of the Sales Officer(s), Primary POC(s) and
+		# Secondary POC instead of their Employee codes
+		employees = {r.employee for f in ("sales_officers", "primary_pocs") for r in self.get(f) or [] if r.employee}
+		if self.get("secondary_poc"):
+			employees.add(self.secondary_poc)
+		names = dict(
+			frappe.get_all("Employee", filters={"name": ("in", list(employees))}, fields=["name", "employee_name"], as_list=True)
+		) if employees else {}
+		self.set_onload("employee_names", names)
+
 	def autoname(self):
 		# Runs before the doctype's own OBM-.YYYY.-.##### rule, which is left in place only
 		# as the fallback Frappe uses when a controller sets no name.

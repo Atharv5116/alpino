@@ -93,10 +93,11 @@ def _role_holders(roles, company=None):
 	return users
 
 
-def employees_with_roles(roles, txt="", start=0, page_len=20, company=None):
+def employees_with_roles(roles, txt="", start=0, page_len=20, company=None, exclude_roles=()):
 	"""Active employees whose linked User holds any of `roles`, as (name, employee_name) rows.
 
 	With company-wise roles the role must be held in `company` (else a company in view).
+	exclude_roles drops anyone whose User also holds one of them.
 	"""
 	if not roles:
 		return []
@@ -113,10 +114,18 @@ def employees_with_roles(roles, txt="", start=0, page_len=20, company=None):
 			AND IFNULL(e.status, 'Active') = 'Active'
 			AND (e.name LIKE %(txt)s OR IFNULL(e.employee_name, '') LIKE %(txt)s)
 			{users}
+			{excluded}
 		ORDER BY e.employee_name ASC
 		LIMIT %(page_len)s OFFSET %(start)s
-		""".format(users="AND u.name IN %(users)s" if holders is not None else ""),
+		""".format(
+			users="AND u.name IN %(users)s" if holders is not None else "",
+			excluded=(
+				"AND NOT EXISTS (SELECT 1 FROM `tabHas Role` x WHERE x.parent = u.name"
+				" AND x.parenttype = 'User' AND x.role IN %(excluded)s)"
+			) if exclude_roles else "",
+		),
 		{
+			"excluded": tuple(exclude_roles or ("",)),
 			"roles": tuple(roles),
 			"txt": f"%{txt or ''}%",
 			"start": int(start or 0),
@@ -139,7 +148,11 @@ def sales_officer_query(doctype, txt, searchfield, start, page_len, filters):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def primary_poc_query(doctype, txt, searchfield, start, page_len, filters):
-	return employees_with_roles(PRIMARY_POC_ROLES, txt, start, page_len, _query_company(filters))
+	# Changes(HP) #78: Sales Manager / Sales Admin only, never anyone holding Sales Officer
+	# (not even the Sales Officer creating the record)
+	return employees_with_roles(
+		PRIMARY_POC_ROLES, txt, start, page_len, _query_company(filters), exclude_roles=(SALES_OFFICER_ROLE,)
+	)
 
 
 @frappe.whitelist()

@@ -26,6 +26,12 @@ PERMISSION_MATRIX = {
 	"Pick List": {SALES_OFFICER: "VIEW"},
 	"Delivery Note": {SALES_OFFICER: "VIEW"},
 	"Buyer Items": {SALES_OFFICER: "VIEW", SALES_MANAGER: "CREATE_EDIT"},
+	# Changes(HP) #77: the addresses and the buyer form link to these ("No permission for State")
+	"State": {SALES_OFFICER: "VIEW"},
+	"City": {SALES_OFFICER: "VIEW"},
+	"Country": {SALES_OFFICER: "VIEW"},
+	"Alpino Customer Type": {SALES_OFFICER: "VIEW"},
+	"Channel": {SALES_OFFICER: "VIEW"},
 	SETTINGS: {"System Manager": "SETTINGS_MANAGE"},
 }
 

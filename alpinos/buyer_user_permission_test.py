@@ -8,7 +8,9 @@ Buyer Master carries poc_employee, an Employee link. So a permission that exists
 self-service was quietly deciding which customers a salesperson could see: the ones whose
 POC is them, and no others.
 
-The fields now ignore user permissions. The check toggles that property at runtime, so a
+Changes(HP) #75 removed poc_employee (Employee Name); the Employee links left on Buyer
+Master are the Secondary POC and the Sales Officer(s) / Primary POC(s) rows, so the check
+now runs on secondary_poc. The fields now ignore user permissions. The check toggles that property at runtime, so a
 single run shows the party hidden with it off and visible with it on.
 """
 
@@ -41,9 +43,9 @@ def _insert(doctype, **values):
 
 
 def _set_ignore(value):
-	"""Flip ignore_user_permissions on poc_employee for this run."""
+	"""Flip ignore_user_permissions on secondary_poc for this run."""
 	name = frappe.db.get_value(
-		"DocField", {"parent": "Buyer Master", "fieldname": "poc_employee"}, "name"
+		"DocField", {"parent": "Buyer Master", "fieldname": "secondary_poc"}, "name"
 	)
 	frappe.db.set_value("DocField", name, "ignore_user_permissions", value, update_modified=False)
 	frappe.clear_cache(doctype="Buyer Master")
@@ -55,7 +57,7 @@ def run():
 	real_commit = frappe.db.commit
 	frappe.db.commit = lambda *a, **k: None
 	original = frappe.db.get_value(
-		"DocField", {"parent": "Buyer Master", "fieldname": "poc_employee"}, "ignore_user_permissions"
+		"DocField", {"parent": "Buyer Master", "fieldname": "secondary_poc"}, "ignore_user_permissions"
 	)
 	try:
 		_run()
@@ -92,9 +94,9 @@ def _run():
 
 	# A buyer whose POC is somebody else -- "U.S Supplements" stood in this position.
 	other = _insert("Buyer Master", name=f"{tag}-OBM-OTHER",
-		customer_business_name=f"{tag} U.S Supplements", channel="Offline", poc_employee=theirs)
+		customer_business_name=f"{tag} U.S Supplements", channel="Offline", secondary_poc=theirs)
 	own = _insert("Buyer Master", name=f"{tag}-OBM-OWN",
-		customer_business_name=f"{tag} Own Party", channel="Offline", poc_employee=mine)
+		customer_business_name=f"{tag} Own Party", channel="Offline", secondary_poc=mine)
 
 	def _visible_to_user():
 		frappe.set_user(user)
@@ -122,7 +124,7 @@ def _run():
 		_assert(other in seen, f"{other} is still hidden with the field ignoring permissions: {seen}")
 		_assert(own in seen, f"{own} went missing: {seen}")
 
-	check("#50 with poc_employee ignoring user permissions, both buyers are listed",
+	check("#50 with secondary_poc ignoring user permissions, both buyers are listed",
 		_ignoring_the_permission_shows_every_buyer)
 
 	def _the_shipped_doctype_ignores_them():
@@ -134,7 +136,7 @@ def _run():
 			"alpinos_development", "doctype", "buyer_master", "buyer_master.json",
 		)
 		fields = {f["fieldname"]: f for f in json.load(open(path))["fields"]}
-		for fieldname in ("poc_employee", "party_owner"):
+		for fieldname in ("secondary_poc", "party_owner"):
 			_assert(fields[fieldname].get("ignore_user_permissions") == 1,
 				f"{fieldname} does not ignore user permissions in the shipped doctype")
 

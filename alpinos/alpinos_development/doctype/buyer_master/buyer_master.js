@@ -111,11 +111,6 @@ frappe.ui.form.on("Buyer Master", {
 		frm.set_query("party_owner", () => ({
 			query: "alpinos.offline_buyer_api.party_owner_user_query",
 		}));
-		// POC is scoped to Channel: E-com -> E-Commerce role holders; Offline -> Sales User/Manager.
-		frm.set_query("poc_employee", () => ({
-			query: "alpinos.offline_buyer_api.poc_employee_query",
-			filters: { channel: frm.doc.channel || "" },
-		}));
 		// The three assignment fields pick from the roles the specification names: assignment
 		// grants access, so the population has to match the role that backs it.
 		// Both are Table MultiSelect fields: the query goes on the field itself. The child-table
@@ -465,12 +460,31 @@ function os_status(frm) {
 	return frm.doc.buyer_status || "Approved";
 }
 
+// Changes(HP) #76: names, not Employee codes, in Sales Officer(s), Primary POC(s) and
+// Secondary POC. The names come with the form (BuyerMaster.onload); a person picked from the
+// dropdown brings their name with them.
+function os_employee_names(frm) {
+	const names = (frm.doc.__onload && frm.doc.__onload.employee_names) || {};
+	Object.entries(names).forEach(([employee, name]) => {
+		if (name) frappe.utils.add_link_title("Employee", employee, name);
+	});
+	["sales_officers", "primary_pocs"].forEach((f) => frm.fields_dict[f] && frm.refresh_field(f));
+	const spoc = frm.fields_dict.secondary_poc;
+	if (spoc && !spoc.__os_named) {
+		spoc.__os_named = true;
+		spoc.is_title_link = () => true;
+	}
+	if (spoc && frm.doc.secondary_poc) spoc.set_formatted_input(frm.doc.secondary_poc);
+}
+
 frappe.ui.form.on("Buyer Master", {
 	refresh(frm) {
+		os_employee_names(frm);
 		if (frm.is_new()) {
 			if (os_is_officer_only()) {
 				frm.set_value("channel", "Offline");
 				frm.set_df_property("channel", "read_only", 1);
+				frm.toggle_display(OS_HIDDEN_FROM_OFFICER, false);
 			}
 			return;
 		}
@@ -544,8 +558,14 @@ function os_actions(frm, status) {
 	}
 }
 
+// Changes(HP) #74: not a Sales Officer's business, so not shown to one at all
+const OS_HIDDEN_FROM_OFFICER = [
+	"tally_section", "appointment_required", "grn_available", "partial_order_allowed", "gst_exclusive_buyer",
+];
+
 function os_officer_limits(frm, status) {
 	if (!os_is_officer_only()) return;
+	frm.toggle_display(OS_HIDDEN_FROM_OFFICER, false);
 	if (!["Pending Approval", "On Hold"].includes(status) || !os_offline(frm)) {
 		frm.disable_form();
 		return;

@@ -479,42 +479,8 @@ def _role_holders(roles):
 	return users
 
 
-POC_ECOM_ROLES = ("E-Commerce Admin", "E-Commerce Coordinator", "E-Commerce Manager")
-POC_SALES_ROLES = ("Sales User", "Sales Manager")
-
-
-@frappe.whitelist()
-@frappe.validate_and_sanitize_search_inputs
-def poc_employee_query(doctype, txt, searchfield, start, page_len, filters):
-	"""POC Employee link: Employees whose User holds the role(s) for the buyer's Channel."""
-	channel = ((filters or {}).get("channel") or "").strip()
-	roles = list(POC_ECOM_ROLES if channel == "E-com" else POC_SALES_ROLES)
-	txt = txt or ""
-	placeholders = ", ".join(["%s"] * len(roles))
-	# With company-wise roles, only people holding the role in a company in view.
-	holders = _role_holders(roles)
-	if holders is not None and not holders:
-		return []
-	users_clause = ""
-	user_args = []
-	if holders is not None:
-		users_clause = "AND e.user_id IN ({0})".format(", ".join(["%s"] * len(holders)))
-		user_args = sorted(holders)
-	return frappe.db.sql(
-		f"""
-		SELECT DISTINCT e.name, e.employee_name
-		FROM `tabEmployee` e
-		INNER JOIN `tabHas Role` hr ON hr.parent = e.user_id AND hr.parenttype = 'User'
-		WHERE IFNULL(e.status, 'Active') = 'Active'
-			AND IFNULL(e.user_id, '') <> ''
-			AND hr.role IN ({placeholders})
-			AND (e.name LIKE %s OR IFNULL(e.employee_name, '') LIKE %s)
-			{users_clause}
-		ORDER BY e.employee_name ASC
-		LIMIT %s OFFSET %s
-		""",
-		roles + [f"%{txt}%", f"%{txt}%"] + user_args + [int(page_len), int(start)],
-	)
+# Changes(HP) #75: Employee Name (poc_employee) and its picker are gone; Sales Officer(s),
+# Primary POC(s) and Secondary POC are the only employee-responsibility fields.
 
 
 @frappe.whitelist()

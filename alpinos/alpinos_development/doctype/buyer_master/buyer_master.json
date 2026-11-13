@@ -63,7 +63,6 @@
   "primary_pocs",
   "primary_poc",
   "secondary_poc",
-  "poc_employee",
   "shipping_section",
   "shipping_same_as_profile",
   "shipping_address",
@@ -471,13 +470,6 @@
    "options": "Employee",
    "ignore_user_permissions": 1,
    "description": "Single Secondary POC / Sales Admin for this Buyer. Assignment controls visibility."
-  },
-  {
-   "fieldname": "poc_employee",
-   "fieldtype": "Link",
-   "label": "Employee Name",
-   "options": "Employee",
-   "ignore_user_permissions": 1
   },
   {
    "fieldname": "shipping_section",
