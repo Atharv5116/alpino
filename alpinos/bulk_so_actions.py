@@ -20,13 +20,16 @@ def _names(sales_orders):
 
 def _run(names, act):
 	done, failed = [], []
-	for name in names:
+	for i, name in enumerate(names):
+		# one order's failure undoes that order only
+		savepoint = f"so_bulk_{i}"
+		frappe.db.savepoint(savepoint)
 		try:
 			act(name)
 			frappe.db.commit()
 			done.append(name)
 		except Exception as e:
-			frappe.db.rollback()
+			frappe.db.rollback(save_point=savepoint)
 			frappe.clear_messages()
 			failed.append({"name": name, "error": frappe.utils.strip_html(str(e)) or type(e).__name__})
 	return {"done": done, "failed": failed, "counts": {"done": len(done), "failed": len(failed)}}
