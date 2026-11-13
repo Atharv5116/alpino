@@ -122,6 +122,11 @@ def download_report_excel(from_date, to_date, channel=None, customer=None, custo
 	from frappe.utils.xlsxutils import make_xlsx
 
 	columns, data = _report(from_date, to_date, channel, customer, customer_type)
+	# Changes(HP) #110: this export is logged per row (same transaction as the file), and the
+	# file shows it in Accounts Format Exported At
+	from alpinos.afr_export import record_export
+
+	record_export(data, "Invoice Sync")
 	headers = [c["label"] for c in columns]
 	fieldnames = [c["fieldname"] for c in columns]
 	rows = [headers]
