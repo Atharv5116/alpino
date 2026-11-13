@@ -1380,7 +1380,8 @@ var SalesOrderEntry = class {
 		$sel.append(`<option value="">${__('Select')}</option>`);
 		const listed = (opts.mrps || []).map((o) => flt(o.mrp));
 		(opts.mrps || []).forEach((o) => {
-			$sel.append(`<option value="${flt(o.mrp)}">${format_currency(o.mrp)} (${flt(o.stock_qty)})</option>`);
+			// Changes(HP) #112: the MRP alone, no stock count in brackets
+			$sel.append(`<option value="${flt(o.mrp)}">${format_currency(o.mrp)}</option>`);
 		});
 		if (keep_mrp && !listed.includes(flt(keep_mrp))) {
 			$sel.append(`<option value="${flt(keep_mrp)}">${format_currency(keep_mrp)} (${__('not active')})</option>`);
@@ -1438,7 +1439,9 @@ var SalesOrderEntry = class {
 		});
 	}
 
-	/** FRD 4.1 Scenario B: no price for this MRP, so Flat Discount and Selling Price stay blank. */
+	/** No Buyer Catalog price for this MRP (FRD 4.1 Scenario B). Changes(HP) #113: no error;
+	 * Flat Discount stays blank (0%) and the Selling Price is the MRP, which the Buyer Catalog
+	 * keeps when the order is submitted. Without an MRP there is nothing to price yet. */
 	_blank_line_price(idx, $row) {
 		const it = this.items[idx];
 		it.flat_discount = 0;
@@ -1447,12 +1450,17 @@ var SalesOrderEntry = class {
 		it._offer_field.set_value('');
 		it.additional_discount = 0;
 		it._add_disc_field.set_value('');
+		if (flt(it.mrp) > 0) {
+			// selling price = MRP x (1 - 0%) x (1 - 0%)
+			this.calc_row_amount(idx, $row, false);
+			return;
+		}
 		it.custom_selling_price = 0;
 		if (it._selling_price_field) it._selling_price_field.set_value('');
 		this.calc_row_amount(idx, $row, true);
 	}
 
-	/** Lines the MRP table rules stop before saving: no MRP chosen, or no price entered. */
+	/** Lines the MRP table rules stop before saving: no MRP chosen. A line with no price takes the MRP. */
 	_mrp_line_problems(items) {
 		const out = [];
 		items.forEach((it) => {
@@ -1462,9 +1470,13 @@ var SalesOrderEntry = class {
 				out.push(__('Select the MRP for SKU {0}.', [it.item_code]));
 				return;
 			}
+			// Changes(HP) #113: a line left without a price is not an error; it sells at the MRP
+			// with 0% Flat Discount (the other MRP rules above still apply)
 			const sp = flt((it._selling_price_field && it._selling_price_field.get_value()) || it.custom_selling_price);
 			if (!sp && flt(it.flat_discount) !== 100) {
-				out.push(__('Enter the Flat Discount or Selling Price for SKU {0} at MRP {1}: the Buyer Catalog has no price for this MRP yet.', [it.item_code, format_currency(it.mrp)]));
+				it.flat_discount = 0;
+				it.custom_selling_price = flt(it.mrp, 2);
+				if (it._selling_price_field) it._selling_price_field.set_value(it.custom_selling_price);
 			}
 		});
 		return out;
