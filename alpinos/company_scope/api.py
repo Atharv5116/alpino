@@ -23,10 +23,19 @@ def context(user=None):
 		return None
 	companies = access.all_companies()
 	members = access.member_companies(user)
+	looks = _company_looks(members)
 	rows = []
 	for company in members:
 		abbr = access.company_abbr(company) or company[:3].upper()
-		rows.append({"name": company, "abbr": abbr, "color": _COLORS[companies.index(company) % len(_COLORS)]})
+		look = looks.get(company) or {}
+		rows.append({
+			"name": company,
+			"abbr": abbr,
+			# Changes(HP) #114: the Company's own Switcher Colour, else one from the palette
+			"color": look.get("color") or _COLORS[companies.index(company) % len(_COLORS)],
+			# Changes(HP) #115: the logo the desk shows while working in this company
+			"logo": look.get("logo"),
+		})
 	selection = active.get_active(user)
 	return {
 		"active": selection,
@@ -36,6 +45,39 @@ def context(user=None):
 		# Doctypes with a company field that are not company-wise (the form does not block them).
 		"global_doctypes": sorted(registry.GLOBAL_DOCTYPES),
 	}
+
+
+def _company_looks(companies):
+	"""{company: {color, logo}} for the switcher. A private logo is served through company_logo."""
+	# company-scope: n/a (reads the look of the user's own member companies)
+	if not companies:
+		return {}
+	fields = ["name", "company_logo"]
+	if frappe.db.has_column("Company", "custom_switcher_color"):
+		fields.append("custom_switcher_color")
+	out = {}
+	for row in frappe.get_all("Company", filters={"name": ("in", list(companies))}, fields=fields):
+		logo = row.get("company_logo")
+		if logo and logo.startswith("/private/"):
+			logo = "/api/method/alpinos.company_scope.api.company_logo?" + frappe.utils.urlencode({"company": row.name})
+		out[row.name] = {"color": row.get("custom_switcher_color"), "logo": logo or None}
+	return out
+
+
+@frappe.whitelist()
+def company_logo(company: str):
+	"""A company's logo for the desk, to its members (the file itself may be private)."""
+	user = frappe.session.user
+	if not (exempt_user(user) or company in (access.member_companies(user) or [])):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	url = frappe.db.get_value("Company", company, "company_logo")
+	if not url:
+		raise frappe.DoesNotExistError
+	file = frappe.get_doc("File", {"file_url": url})
+	frappe.response.filename = file.file_name
+	frappe.response.filecontent = file.get_content()
+	frappe.response.type = "binary"
+	frappe.response.display_content_as = "inline"
 
 
 def extend_bootinfo(bootinfo):

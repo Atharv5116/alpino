@@ -15,6 +15,23 @@
 
 frappe.provide("alpinos.company");
 
+// Changes(HP) #115: the logo at the top of the desk is the logo of the company being worked
+// in (Company > Company Logo). "All my companies", or a company without a logo, keeps the
+// app's own logo.
+(function () {
+	const app_logo = frappe.utils.app_logo;
+	if (!app_logo || app_logo.__alpinos_company) return;
+	frappe.utils.app_logo = function (app) {
+		const out = app_logo.call(this, app);
+		const logo = alpinos.company && alpinos.company.logo && alpinos.company.logo();
+		if (out && logo) {
+			out.icon = `<img src="${frappe.utils.escape_html(logo)}" alt="${frappe.utils.escape_html(out.title || "")}" />`;
+		}
+		return out;
+	};
+	frappe.utils.app_logo.__alpinos_company = true;
+})();
+
 $.extend(alpinos.company, {
 	ALL: "__all__",
 
@@ -51,6 +68,11 @@ $.extend(alpinos.company, {
 	info(company) {
 		const ctx = this.ctx();
 		return (ctx && ctx.companies.find((c) => c.name === company)) || null;
+	},
+	logo() {
+		if (!this.enabled() || this.is_all()) return null;
+		const info = this.info(this.active());
+		return (info && info.logo) || null;
 	},
 	label(selection) {
 		if (selection === this.ALL) return __("All my companies");

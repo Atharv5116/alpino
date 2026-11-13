@@ -117,6 +117,15 @@ def custom_fields():
 				"description": "Goes into this company's document numbers, e.g. APC gives SOR-APC-2627-00001. Blank keeps the numbers as they are.",
 				"module": MODULE,
 			},
+			# Changes(HP) #114: the colour of this company's chip in the company switcher.
+			{
+				"fieldname": "custom_switcher_color",
+				"fieldtype": "Color",
+				"label": "Switcher Colour",
+				"insert_after": "custom_series_code",
+				"description": "Colour of this company's short form in the company switcher. Blank picks one.",
+				"module": MODULE,
+			},
 			*PRINT_FIELDS,
 		],
 		"Employee Checkin": [
@@ -166,6 +175,7 @@ def setup():
 	create_custom_fields(custom_fields(), ignore_validate=True)
 	classify_roles_once()
 	series_codes_once()
+	switcher_colors()
 	print_details_once()
 	show_sales_order_company()
 	remove_company_from_session_defaults()
@@ -181,6 +191,29 @@ def classify_roles_once():
 		if frappe.db.exists("Role", role):
 			frappe.db.set_value("Role", role, "custom_company_scoped", 1, update_modified=False)
 	frappe.db.set_default(_CLASSIFIED_KEY, "1")
+
+
+#: Changes(HP) #114: the colours the business gave each company (matched on its name or
+#: abbreviation). Only a blank Switcher Colour is filled, so a colour changed on the Company
+#: stays as changed; a company created later (Ancient Mill) gets its colour on the next migrate.
+SWITCHER_COLORS = (
+	(("alpino health foods", "ahfpl"), "#005C2A"),
+	(("alpino hospitality",), "#D4151C"),
+	(("ancient mill",), "#53052C"),
+)
+
+
+def switcher_colors():
+	if not frappe.db.has_column("Company", "custom_switcher_color"):
+		return
+	for company in frappe.get_all("Company", fields=["name", "abbr", "custom_switcher_color"]):
+		if company.custom_switcher_color:
+			continue
+		keys = (company.name or "").lower(), (company.abbr or "").lower()
+		for names, color in SWITCHER_COLORS:
+			if any(n in keys[0] or n == keys[1] for n in names):
+				frappe.db.set_value("Company", company.name, "custom_switcher_color", color, update_modified=False)
+				break
 
 
 def series_codes_once():
