@@ -72,6 +72,8 @@ app_include_js = [
 	_asset("js/buyer_id.js"),
 	# Changes(HP) #71: read-only users see Pick List / Delivery Note pages in view-only mode.
 	_asset("js/alpinos_view_only.js"),
+	# Changes(HP) #106: the Order Fulfilment Report's Accounts View.
+	_asset("js/ofr_accounts_view.js"),
 	_asset("js/sales_order_hub_desk_v3.js"),
 	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
 	# the hard-coded item_row_colors.js; its reports became a default configuration).

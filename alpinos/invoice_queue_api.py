@@ -95,11 +95,16 @@ def get_access():
 		selectable = [access["default"]]
 	else:
 		selectable = access["channels"] or _all_channels()
+	from alpinos.ofr_accounts import mode as accounts_view_mode
+
 	return {
 		"channels": access["channels"],
 		"locked": access["locked"],
 		"default_channel": access["default"],
 		"selectable": selectable,
+		# Changes(HP) #106: "only" = the Accounts View is this user's report, "switch" = they
+		# may choose, None = not for them
+		"accounts_view": accounts_view_mode(),
 	}
 
 
