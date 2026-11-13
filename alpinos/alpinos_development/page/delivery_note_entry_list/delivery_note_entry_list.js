@@ -118,7 +118,7 @@ var DeliveryNoteListPage = class {
 			df: {
 				fieldtype: 'Data',
 				fieldname: 'search',
-				label: __('Search (ID, Customer)'),
+				label: __('Search (ID, Customer, Buyer ID)'),
 			},
 			parent: w.find('.fld-search'),
 			render_input: true,
@@ -222,15 +222,16 @@ var DeliveryNoteListPage = class {
 			this._save_view_prefs();
 			this.load_list();
 		});
-		this.wrapper.find('.btn-dnl-prev').on('click', () => {
-			this.start = Math.max(0, this.start - this.page_length);
+		// Changes(HP) #111: a header click sorts every record on the server, from page 1
+		this.wrapper.on('click', '.dnl-sort-th', (e) => {
+			const field = $(e.currentTarget).data('sort');
+			if (!field) return;
+			const cur = this._sort || { field: '', dir: 'desc' };
+			this._sort = cur.field === field
+				? { field, dir: cur.dir === 'asc' ? 'desc' : 'asc' }
+				: { field, dir: 'asc' };
+			this.start = 0;
 			this.load_list();
-		});
-		this.wrapper.find('.btn-dnl-next').on('click', () => {
-			if (this._last_meta.has_more) {
-				this.start += this.page_length;
-				this.load_list();
-			}
 		});
 		this.wrapper.on('click', '.dnl-row', (e) => {
 			if ($(e.target).closest('a,button,input').length) return;
@@ -276,7 +277,10 @@ var DeliveryNoteListPage = class {
 
 	_args() {
 		const f = this._filter_fields;
-		var args = { start: this.start, page_length: this.page_length };
+		var args = {
+			start: this.start, page_length: this.page_length,
+			sort_field: (this._sort && this._sort.field) || '', sort_dir: (this._sort && this._sort.dir) || '',
+		};
 		FILTER_KEYS.forEach(function (k) {
 			args[k] = (f[k] && f[k].get_value()) || '';
 		});
@@ -299,6 +303,7 @@ var DeliveryNoteListPage = class {
 					has_more: cint(msg.has_more),
 					start: cint(msg.start),
 					page_length: cint(msg.page_length),
+					total: cint(msg.total),
 				};
 				me.render_rows(msg.data || []);
 				me.update_pager();
@@ -309,7 +314,7 @@ var DeliveryNoteListPage = class {
 	render_rows(rows) {
 		const tb = this.wrapper.find('.dnl-table tbody').empty();
 		if (!rows.length) {
-			tb.append(`<tr><td colspan="12" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
+			tb.append(`<tr><td colspan="13" class="text-muted text-center">${__('No Delivery Notes found')}</td></tr>`);
 			return;
 		}
 		const esc = (s) => frappe.utils.escape_html(s == null ? '' : String(s));
@@ -332,6 +337,7 @@ var DeliveryNoteListPage = class {
 				<td><span class="indicator-pill ${status_color}">${esc(wf)}</span></td>
 				<td>${dash(d.custom_sales_order_id)}</td>
 				<td>${dash(customer)}</td>
+				<td>${dash(d.buyer_id)}</td>
 				<td>${only_date(d.posting_date)}</td>
 				<td>${only_date(d.custom_dispatch_date)}</td>
 				<td>${dash(d.company)}</td>
@@ -345,16 +351,21 @@ var DeliveryNoteListPage = class {
 	}
 
 	update_pager() {
-		const n = this.wrapper.find('.dnl-table tbody tr.dnl-row').length;
-		if (!n) {
-			this.wrapper.find('.dnl-count').text(__('No rows on this page'));
-		} else {
-			const from = this._last_meta.start + 1;
-			const to = this._last_meta.start + n;
-			this.wrapper.find('.dnl-count').text(__('Showing {0}–{1}', [from, to]));
+		// Changes(HP) #111: total, page numbers, first / last, go to page
+		alpinos.pager.render(this.wrapper.find('.dnl-pager'), {
+			start: this._last_meta.start,
+			page_length: this._last_meta.page_length || this.page_length,
+			total: this._last_meta.total,
+		}, (new_start) => {
+			this.start = new_start;
+			this.load_list();
+		});
+		const sort = this._sort || {};
+		this.wrapper.find('.dnl-sort-th .dnl-sort-mark').remove();
+		if (sort.field) {
+			this.wrapper.find(`.dnl-sort-th[data-sort="${sort.field}"]`)
+				.append(`<span class="dnl-sort-mark">${sort.dir === 'asc' ? '▲' : '▼'}</span>`);
 		}
-		this.wrapper.find('.btn-dnl-prev').prop('disabled', this.start <= 0);
-		this.wrapper.find('.btn-dnl-next').prop('disabled', !this._last_meta.has_more);
 	}
 }
 

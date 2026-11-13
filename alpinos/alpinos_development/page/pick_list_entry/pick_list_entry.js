@@ -316,7 +316,8 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 		page.main.find('[data-fieldname="custom_transporter"]').val(data.custom_transporter);
 		page.main.find('[data-fieldname="custom_gate"]').val(data.custom_gate || '');
 		page.main.find('[data-fieldname="created_by"]').val(data.owner_full_name || data.owner || frappe.session.user_fullname || frappe.session.user);
-		page.main.find('[data-fieldname="custom_customer_name"]').val(data.custom_customer_name);
+		// Changes(HP) #64: "Name (Buyer ID)"
+		alpinos.buyer_id.fill(page.main.find('[data-fieldname="custom_customer_name"]'), data.custom_customer_name, data.custom_sales_order_id);
 		page.main.find('[data-fieldname="custom_party_code"]').val(data.custom_party_code);
 		page.main.find('[data-fieldname="custom_order_date"]').val(data.custom_order_date);
 		page.main.find('[data-fieldname="custom_sales_order_id"]').val(data.custom_sales_order_id);

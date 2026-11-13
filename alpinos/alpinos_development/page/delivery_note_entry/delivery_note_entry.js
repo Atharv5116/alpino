@@ -138,7 +138,8 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 			});
 		})();
 		$main.find('[data-fieldname="custom_dispatch_from"]').val(data.custom_dispatch_from || '');
-		$main.find('[data-fieldname="custom_dn_so_customer_name"]').val(data.custom_dn_so_customer_name || '');
+		// Changes(HP) #64: "Name (Buyer ID)"
+		alpinos.buyer_id.fill($main.find('[data-fieldname="custom_dn_so_customer_name"]'), data.custom_dn_so_customer_name || '', data.custom_sales_order_id);
 		$main.find('[data-fieldname="custom_transporter_name"]').val(data.custom_transporter_name || '');
 		$main.find('[data-fieldname="vehicle_no"]').val(data.vehicle_no || '');
 		$main.find('[data-fieldname="custom_dispatch_date"]').val(data.custom_dispatch_date_value || '');

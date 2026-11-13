@@ -843,8 +843,11 @@ var SalesOrderEntryView = class {
 		this.render_activity_trail();
 		this.render_previous_orders();
 
+		// Changes(HP) #64: "Name (Buyer ID)"
 		w.find('.v-customer-name').text(
-			this._has(p, 'customer_name') ? this._plain_text(p.customer_name) : '—'
+			this._has(p, 'customer_name')
+				? alpinos.buyer_id.label(this._plain_text(p.customer_name), p.custom_offline_buyer_master)
+				: '—'
 		);
 		w.find('.v-order-type').text(this._has(p, 'order_type') ? this._plain_text(p.order_type) : '—');
 		w.find('.v-site-name').text(

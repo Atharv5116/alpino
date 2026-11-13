@@ -2250,6 +2250,8 @@ def get_sales_order_entry_list(
 			["name", "like", like],
 			["customer", "like", like],
 			["customer_name", "like", like],
+			# Changes(HP) #64: the Buyer ID (Buyer Master) finds its orders too
+			["custom_offline_buyer_master", "like", like],
 		]
 
 	# #27 dedicated PO No. search (offline po_no OR e-com custom_po_number), applied as a
@@ -2291,13 +2293,14 @@ def get_sales_order_entry_list(
 		"custom_po_date",
 		"custom_delivery_by_date",
 		"owner",
+		"custom_offline_buyer_master",
 	]
 
 	# whitelist the sort column to keep it injection-safe; default newest first
 	_SORTABLE = {
 		"name", "customer_name", "transaction_date", "delivery_date",
 		"custom_dispatch_date", "custom_po_expiry_date", "custom_delivery_by_date",
-		"custom_po_date", "custom_po_number", "po_no", "custom_site_name",
+		"custom_po_date", "custom_po_number", "po_no", "custom_site_name", "custom_offline_buyer_master",
 		"grand_total", "status", "custom_workflow_status", "order_type",
 		"owner", "modified", "creation",
 	}

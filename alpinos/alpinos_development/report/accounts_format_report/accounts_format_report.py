@@ -485,6 +485,8 @@ def get_columns():
 		# Changes(HP) #89: kept as the two rightmost columns
 		col("Sales Order Submitted By", "so_submitted_by", 150),
 		col("Sales Order Submitted On", "so_submitted_on", 150, "Datetime"),
+		# Changes(HP) #64: the Buyer Master the order belongs to, at the far right
+		col("Buyer ID", "buyer_id", 130),
 	]
 	return cols
 
@@ -745,6 +747,7 @@ def _get_data(filters):
 			"gst_excl_flag": "Yes" if _gst_excl else "",
 			"so_submitted_by": frappe.utils.get_fullname(so.get("custom_submitted_by")) if so.get("custom_submitted_by") else "",
 			"so_submitted_on": so.get("custom_submitted_on"),
+			"buyer_id": so.get("custom_offline_buyer_master") or "",
 			# Less Qty / Less Qty Amount are computed per line in emit().
 			"less_qty": None,
 			"less_qty_amount": None,

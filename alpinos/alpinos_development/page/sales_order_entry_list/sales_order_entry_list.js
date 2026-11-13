@@ -76,6 +76,8 @@ var SO_LIST_LAYOUTS = {
 	sales: [
 		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
 		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
+		// Changes(HP) #64
+		{ label: 'Buyer ID', sort: 'custom_offline_buyer_master', width: 130, nowrap: true, render: (d, h) => h.esc(d.custom_offline_buyer_master || '—') },
 		{ label: 'Order Date', sort: 'transaction_date', width: 111, nowrap: true, render: (d, h) => h.date(d.transaction_date) },
 		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
 		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 140, render: (d, h) => h.wf(d) },
@@ -89,6 +91,8 @@ var SO_LIST_LAYOUTS = {
 		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
 		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
 		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
+		// Changes(HP) #64
+		{ label: 'Buyer ID', sort: 'custom_offline_buyer_master', width: 130, nowrap: true, render: (d, h) => h.esc(d.custom_offline_buyer_master || '—') },
 		{ label: 'Dispatch Date', sort: 'custom_dispatch_date', width: 111, nowrap: true, render: (d, h) => h.date(d.custom_dispatch_date) },
 		{ label: 'PO Exp Date', sort: 'custom_po_expiry_date', width: 111, nowrap: true, render: (d, h) => h.date(d.custom_po_expiry_date) },
 		{ label: 'Delivery Date', sort: 'delivery_date', width: 111, nowrap: true, render: (d, h) => h.date(d.delivery_date) },
@@ -457,7 +461,7 @@ var SalesOrderEntryListPage = class {
 			df: {
 				fieldtype: 'Data',
 				fieldname: 'search',
-				label: __('Search (ID, customer)'),
+				label: __('Search (ID, customer, Buyer ID)'),
 			},
 			parent: w.find('.fld-search'),
 			render_input: true,

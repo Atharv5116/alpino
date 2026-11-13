@@ -282,6 +282,8 @@ def get_delivery_note_list(
 	dispatch_from="",
 	dispatch_to="",
 	customer="",
+	sort_field="",
+	sort_dir="",
 ):
 	if not frappe.has_permission("Delivery Note", "read"):
 		frappe.throw(frappe._("You are not permitted to view Delivery Notes."), frappe.PermissionError)
@@ -352,6 +354,11 @@ def get_delivery_note_list(
 			_allowed_sos = [so for so in _allowed_sos if so in _so_ids]
 		filters["custom_sales_order_id"] = ["in", _allowed_sos or ["__no_match__"]]
 
+	from alpinos import list_page_tools as LT
+
+	# Changes(HP) #71: a Sales Officer sees the Delivery Notes of their assigned Buyers' orders
+	filters = LT.scope_to_assigned_buyers(filters)
+
 	or_filters = []
 	if search:
 		or_filters = [
@@ -359,6 +366,10 @@ def get_delivery_note_list(
 			["custom_dn_so_customer_name", "like", f"%{search}%"],
 			["customer_name", "like", f"%{search}%"],
 		]
+		# Changes(HP) #64: the Buyer ID finds its Delivery Notes too
+		_buyer_sos = LT.buyer_search_orders(search)
+		if _buyer_sos:
+			or_filters.append(["custom_sales_order_id", "in", _buyer_sos])
 
 	rows = frappe.get_all(
 		"Delivery Note",
@@ -380,7 +391,14 @@ def get_delivery_note_list(
 			"custom_assigned_to",
 			"custom_total_boxes",
 		],
-		order_by="creation desc",
+		# Changes(HP) #111: sorted and counted over every record, not the page on screen
+		order_by=LT.order_by(sort_field, sort_dir, {
+			"name": "name", "status": "docstatus", "custom_sales_order_id": "custom_sales_order_id",
+			"customer": "customer_name", "posting_date": "posting_date",
+			"custom_dispatch_date": "custom_dispatch_date", "company": "company",
+			"custom_transporter_name": "custom_transporter_name", "custom_lr_gr_no": "custom_lr_gr_no",
+			"custom_assigned_to": "custom_assigned_to", "custom_total_boxes": "custom_total_boxes",
+		}),
 		limit_start=start,
 		limit_page_length=page_length + 1,
 	)
@@ -388,6 +406,10 @@ def get_delivery_note_list(
 	has_more = len(rows) > page_length
 	if has_more:
 		rows = rows[:page_length]
+	_total = LT.total("Delivery Note", filters, or_filters)
+	_buyers = LT.buyer_ids([r.get("custom_sales_order_id") for r in rows])
+	for r in rows:
+		r["buyer_id"] = _buyers.get(r.get("custom_sales_order_id")) or ""
 
 	# Invoice No lives on the Sales Order (set after the DN is made); the DN's own
 	# copy is usually empty, so show the SO's live value.
@@ -417,6 +439,7 @@ def get_delivery_note_list(
 		"has_more": has_more,
 		"start": start,
 		"page_length": page_length,
+		"total": _total,
 	}
 
 

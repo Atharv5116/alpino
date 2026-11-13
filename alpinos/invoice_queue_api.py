@@ -189,6 +189,8 @@ COLUMNS = {
 	                   "select": "COALESCE(NULLIF(so.po_no, ''), NULLIF(so.custom_po_number, ''), '')",
 	                   "type": "Data"},
 	"customer_name":  {"label": "Customer",       "select": "so.customer_name",        "type": "Data"},
+	# Changes(HP) #64: the Buyer Master the order belongs to.
+	"buyer_id":       {"label": "Buyer ID",       "select": "so.custom_offline_buyer_master", "type": "Data"},
 	"pl_po_no":       {"label": "PL PO No.",      "select": "pl.pl_po_no",             "type": "Data"},
 	# The state the ORDER itself works on: its billing address, which is what decides
 	# IGST vs CGST/SGST (alpinos.sales_order_api._apply_tax_mode_from_billing). The
@@ -301,7 +303,7 @@ for _spec in COLUMNS.values():
 # away, exported, or sorted on.
 DEFAULT_COLUMNS = [
 	"channel", "order_date", "dispatch_date", "customer_type", "sales_order",
-	"customer_po_no", "customer_name", "pl_po_no", "state", "invoice_id",
+	"customer_po_no", "customer_name", "buyer_id", "pl_po_no", "state", "invoice_id",
 	"transporter", "lr_number", "so_amount", "invoice_amount", "amount_diff",
 	"total_ordered_qty", "undispatched", "total_box", "weight", "owner_name",
 ]
@@ -496,6 +498,8 @@ _FILTERS = {
 	"invoice_id":     ("so.custom_invoice_no LIKE %(invoice_id)s", "like"),
 	"lr_number":      ("dn.lr_no LIKE %(lr_number)s", "like"),
 	"customer":       ("so.customer = %(customer)s", "eq"),
+	# Changes(HP) #64
+	"buyer_id":       ("so.custom_offline_buyer_master LIKE %(buyer_id)s", "like"),
 	"customer_type":  ("so.order_type = %(customer_type)s", "eq"),
 	"state":          (f"{_STATE} = %(state)s", "eq"),
 	"order_date_from":    ("so.transaction_date >= %(order_date_from)s", "eq"),

@@ -169,6 +169,8 @@ var InvoiceDownloadQueue = class {
 		mk('.fld-customer-type', { fieldtype: 'Select', fieldname: 'customer_type', label: __('Customer Type'), options: '' });
 		mk('.fld-sales-order', { fieldtype: 'Data', fieldname: 'sales_order', label: __('Sales Order ID') });
 		mk('.fld-customer-po-no', { fieldtype: 'Data', fieldname: 'customer_po_no', label: __('Customer PO No.') });
+		// Changes(HP) #64
+		mk('.fld-buyer-id', { fieldtype: 'Data', fieldname: 'buyer_id', label: __('Buyer ID') });
 		mk('.fld-po-date', { fieldtype: 'Date', fieldname: 'po_date', label: __('PO Date') });
 		mk('.fld-invoice-id', { fieldtype: 'Data', fieldname: 'invoice_id', label: __('Invoice Number') });
 		mk('.fld-lr-number', { fieldtype: 'Data', fieldname: 'lr_number', label: __('LR No.') });

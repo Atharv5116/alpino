@@ -18,6 +18,7 @@ var PickListListPage = class {
 		this._last_meta = { has_more: 0 };
 		this._filter_fields = {};
 		this.so_filter = '';
+		this._sort = { field: '', dir: 'desc' };
 		this._suspend_auto = false;
 		this.setup_toolbar();
 		this.setup_filters();
@@ -218,7 +219,7 @@ var PickListListPage = class {
 			df: {
 				fieldtype: 'Data',
 				fieldname: 'search',
-				label: __('Search (ID, Customer)'),
+				label: __('Search (ID, Customer, Buyer ID)'),
 			},
 			parent: w.find('.fld-search'),
 			render_input: true,
@@ -307,15 +308,15 @@ var PickListListPage = class {
 			this._save_view_prefs();
 			this.load_list();
 		});
-		this.wrapper.find('.btn-pl-list-prev').on('click', () => {
-			this.start = Math.max(0, this.start - this.page_length);
+		// Changes(HP) #111: a header click sorts every record on the server, from page 1
+		this.wrapper.on('click', '.pl-sort-th', (e) => {
+			const field = $(e.currentTarget).data('sort');
+			if (!field) return;
+			this._sort = this._sort.field === field
+				? { field, dir: this._sort.dir === 'asc' ? 'desc' : 'asc' }
+				: { field, dir: 'asc' };
+			this.start = 0;
 			this.load_list();
-		});
-		this.wrapper.find('.btn-pl-list-next').on('click', () => {
-			if (this._last_meta.has_more) {
-				this.start += this.page_length;
-				this.load_list();
-			}
 		});
 		this.wrapper.on('click', '.pl-list-row', (e) => {
 			if ($(e.target).closest('a,button,input[type="checkbox"]').length) return;
@@ -398,7 +399,9 @@ var PickListListPage = class {
 			status: f.status.get_value() || '',
 			company: f.company.get_value() || '',
 			sales_order: (f.sales_order && f.sales_order.get_value()) || '',
-			delivery_note: (f.delivery_note && f.delivery_note.get_value()) || ''
+			delivery_note: (f.delivery_note && f.delivery_note.get_value()) || '',
+			sort_field: this._sort.field || '',
+			sort_dir: this._sort.dir || '',
 		};
 	}
 
@@ -422,6 +425,7 @@ var PickListListPage = class {
 					has_more: cint(msg.has_more),
 					start: cint(msg.start),
 					page_length: cint(msg.page_length),
+					total: cint(msg.total),
 				};
 				me.render_rows(msg.data || []);
 				me.update_pager();
@@ -433,7 +437,7 @@ var PickListListPage = class {
 		const tb = this.wrapper.find('.pl-list-table tbody').empty();
 		if (!rows.length) {
 			tb.append(
-				`<tr><td colspan="14" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
+				`<tr><td colspan="15" class="text-muted text-center">${__('No Pick Lists found')}</td></tr>`
 			);
 			return;
 		}
@@ -465,6 +469,7 @@ var PickListListPage = class {
 				<td><strong>${esc(d.name)}</strong></td>
 				<td>${d.custom_sales_order_id ? '<button type="button" class="btn btn-xs btn-default pl-so-link" data-so="' + esc(d.custom_sales_order_id) + '" title="' + __('Open Sales Order') + '">' + esc(d.custom_sales_order_id) + '</button>' : '—'}</td>
 				<td>${dash(d.custom_customer_name)}</td>
+				<td>${dash(d.buyer_id)}</td>
 				<td>${dash(d.custom_po_no)}</td>
 				<td>${only_date(d.custom_order_date)}</td>
 				<td>${only_date(d.custom_dispatch_date)}</td>
@@ -480,16 +485,20 @@ var PickListListPage = class {
 	}
 
 	update_pager() {
-		const n = this.wrapper.find('.pl-list-table tbody tr.pl-list-row').length;
-		if (!n) {
-			this.wrapper.find('.pl-list-count').text(__('No rows on this page'));
-		} else {
-			const from = this._last_meta.start + 1;
-			const to = this._last_meta.start + n;
-			this.wrapper.find('.pl-list-count').text(__('Showing {0}–{1}', [from, to]));
+		// Changes(HP) #111: total, page numbers, first / last, go to page
+		alpinos.pager.render(this.wrapper.find('.pl-pager'), {
+			start: this._last_meta.start,
+			page_length: this._last_meta.page_length || this.page_length,
+			total: this._last_meta.total,
+		}, (new_start) => {
+			this.start = new_start;
+			this.load_list();
+		});
+		this.wrapper.find('.pl-sort-th .pl-sort-mark').remove();
+		if (this._sort.field) {
+			this.wrapper.find(`.pl-sort-th[data-sort="${this._sort.field}"]`)
+				.append(`<span class="pl-sort-mark">${this._sort.dir === 'asc' ? '▲' : '▼'}</span>`);
 		}
-		this.wrapper.find('.btn-pl-list-prev').prop('disabled', this.start <= 0);
-		this.wrapper.find('.btn-pl-list-next').prop('disabled', !this._last_meta.has_more);
 	}
 
 	update_selection() {

@@ -67,7 +67,9 @@ _HTML = r"""
     </tr>
     <tr>
       <td class="lbl">PARTY NAME</td>
-      <td colspan="2" class="val">{{ doc.custom_customer_name or "" }}</td>
+      {#- Changes(HP) #64: the Buyer ID after the buyer's name -#}
+      {%- set _buyer_id = frappe.db.get_value("Sales Order", doc.custom_sales_order_id, "custom_offline_buyer_master") if doc.custom_sales_order_id else "" -%}
+      <td colspan="2" class="val">{{ doc.custom_customer_name or "" }}{% if _buyer_id %} ({{ _buyer_id }}){% endif %}</td>
       <td class="lbl">TOTAL BOX</td>
       <td class="val">{{ boxes(doc.custom_total_box) if doc.custom_total_box is not none else 0 }}</td>
     </tr>
