@@ -259,14 +259,20 @@ def sales_order_before_cancel(doc, method=None):
 
 
 def sales_order_on_submit(doc, method=None):
+	# Changes(HP) #108: an Only Invoice order skips the warehouse altogether
+	from alpinos.only_invoice import STATUS as ONLY_INVOICE
+
+	only_invoice = bool(doc.get("custom_only_invoice"))
 	# Submit always lands in Warehouse Approval Pending; the daily job moves it forward later.
-	doc.db_set("custom_workflow_status", SO_WAREHOUSE_PENDING, update_modified=False)
+	doc.db_set("custom_workflow_status", ONLY_INVOICE if only_invoice else SO_WAREHOUSE_PENDING, update_modified=False)
 	# Changes(HP) #89: the Accounts Format Report shows who submitted the order and when
 	if doc.meta.has_field("custom_submitted_by"):
 		doc.db_set(
 			{"custom_submitted_by": frappe.session.user, "custom_submitted_on": now_datetime()},
 			update_modified=False,
 		)
+	if only_invoice:
+		return  # nothing for the warehouse to approve or pick
 	from alpinos import so_notifications as son
 	_notify(lambda: son.n01_so_submitted(doc))
 

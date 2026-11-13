@@ -50,6 +50,7 @@ var SO_WF_COLORS = {
 	Completed: 'green',
 	Cancelled: 'red',
 	Rejected: 'red',
+	'Only Invoice': 'purple', // Changes(HP) #108
 };
 
 // Dim placeholder dashes and bare zeros so real figures read first — visual
@@ -536,6 +537,12 @@ var SalesOrderEntryListPage = class {
 			parent: w.find('.fld-au-damage-filter'),
 			render_input: true,
 		});
+		// Changes(HP) #108
+		this._filter_fields.only_invoice = frappe.ui.form.make_control({
+			df: { fieldtype: 'Select', fieldname: 'only_invoice', label: __('Only Invoice'), options: '\nYes\nNo' },
+			parent: w.find('.fld-only-invoice'),
+			render_input: true,
+		});
 		// reveals finished (Dispatched / Forced Dispatched / Completed / Forced Completed),
 		// Cancelled and Rejected orders (warehouse view) and all channels; default off
 		this._filter_fields.show_all = frappe.ui.form.make_control({
@@ -740,6 +747,7 @@ var SalesOrderEntryListPage = class {
 			from_date: f.from_date.get_value() || '',
 			to_date: f.to_date.get_value() || '',
 			additional_units_damage_filter,
+			only_invoice: (f.only_invoice && f.only_invoice.get_value()) || '',
 			show_all: f.show_all && f.show_all.get_value() ? 1 : 0,
 			sort_field: this._sort.field || '',
 			sort_dir: this._sort.dir || 'desc',

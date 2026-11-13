@@ -277,6 +277,7 @@ var SalesOrderEntryView = class {
 				'Forced Completed': 'red',
 				Cancelled: 'red',
 				Rejected: 'red',
+				'Only Invoice': 'purple', // Changes(HP) #108
 			};
 			if (status && me.page.set_indicator) {
 				me.page.set_indicator(status, colorMap[status] || 'gray');

@@ -108,6 +108,7 @@ var SalesOrderEntry = class {
 				if (me.po_expiry_field) me.po_expiry_field.set_value(d.po_expiry_date || '');
 				if (me.po_pdf_no_field) me.po_pdf_no_field.set_value(d.po_no_for_pdf || '');
 				if (me.rl_no_invoice_field) me.rl_no_invoice_field.set_value(cint(d.rl_no_invoice));
+				if (me.only_invoice_field) me.only_invoice_field.set_value(cint(d.only_invoice));
 				if (me.site_name_field && d.site_name) {
 					// keep the stored (possibly hand-edited) site name — auto-fill must not overwrite it
 					me.site_name_field.set_value(d.site_name);
@@ -603,6 +604,16 @@ var SalesOrderEntry = class {
 		this.rl_no_invoice_field = frappe.ui.form.make_control({
 			df: { fieldtype: 'Check', label: __('RL No Invoice'), fieldname: 'custom_rl_no_invoice' },
 			parent: header.find('.field-rl-no-invoice'),
+			render_input: true
+		});
+
+		// Changes(HP) #108: no Pick List / Delivery Note / stock; straight to the Accounts Format
+		this.only_invoice_field = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Check', label: __('Only Invoice'), fieldname: 'custom_only_invoice',
+				description: __('No Pick List or Delivery Note: invoiced from the Accounts Format Report once submitted.'),
+			},
+			parent: header.find('.field-only-invoice'),
 			render_input: true
 		});
 
@@ -2207,6 +2218,7 @@ var SalesOrderEntry = class {
 			po_expiry_date: me.po_expiry_field ? me.po_expiry_field.get_value() : '',
 			po_no_for_pdf: me.po_pdf_no_field ? me.po_pdf_no_field.get_value() : '',
 			rl_no_invoice: me.rl_no_invoice_field ? cint(me.rl_no_invoice_field.get_value()) : 0,
+			only_invoice: me.only_invoice_field ? cint(me.only_invoice_field.get_value()) : 0,
 			site_name: me.site_name_field ? me.site_name_field.get_value() : '',
 			from_quotation: me._from_quotation || '',
 			dispatch_date: me.dispatch_date_field ? me.dispatch_date_field.get_value() : '',
@@ -2340,6 +2352,7 @@ var SalesOrderEntry = class {
 		this.po_expiry_field && this.po_expiry_field.set_value('');
 		this.po_pdf_no_field && this.po_pdf_no_field.set_value('');
 		this.rl_no_invoice_field && this.rl_no_invoice_field.set_value(0);
+		this.only_invoice_field && this.only_invoice_field.set_value(0);
 		this._site_name_manual = false;
 		this._obm_site_name = '';
 		this.site_name_field && this.site_name_field.set_value('');

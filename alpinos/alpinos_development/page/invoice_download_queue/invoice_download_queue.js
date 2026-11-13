@@ -171,6 +171,14 @@ var InvoiceDownloadQueue = class {
 		mk('.fld-customer-po-no', { fieldtype: 'Data', fieldname: 'customer_po_no', label: __('Customer PO No.') });
 		// Changes(HP) #64
 		mk('.fld-buyer-id', { fieldtype: 'Data', fieldname: 'buyer_id', label: __('Buyer ID') });
+		// Changes(HP) #108: for the sales and e-com roles only (the server checks the same)
+		const _oi_roles = ['Sales Manager', 'Sales Admin', 'Sales User', 'Sales Officer',
+			'E-Commerce Manager', 'E-Commerce Admin', 'E-Commerce Coordinator'];
+		if (_oi_roles.some((r) => frappe.user.has_role(r))) {
+			mk('.fld-only-invoice', { fieldtype: 'Select', fieldname: 'only_invoice', label: __('Only Invoice'), options: '\nYes\nNo' });
+		} else {
+			this.wrapper.find('.fld-only-invoice').remove();
+		}
 		mk('.fld-po-date', { fieldtype: 'Date', fieldname: 'po_date', label: __('PO Date') });
 		mk('.fld-invoice-id', { fieldtype: 'Data', fieldname: 'invoice_id', label: __('Invoice Number') });
 		mk('.fld-lr-number', { fieldtype: 'Data', fieldname: 'lr_number', label: __('LR No.') });
