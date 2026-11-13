@@ -13,13 +13,19 @@
 		return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 	}
 
+	// Changes(HP) #104: rows are matched to their Item by name, not by position. Frappe 16 wraps
+	// the column header in a .list-row-container as well, so painting the n-th container with
+	// the n-th item's colour put every colour one row too high, on items that have none.
 	function apply_colors(listview) {
-		if (!listview || !listview.data) return;
-		const rows = listview.$result && listview.$result.find('.list-row-container');
-		if (!rows || !rows.length) return;
-		listview.data.forEach(function (doc, i) {
-			const bg = doc.custom_color ? hex_to_rgba(doc.custom_color, TINT_ALPHA) : '';
-			if (rows[i]) rows[i].style.background = bg;
+		if (!listview || !listview.data || !listview.$result) return;
+		const colors = {};
+		listview.data.forEach(function (doc) {
+			colors[doc.name] = doc.custom_color ? hex_to_rgba(doc.custom_color, TINT_ALPHA) : '';
+		});
+		listview.$result.find('.list-row-container').each(function () {
+			const $named = $(this).find('.list-row [data-name]').first();
+			const name = $named.attr('data-name');
+			this.style.background = name && colors[name] ? colors[name] : '';
 		});
 	}
 
