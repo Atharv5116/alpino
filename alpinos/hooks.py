@@ -42,6 +42,8 @@ app_include_js = [
 	# Frappe 16 control changes that break page and dialog fields (typed dates wiped, saved
 	# link values blanked); restores Frappe 15 behaviour for those controls. See the file.
 	"/assets/alpinos/js/alpinos_page_controls.js",
+	# Changes(HP) #105: bulk Reject / Cancel on the Sales Order lists (System Manager).
+	"/assets/alpinos/js/so_bulk_actions.js",
 	"/assets/alpinos/js/sales_order_hub_desk_v3.js",
 	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
 	# the hard-coded item_row_colors.js; its reports became a default configuration).
