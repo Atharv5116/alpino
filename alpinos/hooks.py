@@ -64,6 +64,8 @@ app_include_js = [
 	_asset("js/alpinos_page_controls.js"),
 	# Offline Sales: the Activity / Audit Trail panel and the Create New Buyer modal.
 	_asset("js/offline_sales.js"),
+	# Changes(HP) #105: bulk Reject / Cancel on the Sales Order lists (System Manager).
+	_asset("js/so_bulk_actions.js"),
 	_asset("js/sales_order_hub_desk_v3.js"),
 	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
 	# the hard-coded item_row_colors.js; its reports became a default configuration).

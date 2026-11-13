@@ -104,6 +104,15 @@ var EcomSalesOrderListPage = class {
 			}, __('Import'));
 			this.page.add_inner_button(__('Import Excel'), () => this.open_import_dialog(), __('Import'));
 		}
+		// Changes(HP) #105: bulk Reject / Cancel for the Admin (BA team)
+		if (window.alpinos && alpinos.so_bulk && alpinos.so_bulk.allowed()) {
+			this.btn_bulk_reject = this.page.add_inner_button(__('Reject Orders'), () =>
+				alpinos.so_bulk.run('reject', this._selected_names(), () => this.load_list()), __('Bulk')
+			);
+			this.btn_bulk_cancel = this.page.add_inner_button(__('Cancel Orders'), () =>
+				alpinos.so_bulk.run('cancel', this._selected_names(), () => this.load_list()), __('Bulk')
+			);
+		}
 		this.btn_export_invoices = this.page.add_inner_button(__('Export Invoices'), () =>
 			this.export_selected_invoices()
 		);
