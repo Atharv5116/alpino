@@ -392,6 +392,8 @@ after_migrate = [
 	"alpinos.afr_export.setup",
 	# Goods Return (FSD Document 1): roles and permissions, inside the perm_seed window.
 	"alpinos.goods_return.setup.execute",
+	# Read-only Stock / Accounts Settings for the roles whose screens read them; import pages' roles.
+	"alpinos.settings_read_access.setup",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",

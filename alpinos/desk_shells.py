@@ -57,6 +57,14 @@ _PAGE_NEEDS_READ = {
 	"stock-reconciliation-import": "Stock Reconciliation",
 }
 
+# The import shortcuts open a Data Import for the document: listed only for someone who may
+# create both (a Warehouse Admin without either got "Not permitted to create Data Import").
+_PAGE_NEEDS_IMPORT = {
+	"sales-order-import": "Sales Order",
+	"stock-entry-import": "Stock Entry",
+	"stock-reconciliation-import": "Stock Reconciliation",
+}
+
 # Report views are URL items, which Frappe 16 shows to everyone; listed only for readers too.
 _URL_NEEDS_READ = {
 	"/desk/sales-order/view/report": "Sales Order",
@@ -112,6 +120,10 @@ def _item_allowed(shell, item, roles):
 		if target in _URL_NEEDS_READ and not frappe.has_permission(_URL_NEEDS_READ[target], "read"):
 			return False
 	if link_type == "Page" and target in _PAGE_NEEDS_READ and not frappe.has_permission(_PAGE_NEEDS_READ[target], "read"):
+		return False
+	if link_type == "Page" and target in _PAGE_NEEDS_IMPORT and not (
+		frappe.has_permission("Data Import", "create") and frappe.has_permission(_PAGE_NEEDS_IMPORT[target], "create")
+	):
 		return False
 	allowed = _ITEM_ROLES.get((shell, target))
 	return not allowed or _SEES_ALL in roles or bool(roles.intersection(allowed))

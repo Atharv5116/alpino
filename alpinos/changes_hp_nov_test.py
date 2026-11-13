@@ -126,6 +126,7 @@ def _run():
 	_only_invoice()
 	_accounts_view()
 	_daily_report()
+	_no_error_screens()
 
 
 def _settings_read():
@@ -613,3 +614,44 @@ def _daily_report():
 		frappe.response.pop("filecontent", None)
 
 	check("#107 Excel export: a sheet per Customer Type in the template layout", _export)
+
+
+def _no_error_screens():
+	"""The page sweep of 13 Nov: screens that showed a red permission message to real roles."""
+	from collections import defaultdict
+
+	from frappe.boot import get_bootinfo
+
+	from alpinos import settings_read_access as S
+
+	wa = _person("swa", "Warehouse Admin", "Employee")
+	acc = _person("sacc", "Accounts User", "Employee")
+	mix = _person("smix", "Sales Manager", "Warehouse Admin")  # Data Import from one role, Stock Entry from the other
+	frappe.clear_cache()
+
+	def _settings():
+		_assert(not any(S.plan().values()), f"settings rows still missing: {S.plan()}")
+		_assert(frappe.has_permission("Stock Settings", "read", user=wa.user), "Warehouse Admin cannot read Stock Settings")
+		_assert(frappe.has_permission("Accounts Settings", "read", user=acc.user), "Accounts User cannot read Accounts Settings")
+		_assert(not frappe.has_permission("Stock Settings", "write", user=wa.user), "the grant is read only")
+
+	check("sweep: Stock Entry / Chart of Accounts read their settings without a permission message", _settings)
+
+	def _import_pages(user):
+		frappe.set_user(user)
+		frappe.local.request_cache = defaultdict(dict)
+		try:
+			bi = get_bootinfo()
+			for hook in frappe.get_hooks("extend_bootinfo"):
+				frappe.get_attr(hook)(bootinfo=bi)
+			return {i.get("link_to") for sb in (bi.get("module_sidebars") or {}).values() for i in sb.get("items") or []
+				if i.get("link_type") == "Page" and "import" in (i.get("link_to") or "")}
+		finally:
+			frappe.set_user("Administrator")
+
+	def _imports():
+		_assert(not _import_pages(wa.user), "a Warehouse Admin who cannot import is offered the import pages")
+		got = _import_pages(mix.user)
+		_assert({"stock-entry-import", "stock-reconciliation-import"} <= got, f"someone who can import lost the link: {got}")
+
+	check("sweep: import links only for someone who may import (no 'Not permitted to create Data Import')", _imports)
