@@ -247,7 +247,35 @@ _INVOICE_AMOUNT = (
 	"NULLIF(ROUND(dnv.ordered_value * so.grand_total / NULLIF(so.net_total, 0), 2), 0),"
 	" NULLIF(so.custom_total_invoice_value, 0), 0)"
 )
-_STATE = "COALESCE(NULLIF(baddr.state, ''), NULLIF(addr.state, ''))"
+# Changes(HP) #101: the order's state is the one its own billing details carry. An order of a
+# multi-site buyer is billed to its SITE (custom_billing_address_text and Billing GSTIN, e.g.
+# Mumbai M12 = Maharashtra), while customer_address is often the buyer's main address
+# (Bengaluru = Karnataka): SOR-2627-04137 showed Karnataka for a Maharashtra order, and about
+# half the orders on the live copy (to 20 Oct 2026) had the two disagreeing. So: the state of
+# the Billing GSTIN, else the state of the order's site, else the linked addresses as before.
+_GST_STATE_NAMES = {
+	"01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh",
+	"05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh",
+	"10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur",
+	"15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal",
+	"20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
+	"25": "Dadra and Nagar Haveli and Daman and Diu", "26": "Dadra and Nagar Haveli and Daman and Diu",
+	"27": "Maharashtra", "28": "Andhra Pradesh", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep",
+	"32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman and Nicobar Islands",
+	"36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh",
+}
+_GSTIN_STATE = (
+	"(CASE LEFT(TRIM(IFNULL(so.custom_billing_gstin, '')), 2) "
+	+ " ".join(f"WHEN '{code}' THEN '{name}'" for code, name in _GST_STATE_NAMES.items())
+	+ " ELSE NULL END)"
+)
+_SITE_STATE = (
+	"(SELECT NULLIF(ba.state, '') FROM `tabBuyer Address` ba"
+	" WHERE ba.parenttype = 'Buyer Master' AND IFNULL(so.custom_site_name, '') <> ''"
+	" AND ba.site_name = so.custom_site_name AND IFNULL(ba.state, '') <> ''"
+	" ORDER BY (ba.parent = so.custom_offline_buyer_master) DESC, ba.is_primary DESC LIMIT 1)"
+)
+_STATE = f"COALESCE({_GSTIN_STATE}, {_SITE_STATE}, NULLIF(baddr.state, ''), NULLIF(addr.state, ''))"
 _FY_DATE = "COALESCE(so.custom_dispatch_date, so.transaction_date)"
 _FY_START = f"(YEAR({_FY_DATE}) - IF(MONTH({_FY_DATE}) < 4, 1, 0))"
 # The stored number without a file extension some orders carry ("6057.pdf"), Changes(HP) #42.3.
