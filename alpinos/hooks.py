@@ -70,6 +70,8 @@ app_include_js = [
 	_asset("js/alpinos_pager.js"),
 	# Changes(HP) #64: "Name (Buyer ID)" on the Pick List / Delivery Note / Sales Order screens.
 	_asset("js/buyer_id.js"),
+	# Changes(HP) #71: read-only users see Pick List / Delivery Note pages in view-only mode.
+	_asset("js/alpinos_view_only.js"),
 	_asset("js/sales_order_hub_desk_v3.js"),
 	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
 	# the hard-coded item_row_colors.js; its reports became a default configuration).

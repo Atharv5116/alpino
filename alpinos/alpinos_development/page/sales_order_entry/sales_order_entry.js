@@ -30,7 +30,11 @@ var SalesOrderEntry = class {
 
 	setup() {
 		this.default_company = this._get_default_company();
+		// Changes(HP) #72 / #73: what a Sales Officer sees differs (see _officer_layout)
+		this._officer = frappe.user.has_role('Sales Officer')
+			&& !['Sales Manager', 'Sales Admin', 'System Manager'].some((r) => frappe.user.has_role(r));
 		this.make_header_fields();
+		this._officer_layout();
 		this.make_item_table();
 		this.make_other_details();
 		this.make_totals();
@@ -2055,11 +2059,42 @@ var SalesOrderEntry = class {
 		});
 	}
 
+	/** Changes(HP) #72: a Sales Officer does not see PO & Dispatch, only the Dispatch Date.
+	 * Changes(HP) #73: the Billing / Shipping Address fields get a clear button that empties
+	 * the field and opens its list straight away. */
+	_officer_layout() {
+		if (!this._officer) return;
+		const header = this.wrapper.find('.so-header');
+		header.find('.so-po-dispatch-title').text(__('Dispatch'));
+		['.field-customer-po', '.field-po-expiry', '.field-po-pdf-no', '.field-delivery-date', '.field-rl-no-invoice']
+			.forEach((sel) => header.find(sel).hide());
+		[this.billing_address_field, this.shipping_address_field].forEach((field) => {
+			if (!field || !field.$input) return;
+			const $wrap = field.$input.parent();
+			$wrap.css('position', 'relative');
+			field.$input.css('padding-right', '28px');
+			$(`<button type="button" class="btn btn-link btn-xs so-address-clear" title="${__('Clear and choose another address')}"
+					style="position:absolute; right:4px; top:50%; transform:translateY(-50%); padding:0 6px; font-size:16px; line-height:1; color: var(--text-muted);">&times;</button>`)
+				.appendTo($wrap)
+				.on('click', (e) => {
+					e.preventDefault();
+					field.set_value('');
+					field.$input.val('').trigger('input').focus();
+					if (field.awesomplete) {
+						field.awesomplete.evaluate && field.awesomplete.evaluate();
+						field.awesomplete.open && field.awesomplete.open();
+					}
+				});
+		});
+	}
+
 	create_sales_order() {
 		let me = this;
 		let customer = this.customer_field.get_value();
 		let order_type = this.order_type_field.get_value();
-		let delivery_date = this.delivery_date_field.get_value();
+		// Changes(HP) #72: a Sales Officer does not see Delivery Date; it follows the Dispatch Date
+		let delivery_date = this.delivery_date_field.get_value()
+			|| (this._officer ? this.dispatch_date_field.get_value() : '');
 		let billing_address = me._get_actual_address(this.billing_address_field);
 		let shipping_address = me._get_actual_address(this.shipping_address_field);
 

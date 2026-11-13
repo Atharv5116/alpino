@@ -42,6 +42,13 @@ var SalesOrderEntryView = class {
 		// idempotent — clear existing buttons/menu first so the action bar never accumulates duplicates
 		this.page.clear_inner_toolbar && this.page.clear_inner_toolbar();
 		this.page.clear_menu && this.page.clear_menu();
+		// Changes(HP) #68: a Sales Officer gets five plain buttons and nothing else
+		this._officer = frappe.user.has_role('Sales Officer')
+			&& !['Sales Manager', 'Sales Admin', 'System Manager'].some((r) => frappe.user.has_role(r));
+		if (this._officer) {
+			this.setup_officer_toolbar();
+			return;
+		}
 		this.page.add_menu_item(__('Print'), () => this.open_default_print_preview());
 		this.page.add_menu_item(__('Download PDF'), () => this.download_default_print_pdf());
 		// E-com orders -> e-com list
@@ -99,39 +106,7 @@ var SalesOrderEntryView = class {
 		}
 		// submitted orders only; server blocks with the linked Pick List / Delivery Note ID while active
 		// Changes(HP) #100: a cancellation needs a reason, kept on the order (the server refuses a blank one)
-		this.btn_cancel_so = this.page.add_inner_button(__('Cancel Order'), () => {
-			const me = this;
-			const d = new frappe.ui.Dialog({
-				title: __('Cancel Sales Order {0}', [me._so_name]),
-				fields: [{
-					fieldtype: 'Small Text',
-					fieldname: 'reason',
-					label: __('Reason for Cancellation'),
-					reqd: 1,
-				}],
-				primary_action_label: __('Cancel Order'),
-				primary_action(values) {
-					const reason = (values.reason || '').trim();
-					if (!reason) {
-						frappe.msgprint(__('Please enter a reason for cancellation.'));
-						return;
-					}
-					d.hide();
-					frappe.call({
-						method: 'alpinos.workflow_engine.cancel_document',
-						args: { doctype: 'Sales Order', name: me._so_name, reason: reason },
-						freeze: true,
-						freeze_message: __('Cancelling...'),
-						callback: (r) => {
-							if (r.exc) return;
-							frappe.show_alert({ message: __('Sales Order cancelled'), indicator: 'red' });
-							me.load_order(me._so_name);
-						}
-					});
-				},
-			});
-			d.show();
-		}, __('Order'));
+		this.btn_cancel_so = this.page.add_inner_button(__('Cancel Order'), () => this.cancel_order_dialog(), __('Order'));
 		if (this.btn_cancel_so) this.btn_cancel_so.hide();
 		// Warehouse Admin/Manager only, early stages before a Pick List is submitted
 		// Changes(HP) #21: a rejection needs a reason, which is kept on the order.
@@ -183,6 +158,64 @@ var SalesOrderEntryView = class {
 		if (this.btn_force_close) this.btn_force_close.hide();
 	}
 
+	/** Changes(HP) #68: Download Sales Order, Edit, Duplicate, Sales Order List, Cancel (red). */
+	setup_officer_toolbar() {
+		const goToList = () => frappe.set_route(
+			this._channel === 'E-com' ? 'ecom-sales-order-entry-list' : 'sales-order-entry-list'
+		);
+		this.page.add_menu_item(__('Print'), () => this.open_default_print_preview());
+		this.page.add_inner_button(__('Download Sales Order'), () => this.download_default_print_pdf());
+		this.btn_edit_so = this.page.add_inner_button(__('Edit'), () => {
+			frappe.route_options = { edit_so: this._so_name };
+			frappe.set_route('sales-order-entry');
+		});
+		if (this.btn_edit_so) this.btn_edit_so.hide();
+		this.page.add_inner_button(__('Duplicate'), () => {
+			frappe.route_options = { duplicate_so: this._so_name };
+			frappe.set_route('sales-order-entry');
+		});
+		this.page.add_inner_button(__('Sales Order List'), goToList);
+		this.btn_cancel_so = this.page.add_inner_button(__('Cancel Sales Order'), () => this.cancel_order_dialog());
+		if (this.btn_cancel_so) {
+			this.btn_cancel_so.removeClass('btn-default btn-secondary').addClass('btn-danger');
+			this.btn_cancel_so.hide();
+		}
+	}
+
+	/** Changes(HP) #67 / #100: a Draft is cancelled with the draft cancel, a submitted order
+	 * with cancel_document; both need a reason. The server decides who may. */
+	cancel_order_dialog() {
+		const me = this;
+		const draft = cint(me._docstatus) === 0;
+		const d = new frappe.ui.Dialog({
+			title: __('Cancel Sales Order {0}', [me._so_name]),
+			fields: [{ fieldtype: 'Small Text', fieldname: 'reason', label: __('Reason for Cancellation'), reqd: 1 }],
+			primary_action_label: __('Cancel Order'),
+			primary_action(values) {
+				const reason = (values.reason || '').trim();
+				if (!reason) {
+					frappe.msgprint(__('Please enter a reason for cancellation.'));
+					return;
+				}
+				d.hide();
+				frappe.call({
+					method: draft ? 'alpinos.sales_order_actions.cancel_draft_sales_order' : 'alpinos.workflow_engine.cancel_document',
+					args: draft
+						? { sales_order: me._so_name, reason: reason }
+						: { doctype: 'Sales Order', name: me._so_name, reason: reason },
+					freeze: true,
+					freeze_message: __('Cancelling...'),
+					callback: (r) => {
+						if (r.exc) return;
+						frappe.show_alert({ message: __('Sales Order cancelled'), indicator: 'red' });
+						me.load_order(me._so_name);
+					},
+				});
+			},
+		});
+		d.show();
+	}
+
 	_has_any_role(roles) {
 		const mine = frappe.user_roles || [];
 		return roles.some((r) => mine.includes(r));
@@ -213,9 +246,14 @@ var SalesOrderEntryView = class {
 				if (docstatus === 0 && status !== 'Cancelled') me.btn_edit_so.show();
 				else me.btn_edit_so.hide();
 			}
+			me._docstatus = docstatus;
 			if (me.btn_cancel_so) {
 				const can_cancel = frappe.model.can_cancel && frappe.model.can_cancel('Sales Order');
-				if (docstatus === 1 && status !== 'Cancelled' && can_cancel) me.btn_cancel_so.show();
+				// Changes(HP) #67: a Draft can be cancelled too (assigned Sales Officer, the Buyer's
+				// POCs, managers; the server decides)
+				const draft_ok = docstatus === 0 && status !== 'Cancelled' && frappe.model.can_write('Sales Order');
+				const submitted_ok = docstatus === 1 && status !== 'Cancelled' && can_cancel && !me._officer;
+				if (draft_ok || submitted_ok) me.btn_cancel_so.show();
 				else me.btn_cancel_so.hide();
 			}
 			const colorMap = {

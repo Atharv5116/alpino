@@ -13,6 +13,7 @@ def execute():
 	from alpinos.offline_sales import roles
 
 	roles.setup_permissions()
+	roles.setup_page_roles()
 	seed_settings()
 	backfill_quotation_buyers()
 	frappe.db.commit()

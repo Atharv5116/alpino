@@ -49,3 +49,31 @@ def setup_permissions():
 				_grant(doctype, role, level)
 		validate_permissions_for_doctype(doctype)
 		frappe.clear_cache(doctype=doctype)
+
+
+#: Pages a Sales Officer works in. Changes(HP) #66 / #68 / #70: the Sales Order entry, list and
+#: view pages (the 3 Oct amendment gave the role Sales Order rights, but the pages themselves
+#: never listed it, so the screens refused it), and the Order Fulfilment Report. The Pick List
+#: and Delivery Note pages list no roles at all, so they are open to every desk user already.
+PAGE_ROLES = {
+	"sales-order-entry": (SALES_OFFICER,),
+	"sales-order-entry-list": (SALES_OFFICER,),
+	"sales-order-entry-view": (SALES_OFFICER,),
+	"invoice-download-queue": (SALES_OFFICER,),
+}
+
+
+def setup_page_roles():
+	"""Add the role to the page once; seeded by company_scope.perm_seed like any new row."""
+	for page, page_roles in PAGE_ROLES.items():
+		if not frappe.db.exists("Page", page):
+			continue
+		have = set(frappe.get_all("Has Role", filters={"parent": page, "parenttype": "Page"}, pluck="role"))
+		if not have:
+			continue  # a page with no roles is open to everyone; adding one would close it
+		for role in page_roles:
+			if role not in have and frappe.db.exists("Role", role):
+				frappe.get_doc(
+					{"doctype": "Has Role", "parent": page, "parenttype": "Page", "parentfield": "roles", "role": role}
+				).db_insert()
+		frappe.clear_cache()

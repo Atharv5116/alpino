@@ -1008,6 +1008,13 @@ frappe.pages['pick_list_entry'].on_page_load = function(wrapper) {
 			page.main.find('[data-fieldname="custom_total_box"]').val(flt(_actual + _stored_sample, 2));
 		}
 	};
+	// Changes(HP) #71: someone who may only read a Pick List (a Sales Officer) sees it view-only
+	const _render_data_full = page.render_data;
+	page.render_data = function(data) {
+		const out = _render_data_full.apply(this, arguments);
+		alpinos.view_only.apply(page, 'Pick List', { keep: ['#btn-print-packing', '#btn-go-to-list'] });
+		return out;
+	};
 	
 	/** The row's Batch / MRP, flagged red when its MRP is not the order line's. */
 	page.paint_lot = function (tr) {

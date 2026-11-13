@@ -201,6 +201,13 @@ frappe.pages['delivery_note_entry'].on_page_load = function(wrapper) {
 
 		page.apply_mode();
 	};
+	// Changes(HP) #71: someone who may only read a Delivery Note (a Sales Officer) sees it view-only
+	const _render_data_full = page.render_data;
+	page.render_data = function(data) {
+		const out = _render_data_full.apply(this, arguments);
+		alpinos.view_only.apply(page, 'Delivery Note', { keep: ['#btn-dn-print', '#btn-dn-list', '#btn-dn-back'] });
+		return out;
+	};
 
 	page.render_dispatch_to = function(rows) {
 		var $wrap = page.main.find('#dn-dispatch-to-rows').empty();

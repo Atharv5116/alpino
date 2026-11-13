@@ -543,6 +543,15 @@ def _build(filters, columns, sort_field, sort_dir):
 	params.update(chan_params)
 	# Only the companies the user works in (the active one, or all of theirs in All mode).
 	conditions.append("1 = 1" + company_sql(DOCTYPE, "so"))
+	# Changes(HP) #70: a Sales Officer sees the orders of their assigned Buyers only (the same
+	# rule as the Sales Order list, alpinos.buyer_assignment_visibility)
+	from alpinos import buyer_assignment_visibility as _V
+
+	if _V.is_assignment_scoped():
+		_employee = _V._employee_for(frappe.session.user)
+		conditions.append(
+			f"so.custom_offline_buyer_master IN ({_V._assigned_buyers_sql(_employee)})" if _employee else "1 = 0"
+		)
 
 	for key, spec in _FILTERS.items():
 		if not spec:

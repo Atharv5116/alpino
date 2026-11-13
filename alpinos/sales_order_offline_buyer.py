@@ -10,7 +10,7 @@ from frappe.utils import cint, flt
 from alpinos.company_scope.helpers import tagged_condition, tagged_names
 
 
-def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None, parents_only=False):
+def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=None, parents_only=False, only_buyers=None):
 	"""Customers that have a row in Buyer Master (same pool for Sales Order + Catalog).
 
 	channel: "Offline" -> offline + legacy(blank) buyers, "E-com" -> e-com buyers only,
@@ -41,6 +41,12 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		parent_clause = "AND (IFNULL(m.is_parent, 0) = 1 OR IFNULL(m.parent_buyer, '') = '')"
 	else:
 		parent_clause = "AND IFNULL(m.is_parent, 0) = 0"
+	# Changes(HP) #65: a Sales Officer picks only from their assigned Buyers (a list of Buyer
+	# Master names; None = no narrowing)
+	buyers_clause = ""
+	if only_buyers is not None:
+		buyers_clause = "AND m.name IN %(only_buyers)s"
+		params["only_buyers"] = tuple(only_buyers) or ("__none__",)
 	channel_clause = ""
 	if channel == "Offline":
 		channel_clause = "AND (IFNULL(m.channel, '') = '' OR m.channel = 'Offline')"
@@ -60,6 +66,7 @@ def _customers_with_offline_buyer_master_query(txt, start, page_len, channel=Non
 		WHERE IFNULL(c.disabled, 0) = 0
 			{parent_clause}
 			{channel_clause}
+			{buyers_clause}
 			{tagged_condition("Customer", "c")}
 			{tagged_condition("Buyer Master", "m")}
 			AND (c.name LIKE %(txt)s OR c.customer_name LIKE %(txt)s OR m.gst_no LIKE %(txt)s
@@ -81,8 +88,28 @@ def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filte
 	Only parents show; the Site Name dropdown then narrows to a child site and its
 	addresses. GST follows the chosen billing address, so anchoring on the parent
 	stays tax-correct."""
-	rows = _customers_with_offline_buyer_master_query(txt, start, page_len, channel="Offline", parents_only=True)
+	rows = _customers_with_offline_buyer_master_query(
+		txt, start, page_len, channel="Offline", parents_only=True, only_buyers=_assigned_roots()
+	)
 	return _label_buyers_not_ready(rows)
+
+
+def _assigned_roots():
+	"""The family roots (what this picker lists) of the Buyers assigned to a scoped user."""
+	from alpinos import buyer_assignment_visibility as V
+
+	if not V.is_assignment_scoped():
+		return None
+	employee = V._employee_for(frappe.session.user)
+	buyers = V._assigned_buyer_names(employee) if employee else set()
+	if not buyers:
+		return []
+	roots = set()
+	for row in frappe.get_all(
+		"Buyer Master", filters={"name": ("in", list(buyers))}, fields=["name", "parent_buyer"]
+	):
+		roots.add(row.parent_buyer or row.name)
+	return sorted(roots)
 
 
 def _label_buyers_not_ready(rows):
