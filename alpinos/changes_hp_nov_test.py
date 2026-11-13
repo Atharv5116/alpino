@@ -405,6 +405,23 @@ def _switcher():
 
 	check("#114 / #115 the switcher gets each company's colour and logo", _looks)
 
+	def _missing_file():
+		import os
+
+		company = frappe.db.get_value("Company", {}, "name")
+		gone = "/private/files/alpinos-test-missing-logo.png"
+		_assert(not os.path.exists(frappe.get_site_path("private", "files", "alpinos-test-missing-logo.png")))
+		frappe.db.set_value("Company", company, "company_logo", gone, update_modified=False)
+		_assert(api._company_looks([company])[company]["logo"] is None, "a logo whose file is gone is not offered")
+		frappe.set_user("Administrator")
+		try:
+			api.company_logo(company)
+			_assert(False, "company_logo answered for a missing file")
+		except frappe.DoesNotExistError:
+			pass  # 404, not a server error
+
+	check("#115 a Company Logo whose file is missing keeps the app logo (no error)", _missing_file)
+
 
 def _item_row(parent, item_code, qty, idx=1):
 	return _insert("Sales Order Item", name=f"{parent}-I{idx}", parent=parent, parenttype="Sales Order", parentfield="items",

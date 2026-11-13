@@ -2,6 +2,8 @@
 Access Manager page."""
 
 import json
+import os
+from urllib.parse import unquote
 
 import frappe
 from frappe import _
@@ -57,11 +59,28 @@ def _company_looks(companies):
 		fields.append("custom_switcher_color")
 	out = {}
 	for row in frappe.get_all("Company", filters={"name": ("in", list(companies))}, fields=fields):
-		logo = row.get("company_logo")
+		logo = row.get("company_logo") if _logo_on_disk(row.get("company_logo")) else None
 		if logo and logo.startswith("/private/"):
 			logo = "/api/method/alpinos.company_scope.api.company_logo?" + frappe.utils.urlencode({"company": row.name})
 		out[row.name] = {"color": row.get("custom_switcher_color"), "logo": logo or None}
 	return out
+
+
+def _logo_on_disk(url):
+	"""A Company Logo is offered only when its file is really there: a record whose file is gone
+	(uploaded elsewhere, a restored copy without files) would show a broken image on every page."""
+	if not url:
+		return False
+	if url.startswith(("http://", "https://")):
+		return True
+	path = url.split("?", 1)[0]
+	if path.startswith("/private/files/"):
+		local = frappe.get_site_path("private", "files", path[len("/private/files/"):])
+	elif path.startswith("/files/"):
+		local = frappe.get_site_path("public", "files", path[len("/files/"):])
+	else:
+		return False
+	return os.path.isfile(unquote(local))
 
 
 @frappe.whitelist()
@@ -71,9 +90,11 @@ def company_logo(company: str):
 	if not (exempt_user(user) or company in (access.member_companies(user) or [])):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 	url = frappe.db.get_value("Company", company, "company_logo")
-	if not url:
+	file_name = url and frappe.db.get_value("File", {"file_url": url}, "name")
+	if not file_name or not _logo_on_disk(url):
+		# no logo, or its file is gone: the desk keeps the app logo (404, not a server error)
 		raise frappe.DoesNotExistError
-	file = frappe.get_doc("File", {"file_url": url})
+	file = frappe.get_doc("File", file_name)
 	frappe.response.filename = file.file_name
 	frappe.response.filecontent = file.get_content()
 	frappe.response.type = "binary"

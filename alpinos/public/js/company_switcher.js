@@ -25,7 +25,12 @@ frappe.provide("alpinos.company");
 		const out = app_logo.call(this, app);
 		const logo = alpinos.company && alpinos.company.logo && alpinos.company.logo();
 		if (out && logo) {
-			out.icon = `<img src="${frappe.utils.escape_html(logo)}" alt="${frappe.utils.escape_html(out.title || "")}" />`;
+			// if the company's image cannot be loaded, fall back to the app's own logo
+			const own = app && (Array.isArray(app.app_logo_url) ? app.app_logo_url[0] : app.app_logo_url);
+			const fallback = own
+				? `this.onerror=null;this.src=${frappe.utils.escape_html(JSON.stringify(own))}`
+				: "this.onerror=null;this.style.visibility='hidden'";
+			out.icon = `<img src="${frappe.utils.escape_html(logo)}" alt="${frappe.utils.escape_html(out.title || "")}" onerror="${fallback}" />`;
 		}
 		return out;
 	};
