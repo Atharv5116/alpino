@@ -123,6 +123,9 @@ def _run():
 	_afr_export()
 	_restore()
 	_switcher()
+	_only_invoice()
+	_accounts_view()
+	_daily_report()
 
 
 def _settings_read():
@@ -146,6 +149,7 @@ def _so(name, **values):
 	base = dict(name=name, company=F.company, customer=frappe.db.get_value("Buyer Master", F.mine, "customer"),
 		customer_name=f"{TAG} Mine", custom_offline_buyer_master=F.mine, transaction_date=today(),
 		custom_channel="Offline", docstatus=0, custom_workflow_status="Draft", currency="INR", conversion_rate=1,
+		custom_rl_no_invoice=0, custom_only_invoice=0,
 		selling_price_list="Standard Selling", plc_conversion_rate=1)
 	base.update(values)
 	return _insert("Sales Order", **base)
@@ -400,3 +404,195 @@ def _switcher():
 		_assert(not logo or logo.startswith("/files/") or "company_logo" in logo, logo)
 
 	check("#114 / #115 the switcher gets each company's colour and logo", _looks)
+
+
+def _item_row(parent, item_code, qty, idx=1):
+	return _insert("Sales Order Item", name=f"{parent}-I{idx}", parent=parent, parenttype="Sales Order", parentfield="items",
+		idx=idx, item_code=item_code, item_name=item_code, qty=qty, stock_qty=qty, rate=100, amount=100 * qty,
+		custom_customer_mrp=120, custom_selling_price=100, custom_gst_percent=0, uom="Nos", conversion_factor=1)
+
+
+def _only_invoice():
+	from alpinos import only_invoice as OI
+	from alpinos import sales_order_api
+	from alpinos.workflow_engine import sales_order_on_submit
+
+	item = frappe.db.get_value("Item", {"disabled": 0, "is_stock_item": 1}, "name")
+	so = _so(f"{TAG}-SO-OI", docstatus=1, custom_only_invoice=1, custom_dispatch_date=today(), order_type="Modern Trade",
+		custom_invoice_no="5555")
+	_item_row(so, item, 5)
+	F.oi_so = so
+
+	def _submit():
+		sales_order_on_submit(frappe.get_doc("Sales Order", so))
+		_assert(frappe.db.get_value("Sales Order", so, "custom_workflow_status") == "Only Invoice", "status")
+		_assert(not frappe.get_all("Notification Log", {"document_name": so}), "warehouse notified")
+
+	check("#108 an Only Invoice order goes to Only Invoice on submit, the warehouse not notified", _submit)
+
+	def _no_pl_dn():
+		pl = frappe._dict(custom_sales_order_id=so, docstatus=0, items=[], flags=frappe._dict())
+		pl.is_new = lambda: True
+		pl.get = lambda k, d=None: pl[k] if k in pl else d
+		_assert("Only Invoice" in refused(lambda: OI.pick_list_validate(pl)), "Pick List allowed")
+		dn = frappe._dict(custom_sales_order_id=so, docstatus=0, items=[], flags=frappe._dict())
+		dn.get = lambda k, d=None: dn[k] if k in dn else d
+		_assert("Only Invoice" in refused(lambda: OI.delivery_note_validate(dn)), "Delivery Note allowed")
+
+	check("#108 no Pick List or Delivery Note for an Only Invoice order", _no_pl_dn)
+
+	def _lists():
+		yes = sales_order_api.get_sales_order_entry_list(page_length=100, search=TAG, only_invoice="Yes", show_all=1)
+		no = sales_order_api.get_sales_order_entry_list(page_length=100, search=TAG, only_invoice="No", show_all=1)
+		_assert(so in {r.name for r in yes["data"]} and so not in {r.name for r in no["data"]}, "SO list Only Invoice filter")
+
+	check("#108 the Sales Order list filters Only Invoice Yes / No", _lists)
+
+	def _afr():
+		from alpinos.alpinos_development.report.accounts_format_report import accounts_format_report as AFR
+
+		cols, rows = AFR.execute({"from_date": today(), "to_date": today(), "only_invoice": "Yes", "sales_order": so, "show_all": 1})
+		mine = [r for r in rows if r.get("sales_order_id") == so]
+		_assert(mine and all(r["only_invoice"] == "Yes" for r in mine), f"AFR rows {len(mine)}")
+		_assert(any(abs(float(r.get("unit") or 0) - 5) < 0.001 for r in mine), "quantity not from the Sales Order")
+		_assert(not mine[0].get("pl_submitted_at"), "Pick List Submitted At should be blank")
+		_assert([c["fieldname"] for c in cols][-1] == "only_invoice", "Only Invoice not the last column")
+		_c, rows = AFR.execute({"from_date": today(), "to_date": today(), "only_invoice": "No", "sales_order": so, "show_all": 1})
+		_assert(not [r for r in rows if r.get("sales_order_id") == so], "filter No still lists it")
+
+	check("#108 Accounts Format Report: rows from the Sales Order, Only Invoice column and filter", _afr)
+
+	def _ofr_column():
+		import alpinos.invoice_queue_api as Q
+
+		_assert("only_invoice" in as_(F.sm.user, lambda: Q.catalogue()), "Sales Manager misses the column")
+		acc = _person("acc1", "Accounts User")
+		_assert("only_invoice" not in as_(acc.user, lambda: Q.catalogue()), "Accounts User sees the column")
+
+	check("#108 OFR Only Invoice column only for the sales / e-com roles", _ofr_column)
+
+
+def _accounts_view():
+	from alpinos import ofr_accounts as A
+
+	acc = _person("acc", "Accounts User")
+	accm = _person("accsys", "Accounts Manager", "System Manager")
+
+	def _modes():
+		_assert(A.mode(acc.user) == "only" and A.mode(accm.user) == "switch" and A.mode(F.sm.user) is None,
+			(A.mode(acc.user), A.mode(accm.user), A.mode(F.sm.user)))
+
+	check("#106 Accounts View: only view for Accounts roles, a switch for someone with more", _modes)
+
+	so_pending = _so(f"{TAG}-SO-AV1", docstatus=1, custom_dispatch_date=today())
+	pl_cancel = _insert("Pick List", name=f"{TAG}-PL-AV1", custom_sales_order_id=so_pending, company=F.company,
+		purpose="Delivery", docstatus=2, custom_dispatch_date=today())
+	so_linked = _so(f"{TAG}-SO-AV2", docstatus=1, custom_dispatch_date=today(), custom_invoice_no="4444",
+		custom_invoice_pdf="/private/files/x.pdf")
+	_insert("Pick List", name=f"{TAG}-PL-AV2", custom_sales_order_id=so_linked, company=F.company,
+		purpose="Delivery", docstatus=1, custom_dispatch_date=today(), custom_invoice_no="4444")
+
+	def _view():
+		r = as_(acc.user, lambda: A.get_accounts_view(today(), today(), "", "", TAG))
+		rows = {x.sales_order: x for x in r["rows"]}
+		_assert({so_pending, so_linked, F.oi_so} <= set(rows), sorted(rows))
+		_assert(rows[so_pending].pl_cancelled == 1 and rows[so_pending].pick_list == pl_cancel, "cancelled PL not flagged")
+		_assert(rows[so_linked].linked == 1 and rows[so_pending].linked == 0, "linked / pending")
+		_assert(rows[F.oi_so].only_invoice == 1, "Only Invoice row")
+		only = as_(acc.user, lambda: A.get_accounts_view(today(), today(), "", "only_invoice", TAG))
+		_assert({x.sales_order for x in only["rows"]} == {F.oi_so}, "Only Invoice card filter")
+		c = r["counts"]
+		_assert(c["pending"] + c["total"] >= 3 and c["only_invoice"] >= 1, str(c))
+		_assert(c["only_invoice"] <= c["pending"] + c["total"], "Only Invoice added on top")
+
+	check("#106 cards (pending / total / only invoice), cancelled Pick List kept and flagged", _view)
+
+	def _replaced():
+		_insert("Pick List", name=f"{TAG}-PL-AV1B", custom_sales_order_id=so_pending, company=F.company,
+			purpose="Delivery", docstatus=1, custom_dispatch_date=today())
+		r = as_(acc.user, lambda: A.get_accounts_view(today(), today(), "", "", TAG))
+		row = [x for x in r["rows"] if x.sales_order == so_pending][0]
+		_assert(row.pick_list == f"{TAG}-PL-AV1B" and not row.pl_cancelled, "new Pick List does not replace the red one")
+
+	check("#106 a new Pick List replaces the cancelled one (no red)", _replaced)
+
+	def _delink():
+		res = as_(acc.user, lambda: A.delink_invoices(json.dumps([so_linked])))
+		_assert(res["done"] == [so_linked], str(res))
+		row = frappe.db.get_value("Sales Order", so_linked, ["custom_invoice_no", "custom_invoice_pdf"], as_dict=True)
+		_assert(not row.custom_invoice_no and not row.custom_invoice_pdf, str(row))
+		_assert(not frappe.db.get_value("Pick List", f"{TAG}-PL-AV2", "custom_invoice_no"), "PL invoice kept")
+		_assert(frappe.db.exists("Invoice Sync Log", {"order_id": so_linked, "sync_type": "Delink"}), "not logged")
+		_assert("Accounts" in refused(lambda: as_(F.sm.user, lambda: A.delink_invoices(json.dumps([so_linked])))), "SM delinked")
+
+	check("#106 Delink clears the order's invoice and its parts, logged; Accounts roles only", _delink)
+
+
+def _daily_report():
+	from alpinos import daily_report as DR
+
+	item = frappe.db.get_value("Item", {"disabled": 0, "is_stock_item": 1}, "name")
+	ctype = "Reliance" if frappe.db.exists("Alpino Customer Type", "Reliance") else frappe.db.get_value("Alpino Customer Type", {}, "name")
+	so = _so(f"{TAG}-SO-DR", docstatus=1, order_type=ctype, custom_invoice_no="3333", custom_invoice_pdf="/private/files/y.pdf")
+	pl_old = _insert("Pick List", name=f"{TAG}-PL-DR1", custom_sales_order_id=so, company=F.company, purpose="Delivery",
+		docstatus=2, custom_dispatch_date=today(), custom_actual_box=3, custom_total_box=3, custom_customer_name=f"{TAG} Mine")
+	_insert("Pick List Item", name=f"{TAG}-PLI-1", parent=pl_old, parenttype="Pick List", parentfield="locations",
+		item_code=item, qty=7, stock_qty=7, idx=1)
+
+	def blocks(ct=ctype):
+		r = DR.get_daily_report(today(), today(), ct, 0)
+		return {b["customer_type"]: b for b in r["blocks"]}
+
+	def _cancelled_kept():
+		b = blocks().get(ctype)
+		col = [c for c in (b or {}).get("columns", []) if c["sales_order"] == so]
+		_assert(col and col[0]["cancelled"], "cancelled Pick List not kept / not flagged")
+
+	check("#107 a cancelled Pick List stays (red) while the order has no other", _cancelled_kept)
+
+	def _replaced():
+		pl_new = _insert("Pick List", name=f"{TAG}-PL-DR2", custom_sales_order_id=so, company=F.company, purpose="Delivery",
+			docstatus=1, custom_dispatch_date=today(), custom_actual_box=4, custom_total_box=4, custom_customer_name=f"{TAG} Mine",
+			custom_party_code="P-1")
+		_insert("Pick List Item", name=f"{TAG}-PLI-2", parent=pl_new, parenttype="Pick List", parentfield="locations",
+			item_code=item, qty=9, stock_qty=9, idx=1)
+		b = blocks()[ctype]
+		cols = [c for c in b["columns"] if c["sales_order"] == so]
+		_assert(len(cols) == 1 and cols[0]["pick_list"] == pl_new and not cols[0]["cancelled"], str(cols))
+		i = [x for x in b["items"] if x["item_code"] == item][0]
+		_assert(9 in i["values"], f"qty {i['values']}")
+		_assert(cols[0]["header"]["party_code"] == "P-1" and cols[0]["header"]["actual_box"] == 4, cols[0]["header"])
+
+	check("#107 the new Pick List replaces it: its boxes, party code and quantities", _replaced)
+
+	def _parent_type():
+		parent = frappe.db.get_value("Alpino Customer Type", ctype, "parent_customer_type")
+		if not parent:
+			return
+		_assert(ctype in blocks(parent), "a parent type does not show its child type")
+
+	check("#107 a parent Customer Type shows its child types", _parent_type)
+
+	def _no_invoice():
+		frappe.db.set_value("Sales Order", so, "custom_invoice_pdf", "", update_modified=False)
+		b = blocks().get(ctype)
+		_assert(not [c for c in (b or {}).get("columns", []) if c["sales_order"] == so], "listed without a fetched invoice")
+		frappe.db.set_value("Sales Order", so, "custom_invoice_pdf", "/private/files/y.pdf", update_modified=False)
+
+	check("#107 nothing until the invoice PDF is fetched and linked", _no_invoice)
+
+	def _export():
+		import io
+
+		import openpyxl
+
+		DR.export_daily_report(today(), today(), ctype, 1)
+		wb = openpyxl.load_workbook(io.BytesIO(frappe.response["filecontent"]))
+		abbr = frappe.db.get_value("Alpino Customer Type", ctype, "abbreviation") or ctype[:12]
+		_assert(abbr in wb.sheetnames, wb.sheetnames)
+		ws = wb[abbr]
+		_assert(ws["D4"].value == "TOTAL BOX" and ws["D4"].fill.fgColor.rgb.endswith("4472C4"), "header rows / colours")
+		_assert(ws.freeze_panes == "E12", ws.freeze_panes)
+		frappe.response.pop("filecontent", None)
+
+	check("#107 Excel export: a sheet per Customer Type in the template layout", _export)
