@@ -22,6 +22,31 @@ def setup_quotation_custom_fields():
 				hidden=1,
 				read_only=1,
 			),
+			# Offline Sales (alpinos.offline_sales): the Buyer this Quotation belongs to, whichever
+			# party type it was raised against, so Buyer assignment can scope it; and that
+			# Buyer's Secondary POC, which a Sales Admin's list view filters on.
+			dict(
+				fieldname="custom_buyer_master",
+				label="Buyer Master",
+				fieldtype="Link",
+				options="Buyer Master",
+				insert_after="custom_resolved_customer",
+				read_only=1,
+				no_copy=1,
+				search_index=1,
+				ignore_user_permissions=1,
+			),
+			dict(
+				fieldname="custom_secondary_poc",
+				label="Secondary POC",
+				fieldtype="Link",
+				options="Employee",
+				insert_after="custom_buyer_master",
+				hidden=1,
+				read_only=1,
+				no_copy=1,
+				ignore_user_permissions=1,
+			),
 			dict(
 				fieldname="custom_order_no",
 				label="Order No.",

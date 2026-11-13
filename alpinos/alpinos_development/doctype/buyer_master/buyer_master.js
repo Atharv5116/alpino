@@ -118,10 +118,13 @@ frappe.ui.form.on("Buyer Master", {
 		}));
 		// The three assignment fields pick from the roles the specification names: assignment
 		// grants access, so the population has to match the role that backs it.
-		frm.set_query("employee", "sales_officers", () => ({
+		// Both are Table MultiSelect fields: the query goes on the field itself. The child-table
+		// form, set_query("employee", "sales_officers", ...), reads a grid these fields do not
+		// have, threw, and stopped the rest of every refresh handler on this form.
+		frm.set_query("sales_officers", () => ({
 			query: "alpinos.buyer_assignment.sales_officer_query",
 		}));
-		frm.set_query("employee", "primary_pocs", () => ({
+		frm.set_query("primary_pocs", () => ({
 			query: "alpinos.buyer_assignment.primary_poc_query",
 		}));
 		frm.set_query("secondary_poc", () => ({
@@ -423,3 +426,132 @@ frappe.ui.form.on("Buyer Margin", {
 		});
 	},
 });
+
+// ---------------------------------------------------------------------------------------------
+// Offline Sales ("Opportunity to Sales Order v1.0.0", Section 4): status, approval actions,
+// what a Sales Officer may still correct, and the Activity / Audit Trail. The server enforces
+// every rule here (alpinos.offline_sales.buyer_rules / buyer_status); this only shapes the form.
+
+const OS_STATUS_COLORS = {
+	"Pending Approval": "orange",
+	Approved: "green",
+	"On Hold": "yellow",
+	Inactive: "gray",
+	Cancelled: "red",
+};
+
+// The fields of the Create New Buyer form: all a Sales Officer may correct (Section 4, 3.1-3.3).
+const OS_SO_EDITABLE = [
+	"customer_business_name", "customer_type", "gst_type", "gst_no", "gst_certificate", "pan_no",
+	"pan_attachment", "level", "payment_term", "payment_term_days", "site_name", "addresses",
+	"shipping_same_as_profile", "shipping_address", "shipping_state", "shipping_city",
+	"contact_person", "email", "contact_no", "alternate_no", "sales_officers", "primary_pocs", "secondary_poc",
+];
+
+function os_is_manager() {
+	return frappe.session.user === "Administrator"
+		|| ["Sales Manager", "Sales Admin", "System Manager"].some((r) => frappe.user.has_role(r));
+}
+
+function os_is_officer_only() {
+	return frappe.user.has_role("Sales Officer") && !os_is_manager();
+}
+
+function os_offline(frm) {
+	return (frm.doc.channel || "") !== "E-com";
+}
+
+function os_status(frm) {
+	return frm.doc.buyer_status || "Approved";
+}
+
+frappe.ui.form.on("Buyer Master", {
+	refresh(frm) {
+		if (frm.is_new()) {
+			if (os_is_officer_only()) {
+				frm.set_value("channel", "Offline");
+				frm.set_df_property("channel", "read_only", 1);
+			}
+			return;
+		}
+		const status = os_status(frm);
+		if (os_offline(frm)) {
+			frm.page.set_indicator(__(status), OS_STATUS_COLORS[status] || "gray");
+			os_intro(frm, status);
+			os_actions(frm, status);
+		}
+		os_officer_limits(frm, status);
+		if (window.alpinos_offline) {
+			alpinos_offline.render_trail(frm.get_field("activity_html").$wrapper, "Buyer Master", frm.doc.name);
+		}
+	},
+});
+
+function os_intro(frm, status) {
+	const catalog = frm.doc.buyer_catalog_status || "Completed";
+	const reason = frm.doc.status_reason ? ` ${__("Reason")}: ${frappe.utils.escape_html(frm.doc.status_reason)}` : "";
+	const notes = {
+		"Pending Approval": [__("Waiting for approval by a Sales Manager or Sales Admin. Quotations and Sales Orders stay blocked until the buyer is approved and its Buyer Catalog is set up."), "orange"],
+		"On Hold": [__("On Hold: this buyer cannot be used for new sales transactions until approved by SM or SA.") + reason, "yellow"],
+		Inactive: [__("Inactive: business with this buyer is stopped until a Sales Manager or Sales Admin reactivates it.") + reason, "gray"],
+		Cancelled: [__("Cancelled: this Buyer Master is closed for good. Create a new Buyer Master if business starts again.") + reason, "red"],
+	};
+	if (notes[status]) {
+		frm.set_intro(notes[status][0], notes[status][1]);
+	} else if (status === "Approved" && catalog === "Pending") {
+		frm.set_intro(__("Approved. Quotations and Sales Orders stay blocked until a Sales Manager or Sales Admin sets up this buyer's Buyer Catalog."), "orange");
+	}
+}
+
+function os_actions(frm, status) {
+	if (!os_is_manager()) return;
+	const group = __("Buyer Status");
+	const act = (action, confirm_text, needs_reason, reason_label) => () => {
+		const go = (reason) => frappe
+			.xcall("alpinos.offline_sales.buyer_status.buyer_action", { buyer: frm.doc.name, action, reason })
+			.then((r) => {
+				frappe.show_alert({ message: r.message, indicator: "green" });
+				frm.reload_doc();
+			});
+		if (needs_reason) {
+			frappe.prompt(
+				[{ fieldname: "reason", fieldtype: "Small Text", label: reason_label, reqd: 1 }],
+				(v) => go(v.reason),
+				confirm_text,
+				__("Confirm"),
+			);
+		} else {
+			frappe.confirm(confirm_text, () => go(null));
+		}
+	};
+	if (["Pending Approval", "On Hold"].includes(status)) {
+		frm.add_custom_button(__("Approve Buyer"), act("approve", __("Approve this Buyer account?")), group);
+	}
+	if (status === "Pending Approval") {
+		frm.add_custom_button(__("Put Buyer On Hold"), act("hold", __("Put Buyer On Hold"), true, __("Hold Reason")), group);
+	}
+	if (status === "Approved") {
+		frm.add_custom_button(__("Make Buyer Inactive"), act("inactive", __("Make Buyer Inactive"), true, __("Reason")), group);
+	}
+	if (status === "Inactive") {
+		frm.add_custom_button(__("Reactivate Buyer"), act("reactivate", __("Reactivate this Buyer account?")), group);
+	}
+	if (status !== "Cancelled") {
+		frm.add_custom_button(__("Cancel Buyer"), act("cancel", __("Cancel Buyer"), true, __("Cancellation Reason")), group);
+	}
+	if (status === "Approved" && (frm.doc.buyer_catalog_status || "Completed") === "Pending") {
+		frm.add_custom_button(__("Set Up Buyer Catalog"), () => frappe.set_route("offline_buyer_catalog"));
+	}
+}
+
+function os_officer_limits(frm, status) {
+	if (!os_is_officer_only()) return;
+	if (!["Pending Approval", "On Hold"].includes(status) || !os_offline(frm)) {
+		frm.disable_form();
+		return;
+	}
+	(frm.meta.fields || []).forEach((df) => {
+		if (["Section Break", "Column Break", "Tab Break", "HTML"].includes(df.fieldtype)) return;
+		if (!OS_SO_EDITABLE.includes(df.fieldname)) frm.set_df_property(df.fieldname, "read_only", 1);
+	});
+}

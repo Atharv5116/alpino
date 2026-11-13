@@ -1,0 +1,84 @@
+{
+ "actions": [],
+ "creation": "2026-11-13 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "access_section",
+  "assignment_scope_for_managers",
+  "coverage_html",
+  "buyer_section",
+  "default_primary_pocs",
+  "escalation_hours"
+ ],
+ "fields": [
+  {
+   "fieldname": "access_section",
+   "fieldtype": "Section Break",
+   "label": "Record Access"
+  },
+  {
+   "fieldname": "assignment_scope_for_managers",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Buyer assignment decides what Sales Managers and Sales Admins see",
+   "description": "On: a Sales Manager sees the buyers they are assigned to (Sales Officer, Primary POC or Secondary POC), and a Sales Admin's lists open on the buyers they are Secondary POC of, with Show All for the rest. Off: both see every buyer, as before. Sales Officers always see only their assigned buyers. Check the coverage report before switching it on."
+  },
+  {
+   "fieldname": "coverage_html",
+   "fieldtype": "HTML",
+   "label": "Assignment Coverage"
+  },
+  {
+   "fieldname": "buyer_section",
+   "fieldtype": "Section Break",
+   "label": "New Buyers"
+  },
+  {
+   "fieldname": "default_primary_pocs",
+   "fieldtype": "Table MultiSelect",
+   "label": "Default Primary POC(s)",
+   "options": "Buyer Primary POC",
+   "description": "Added to every new buyer. A Sales Officer may add more Primary POCs but cannot remove these."
+  },
+  {
+   "fieldname": "escalation_hours",
+   "fieldtype": "Int",
+   "default": "48",
+   "label": "Escalate Pending Approval After (hours)",
+   "non_negative": 1,
+   "description": "A buyer still Pending Approval this many hours after it was created is escalated once to its Primary POC(s) and Secondary POC."
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-13 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Offline Sales Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "share": 1
+  },
+  {
+   "role": "Sales Admin",
+   "read": 1
+  },
+  {
+   "role": "Sales Manager",
+   "read": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

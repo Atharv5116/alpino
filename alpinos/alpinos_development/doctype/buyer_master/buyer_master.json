@@ -7,6 +7,17 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "approval_section",
+  "buyer_status",
+  "buyer_catalog_status",
+  "status_reason",
+  "approval_col",
+  "approved_by",
+  "approver_role",
+  "approved_on",
+  "catalog_completed_by",
+  "catalog_completed_on",
+  "escalated_on",
   "classification_section",
   "channel",
   "customer_type",
@@ -71,9 +82,102 @@
   "margins",
   "other_section",
   "alternate_no",
-  "contact_person"
+  "contact_person",
+  "activity_tab",
+  "activity_html"
  ],
  "fields": [
+  {
+   "fieldname": "approval_section",
+   "fieldtype": "Section Break",
+   "label": "Approval"
+  },
+  {
+   "fieldname": "buyer_status",
+   "fieldtype": "Select",
+   "label": "Buyer Status",
+   "options": "\nPending Approval\nApproved\nOn Hold\nInactive\nCancelled",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "Changed only by the Approve / On Hold / Inactive / Reactivate / Cancel actions."
+  },
+  {
+   "fieldname": "buyer_catalog_status",
+   "fieldtype": "Select",
+   "label": "Buyer Catalog",
+   "options": "\nPending\nCompleted",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_standard_filter": 1,
+   "description": "Completed once a Sales Manager or Sales Admin saves this buyer's catalogue with a price. Quotations and Sales Orders wait for it."
+  },
+  {
+   "fieldname": "status_reason",
+   "fieldtype": "Small Text",
+   "label": "Status Reason",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.status_reason"
+  },
+  {
+   "fieldname": "approval_col",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1,
+   "ignore_user_permissions": 1,
+   "depends_on": "eval:doc.approved_by"
+  },
+  {
+   "fieldname": "approver_role",
+   "fieldtype": "Data",
+   "label": "Approver Role",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.approved_by"
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.approved_by"
+  },
+  {
+   "fieldname": "catalog_completed_by",
+   "fieldtype": "Link",
+   "label": "Catalog Completed By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1,
+   "ignore_user_permissions": 1,
+   "depends_on": "eval:doc.catalog_completed_by"
+  },
+  {
+   "fieldname": "catalog_completed_on",
+   "fieldtype": "Datetime",
+   "label": "Catalog Completed On",
+   "read_only": 1,
+   "no_copy": 1,
+   "depends_on": "eval:doc.catalog_completed_by"
+  },
+  {
+   "fieldname": "escalated_on",
+   "fieldtype": "Datetime",
+   "label": "Approval Escalated On",
+   "read_only": 1,
+   "no_copy": 1,
+   "hidden": 1
+  },
   {
    "fieldname": "classification_section",
    "fieldtype": "Section Break",
@@ -504,11 +608,21 @@
    "hidden": 1,
    "label": "Sub Area (primary sync)",
    "read_only": 1
+  },
+  {
+   "fieldname": "activity_tab",
+   "fieldtype": "Tab Break",
+   "label": "Activity"
+  },
+  {
+   "fieldname": "activity_html",
+   "fieldtype": "HTML",
+   "label": "Activity / Audit Trail"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-03 11:05:00.000000",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Buyer Master",

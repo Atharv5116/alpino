@@ -62,6 +62,8 @@ app_include_js = [
 	# Frappe 16 control changes that break page and dialog fields (typed dates wiped, saved
 	# link values blanked); restores Frappe 15 behaviour for those controls. See the file.
 	_asset("js/alpinos_page_controls.js"),
+	# Offline Sales: the Activity / Audit Trail panel and the Create New Buyer modal.
+	_asset("js/offline_sales.js"),
 	_asset("js/sales_order_hub_desk_v3.js"),
 	# Changes(HP) #39: Item colour / sequence on configured reports and pages (replaces
 	# the hard-coded item_row_colors.js; its reports became a default configuration).
@@ -132,6 +134,8 @@ doctype_js = {
 	"Process Master": "public/js/production_doctype_breadcrumb.js",
 }
 doctype_list_js = {
+	# Offline Sales: a Sales Admin's Quotation list opens on their Secondary POC buyers (Show All).
+	"Quotation": "public/js/quotation_list_scope.js",
 	"Purchase Order": "public/js/purchase_order_list.js",
 	"Pick List": "public/js/pick_list_list.js",
 	"Item": "public/js/item_list_colors.js",
@@ -372,6 +376,8 @@ after_migrate = [
 	"alpinos.mrp_batch.setup",
 	# The Item's MRPs tab (sales-side Multiple MRP).
 	"alpinos.item_mrp.setup",
+	# Offline Sales build 1: Sales Officer / Sales Manager rows, settings defaults, Quotation Buyer.
+	"alpinos.offline_sales.setup.execute",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
@@ -419,6 +425,7 @@ after_migrate = [
 # assigned-visibility hooks listed before them still decide everything else.
 permission_query_conditions = {
 	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_query_conditions",
+	"Quotation": "alpinos.buyer_assignment_visibility.quotation_query_conditions",
 	"Sales Order": [
 		"alpinos.channel_access.sales_order_query_conditions",
 		"alpinos.buyer_assignment_visibility.sales_order_query_conditions",
@@ -426,10 +433,12 @@ permission_query_conditions = {
 	"Pick List": [
 		"alpinos.assigned_visibility.pick_list_query_conditions",
 		"alpinos.channel_access.pick_list_query_conditions",
+		"alpinos.buyer_assignment_visibility.pick_list_query_conditions",
 	],
 	"Delivery Note": [
 		"alpinos.assigned_visibility.delivery_note_query_conditions",
 		"alpinos.channel_access.delivery_note_query_conditions",
+		"alpinos.buyer_assignment_visibility.delivery_note_query_conditions",
 	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_query_conditions",
 	# Company-wise access: rows of the companies the user may see (alpinos.company_scope).
@@ -438,6 +447,7 @@ permission_query_conditions = {
 
 has_permission = {
 	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_has_permission",
+	"Quotation": "alpinos.buyer_assignment_visibility.quotation_has_permission",
 	"Sales Order": [
 		"alpinos.channel_access.sales_order_has_permission",
 		"alpinos.buyer_assignment_visibility.sales_order_has_permission",
@@ -446,10 +456,12 @@ has_permission = {
 	"Pick List": [
 		"alpinos.assigned_visibility.pick_list_has_permission",
 		"alpinos.channel_access.pick_list_has_permission",
+		"alpinos.buyer_assignment_visibility.pick_list_has_permission",
 	],
 	"Delivery Note": [
 		"alpinos.assigned_visibility.delivery_note_has_permission",
 		"alpinos.channel_access.delivery_note_has_permission",
+		"alpinos.buyer_assignment_visibility.delivery_note_has_permission",
 	],
 	"Salary Slip": "alpinos.salary_visibility.salary_slip_has_permission",
 	# Company-wise access: the user's roles in the document's company decide (deny-only).
@@ -696,7 +708,18 @@ doc_events = {
 		"validate": [
 			"alpinos.quotation_validate.validate_quotation_alpinos",
 			"alpinos.qty_flow.quotation_qty_remarks",
+			# Offline Sales: the Quotation's Buyer, and a new one needs a ready buyer.
+			"alpinos.offline_sales.catalog_gate.quotation_validate",
 		],
+	},
+	# Offline Sales (alpinos.offline_sales): the buyer Activity Trail, and the Buyer Catalog rules.
+	"Buyer Master": {
+		"after_insert": "alpinos.offline_sales.buyer_rules.after_insert",
+		"on_update": "alpinos.offline_sales.buyer_rules.on_update",
+	},
+	"Buyer Items": {
+		"validate": "alpinos.offline_sales.catalog_gate.buyer_items_validate",
+		"on_update": "alpinos.offline_sales.catalog_gate.buyer_items_on_update",
 	},
 	"Opportunity": {
 		"validate": ["alpinos.opportunity_validate.validate_opportunity_alpinos"],
@@ -869,6 +892,8 @@ doc_events = {
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
+			# Offline Sales: a new order / a submission needs an Approved buyer with its Buyer Catalog.
+			"alpinos.offline_sales.catalog_gate.sales_order_gate",
 			"alpinos.sales_order_api.validate_so_row_quantities",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
 			# Multiple MRP: one MRP per SKU, and the MRP from the Item's MRP table on submit / import.
@@ -993,6 +1018,10 @@ scheduler_events = {
 		],
 		"*/30 * * * *": [
 			"alpinos.attendance_scheduler.process_auto_attendance_periodic"
+		],
+		# Offline Sales: buyers Pending Approval for 48 hours are escalated to their POCs.
+		"7 * * * *": [
+			"alpinos.offline_sales.escalation.run"
 		],
 		"30 11 * * *": [
 			"alpinos.attendance_alerts.notify_missing_checkins"

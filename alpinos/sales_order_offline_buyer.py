@@ -81,7 +81,35 @@ def sales_order_customer_query(doctype, txt, searchfield, start, page_len, filte
 	Only parents show; the Site Name dropdown then narrows to a child site and its
 	addresses. GST follows the chosen billing address, so anchoring on the parent
 	stays tax-correct."""
-	return _customers_with_offline_buyer_master_query(txt, start, page_len, channel="Offline", parents_only=True)
+	rows = _customers_with_offline_buyer_master_query(txt, start, page_len, channel="Offline", parents_only=True)
+	return _label_buyers_not_ready(rows)
+
+
+def _label_buyers_not_ready(rows):
+	"""Offline Sales: a buyer that cannot take a new order yet says so in the dropdown (the
+	order itself is refused by alpinos.offline_sales.catalog_gate)."""
+	customers = [r[0] for r in rows or []]
+	if not customers:
+		return rows
+	states = {
+		r.customer: r
+		for r in frappe.get_all(
+			"Buyer Master",
+			filters={"customer": ("in", customers)},
+			fields=["customer", "buyer_status", "buyer_catalog_status"],
+		)
+	}
+	out = []
+	for row in rows:
+		st = states.get(row[0])
+		status = (st.buyer_status if st else None) or "Approved"
+		label = None
+		if status != "Approved":
+			label = _("{0}: not ready for orders").format(_(status))
+		elif st and st.buyer_catalog_status == "Pending":
+			label = _("Buyer Catalog pending: not ready for orders")
+		out.append(tuple(row) + ((label,) if label else ()))
+	return out
 
 
 @frappe.whitelist()
@@ -1849,6 +1877,10 @@ def update_offline_buyer_margin_if_changed(customer, item_code, new_margin, mrp=
 
 	# 1. Update in Buyer Items (Catalog): for an SKU in the MRP table only the row of this
 	# MRP, so another MRP's margin is never touched (Multiple MRP FRD 6.2).
+	# The UPDATE below is invisible to document events, so its trail lines are written first.
+	from alpinos.offline_sales.catalog_gate import log_margin_sync
+
+	log_margin_sync(customer, item_code, new_margin, mrp=mrp if by_mrp else None)
 	obi_list = frappe.db.get_all("Buyer Items", {"buyer": customer, "docstatus": ("<", 2)}, order_by="modified desc")
 	for obi in obi_list:
 		frappe.db.sql(f"""

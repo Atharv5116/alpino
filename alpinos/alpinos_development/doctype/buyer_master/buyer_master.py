@@ -189,6 +189,12 @@ class BuyerMaster(Document):
 		self.name = next_buyer_id()
 
 	def validate(self):
+		# Offline Sales (Opportunity to Sales Order v1.0.0, Section 4): the status guard, the
+		# Sales Officer correction limits and a new buyer's starting status -- before anything
+		# below recomputes a field, so they judge what the person actually changed.
+		from alpinos.offline_sales import buyer_rules
+
+		buyer_rules.before_validate(self)
 		self._set_search_alias()
 		validate_assignments(self)          # Sales Officer(s) / Primary POC(s) / Secondary POC
 		set_tally_fields(self)              # Changes(HP) #56: Offline P&L name + warehouse
@@ -209,6 +215,9 @@ class BuyerMaster(Document):
 				_("This record is already a Parent to other records and cannot be assigned a Parent."),
 				title=_("Relationship Error"),
 			)
+
+		# duplicate buyers (GSTIN / PAN / overseas name), GSTIN state code, contact formats
+		buyer_rules.validate(self)
 
 		_ensure_customer_for_obm(self)
 
@@ -260,7 +269,7 @@ class BuyerMaster(Document):
 				continue  # unchanged legacy value
 			if not re.fullmatch(r"[1-9][0-9]{5}", pin):
 				frappe.throw(
-					_("Address row #{0}: invalid PIN Code {1} — must be a 6-digit Indian PIN.").format(r.idx, pin),
+					_("Address row #{0}: Pincode must be exactly 6 numeric digits ({1}).").format(r.idx, pin),
 					title=_("Address"),
 				)
 
@@ -274,30 +283,8 @@ class BuyerMaster(Document):
 		else:
 			self.payment_term_days = None
 
-		# GST No must be unique across Buyer Masters (a shared GSTIN spawns the
-		# duplicate customer that breaks SO selection). Parent/child sites in one
-		# family may share it. Only checked when the GST is set or changed.
-		gst = (self.gst_no or "").strip().upper()
-		old_gst = ""
-		if not self.is_new():
-			old_gst = (frappe.db.get_value("Buyer Master", self.name, "gst_no") or "").strip().upper()
-		if self.gst_type == "Registered Business" and gst and gst != old_gst:
-			my_root = self.parent_buyer or (self.name if self.is_parent else None)
-			for other in frappe.get_all(
-				"Buyer Master",
-				filters={"gst_no": gst, "name": ["!=", self.name or ""]},
-				fields=["name", "parent_buyer", "is_parent"],
-			):
-				other_root = other.parent_buyer or (other.name if other.is_parent else None)
-				if my_root and other_root and my_root == other_root:
-					continue  # same family, shared GSTIN is fine
-				frappe.throw(
-					_(
-						"GST No {0} is already used by Buyer Master {1}. A GSTIN can belong "
-						"to only one buyer (its parent/child sites aside)."
-					).format(frappe.bold(gst), frappe.bold(other.name)),
-					title=_("Duplicate GST"),
-				)
+		# A GSTIN shared with another buyer (its own parent / child sites aside) is refused by
+		# alpinos.offline_sales.buyer_rules.validate_duplicate, with PAN and overseas name.
 
 		# Only meaningful once a Customer is linked; a blank one would match every
 		# unlinked buyer and raise a bogus duplicate warning.

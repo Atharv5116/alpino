@@ -146,6 +146,10 @@ def _fixtures(A):
 		}).insert(ignore_permissions=True)
 	S.customer = frappe.db.get_value("Customer", {"customer_name": CUSTOMER}, "name")
 	S.buyer = frappe.db.get_value("Buyer Master", {"customer": S.customer}, "name")
+	# An onboarded buyer: approved, with its Buyer Catalog set up (alpinos.offline_sales gates
+	# a Sales Order on both; a new buyer's catalogue is the Sales Manager's first step).
+	if frappe.db.has_column("Buyer Master", "buyer_catalog_status"):
+		frappe.db.set_value("Buyer Master", S.buyer, {"buyer_status": "Approved", "buyer_catalog_status": "Completed"})
 
 	se = frappe.get_doc({
 		"doctype": "Stock Entry", "stock_entry_type": "Material Receipt", "purpose": "Material Receipt",

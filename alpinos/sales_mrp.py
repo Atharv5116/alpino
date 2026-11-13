@@ -60,7 +60,14 @@ def update_buyer_catalog_on_submit(doc, method=None):
 		upsert_buyer_catalog_selling_rate,
 	)
 
-	for row in _item_rows(doc):
-		mrp = flt(row.get("custom_customer_mrp"))
-		update_offline_buyer_margin_if_changed(doc.customer, row.item_code, flt(row.get("custom_flat_discount")), mrp=mrp)
-		upsert_buyer_catalog_selling_rate(doc.customer, row.item_code, flt(row.get("custom_selling_price"), 2), mrp=mrp)
+	# the catalogue changes below are the Sales Order's, not a person's: the Activity Trail says
+	# so, and the Sales Officer catalogue rule does not apply to them (alpinos.offline_sales)
+	previous = frappe.flags.alpinos_catalog_sync
+	frappe.flags.alpinos_catalog_sync = doc.name
+	try:
+		for row in _item_rows(doc):
+			mrp = flt(row.get("custom_customer_mrp"))
+			update_offline_buyer_margin_if_changed(doc.customer, row.item_code, flt(row.get("custom_flat_discount")), mrp=mrp)
+			upsert_buyer_catalog_selling_rate(doc.customer, row.item_code, flt(row.get("custom_selling_price"), 2), mrp=mrp)
+	finally:
+		frappe.flags.alpinos_catalog_sync = previous

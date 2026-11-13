@@ -6,7 +6,21 @@ from frappe.model.document import Document
 
 
 class FieldChangeLog(Document):
-	pass
+	"""An Activity / Audit Trail entry: written once, never edited, deleted only by
+	Administrator ("Normal business users cannot edit or delete Audit Trail entries",
+	Opportunity to Sales Order v1.0.0, Section 1, 5.1)."""
+
+	def validate(self):
+		if not self.is_new():
+			frappe.throw(
+				frappe._("An Activity Trail entry cannot be changed."), frappe.PermissionError
+			)
+
+	def on_trash(self):
+		if frappe.session.user != "Administrator":
+			frappe.throw(
+				frappe._("An Activity Trail entry cannot be deleted."), frappe.PermissionError
+			)
 
 
 #: The roles a change is attributed to, most specific first. The trail records which hat

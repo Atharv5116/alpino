@@ -2173,6 +2173,14 @@ def get_sales_order_entry_list(
 	filters = restrict_company(filters, "Sales Order")
 	if customer:
 		filters["customer"] = str(customer).strip()
+	# Offline Sales: with manager scoping on, a Sales Admin's list opens on the Buyers they are
+	# Secondary POC of; Show All lifts it. List scope only, never permission.
+	if not show_all and channel != "E-com":
+		from alpinos.offline_sales.access import sa_default_buyers
+
+		_sa_buyers = sa_default_buyers()
+		if _sa_buyers is not None:
+			filters["custom_offline_buyer_master"] = ["in", _sa_buyers or ["__no_buyer__"]]
 
 	# Optional: filter by Additional Units – Damage (`custom_additional_units_damage`).
 	_aug = (additional_units_damage_filter or "").strip().lower()

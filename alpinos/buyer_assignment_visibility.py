@@ -14,9 +14,16 @@ they are unassigned, including orders they raised themselves. There is deliberat
 "but I created it" fallback -- that would keep an unassigned officer looking at the account
 after the handover, which is the opposite of what the rule is for.
 
-Only Sales Officers are narrowed. Sales Managers and Sales Admins keep the scope they have
-today: the approved BRD gives SA organisation-wide Offline Buyer access and says Show All
-governs list scope only, so inventing a restriction for them here would contradict it.
+Only Sales Officers are narrowed by default. The approved "Opportunity to Sales Order v1.0.0"
+(Section 1, 4.1) narrows a Sales Manager to the Buyers they are Primary POC of too; that ships
+behind Offline Sales Settings > "Buyer assignment decides what Sales Managers and Sales Admins
+see", OFF until the Buyers carry their POCs (on 13 Nov one UAT Buyer had a Primary POC). A Sales
+Admin keeps organisation-wide Offline Buyer access either way: Show All governs list scope
+only (alpinos.offline_sales.access), never permission.
+
+Section 1, 4.1-4.2 also carries the scope downstream: a scoped user sees the Quotations of
+their Buyers, and the Pick Lists and Delivery Notes of their Buyers' Sales Orders, read only
+for a Sales Officer.
 """
 
 import frappe
@@ -25,14 +32,31 @@ from alpinos.permission_compat import NO_OBJECTION
 
 from alpinos.buyer_assignment import SALES_OFFICER_ROLE
 
-#: Holding any of these means the Sales Officer narrowing does not apply.
+#: Holding any of these means the assignment narrowing does not apply.
 UNRESTRICTED_ROLES = {
 	"Sales Admin",
-	"Sales Manager",
 	"Sales Master Manager",
 	"System Manager",
 	"Administrator",
 }
+
+#: Narrowed only while Offline Sales Settings switches manager scoping on.
+SWITCHED_ROLE = "Sales Manager"
+
+#: Roles that work Pick Lists and Delivery Notes for every order: assignment never narrows
+#: those two documents for them.
+OPERATIONS_ROLES = {
+	"Warehouse Admin",
+	"Warehouse Manager",
+	"Accounts User",
+	"Accounts Manager",
+	"PL User",
+	"DN User",
+	"Alpinos Full Access",
+}
+
+#: A Sales Officer only reads Pick Lists and Delivery Notes (Section 1, 4.2).
+_WRITE_PTYPES = {"write", "create", "submit", "cancel", "delete", "amend"}
 
 #: The Sales Order field that points at the Buyer Master.
 SO_BUYER_FIELD = "custom_offline_buyer_master"
@@ -40,6 +64,12 @@ SO_BUYER_FIELD = "custom_offline_buyer_master"
 
 def _employee_for(user):
 	return frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "name", order_by="name asc")
+
+
+def _scope_managers():
+	from alpinos.offline_sales.settings import scope_managers
+
+	return scope_managers()
 
 
 def is_assignment_scoped(user=None):
@@ -50,7 +80,14 @@ def is_assignment_scoped(user=None):
 	roles = set(frappe.get_roles(user))
 	if roles & UNRESTRICTED_ROLES:
 		return False
+	if SWITCHED_ROLE in roles:
+		return _scope_managers()
 	return SALES_OFFICER_ROLE in roles
+
+
+def _is_officer_only(user):
+	roles = set(frappe.get_roles(user))
+	return SALES_OFFICER_ROLE in roles and not (roles & (UNRESTRICTED_ROLES | {SWITCHED_ROLE}))
 
 
 def _assigned_buyers_sql(employee):
@@ -141,6 +178,98 @@ def sales_order_has_permission(doc, user=None, permission_type=None):
 	return NO_OBJECTION
 
 
+# ---------------------------------------------------------------------------
+# Quotation (Section 1, 4.1)
+# ---------------------------------------------------------------------------
+
+QUOTATION_BUYER_FIELD = "custom_buyer_master"
+
+
+def quotation_query_conditions(user=None):
+	user = user or frappe.session.user
+	if not is_assignment_scoped(user):
+		return ""
+	employee = _employee_for(user)
+	if not employee:
+		return "1 = 0"
+	return (
+		f"IFNULL(`tabQuotation`.{QUOTATION_BUYER_FIELD}, '') <> '' "
+		f"AND `tabQuotation`.{QUOTATION_BUYER_FIELD} IN ({_assigned_buyers_sql(employee)})"
+	)
+
+
+def quotation_has_permission(doc, user=None, permission_type=None):
+	user = user or frappe.session.user
+	if not is_assignment_scoped(user):
+		return NO_OBJECTION
+	if not doc.get("creation") or (hasattr(doc, "is_new") and doc.is_new()):
+		return NO_OBJECTION  # creating one is the role's create right; its Buyer is checked on save
+	from alpinos.offline_sales.catalog_gate import quotation_buyer
+
+	buyer = doc.get(QUOTATION_BUYER_FIELD) or quotation_buyer(doc)
+	employee = _employee_for(user)
+	if not buyer or not employee or buyer not in _assigned_buyer_names(employee):
+		return False
+	return NO_OBJECTION
+
+
+# ---------------------------------------------------------------------------
+# Pick List / Delivery Note: through their Sales Order's Buyer (Section 1, 4.2)
+# ---------------------------------------------------------------------------
+
+
+def is_downstream_scoped(user=None):
+	user = user or frappe.session.user
+	if not is_assignment_scoped(user):
+		return False
+	return not (set(frappe.get_roles(user)) & OPERATIONS_ROLES)
+
+
+def _downstream_condition(doctype, user):
+	user = user or frappe.session.user
+	if not is_downstream_scoped(user):
+		return ""
+	employee = _employee_for(user)
+	if not employee:
+		return "1 = 0"
+	return (
+		f"`tab{doctype}`.custom_sales_order_id IN (SELECT so.name FROM `tabSales Order` so "
+		f"WHERE so.{SO_BUYER_FIELD} IN ({_assigned_buyers_sql(employee)}))"
+	)
+
+
+def _downstream_permission(doc, user, permission_type):
+	user = user or frappe.session.user
+	if not is_downstream_scoped(user):
+		return NO_OBJECTION
+	if permission_type in _WRITE_PTYPES and _is_officer_only(user):
+		return False
+	if not doc.get("creation") or (hasattr(doc, "is_new") and doc.is_new()):
+		return NO_OBJECTION
+	so = doc.get("custom_sales_order_id")
+	buyer = frappe.db.get_value("Sales Order", so, SO_BUYER_FIELD) if so else None
+	employee = _employee_for(user)
+	if not buyer or not employee or buyer not in _assigned_buyer_names(employee):
+		return False
+	return NO_OBJECTION
+
+
+def pick_list_query_conditions(user=None):
+	return _downstream_condition("Pick List", user)
+
+
+def delivery_note_query_conditions(user=None):
+	return _downstream_condition("Delivery Note", user)
+
+
+def pick_list_has_permission(doc, user=None, permission_type=None):
+	return _downstream_permission(doc, user, permission_type)
+
+
+def delivery_note_has_permission(doc, user=None, permission_type=None):
+	return _downstream_permission(doc, user, permission_type)
+
+
 @frappe.whitelist()
 def explain(user=None):
 	"""What this user is scoped to, and why. For a 'why can't I see it' complaint.
@@ -165,8 +294,12 @@ def explain(user=None):
 			if set(roles) & UNRESTRICTED_ROLES
 			else "scoped to assigned Buyers"
 			if scoped
+			else f"not scoped: {SWITCHED_ROLE} with manager scoping switched off"
+			if SWITCHED_ROLE in roles
 			else f"not scoped: does not hold {SALES_OFFICER_ROLE}"
 		),
+		"manager_scoping_on": _scope_managers(),
+		"pick_list_and_delivery_note_scoped": is_downstream_scoped(user),
 		"assigned_buyers": buyers,
 		"assigned_buyer_count": len(buyers) if buyers is not None else None,
 	}
