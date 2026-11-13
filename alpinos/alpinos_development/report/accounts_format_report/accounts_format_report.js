@@ -54,6 +54,13 @@ frappe.query_reports["Accounts Format Report"] = {
 			label: "Site Name",
 			fieldtype: "Data",
 		},
+		// Changes(HP) #108
+		{
+			fieldname: "only_invoice",
+			label: "Only Invoice",
+			fieldtype: "Select",
+			options: "\nYes\nNo",
+		},
 		{
 			fieldname: "show_all",
 			label: "Show All (incl. fetched invoices)",

@@ -411,6 +411,8 @@ doc_events = {
 			"alpinos.expiry_validation.validate_expiry_on_pick_list",
 			"alpinos.qty_flow.pick_list_qty_remarks",
 			"alpinos.partial_dispatch.validate_pick_list_partial",
+			# Changes(HP) #108: no Pick List for an Only Invoice order
+			"alpinos.only_invoice.pick_list_validate",
 		],
 		"after_insert": [
 			"alpinos.workflow_engine.pick_list_after_insert",
@@ -440,6 +442,8 @@ doc_events = {
 	"Delivery Note": {
 		"before_validate": "alpinos.delivery_note_hooks.strip_non_batch_item_batches",
 		"validate": [
+			# Changes(HP) #108: no Delivery Note for an Only Invoice order
+			"alpinos.only_invoice.delivery_note_validate",
 			"alpinos.lr_number.normalise_delivery_note_lr",
 			"alpinos.delivery_note_hooks.validate_delivery_note",
 			"alpinos.expiry_validation.validate_expiry_on_delivery_note",

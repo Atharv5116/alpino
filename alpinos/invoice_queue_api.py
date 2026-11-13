@@ -219,6 +219,11 @@ COLUMNS = {
 	"downloaded":     {"label": "Downloaded",
 	                   "select": "CASE WHEN IFNULL(so.custom_invoice_downloaded,0) = 1 THEN 'Yes' ELSE 'No' END",
 	                   "type": "Data"},
+	# Changes(HP) #108: an order invoiced straight from the Sales Order (no Pick List / DN).
+	# Offered only to the sales and e-com roles (ONLY_INVOICE_ROLES).
+	"only_invoice":   {"label": "Only Invoice",
+	                   "select": "CASE WHEN IFNULL(so.custom_only_invoice, 0) = 1 THEN 'Yes' ELSE 'No' END",
+	                   "type": "Data"},
 	# Every item line of the order added up, as ordered (Changes(HP) #80).
 	"total_ordered_qty": {"label": "Total Ordered Qty",
 	                      "select": "(SELECT IFNULL(SUM(soi.qty), 0) FROM `tabSales Order Item` soi"
@@ -269,8 +274,23 @@ DEFAULT_COLUMNS = [
 	"channel", "order_date", "dispatch_date", "customer_type", "sales_order",
 	"customer_po_no", "customer_name", "pl_po_no", "state", "invoice_id",
 	"transporter", "lr_number", "so_amount", "invoice_amount", "amount_diff",
-	"total_ordered_qty", "undispatched", "total_box", "weight", "owner_name",
+	"total_ordered_qty", "undispatched", "total_box", "weight", "owner_name", "only_invoice",
 ]
+
+#: Changes(HP) #108: who sees the Only Invoice column and filter.
+ONLY_INVOICE_ROLES = {
+	"Sales Manager", "Sales Admin", "Sales User", "Sales Officer",
+	"E-Commerce Manager", "E-Commerce Admin", "E-Commerce Coordinator",
+}
+
+
+def sees_only_invoice(user=None):
+	return bool(set(frappe.get_roles(user or frappe.session.user)) & ONLY_INVOICE_ROLES)
+
+
+def default_columns():
+	cat = catalogue()
+	return [c for c in DEFAULT_COLUMNS if c in cat]
 
 # Dynamic columns: any plain field of these documents, per the spec's "fields available
 # from Sales Order, Pick List, Delivery Note, and Post Dispatch". Keys are
@@ -343,6 +363,8 @@ def catalogue():
 	out = {}
 	for key, spec in COLUMNS.items():
 		out[key] = dict(spec, group=REPORT_GROUP)
+	if not sees_only_invoice():
+		out.pop("only_invoice", None)
 	# A plain field the report already shows under its own name is not offered twice.
 	already = {spec["select"].replace("`", "") for spec in COLUMNS.values() if spec["select"]}
 
@@ -392,7 +414,7 @@ def get_columns():
 			}
 			for k, v in catalogue().items()
 		],
-		"default": list(DEFAULT_COLUMNS),
+		"default": default_columns(),
 	}
 
 
@@ -401,13 +423,13 @@ def _clean_columns(columns):
 	if isinstance(columns, str):
 		columns = frappe.parse_json(columns)
 	if not columns:
-		return list(DEFAULT_COLUMNS)
+		return default_columns()
 	cat = catalogue()
 	out = []
 	for c in columns:
 		if isinstance(c, str) and c in cat and c not in out:
 			out.append(c)
-	return out or list(DEFAULT_COLUMNS)
+	return out or default_columns()
 
 
 # --------------------------------------------------------------------- query
@@ -462,6 +484,8 @@ _FILTERS = {
 	"invoice_id":     ("so.custom_invoice_no LIKE %(invoice_id)s", "like"),
 	"lr_number":      ("dn.lr_no LIKE %(lr_number)s", "like"),
 	"customer":       ("so.customer = %(customer)s", "eq"),
+	# Changes(HP) #108: Yes / No (blank = both); for the sales and e-com roles
+	"only_invoice":   ("IFNULL(so.custom_only_invoice, 0) = %(only_invoice)s", "eq"),
 	"customer_type":  ("so.order_type = %(customer_type)s", "eq"),
 	"state":          (f"{_STATE} = %(state)s", "eq"),
 	"order_date_from":    ("so.transaction_date >= %(order_date_from)s", "eq"),
@@ -514,6 +538,10 @@ def _build(filters, columns, sort_field, sort_dir):
 		if key == "invoice_id":
 			# The column shows AHF/26-27/6055 but the order stores 6055: accept either.
 			value = _strip_invoice_prefix(value)
+		if key == "only_invoice":
+			if not sees_only_invoice() or value not in ("Yes", "No"):
+				continue
+			value = 1 if value == "Yes" else 0
 		conditions.append(sql)
 		params[key] = f"%{_escape_like(value)}%" if mode == "like" else value
 
@@ -657,8 +685,12 @@ def attach_undispatched(rows):
 	pending = {}
 	for i in range(0, len(names), _CHUNK):
 		pending.update(_undispatched_for(names[i : i + _CHUNK]))
+	# Changes(HP) #108: an Only Invoice order is never dispatched, so nothing is pending on it
+	only = set(
+		frappe.get_all("Sales Order", filters={"name": ("in", names), "custom_only_invoice": 1}, pluck="name")
+	) if names and frappe.db.has_column("Sales Order", "custom_only_invoice") else set()
 	for r in rows:
-		items = pending.get(r.get("sales_order"), [])
+		items = [] if r.get("sales_order") in only else pending.get(r.get("sales_order"), [])
 		r["undispatched"] = ", ".join(f"{i['item_code']} ({i['qty']})" for i in items)
 		# The full list behind the compact cell (Changes(HP) #41); not an export column.
 		r["undispatched_items"] = items

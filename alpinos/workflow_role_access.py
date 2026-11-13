@@ -324,6 +324,8 @@ SALES_ORDER_STATUSES = "\n".join(
 		"Completed",
 		"Cancelled",
 		"Rejected",
+		# Changes(HP) #108: a submitted Only Invoice order goes straight to the Accounts Format
+		"Only Invoice",
 	]
 )
 
@@ -465,6 +467,17 @@ def _setup_status_fields():
 				fieldtype="Check",
 				insert_after="order_type",
 				default="0",
+			),
+			# Changes(HP) #108: the opposite case: only an invoice, no Pick List, no Delivery Note,
+			# no stock movement. Submitted -> straight to the Accounts Format Report.
+			dict(
+				fieldname="custom_only_invoice",
+				label="Only Invoice",
+				fieldtype="Check",
+				insert_after="custom_rl_no_invoice",
+				default="0",
+				in_standard_filter=1,
+				description="No Pick List or Delivery Note and no stock movement: the submitted order goes straight to the Accounts Format Report for invoicing.",
 			),
 		],
 		"Pick List": [

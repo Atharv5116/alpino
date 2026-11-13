@@ -1722,7 +1722,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
                        from_quotation=None, po_no_for_pdf=None,
-                       submit_now=1, ecom_fields=None, billing_gstin=None, rl_no_invoice=None):
+                       submit_now=1, ecom_fields=None, billing_gstin=None, rl_no_invoice=None,
+                       only_invoice=None):
 	"""Create a Sales Order from the custom entry page.
 	ecom_fields (JSON): optional offline Modern-Trade extra fields (channel='Offline').
 	billing_gstin (#24): Billing GST No. for a Registered-Business buyer."""
@@ -1743,6 +1744,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
 		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	_apply_rl_no_invoice(so, rl_no_invoice)
+	_apply_only_invoice(so, only_invoice)
 	if ecom_fields:
 		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
 		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
@@ -1774,7 +1776,7 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
                        from_quotation=None, po_no_for_pdf=None, ecom_fields=None, billing_gstin=None,
-                       rl_no_invoice=None):
+                       rl_no_invoice=None, only_invoice=None):
 	"""Rewrite a draft Sales Order from the entry page (edit mode). Child tables
 	are rebuilt from the payload; owner, docstatus and the workflow status are
 	left untouched. ecom_fields (JSON): optional offline Modern-Trade extra fields.
@@ -1801,6 +1803,7 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 	if billing_gstin and so.meta.has_field("custom_billing_gstin"):
 		so.custom_billing_gstin = (billing_gstin or "").strip().upper()
 	_apply_rl_no_invoice(so, rl_no_invoice)
+	_apply_only_invoice(so, only_invoice)
 	if ecom_fields:
 		from alpinos.ecom_sales_order_api import apply_ecom_fields_to_so
 		apply_ecom_fields_to_so(so, ecom_fields, channel="Offline")
@@ -1812,6 +1815,13 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 		from alpinos.po_drive_link import maybe_build_po_drive_url
 		maybe_build_po_drive_url(so.name)
 	return {"name": so.name, "docstatus": so.docstatus}
+
+
+def _apply_only_invoice(so, value):
+	"""Changes(HP) #108: Only Invoice -- no Pick List, no Delivery Note, no stock movement; the
+	submitted order goes straight to the Accounts Format Report. None leaves it as it was."""
+	if value is not None and so.meta.has_field("custom_only_invoice"):
+		so.custom_only_invoice = cint(value)
 
 
 def _apply_rl_no_invoice(so, value):
@@ -1907,6 +1917,7 @@ def get_so_entry_payload(sales_order):
 		"po_expiry_date": str(doc.get("custom_po_expiry_date") or ""),
 		"po_no_for_pdf": doc.get("custom_po_no_for_pdf") or "",
 		"rl_no_invoice": cint(doc.get("custom_rl_no_invoice")),
+		"only_invoice": cint(doc.get("custom_only_invoice")),
 		"site_name": doc.get("custom_site_name") or "",
 		"billing_address": doc.get("customer_address") or "",
 		"shipping_address": doc.get("shipping_address_name") or "",
@@ -2121,6 +2132,7 @@ def get_sales_order_entry_list(
 	sort_field=None,
 	sort_dir=None,
 	show_all=None,
+	only_invoice=None,
 ):
 	"""Paginated Sales Order rows for the Alpinos custom list page (respects DocPerm).
 	channel: "Offline"/"E-com" restricts to that channel; legacy (blank) counts as Offline."""
@@ -2148,6 +2160,9 @@ def get_sales_order_entry_list(
 		filters["company"] = str(company).strip()
 	if customer:
 		filters["customer"] = str(customer).strip()
+	# Changes(HP) #108: Only Invoice = Yes / No (blank = both)
+	if (only_invoice or "") in ("Yes", "No") and frappe.db.has_column("Sales Order", "custom_only_invoice"):
+		filters["custom_only_invoice"] = 1 if only_invoice == "Yes" else ["!=", 1]
 
 	# Optional: filter by Additional Units – Damage (`custom_additional_units_damage`).
 	_aug = (additional_units_damage_filter or "").strip().lower()

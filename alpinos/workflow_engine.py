@@ -275,13 +275,19 @@ def sales_order_on_submit(doc, method=None):
 	# the approval stage must never be skipped. The date-driven Today's Dispatch
 	# transition happens afterwards via refresh_todays_dispatch (the daily job
 	# flips due-today orders forward), so it's the stage after, not instead.
-	doc.db_set("custom_workflow_status", SO_WAREHOUSE_PENDING, update_modified=False)
+	# Changes(HP) #108: an Only Invoice order skips the warehouse altogether.
+	from alpinos.only_invoice import STATUS as ONLY_INVOICE
+
+	only_invoice = bool(doc.get("custom_only_invoice"))
+	doc.db_set("custom_workflow_status", ONLY_INVOICE if only_invoice else SO_WAREHOUSE_PENDING, update_modified=False)
 	# Changes(HP) #89: the Accounts Format Report shows who submitted the order and when
 	if doc.meta.has_field("custom_submitted_by"):
 		doc.db_set(
 			{"custom_submitted_by": frappe.session.user, "custom_submitted_on": now_datetime()},
 			update_modified=False,
 		)
+	if only_invoice:
+		return  # nothing for the warehouse to approve or pick
 	from alpinos import so_notifications as son
 	_notify(lambda: son.n01_so_submitted(doc))
 

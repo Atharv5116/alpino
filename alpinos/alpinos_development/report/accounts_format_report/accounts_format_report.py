@@ -483,6 +483,8 @@ def get_columns():
 		# Changes(HP) #89: kept as the two rightmost columns
 		col("Sales Order Submitted By", "so_submitted_by", 150),
 		col("Sales Order Submitted On", "so_submitted_on", 150, "Datetime"),
+		# Changes(HP) #108: Yes for an Only Invoice order (rows from the Sales Order itself)
+		col("Only Invoice", "only_invoice", 90),
 	]
 	return cols
 
@@ -530,6 +532,10 @@ def _get_data(filters):
 	# not invoiced, so it has no place here.
 	if frappe.get_meta("Sales Order").has_field("custom_rl_no_invoice"):
 		so_filters["custom_rl_no_invoice"] = ["!=", 1]
+	# Changes(HP) #108: Only Invoice = Yes / No / both (blank). Submitted orders only, as above.
+	_only = (filters.get("only_invoice") or "").strip()
+	if _only and frappe.get_meta("Sales Order").has_field("custom_only_invoice"):
+		so_filters["custom_only_invoice"] = 1 if _only == "Yes" else ["!=", 1]
 	# Dispatch Date is the primary date filter (Order Date From/To removed).
 	if filters.get("from_date") and filters.get("to_date"):
 		so_filters["custom_dispatch_date"] = ["between", [filters.from_date, filters.to_date]]
@@ -738,6 +744,8 @@ def _get_data(filters):
 			"gst_excl_flag": "Yes" if _gst_excl else "",
 			"so_submitted_by": frappe.utils.get_fullname(so.get("custom_submitted_by")) if so.get("custom_submitted_by") else "",
 			"so_submitted_on": so.get("custom_submitted_on"),
+			# Changes(HP) #108: an Only Invoice order has no Pick List; its rows are the order's
+			"only_invoice": "Yes" if so.get("custom_only_invoice") else "No",
 			# Less Qty / Less Qty Amount are computed per line in emit().
 			"less_qty": None,
 			"less_qty_amount": None,

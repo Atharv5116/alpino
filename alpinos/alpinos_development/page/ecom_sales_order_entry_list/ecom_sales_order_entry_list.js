@@ -43,6 +43,7 @@ var ESO_WF_COLORS = {
 	Completed: 'green',
 	'Forced Completed': 'red',
 	Cancelled: 'red',
+	'Only Invoice': 'purple', // Changes(HP) #108
 };
 
 // specced separately from the offline Sales/Warehouse layouts.
@@ -249,6 +250,11 @@ var EcomSalesOrderListPage = class {
 			df: { fieldtype: 'Date', fieldname: 'to_date', label: __('To date') },
 			parent: w.find('.fld-to-date'), render_input: true,
 		});
+		// Changes(HP) #108
+		this._filters.only_invoice = frappe.ui.form.make_control({
+			df: { fieldtype: 'Select', fieldname: 'only_invoice', label: __('Only Invoice'), options: '\nYes\nNo' },
+			parent: w.find('.fld-only-invoice'), render_input: true,
+		});
 	}
 
 	bind_events() {
@@ -390,6 +396,7 @@ var EcomSalesOrderListPage = class {
 			customer: f.customer.get_value() || '',
 			from_date: f.from_date.get_value() || '',
 			to_date: f.to_date.get_value() || '',
+			only_invoice: (f.only_invoice && f.only_invoice.get_value()) || '',
 			sort_field: this._sort.field || '',
 			sort_dir: this._sort.dir || 'desc',
 		};
