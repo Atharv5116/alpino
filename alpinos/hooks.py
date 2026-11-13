@@ -386,6 +386,8 @@ after_migrate = [
 	"alpinos.item_mrp.setup",
 	# Offline Sales build 1: Sales Officer / Sales Manager rows, settings defaults, Quotation Buyer.
 	"alpinos.offline_sales.setup.execute",
+	# Changes(HP) #110: Pick List Submitted On.
+	"alpinos.afr_export.setup",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
@@ -487,6 +489,8 @@ has_permission = {
 override_whitelisted_methods = {
 	# Changes(HP) #116: the Settings dialog reads a user's own preferences back (Doc View etc.).
 	"frappe.client.get_value": "alpinos.user_settings_compat.get_value",
+	# Changes(HP) #110: the Accounts Format Report's own Export is logged per row.
+	"frappe.desk.query_report.export_query": "alpinos.afr_export.export_query",
 	# Tolerate broken/unreachable images so one bad item image doesn't fail the
 	# whole PDF ("PDF generation failed because of broken image links").
 	"frappe.utils.print_format.download_pdf": "alpinos.pdf_tolerant.download_pdf",
@@ -791,6 +795,8 @@ doc_events = {
 			# An order with no Delivery Note yet is valued from its pick, so the figure
 			# appears when the list is signed off rather than only when stock ships.
 			"alpinos.so_invoice_value.refresh_from_pick_list",
+			# Changes(HP) #110: when it was submitted (Accounts Format Report)
+			"alpinos.afr_export.pick_list_on_submit",
 		],
 		"on_update_after_submit": [
 			"alpinos.after_submit_sync.pick_list_on_update_after_submit",

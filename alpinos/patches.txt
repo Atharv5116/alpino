@@ -42,3 +42,4 @@ alpinos.patches.v1_0.inward_purchase_rate_and_actual_mrp
 alpinos.patches.v1_0.item_mrp_opening
 alpinos.patches.v2_0.company_scope_backfill
 alpinos.patches.v2_0.offline_sales_build1
+alpinos.patches.v2_0.afr_pick_list_submitted_on

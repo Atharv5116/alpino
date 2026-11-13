@@ -1,0 +1,84 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-13 18:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order",
+  "pick_list",
+  "exported_on",
+  "exported_by",
+  "source"
+ ],
+ "fields": [
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "in_list_view": 1,
+   "search_index": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "pick_list",
+   "fieldtype": "Link",
+   "label": "Pick List (part)",
+   "options": "Pick List",
+   "in_list_view": 1,
+   "read_only": 1,
+   "description": "The part exported; blank for an order with no Pick List (Only Invoice)."
+  },
+  {
+   "fieldname": "exported_on",
+   "fieldtype": "Datetime",
+   "label": "Exported On",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "exported_by",
+   "fieldtype": "Link",
+   "label": "Exported By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Exported From",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-11-13 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Accounts Format Export Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "report": 1
+  },
+  {
+   "role": "Accounts User",
+   "read": 1,
+   "report": 1
+  }
+ ],
+ "sort_field": "exported_on",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "sales_order"
+}

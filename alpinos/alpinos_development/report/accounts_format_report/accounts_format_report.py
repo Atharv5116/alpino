@@ -487,6 +487,9 @@ def get_columns():
 		col("Sales Order Submitted On", "so_submitted_on", 150, "Datetime"),
 		# Changes(HP) #64: the Buyer Master the order belongs to, at the far right
 		col("Buyer ID", "buyer_id", 130),
+		# Changes(HP) #110: when the part's Pick List was submitted, and every export of the row
+		col("Pick List Submitted At", "pl_submitted_at", 150, "Datetime"),
+		col("Accounts Format Exported At", "exported_at", 260),
 	]
 	return cols
 
@@ -763,6 +766,14 @@ def _get_data(filters):
 		for _part in _parts:
 			header = dict(_base_header)
 			_part_name = _part["name"] if _part else None
+			# Changes(HP) #110: the Pick List behind this row (its part, else the order's one
+			# submitted Pick List; none for an order with no Pick List) keys the export log
+			_row_pl = _part_name or (_all_parts[0]["name"] if _all_parts else "")
+			header["_pick_list"] = _row_pl
+			header["pl_submitted_at"] = (
+				frappe.db.get_value("Pick List", _row_pl, "custom_submitted_on")
+				if _row_pl and frappe.db.has_column("Pick List", "custom_submitted_on") else None
+			)
 			if _part:
 				_pd = _part_dispatch_date(_part, so)
 				header["dispatch_date"] = formatdate(_pd, "dd-MM-yyyy") if _pd else ""
@@ -1045,4 +1056,8 @@ def _get_data(filters):
 		needle = _invoice_q.lower()
 		data = [r for r in data if needle in (r.get("invoice_no") or "").lower()]
 
+	# Changes(HP) #110: every export of each row, oldest first
+	from alpinos.afr_export import fill_history
+
+	fill_history(data)
 	return data
