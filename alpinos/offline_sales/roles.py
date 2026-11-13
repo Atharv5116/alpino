@@ -46,9 +46,41 @@ def setup_permissions():
 			continue
 		for role, level in role_levels.items():
 			if frappe.db.exists("Role", role):
-				_grant(doctype, role, level)
-		validate_permissions_for_doctype(doctype)
+				try:
+					_grant(doctype, role, level)
+				except frappe.ValidationError:
+					# Frappe's add_permission validates the doctype's EXISTING rows too, and a row
+					# someone else owns may not pass (State's System Manager row has Import on a
+					# doctype that is not importable). Write ours directly instead.
+					frappe.clear_messages()
+					_grant_direct(doctype, role, level)
+		try:
+			validate_permissions_for_doctype(doctype)
+		except frappe.ValidationError:
+			# a row someone else owns may not pass Frappe's own check (State's System Manager
+			# row carries Import on a doctype that is not importable); ours are written right
+			frappe.clear_messages()
+			frappe.log_error(title=f"Offline Sales: permissions of {doctype} not validated")
 		frappe.clear_cache(doctype=doctype)
+
+
+def _grant_direct(doctype, role, level):
+	"""The same row _grant writes, without Frappe validating the doctype's other rows."""
+	from frappe.permissions import setup_custom_perms
+
+	from alpinos.purchase.roles import _MANAGED_PTYPES, _level_ptypes
+
+	setup_custom_perms(doctype)
+	granted = _level_ptypes(level)
+	key = {"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0}
+	name = frappe.db.get_value("Custom DocPerm", key, "name")
+	values = {ptype: 1 if ptype in granted else 0 for ptype in _MANAGED_PTYPES}
+	if name:
+		frappe.db.set_value("Custom DocPerm", name, values, update_modified=False)
+	else:
+		frappe.get_doc(
+			dict(doctype="Custom DocPerm", parenttype="DocType", parentfield="permissions", **key, **values)
+		).db_insert()
 
 
 #: Pages a Sales Officer works in. Changes(HP) #66 / #68 / #70: the Sales Order entry, list and
