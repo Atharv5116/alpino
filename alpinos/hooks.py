@@ -477,6 +477,8 @@ has_permission = {
 # Override standard doctype classes
 
 override_whitelisted_methods = {
+	# Changes(HP) #116: the Settings dialog reads a user's own preferences back (Doc View etc.).
+	"frappe.client.get_value": "alpinos.user_settings_compat.get_value",
 	# Tolerate broken/unreachable images so one bad item image doesn't fail the
 	# whole PDF ("PDF generation failed because of broken image links").
 	"frappe.utils.print_format.download_pdf": "alpinos.pdf_tolerant.download_pdf",
