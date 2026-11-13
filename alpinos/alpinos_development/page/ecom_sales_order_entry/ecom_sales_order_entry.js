@@ -548,7 +548,8 @@ var EcomSalesOrderEntry = class {
 		$sel.append(`<option value="">${__('Select')}</option>`);
 		const listed = (opts.mrps || []).map((o) => flt(o.mrp));
 		(opts.mrps || []).forEach((o) => {
-			$sel.append(`<option value="${flt(o.mrp)}">${format_currency(o.mrp)} (${flt(o.stock_qty)})</option>`);
+			// Changes(HP) #112: the MRP alone, no stock count in brackets
+			$sel.append(`<option value="${flt(o.mrp)}">${format_currency(o.mrp)}</option>`);
 		});
 		if (keep_mrp && !listed.includes(flt(keep_mrp))) {
 			$sel.append(`<option value="${flt(keep_mrp)}">${format_currency(keep_mrp)} (${__('not active')})</option>`);
