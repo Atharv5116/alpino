@@ -90,6 +90,11 @@ var InvoiceDownloadQueue = class {
 				frappe.call({ method: 'alpinos.invoice_queue_api.list_views' }),
 			]);
 			if (!cols.message || !access.message) return;
+			// Changes(HP) #106: Accounts User / Accounts Manager work in the Accounts View
+			if (access.message.accounts_view && window.alpinos && alpinos.ofr_accounts) {
+				this.setup_accounts_view(access.message.accounts_view);
+				if (access.message.accounts_view === 'only') return;
+			}
 			(cols.message.available || []).forEach((c) => { this._catalogue[c.key] = c; });
 			this._default_columns = cols.message.default.slice();
 			this._columns = this._default_columns.slice();
@@ -115,6 +120,32 @@ var InvoiceDownloadQueue = class {
 		} catch (e) {
 			console.error(e);
 		}
+	}
+
+	/** Changes(HP) #106: "only" makes the Accounts View the whole page; "switch" adds a
+	 * button to move between it and the usual report. */
+	setup_accounts_view(mode) {
+		this.wrapper.children().wrapAll('<div class="idq-normal"></div>');
+		const $acc = $('<div class="idq-accounts"></div>').appendTo(this.wrapper);
+		const show_accounts = (on) => {
+			this.wrapper.find('.idq-normal').toggle(!on);
+			$acc.toggle(on);
+			if (on && !this._accounts) this._accounts = alpinos.ofr_accounts.mount(this.page, $acc);
+			this.page.set_title(on ? __('Order Fulfilment Report: Accounts View') : __('Order Fulfilment Report'));
+		};
+		if (mode === 'only') {
+			this.page.clear_inner_toolbar && this.page.clear_inner_toolbar();
+			this.page.add_inner_button(__('Refresh'), () => this._accounts && this._accounts.load());
+			show_accounts(true);
+			return;
+		}
+		let on = false;
+		$acc.hide();
+		const btn = this.page.add_inner_button(__('Accounts View'), () => {
+			on = !on;
+			show_accounts(on);
+			btn.text(on ? __('Full Report') : __('Accounts View'));
+		});
 	}
 
 	/** Filters saved by the page before the rewrite used single dates. */
