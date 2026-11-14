@@ -42,6 +42,7 @@ def migrate(names=None):
 
 	filters = {"name": ("in", names)} if names else {}
 	for name in frappe.get_all("Quotation", filters=filters, pluck="name", order_by="creation asc"):
+		_legacy_selling_prices(name)
 		doc = frappe.get_doc("Quotation", name)
 		buyer = Q.buyer_of(doc)
 		row = frappe.db.get_value("Buyer Master", buyer, ["payment_term", "payment_term_days"], as_dict=True) if buyer else None
@@ -78,3 +79,20 @@ def migrate(names=None):
 		values["custom_credit_days"] = cint(values["custom_credit_days"])
 		values["custom_total_pending"] = flt(values["custom_total_pending"], 2)
 		frappe.db.set_value("Quotation", name, values, update_modified=False)
+
+
+def _legacy_selling_prices(quotation):
+	"""Rows priced before this build carry no Selling Price (the old Quotation priced a line as
+	MRP x (1 - Flat %) x (1 - Offer %)); give them that price so the PDF and totals show it."""
+	if not frappe.db.has_column("Quotation Item", "custom_selling_price"):
+		return
+	for row in frappe.get_all(
+		"Quotation Item",
+		filters={"parent": quotation, "parenttype": "Quotation"},
+		fields=["name", "custom_mrp", "custom_flat_discount", "custom_offer", "custom_selling_price"],
+	):
+		if flt(row.custom_selling_price) > 0 or flt(row.custom_mrp) <= 0:
+			continue
+		price = flt(row.custom_mrp) * (1 - flt(row.custom_flat_discount) / 100) * (1 - flt(row.custom_offer) / 100)
+		frappe.db.set_value("Quotation Item", row.name, "custom_selling_price", flt(price, 2), update_modified=False)
+
