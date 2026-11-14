@@ -377,7 +377,7 @@ def site_exists_in_buyer_family(customer, site_name):
 	return bool(frappe.db.exists("Buyer Address", {"parent": ["in", masters], "site_name": site_name}))
 
 
-def assert_import_site_requirements(customer, site_name, customer_type=None):
+def assert_import_site_requirements(customer, site_name, customer_type=None, quotation=None):
 	"""Import guard for a Sales Order's Site (the site-validation spec).
 
 	Site Name is mandatory on every Sales Order, offline and e-commerce alike. It must map
@@ -424,6 +424,11 @@ def assert_import_site_requirements(customer, site_name, customer_type=None):
 		)
 	if registered and not (_gst_for_site(site_name, "", customer=customer) or "").strip():
 		missing.append("GST No")
+	if missing == ["GST No"] and quotation:
+		# an order created from a Quotation: the doc's own message (Opportunity to SO, Section 6)
+		from alpinos.offline_sales.so_handoff import MSG_GSTIN
+
+		frappe.throw(_(MSG_GSTIN).format(site_name), title=_("Billing GSTIN missing"))
 	if missing:
 		frappe.throw(
 			_("Site '{0}' (Buyer Master {1}) is missing required site-level data: {2}. Set it on the site record - the parent buyer's data is not used as a fallback.").format(site_name, ", ".join(sorted(owners)), ", ".join(missing)),
@@ -658,6 +663,8 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 		if (
 			doc.is_new()
 			and meta.has_field("custom_billing_gstin")
+			# an order from a Quotation gets the doc's own message (offline_sales.so_handoff)
+			and not doc.get("custom_quotation")
 			and (row.get("gst_type") == "Registered Business")
 			and not (doc.get("custom_billing_gstin") or "").strip()
 		):
@@ -708,6 +715,7 @@ def sync_sales_order_offline_buyer_fields(doc, method=None):
 				doc.customer,
 				(doc.get("custom_site_name") or "").strip(),
 				row.get("customer_type"),
+				quotation=doc.get("custom_quotation"),
 			)
 		# Billing/Shipping must come from the Site's own Buyer Master rows — mirror one
 		# into the other when only one is given, and never leave an address ERPNext

@@ -134,6 +134,34 @@ def setup_sales_order_custom_fields():
 				read_only=0,
 				description="Billing GST No. Auto-fetched site-wise from the Buyer Master when a Site is selected; otherwise the buyer's own GST — never the Parent Buyer's. Enter it manually when it can't be auto-fetched. Mandatory for Registered Business buyers.",
 			),
+			# Opportunity to SO doc Section 6: the order's Quotation and Opportunity (clickable)
+			dict(
+				fieldname="custom_quotation",
+				label="Linked Quotation ID",
+				fieldtype="Link",
+				options="Quotation",
+				insert_after="custom_billing_gstin",
+				read_only=1,
+				search_index=1,
+				in_standard_filter=1,
+				description="The Quotation this Sales Order was created from (doc Section 6).",
+			),
+			dict(
+				fieldname="custom_opportunity",
+				label="Linked Opportunity ID",
+				fieldtype="Link",
+				options="Opportunity",
+				insert_after="custom_quotation",
+				read_only=1,
+				description="The Opportunity of that Quotation; blank for a Standalone Quotation.",
+			),
+			dict(
+				fieldname="custom_order_remarks",
+				label="Remarks",
+				fieldtype="Small Text",
+				insert_after="custom_opportunity",
+				description="Carried from the Quotation's remarks; editable while the order is a Draft.",
+			),
 			# Invoice fields, populated by the Invoice PDF sync; shown once Dispatched
 			dict(
 				fieldname="custom_invoice_section",

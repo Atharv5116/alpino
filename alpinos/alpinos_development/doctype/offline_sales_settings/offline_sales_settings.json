@@ -10,7 +10,9 @@
   "coverage_html",
   "buyer_section",
   "default_primary_pocs",
-  "escalation_hours"
+  "escalation_hours",
+  "sales_order_section",
+  "quotation_required_for_sales_order"
  ],
  "fields": [
   {
@@ -49,11 +51,23 @@
    "label": "Escalate Pending Approval After (hours)",
    "non_negative": 1,
    "description": "A buyer still Pending Approval this many hours after it was created is escalated once to its Primary POC(s) and Secondary POC."
+  },
+  {
+   "fieldname": "sales_order_section",
+   "fieldtype": "Section Break",
+   "label": "Sales Orders"
+  },
+  {
+   "fieldname": "quotation_required_for_sales_order",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Offline Sales Orders must come from a Finalized Quotation",
+   "description": "When ticked, every Offline Sales Order is created from a Finalized Quotation whose SO Eligibility is Allowed, by a Sales Manager or Sales Admin (doc Section 6). Direct Sales Orders, a Duplicate of an order without a Quotation and Sales Order imports are then refused. Off: Sales Orders are created as before."
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-13 12:00:00.000000",
+ "modified": "2026-11-14 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Offline Sales Settings",

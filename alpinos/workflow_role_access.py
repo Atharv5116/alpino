@@ -271,6 +271,8 @@ SUPPORTING_READ_ROLES = [
 	"Sales Admin",
 	"Sales Manager",
 	"Sales User",
+	# the 3 Oct amendment lets a Sales Officer draft Sales Orders; saving one reads these too
+	"Sales Officer",
 	"E-Commerce Coordinator",
 	"E-Commerce Manager",
 	"E-Commerce Admin",

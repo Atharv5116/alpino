@@ -925,6 +925,9 @@ doc_events = {
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
 			# Offline Sales: a new order / a submission needs an Approved buyer with its Buyer Catalog.
 			"alpinos.offline_sales.catalog_gate.sales_order_gate",
+			# Opportunity to SO doc Section 6: Quotation-only switch, one active order per Quotation,
+			# Sales Officer cannot create from a Quotation, Billing GSTIN for Registered buyers.
+			"alpinos.offline_sales.so_handoff.sales_order_validate",
 			"alpinos.sales_order_api.validate_so_row_quantities",
 			"alpinos.sales_order_api.validate_sales_order_pricing",
 			# Multiple MRP: one MRP per SKU, and the MRP from the Item's MRP table on submit / import.
@@ -939,6 +942,8 @@ doc_events = {
 			"alpinos.workflow_engine.sales_order_on_submit",
 			"alpinos.sales_order_trail.record_submission",
 			"alpinos.sales_mrp.update_buyer_catalog_on_submit",
+			# doc Section 6 8.3: Last Order Date + Linked Sales Order on the synced catalogue rows
+			"alpinos.offline_sales.so_handoff.stamp_catalog_on_submit",
 		],
 		"before_cancel": "alpinos.workflow_engine.sales_order_before_cancel",
 		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",

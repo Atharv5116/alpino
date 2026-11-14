@@ -10,7 +10,9 @@
   "item_group",
   "mrp",
   "margin_percent",
-  "selling_rate"
+  "selling_rate",
+  "last_order_date",
+  "last_sales_order"
  ],
  "fields": [
   {
@@ -62,12 +64,26 @@
    "in_list_view": 1,
    "label": "Selling Rate",
    "read_only": 1
+  },
+  {
+   "fieldname": "last_order_date",
+   "fieldtype": "Date",
+   "label": "Last Order Date",
+   "read_only": 1,
+   "description": "Date of the submitted Sales Order that last set this row."
+  },
+  {
+   "fieldname": "last_sales_order",
+   "fieldtype": "Link",
+   "options": "Sales Order",
+   "label": "Linked Sales Order",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-27 12:00:00.000000",
+ "modified": "2026-11-14 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Buyer Item",
