@@ -23,6 +23,6 @@ def get_context(context):
 		frappe.local.response["http_status_code"] = 403
 		return context
 	context.refused = False
-	context.token = token.strip().lower()
+	context.order_token = token.strip().lower()
 	context.page_data = frappe.as_json(data)
 	return context

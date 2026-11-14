@@ -2,6 +2,10 @@
 
 {% block title %}Order Request{% endblock %}
 
+{# a no-login page for the buyer: no website navbar / footer, no Login link #}
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+
 {% block page_content %}
 <style>
 	.bor { max-width: 1100px; margin: 0 auto; padding: 8px 0 40px; font-size: 14px; }
@@ -92,7 +96,7 @@
 
 	<script>
 	(function () {
-		const TOKEN = {{ token | tojson }};
+		const TOKEN = {{ order_token | tojson }};
 		const DATA = {{ page_data }};
 		const API = "/api/method/alpinos.offline_sales.order_link.";
 		const DRAFT_KEY = "bor-draft-" + TOKEN.slice(-12);
@@ -135,7 +139,7 @@
 			try {
 				const items = await call("search_products", {token: TOKEN, txt: $("f-search").value});
 				$("results").innerHTML = items.length ? items.map((i, n) => `<div class="opt" data-n="${n}">
-					${i.image ? `<img class="thumb" src="${esc(i.image)}">` : `<span class="thumb"></span>`}
+					${i.image ? `<img class="thumb" src="${esc(i.image)}" onerror="this.style.visibility='hidden'">` : `<span class="thumb"></span>`}
 					<div><div><b>${esc(i.item_name)}</b></div><div class="muted">${esc(i.item_code)} &middot; MRP ${money(i.mrp)} &middot; ${money(i.selling_price)}</div></div></div>`).join("")
 					: `<div class="empty">No products found</div>`;
 				$("results").style.display = "block";
@@ -152,7 +156,7 @@
 
 		function render() {
 			$("rows").innerHTML = rows.length ? rows.map((r, n) => `<tr>
-				<td data-label="">${r.image ? `<img class="thumb" src="${esc(r.image)}">` : ""}</td>
+				<td data-label="">${r.image ? `<img class="thumb" src="${esc(r.image)}" onerror="this.style.visibility='hidden'">` : ""}</td>
 				<td data-label="Product SKU">${esc(r.item_code)}</td>
 				<td data-label="Product Name">${esc(r.item_name)}</td>
 				<td class="num" data-label="MRP">${money(r.mrp)}</td>

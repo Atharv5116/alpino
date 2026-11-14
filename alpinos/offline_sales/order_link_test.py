@@ -194,7 +194,7 @@ def _token_rules():
 		import os
 		import runpy
 
-		get_context = runpy.run_path(os.path.join(frappe.get_app_path("alpinos"), "www", "order-request.py"))["get_context"]
+		get_context = runpy.run_path(os.path.join(frappe.get_app_path("alpinos"), "www", "order_request.py"))["get_context"]
 		for token in ("bad", F.token):
 			frappe.form_dict.token = token
 			ctx = frappe._dict()
