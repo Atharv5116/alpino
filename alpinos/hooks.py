@@ -969,6 +969,8 @@ doc_events = {
 			"alpinos.sales_mrp.update_buyer_catalog_on_submit",
 			# doc Section 6 8.3: Last Order Date + Linked Sales Order on the synced catalogue rows
 			"alpinos.offline_sales.so_handoff.stamp_catalog_on_submit",
+			# doc Section 7: "Fulfillment Handoff" in the order's trail
+			"alpinos.offline_sales.so_handoff.on_submit",
 		],
 		"before_cancel": "alpinos.workflow_engine.sales_order_before_cancel",
 		"on_cancel": [

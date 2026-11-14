@@ -300,6 +300,14 @@ def on_rejected(sales_order):
 	release_quotation(sales_order, _("Sales Order {0} rejected").format(sales_order))
 
 
+def on_submit(doc, method=None):
+	"""The submitted order goes to the existing fulfilment flow (Warehouse, Pick List, QC,
+	Delivery Note, Dispatch): the doc's "Fulfillment Handoff" trail row, by the System."""
+	if _offline(doc):
+		audit.log("Sales Order", doc.name, "Fulfillment Handoff", "Status", "Submitted", "Downstream Processing",
+			reason=_("Submitted Sales Order handed to the existing operational workflow"), after_submit=1, role="System")
+
+
 # ------------------------------------------------------------------------------ catalogue
 
 

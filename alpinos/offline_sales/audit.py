@@ -23,8 +23,9 @@ from alpinos.alpinos_development.doctype.field_change_log.field_change_log impor
 )
 
 
-def log(doctype, name, action, field=None, old=None, new=None, reason=None, item_code=None, after_submit=0):
-	"""One trail entry. Never raises (a failed log must not undo the action it records)."""
+def log(doctype, name, action, field=None, old=None, new=None, reason=None, item_code=None, after_submit=0, role=None):
+	"""One trail entry. Never raises (a failed log must not undo the action it records).
+	`role` overrides the acting user's role, e.g. "System" for what the system does on its own."""
 	log_field_change(
 		doctype,
 		name,
@@ -35,7 +36,7 @@ def log(doctype, name, action, field=None, old=None, new=None, reason=None, item
 		action=action,
 		item_code=item_code,
 		reason=reason,
-		user_role=acting_role(),
+		user_role=role or acting_role(),
 	)
 
 

@@ -246,8 +246,11 @@ def _run():
 		priced = {r.item_code for r in so.items if flt(r.custom_selling_price) > 0}
 		_assert(priced and priced <= {r.item_code for r in rows}, f"{priced} vs {rows}")
 		_assert(all(str(r.last_order_date) == str(so.transaction_date) for r in rows), rows)
+		handoff = frappe.get_all("Field Change Log", filters={"reference_doctype": "Sales Order", "reference_name": so.name,
+			"action": "Fulfillment Handoff"}, fields=["new_value", "user_role"])
+		_assert(handoff and handoff[0].new_value == "Downstream Processing" and handoff[0].user_role == "System", handoff)
 
-	check("S6 8.3: on submission each synced catalogue row records Last Order Date and Linked Sales Order", _stamp)
+	check("S6 8.3 / S7: on submission the catalogue rows record Last Order Date + Linked SO; Fulfillment Handoff by System", _stamp)
 
 	def _draft_no_sync():
 		so = _new_order()
