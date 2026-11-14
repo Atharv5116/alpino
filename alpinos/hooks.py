@@ -1059,6 +1059,10 @@ scheduler_events = {
 		"7 * * * *": [
 			"alpinos.offline_sales.escalation.run"
 		],
+		# Offline Sales W6: Credit payment reminders, every calendar day at 08:00 (doc Section 5).
+		"0 8 * * *": [
+			"alpinos.offline_sales.payment_reminders.run"
+		],
 		"30 11 * * *": [
 			"alpinos.attendance_alerts.notify_missing_checkins"
 		],
