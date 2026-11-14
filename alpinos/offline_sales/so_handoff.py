@@ -216,6 +216,12 @@ def _commercial_changes(doc):
 	reason = (doc.flags.change_reason or "").strip()
 	if not reason:
 		frappe.throw(_(MSG_REASON), title=_("Reason for Change"))
+	# the existing rule wants a row remark where the quantity went below the Quotation's: the
+	# reason just given is that remark, so nobody types it twice
+	reduced = {c[0] for c in changes if c[1] == "Quantity" and flt(c[3]) < flt(c[2])}
+	for row in doc.get("items") or []:
+		if row.item_code in reduced and not (row.get("custom_remarks") or "").strip():
+			row.custom_remarks = reason
 	doc.flags.commercial_changes = (changes, reason)
 
 
