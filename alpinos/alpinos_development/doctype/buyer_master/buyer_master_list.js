@@ -1,6 +1,7 @@
 // Buyer Master list (Offline Sales, "Opportunity to Sales Order v1.0.0" Sections 1 and 4).
 //
-//   * status indicator (Pending Approval / Approved / On Hold / Inactive / Cancelled);
+//   * status badge (doc Section 8: Pending Approval orange, Approved green, On Hold yellow,
+//     Inactive gray, Cancelled red); newest first;
 //   * "+ Create New Buyer" opens the creation modal; for a Sales Officer it IS the Add button;
 //   * a Sales Admin, with manager scoping switched on, opens on the buyers they are Secondary
 //     POC of, and Show All lifts that. List scope only: their permissions are unchanged.
@@ -12,9 +13,6 @@ frappe.listview_settings["Buyer Master"] = {
 		if ((doc.channel || "") === "E-com") return null;
 		const status = doc.buyer_status || "Approved";
 		const colors = { "Pending Approval": "orange", Approved: "green", "On Hold": "yellow", Inactive: "gray", Cancelled: "red" };
-		if (status === "Approved" && doc.buyer_catalog_status === "Pending") {
-			return [__("Catalog Pending"), "orange", "buyer_status,=,Approved|buyer_catalog_status,=,Pending"];
-		}
 		return [__(status), colors[status] || "gray", `buyer_status,=,${status}`];
 	},
 
