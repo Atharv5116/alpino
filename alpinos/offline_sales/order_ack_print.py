@@ -17,7 +17,7 @@ HTML = r"""
 	{%- endif -%}
 {%- endmacro -%}
 {%- set buyer = frappe.db.get_value("Buyer Master", doc.party_name, ["customer_business_name", "customer", "gst_no"], as_dict=True) or {} -%}
-{%- set gstin = (frappe.db.get_value("Address", doc.custom_billing_address, "gstin") if doc.custom_billing_address and frappe.db.has_column("Address", "gstin") else "") or buyer.gst_no or "" -%}
+{%- set gstin = doc.get("custom_billing_gstin") or buyer.gst_no or "" -%}
 <style>
 	.bor-ack { font-size: 12px; }
 	.bor-ack h2 { font-size: 18px; margin: 0 0 4px; }

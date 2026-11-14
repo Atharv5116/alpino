@@ -364,7 +364,14 @@ def _submit_and_edit():
 	check("S2: no edit after the Opportunity leaves Draft; another buyer's request is never reachable", _locked)
 
 	def _notifications():
-		L.after_submit(F.opp)
+		# the PDF itself is rendered by wkhtmltopdf, which needs the web server; the template is
+		# checked through its HTML below, so the mail carries a stand-in file here
+		real_pdf = L.ack_pdf
+		L.ack_pdf = lambda name: b"%PDF-1.4 test"
+		try:
+			L.after_submit(F.opp)
+		finally:
+			L.ack_pdf = real_pdf
 		officers = frappe.get_all("Notification Log", filters={"document_type": "Opportunity", "document_name": F.opp, "for_user": F.so.user}, pluck="subject")
 		_assert(officers and officers[0].startswith(f"New Buyer Order Request {F.bor} submitted by"), officers)
 		mail = frappe.get_all("Email Queue", filters={"reference_doctype": "Opportunity", "reference_name": F.opp}, fields=["name"])
