@@ -25,6 +25,7 @@ OPPORTUNITY = {
 	"not_filters": ["opportunity_from", "status"],
 	"labels": {"total": "Total Amount", "customer_name": "Customer"},
 	"search_fields": "customer_name,party_name,custom_buyer_order_request_ref,custom_site_name,custom_linked_quotation",
+	"id_first": True,
 }
 
 
@@ -43,6 +44,7 @@ QUOTATION = {
 	"not_filters": ["status"],
 	"labels": {"opportunity": "Opportunity ID", "customer_name": "Customer", "custom_linked_sales_order": "Sales Order ID"},
 	"search_fields": "customer_name,party_name,opportunity,custom_linked_sales_order",
+	"id_first": True,
 }
 
 
@@ -77,6 +79,10 @@ def _apply(doctype, spec):
 	search = ",".join(f for f in (spec.get("search_fields") or "").split(",") if f and meta.get_field(f))
 	if search and meta.search_fields != search:
 		make_property_setter(doctype, None, "search_fields", search, "Data", for_doctype=True)
+	if spec.get("id_first") and meta.title_field:
+		# the list's first column is the document ID (doc: "Opportunity ID" / "Quotation ID"),
+		# not ERPNext's Title, which repeats the customer's name
+		make_property_setter(doctype, None, "title_field", "", "Data", for_doctype=True)
 	if meta.sort_field != "creation" or (meta.sort_order or "").upper() != "DESC":
 		make_property_setter(doctype, None, "sort_field", "creation", "Data", for_doctype=True)
 		make_property_setter(doctype, None, "sort_order", "DESC", "Data", for_doctype=True)
