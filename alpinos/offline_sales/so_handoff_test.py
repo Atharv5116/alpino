@@ -209,8 +209,12 @@ def _run():
 
 	def _links_locked():
 		so = frappe.get_doc("Sales Order", F.second)
-		other = frappe.db.get_value("Customer", {"name": ("!=", so.customer)}, "name")
+		# another real Offline buyer's Customer (not one of the test-made customers other suites leave)
+		other = frappe.db.get_value("Buyer Master", {"customer": ("not in", [so.customer, ""]), "buyer_status": "Approved",
+			"channel": ("!=", "E-com")}, "customer")
 		so.customer = other
+		for f in ("contact_person", "contact_display", "contact_email", "contact_mobile", "customer_address", "shipping_address_name"):
+			so.set(f, None)  # the old customer's contact / addresses would be refused by ERPNext first
 		err = refused(lambda: so.save())
 		_assert("cannot be changed" in err, err)
 
