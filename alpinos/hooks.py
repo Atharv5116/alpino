@@ -128,7 +128,12 @@ page_js = {"permission-manager": "public/js/permission_manager_company.js"}
 doctype_js = {
 	"User": "public/js/user_override.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
-	"Quotation": ["public/js/quotation_sales_order_redirect.js", "public/js/quotation_create_so.js"],
+	# Offline Sales, Section 5: the Quotation form (status and payment actions, dialogs, trail).
+	"Quotation": [
+		"public/js/quotation_sales_order_redirect.js",
+		"public/js/quotation_create_so.js",
+		"public/js/quotation_offline.js",
+	],
 	# Offline Sales, Section 3: the Opportunity form (status actions, lock, read-only pricing).
 	"Opportunity": "public/js/opportunity_offline.js",
 	"Purchase Receipt": "public/js/purchase_receipt_grn.js",
@@ -393,6 +398,8 @@ after_migrate = [
 	"alpinos.offline_sales.setup.execute",
 	# Buyer Order Request acknowledgement PDF (doc Section 2).
 	"alpinos.offline_sales.order_ack_print.execute",
+	# Quotation PDF (doc Section 5, 22), the Quotation's default print format.
+	"alpinos.offline_sales.quotation_print.execute",
 	# Changes(HP) #110: Pick List Submitted On.
 	"alpinos.afr_export.setup",
 	# Goods Return (FSD Document 1): roles and permissions, inside the perm_seed window.
@@ -736,13 +743,28 @@ doc_events = {
 		]
 	},
 	"Quotation": {
-		"before_validate": ["alpinos.quotation_validate.before_validate_quotation_alpinos"],
+		"before_validate": [
+			"alpinos.quotation_validate.before_validate_quotation_alpinos",
+			# Offline Sales, Section 5: status and stamps only through the actions; quantity message.
+			"alpinos.offline_sales.quotation.before_validate",
+		],
 		"validate": [
 			"alpinos.quotation_validate.validate_quotation_alpinos",
 			"alpinos.qty_flow.quotation_qty_remarks",
 			# Offline Sales: the Quotation's Buyer, and a new one needs a ready buyer.
 			"alpinos.offline_sales.catalog_gate.quotation_validate",
+			# Section 5: defaults, one active Quotation per Opportunity, Sales Order pricing, payments.
+			"alpinos.offline_sales.quotation.validate",
 		],
+		"after_insert": "alpinos.offline_sales.quotation.after_insert",
+		"on_update": "alpinos.offline_sales.quotation.on_update",
+		# Finalize / Cancel Quotation are the only way to submit / cancel (or discard) one; after
+		# Finalize the commercial values are locked and payments change through their actions.
+		"before_submit": "alpinos.offline_sales.quotation.before_submit",
+		"before_cancel": "alpinos.offline_sales.quotation.before_cancel",
+		"before_discard": "alpinos.offline_sales.quotation.before_discard",
+		"before_update_after_submit": "alpinos.offline_sales.quotation.before_update_after_submit",
+		"on_update_after_submit": "alpinos.offline_sales.quotation.on_update_after_submit",
 	},
 	# Offline Sales (alpinos.offline_sales): the buyer Activity Trail, and the Buyer Catalog rules.
 	"Buyer Master": {
@@ -933,6 +955,8 @@ doc_events = {
 	},
 	"File": {
 		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",
+		# Offline Sales, Section 5, 19: a Quotation payment proof is never deleted by a business user.
+		"on_trash": "alpinos.offline_sales.quotation_payments.protect_proof_file",
 	},
 	"Sales Order": {
 		"after_insert": [

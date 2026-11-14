@@ -44,3 +44,4 @@ alpinos.patches.v2_0.company_scope_backfill
 alpinos.patches.v2_0.offline_sales_build1
 alpinos.patches.v2_0.afr_pick_list_submitted_on
 alpinos.patches.v2_0.opportunity_workflow
+alpinos.patches.v2_0.quotation_payment_v2

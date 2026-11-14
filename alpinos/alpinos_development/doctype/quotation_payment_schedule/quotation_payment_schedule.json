@@ -1,0 +1,130 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-11-14 06:30:00.000000",
+ "description": "Partial payment schedule row of a Quotation (Offline Sales, Section 5).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "row_key",
+  "payment_term",
+  "expected_payment_date",
+  "expected_amount",
+  "received_amount",
+  "received_date",
+  "payment_proof",
+  "reference_utr",
+  "remarks",
+  "pending_amount",
+  "row_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "row_key",
+   "label": "Row Key",
+   "fieldtype": "Data",
+   "allow_on_submit": 1,
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_term",
+   "label": "Payment Term",
+   "fieldtype": "Select",
+   "allow_on_submit": 1,
+   "options": "Advance\nCredit",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "expected_payment_date",
+   "label": "Expected Payment Date",
+   "fieldtype": "Date",
+   "allow_on_submit": 1,
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "expected_amount",
+   "label": "Expected Amount",
+   "fieldtype": "Currency",
+   "allow_on_submit": 1,
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 2,
+   "options": "currency"
+  },
+  {
+   "fieldname": "received_amount",
+   "label": "Received Amount",
+   "fieldtype": "Currency",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 2,
+   "options": "currency"
+  },
+  {
+   "fieldname": "received_date",
+   "label": "Received Date",
+   "fieldtype": "Date",
+   "allow_on_submit": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_proof",
+   "label": "Payment Proof",
+   "fieldtype": "Attach",
+   "allow_on_submit": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_utr",
+   "label": "Reference / UTR",
+   "fieldtype": "Data",
+   "allow_on_submit": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "label": "Remarks",
+   "fieldtype": "Small Text",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "pending_amount",
+   "label": "Pending Amount",
+   "fieldtype": "Currency",
+   "allow_on_submit": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 2,
+   "options": "currency"
+  },
+  {
+   "fieldname": "row_status",
+   "label": "Row Status",
+   "fieldtype": "Select",
+   "allow_on_submit": 1,
+   "options": "Pending\nPartially Received\nFully Received",
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-14 06:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alpinos Development",
+ "name": "Quotation Payment Schedule",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

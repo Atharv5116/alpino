@@ -84,18 +84,16 @@ def map_quotation(source_name, target_doc=None):
 		obm_party = source.party_name if source.get("opportunity_from") == "Buyer Master" else None
 		resolved_customer = None
 		obm_customer_name = None
-		payment_term = None
 		if obm_party:
 			row = frappe.db.get_value(
 				"Buyer Master",
 				obm_party,
-				["customer", "customer_business_name", "payment_term"],
+				["customer", "customer_business_name"],
 				as_dict=True,
 			)
 			if row:
 				resolved_customer = row.get("customer")
 				obm_customer_name = row.get("customer_business_name")
-				payment_term = row.get("payment_term")
 			if not resolved_customer:
 				frappe.throw(
 					"Buyer Master {0} has no linked Customer. Please save the Buyer Master first.".format(
@@ -106,12 +104,8 @@ def map_quotation(source_name, target_doc=None):
 		order_type_src = source.get("custom_order_type")
 		if order_type_src:
 			quotation.order_type = order_type_src
-		if obm_party and payment_term:
-			quotation.custom_payment_mode = {
-				"Credit": "Debit",
-				"Partial": "Partial",
-				"Advance": "Advance",
-			}.get(payment_term, "Advance")
+		# Payment Term (and Credit Days) come from the Buyer Master when the Quotation is created
+		# (alpinos.offline_sales.quotation.validate, Section 5, 9.1)
 
 		company_currency = frappe.get_cached_value("Company", quotation.company, "default_currency")
 
