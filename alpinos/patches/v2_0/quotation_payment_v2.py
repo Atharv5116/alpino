@@ -25,6 +25,12 @@ def execute():
 		from alpinos.quotation_custom_fields import setup_quotation_custom_fields
 
 		setup_quotation_custom_fields()
+	# the Sales Order's Linked Quotation (W7) decides "Sales Order Created"; on a site migrating to
+	# this build it is created by after_migrate, which runs after the patches
+	if not frappe.db.has_column("Sales Order", "custom_quotation"):
+		from alpinos.sales_order_custom_fields import setup_sales_order_custom_fields
+
+		setup_sales_order_custom_fields()
 	if not frappe.db.has_column("Quotation", "custom_quotation_status"):
 		return
 	migrate()

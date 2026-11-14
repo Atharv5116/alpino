@@ -58,7 +58,7 @@ def _has(field):
 
 def active_sales_order(quotation, exclude=None):
 	"""The active Sales Order of a Quotation: Draft or submitted, not Cancelled / Rejected."""
-	if not quotation:
+	if not quotation or not frappe.db.has_column("Sales Order", "custom_quotation"):
 		return None
 	rows = frappe.db.sql(
 		"""
