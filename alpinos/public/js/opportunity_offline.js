@@ -25,6 +25,7 @@
 		"organization_details_section", "no_of_employees", "annual_revenue", "industry", "market_segment",
 		"column_break_23", "territory", "city", "state", "country", "section_break_14", "utm_analytics_section",
 		"opportunity_type", "opportunity_owner", "sales_stage", "expected_closing", "probability", "status",
+		"opportunity_from", "naming_series",
 	];
 	const PRICE_FIELDS = [
 		"custom_mrp", "custom_flat_discount", "custom_selling_price", "custom_offer", "custom_additional_discount",
@@ -40,18 +41,17 @@
 	function add_style() {
 		if (style_added) return;
 		style_added = true;
-		// Section 3, 2 (mobile): header fields stack, the action bar wraps, item tables scroll
-		// sideways, nothing is cut off.
+		// Section 3, 2 (mobile): the desk already stacks the header fields and scrolls item
+		// tables sideways; the action buttons are reached through the "..." menu, and the banner,
+		// the Buyer block and the Create New Buyer button are made to fit.
 		$(`<style>
 			.alpinos-opp-buyer { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 13px; }
 			.alpinos-opp-buyer > div { min-width: 0; overflow-wrap: anywhere; }
 			.alpinos-create-buyer-btn { margin-top: 6px; }
 			@media (max-width: 767px) {
-				body[data-route^="Form/Opportunity"] .page-head .page-actions { flex-wrap: wrap; gap: 4px; height: auto; }
-				body[data-route^="Form/Opportunity"] .page-head .custom-actions { display: flex !important; flex-wrap: wrap; gap: 4px; }
-				body[data-route^="Form/Opportunity"] .form-grid { overflow-x: auto; }
-				body[data-route^="Form/Opportunity"] .form-grid .grid-heading-row,
-				body[data-route^="Form/Opportunity"] .form-grid .grid-body { min-width: 680px; }
+				/* the desk's button strip sits partly above a phone screen; the same buttons are
+				   in the "..." menu, which is the overflow menu the document allows */
+				body[data-route^="Form/Opportunity"] .page-head .custom-actions { display: none !important; }
 				body[data-route^="Form/Opportunity"] .form-message { white-space: normal; overflow-wrap: anywhere; }
 				.alpinos-opp-buyer { flex-direction: column; }
 				.alpinos-create-buyer-btn { width: 100%; }
@@ -235,6 +235,11 @@
 	}
 
 	function convert(frm) {
+		if (frm.__convert_blocked) {
+			// the phone menu copy of the disabled button still calls this
+			frappe.msgprint({ message: esc(frm.__convert_blocked), indicator: "red", title: __("Convert to Quotation") });
+			return;
+		}
 		frappe.confirm(__("Create Quotation from this Opportunity?"), () =>
 			frappe
 				.xcall(API + "convert_to_quotation", { name: frm.doc.name }, "POST", { freeze: true, freeze_message: __("Creating Quotation...") })
@@ -244,6 +249,7 @@
 
 	function render_actions(frm) {
 		frm.clear_custom_buttons(); // ERPNext's Create > Quotation / Customer, Close / Reopen bypass the workflow
+		frm.__convert_blocked = null;
 		if (frm.is_new()) return;
 		frappe.xcall(API + "form_actions", { name: frm.doc.name }).then((ctx) => {
 			if (!ctx || status_of(frm) !== ctx.status) return;
@@ -257,6 +263,7 @@
 				const blocked = ctx.convert_blocked_reason || (ctx.active_quotation
 					? __("An active Quotation [{0}] already exists for this Opportunity. Cancel the existing Quotation before creating another Quotation.", [ctx.active_quotation])
 					: null);
+				frm.__convert_blocked = blocked;
 				const btn = frm.add_custom_button(__("Convert to Quotation"), () => convert(frm));
 				if (blocked) {
 					btn.prop("disabled", true).attr("title", blocked);
@@ -306,6 +313,7 @@
 			add_style();
 			set_queries(frm);
 			OBM_HIDDEN.forEach((f) => frm.toggle_display(f, !is_obm(frm)));
+			if (is_obm(frm)) frm.set_df_property("party_name", "label", __("Customer"));
 			frm.toggle_display("customer_name", is_obm(frm) && !!frm.doc.customer_name);
 			show_status(frm);
 			render_actions(frm);
@@ -324,6 +332,11 @@
 			if (trail && !frm.is_new() && window.alpinos_offline) {
 				alpinos_offline.render_trail(trail.$wrapper, "Opportunity", frm.doc.name);
 			}
+		},
+
+		set_dynamic_field_label(frm) {
+			// ERPNext labels the party after Opportunity From; 3.1 calls it Customer
+			if (is_obm(frm)) frm.set_df_property("party_name", "label", __("Customer"));
 		},
 
 		party_name(frm) {

@@ -26,6 +26,9 @@ PERMISSION_MATRIX = {
 	# Section 3 (Opportunity): SO / SM / SA create, edit while Draft and act on it; Sales
 	# Manager and Sales Admin already hold their rows
 	"Opportunity": {SALES_OFFICER: "CREATE_EDIT"},
+	# ERPNext's new Opportunity sets Opportunity Type "Sales" in the browser, whose link check
+	# refused a Sales Officer ("Insufficient Permission for Opportunity Type")
+	"Opportunity Type": {SALES_OFFICER: "VIEW"},
 	"Quotation": {SALES_OFFICER: "CREATE_EDIT"},
 	"Pick List": {SALES_OFFICER: "VIEW"},
 	"Delivery Note": {SALES_OFFICER: "VIEW"},
