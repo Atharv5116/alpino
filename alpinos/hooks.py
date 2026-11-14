@@ -148,7 +148,7 @@ doctype_js = {
 doctype_list_js = {
 	# Offline Sales: a Sales Admin's Quotation list opens on their Secondary POC buyers (Show All).
 	"Quotation": "public/js/quotation_list_scope.js",
-	"Opportunity": "public/js/opportunity_list_scope.js",
+	"Opportunity": ["public/js/opportunity_list_scope.js", "public/js/opportunity_list.js"],
 	"Purchase Order": "public/js/purchase_order_list.js",
 	"Pick List": "public/js/pick_list_list.js",
 	"Item": "public/js/item_list_colors.js",
@@ -399,6 +399,8 @@ after_migrate = [
 	"alpinos.goods_return.setup.execute",
 	# Read-only Stock / Accounts Settings for the roles whose screens read them; import pages' roles.
 	"alpinos.settings_read_access.setup",
+	# doc Section 8 list views (columns, filters, newest first) for the Offline Sales doctypes.
+	"alpinos.offline_sales.list_views.setup",
 	# Last: after the steps that rebuild print formats (core_customizations).
 	"alpinos.core_customizations.keep_v15_print_cells",
 	"alpinos.core_customizations.keep_v15_hidden_empty_fields",
