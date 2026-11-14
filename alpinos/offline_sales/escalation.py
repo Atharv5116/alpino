@@ -8,6 +8,7 @@ the rule is kept simple and explicit).
 """
 
 import frappe
+from frappe import _
 from frappe.utils import add_to_date, now_datetime
 
 from alpinos.offline_sales import ECOM_CHANNEL, PENDING
@@ -68,8 +69,11 @@ def run(now=None):
 		subject = message(row)
 		sent = notify([], subject, doctype="Buyer Master", name=row.name, email=True, users=users) if users else []
 		frappe.db.set_value("Buyer Master", row.name, "escalated_on", now or now_datetime(), update_modified=False)
+		# doc Section 8: system time, hours elapsed and recipients
+		elapsed = int((((now or now_datetime()) - row.creation).total_seconds()) // 3600) if row.get("creation") else escalation_hours()
 		audit.log(
 			"Buyer Master", row.name, "Approval Escalated", "Escalated To", "", ", ".join(sent) or "(no POC user)",
+			reason=_("Pending Approval for {0} hours").format(elapsed), role="System",
 		)
 		done.append(row.name)
 	if done:

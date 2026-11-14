@@ -301,9 +301,15 @@ def on_rejected(sales_order):
 
 
 def on_submit(doc, method=None):
-	"""The submitted order goes to the existing fulfilment flow (Warehouse, Pick List, QC,
-	Delivery Note, Dispatch): the doc's "Fulfillment Handoff" trail row, by the System."""
+	"""The doc's "Sales Order Submitted" row with the final values, and "Fulfillment Handoff"
+	(by the System) as the order goes to the existing Warehouse / Pick List / QC / Delivery
+	Note / Dispatch flow."""
 	if _offline(doc):
+		lines = [r for r in doc.get("items") or [] if r.item_code]
+		final = _("{0} lines, Qty {1}, Grand Total {2}").format(
+			len(lines), flt(sum(flt(r.qty) for r in lines)), frappe.utils.fmt_money(doc.grand_total, currency=doc.currency)
+		)
+		audit.log("Sales Order", doc.name, "Sales Order Submitted", "Final Values", "Draft", final, after_submit=1)
 		audit.log("Sales Order", doc.name, "Fulfillment Handoff", "Status", "Submitted", "Downstream Processing",
 			reason=_("Submitted Sales Order handed to the existing operational workflow"), after_submit=1, role="System")
 
@@ -325,6 +331,12 @@ def stamp_catalog_on_submit(doc, method=None):
 			continue
 		mrp = flt(row.get("custom_customer_mrp"))
 		by_mrp = bool(mrp > 0 and IM.applicable(row.item_code).tracked)
+		buyer = doc.get("custom_offline_buyer_master") or frappe.db.get_value("Buyer Master", {"customer": doc.customer}, "name")
+		if buyer:
+			# doc Section 8: Buyer, SKU, Submitted SO, Selling Price, Discount
+			audit.log("Buyer Master", buyer, "Buyer Catalog Updated", "Selling Price / Flat Discount %", None,
+				f"{flt(row.get('custom_selling_price'), 2)} / {flt(row.get('custom_flat_discount'), 2)}%",
+				reason=_("From submitted Sales Order {0}").format(doc.name), item_code=row.item_code, role="System")
 		frappe.db.sql(
 			f"""
 			UPDATE `tabBuyer Item` bil

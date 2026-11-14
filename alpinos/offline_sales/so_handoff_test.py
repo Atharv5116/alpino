@@ -119,8 +119,11 @@ def _new_order(quotation=None, user="Administrator", insert=True):
 def _quotation(suffix):
 	"""A submitted Quotation with the same lines as the source order (so an order from it differs in nothing)."""
 	src = frappe.get_doc("Sales Order", F.src)
+	extra = {}
+	if frappe.db.has_column("Quotation", "custom_quotation_status"):
+		extra = {"custom_quotation_status": "Finalized", "custom_so_eligibility": "Allowed"}
 	name = _insert("Quotation", name=f"{TAG}-{suffix}", quotation_to="Customer", party_name=src.customer, company=src.company,
-		transaction_date=today(), docstatus=1, custom_cash_discount=src.get("custom_cash_discount"))
+		transaction_date=today(), docstatus=1, custom_cash_discount=src.get("custom_cash_discount"), **extra)
 	qmeta = frappe.get_meta("Quotation Item")
 	for i, row in enumerate(src.items, start=1):
 		values = dict(name=f"{name}-I{i}", parent=name, parenttype="Quotation", parentfield="items", idx=i,
@@ -187,6 +190,7 @@ def _run():
 		err = refused(lambda: _new_order(F.quotation))
 		_assert(err == H.MSG_DUPLICATE.format(F.first, F.quotation), err)
 		frappe.db.set_value("Sales Order", F.first, "custom_workflow_status", "Cancelled")
+		H.release_quotation(F.first, "test: cancelled")  # what the real cancel event does
 		so = _new_order(F.quotation)
 		_assert(so.name, "replacement refused after the first order was cancelled")
 		F.second = so.name
