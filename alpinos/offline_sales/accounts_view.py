@@ -101,5 +101,7 @@ def proof_file(sales_order, index=0):
 	f = frappe.get_doc("File", name)
 	frappe.local.response.filename = f.file_name
 	frappe.local.response.filecontent = f.get_content()
-	frappe.local.response.type = "binary"
+	# "download" sends the file's own type and honours inline ("binary" is always an octet-stream attachment,
+	# which a PDF preview frame would download instead of showing)
+	frappe.local.response.type = "download"
 	frappe.local.response.display_content_as = "inline"
