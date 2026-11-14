@@ -388,6 +388,8 @@ after_migrate = [
 	"alpinos.item_mrp.setup",
 	# Offline Sales build 1: Sales Officer / Sales Manager rows, settings defaults, Quotation Buyer.
 	"alpinos.offline_sales.setup.execute",
+	# Buyer Order Request acknowledgement PDF (doc Section 2).
+	"alpinos.offline_sales.order_ack_print.execute",
 	# Changes(HP) #110: Pick List Submitted On.
 	"alpinos.afr_export.setup",
 	# Goods Return (FSD Document 1): roles and permissions, inside the perm_seed window.

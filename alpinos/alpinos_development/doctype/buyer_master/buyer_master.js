@@ -575,3 +575,46 @@ function os_officer_limits(frm, status) {
 		if (!OS_SO_EDITABLE.includes(df.fieldname)) frm.set_df_property(df.fieldname, "read_only", 1);
 	});
 }
+
+// Buyer Order Request Link (doc Section 2.4): Generate / Copy / Open / Regenerate / Deactivate /
+// Activate. Sales Manager and Sales Admin manage the link; a Sales Officer may copy and open it.
+// Nothing is offered until the Buyer is Approved. The server repeats every check.
+frappe.ui.form.on("Buyer Master", {
+	refresh(frm) {
+		if (frm.is_new()) return;
+		frappe.xcall("alpinos.offline_sales.order_link.link_info", { buyer: frm.doc.name }).then((info) => {
+			if (!info || !info.approved) return;
+			const group = __("Buyer Order Link");
+			const run = (method, question) => {
+				const go = () =>
+					frappe.xcall(`alpinos.offline_sales.order_link.${method}`, { buyer: frm.doc.name }).then(() => frm.reload_doc());
+				question ? frappe.confirm(question, go) : go();
+			};
+			const status = info.status;
+			if (info.manager && status === "Not Generated") {
+				frm.add_custom_button(__("Generate Buyer Order Link"), () => run("generate_link"), group);
+			}
+			if (status === "Active" && info.url) {
+				frm.add_custom_button(__("Copy Buyer Order Link"), () => {
+					const done = () => frappe.show_alert({ message: __("Link copied to clipboard!"), indicator: "green" });
+					if (navigator.clipboard && window.isSecureContext) {
+						navigator.clipboard.writeText(info.url).then(done, () => frappe.utils.copy_to_clipboard(info.url));
+					} else {
+						frappe.utils.copy_to_clipboard(info.url);
+					}
+				}, group);
+				frm.add_custom_button(__("Open Buyer Order Form"), () => window.open(info.url, "_blank"), group);
+			}
+			if (info.manager && status !== "Not Generated") {
+				frm.add_custom_button(__("Regenerate Link"),
+					() => run("regenerate_link", __("Regenerating will deactivate the existing link. Proceed?")), group);
+			}
+			if (info.manager && status === "Active") {
+				frm.add_custom_button(__("Deactivate Link"), () => run("deactivate_link", __("Deactivate link for this buyer?")), group);
+			}
+			if (info.manager && status === "Inactive") {
+				frm.add_custom_button(__("Activate Link"), () => run("activate_link"), group);
+			}
+		});
+	},
+});

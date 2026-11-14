@@ -1,0 +1,246 @@
+{% extends "templates/web.html" %}
+
+{% block title %}Order Request{% endblock %}
+
+{% block page_content %}
+<style>
+	.bor { max-width: 1100px; margin: 0 auto; padding: 8px 0 40px; font-size: 14px; }
+	.bor h2 { font-size: 20px; margin: 0 0 4px; }
+	.bor h3 { font-size: 15px; margin: 22px 0 10px; }
+	.bor .muted { color: #6b7280; }
+	.bor .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; background: #fff; }
+	.bor .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
+	.bor label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+	.bor .ro { padding: 8px 10px; background: #f3f4f6; border-radius: 6px; min-height: 36px; }
+	.bor select, .bor input, .bor textarea { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; background: #fff; }
+	.bor textarea { min-height: 64px; }
+	.bor .search { position: relative; }
+	.bor .results { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid #d1d5db; border-radius: 6px; max-height: 320px; overflow: auto; display: none; }
+	.bor .results div.opt { padding: 8px 10px; cursor: pointer; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #f3f4f6; }
+	.bor .results div.opt:hover { background: #f9fafb; }
+	.bor img.thumb { width: 40px; height: 40px; object-fit: contain; border-radius: 4px; background: #f9fafb; }
+	.bor table { width: 100%; border-collapse: collapse; }
+	.bor th, .bor td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: middle; }
+	.bor th { font-size: 12px; color: #6b7280; font-weight: 600; }
+	.bor td.num, .bor th.num { text-align: right; white-space: nowrap; }
+	.bor td input.qty { width: 90px; text-align: right; }
+	.bor .totals { display: flex; justify-content: flex-end; gap: 28px; margin-top: 10px; font-size: 15px; }
+	.bor .totals b { margin-left: 8px; }
+	.bor .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-top: 18px; }
+	.bor button { padding: 9px 16px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer; font-size: 14px; }
+	.bor button.primary { background: #111827; color: #fff; border-color: #111827; }
+	.bor button.link { border: none; background: none; color: #1d4ed8; padding: 2px 4px; }
+	.bor .msg { margin-top: 12px; padding: 10px 12px; border-radius: 6px; display: none; }
+	.bor .msg.err { background: #fef2f2; color: #991b1b; display: block; }
+	.bor .msg.ok { background: #ecfdf5; color: #065f46; display: block; }
+	.bor .empty { color: #6b7280; text-align: center; padding: 14px; }
+	.bor .refused { max-width: 560px; margin: 60px auto; text-align: center; font-size: 16px; }
+	@media (max-width: 720px) {
+		.bor .grid { grid-template-columns: 1fr; }
+		.bor table.items thead { display: none; }
+		.bor table.items tr { display: block; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 10px; padding: 6px 4px; }
+		.bor table.items td { display: flex; justify-content: space-between; border: none; padding: 5px 8px; text-align: right; }
+		.bor table.items td::before { content: attr(data-label); color: #6b7280; font-size: 12px; text-align: left; margin-right: 12px; }
+		.bor .totals { flex-direction: column; align-items: flex-end; gap: 4px; }
+		.bor .actions button { flex: 1 1 100%; }
+	}
+</style>
+
+<div class="bor">
+{% if refused %}
+	<div class="refused card">&#128721; {{ refused_message }}</div>
+{% else %}
+	<h2>Order Request</h2>
+	<div class="muted">Select products and quantities and submit. Prices are shown for reference; our Sales Team will review your request.</div>
+
+	<h3>Customer Details</h3>
+	<div class="card grid">
+		<div><label>Customer Account</label><div class="ro" id="f-customer"></div></div>
+		<div><label>Customer Type</label><div class="ro" id="f-ctype"></div></div>
+		<div><label>Billing Address</label><select id="f-billing"></select></div>
+		<div><label>Billing GSTIN</label><div class="ro" id="f-gstin"></div></div>
+		<div><label>Shipping Address</label><select id="f-shipping"></select></div>
+		<div><label>Contact Person</label><input id="f-contact" maxlength="140"></div>
+		<div style="grid-column: 1 / -1;"><label>Order Remarks</label><textarea id="f-remarks" maxlength="2000"></textarea></div>
+	</div>
+
+	<h3>Order Products &amp; Pricing <span class="muted" id="editing-note"></span></h3>
+	<div class="card">
+		<div class="search">
+			<input id="f-search" placeholder="Search products by name or SKU" autocomplete="off">
+			<div class="results" id="results"></div>
+		</div>
+		<table class="items" style="margin-top: 12px;">
+			<thead><tr>
+				<th></th><th>Product SKU</th><th>Product Name</th><th class="num">MRP</th><th class="num">Flat Discount %</th>
+				<th class="num">Selling Price</th><th class="num">Quantity</th><th class="num">Item Amount</th><th></th>
+			</tr></thead>
+			<tbody id="rows"></tbody>
+		</table>
+		<div class="totals"><span>Sub Total<b id="t-sub">0.00</b></span><span>Net Total<b id="t-net">0.00</b></span></div>
+	</div>
+
+	<div class="msg" id="msg"></div>
+	<div class="actions">
+		<button id="b-new" style="display:none;">New Request</button>
+		<button id="b-draft">Save Draft</button>
+		<button id="b-submit" class="primary">Submit Order Request</button>
+	</div>
+
+	<h3>Your Requests</h3>
+	<div class="card" id="requests"></div>
+
+	<script>
+	(function () {
+		const TOKEN = {{ token | tojson }};
+		const DATA = {{ page_data }};
+		const API = "/api/method/alpinos.offline_sales.order_link.";
+		const DRAFT_KEY = "bor-draft-" + TOKEN.slice(-12);
+		const $ = (id) => document.getElementById(id);
+		const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+		const money = (v) => (Number(v) || 0).toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+		let rows = [];          // [{item_code, item_name, image, qty, mrp, flat_discount, selling_price, amount}]
+		let editingBor = null;
+
+		async function call(method, args) {
+			const body = new URLSearchParams();
+			Object.entries(args || {}).forEach(([k, v]) => body.append(k, typeof v === "string" ? v : JSON.stringify(v)));
+			const r = await fetch(API + method, {method: "POST", headers: {"Accept": "application/json"}, body});
+			const j = await r.json().catch(() => ({}));
+			if (!r.ok) {
+				let m = "";
+				try { m = JSON.parse(JSON.parse(j._server_messages || "[]")[0] || "{}").message || ""; } catch (e) {}
+				throw new Error((m || j.exception || "Something went wrong. Please try again.").replace(/<[^>]+>/g, ""));
+			}
+			return j.message;
+		}
+		function show(text, ok) { const m = $("msg"); m.className = "msg " + (ok ? "ok" : "err"); m.innerHTML = text; }
+		function clearMsg() { $("msg").className = "msg"; }
+
+		// customer details
+		$("f-customer").textContent = DATA.customer;
+		$("f-ctype").textContent = DATA.customer_type;
+		$("f-contact").value = DATA.contact_person || "";
+		$("f-billing").innerHTML = DATA.billing.map((a) => `<option value="${esc(a.address)}">${esc(a.label)}</option>`).join("");
+		$("f-shipping").innerHTML = DATA.shipping.map((a) => `<option value="${esc(a.address)}">${esc(a.label)}</option>`).join("");
+		function gstin() { const b = DATA.billing.find((a) => a.address === $("f-billing").value); $("f-gstin").textContent = (b && b.gstin) || ""; }
+		$("f-billing").addEventListener("change", gstin); gstin();
+
+		// product search (only permitted products; never stock)
+		let timer = null;
+		$("f-search").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 300); });
+		$("f-search").addEventListener("focus", search);
+		document.addEventListener("click", (e) => { if (!e.target.closest(".search")) $("results").style.display = "none"; });
+		async function search() {
+			try {
+				const items = await call("search_products", {token: TOKEN, txt: $("f-search").value});
+				$("results").innerHTML = items.length ? items.map((i, n) => `<div class="opt" data-n="${n}">
+					${i.image ? `<img class="thumb" src="${esc(i.image)}">` : `<span class="thumb"></span>`}
+					<div><div><b>${esc(i.item_name)}</b></div><div class="muted">${esc(i.item_code)} &middot; MRP ${money(i.mrp)} &middot; ${money(i.selling_price)}</div></div></div>`).join("")
+					: `<div class="empty">No products found</div>`;
+				$("results").style.display = "block";
+				$("results").querySelectorAll(".opt").forEach((el) => el.addEventListener("click", () => add(items[el.dataset.n])));
+			} catch (e) { show(esc(e.message)); }
+		}
+		function add(item) {
+			$("results").style.display = "none"; $("f-search").value = "";
+			const dup = rows.findIndex((r) => r.item_code === item.item_code);
+			if (dup >= 0) { rows[dup].qty = (Number(rows[dup].qty) || 0) + 1; }
+			else rows.push(Object.assign({qty: 1}, item));
+			render(); reprice();
+		}
+
+		function render() {
+			$("rows").innerHTML = rows.length ? rows.map((r, n) => `<tr>
+				<td data-label="">${r.image ? `<img class="thumb" src="${esc(r.image)}">` : ""}</td>
+				<td data-label="Product SKU">${esc(r.item_code)}</td>
+				<td data-label="Product Name">${esc(r.item_name)}</td>
+				<td class="num" data-label="MRP">${money(r.mrp)}</td>
+				<td class="num" data-label="Flat Discount %">${money(r.flat_discount)}</td>
+				<td class="num" data-label="Selling Price">${money(r.selling_price)}</td>
+				<td class="num" data-label="Quantity"><input class="qty" type="number" min="1" step="1" inputmode="numeric" data-n="${n}" value="${esc(r.qty)}"></td>
+				<td class="num" data-label="Item Amount">${money(r.amount)}</td>
+				<td data-label=""><button class="link" data-del="${n}" title="Remove">Remove</button></td>
+			</tr>`).join("") : `<tr><td colspan="9" class="empty">No products added yet</td></tr>`;
+			$("rows").querySelectorAll("input.qty").forEach((el) => el.addEventListener("change", () => { rows[el.dataset.n].qty = el.value; reprice(); }));
+			$("rows").querySelectorAll("[data-del]").forEach((el) => el.addEventListener("click", () => { rows.splice(el.dataset.del, 1); render(); reprice(); }));
+			const sub = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+			$("t-sub").textContent = money(sub); $("t-net").textContent = money(sub);
+		}
+		async function reprice() {
+			if (!rows.length) { render(); return; }
+			try {
+				const r = await call("quote_rows", {token: TOKEN, rows: rows.map((x) => ({item_code: x.item_code, qty: x.qty}))});
+				r.rows.forEach((p, i) => Object.assign(rows[i], p));
+				render(); clearMsg();
+			} catch (e) { show(esc(e.message)); }
+		}
+
+		function payload() {
+			return {
+				billing_address: $("f-billing").value, shipping_address: $("f-shipping").value,
+				contact_person: $("f-contact").value, remarks: $("f-remarks").value,
+				rows: rows.map((r) => ({item_code: r.item_code, qty: r.qty})),
+			};
+		}
+
+		// draft: kept in this browser only (doc 6.1)
+		$("b-draft").addEventListener("click", () => {
+			try { localStorage.setItem(DRAFT_KEY, JSON.stringify(Object.assign(payload(), {rows: rows, bor: editingBor}))); show("Draft saved on this device.", true); }
+			catch (e) { show("This browser does not allow saving a draft."); }
+		});
+		function loadDraft() {
+			try {
+				const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+				if (!d) return;
+				fill(d); rows = d.rows || []; editingBor = d.bor || null; note(); render(); reprice();
+			} catch (e) {}
+		}
+		function fill(d) {
+			if (d.billing_address) $("f-billing").value = d.billing_address;
+			if (d.shipping_address) $("f-shipping").value = d.shipping_address;
+			$("f-contact").value = d.contact_person || $("f-contact").value; $("f-remarks").value = d.remarks || ""; gstin();
+		}
+		function note() {
+			$("editing-note").textContent = editingBor ? ` (editing ${editingBor})` : "";
+			$("b-new").style.display = editingBor ? "" : "none";
+			$("b-submit").textContent = editingBor ? "Update Order Request" : "Submit Order Request";
+		}
+		$("b-new").addEventListener("click", () => { editingBor = null; rows = []; $("f-remarks").value = ""; note(); render(); clearMsg(); });
+
+		$("b-submit").addEventListener("click", async () => {
+			if (!rows.length) { show(esc({{ no_products | tojson }})); return; }
+			$("b-submit").disabled = true;
+			try {
+				const r = editingBor
+					? await call("update_request", {token: TOKEN, bor: editingBor, data: payload()})
+					: await call("submit_request", {token: TOKEN, data: payload()});
+				try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+				show(`${editingBor ? "Order request updated" : "Order request submitted"}: <b>${esc(r.bor)}</b> (Total ${money(r.total)}).
+					<a href="${API}download_ack?token=${encodeURIComponent(TOKEN)}&bor=${encodeURIComponent(r.bor)}" target="_blank">Download acknowledgement</a>`, true);
+				rows = []; editingBor = null; note(); render(); REQUESTS = r.requests || REQUESTS; renderRequests();
+			} catch (e) { show(esc(e.message)); }
+			finally { $("b-submit").disabled = false; }
+		});
+
+		async function edit(bor) {
+			try {
+				const d = await call("get_request", {token: TOKEN, bor});
+				fill(d); editingBor = bor; rows = d.rows; note(); await reprice(); window.scrollTo(0, 0);
+			} catch (e) { show(esc(e.message)); }
+		}
+		let REQUESTS = DATA.requests || [];
+		function renderRequests() {
+			$("requests").innerHTML = REQUESTS.length ? `<table><thead><tr><th>Reference</th><th>Submitted</th><th class="num">Total</th><th></th></tr></thead><tbody>
+				${REQUESTS.map((q) => `<tr><td>${esc(q.bor)}</td><td>${esc(q.on)}</td><td class="num">${money(q.total)}</td>
+				<td>${q.editable ? `<button class="link" data-edit="${esc(q.bor)}">Edit</button>` : `<span class="muted">Under review</span>`}
+				<a class="link" target="_blank" href="${API}download_ack?token=${encodeURIComponent(TOKEN)}&bor=${encodeURIComponent(q.bor)}">PDF</a></td></tr>`).join("")}
+				</tbody></table>` : `<div class="empty">No requests yet</div>`;
+			$("requests").querySelectorAll("[data-edit]").forEach((el) => el.addEventListener("click", () => edit(el.dataset.edit)));
+		}
+		renderRequests(); render(); loadDraft();
+	})();
+	</script>
+{% endif %}
+</div>
+{% endblock %}
