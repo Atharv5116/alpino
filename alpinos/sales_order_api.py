@@ -1742,7 +1742,7 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
                        from_quotation=None, po_no_for_pdf=None,
                        submit_now=1, ecom_fields=None, billing_gstin=None, rl_no_invoice=None,
-                       only_invoice=None):
+                       only_invoice=None, change_reason=None):
 	"""Create a Sales Order from the custom entry page.
 	ecom_fields (JSON): optional offline Modern-Trade extra fields (channel='Offline').
 	billing_gstin (#24): Billing GST No. for a Registered-Business buyer."""
@@ -1753,6 +1753,8 @@ def create_sales_order(customer, order_type, company, items, cash_discount=0,
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 	so = frappe.new_doc("Sales Order")
+	# a commercial change on an order from a Quotation needs its reason (offline_sales.so_handoff)
+	so.flags.change_reason = change_reason
 	_populate_so_from_entry(
 		so, customer, order_type, company, items, cash_discount,
 		delivery_date, dispatch_date, freebies, scheme_items,
@@ -1796,7 +1798,7 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
                        additional_units_damage=0, billing_address=None, shipping_address=None,
                        taxes_and_charges=None, po_no=None, po_expiry_date=None, site_name=None,
                        from_quotation=None, po_no_for_pdf=None, ecom_fields=None, billing_gstin=None,
-                       rl_no_invoice=None, only_invoice=None):
+                       rl_no_invoice=None, only_invoice=None, change_reason=None):
 	"""Rewrite a draft Sales Order from the entry page (edit mode). Child tables
 	are rebuilt from the payload; owner, docstatus and the workflow status are
 	left untouched. ecom_fields (JSON): optional offline Modern-Trade extra fields.
@@ -1809,6 +1811,7 @@ def update_sales_order(name, customer, order_type, company, items, cash_discount
 	assert_company(so, ptype="write")
 	if so.docstatus != 0:
 		frappe.throw(_("Only draft Sales Orders can be edited from the entry page."))
+	so.flags.change_reason = change_reason
 
 	so.set("items", [])
 	so.set("custom_marketing_freebies", [])

@@ -128,7 +128,7 @@ page_js = {"permission-manager": "public/js/permission_manager_company.js"}
 doctype_js = {
 	"User": "public/js/user_override.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
-	"Quotation": "public/js/quotation_sales_order_redirect.js",
+	"Quotation": ["public/js/quotation_sales_order_redirect.js", "public/js/quotation_create_so.js"],
 	# Offline Sales, Section 3: the Opportunity form (status actions, lock, read-only pricing).
 	"Opportunity": "public/js/opportunity_offline.js",
 	"Purchase Receipt": "public/js/purchase_receipt_grn.js",
@@ -933,8 +933,18 @@ doc_events = {
 		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",
 	},
 	"Sales Order": {
-		"after_insert": "alpinos.sales_order_trail.record_creation",
-		"on_update": "alpinos.sales_order_trail.record_changes",
+		"after_insert": [
+			"alpinos.sales_order_trail.record_creation",
+			# Opportunity to SO doc Section 6: the Quotation gets "Sales Order Created" + its SO ID
+			"alpinos.offline_sales.so_handoff.after_insert",
+		],
+		"on_update": [
+			"alpinos.sales_order_trail.record_changes",
+			# reasoned commercial changes of an order from a Quotation
+			"alpinos.offline_sales.so_handoff.on_update",
+		],
+		"before_submit": "alpinos.offline_sales.so_handoff.before_submit",
+		"on_trash": "alpinos.offline_sales.so_handoff.on_trash",
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
 			"alpinos.sales_order_offline_buyer.sync_sales_order_offline_buyer_fields",
@@ -961,7 +971,11 @@ doc_events = {
 			"alpinos.offline_sales.so_handoff.stamp_catalog_on_submit",
 		],
 		"before_cancel": "alpinos.workflow_engine.sales_order_before_cancel",
-		"on_cancel": "alpinos.workflow_engine.sales_order_on_cancel",
+		"on_cancel": [
+			"alpinos.workflow_engine.sales_order_on_cancel",
+			# the order's Quotation is back to Finalized for a replacement (doc Section 6)
+			"alpinos.offline_sales.so_handoff.on_cancel",
+		],
 		"before_update_after_submit": "alpinos.ecom_sales_order_api.validate_po_expiry_terminal_lock",
 	},
 	"Employee Onboarding": {

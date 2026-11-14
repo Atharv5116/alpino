@@ -116,6 +116,22 @@ def _new_order(quotation=None, user="Administrator", insert=True):
 	return so
 
 
+def _quotation(suffix):
+	"""A submitted Quotation with the same lines as the source order (so an order from it differs in nothing)."""
+	src = frappe.get_doc("Sales Order", F.src)
+	name = _insert("Quotation", name=f"{TAG}-{suffix}", quotation_to="Customer", party_name=src.customer, company=src.company,
+		transaction_date=today(), docstatus=1, custom_cash_discount=src.get("custom_cash_discount"))
+	qmeta = frappe.get_meta("Quotation Item")
+	for i, row in enumerate(src.items, start=1):
+		values = dict(name=f"{name}-I{i}", parent=name, parenttype="Quotation", parentfield="items", idx=i,
+			item_code=row.item_code, item_name=row.item_name, qty=row.qty, uom=row.uom, conversion_factor=1)
+		for f in ("custom_selling_price", "custom_flat_discount", "custom_offer", "custom_additional_discount"):
+			if qmeta.has_field(f):
+				values[f] = row.get(f)
+		_insert("Quotation Item", **values)
+	return name
+
+
 def _person(suffix, *roles):
 	user = f"{TAG.lower()}.{suffix}@example.com"
 	_insert("User", name=user, email=user, first_name=f"{TAG} {suffix}", user_type="System User", enabled=1)
@@ -128,10 +144,8 @@ def _run():
 	F.src = _source()
 	src = frappe.get_doc("Sales Order", F.src)
 	F.customer = src.customer
-	F.quotation = _insert("Quotation", name=f"{TAG}-Q1", quotation_to="Customer", party_name=src.customer, company=src.company,
-		transaction_date=today(), docstatus=1, opportunity=None)
-	F.quotation2 = _insert("Quotation", name=f"{TAG}-Q2", quotation_to="Customer", party_name=src.customer, company=src.company,
-		transaction_date=today(), docstatus=1)
+	F.quotation = _quotation("Q1")
+	F.quotation2 = _quotation("Q2")
 	F.officer = _person("so", "Sales Officer", "Employee")
 	from alpinos.company_scope import sync
 
@@ -152,12 +166,14 @@ def _run():
 
 	def _switch_on():
 		frappe.db.set_single_value("Offline Sales Settings", "quotation_required_for_sales_order", 1)
-		err = refused(lambda: _new_order())
-		_assert(err == H.MSG_QUOTATION_ONLY, err)
-		so = _new_order(F.quotation)
-		_assert(so.custom_quotation == F.quotation, "a Quotation-sourced order was refused")
-		F.first = so.name
-		frappe.db.set_single_value("Offline Sales Settings", "quotation_required_for_sales_order", 0)
+		try:
+			err = refused(lambda: _new_order())
+			_assert(err == H.MSG_QUOTATION_ONLY, err)
+			so = _new_order(F.quotation)
+			_assert(so.custom_quotation == F.quotation, "a Quotation-sourced order was refused")
+			F.first = so.name
+		finally:
+			frappe.db.set_single_value("Offline Sales Settings", "quotation_required_for_sales_order", 0)
 
 	check("S6: switch ON: an order without a Quotation is refused; from a Quotation it is created", _switch_on)
 
@@ -246,3 +262,90 @@ def _run():
 		_assert(so.name and so.docstatus == 0, "an assigned Sales Officer could not save a direct draft order")
 
 	check("amendment: switch OFF, an assigned Sales Officer saves a direct draft order (reads its masters)", _officer_direct)
+	_run_more()
+
+
+def _run_more():
+	"""The Quotation side of the hand-off; status checks run once the W5 fields exist."""
+	from alpinos.offline_sales import so_handoff as H2
+
+	has_status = frappe.db.has_column("Quotation", "custom_quotation_status")
+	F.q3 = _quotation("Q3")
+	if has_status:
+		frappe.db.set_value("Quotation", F.q3, {"custom_quotation_status": "Finalized", "custom_so_eligibility": "Allowed"})
+
+	def _from_lines():
+		so = _new_order(insert=False)
+		for row in so.items:
+			row.prevdoc_docname = F.q3
+		so.insert()
+		_assert(so.custom_quotation == F.q3, "the Quotation on the lines was not taken")
+		F.q3_so = so.name
+
+	check("S6: an order from the entry page takes its Linked Quotation from its lines", _from_lines)
+
+	def _button():
+		_assert(not H2.can_create_sales_order(F.q3)["allowed"], "an active order exists, yet Create Sales Order is offered")
+		frappe.set_user(F.officer)
+		try:
+			r = H2.can_create_sales_order(F.q3)
+		finally:
+			frappe.set_user("Administrator")
+		_assert(not r["allowed"] and r["reason"] == H2.MSG_SO_CANNOT_CREATE, r)
+
+	check("S6: Create Sales Order is refused while an order is active, and always for a Sales Officer", _button)
+
+	def _reason():
+		so = frappe.get_doc("Sales Order", F.q3_so)
+		so.items[0].qty = flt(so.items[0].qty) + 1
+		err = refused(lambda: so.save())
+		_assert(err == H2.MSG_REASON, err)
+		so = frappe.get_doc("Sales Order", F.q3_so)
+		so.items[0].qty = flt(so.items[0].qty) + 1
+		so.flags.change_reason = "buyer asked for one more"
+		so.save()
+		rows = frappe.get_all("Field Change Log", filters={"reference_doctype": "Sales Order", "reference_name": so.name,
+			"action": "Sales Order Commercial Value Changed"}, fields=["field_label", "reason"])
+		_assert(rows and rows[0].reason == "buyer asked for one more" and rows[0].field_label == "Quantity", rows)
+		so = frappe.get_doc("Sales Order", F.q3_so)
+		so.custom_order_remarks = "no commercial change"
+		so.save()  # no reason needed
+
+	check("S6: a commercial change on an order from a Quotation needs a reason, recorded per field", _reason)
+
+	def _officer_read_only():
+		so = frappe.get_doc("Sales Order", F.q3_so)
+		so.custom_order_remarks = "officer edit"
+		frappe.set_user(F.officer)
+		try:
+			err = refused(lambda: so.save())
+		finally:
+			frappe.set_user("Administrator")
+		_assert(err in (H2.MSG_SO_READ_ONLY, "PermissionError") or "Permission" in err, err)
+
+	check("S6: a Sales Officer cannot change an order created from a Quotation", _officer_read_only)
+
+	if not has_status:
+		R.append(("ERR ", "S6: Quotation status sync (needs the W5 fields)", "W5 fields missing"))
+		return
+
+	def _status_sync():
+		q = frappe.db.get_value("Quotation", F.q3, ["custom_quotation_status", "custom_linked_sales_order"], as_dict=True)
+		_assert(q.custom_quotation_status == "Sales Order Created" and q.custom_linked_sales_order == F.q3_so, q)
+		frappe.get_doc("Sales Order", F.q3_so).delete()
+		q = frappe.db.get_value("Quotation", F.q3, ["custom_quotation_status", "custom_linked_sales_order"], as_dict=True)
+		_assert(q.custom_quotation_status == "Finalized" and not q.custom_linked_sales_order, q)
+		_assert(H2.can_create_sales_order(F.q3)["allowed"], "a released Quotation should offer Create Sales Order")
+
+	check("S6: the Quotation shows Sales Order Created with its SO ID, and is Finalized again when the Draft is deleted", _status_sync)
+
+	def _gates():
+		frappe.db.set_value("Quotation", F.q3, "custom_so_eligibility", "Blocked")
+		err = refused(lambda: _new_order(F.q3))
+		_assert(err.startswith("A Sales Order cannot be created yet"), err)
+		frappe.db.set_value("Quotation", F.q3, {"custom_so_eligibility": "Allowed", "custom_quotation_status": "Negotiation"})
+		err = refused(lambda: _new_order(F.q3))
+		_assert(err.startswith("A Sales Order can be created only from a Finalized Quotation"), err)
+		frappe.db.set_value("Quotation", F.q3, "custom_quotation_status", "Finalized")
+
+	check("S6: SO Eligibility Blocked or a Quotation not Finalized refuses the order", _gates)

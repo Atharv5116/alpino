@@ -55,6 +55,10 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 				"image": img,
 				# mirror discount semantics from quotation rows
 				"discount_type": row.get("custom_discount_type") or "",
+				# Opportunity to SO doc Section 6: the Quotation's own Selling Price and row remark
+				# go to the order as they are (no re-pricing from the catalogue)
+				"custom_selling_price": flt(row.get("custom_selling_price")) or None,
+				"custom_remarks": row.get("custom_remarks") or row.get("custom_row_remark") or "",
 			}
 		)
 
@@ -107,6 +111,8 @@ def get_sales_order_entry_payload_from_quotation(quotation):
 		"custom_cash_discount": flt(doc.get("custom_cash_discount")),
 		"billing_address": doc.get("customer_address"),
 		"shipping_address": doc.get("shipping_address_name"),
+		"site_name": doc.get("custom_site_name") or "",
+		"order_remarks": doc.get("custom_quotation_remarks") or doc.get("custom_opportunity_remark") or "",
 		"items": items,
 		"freebies": freebies,
 		"scheme_items": scheme_items,

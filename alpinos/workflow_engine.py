@@ -578,6 +578,10 @@ def reject_sales_order(sales_order, reason=None):
 	frappe.get_doc("Sales Order", sales_order).add_comment(
 		"Comment", frappe._("Rejected. Reason: {0}").format(frappe.utils.escape_html(reason))
 	)
+	# an order from a Quotation frees it for a replacement (Opportunity to SO doc, Section 6)
+	from alpinos.offline_sales.so_handoff import on_rejected
+
+	on_rejected(sales_order)
 	frappe.db.commit()
 	return {"status": SO_REJECTED}
 

@@ -151,6 +151,11 @@ var SalesOrderEntry = class {
 
 		me.customer_field.set_value(d.customer);
 		me.order_type_field.set_value(d.order_type || '');
+		if (d.quotation && me.site_name_field && d.site_name) {
+			// the Quotation's Site Name goes to the order as it is (doc Section 6)
+			me.site_name_field.set_value(d.site_name);
+			me._site_name_manual = true;
+		}
 		me.delivery_date_field.set_value(d.delivery_date || '');
 		me.cash_discount_field.set_value(flt(d.custom_cash_discount));
 		me._refresh_box_round_mode();
@@ -232,6 +237,10 @@ var SalesOrderEntry = class {
 				message: d._alert_message || __('Loaded from quotation {0}', [d.quotation]),
 				indicator: 'green',
 			});
+			// Opportunity to SO doc Section 6: commercial values as loaded, so a change on an order
+			// from a Quotation can ask for its Reason for Change (prices settle after the draw)
+			me._commercial_snapshot = null;
+			if (me._from_quotation) setTimeout(() => { me._commercial_snapshot = me._commercial_state(); }, 1500);
 		};
 
 		if (!codes.length) {
@@ -2243,12 +2252,28 @@ var SalesOrderEntry = class {
 		const mt_payload = me.mt_ecom_payload();
 		if (mt_payload) args.ecom_fields = JSON.stringify(mt_payload);
 
-		frappe.call({
-			method: is_edit ? 'alpinos.sales_order_api.update_sales_order' : 'alpinos.sales_order_api.create_sales_order',
-			args: args,
-			freeze: true,
-			freeze_message: is_edit ? 'Updating Sales Order...' : 'Creating Sales Order...',
-			callback: function(r) {
+		const send = (reason) => {
+			if (reason) args.change_reason = reason;
+			frappe.call({
+				method: is_edit ? 'alpinos.sales_order_api.update_sales_order' : 'alpinos.sales_order_api.create_sales_order',
+				args: args,
+				freeze: true,
+				freeze_message: is_edit ? 'Updating Sales Order...' : 'Creating Sales Order...',
+				error: function(r) {
+					// the server found a commercial change without a reason: ask and send again
+					const msg = JSON.stringify((r && r._server_messages) || '');
+					if (!reason && me._from_quotation && msg.indexOf('Reason for Change') !== -1) {
+						me._ask_change_reason(send);
+					}
+				},
+				callback: done,
+			});
+		};
+		const changed = me._from_quotation && me._commercial_snapshot && me._commercial_state() !== me._commercial_snapshot;
+		if (changed) me._ask_change_reason(send);
+		else send(null);
+
+		function done(r) {
 				if (r.message && r.message.name) {
 					frappe.show_alert({
 						message: is_edit
@@ -2258,8 +2283,26 @@ var SalesOrderEntry = class {
 					}, 6);
 					frappe.set_route('sales-order-entry-view', r.message.name);
 				}
-			}
-		});
+		}
+	}
+
+	/** The commercial values of the lines and the cash discount, for the Reason for Change rule. */
+	_commercial_state() {
+		const rows = (this.items || []).filter((it) => it.item_code).map((it) => [
+			it.item_code, flt(it.qty), flt(it.custom_selling_price, 2), flt(it.flat_discount, 2),
+			flt(it.offer, 2), flt(it.additional_discount, 2),
+		]);
+		rows.sort((a, b) => (a[0] > b[0] ? 1 : a[0] < b[0] ? -1 : a[1] - b[1]));
+		return JSON.stringify([rows, flt(this.cash_discount_field && this.cash_discount_field.get_value(), 2)]);
+	}
+
+	_ask_change_reason(send) {
+		frappe.prompt(
+			[{ fieldtype: 'Small Text', fieldname: 'reason', label: __('Reason for Change'), reqd: 1 }],
+			(v) => send(v.reason),
+			__('This order differs from its Quotation'),
+			__('Save')
+		);
 	}
 
 	load_recent_orders() {
