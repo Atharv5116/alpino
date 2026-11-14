@@ -58,6 +58,22 @@ def _map_opportunity_item_to_quotation_child(source, target, source_parent):
 
 @frappe.whitelist()
 def make_quotation(source_name, target_doc=None):
+	"""ERPNext's Create > Quotation (and the Quotation's Get Items From > Opportunity).
+
+	A Buyer Master Opportunity follows the Offline Sales workflow (Section 3): its Quotation
+	comes only from Convert to Quotation, which checks the status, the Buyer and the one
+	active Quotation rule (alpinos.offline_sales.opportunity.convert_to_quotation)."""
+	if frappe.db.get_value("Opportunity", source_name, "opportunity_from") == "Buyer Master":
+		frappe.throw(
+			frappe._("Use Convert to Quotation on Opportunity {0}.").format(frappe.bold(source_name)),
+			title=frappe._("Not Permitted"),
+		)
+	return map_quotation(source_name, target_doc)
+
+
+def map_quotation(source_name, target_doc=None):
+	"""The Quotation mapped from an Opportunity (not saved)."""
+
 	def set_missing_values(source, target):
 		from erpnext.controllers.accounts_controller import get_default_taxes_and_charges
 

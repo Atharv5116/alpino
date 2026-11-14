@@ -10,8 +10,8 @@ anyone but Administrator.
 Event families wired in build 1: Buyer creation, correction, approval, On Hold, Inactive,
 Reactivation, Cancellation, approval escalation, assignment changes, Buyer Catalog setup and
 changes (manual and from a submitted Sales Order). Sales Order creation, changes and submission
-are logged by sales_order_trail. Link, Opportunity, Quotation, payment and reminder events come
-with their modules.
+are logged by sales_order_trail; Opportunity events by offline_sales.opportunity. Link, Quotation,
+payment and reminder events come with their modules.
 """
 
 import frappe
@@ -47,7 +47,7 @@ def status_change(doctype, name, action, old_status, new_status, reason=None):
 def get_trail(doctype, name, limit=500):
 	"""Trail entries of one record, newest first, for anyone who may read the record."""
 	# company-scope: n/a (reads the trail of one record after its own read permission check)
-	if doctype not in ("Buyer Master", "Quotation", "Sales Order"):
+	if doctype not in ("Buyer Master", "Opportunity", "Quotation", "Sales Order"):
 		frappe.throw(_("No Activity Trail for {0}.").format(doctype))
 	doc = frappe.get_doc(doctype, name)
 	doc.check_permission("read")

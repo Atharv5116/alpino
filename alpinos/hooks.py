@@ -129,6 +129,8 @@ doctype_js = {
 	"User": "public/js/user_override.js",
 	"Sales Order": "public/js/sales_order_offline_buyer.js",
 	"Quotation": "public/js/quotation_sales_order_redirect.js",
+	# Offline Sales, Section 3: the Opportunity form (status actions, lock, read-only pricing).
+	"Opportunity": "public/js/opportunity_offline.js",
 	"Purchase Receipt": "public/js/purchase_receipt_grn.js",
 	"Purchase Invoice": "public/js/purchase_invoice_debit_note.js",
 	# Changes(HP) #20: Half Day is not offered when the reason is On Duty.
@@ -146,6 +148,7 @@ doctype_js = {
 doctype_list_js = {
 	# Offline Sales: a Sales Admin's Quotation list opens on their Secondary POC buyers (Show All).
 	"Quotation": "public/js/quotation_list_scope.js",
+	"Opportunity": "public/js/opportunity_list_scope.js",
 	"Purchase Order": "public/js/purchase_order_list.js",
 	"Pick List": "public/js/pick_list_list.js",
 	"Item": "public/js/item_list_colors.js",
@@ -443,6 +446,7 @@ after_migrate = [
 # assigned-visibility hooks listed before them still decide everything else.
 permission_query_conditions = {
 	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_query_conditions",
+	"Opportunity": "alpinos.buyer_assignment_visibility.opportunity_query_conditions",
 	"Quotation": "alpinos.buyer_assignment_visibility.quotation_query_conditions",
 	"Sales Order": [
 		"alpinos.channel_access.sales_order_query_conditions",
@@ -467,6 +471,7 @@ permission_query_conditions = {
 
 has_permission = {
 	"Buyer Master": "alpinos.buyer_assignment_visibility.buyer_master_has_permission",
+	"Opportunity": "alpinos.buyer_assignment_visibility.opportunity_has_permission",
 	"Quotation": "alpinos.buyer_assignment_visibility.quotation_has_permission",
 	"Sales Order": [
 		"alpinos.channel_access.sales_order_has_permission",
@@ -746,8 +751,16 @@ doc_events = {
 		"validate": "alpinos.offline_sales.catalog_gate.buyer_items_validate",
 		"on_update": "alpinos.offline_sales.catalog_gate.buyer_items_on_update",
 	},
+	# Offline Sales, Section 3 (alpinos.offline_sales.opportunity): the lock and the document's
+	# quantity message before ERPNext's validate; header, prices and totals after it; the trail.
 	"Opportunity": {
-		"validate": ["alpinos.opportunity_validate.validate_opportunity_alpinos"],
+		"before_validate": "alpinos.offline_sales.opportunity.before_validate",
+		"validate": [
+			"alpinos.opportunity_validate.validate_opportunity_alpinos",
+			"alpinos.offline_sales.opportunity.validate",
+		],
+		"after_insert": "alpinos.offline_sales.opportunity.after_insert",
+		"on_update": "alpinos.offline_sales.opportunity.on_update",
 	},
 	"Stock Entry": {
 		"before_insert": "alpinos.stock_entry_hooks.set_entry_by",

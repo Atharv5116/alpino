@@ -47,6 +47,24 @@ def setup_quotation_custom_fields():
 				no_copy=1,
 				ignore_user_permissions=1,
 			),
+			# Offline Sales, Section 5, 2.1 (S5-R5, S5-R9): what Convert to Quotation carries over
+			# from the Opportunity (alpinos.offline_sales.opportunity.convert_to_quotation).
+			dict(
+				fieldname="custom_site_name",
+				label="Site Name",
+				fieldtype="Data",
+				insert_after="custom_secondary_poc",
+				no_copy=1,
+			),
+			dict(
+				fieldname="custom_opportunity_remark",
+				label="Opportunity Remark",
+				fieldtype="Small Text",
+				insert_after="custom_site_name",
+				read_only=1,
+				no_copy=1,
+				depends_on="eval:doc.opportunity && doc.custom_opportunity_remark",
+			),
 			dict(
 				fieldname="custom_order_no",
 				label="Order No.",

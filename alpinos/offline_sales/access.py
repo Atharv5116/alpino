@@ -7,6 +7,7 @@ Buyers. Show All controls display scope and does not grant the underlying busine
 So it is a list filter, applied only while Offline Sales Settings switches manager scoping on:
   * Buyer Master list   secondary_poc = the Sales Admin's Employee
   * Quotation list      custom_secondary_poc = the same (kept current from the Buyer)
+  * Opportunity list    custom_secondary_poc = the same
   * Sales Order Entry   the page's own Show All lifts it (alpinos.sales_order_api)
 Link fields, reports and the documents themselves stay as the user's permissions allow.
 """
@@ -76,9 +77,15 @@ def coverage_report():
 
 
 def refresh_quotation_secondary_poc(buyer, secondary_poc):
-	"""A Buyer's new Secondary POC follows onto its Quotations (their list filter reads it)."""
+	"""A Buyer's new Secondary POC follows onto its Quotations and Opportunities (their list
+	filter reads it)."""
 	if frappe.db.has_column("Quotation", "custom_secondary_poc") and frappe.db.has_column("Quotation", "custom_buyer_master"):
 		frappe.db.sql(
 			"UPDATE `tabQuotation` SET custom_secondary_poc = %s WHERE custom_buyer_master = %s",
+			(secondary_poc or None, buyer),
+		)
+	if frappe.db.has_column("Opportunity", "custom_secondary_poc"):
+		frappe.db.sql(
+			"UPDATE `tabOpportunity` SET custom_secondary_poc = %s WHERE opportunity_from = 'Buyer Master' AND party_name = %s",
 			(secondary_poc or None, buyer),
 		)

@@ -157,14 +157,19 @@ def sync_resolved_customer(doc):
 
 
 def _address_belongs_to_customer(address_name, customer):
+	"""An address of the Customer or of another Buyer in its family (parent + sites): the
+	Opportunity offers the family's addresses, as the Sales Order does, and Convert to Quotation
+	carries the chosen ones over."""
 	if not address_name or not customer:
 		return True
+	from alpinos.sales_order_offline_buyer import buyer_family_customers
+
 	return bool(
 		frappe.db.exists(
 			"Dynamic Link",
 			{
 				"link_doctype": "Customer",
-				"link_name": customer,
+				"link_name": ("in", buyer_family_customers(customer) or [customer]),
 				"parenttype": "Address",
 				"parent": address_name,
 			},
@@ -194,6 +199,9 @@ def link_obm_quotation_addresses(doc):
 
 
 def validate_payment_proof(doc, method=None):
+	if doc.flags.alpinos_from_opportunity and doc.is_new():
+		# Convert to Quotation (Section 3) creates the Draft; payment comes later (Section 5)
+		return
 	mode = doc.get("custom_payment_mode")
 	if mode in ("Advance", "Partial"):
 		if not doc.get("custom_attachment_proof"):

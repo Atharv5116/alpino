@@ -21,8 +21,8 @@ see", OFF until the Buyers carry their POCs (on 13 Nov one UAT Buyer had a Prima
 Admin keeps organisation-wide Offline Buyer access either way: Show All governs list scope
 only (alpinos.offline_sales.access), never permission.
 
-Section 1, 4.1-4.2 also carries the scope downstream: a scoped user sees the Quotations of
-their Buyers, and the Pick Lists and Delivery Notes of their Buyers' Sales Orders, read only
+Section 1, 4.1-4.2 also carries the scope downstream: a scoped user sees the Opportunities and
+Quotations of their Buyers, and the Pick Lists and Delivery Notes of their Buyers' Sales Orders, read only
 for a Sales Officer.
 """
 
@@ -207,6 +207,37 @@ def quotation_has_permission(doc, user=None, permission_type=None):
 	from alpinos.offline_sales.catalog_gate import quotation_buyer
 
 	buyer = doc.get(QUOTATION_BUYER_FIELD) or quotation_buyer(doc)
+	employee = _employee_for(user)
+	if not buyer or not employee or buyer not in _assigned_buyer_names(employee):
+		return False
+	return NO_OBJECTION
+
+
+# ---------------------------------------------------------------------------
+# Opportunity (Section 1, 4.1 and Section 8: the Opportunities of the user's Buyers)
+# ---------------------------------------------------------------------------
+
+
+def opportunity_query_conditions(user=None):
+	user = user or frappe.session.user
+	if not is_assignment_scoped(user):
+		return ""
+	employee = _employee_for(user)
+	if not employee:
+		return "1 = 0"
+	return (
+		"`tabOpportunity`.opportunity_from = 'Buyer Master' "
+		f"AND `tabOpportunity`.party_name IN ({_assigned_buyers_sql(employee)})"
+	)
+
+
+def opportunity_has_permission(doc, user=None, permission_type=None):
+	user = user or frappe.session.user
+	if not is_assignment_scoped(user):
+		return NO_OBJECTION
+	if not doc.get("creation") or (hasattr(doc, "is_new") and doc.is_new()):
+		return NO_OBJECTION  # creating one is the role's create right; its Buyer is checked on save
+	buyer = doc.get("party_name") if doc.get("opportunity_from") == "Buyer Master" else None
 	employee = _employee_for(user)
 	if not buyer or not employee or buyer not in _assigned_buyer_names(employee):
 		return False

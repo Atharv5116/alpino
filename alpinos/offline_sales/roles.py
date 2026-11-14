@@ -1,6 +1,7 @@
 """The Offline Sales access matrix (document Section 1, 3 and 6-7), as DocPerm rows.
 
     Sales Officer   Buyer Master    read, create, write    which fields and when: buyer_rules
+                    Opportunity     read, create, write    status changes through its actions only
                     Quotation       read, create, write    never submit or cancel (finalize)
                     Pick List       read only              of their Buyers' orders
                     Delivery Note   read only              of their Buyers' orders
@@ -22,6 +23,9 @@ from alpinos.offline_sales import SALES_MANAGER, SALES_OFFICER, SETTINGS
 
 PERMISSION_MATRIX = {
 	"Buyer Master": {SALES_OFFICER: "CREATE_EDIT"},
+	# Section 3 (Opportunity): SO / SM / SA create, edit while Draft and act on it; Sales
+	# Manager and Sales Admin already hold their rows
+	"Opportunity": {SALES_OFFICER: "CREATE_EDIT"},
 	"Quotation": {SALES_OFFICER: "CREATE_EDIT"},
 	"Pick List": {SALES_OFFICER: "VIEW"},
 	"Delivery Note": {SALES_OFFICER: "VIEW"},
