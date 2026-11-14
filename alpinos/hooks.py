@@ -859,6 +859,8 @@ doc_events = {
 			"alpinos.workflow_engine.delivery_note_on_submit",
 			"alpinos.stock_reservation.release_leftover_after_delivery_note",
 			"alpinos.so_invoice_value.refresh_from_delivery_note",
+			# Opportunity to SO doc Section 2, 5.1: the buyer's "Your Order ... has been dispatched" email
+			"alpinos.offline_sales.buyer_emails.delivery_note_on_submit",
 		],
 		"on_update": [
 			"alpinos.after_submit_sync.delivery_note_on_update_draft",
