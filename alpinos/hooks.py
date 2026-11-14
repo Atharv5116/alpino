@@ -147,7 +147,7 @@ doctype_js = {
 }
 doctype_list_js = {
 	# Offline Sales: a Sales Admin's Quotation list opens on their Secondary POC buyers (Show All).
-	"Quotation": "public/js/quotation_list_scope.js",
+	"Quotation": ["public/js/quotation_list_scope.js", "public/js/quotation_list.js"],
 	"Opportunity": ["public/js/opportunity_list_scope.js", "public/js/opportunity_list.js"],
 	"Purchase Order": "public/js/purchase_order_list.js",
 	"Pick List": "public/js/pick_list_list.js",

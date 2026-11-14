@@ -2420,6 +2420,14 @@ def _attach_so_list_row_extras(rows):
 		r["invoice_downloaded"] = 1 if meta.get("custom_invoice_downloaded") else 0
 		r["asn_details"] = asn_map.get(r.name) or []
 
+	# Opportunity to SO doc Section 8: Payment Status / Payment Attachments of the linked
+	# Quotation, read live (the Accounts layout shows them)
+	from alpinos.offline_sales.accounts_view import payment_columns
+
+	pay = payment_columns(names)
+	for r in rows:
+		r.update(pay.get(r.name) or {"payment_status": "", "payment_proof_count": 0, "has_quotation": False})
+
 @frappe.whitelist()
 def get_pick_list_mapping_data(sales_order, remaining_only=0):
 	"""Build the Pick List skeleton for a Sales Order.

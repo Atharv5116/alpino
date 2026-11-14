@@ -106,7 +106,8 @@ _ADOPTED_DOCTYPES = ("Data Import",)
 _ADOPTING_SHELLS = (SALES, STOCK, PRODUCTION, GOODS_INWARD, HR)
 # The same for the report views Alpino Sales & Dispatch lists: they belong to ERPNext's Selling
 # and Stock sidebars, so the Sales Order Report link landed in Selling.
-_SALES_DOCTYPES = ("Sales Order", "Pick List", "Delivery Note", "Goods Return Request", "Goods Return Reason")
+_SALES_DOCTYPES = ("Sales Order", "Pick List", "Delivery Note", "Goods Return Request", "Goods Return Reason",
+                   "Opportunity", "Quotation")
 
 
 def _item_allowed(shell, item, roles):

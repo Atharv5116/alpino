@@ -2,8 +2,11 @@
 
 Opportunity: Opportunity ID, Source, Buyer Order Request Ref., Status (badge), Customer, Customer
 Type, Site Name, Total Amount, Linked Quotation; filters on each but Total Amount; newest first.
-The status badge colours are in public/js/opportunity_list.js. Applied by after_migrate through
-Property Setters, so ERPNext's own Opportunity definition is untouched.
+Quotation: Quotation ID, Opportunity ID, Customer, Quotation Status (badge), Payment Term, Payment
+Status (badge, a separate column: never merged with the Quotation Status), Grand Total, Sales Order
+ID; Force Complete Applied is a filter, never a status. Badges: public/js/opportunity_list.js and
+public/js/quotation_list.js. Applied by after_migrate through Property Setters (fields that do not
+exist yet are skipped), so ERPNext's own definitions are untouched.
 """
 
 import frappe
@@ -22,6 +25,24 @@ OPPORTUNITY = {
 	"not_filters": ["opportunity_from", "status"],
 	"labels": {"total": "Total Amount", "customer_name": "Customer"},
 	"search_fields": "customer_name,party_name,custom_buyer_order_request_ref,custom_site_name,custom_linked_quotation",
+}
+
+
+QUOTATION = {
+	# Quotation ID, Opportunity ID, Customer, Quotation Status (badge), Payment Term, Payment Status
+	# (badge), Grand Total, Sales Order ID; Force Complete Applied as a filter
+	"list": [
+		"opportunity", "customer_name", "custom_payment_term", "custom_payment_status", "grand_total",
+		"custom_linked_sales_order",
+	],
+	"not_list": ["status", "transaction_date", "quotation_to", "party_name", "title"],
+	"filters": [
+		"opportunity", "party_name", "custom_quotation_status", "custom_payment_term", "custom_payment_status",
+		"custom_linked_sales_order", "custom_force_complete_applied",
+	],
+	"not_filters": ["status"],
+	"labels": {"opportunity": "Opportunity ID", "customer_name": "Customer", "custom_linked_sales_order": "Sales Order ID"},
+	"search_fields": "customer_name,party_name,opportunity,custom_linked_sales_order",
 }
 
 
@@ -52,8 +73,10 @@ def _apply(doctype, spec):
 	for f, label in spec.get("labels", {}).items():
 		_field(doctype, f, "label", label, "Data")
 	meta = frappe.get_meta(doctype)
-	if spec.get("search_fields") and meta.search_fields != spec["search_fields"]:
-		make_property_setter(doctype, None, "search_fields", spec["search_fields"], "Data", for_doctype=True)
+	# only fields that exist (a field another build adds later joins on the next migrate)
+	search = ",".join(f for f in (spec.get("search_fields") or "").split(",") if f and meta.get_field(f))
+	if search and meta.search_fields != search:
+		make_property_setter(doctype, None, "search_fields", search, "Data", for_doctype=True)
 	if meta.sort_field != "creation" or (meta.sort_order or "").upper() != "DESC":
 		make_property_setter(doctype, None, "sort_field", "creation", "Data", for_doctype=True)
 		make_property_setter(doctype, None, "sort_order", "DESC", "Data", for_doctype=True)
@@ -62,3 +85,4 @@ def _apply(doctype, spec):
 
 def setup():
 	_apply("Opportunity", OPPORTUNITY)
+	_apply("Quotation", QUOTATION)

@@ -87,6 +87,22 @@ var SO_LIST_LAYOUTS = {
 		{ label: 'Created By', sort: 'owner', width: 106, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
 		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 125, render: (d, h) => h.money(d) },
 	],
+	// Opportunity to SO doc Section 8: Accounts User / Accounts Manager, the sales columns plus
+	// Payment Status and Payment Attachments of the order's Quotation (after PO No.)
+	accounts: [
+		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
+		{ label: 'Customer Name', sort: 'customer_name', width: 150, render: (d, h) => h.esc(d.customer_name) },
+		{ label: 'Buyer ID', sort: 'custom_offline_buyer_master', width: 130, nowrap: true, render: (d, h) => h.esc(d.custom_offline_buyer_master || '—') },
+		{ label: 'Order Date', sort: 'transaction_date', width: 111, nowrap: true, render: (d, h) => h.date(d.transaction_date) },
+		{ label: 'PO No', sort: 'po_no', width: 110, render: (d, h) => h.esc(d.po_no || '—') },
+		{ label: 'Payment Status', width: 140, render: (d, h) => so_list_payment_status(d, h) },
+		{ label: 'Payment Attachments', width: 130, render: (d, h) => so_list_payment_files(d, h) },
+		{ label: 'Workflow Status', sort: 'custom_workflow_status', width: 140, render: (d, h) => h.wf(d) },
+		{ label: 'Invoice No', sort: 'custom_invoice_no', width: 95, render: (d, h) => h.esc(d.invoice_no || '—') },
+		{ label: 'Links', cls: 'text-center', width: 64, render: (d, h) => h.links(d) },
+		{ label: 'Created By', sort: 'owner', width: 106, render: (d, h) => h.esc(d.owner_full_name || d.owner) },
+		{ label: 'Grand Total', sort: 'grand_total', cls: 'text-right', width: 125, render: (d, h) => h.money(d) },
+	],
 	warehouse: [
 		{ label: 'Customer Type', sort: 'order_type', width: 92, render: (d, h) => h.esc(d.order_type || '—') },
 		{ label: 'ID', sort: 'name', width: 150, nowrap: true, render: (d, h) => `<strong>${h.esc(d.name)}</strong>` },
@@ -105,6 +121,54 @@ var SO_LIST_LAYOUTS = {
 	],
 };
 
+// Payment Status badge: Pending red, Partially Received yellow, Fully Received green; "—" for an
+// order without a Quotation.
+function so_list_payment_status(d, h) {
+	if (!d.has_quotation || !d.payment_status) return '—';
+	const color = { 'Pending': 'red', 'Partially Received': 'yellow', 'Fully Received': 'green' }[d.payment_status] || 'gray';
+	return `<span class="indicator-pill ${color}">${h.esc(__(d.payment_status))}</span>`;
+}
+
+function so_list_payment_files(d, h) {
+	if (!d.has_quotation || !d.payment_proof_count) return `<span class="text-muted">${__('No Files')}</span>`;
+	return `<a href="#" class="so-proofs" data-so="${h.esc(d.name)}">&#128206; ${__('View Files ({0})', [d.payment_proof_count])}</a>`;
+}
+
+// The Payment Attachment preview: images and PDFs inside the dialog, Previous / Next with the
+// position ("2 of 4"); closing it leaves the list where it was.
+function so_list_open_proofs(sales_order) {
+	frappe.xcall('alpinos.offline_sales.accounts_view.so_payment_proofs', { sales_order }).then((r) => {
+		const files = (r && r.files) || [];
+		if (!files.length) return frappe.msgprint(__('No Files'));
+		let at = 0;
+		const d = new frappe.ui.Dialog({ title: __('Payment Attachments: {0}', [sales_order]), size: 'extra-large' });
+		const $b = d.$body;
+		const show = () => {
+			const f = files[at];
+			const view = f.kind === 'image'
+				? `<img src="${f.url}" style="max-width:100%; max-height:70vh; display:block; margin:0 auto;">`
+				: f.kind === 'pdf'
+					? `<iframe src="${f.url}" style="width:100%; height:70vh; border:0;"></iframe>`
+					: `<div class="text-center" style="padding:40px;"><a href="${f.url}" target="_blank">${frappe.utils.escape_html(f.file_name)}</a></div>`;
+			$b.html(`<div class="d-flex justify-content-between align-items-center" style="margin-bottom:10px;">
+					<button class="btn btn-sm btn-default proof-prev" ${at === 0 ? 'disabled' : ''}>${__('Previous')}</button>
+					<span class="text-muted">${__('{0} of {1}', [at + 1, files.length])} &middot; ${frappe.utils.escape_html(f.file_name)}</span>
+					<button class="btn btn-sm btn-default proof-next" ${at === files.length - 1 ? 'disabled' : ''}>${__('Next')}</button>
+				</div>${view}`);
+			$b.find('.proof-prev').on('click', () => { if (at > 0) { at--; show(); } });
+			$b.find('.proof-next').on('click', () => { if (at < files.length - 1) { at++; show(); } });
+		};
+		show();
+		d.show();
+	});
+}
+
+$(document).on('click', '.so-proofs', function (e) {
+	e.preventDefault();
+	e.stopPropagation();
+	so_list_open_proofs($(this).data('so'));
+});
+
 function so_list_layout_for_user() {
 	const roles = frappe.user_roles || [];
 	const WAREHOUSE_ROLES = [
@@ -114,7 +178,9 @@ function so_list_layout_for_user() {
 	const SALES_ROLES = ['Sales Admin', 'Sales Manager', 'Sales User'];
 	const isWarehouse = WAREHOUSE_ROLES.some((r) => roles.includes(r));
 	const isSales = SALES_ROLES.some((r) => roles.includes(r));
-	return isWarehouse && !isSales ? 'warehouse' : 'sales';
+	const isAccounts = ['Accounts User', 'Accounts Manager'].some((r) => roles.includes(r));
+	if (isWarehouse && !isSales) return 'warehouse';
+	return isAccounts && !isSales ? 'accounts' : 'sales';
 }
 
 var SalesOrderEntryListPage = class {
