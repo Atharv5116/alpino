@@ -66,8 +66,7 @@ def setup_permissions():
 		except frappe.ValidationError:
 			# a row someone else owns may not pass Frappe's own check (State's System Manager
 			# row carries Import on a doctype that is not importable); ours are written right
-			frappe.clear_messages()
-			frappe.log_error(title=f"Offline Sales: permissions of {doctype} not validated")
+			frappe.clear_messages()  # expected for State / City: not an error, nothing to log
 		frappe.clear_cache(doctype=doctype)
 
 
