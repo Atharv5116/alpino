@@ -11,6 +11,7 @@
   "qty",
   "box",
   "previous_order_id",
+  "entry_type",
   "remarks"
  ],
  "fields": [
@@ -53,6 +54,14 @@
    "label": "Previous Order No / ID"
   },
   {
+   "fieldname": "entry_type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "options": "\nDamage Replacement\nAdditional Unit",
+   "in_list_view": 1,
+   "description": "Damage Replacement needs a Remark; Additional Unit does not (Opportunity to SO doc, Section 3)."
+  },
+  {
    "fieldname": "remarks",
    "fieldtype": "Small Text",
    "label": "Remark"
@@ -61,7 +70,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-08-03 12:00:00.000000",
+ "modified": "2026-11-14 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Sales Order Additional Units Item",

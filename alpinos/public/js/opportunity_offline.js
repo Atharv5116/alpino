@@ -75,7 +75,10 @@
 		});
 		const active = () => ({ filters: { disabled: 0, is_sales_item: 1, has_variants: 0 } });
 		frm.set_query("item_code", "items", sellable);
-		frm.set_query("item_code", "custom_marketing_freebies", active);
+		// doc 3.3: freebies come from the Marketing Material items
+		frm.set_query("item_code", "custom_marketing_freebies", () => ({
+			filters: { disabled: 0, item_group: ["descendants of (inclusive)", "Marketing Material"] },
+		}));
 		frm.set_query("item_code", "custom_scheme_item_table", active);
 		frm.set_query("item_code", "custom_additional_units_damage_items", sellable);
 	}

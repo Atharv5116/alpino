@@ -69,6 +69,7 @@ def _check(sales_order):
 @frappe.whitelist()
 def so_payment_proofs(sales_order):
 	"""The proof files of an order's Quotation, in received-date order, for the preview."""
+	# company-scope: n/a (the Sales Order's own read permission, which carries its company, is checked first)
 	q, rows = _check(sales_order)
 	out = []
 	for i, r in enumerate(rows):
@@ -88,6 +89,7 @@ def so_payment_proofs(sales_order):
 @frappe.whitelist()
 def proof_file(sales_order, index=0):
 	"""One proof file, shown inline (images, PDF) or downloaded (anything else)."""
+	# company-scope: n/a (the Sales Order's own read permission, which carries its company, is checked first)
 	_q, rows = _check(sales_order)
 	index = int(index)
 	if index < 0 or index >= len(rows):

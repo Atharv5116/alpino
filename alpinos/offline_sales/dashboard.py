@@ -70,6 +70,7 @@ def _route(doctype, filters):
 
 @frappe.whitelist()
 def get_dashboard(show_all=0):
+	# company-scope: n/a (every count goes through frappe.get_list, which applies the company scope)
 	roles = _roles()
 	if not roles & set(ALL3):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)

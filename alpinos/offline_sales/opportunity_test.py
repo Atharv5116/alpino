@@ -140,7 +140,11 @@ def _items():
 	F.multi_mrps = IM.applicable(F.multi).mrps
 	F.plain = next(r.name for r in rows if r.mrp_rows == 0 and flt(r.valuation_rate) > 0)
 	F.plain_rate = flt(frappe.db.get_value("Item", F.plain, "valuation_rate"))
-	F.freebie = next(r.name for r in rows if r.mrp_rows == 0 and r.name != F.plain)
+	# a freebie is a Marketing Material SKU (doc 3.3)
+	from alpinos.dispatch_report_api import _marketing_material_items
+
+	mm = sorted(_marketing_material_items() - {F.plain})
+	F.freebie = mm[0] if mm else next(r.name for r in rows if r.mrp_rows == 0 and r.name != F.plain)
 
 
 def _fixtures():
@@ -319,6 +323,7 @@ def _run():
 	_scoping()
 	_form_support()
 	_legacy()
+	_freebie_and_damage()
 
 
 def _matrix():
@@ -928,3 +933,34 @@ def _legacy():
 			_assert(got.custom_opportunity_status == want and got.custom_opportunity_source == "Direct Opportunity", f"{erp_status}: {got}")
 
 	check("migration: older Opportunities get Source and a status mapped from ERPNext's", _patch)
+
+
+def _freebie_and_damage():
+	"""Doc 3.3 / 3.5: a freebie is a Marketing Material SKU; a Damage Replacement needs a Remark."""
+	from alpinos.dispatch_report_api import _marketing_material_items
+
+	mm = sorted(_marketing_material_items())
+
+	def _freebie():
+		doc = new_opp(F.so1.user, F.ready.name, custom_marketing_freebies=[{"item_code": F.single, "qty": 2}])
+		err = refused(lambda: act(F.so1.user, doc.name, "submit"))
+		_assert("is not a Marketing Material (freebie) SKU" in err, err)
+		if mm:
+			doc2 = new_opp(F.so1.user, F.ready.name, custom_marketing_freebies=[{"item_code": mm[0], "qty": 2}])
+			act(F.so1.user, doc2.name, "submit")
+			_assert(status(doc2.name) == "Pending (Submitted)", status(doc2.name))
+
+	check("3.3 a Marketing Freebie must be a Marketing Material SKU", _freebie)
+
+	def _damage():
+		doc = new_opp(F.so1.user, F.ready.name, custom_additional_units_damage=1,
+			custom_additional_units_damage_items=[{"item_code": F.single, "qty": 1, "entry_type": "Damage Replacement"}])
+		err = refused(lambda: act(F.so1.user, doc.name, "submit"))
+		_assert("a Remark is required for a Damage Replacement" in err, err)
+		doc2 = new_opp(F.so1.user, F.ready.name, custom_additional_units_damage=1,
+			custom_additional_units_damage_items=[{"item_code": F.single, "qty": 1, "entry_type": "Additional Unit"}])
+		act(F.so1.user, doc2.name, "submit")
+		_assert(status(doc2.name) == "Pending (Submitted)", "an Additional Unit row without a Remark was refused")
+
+	check("3.5 a Damage Replacement row needs a Remark; an Additional Unit does not", _damage)
+

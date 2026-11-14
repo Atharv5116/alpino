@@ -96,6 +96,7 @@ def creation_problem(quotation, user=None):
 @frappe.whitelist()
 def can_create_sales_order(quotation):
 	"""For the Quotation's Create Sales Order button: {allowed, reason}."""
+	# company-scope: n/a (the Quotation's own read permission, which carries its company, is checked first)
 	frappe.get_doc("Quotation", quotation).check_permission("read")
 	problem = creation_problem(quotation)
 	return {"allowed": not problem, "reason": problem}

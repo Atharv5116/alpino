@@ -585,11 +585,26 @@ def _validate_for_submit(doc):
 				errors.append(_("Quantity for SKU [{0}] in {1} must be greater than zero.").format(row.item_code, _(label)))
 			if table == "custom_scheme_item_table" and not cstr(row.get("scheme")).strip():
 				errors.append(_("{0} row {1}: enter the Scheme.").format(_(label), row.idx))
+			# doc 3.3: a freebie is a Marketing Material SKU; 3.5: a Damage Replacement needs a Remark
+			if table == "custom_marketing_freebies" and row.get("item_code") and row.item_code not in _freebie_skus():
+				errors.append(_("{0} row {1}: SKU {2} is not a Marketing Material (freebie) SKU.").format(_(label), row.idx, row.item_code))
+			if (table == "custom_additional_units_damage_items" and row.get("entry_type") == "Damage Replacement"
+					and not cstr(row.get("remarks")).strip()):
+				errors.append(_("{0} row {1}: a Remark is required for a Damage Replacement.").format(_(label), row.idx))
 	if errors:
 		frappe.throw("<br>".join(errors), title=_("Opportunity cannot be submitted"))
 	reason = create_block_reason(buyer)
 	if reason:
 		frappe.throw(reason, title=_("Buyer Not Ready"))
+
+
+def _freebie_skus():
+	from alpinos.dispatch_report_api import _marketing_material_items
+
+	skus = getattr(frappe.local, "alpinos_freebie_skus", None)
+	if skus is None:
+		skus = frappe.local.alpinos_freebie_skus = _marketing_material_items()
+	return skus
 
 
 def _set_status(doc, to_status, action, trail_action, current, reason=None, extra=None):
