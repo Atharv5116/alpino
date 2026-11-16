@@ -265,6 +265,11 @@ def get_delivery_note_list(
 	status="",
 	company="",
 	sales_order="",
+	invoice_no="",
+	lr_no="",
+	dispatch_from="",
+	dispatch_to="",
+	customer="",
 ):
 	if not frappe.has_permission("Delivery Note", "read"):
 		frappe.throw(frappe._("You are not permitted to view Delivery Notes."), frappe.PermissionError)
@@ -272,12 +277,43 @@ def get_delivery_note_list(
 	page_length = cint(page_length)
 
 	filters = {}
+	# Changes(HP) #47: the list's Status column is the workflow stage, read off the
+	# docstatus, so the filter that sits beside it works in the same three values.
+	_STAGE_DOCSTATUS = {"Draft": 0, "Dispatched": 1, "Cancelled": 2}
 	if status:
-		filters["status"] = status
+		if status in _STAGE_DOCSTATUS:
+			filters["docstatus"] = _STAGE_DOCSTATUS[status]
+		else:
+			# An older saved view may still hold an ERPNext status (To Bill, Closed, ...).
+			filters["status"] = status
 	if company:
 		filters["company"] = company
-	if sales_order:
-		filters["custom_sales_order_id"] = sales_order
+	if customer:
+		filters["customer"] = customer
+	if lr_no:
+		filters["custom_lr_gr_no"] = ["like", f"%{lr_no}%"]
+	# The Dispatch Date is a Datetime: "to" has to cover the whole day, not midnight.
+	if dispatch_from:
+		filters["custom_dispatch_date"] = [">=", f"{getdate(dispatch_from)} 00:00:00"]
+	if dispatch_to:
+		_to = ["<=", f"{getdate(dispatch_to)} 23:59:59"]
+		filters["custom_dispatch_date"] = (
+			["between", [f"{getdate(dispatch_from)} 00:00:00", _to[1]]] if dispatch_from else _to
+		)
+
+	# Sales Order and Invoice No both narrow the same column. Invoice No is the ORDER's
+	# live value -- the same one the list shows -- not the copy stored on the note, which
+	# is written once and can lag.
+	_so_ids = None
+	if sales_order or invoice_no:
+		_so_filters = {}
+		if sales_order:
+			_so_filters["name"] = ["like", f"%{sales_order}%"]
+		if invoice_no:
+			_so_filters["custom_invoice_no"] = ["like", f"%{invoice_no}%"]
+		_so_ids = set(frappe.get_all("Sales Order", filters=_so_filters, pluck="name"))
+	if _so_ids is not None:
+		filters["custom_sales_order_id"] = ["in", sorted(_so_ids) or ["__no_match__"]]
 
 	# A dedicated DN User only sees DNs assigned to them; admins/managers see all.
 	_roles = set(frappe.get_roles())
@@ -291,8 +327,8 @@ def get_delivery_note_list(
 
 	_allowed_sos = allowed_sales_orders()
 	if _allowed_sos is not None:
-		if sales_order:
-			_allowed_sos = [sales_order] if sales_order in _allowed_sos else []
+		if _so_ids is not None:
+			_allowed_sos = [so for so in _allowed_sos if so in _so_ids]
 		filters["custom_sales_order_id"] = ["in", _allowed_sos or ["__no_match__"]]
 
 	or_filters = []

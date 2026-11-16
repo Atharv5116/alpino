@@ -1,3 +1,18 @@
+// Every filter on the page, in one list: the controls, the saved view and the server args
+// all read it, so a new filter is added in one place (Changes(HP) #47). `var`, because the
+// page script is re-evaluated on navigation and a re-declared const blanks the page.
+var FILTER_KEYS = [
+	'search',
+	'sales_order',
+	'invoice_no',
+	'lr_no',
+	'dispatch_from',
+	'dispatch_to',
+	'customer',
+	'status',
+	'company',
+];
+
 frappe.pages['delivery_note_entry_list'].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
@@ -124,12 +139,71 @@ var DeliveryNoteListPage = class {
 			parent: w.find('.fld-search'),
 			render_input: true,
 		});
+		// Changes(HP) #47: the fields people search notes by, each on its own.
+		this._filter_fields.sales_order = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				fieldname: 'sales_order',
+				label: __('Sales Order'),
+			},
+			parent: w.find('.fld-sales-order'),
+			render_input: true,
+		});
+		this._filter_fields.invoice_no = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				fieldname: 'invoice_no',
+				label: __('Invoice No.'),
+			},
+			parent: w.find('.fld-invoice-no'),
+			render_input: true,
+		});
+		this._filter_fields.lr_no = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Data',
+				fieldname: 'lr_no',
+				label: __('LR No.'),
+			},
+			parent: w.find('.fld-lr-no'),
+			render_input: true,
+		});
+		this._filter_fields.dispatch_from = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Date',
+				fieldname: 'dispatch_from',
+				label: __('Dispatch Date - From'),
+			},
+			parent: w.find('.fld-dispatch-from'),
+			render_input: true,
+		});
+		this._filter_fields.dispatch_to = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Date',
+				fieldname: 'dispatch_to',
+				label: __('Dispatch Date - To'),
+			},
+			parent: w.find('.fld-dispatch-to'),
+			render_input: true,
+		});
+		this._filter_fields.customer = frappe.ui.form.make_control({
+			df: {
+				fieldtype: 'Link',
+				fieldname: 'customer',
+				label: __('Customer'),
+				options: 'Customer',
+			},
+			parent: w.find('.fld-customer'),
+			render_input: true,
+		});
+		// The Status column reads the workflow stage off the docstatus, so the filter offers
+		// the same three values. ERPNext's own status (To Bill, Closed, ...) named different
+		// things in the dropdown and the column, which is what Changes(HP) #47 replaces.
 		this._filter_fields.status = frappe.ui.form.make_control({
 			df: {
 				fieldtype: 'Select',
 				fieldname: 'status',
-				label: __('Status'),
-				options: '\nDraft\nTo Bill\nCompleted\nCancelled\nClosed\nReturn Issued',
+				label: __('Workflow Status'),
+				options: '\nDraft\nDispatched\nCancelled',
 			},
 			parent: w.find('.fld-status'),
 			render_input: true,
@@ -204,12 +278,11 @@ var DeliveryNoteListPage = class {
 	_save_view_prefs() {
 		if (!(window.alpinos && alpinos.list_prefs)) return;
 		const f = this._filter_fields;
-		alpinos.list_prefs.save(this._prefs_route, {
-			search: (f.search && f.search.get_value()) || '',
-			status: (f.status && f.status.get_value()) || '',
-			company: (f.company && f.company.get_value()) || '',
-			page_length: this.page_length,
+		var saved = { page_length: this.page_length };
+		FILTER_KEYS.forEach(function (k) {
+			saved[k] = (f[k] && f[k].get_value()) || '';
 		});
+		alpinos.list_prefs.save(this._prefs_route, saved);
 	}
 
 	// Applies the saved view to instance state + UI controls before the first data load.
@@ -218,7 +291,7 @@ var DeliveryNoteListPage = class {
 		const saved = alpinos.list_prefs.load(this._prefs_route);
 		if (!saved || typeof saved !== 'object') return;
 		const f = this._filter_fields;
-		['search', 'status', 'company'].forEach((k) => {
+		FILTER_KEYS.forEach((k) => {
 			const v = saved[k];
 			if (typeof v !== 'string' || !v || !f[k]) return;
 			// set_input applies synchronously so the first load_list() reads the restored values.
@@ -237,14 +310,13 @@ var DeliveryNoteListPage = class {
 
 	_args() {
 		const f = this._filter_fields;
-		return {
-			start: this.start,
-			page_length: this.page_length,
-			search: f.search.get_value() || '',
-			status: f.status.get_value() || '',
-			company: f.company.get_value() || '',
-			sales_order: this.so_filter || '',
-		};
+		var args = { start: this.start, page_length: this.page_length };
+		FILTER_KEYS.forEach(function (k) {
+			args[k] = (f[k] && f[k].get_value()) || '';
+		});
+		// A Sales Order carried in from another page wins over the typed one.
+		if (this.so_filter) args.sales_order = this.so_filter;
+		return args;
 	}
 
 	load_list() {
