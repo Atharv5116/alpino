@@ -49,6 +49,8 @@ app_include_js = [
 	"/assets/alpinos/js/alpinos_list_prefs.js",
 	"/assets/alpinos/js/alpinos_change_log.js",
 	"/assets/alpinos/js/alpinos_desk_links.js",
+	# Changes(HP) #111: page numbers / first / last / go to page on the list pages.
+	"/assets/alpinos/js/alpinos_pager.js",
 ]
 
 # include js, css files in header of web template

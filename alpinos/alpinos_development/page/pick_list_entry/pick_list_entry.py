@@ -263,7 +263,9 @@ def get_pick_list_entry_list(
 	status="",
 	company="",
 	sales_order="",
-	delivery_note=""
+	delivery_note="",
+	sort_field="",
+	sort_dir="",
 ):
 	if not frappe.has_permission("Pick List", "read"):
 		frappe.throw(frappe._("You are not permitted to view Pick Lists."), frappe.PermissionError)
@@ -307,6 +309,9 @@ def get_pick_list_entry_list(
 				_allowed_sos = [sales_order]
 		filters["custom_sales_order_id"] = ["in", _allowed_sos or ["__no_match__"]]
 		
+	# Changes(HP) #111: sorted and counted over every record, not the page on screen
+	from alpinos import list_page_tools as LT
+
 	or_filters = []
 	if search:
 		or_filters = [
@@ -324,7 +329,14 @@ def get_pick_list_entry_list(
 			"custom_po_no", "custom_transporter", "custom_assigned_to",
 			"custom_dispatch_date", "custom_total_box", "custom_invoice_no",
 		],
-		order_by="creation desc",
+		order_by=LT.order_by(sort_field, sort_dir, {
+			"name": "name", "custom_sales_order_id": "custom_sales_order_id",
+			"custom_customer_name": "custom_customer_name", "custom_po_no": "custom_po_no",
+			"custom_order_date": "custom_order_date", "custom_dispatch_date": "custom_dispatch_date",
+			"company": "company", "custom_transporter": "custom_transporter",
+			"custom_assigned_to": "custom_assigned_to", "custom_total_box": "custom_total_box",
+			"custom_workflow_status": "custom_workflow_status", "status": "status",
+		}),
 		limit_start=start,
 		limit_page_length=page_length + 1
 	)
@@ -332,6 +344,7 @@ def get_pick_list_entry_list(
 	has_more = len(data) > page_length
 	if has_more:
 		data = data[:page_length]
+	_total = LT.total("Pick List", filters, or_filters)
 
 	# Invoice No lives on the Sales Order (set after the PL is made); the PL's own
 	# copy is usually stale, so show the SO's live value.
@@ -349,7 +362,8 @@ def get_pick_list_entry_list(
 		"data": data,
 		"has_more": has_more,
 		"start": start,
-		"page_length": page_length
+		"page_length": page_length,
+		"total": _total,
 	}
 
 def _build_pick_list_from_mapping(so_name, header, items, removed_rows=None, remaining_only=0):

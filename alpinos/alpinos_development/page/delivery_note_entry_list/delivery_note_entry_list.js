@@ -27,7 +27,8 @@ var DeliveryNoteListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
-		this.page_length = 20;
+		// 100 rows by default (Changes(HP) 16 Nov); a size picked from the list is remembered
+		this.page_length = 100;
 		this.start = 0;
 		this._prefs_route = 'delivery_note_entry_list';
 		this._last_meta = { has_more: 0 };
@@ -233,20 +234,21 @@ var DeliveryNoteListPage = class {
 			this.load_list();
 		});
 		this.wrapper.find('.dnl-page-size').on('change', (e) => {
-			this.page_length = cint($(e.currentTarget).val()) || 20;
+			this.page_length = cint($(e.currentTarget).val()) || 100;
 			this.start = 0;
 			this._save_view_prefs();
 			this.load_list();
 		});
-		this.wrapper.find('.btn-dnl-prev').on('click', () => {
-			this.start = Math.max(0, this.start - this.page_length);
+		// Changes(HP) #111: a header click sorts every record on the server, from page 1
+		this.wrapper.on('click', '.dnl-sort-th', (e) => {
+			const field = $(e.currentTarget).data('sort');
+			if (!field) return;
+			const cur = this._sort || { field: '', dir: 'desc' };
+			this._sort = cur.field === field
+				? { field, dir: cur.dir === 'asc' ? 'desc' : 'asc' }
+				: { field, dir: 'asc' };
+			this.start = 0;
 			this.load_list();
-		});
-		this.wrapper.find('.btn-dnl-next').on('click', () => {
-			if (this._last_meta.has_more) {
-				this.start += this.page_length;
-				this.load_list();
-			}
 		});
 		this.wrapper.on('click', '.dnl-row', (e) => {
 			if ($(e.target).closest('a,button,input').length) return;
@@ -278,7 +280,7 @@ var DeliveryNoteListPage = class {
 	_save_view_prefs() {
 		if (!(window.alpinos && alpinos.list_prefs)) return;
 		const f = this._filter_fields;
-		var saved = { page_length: this.page_length };
+		var saved = { page_length: this.page_length, page_length_v: 2 };
 		FILTER_KEYS.forEach(function (k) {
 			saved[k] = (f[k] && f[k].get_value()) || '';
 		});
@@ -301,8 +303,9 @@ var DeliveryNoteListPage = class {
 				f[k].set_value(v);
 			}
 		});
+		// a size saved before 100 became the default (always 20 then) is not restored
 		const pl = cint(saved.page_length);
-		if ([20, 50, 100].includes(pl)) {
+		if (cint(saved.page_length_v) === 2 && [20, 50, 100].includes(pl)) {
 			this.page_length = pl;
 			this.wrapper.find('.dnl-page-size').val(String(pl));
 		}
@@ -310,7 +313,10 @@ var DeliveryNoteListPage = class {
 
 	_args() {
 		const f = this._filter_fields;
-		var args = { start: this.start, page_length: this.page_length };
+		var args = {
+			start: this.start, page_length: this.page_length,
+			sort_field: (this._sort && this._sort.field) || '', sort_dir: (this._sort && this._sort.dir) || '',
+		};
 		FILTER_KEYS.forEach(function (k) {
 			args[k] = (f[k] && f[k].get_value()) || '';
 		});
@@ -333,6 +339,7 @@ var DeliveryNoteListPage = class {
 					has_more: cint(msg.has_more),
 					start: cint(msg.start),
 					page_length: cint(msg.page_length),
+					total: cint(msg.total),
 				};
 				me.render_rows(msg.data || []);
 				me.update_pager();
@@ -382,17 +389,23 @@ var DeliveryNoteListPage = class {
 	}
 
 	update_pager() {
-		const n = this.wrapper.find('.dnl-table tbody tr.dnl-row').length;
-		if (!n) {
-			this.wrapper.find('.dnl-count').text(__('No rows on this page'));
-		} else {
-			const from = this._last_meta.start + 1;
-			const to = this._last_meta.start + n;
-			this.wrapper.find('.dnl-count').text(__('Showing {0}–{1}', [from, to]));
+		// Changes(HP) #111: total, page numbers, first / last, go to page
+		alpinos.pager.render(this.wrapper.find('.dnl-pager'), {
+			start: this._last_meta.start,
+			page_length: this._last_meta.page_length || this.page_length,
+			total: this._last_meta.total,
+		}, (new_start) => {
+			this.start = new_start;
+			this.load_list();
+		});
+		const sort = this._sort || {};
+		this.wrapper.find('.dnl-sort-th .dnl-sort-mark').remove();
+		if (sort.field) {
+			this.wrapper.find(`.dnl-sort-th[data-sort="${sort.field}"]`)
+				.append(`<span class="dnl-sort-mark">${sort.dir === 'asc' ? '▲' : '▼'}</span>`);
 		}
-		this.wrapper.find('.btn-dnl-prev').prop('disabled', this.start <= 0);
-		this.wrapper.find('.btn-dnl-next').prop('disabled', !this._last_meta.has_more);
 	}
+
 }
 
 frappe.pages['delivery_note_entry_list'].on_page_show = function (wrapper) {
