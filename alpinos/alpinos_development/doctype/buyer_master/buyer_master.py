@@ -263,6 +263,14 @@ class BuyerMaster(Document):
 
 		new_gst = (self.gst_no or "").strip().upper()
 		old_gst = ((before.get("gst_no") if before else "") or "").strip().upper()
+		# Changes(HP) #119: only a Registered Business has a GST No. A buyer saved as another GST
+		# Type for the first time (new, or its GST Type just changed) drops the number entered
+		# before, so no GST No. check stands in the way of saving it with its PAN No. Older
+		# buyers whose GST Type did not change keep what they have.
+		if self.gst_type != "Registered Business":
+			if new_gst and (before is None or before.get("gst_type") != self.gst_type):
+				self.gst_no = None
+			new_gst = ""
 		if new_gst and new_gst != old_gst:
 			if not gstin_re.match(new_gst):
 				frappe.throw(_("Invalid GSTIN format: {0}").format(new_gst), title=_("GST"))
