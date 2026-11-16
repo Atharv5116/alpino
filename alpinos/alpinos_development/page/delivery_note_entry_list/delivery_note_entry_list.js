@@ -27,7 +27,8 @@ var DeliveryNoteListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
-		this.page_length = 20;
+		// 100 rows by default (Changes(HP) 16 Nov); a size picked from the list is remembered
+		this.page_length = 100;
 		this.start = 0;
 		this._prefs_route = 'delivery_note_entry_list';
 		this._last_meta = { has_more: 0 };
@@ -217,7 +218,7 @@ var DeliveryNoteListPage = class {
 			this.load_list();
 		});
 		this.wrapper.find('.dnl-page-size').on('change', (e) => {
-			this.page_length = cint($(e.currentTarget).val()) || 20;
+			this.page_length = cint($(e.currentTarget).val()) || 100;
 			this.start = 0;
 			this._save_view_prefs();
 			this.load_list();
@@ -245,7 +246,7 @@ var DeliveryNoteListPage = class {
 	_save_view_prefs() {
 		if (!(window.alpinos && alpinos.list_prefs)) return;
 		const f = this._filter_fields;
-		var saved = { page_length: this.page_length };
+		var saved = { page_length: this.page_length, page_length_v: 2 };
 		FILTER_KEYS.forEach(function (k) {
 			saved[k] = (f[k] && f[k].get_value()) || '';
 		});
@@ -268,8 +269,9 @@ var DeliveryNoteListPage = class {
 				f[k].set_value(v);
 			}
 		});
+		// a size saved before 100 became the default (always 20 then) is not restored
 		const pl = cint(saved.page_length);
-		if ([20, 50, 100].includes(pl)) {
+		if (cint(saved.page_length_v) === 2 && [20, 50, 100].includes(pl)) {
 			this.page_length = pl;
 			this.wrapper.find('.dnl-page-size').val(String(pl));
 		}

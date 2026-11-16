@@ -12,7 +12,8 @@ var PickListListPage = class {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.main);
-		this.page_length = 20;
+		// 100 rows by default (Changes(HP) 16 Nov); a size picked from the list is remembered
+		this.page_length = 100;
 		this.start = 0;
 		this._prefs_route = 'pick_list_list';
 		this._last_meta = { has_more: 0 };
@@ -302,7 +303,7 @@ var PickListListPage = class {
 		}
 		this.wrapper.find('.pl-list-page-size').on('change', (e) => {
 			const v = cint($(e.currentTarget).val());
-			this.page_length = [20, 50, 100].includes(v) ? v : 20;
+			this.page_length = [20, 50, 100].includes(v) ? v : 100;
 			$(e.currentTarget).val(String(this.page_length));
 			this.start = 0;
 			this._save_view_prefs();
@@ -349,6 +350,7 @@ var PickListListPage = class {
 			status: (f.status && f.status.get_value()) || '',
 			company: (f.company && f.company.get_value()) || '',
 			page_length: this.page_length,
+			page_length_v: 2,
 		});
 	}
 
@@ -380,8 +382,9 @@ var PickListListPage = class {
 			if (typeof saved.company === 'string') {
 				set_sync(f.company, saved.company);
 			}
+			// a size saved before 100 became the default (always 20 then) is not restored
 			const pl = cint(saved.page_length);
-			if ([20, 50, 100].includes(pl)) {
+			if (cint(saved.page_length_v) === 2 && [20, 50, 100].includes(pl)) {
 				this.page_length = pl;
 			}
 		} catch (e) {
