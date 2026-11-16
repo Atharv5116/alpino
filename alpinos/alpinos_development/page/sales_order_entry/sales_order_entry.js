@@ -2275,10 +2275,13 @@ var SalesOrderEntry = class {
 
 		function done(r) {
 				if (r.message && r.message.name) {
+					// Changes(HP) #117: the view's button is "Submit Order" for an Only Invoice order
+					const submit_label = me.only_invoice_field && cint(me.only_invoice_field.get_value())
+						? 'Submit Order' : 'Send for Warehouse Approval';
 					frappe.show_alert({
 						message: is_edit
 							? `Sales Order <b>${r.message.name}</b> updated.`
-							: `Sales Order <b>${r.message.name}</b> saved as Draft. Review it, then click "Send for Warehouse Approval".`,
+							: `Sales Order <b>${r.message.name}</b> saved as Draft. Review it, then click "${submit_label}".`,
 						indicator: 'green'
 					}, 6);
 					frappe.set_route('sales-order-entry-view', r.message.name);

@@ -329,9 +329,10 @@ var SalesOrderEntryView = class {
 					callback(r) {
 						const a = r.message || {};
 						if (cint(a.can_submit)) {
-							me.page.set_primary_action(__('Send for Warehouse Approval'), () =>
-								me.do_submit_order()
-							);
+							// Changes(HP) #117: same action and workflow, only the label differs for an
+							// Only Invoice order (it skips the warehouse)
+							const label = me._only_invoice ? __('Submit Order') : __('Send for Warehouse Approval');
+							me.page.set_primary_action(label, () => me.do_submit_order());
 						} else if (a.reason) {
 							// Say who does submit it, rather than leaving a dead screen.
 							me.page.clear_primary_action();
@@ -408,8 +409,13 @@ var SalesOrderEntryView = class {
 	do_submit_order() {
 		if (!this._so_name) return;
 		const me = this;
+		// Changes(HP) #117: an Only Invoice order goes to the Accounts Format Report, not to the
+		// warehouse, so its confirmation does not mention warehouse approval
+		const only_invoice = !!this._only_invoice;
 		frappe.confirm(
-			__('Submit this Sales Order for warehouse approval? It becomes read-only after this.'),
+			only_invoice
+				? __('Submit this Sales Order? It becomes read-only after this.')
+				: __('Submit this Sales Order for warehouse approval? It becomes read-only after this.'),
 			() => {
 				frappe.call({
 					method: 'alpinos.workflow_engine.submit_sales_order',
@@ -418,7 +424,10 @@ var SalesOrderEntryView = class {
 					freeze_message: __('Submitting...'),
 					callback(r) {
 						if (r.exc) return;
-						frappe.show_alert({ message: __('Sent for Warehouse Approval'), indicator: 'green' });
+						frappe.show_alert({
+							message: only_invoice ? __('Sales Order submitted') : __('Sent for Warehouse Approval'),
+							indicator: 'green',
+						});
 						me.load_order(me._so_name);
 					},
 				});
@@ -875,6 +884,8 @@ var SalesOrderEntryView = class {
 		const w = this.wrapper;
 		const currency = p.currency || frappe.boot?.sysdefaults?.currency || '';
 
+		// Changes(HP) #117: an Only Invoice order is submitted with "Submit Order"
+		this._only_invoice = cint(p.custom_only_invoice);
 		this.update_actions();
 		this.render_status_note(p);
 		// Sections 16-21: what happened inside THIS order, and -- separately -- which other
