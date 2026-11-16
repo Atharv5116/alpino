@@ -95,11 +95,23 @@ frappe.ui.form.on("Buyer Master", {
 		}
 		// Fires on every correction, which is what the ticket asks for.
 		frm.__gst_fetched_for = null;
+		// Changes(HP) #118: Frappe runs this half a second after each pause in typing, so the
+		// number is checked only once it is complete. At 15 characters it is checked (and its
+		// details fetched) at once; one still short of 15 is not checked here at all and Save
+		// reports it. A number longer than 15 is checked when the user leaves the field
+		// (bind_gst_no_blur), not while they are still typing or correcting it.
+		frm.__gst_deferred = null;
+		if (clean.length < 15) return;
+		if (clean.length > 15 && gst_no_being_typed(frm)) {
+			frm.__gst_deferred = clean;
+			return;
+		}
 		fetch_gst_details(frm);
 	},
 
 	refresh(frm) {
 		toggle_tax_fields(frm);
+		bind_gst_no_blur(frm);
 		set_city_state_queries(frm);
 		set_margin_queries(frm);
 		toggle_shipping_editability(frm);
@@ -162,6 +174,13 @@ frappe.ui.form.on("Buyer Master", {
 
 	gst_type(frm) {
 		toggle_tax_fields(frm);
+		// Changes(HP) #119: a buyer that is no longer a Registered Business has no GST No. The
+		// number entered before is cleared, so its checks no longer apply and the buyer can be
+		// saved with its PAN No. (the server does the same on save).
+		if (frm.doc.gst_type && frm.doc.gst_type !== "Registered Business" && frm.doc.gst_no) {
+			frm.__gst_fetched_for = null;
+			frm.set_value("gst_no", "");
+		}
 	},
 
 	shipping_same_as_profile(frm) {
@@ -297,6 +316,31 @@ frappe.ui.form.on("Buyer Address", {
 		}
 	},
 });
+
+// Changes(HP) #118: is the user typing in GST No. right now?
+function gst_no_being_typed(frm) {
+	const $input = frm.fields_dict.gst_no && frm.fields_dict.gst_no.$input;
+	return !!($input && $input.is(":focus"));
+}
+
+// Changes(HP) #118: leaving GST No. ends the entry, so a number longer than 15 that was skipped
+// while it was being typed is checked now. Frappe has usually stored the value already (its
+// typing pause), and then leaving the field changes nothing and runs no field event of its own.
+// Only that skipped number is checked: clicking in and out of a saved GST No. fetches nothing.
+function bind_gst_no_blur(frm) {
+	const $input = frm.fields_dict.gst_no && frm.fields_dict.gst_no.$input;
+	if (!$input || $input.data("alp-gst-blur")) return;
+	$input.data("alp-gst-blur", 1);
+	$input.on("blur", () => {
+		// after Frappe's own change handling for the same blur
+		setTimeout(() => {
+			const gstin = (frm.doc.gst_no || "").trim().toUpperCase();
+			if (!frm.__gst_deferred || frm.__gst_deferred !== gstin || gst_no_being_typed(frm)) return;
+			frm.__gst_deferred = null;
+			if (frm.doc.gst_type === "Registered Business") fetch_gst_details(frm);
+		}, 600);
+	});
+}
 
 function toggle_tax_fields(frm) {
 	const gst_type = frm.doc.gst_type;
