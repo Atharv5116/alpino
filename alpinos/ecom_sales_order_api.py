@@ -24,6 +24,8 @@ from alpinos.sales_order_api import (
 	_apply_only_invoice,
 	_apply_rl_no_invoice,
 	_populate_so_from_entry,
+	_saved_po_number,
+	line_percent,
 )
 from alpinos.sales_order_api import get_box_conversion_factor, get_customer_item_mrp
 from alpinos.sales_order_offline_buyer import (
@@ -518,7 +520,10 @@ def get_ecom_so_entry_payload(sales_order):
 			"qty": flt(row.qty),
 			"box": flt(row.get("custom_box")),
 			"mrp": flt(row.get("custom_customer_mrp")),
-			"margin_percent": flt(row.get("custom_margin_percent")),
+			# Changes(HP) #121: imported lines keep 0 here while priced below the MRP
+			"margin_percent": line_percent(
+				row.get("custom_margin_percent"), row.get("custom_selling_price"), row.get("custom_customer_mrp")
+			),
 			"custom_selling_price": flt(row.get("custom_selling_price")),
 			"gst_percent": flt(row.get("custom_gst_percent")),
 			"rate": flt(row.rate),
@@ -551,7 +556,7 @@ def get_ecom_so_entry_payload(sales_order):
 			"partial_order_allowed": cint(doc.get("custom_partial_order_allowed")),
 			"gst_exclusive_buyer": cint(doc.get("custom_gst_exclusive_buyer")),
 		},
-		"po_number": doc.get("custom_po_number") or "",
+		"po_number": _saved_po_number(doc),  # Changes(HP) #120
 		"po_date": str(doc.get("custom_po_date") or ""),
 		"po_expiry_date": str(doc.get("custom_po_expiry_date") or ""),
 		"delivery_by_date": str(doc.get("custom_delivery_by_date") or ""),

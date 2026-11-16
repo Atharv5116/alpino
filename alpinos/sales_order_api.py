@@ -1857,6 +1857,30 @@ def _apply_rl_no_invoice(so, value):
 		so.custom_rl_no_invoice = cint(value)
 
 
+def line_percent(stored, selling_price, mrp):
+	"""Changes(HP) #121: a line's Flat Discount % (offline) or Margin % (e-com) as the order priced it.
+
+	Orders from Sales Order Import, and lines priced by typing the Selling Price, keep 0 here
+	while selling below the MRP, so an Edit or Duplicate showed the percentage blank. The
+	percentage that Selling Price means is given instead, the same back-fill the e-com page
+	makes when a Selling Price is typed. The Selling Price itself is loaded as stored.
+	"""
+	stored = flt(stored)
+	selling_price, mrp = flt(selling_price), flt(mrp)
+	if stored or mrp <= 0 or not (0 < selling_price < mrp):
+		return stored
+	return flt((1 - selling_price / mrp) * 100, 2)
+
+
+def _saved_po_number(doc):
+	"""Changes(HP) #120: the order's PO Number for the Edit / Duplicate screens.
+
+	The entry pages keep it in custom_po_number and also in po_no (Customer's Purchase Order);
+	orders from Sales Order Import carry only po_no, so their PO Number loaded blank on Edit.
+	"""
+	return (doc.get("custom_po_number") or doc.get("po_no") or "").strip()
+
+
 @frappe.whitelist()
 def get_so_entry_payload(sales_order):
 	"""Prefill payload for the entry page from an existing Sales Order (Edit / Duplicate)."""
@@ -1878,7 +1902,13 @@ def get_so_entry_payload(sales_order):
 				"mrp": flt(row.get("custom_customer_mrp")),
 				"custom_selling_price": flt(row.get("custom_selling_price")),
 				"gst_percent": flt(row.get("custom_gst_percent")),
-				"flat_discount": flt(row.get("custom_flat_discount")),
+				# Changes(HP) #121: an Offer also lowers the price, so the Flat Discount % is read
+				# from the Selling Price only for a line without one
+				"flat_discount": (
+					flt(row.get("custom_flat_discount"))
+					if flt(row.get("custom_offer"))
+					else line_percent(row.get("custom_flat_discount"), row.get("custom_selling_price"), row.get("custom_customer_mrp"))
+				),
 				"offer": row.get("custom_offer") or "",
 				"additional_discount": flt(row.get("custom_additional_discount")),
 				"rate": flt(row.rate),
@@ -1959,7 +1989,7 @@ def get_so_entry_payload(sales_order):
 				"partial_order_allowed": cint(doc.get("custom_partial_order_allowed")),
 				"gst_exclusive_buyer": cint(doc.get("custom_gst_exclusive_buyer")),
 			},
-			"po_number": doc.get("custom_po_number") or "",
+			"po_number": _saved_po_number(doc),
 			"po_date": str(doc.get("custom_po_date") or ""),
 			"delivery_by_date": str(doc.get("custom_delivery_by_date") or ""),
 			"billing_gstin": doc.get("custom_billing_gstin") or "",
