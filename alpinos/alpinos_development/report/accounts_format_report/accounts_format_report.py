@@ -605,6 +605,14 @@ def _get_data(filters):
 				pluck="custom_sales_order_id",
 			)
 		)
+		# Changes(HP) #108: an Only Invoice order has no Pick List by design; its rows come from
+		# the Sales Order itself (the no-Pick-List path in emit below)
+		if frappe.get_meta("Sales Order").has_field("custom_only_invoice"):
+			picked |= set(
+				frappe.get_all(
+					"Sales Order", filters={"name": ["in", so_names], "custom_only_invoice": 1}, pluck="name"
+				)
+			)
 		so_names = [s for s in so_names if s in picked]
 
 	# Hide orders whose invoice PDF is already fetched, unless "Show All" is set.
