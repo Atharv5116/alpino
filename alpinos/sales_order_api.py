@@ -105,9 +105,21 @@ def _resolve_item_warehouse(item_code, company, fallback=None):
 	return fallback
 
 
+# Alpinos' own GST 5% categories (patches/v1_0/create_gst_5_sales_tax_setup.py). India Compliance
+# adds its own "In-State" / "Out-State" (18% templates) and "Reverse Charge In-State / Out-State"
+# (GST added and taken off again, so no GST at all): a name search must never land on those.
+ALPINOS_TAX_CATEGORY = {False: "In-State GST", True: "Out-State GST"}
+_NOT_FORWARD_CHARGE = ("reverse", "rcm", "composition")
+
+
 def _pick_tax_category(inter_state):
-	"""Pick best-fit Tax Category name for intra/inter-state GST."""
-	names = frappe.get_all("Tax Category", pluck="name") or []
+	"""Pick the Tax Category for intra/inter-state GST: Alpinos' own one when it exists,
+	else the oldest matching name that is not reverse charge or composition."""
+	own = ALPINOS_TAX_CATEGORY[bool(inter_state)]
+	if frappe.db.exists("Tax Category", own):
+		return own
+
+	names = frappe.get_all("Tax Category", pluck="name", order_by="creation asc") or []
 	if not names:
 		return None
 
@@ -117,6 +129,8 @@ def _pick_tax_category(inter_state):
 
 	for name in names:
 		n = (name or "").strip().lower()
+		if any(x in n for x in _NOT_FORWARD_CHARGE):
+			continue
 		if any(k in n for k in keys):
 			return name
 	return None
