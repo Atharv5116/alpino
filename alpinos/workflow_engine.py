@@ -400,6 +400,10 @@ def pick_list_on_cancel(doc, method=None):
 	# Reservation released: recompute the SO back to its date-driven queue.
 	so = _so_of_pick_list(doc)
 	if so:
+		# A Force Close with nothing left (no other Pick List, no Delivery Note, nothing
+		# dispatched) is undone first, so the order reopens instead of staying locked.
+		from alpinos.forced_close import reopen_after_pick_list_cancel
+		reopen_after_pick_list_cancel(so, doc.name)
 		_set_status("Sales Order", so, _recompute_so_status(so))
 
 
@@ -757,10 +761,11 @@ def _recompute_so_status(so):
 	if cur == SO_REJECTED:
 		return SO_REJECTED
 
-	# Force-closed orders are locked to their forced state. Forced Delivery Note Created is one
-	# of them (a Delivery Note raised after the force-close); left out, it became Forced Completed.
+	# Force-closed orders are locked to their forced state. Forced Delivery Note Created and
+	# Forced Ready For Dispatch are among them (a Delivery Note raised after the force-close, a
+	# Pick List submitted with it); left out, each became Forced Completed on every migrate.
 	if frappe.db.get_value("Sales Order", so, "custom_force_closed"):
-		forced = (SO_FORCED_DN_CREATED, SO_FORCED_DISPATCHED, SO_FORCED_COMPLETED)
+		forced = (SO_FORCED_READY, SO_FORCED_DN_CREATED, SO_FORCED_DISPATCHED, SO_FORCED_COMPLETED)
 		return cur if cur in forced else SO_FORCED_COMPLETED
 
 	# Completed with no Delivery Note at all is an order closed by hand (the USOR orders brought
