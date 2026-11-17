@@ -8,7 +8,7 @@ Forced Completed (terminal); an order with nothing dispatched closes straight th
 import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-from frappe.utils import now, today
+from frappe.utils import format_datetime, now, today
 
 FORCE_CLOSE_REASONS = ("Damage", "Stock Shortage", "Expiry", "Others")
 
@@ -174,6 +174,63 @@ def apply_forced_close_after_pl(sales_order, pick_list, reason):
 	)
 	from alpinos import so_notifications as son
 	son.safe(lambda: son.n17_forced_close(sales_order, reason))
+
+
+def reopen_after_pick_list_cancel(sales_order, pick_list=None):
+	"""Undo a Force Close once the order has nothing left for it to close.
+
+	A Force Close keeps what was dispatched and drops the rest. When a Pick List is cancelled
+	and the order is left with no other Pick List, no Delivery Note and nothing dispatched,
+	the Force Close no longer covers anything: it is cleared so the order goes back to the
+	dispatch queue and a new Pick List can be made. Forced Completed stays final.
+	Called from Pick List on_cancel, before the order's status is recomputed.
+	"""
+	from alpinos import partial_dispatch as pd
+
+	if not sales_order:
+		return False
+	so = frappe.db.get_value(
+		"Sales Order", sales_order,
+		["docstatus", "custom_force_closed", "custom_workflow_status", "custom_force_close_reason",
+			"custom_force_closed_by", "custom_force_closed_on"],
+		as_dict=True,
+	)
+	if not so or so.docstatus != 1 or not so.custom_force_closed:
+		return False
+	if so.custom_workflow_status == SO_FORCED_COMPLETED:
+		return False
+	if frappe.db.exists(
+		"Pick List",
+		{"custom_sales_order_id": sales_order, "docstatus": ["<", 2], "name": ["!=", pick_list or ""]},
+	):
+		return False
+	if frappe.db.exists(
+		"Delivery Note", {"custom_sales_order_id": sales_order, "docstatus": ["<", 2], "is_return": 0}
+	):
+		return False
+	if any(q > 0 for q in pd.dispatched_qty_by_sku(sales_order).values()):
+		return False
+
+	frappe.db.set_value(
+		"Sales Order", sales_order,
+		{
+			"custom_force_closed": 0,
+			"custom_force_close_reason": None,
+			"custom_force_closed_by": None,
+			"custom_force_closed_on": None,
+		},
+		update_modified=False,
+	)
+	closed_on = format_datetime(so.custom_force_closed_on, "dd-MM-yyyy HH:mm") if so.custom_force_closed_on else "-"
+	frappe.get_doc("Sales Order", sales_order).add_comment(
+		"Info",
+		_("Force Close undone: Pick List {0} was cancelled and the order has no other Pick List, no Delivery Note "
+			"and nothing dispatched, so it is open again for a new Pick List. Before: {1}, {2}, closed by {3} on {4}.").format(
+			pick_list or "-", so.custom_workflow_status or "-", so.custom_force_close_reason or "-",
+			so.custom_force_closed_by or "-", closed_on,
+		),
+	)
+	return True
 
 
 @frappe.whitelist()
