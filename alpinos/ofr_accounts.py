@@ -35,10 +35,16 @@ OTHER_VIEW_ROLES = {
 CARDS = ("pending", "total", "only_invoice")
 
 _LINKED = "(IFNULL(so.custom_invoice_no, '') <> '' AND IFNULL(so.custom_invoice_pdf, '') <> '')"
+# The order's Pick List: its submitted one, else its latest cancelled one. Picked for every order in
+# one pass over Pick List (window function), not a lookup per Sales Order: Pick List has no index on
+# custom_sales_order_id, so the per-order lookup scanned the whole table once per submitted order and
+# the view timed out on live (no cards, no rows).
 _PL = (
-	"LEFT JOIN `tabPick List` pl ON pl.name = ("
-	" SELECT p.name FROM `tabPick List` p WHERE p.custom_sales_order_id = so.name AND p.docstatus IN (1, 2)"
-	" ORDER BY (p.docstatus = 1) DESC, p.creation DESC LIMIT 1)"
+	"LEFT JOIN ("
+	" SELECT p.custom_sales_order_id AS so_id, p.name, p.docstatus, p.custom_dispatch_date,"
+	" ROW_NUMBER() OVER (PARTITION BY p.custom_sales_order_id ORDER BY (p.docstatus = 1) DESC, p.creation DESC) AS rn"
+	" FROM `tabPick List` p WHERE p.docstatus IN (1, 2) AND IFNULL(p.custom_sales_order_id, '') <> ''"
+	") pl ON pl.so_id = so.name AND pl.rn = 1"
 )
 
 
