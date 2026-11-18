@@ -958,6 +958,10 @@ doc_events = {
 		# Offline Sales, Section 5, 19: a Quotation payment proof is never deleted by a business user.
 		"on_trash": "alpinos.offline_sales.quotation_payments.protect_proof_file",
 	},
+	# India Compliance's State spelling on every Indian Address, before it checks it
+	"Address": {
+		"before_validate": "alpinos.address_state.before_validate",
+	},
 	"Sales Order": {
 		"after_insert": [
 			"alpinos.sales_order_trail.record_creation",
