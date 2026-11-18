@@ -240,10 +240,11 @@ def _buyer_id_and_paging():
 		from alpinos.alpinos_development.report.accounts_format_report import accounts_format_report as AFR
 
 		_assert("buyer_id" in Q.COLUMNS and "buyer_id" in Q.DEFAULT_COLUMNS and "buyer_id" in Q._FILTERS, "OFR Buyer ID")
+		# Changes(HP) #122: the AFR's Buyer ID moved into Terms of Delivery (no column of its own)
 		cols = [c["fieldname"] for c in AFR.get_columns()]
-		_assert(cols.index("buyer_id") > cols.index("so_submitted_on"), cols[-5:])
+		_assert("buyer_id" not in cols and "terms_of_delivery" in cols, cols[-8:])
 
-	check("#64 OFR Buyer ID column + filter; AFR Buyer ID after Submitted By / On", _ofr_and_afr)
+	check("#64 OFR Buyer ID column + filter; AFR Buyer ID inside Terms of Delivery (#122)", _ofr_and_afr)
 
 
 def _officer_scope():

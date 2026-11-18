@@ -288,6 +288,18 @@ def _pl_header(so_name, pick_list=None):
 	}
 
 
+def _with_buyer_id(terms_of_delivery, buyer):
+	"""Terms of Delivery ending with the order's Buyer ID (Changes(HP) #122).
+
+	"PL PO No: 1 / Total Box: 24 / Total Weight: 229.20 / Transporter: Delhivery / Buyer ID: OBM-2026-00655".
+	A row without a Pick List has no dispatch part, so it reads "Buyer ID: ..." alone.
+	"""
+	terms_of_delivery = terms_of_delivery or ""
+	if terms_of_delivery:
+		return f"{terms_of_delivery} / Buyer ID: {buyer or ''}"
+	return f"Buyer ID: {buyer}" if buyer else ""
+
+
 def _combined_addr(city, state, pincode, mobile, pin_label):
 	"""Labeled single-cell address per the Final Format."""
 	parts = []
@@ -485,8 +497,6 @@ def get_columns():
 		# Changes(HP) #89: kept as the two rightmost columns
 		col("Sales Order Submitted By", "so_submitted_by", 150),
 		col("Sales Order Submitted On", "so_submitted_on", 150, "Datetime"),
-		# Changes(HP) #64: the Buyer Master the order belongs to, at the far right
-		col("Buyer ID", "buyer_id", 130),
 		# Changes(HP) #110: when the part's Pick List was submitted, and every export of the row
 		col("Pick List Submitted At", "pl_submitted_at", 150, "Datetime"),
 		col("Accounts Format Exported At", "exported_at", 260),
@@ -766,7 +776,6 @@ def _get_data(filters):
 			"so_submitted_on": so.get("custom_submitted_on"),
 			# Changes(HP) #108: an Only Invoice order has no Pick List; its rows are the order's
 			"only_invoice": "Yes" if so.get("custom_only_invoice") else "No",
-			"buyer_id": so.get("custom_offline_buyer_master") or "",
 			# Less Qty / Less Qty Amount are computed per line in emit().
 			"less_qty": None,
 			"less_qty_amount": None,
@@ -795,6 +804,8 @@ def _get_data(filters):
 				header["dispatch_date"] = formatdate(_pd, "dd-MM-yyyy") if _pd else ""
 				header["invoice_no"] = _part_invoice_no(_part)
 			header.update(_pl_header(so.name, _part_name))
+			# Changes(HP) #122: the Buyer ID has no column of its own; it ends Terms of Delivery
+			header["terms_of_delivery"] = _with_buyer_id(header.get("terms_of_delivery"), so.get("custom_offline_buyer_master"))
 			for i in range(3):
 				header[f"bill_addr_{i+1}"] = bill_lines[i]
 				header[f"ship_addr_{i+1}"] = ship_lines[i]
