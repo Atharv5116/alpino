@@ -488,6 +488,10 @@ doc_events = {
 	"File": {
 		"after_insert": "alpinos.product_sale_files.make_product_sale_file_public",
 	},
+	# India Compliance's State spelling on every Indian Address, before it checks it
+	"Address": {
+		"before_validate": "alpinos.address_state.before_validate",
+	},
 	"Sales Order": {
 		"validate": [
 			"alpinos.sales_order_offline_buyer.validate_sales_order_offline_buyer_customer",
