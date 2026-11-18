@@ -598,7 +598,7 @@ function os_actions(frm, status) {
 		frm.add_custom_button(__("Cancel Buyer"), act("cancel", __("Cancel Buyer"), true, __("Cancellation Reason")), group);
 	}
 	if (status === "Approved" && (frm.doc.buyer_catalog_status || "Completed") === "Pending") {
-		frm.add_custom_button(__("Set Up Buyer Catalog"), () => frappe.set_route("offline_buyer_catalog"));
+		frm.add_custom_button(__("Set Up Buyer Catalog"), () => frappe.set_route("offline-buyer-catalog"));
 	}
 }
 
