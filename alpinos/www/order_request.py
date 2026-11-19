@@ -14,6 +14,10 @@ def get_context(context):
 	token = frappe.form_dict.get("token") or ""
 	context.refused_message = MSG_LINK_INACTIVE
 	context.no_products = MSG_NO_PRODUCTS
+	# a browser also logged in to the ERP: its POSTs need the session's CSRF token or Frappe answers
+	# "Invalid Request" (a buyer with no login has none and is not checked). Read it before
+	# page_context, whose set_user("Administrator") swaps the session data out.
+	context.session_csrf = (frappe.session.data.get("csrf_token") or "") if frappe.session.user != "Guest" else ""
 	try:
 		data = page_context(token)
 	except LinkRefused:

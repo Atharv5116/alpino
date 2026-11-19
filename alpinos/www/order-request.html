@@ -98,6 +98,7 @@
 	(function () {
 		const TOKEN = {{ order_token | tojson }};
 		const DATA = {{ page_data }};
+		const CSRF = {{ (session_csrf or "") | tojson }};  // set only when this browser is also logged in to the ERP
 		const API = "/api/method/alpinos.offline_sales.order_link.";
 		const DRAFT_KEY = "bor-draft-" + TOKEN.slice(-12);
 		const $ = (id) => document.getElementById(id);
@@ -109,7 +110,9 @@
 		async function call(method, args) {
 			const body = new URLSearchParams();
 			Object.entries(args || {}).forEach(([k, v]) => body.append(k, typeof v === "string" ? v : JSON.stringify(v)));
-			const r = await fetch(API + method, {method: "POST", headers: {"Accept": "application/json"}, body});
+			const headers = {"Accept": "application/json"};
+			if (CSRF) headers["X-Frappe-CSRF-Token"] = CSRF;
+			const r = await fetch(API + method, {method: "POST", headers, body});
 			const j = await r.json().catch(() => ({}));
 			if (!r.ok) {
 				let m = "";
