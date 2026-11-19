@@ -1106,7 +1106,9 @@ scheduler_events = {
 		# Quarantine documents remind the Store / QC teams on their own interval.
 		"alpinos.purchase.quarantine.send_quarantine_reminders",
 		# Company-wise access: undo ERPNext's Company User Permission drift.
-		"alpinos.company_scope.sync.reconcile_all"
+		"alpinos.company_scope.sync.reconcile_all",
+		# Order Fulfilment Report: background Club Download ZIPs are removed after 2 days.
+		"alpinos.order_bundle_job.cleanup"
 	],
 	"cron": {
 		"*/5 * * * *": [

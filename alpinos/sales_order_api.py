@@ -1120,10 +1120,12 @@ def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
 	<document>". One document for one order is that file on its own; anything more is a
 	ZIP holding one file per document per order, so the invoice can be forwarded on
 	without the pick list riding along with it.
+
+	More than a few orders with Sales Order / Pick List PDFs go through
+	alpinos.order_bundle_job instead: one PDF each, 92 orders took longer than the 120 s
+	request limit on live (19 Nov 2026).
 	"""
 	import json
-	import zipfile
-	from io import BytesIO
 
 	if isinstance(names, str):
 		names = json.loads(names)
@@ -1136,11 +1138,46 @@ def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
 
 	assert_orders_in_channel(names)
 
+	wanted = bundle_wanted(parts)
+	built, skipped, incomplete = build_bundle(names, wanted, no_letterhead)
+
+	if not built:
+		frappe.throw(_("Nothing could be generated for the selection."))
+	frappe.db.commit()
+
+	if incomplete:
+		frappe.msgprint(
+			_("Some documents were not available and were left out:<br>{0}").format(
+				"<br>".join(incomplete[:20])
+			),
+			title=_("Partial bundle"),
+			indicator="orange",
+		)
+
+	if len(built) == 1:
+		filename, content = built[0]
+		frappe.local.response.filename = filename
+		frappe.local.response.filecontent = content
+		frappe.local.response.type = "download"
+		return
+
+	frappe.local.response.filename = "{0}-{1}.zip".format("-".join(wanted), len(names))
+	frappe.local.response.filecontent = bundle_zip(built)
+	frappe.local.response.type = "download"
+
+
+def bundle_wanted(parts):
+	"""The requested parts ("so,pl,invoice"), in BUNDLE_PARTS order; throws when none is valid."""
 	wanted = [p.strip().lower() for p in str(parts or "").split(",") if p.strip()]
-	wanted = [p for p in wanted if p in BUNDLE_PARTS]
+	wanted = [p for p in BUNDLE_PARTS if p in wanted]
 	if not wanted:
 		frappe.throw(_("Choose at least one of: Sales Order, Pick List, Invoice."))
+	return wanted
 
+
+def build_bundle(names, wanted, no_letterhead=0):
+	"""(built, skipped, incomplete) for download_order_bundle and its background job
+	(alpinos.order_bundle_job): built is [(file name, bytes)], one file per document per order."""
 	meta = frappe.get_meta("Sales Order")
 	format_name = (meta.default_print_format or "").strip() or "Standard"
 	no_letterhead = cint(no_letterhead)
@@ -1164,34 +1201,19 @@ def download_order_bundle(names, parts="so,invoice", no_letterhead=0):
 				built.append(("{0} - {1}.{2}".format(base, label, ext), content))
 		if missing:
 			incomplete.append("{0} (no {1})".format(name, ", ".join(missing)))
+	return built, skipped, incomplete
 
-	if not built:
-		frappe.throw(_("Nothing could be generated for the selection."))
-	frappe.db.commit()
 
-	if incomplete:
-		frappe.msgprint(
-			_("Some documents were not available and were left out:<br>{0}").format(
-				"<br>".join(incomplete[:20])
-			),
-			title=_("Partial bundle"),
-			indicator="orange",
-		)
-
-	if len(built) == 1:
-		filename, content = built[0]
-		frappe.local.response.filename = filename
-		frappe.local.response.filecontent = content
-		frappe.local.response.type = "download"
-		return
+def bundle_zip(built):
+	"""The files of build_bundle as one ZIP (bytes)."""
+	import zipfile
+	from io import BytesIO
 
 	buf = BytesIO()
 	with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
 		for filename, content in built:
 			zf.writestr(filename, content)
-	frappe.local.response.filename = "{0}-{1}.zip".format("-".join(wanted), len(names))
-	frappe.local.response.filecontent = buf.getvalue()
-	frappe.local.response.type = "download"
+	return buf.getvalue()
 
 
 @frappe.whitelist()

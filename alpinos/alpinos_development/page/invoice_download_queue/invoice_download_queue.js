@@ -24,6 +24,10 @@ var IDQ_PAGE_LENGTH = 50;
 // Same user-settings key the page used before the rewrite, so a user last-used filters
 // carry over.
 var IDQ_SETTINGS_KEY = 'invoice_download_queue';
+// More orders than this in a Club Download are built in the background (one SO / PL PDF
+// each; 92 orders passed the 120 s request limit on live). Same as SYNC_LIMIT in
+// alpinos.order_bundle_job.
+var IDQ_BUNDLE_SYNC_LIMIT = 10;
 // Columns added to the default layout after people had saved theirs (see _apply_state).
 var IDQ_ADDED_COLUMNS = ['total_ordered_qty'];
 var IDQ_GROUP_ORDER = ['Report', 'Sales Order', 'Pick List', 'Delivery Note', 'Post Dispatch'];
@@ -76,6 +80,7 @@ var InvoiceDownloadQueue = class {
 		this.page.add_inner_button(__('SO + PL + Invoice'), () => this.download_bundle('so,pl,invoice'), __('Club Download'));
 
 		this.bind_events();
+		this.listen_bundle_ready();
 		this.bootstrap();
 	}
 
@@ -769,6 +774,10 @@ var InvoiceDownloadQueue = class {
 			frappe.msgprint(__('No invoices to download.'));
 			return;
 		}
+		if (parts && /(^|,)(so|pl)(,|$)/.test(parts) && names.length > IDQ_BUNDLE_SYNC_LIMIT) {
+			this._download_in_background(names, parts);
+			return;
+		}
 		// Same two server functions as before; the ZIP now goes through the queue
 		// door, which checks the channel before handing over to the shared function.
 		const url = parts
@@ -786,6 +795,61 @@ var InvoiceDownloadQueue = class {
 		// A downloaded row STAYS in the list (Changes(HP) #30 MAIN NOTE); the refresh is
 		// only so the Downloaded column catches up.
 		setTimeout(() => this.load_list(), 2500);
+	}
+
+	/** A big Club Download: the server builds the ZIP in a job; ready -> listen_bundle_ready. */
+	_download_in_background(names, parts) {
+		frappe.call({
+			method: 'alpinos.order_bundle_job.start',
+			args: { names: names, parts: parts },
+			freeze: true,
+			freeze_message: __('Starting the download...'),
+			callback: (r) => {
+				if (r.exc || !r.message) return;
+				if (r.message.mode === 'direct') {
+					// the server says it is small enough after all: download as before
+					const url = '/api/method/alpinos.sales_order_api.download_order_bundle?parts=' +
+						encodeURIComponent(parts) + '&names=' + encodeURIComponent(JSON.stringify(names));
+					if (!window.open(frappe.urllib.get_full_url(url), '_blank')) {
+						frappe.msgprint(__('Please allow pop-ups to download the invoices.'));
+					}
+					return;
+				}
+				frappe.msgprint({
+					title: __('Preparing your download'),
+					indicator: 'blue',
+					message: __('The documents of {0} orders are being prepared. This can take a few minutes, and you can keep working. A Download button will appear here when the file is ready, and it will also come in your notifications (bell icon).', [r.message.count]),
+				});
+			},
+		});
+	}
+
+	/** The job's result for this user: a Download button (the bell notification is the backup). */
+	listen_bundle_ready() {
+		frappe.realtime.off('order_bundle_ready');
+		frappe.realtime.on('order_bundle_ready', (d) => {
+			if (!d) return;
+			if (!d.ok || !d.file_url) {
+				frappe.msgprint({ title: __('Download'), indicator: 'red', message: frappe.utils.escape_html(d.message || '') });
+				return;
+			}
+			const left_out = d.incomplete_count
+				? `<p class="text-muted small">${__('Not available and left out')}: ${d.incomplete.map((x) => frappe.utils.escape_html(x)).join(', ')}${d.incomplete_count > d.incomplete.length ? ' ...' : ''}</p>`
+				: '';
+			frappe.msgprint({
+				title: __('Your download is ready'),
+				indicator: 'green',
+				message: `<p>${frappe.utils.escape_html(d.message || '')}</p>${left_out}`,
+				primary_action: {
+					label: __('Download'),
+					action: () => {
+						window.open(frappe.urllib.get_full_url(d.file_url), '_blank');
+						frappe.hide_msgprint();
+					},
+				},
+			});
+			this.load_list();
+		});
 	}
 
 	download_bundle(parts) {
