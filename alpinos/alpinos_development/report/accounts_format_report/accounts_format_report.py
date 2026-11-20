@@ -768,6 +768,13 @@ def _get_data(filters):
 		# and behaves exactly as before.
 		_all_parts = _submitted_parts(so.name)
 		_parts = _all_parts if len(_all_parts) > 1 else [None]
+		# Changes(HP) #125: a Partial PO order's parts read SOR-.../2, /3 ... in Sales Order Id
+		# (the export log and the Invoice Mapping upload key on the order itself, _sales_order)
+		from alpinos.partial_po_ref import part_numbers
+		from alpinos.partial_po_ref import reference as _part_reference
+
+		_part_no = part_numbers(so.name) if len(_all_parts) > 1 else {}
+		header["_sales_order"] = so.name
 		_base_header = header
 		for _part in _parts:
 			header = dict(_base_header)
@@ -784,6 +791,8 @@ def _get_data(filters):
 				_pd = _part_dispatch_date(_part, so)
 				header["dispatch_date"] = formatdate(_pd, "dd-MM-yyyy") if _pd else ""
 				header["invoice_no"] = _part_invoice_no(_part)
+				if _part_name in _part_no:
+					header["sales_order_id"] = _part_reference(so.name, _part_no[_part_name])
 			header.update(_pl_header(so.name, _part_name))
 			for i in range(3):
 				header[f"bill_addr_{i+1}"] = bill_lines[i]

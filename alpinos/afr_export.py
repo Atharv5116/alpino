@@ -45,7 +45,8 @@ def pick_list_on_submit(doc, method=None):
 
 
 def row_key(row):
-	return (row.get("sales_order_id") or "", row.get("_pick_list") or "")
+	# the order itself: a Partial PO part's Sales Order Id reads SOR-.../2 (Changes(HP) #125)
+	return (row.get("_sales_order") or row.get("sales_order_id") or "", row.get("_pick_list") or "")
 
 
 def _fmt(value):
@@ -79,7 +80,7 @@ def fill_history(rows):
 
 def record_export(rows, source):
 	"""Log this export for every row key in `rows`, and show it on the rows being exported."""
-	keys = sorted({row_key(r) for r in rows if r.get("sales_order_id")})
+	keys = sorted({row_key(r) for r in rows if r.get("_sales_order") or r.get("sales_order_id")})
 	if not keys:
 		return
 	now = now_datetime()
