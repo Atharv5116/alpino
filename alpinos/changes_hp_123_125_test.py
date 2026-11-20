@@ -93,10 +93,15 @@ def _hp123():
 	from alpinos.offline_sales import order_link as L
 
 	def _image_kept():
-		buyer = frappe.get_doc("Buyer Master", {"buyer_status": "Approved", "customer": ("is", "set"), "channel": ("!=", "E-com")})
-		with_image = frappe.db.sql("""SELECT name FROM tabItem WHERE disabled = 0 AND IFNULL(image, '') <> '' LIMIT 50""", pluck=True)
-		visible = {i.item_code: i for i in L.visible_items(buyer, names=with_image, limit=50)}
-		_assert(visible, "no product with an image is offered to this buyer")
+		with_image = frappe.db.sql("""SELECT name FROM tabItem WHERE disabled = 0 AND IFNULL(image, '') <> ''""", pluck=True)
+		visible = {}
+		for name in frappe.get_all("Buyer Master", filters={"buyer_status": "Approved", "customer": ("is", "set"), "channel": ("!=", "E-com")},
+				pluck="name", limit=60):
+			buyer = frappe.get_doc("Buyer Master", name)
+			visible = {i.item_code: i for i in L.visible_items(buyer, names=with_image, limit=len(with_image) or 1)}
+			if visible:
+				break
+		_assert(visible, "no buyer here is offered a product with an image")
 		code = next(iter(visible))
 		row = L._priced_rows(buyer, [{"item_code": code, "qty": 2}])[0]
 		_assert(row.get("image") == visible[code].image, ("the priced row lost its image", row.get("image")))
