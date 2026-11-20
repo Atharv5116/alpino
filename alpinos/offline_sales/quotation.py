@@ -489,6 +489,7 @@ def validate(doc, method=None):
 	before = None if doc.is_new() else doc.get_doc_before_save()
 	if doc.is_new():
 		_set_defaults(doc)
+	_officer_buyer_guard(doc, before)
 	_one_active_per_opportunity(doc, before)
 	drafting = doc.docstatus == 0 or (before is not None and before.docstatus == 0)
 	if drafting and doc.flags.alpinos_quotation_action != "cancel":
@@ -498,6 +499,29 @@ def validate(doc, method=None):
 		doc.custom_billing_gstin = billing_gstin(customer_of(doc), doc.get("custom_site_name"))
 		P.prepare_schedule(doc, blocking=doc.flags.alpinos_quotation_action == "finalize")
 	P.recompute(doc)
+
+
+def _officer_buyer_guard(doc, before):
+	"""Changes(HP) #124: a Sales Officer quotes only to a Buyer (the Customer on screen; Quotation
+	To is fixed) assigned to them. The Customer picker lists only those; this is the server's
+	check, as the Opportunity had."""
+	if doc.flags.from_order_portal:
+		return
+	if not (doc.is_new() or (before and cstr(before.get("party_name")) != cstr(doc.get("party_name")))):
+		return
+	from alpinos import buyer_assignment_visibility as V
+
+	if not V.is_assignment_scoped():
+		return
+	if doc.get("quotation_to") != "Buyer Master":
+		frappe.throw(_("A Sales Officer's Quotation is always for a Customer (Buyer Master)."), frappe.PermissionError, title=_("Not Permitted"))
+	buyer = buyer_of(doc)
+	if buyer and buyer not in V._assigned_buyer_names(V._employee_for(frappe.session.user)):
+		frappe.throw(
+			_("You are not assigned to Customer {0}.").format(frappe.bold(frappe.db.get_value("Buyer Master", buyer, "customer_business_name") or buyer)),
+			frappe.PermissionError,
+			title=_("Not Permitted"),
+		)
 
 
 def _responsible_officer_guard(doc, before):

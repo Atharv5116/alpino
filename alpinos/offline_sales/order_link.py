@@ -387,7 +387,8 @@ def _priced_rows(buyer, rows):
 		if qty <= 0 or qty != cint(qty):
 			frappe.throw(_("Quantity for SKU [{0}] must be greater than zero.").format(code))
 		p = price(buyer.customer, code, cint(qty))
-		out.append(dict(item_code=code, item_name=allowed[code].item_name, qty=cint(qty), **p))
+		# Changes(HP) #123: the row keeps its Product Image, also when a submitted request is reopened
+		out.append(dict(item_code=code, item_name=allowed[code].item_name, image=allowed[code].get("image"), qty=cint(qty), **p))
 	return out
 
 

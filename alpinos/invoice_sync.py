@@ -140,14 +140,14 @@ def download_report_excel(from_date, to_date, channel=None, customer=None, custo
 
 
 # ── upload + process ────────────────────────────────────────────────────────
-def _set_invoice_no_retry(so_id, invoice_no, attempts=3):
-	"""Write the SO's invoice no in its own short transaction, retrying on a row-lock
-	timeout (1205) so one busy order doesn't fail the upload. Returns True on success."""
+def _set_invoice_no_retry(so_id, invoice_no, attempts=3, doctype="Sales Order"):
+	"""Write the SO's (or a Pick List's) invoice no in its own short transaction, retrying on a
+	row-lock timeout (1205) so one busy order doesn't fail the upload. Returns True on success."""
 	import time
 
 	for i in range(attempts):
 		try:
-			frappe.db.set_value("Sales Order", so_id, "custom_invoice_no", invoice_no, update_modified=False)
+			frappe.db.set_value(doctype, so_id, "custom_invoice_no", invoice_no, update_modified=False)
 			frappe.db.commit()
 			return True
 		except Exception:
@@ -230,8 +230,13 @@ def _run_invoice_sync(mapping):
 	# The job runs as the uploader: only orders of the companies they work in are stamped.
 	companies = scope_companies("Sales Order", narrow=False)
 
+	from alpinos import partial_po_ref as PO
+
 	updated, fetched, missing, skipped = 0, 0, [], []
-	for so_id, invoice_no in mapping.items():
+	for ref, invoice_no in mapping.items():
+		# Changes(HP) #125: "SOR-.../2" is part 2 of a Partial PO order, the reference the
+		# Accounts Format Report gave that Pick List; it is logged against the order itself
+		so_id, part = PO.parse(ref)
 		so_company = frappe.db.get_value("Sales Order", so_id, "company")
 		if not so_company:
 			skipped.append(f"{so_id} (not found)")
@@ -241,6 +246,39 @@ def _run_invoice_sync(mapping):
 		if companies is not None and so_company not in companies:
 			skipped.append(f"{so_id} (another company)")
 			log_invoice_sync(so_id, invoice_no, "Failed", "Sales Order belongs to a company you do not work in")
+			frappe.db.commit()
+			continue
+		numbers = PO.part_numbers(so_id)
+		pick_list = PO.pick_list_of(so_id, part) if numbers else None
+		if part > 1 and not pick_list:
+			skipped.append(f"{ref} (no part {part})")
+			log_invoice_sync(so_id, invoice_no, "Failed", f"{ref}: this Sales Order has no Partial PO part {part}")
+			frappe.db.commit()
+			continue
+		if pick_list and not _set_invoice_no_retry(pick_list, invoice_no, doctype="Pick List"):
+			skipped.append(f"{ref} (locked)")
+			log_invoice_sync(so_id, invoice_no, "Failed", f"{ref}: Pick List {pick_list} was locked — try again")
+			frappe.db.commit()
+			continue
+		if part > 1:
+			# a later part: its invoice is the Pick List's; the order keeps its own number and PDF
+			updated += 1
+			if not drive:
+				log_invoice_sync(so_id, invoice_no, "Failed", f"{ref} (Pick List {pick_list}): Invoice Drive sync not configured")
+				frappe.db.commit()
+				continue
+			if frappe.db.exists("File", {"attached_to_doctype": "Sales Order", "attached_to_name": so_id, "file_name": f"{invoice_no}{ext}"}):
+				log_invoice_sync(so_id, invoice_no, "Success", f"{ref} (Pick List {pick_list}): Invoice PDF already present")
+				frappe.db.commit()
+				continue
+			part_date = frappe.db.get_value("Pick List", pick_list, "custom_dispatch_date")
+			fetched_url, err = _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext, dispatch_date=part_date, set_on_order=False)
+			if err:
+				missing.append(f"{invoice_no} ({err})")
+				log_invoice_sync(so_id, invoice_no, "Failed", f"{ref} (Pick List {pick_list}): {err}")
+			else:
+				fetched += 1
+				log_invoice_sync(so_id, invoice_no, "Success", f"{ref} (Pick List {pick_list})")
 			frappe.db.commit()
 			continue
 		# Each SO update is its own short transaction, so the row lock isn't held during
@@ -281,14 +319,17 @@ def _run_invoice_sync(mapping):
 	}
 
 
-def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None):
+def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None, dispatch_date=None, set_on_order=True):
 	"""Find the invoice PDF (filename == invoice_no) and attach it to the Sales Order's
-	custom_invoice_pdf. Returns (file_url, error) with error set when the folder/PDF isn't found."""
+	custom_invoice_pdf. Returns (file_url, error) with error set when the folder/PDF isn't found.
+
+	A later Partial PO part (Changes(HP) #125) passes its Pick List's dispatch date and
+	set_on_order=False: the PDF is attached to the order, which keeps its own invoice PDF."""
 	ext = ext or (s.get("pdf_extension") or ".pdf")
 	# Invoices are filed by the month they were dispatched in, not the month the order
 	# was raised — an order taken in one month and dispatched in the next lives in the
 	# later folder.
-	dispatch_date = frappe.db.get_value("Sales Order", so_id, "custom_dispatch_date")
+	dispatch_date = dispatch_date or frappe.db.get_value("Sales Order", so_id, "custom_dispatch_date")
 	month = _month_label(dispatch_date) if dispatch_date else None
 	if not month:
 		return None, "Sales Order has no dispatch date"
@@ -306,7 +347,8 @@ def _fetch_invoice_pdf(drive, s, so_id, invoice_no, folder_cache, ext=None):
 	from frappe.utils.file_manager import save_file
 
 	f = save_file(f"{invoice_no}{ext}", content, "Sales Order", so_id, is_private=1)
-	frappe.db.set_value("Sales Order", so_id, "custom_invoice_pdf", f.file_url, update_modified=False)
+	if set_on_order:
+		frappe.db.set_value("Sales Order", so_id, "custom_invoice_pdf", f.file_url, update_modified=False)
 	return f.file_url, None
 
 

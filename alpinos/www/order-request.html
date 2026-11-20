@@ -76,7 +76,7 @@
 		</div>
 		<table class="items" style="margin-top: 12px;">
 			<thead><tr>
-				<th></th><th>Product SKU</th><th>Product Name</th><th class="num">MRP</th><th class="num">Flat Discount %</th>
+				<th>Product Image</th><th>Product SKU</th><th>Product Name</th><th class="num">MRP</th><th class="num">Flat Discount %</th>
 				<th class="num">Selling Price</th><th class="num">Quantity</th><th class="num">Item Amount</th><th></th>
 			</tr></thead>
 			<tbody id="rows"></tbody>
@@ -159,7 +159,7 @@
 
 		function render() {
 			$("rows").innerHTML = rows.length ? rows.map((r, n) => `<tr>
-				<td data-label="">${r.image ? `<img class="thumb" src="${esc(r.image)}" onerror="this.style.visibility='hidden'">` : ""}</td>
+				<td data-label="Product Image">${r.image ? `<img class="thumb" src="${esc(r.image)}" alt="${esc(r.item_code)}" onerror="this.style.visibility='hidden'">` : ""}</td>
 				<td data-label="Product SKU">${esc(r.item_code)}</td>
 				<td data-label="Product Name">${esc(r.item_name)}</td>
 				<td class="num" data-label="MRP">${money(r.mrp)}</td>
