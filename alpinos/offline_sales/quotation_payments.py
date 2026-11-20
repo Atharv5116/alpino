@@ -153,6 +153,9 @@ def recompute(doc):
 			r.schedule_row_no = row_no[r.schedule_row_key]
 	received = flt(sum(flt(r.get("received_amount")) for r in receipts), 2)
 	pending = flt(flt(doc.get("grand_total"), 2) - received, 2)
+	# the Payment Section shows the Quotation Grand Total beside Received / Pending (11)
+	if doc.meta.has_field("custom_payment_grand_total"):
+		doc.custom_payment_grand_total = flt(doc.get("grand_total"), 2)
 	doc.custom_total_received = received
 	doc.custom_total_pending = pending
 	doc.custom_payment_status = status_for(received, pending)

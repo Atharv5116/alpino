@@ -91,10 +91,8 @@ def get_dashboard(show_all=0):
 		late = pending + [["Buyer Master", "creation", "<", cutoff]]
 		card("K2", _("Buyer Approvals > 48h"), MGR, _count("Buyer Master", late, "secondary_poc", emp),
 			_route("Buyer Master", {"buyer_status": "Pending Approval", "creation": ["<", str(cutoff)]}))
-	if _has("Opportunity", "custom_opportunity_status"):
-		for key, title, status in (("K3", _("Draft Opportunities"), "Pending (Draft)"), ("K4", _("Opportunities on Hold"), "Hold")):
-			card(key, title, ALL3, _count("Opportunity", [["Opportunity", "custom_opportunity_status", "=", status]], "custom_secondary_poc", emp),
-				_route("Opportunity", {"custom_opportunity_status": status}))
+	# K3 Draft Opportunities / K4 Opportunities on Hold: none since the Opportunity is skipped
+	# (20 Nov 2026); a buyer's request is a Draft Quotation, counted in K5.
 	if _has("Quotation", "custom_quotation_status"):
 		for key, title, status in (("K5", _("Draft Quotations"), "Draft"), ("K6", _("Negotiation Quotations"), "Negotiation")):
 			card(key, title, ALL3, _count("Quotation", [["Quotation", "custom_quotation_status", "=", status]], "custom_secondary_poc", emp),

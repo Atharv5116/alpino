@@ -295,8 +295,9 @@ def _visibility_and_pricing():
 
 
 def _submit_and_edit():
-	if not frappe.db.has_column("Opportunity", "custom_buyer_order_request_ref"):
-		R.append(("ERR ", "S2: submission (needs the W4 Opportunity fields)", "Opportunity fields missing: build W4 first"))
+	"""Since 20 Nov 2026 a request is a Draft Quotation (the Opportunity is skipped)."""
+	if not frappe.db.has_column("Quotation", "custom_buyer_order_request_ref"):
+		R.append(("ERR ", "S2: submission (needs the Quotation request fields)", "migrate first"))
 		return
 	buyer = frappe.get_doc("Buyer Master", BUYER)
 	billing, shipping = L._addresses(buyer)
@@ -312,9 +313,9 @@ def _submit_and_edit():
 	check("S2: billing and shipping choices for a buyer without Site Names", _addresses_offered)
 
 	def _nothing_on_empty():
-		before = frappe.db.count("Opportunity")
+		before = frappe.db.count("Quotation")
 		_assert(refused(lambda: as_("Guest", lambda: L.submit_request(F.token, {**_data(), "rows": []}))) == L.MSG_NO_PRODUCTS)
-		_assert(frappe.db.count("Opportunity") == before, "an Opportunity was created")
+		_assert(frappe.db.count("Quotation") == before, "a Quotation was created")
 
 	check("S2: zero products: nothing is created and the doc's message is shown", _nothing_on_empty)
 
@@ -322,65 +323,90 @@ def _submit_and_edit():
 		r = as_("Guest", lambda: L.submit_request(F.token, _data()))
 		F.bor = r["bor"]
 		_assert(re.fullmatch(r"BOR-2627-\d{5}", F.bor), F.bor)
-		opp = frappe.get_doc("Opportunity", {"custom_buyer_order_request_ref": F.bor})
-		F.opp = opp.name
-		_assert(opp.custom_opportunity_source == "Buyer Order Request Form" and opp.custom_opportunity_status == "Pending (Draft)", opp.custom_opportunity_status)
-		_assert(opp.party_name == BUYER and opp.custom_billing_address == billing[0]["address"] and opp.customer_address == shipping[0]["address"], "header")
-		_assert(opp.custom_request_contact_person == "Ravi" and opp.custom_common_remark == "deliver before Friday", "contact / remark")
-		_assert(opp.custom_source_display == "Buyer Portal – Ravi", opp.custom_source_display)
-		_assert(len(opp.items) == 1 and cint(opp.items[0].qty) == 3 and opp.items[0].item_code == F.fallback_item, "items")
+		q = frappe.get_doc("Quotation", {"custom_buyer_order_request_ref": F.bor})
+		F.qtn = q.name
+		_assert(q.custom_quotation_source == "Buyer Order Request Form" and q.custom_quotation_status == "Draft" and q.docstatus == 0,
+			(q.custom_quotation_source, q.custom_quotation_status, q.docstatus))
+		_assert(q.quotation_to == "Buyer Master" and q.party_name == BUYER, (q.quotation_to, q.party_name))
+		_assert(q.customer_address == billing[0]["address"] and q.shipping_address_name == shipping[0]["address"], "addresses")
+		_assert(q.custom_request_contact_person == "Ravi" and q.custom_quotation_remarks == "deliver before Friday", "contact / remark")
+		_assert(q.custom_source_display == "Buyer Portal – Ravi", q.custom_source_display)
+		_assert(len(q.items) == 1 and cint(q.items[0].qty) == 3 and q.items[0].item_code == F.fallback_item, "items")
+		page = L.price(buyer.customer, F.fallback_item, 3)
+		_assert(flt(q.items[0].custom_mrp) == flt(page["mrp"]) and flt(q.items[0].custom_selling_price) == flt(page["selling_price"])
+			and flt(q.items[0].custom_flat_discount) == flt(page["flat_discount"]),
+			("the Quotation prices the row as the page did", q.items[0].custom_mrp, q.items[0].custom_selling_price, page))
+		_assert(flt(r["total"]) == flt(page["amount"]), ("the buyer's total", r["total"], page["amount"]))
+		_assert(flt(q.grand_total) >= flt(page["amount"]) - 0.05, ("Grand Total below the page total", q.grand_total, page["amount"]))
 		_assert(frappe.db.get_value("Buyer Master", BUYER, "order_link_last_used_on"), "Last Used On")
-		_assert(frappe.get_all("Field Change Log", filters={"reference_doctype": "Opportunity", "reference_name": opp.name, "action": "Opportunity Created"}), "audit")
-		_assert(any(k.get("opportunity") == opp.name for k in F.get("enqueued", [])), "notifications not queued")
+		_assert(frappe.get_all("Field Change Log", filters={"reference_doctype": "Quotation", "reference_name": q.name, "action": "Quotation Created"}), "audit")
+		_assert(any(k.get("quotation") == q.name for k in F.get("enqueued", [])), "notifications not queued")
 
-	check("S2: a submission creates one Draft Opportunity with a BOR reference (as Guest)", _submit)
+	check("S2: a submission creates one Draft Quotation with the BOR reference, priced as the page (as Guest)", _submit)
 
 	def _second():
 		r = as_("Guest", lambda: L.submit_request(F.token, _data(5)))
-		_assert(r["bor"] != F.bor and frappe.db.count("Opportunity", {"custom_buyer_order_request_ref": ("in", [F.bor, r["bor"]])}) == 2, r)
+		_assert(r["bor"] != F.bor and frappe.db.count("Quotation", {"custom_buyer_order_request_ref": ("in", [F.bor, r["bor"]])}) == 2, r)
+		_assert(len(r["requests"]) >= 2 and all(x["editable"] for x in r["requests"][:2]), r["requests"])
 
-	check("S2: a second submission the same day is a new BOR and a new Opportunity", _second)
+	check("S2: a second submission the same day is a new BOR and a new Quotation", _second)
 
 	def _edit():
 		d = as_("Guest", lambda: L.get_request(F.token, F.bor))
-		_assert(d["rows"][0]["qty"] == 3, d)
+		_assert(d["rows"][0]["qty"] == 3 and d["remarks"] == "deliver before Friday", d)
 		as_("Guest", lambda: L.update_request(F.token, F.bor, {**_data(7), "remarks": "changed"}))
-		opp = frappe.get_doc("Opportunity", F.opp)
-		_assert(opp.custom_buyer_order_request_ref == F.bor and cint(opp.items[0].qty) == 7 and opp.custom_common_remark == "changed", "not updated")
-		_assert(frappe.db.count("Opportunity", {"custom_buyer_order_request_ref": F.bor}) == 1, "duplicated")
-		_assert(frappe.get_all("Field Change Log", filters={"reference_doctype": "Opportunity", "reference_name": F.opp, "action": "Opportunity Updated"}), "edit audit")
+		q = frappe.get_doc("Quotation", F.qtn)
+		_assert(q.custom_buyer_order_request_ref == F.bor and cint(q.items[0].qty) == 7 and q.custom_quotation_remarks == "changed", "not updated")
+		_assert(frappe.db.count("Quotation", {"custom_buyer_order_request_ref": F.bor}) == 1, "duplicated")
+		_assert(frappe.get_all("Field Change Log", filters={"reference_doctype": "Quotation", "reference_name": F.qtn, "action": "Buyer Request Updated"}), "edit audit")
 
-	check("S2: editing while Draft keeps the same BOR and Opportunity, and is audited", _edit)
+	check("S2: editing while Draft keeps the same BOR and Quotation, and is audited", _edit)
+
+	def _staff_cannot_change_source():
+		err = refused(lambda: as_(F.sm.user, lambda: (lambda q: (q.set("custom_buyer_order_request_ref", "BOR-2627-00000"), q.save()))(frappe.get_doc("Quotation", F.qtn))))
+		_assert("set by the Buyer Order Request Form" in err, err)
+		desk = frappe.new_doc("Quotation")
+		desk.custom_quotation_source = "Buyer Order Request Form"
+		from alpinos.offline_sales.quotation import before_validate
+
+		before_validate(desk)
+		_assert(desk.custom_quotation_source == "Direct Quotation", "a desk Quotation became a request")
+
+	check("S2: the request's Source / BOR cannot be set or changed by staff", _staff_cannot_change_source)
 
 	def _locked():
-		frappe.db.set_value("Opportunity", F.opp, "custom_opportunity_status", "Pending (Submitted)")
+		frappe.db.set_value("Quotation", F.qtn, "custom_quotation_status", "Negotiation")
 		err = refused(lambda: as_("Guest", lambda: L.update_request(F.token, F.bor, _data(9))))
 		_assert("can no longer be changed" in err, err)
-		other = frappe.db.get_value("Opportunity", {"party_name": ("!=", BUYER)}, "name")
+		r = as_("Guest", lambda: L.page_context(F.token))
+		_assert(not next(x for x in r["requests"] if x["bor"] == F.bor)["editable"], "still offered for editing")
+		other = frappe.db.get_value("Quotation", {"party_name": ("!=", BUYER)}, "name")
 		if other:
-			frappe.db.set_value("Opportunity", other, "custom_buyer_order_request_ref", "BOR-2627-99999")
+			frappe.db.set_value("Quotation", other, "custom_buyer_order_request_ref", "BOR-2627-99999")
 			_assert("no longer active" in refused(lambda: as_("Guest", lambda: L.get_request(F.token, "BOR-2627-99999"))), "another buyer's request")
 
-	check("S2: no edit after the Opportunity leaves Draft; another buyer's request is never reachable", _locked)
+	check("S2: no edit once the Quotation leaves Draft; another buyer's request is never reachable", _locked)
 
 	def _notifications():
 		# the PDF itself is rendered by wkhtmltopdf, which needs the web server; the template is
 		# checked through its HTML below, so the mail carries a stand-in file here
 		real_pdf = L.ack_pdf
-		L.ack_pdf = lambda name: b"%PDF-1.4 test"
+		L.ack_pdf = lambda *a, **k: b"%PDF-1.4 test"
 		try:
-			L.after_submit(F.opp)
+			L.after_submit(F.qtn)
 		finally:
 			L.ack_pdf = real_pdf
-		officers = frappe.get_all("Notification Log", filters={"document_type": "Opportunity", "document_name": F.opp, "for_user": F.so.user}, pluck="subject")
-		_assert(officers and officers[0].startswith(f"New Buyer Order Request {F.bor} submitted by"), officers)
-		mail = frappe.get_all("Email Queue", filters={"reference_doctype": "Opportunity", "reference_name": F.opp}, fields=["name"])
+		officers = frappe.get_all("Notification Log", filters={"document_type": "Quotation", "document_name": F.qtn, "for_user": F.so.user}, pluck="subject")
+		_assert(officers and officers[0].startswith(f"New Buyer Order Request {F.bor} submitted by") and officers[0].endswith("Click to review Quotation."), officers)
+		mail = frappe.get_all("Email Queue", filters={"reference_doctype": "Quotation", "reference_name": F.qtn}, fields=["name"])
 		_assert(mail, "no buyer email")
 
-	check("S2: internal in-app notification to the assigned team; buyer email with the PDF", _notifications)
+	check("S2: internal in-app notification (opens the Quotation) to the assigned team; buyer email with the PDF", _notifications)
 
 	def _ack():
-		html = frappe.get_print("Opportunity", F.opp, L.ACK_PRINT_FORMAT)
-		_assert(F.bor in html and L.MSG_ACK_FOOTER in html and F.fallback_item in html, "acknowledgement content")
+		from alpinos.offline_sales.order_ack_print import PF_NAME_QUOTATION
 
-	check("S2: acknowledgement shows the BOR reference, the products and the doc's footer", _ack)
+		html = frappe.get_print("Quotation", F.qtn, PF_NAME_QUOTATION)
+		_assert(F.bor in html and L.MSG_ACK_FOOTER in html and F.fallback_item in html and "Ravi" in html, "acknowledgement content")
+
+	check("S2: acknowledgement (from the Quotation) shows the BOR reference, the products and the doc's footer", _ack)

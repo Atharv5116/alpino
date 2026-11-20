@@ -1,4 +1,7 @@
-"""Print Format "Buyer Order Request Acknowledgement" on Opportunity (doc Section 2, 4.4).
+"""Print Format "Buyer Order Request Acknowledgement" (doc Section 2, 5.2).
+
+One layout, two formats: on Quotation (a request is a Draft Quotation since the Opportunity was
+skipped, 20 Nov 2026) and on Opportunity (requests made before that keep their acknowledgement).
 
 Generated for every portal submission and emailed to the buyer. It shows the BOR reference,
 the request as the buyer sent it, and the doc's footer; it is not a quotation or invoice.
@@ -8,6 +11,11 @@ Created / refreshed by after_migrate (the app's print formats are kept in code).
 import frappe
 
 PF_NAME = "Buyer Order Request Acknowledgement"
+PF_NAME_QUOTATION = "Buyer Order Request Acknowledgement (Quotation)"
+
+
+def print_format_for(doctype):
+	return PF_NAME_QUOTATION if doctype == "Quotation" else PF_NAME
 
 HTML = r"""
 {%- macro address(name) -%}
@@ -16,6 +24,11 @@ HTML = r"""
 		{{ [a.address_line1, a.address_line2, a.city, a.state, a.pincode] | select | reject("equalto", "N/A") | join(", ") }}
 	{%- endif -%}
 {%- endmacro -%}
+{%- set is_q = doc.doctype == "Quotation" -%}
+{%- set billing = doc.customer_address if is_q else doc.custom_billing_address -%}
+{%- set shipping = doc.shipping_address_name if is_q else doc.customer_address -%}
+{%- set customer_type = doc.order_type if is_q else doc.custom_order_type -%}
+{%- set remarks = doc.custom_quotation_remarks if is_q else doc.custom_common_remark -%}
 {%- set buyer = frappe.db.get_value("Buyer Master", doc.party_name, ["customer_business_name", "customer", "gst_no"], as_dict=True) or {} -%}
 {%- set gstin = doc.get("custom_billing_gstin") or buyer.gst_no or "" -%}
 <style>
@@ -34,12 +47,12 @@ HTML = r"""
 		&nbsp;&middot;&nbsp; Submitted: {{ frappe.utils.format_datetime(doc.creation, "dd-MM-yyyy HH:mm") }}</div>
 	<table class="meta">
 		<tr><td width="22%">Customer</td><td><b>{{ buyer.customer_business_name or buyer.customer or doc.party_name }}</b></td></tr>
-		<tr><td>Customer Type</td><td>{{ doc.custom_order_type or "" }}</td></tr>
-		<tr><td>Billing Address</td><td>{{ address(doc.custom_billing_address) }}</td></tr>
+		<tr><td>Customer Type</td><td>{{ customer_type or "" }}</td></tr>
+		<tr><td>Billing Address</td><td>{{ address(billing) }}</td></tr>
 		<tr><td>Billing GSTIN</td><td>{{ gstin }}</td></tr>
-		<tr><td>Shipping Address</td><td>{{ address(doc.customer_address) }}</td></tr>
+		<tr><td>Shipping Address</td><td>{{ address(shipping) }}</td></tr>
 		<tr><td>Contact Person</td><td>{{ doc.custom_request_contact_person or "" }}</td></tr>
-		<tr><td>Order Remarks</td><td>{{ doc.custom_common_remark or "" }}</td></tr>
+		<tr><td>Order Remarks</td><td>{{ remarks or "" }}</td></tr>
 	</table>
 	<table>
 		<thead><tr>
@@ -49,7 +62,7 @@ HTML = r"""
 		<tbody>
 		{%- set ns = namespace(total=0) -%}
 		{%- for row in doc.items -%}
-			{%- set amount = row.custom_line_amount or ((row.qty or 0) * (row.custom_selling_price or 0)) -%}
+			{%- set amount = ((row.qty or 0) * (row.custom_selling_price or 0)) if is_q else (row.custom_line_amount or ((row.qty or 0) * (row.custom_selling_price or 0))) -%}
 			{%- set ns.total = ns.total + amount -%}
 			<tr>
 				<td>{{ loop.index }}</td><td>{{ row.item_code }}</td><td>{{ row.item_name or "" }}</td>
@@ -72,20 +85,21 @@ HTML = r"""
 
 
 def execute():
-	fields = {
-		"doc_type": "Opportunity",
-		"module": "Alpinos Development",
-		"standard": "No",
-		"custom_format": 1,
-		"print_format_type": "Jinja",
-		"html": HTML,
-		"disabled": 0,
-	}
-	if frappe.db.exists("Print Format", PF_NAME):
-		pf = frappe.get_doc("Print Format", PF_NAME)
-		if all(pf.get(k) == v for k, v in fields.items()):
-			return
-		pf.update(fields)
-		pf.save(ignore_permissions=True)
-	else:
-		frappe.get_doc({"doctype": "Print Format", "name": PF_NAME, **fields}).insert(ignore_permissions=True)
+	for name, doctype in ((PF_NAME, "Opportunity"), (PF_NAME_QUOTATION, "Quotation")):
+		fields = {
+			"doc_type": doctype,
+			"module": "Alpinos Development",
+			"standard": "No",
+			"custom_format": 1,
+			"print_format_type": "Jinja",
+			"html": HTML,
+			"disabled": 0,
+		}
+		if frappe.db.exists("Print Format", name):
+			pf = frappe.get_doc("Print Format", name)
+			if all(pf.get(k) == v for k, v in fields.items()):
+				continue
+			pf.update(fields)
+			pf.save(ignore_permissions=True)
+		else:
+			frappe.get_doc({"doctype": "Print Format", "name": name, **fields}).insert(ignore_permissions=True)

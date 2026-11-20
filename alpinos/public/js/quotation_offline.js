@@ -26,6 +26,7 @@
 		frm.doc.custom_quotation_status || { 1: "Finalized", 2: "Cancelled" }[frm.doc.docstatus] || "Draft";
 	const editable = (frm) => frm.is_new() || (frm.doc.docstatus === 0 && EDITABLE.includes(status_of(frm)));
 	const money = (frm, v) => format_currency(flt(v), frm.doc.currency || "INR");
+	const is_request = (frm) => frm.doc.custom_quotation_source === "Buyer Order Request Form";
 
 	// ------------------------------------------------------------------ rows
 
@@ -88,8 +89,9 @@
 		const before_finalize = editable(frm);
 		["custom_payment_term", "custom_credit_days"].forEach((f) => frm.set_df_property(f, "read_only", before_finalize ? 0 : 1));
 		frm.set_df_property("custom_payment_schedule", "read_only", before_finalize ? 0 : 1);
-		// A-28: a Quotation converted from an Opportunity keeps the Opportunity's Customer
-		frm.set_df_property("party_name", "read_only", frm.doc.opportunity || !editable(frm) ? 1 : 0);
+		// A-28: a Quotation converted from an Opportunity keeps the Opportunity's Customer; a buyer's
+		// own request keeps that buyer
+		frm.set_df_property("party_name", "read_only", frm.doc.opportunity || is_request(frm) || !editable(frm) ? 1 : 0);
 		frm.set_df_property("custom_responsible_sales_officer", "read_only", frm.__manager && status_of(frm) !== "Cancelled" && !frm.doc.custom_force_complete_applied ? 0 : 1);
 	}
 
@@ -394,11 +396,19 @@
 			hide_standard(frm);
 			const has = (a) => (ctx.actions || []).includes(a);
 			const pay = __("Payment");
-			if (has("finalize")) frm.add_custom_button(__("Finalize Quotation"), () => finalize(frm)).addClass("btn-primary");
+			// a Draft saved before the buyer was Approved with its Buyer Catalog set up: the buttons
+			// stay, disabled, with the reason (as the Opportunity's Convert to Quotation did)
+			const wait = ctx.buyer_not_ready;
+			const hold = (btn) => (wait ? btn.prop("disabled", true).attr("title", wait) : btn);
+			if (has("finalize")) {
+				const btn = frm.add_custom_button(__("Finalize Quotation"), () => finalize(frm));
+				if (!wait) btn.addClass("btn-primary");
+				hold(btn);
+			}
 			if (has("start_negotiation")) {
-				frm.add_custom_button(__("Start Negotiation"), () =>
+				hold(frm.add_custom_button(__("Start Negotiation"), () =>
 					frappe.confirm(__("Move this Quotation to Negotiation?"), () => call(frm, API + "start_negotiation", {}, __("Negotiation started")))
-				);
+				));
 			}
 			if (has("record_payment")) frm.add_custom_button(__("Record Payment"), () => record_payment(frm, ctx), pay);
 			if (has("change_payment_term")) frm.add_custom_button(__("Change Payment Term"), () => change_term(frm, ctx), pay);
@@ -409,10 +419,101 @@
 			if (has("correct_payment")) frm.add_custom_button(__("Correct Payment"), () => correct_payment(frm), pay);
 			if (has("cancel")) frm.add_custom_button(__("Cancel Quotation"), () => cancel_quotation(frm, ctx), __("Actions"));
 			if (ctx.eligibility_note) frm.set_intro(esc(ctx.eligibility_note), "orange");
+			if (wait) frm.set_intro(esc(wait), "red");
 		});
 	}
 
+	// ------------------------------------------------------------------ header
+
+	// Section 4, 2: "+ Create New Buyer" beside the Customer, while the Quotation can still change;
+	// the new buyer is selected on this Quotation (the Opportunity, where the document put it, is
+	// skipped since 20 Nov 2026)
+	function render_create_buyer(frm) {
+		const field = frm.get_field("party_name");
+		if (!field || !field.$wrapper) return;
+		field.$wrapper.find(".alpinos-create-buyer-btn").remove();
+		if (!editable(frm) || is_request(frm) || frm.doc.quotation_to !== "Buyer Master" || !window.alpinos_offline) return;
+		if (!frappe.model.can_create("Buyer Master")) return;
+		const $btn = $(`<button type="button" class="btn btn-xs btn-default alpinos-create-buyer-btn" style="margin-top:6px;">${__("+ Create New Buyer")}</button>`);
+		$btn.on("click", () => alpinos_offline.create_buyer({ on_created: (r) => frm.set_value("party_name", r.name) }));
+		field.$wrapper.append($btn);
+	}
+
+	// Section 5, 5: Site Name from the Buyer's sites, Billing / Shipping Address from the Buyer's own
+	// (per site) addresses, defaulted when the Customer or the Site is picked. The Opportunity did
+	// this; its server calls take the Buyer Master and are reused as they are.
+	const OPP = "alpinos.offline_sales.opportunity.";
+	const is_obm = (frm) => frm.doc.quotation_to === "Buyer Master";
+
+	function set_queries(frm) {
+		frm.set_query("party_name", () => (is_obm(frm) ? { filters: { customer: ["!=", ""] } } : {}));
+		const address_query = (kind) => () =>
+			is_obm(frm) ? { query: OPP + "address_query", filters: { party_name: frm.doc.party_name || "", kind } } : {};
+		frm.set_query("customer_address", address_query("billing"));
+		frm.set_query("shipping_address_name", address_query("shipping"));
+	}
+
+	function set_site_options(frm, sites) {
+		const options = [""].concat(sites || []);
+		if (frm.doc.custom_site_name && !options.includes(frm.doc.custom_site_name)) options.push(frm.doc.custom_site_name);
+		frm.set_df_property("custom_site_name", "options", options);
+		// mandatory only for a Buyer that has sites (most old buyers have none)
+		frm.set_df_property("custom_site_name", "reqd", editable(frm) && (sites || []).length ? 1 : 0);
+		frm.refresh_field("custom_site_name");
+	}
+
+	function load_buyer(frm, picked) {
+		if (!is_obm(frm) || !frm.doc.party_name) {
+			set_site_options(frm, []);
+			return Promise.resolve();
+		}
+		return frappe.xcall(OPP + "buyer_context", { party_name: frm.doc.party_name, sync_addresses: picked ? 1 : 0 }).then((ctx) => {
+			ctx = ctx || {};
+			set_site_options(frm, ctx.sites);
+			if (!picked) return;
+			if (ctx.customer_type) frm.set_value("order_type", ctx.customer_type);
+			return Promise.resolve(frm.set_value("custom_site_name", ctx.default_site || "")).then(() => apply_site_addresses(frm));
+		});
+	}
+
+	function apply_site_addresses(frm) {
+		if (!is_obm(frm) || !frm.doc.party_name) return Promise.resolve();
+		return frappe
+			.xcall(OPP + "site_addresses", { party_name: frm.doc.party_name, site_name: frm.doc.custom_site_name || "" })
+			.then((r) => {
+				frm.set_value("customer_address", (r && r.billing) || "");
+				frm.set_value("shipping_address_name", (r && r.shipping) || "");
+			});
+	}
+
+	// ERPNext labels it "<Quotation To> Address" ("Buyer Master Address"); the document calls it
+	// the Billing Address
+	function set_address_label(frm) {
+		const field = frm.fields_dict.customer_address;
+		if (field && field.df.label !== __("Billing Address")) field.set_label(__("Billing Address"));
+	}
+
+	// Only the document's fields (Hetvi, 20 Nov 2026). The doctype hides the rest; these are the ones
+	// ERPNext's own form script shows again (customer name, series, company-currency totals) or
+	// hides (Net Total, shown by the document's summary), so they are set after it.
+	const ERPNEXT_SHOWN = [
+		"customer_name", "naming_series", "base_total", "base_net_total", "base_total_taxes_and_charges",
+		"base_grand_total", "base_rounding_adjustment", "base_rounded_total", "base_in_words", "rounding_adjustment",
+		"rounded_total", "in_words", "conversion_rate", "plc_conversion_rate",
+	];
+
+	function only_document_fields(frm) {
+		ERPNEXT_SHOWN.forEach((f) => frm.fields_dict[f] && frm.toggle_display(f, false));
+		if (frm.fields_dict.net_total) frm.toggle_display("net_total", true);
+		// Frappe's "Submit this document to confirm": Finalize Quotation is the submit here
+		const head = frm.layout && frm.layout.wrapper && frm.layout.wrapper.find(".form-message");
+		if (head && head.text().trim() === __("Submit this document to confirm")) frm.dashboard.clear_comment();
+		// ERPNext's "Get Items From" (Opportunity) is not part of this flow
+		frm.page.wrapper.find(".inner-group-button").filter((_, g) => $(g).find("button").first().text().trim() === __("Get Items From")).remove();
+	}
+
 	function hide_standard(frm) {
+		only_document_fields(frm);
 		// A-2 / A-34: Finalize Quotation and Cancel Quotation are the only submit / cancel; no Amend.
 		// Save (a changed Draft) and Update (a changed Responsible Sales Officer) stay.
 		if (!frm.is_new() && (!frm.is_dirty() || frm.doc.docstatus === 2)) frm.page.clear_actions();
@@ -437,21 +538,49 @@
 
 	frappe.ui.form.on("Quotation", {
 		onload(frm) {
-			if (frm.is_new()) frm.doc.ignore_pricing_rule = 1;
+			if (frm.is_new()) {
+				frm.doc.ignore_pricing_rule = 1;
+				// the field is hidden: every Quotation is for a Buyer Master
+				if (frm.doc.quotation_to !== "Buyer Master" && !frm.doc.party_name) frm.set_value("quotation_to", "Buyer Master");
+			}
+		},
+
+		setup(frm) {
+			set_queries(frm);
 		},
 
 		refresh(frm) {
 			show_status(frm);
 			set_row_access(frm);
 			render_actions(frm);
-			setTimeout(() => hide_standard(frm), 0);
+			render_create_buyer(frm);
+			load_buyer(frm, false);
+			// after ERPNext's own refresh, which finishes after its server calls
+			const tidy = () => {
+				hide_standard(frm);
+				set_address_label(frm);
+			};
+			setTimeout(tidy, 0);
+			frappe.after_ajax(() => setTimeout(tidy, 150));
 			const trail = frm.get_field("custom_activity_html");
 			if (trail && !frm.is_new() && window.alpinos_offline) {
 				alpinos_offline.render_trail(trail.$wrapper, "Quotation", frm.doc.name);
 			}
 		},
 
+		quotation_to(frm) {
+			setTimeout(() => {
+				set_address_label(frm);
+				render_create_buyer(frm);
+			}, 0);
+		},
+
+		custom_site_name(frm) {
+			if (editable(frm) && frm.doc.party_name) apply_site_addresses(frm);
+		},
+
 		party_name(frm) {
+			if (editable(frm)) load_buyer(frm, true);
 			// 9.1: a new Quotation takes the Buyer's Payment Term and Credit Days once
 			if (!frm.is_new() || !frm.doc.party_name) return;
 			frappe.xcall(API + "buyer_defaults", { party_name: frm.doc.party_name, quotation_to: frm.doc.quotation_to }).then((v) => {

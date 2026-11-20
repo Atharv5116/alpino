@@ -53,6 +53,11 @@ SYSTEM_FIELDS = (
 	"custom_force_complete_applied", "custom_force_complete_reason", "custom_force_completed_by",
 	"custom_force_completed_role", "custom_force_completed_on", "custom_force_complete_unpaid",
 )
+#: written only by the Buyer Order Request Form (order_link); every other Quotation is Direct
+SOURCE_DIRECT, SOURCE_PORTAL = "Direct Quotation", "Buyer Order Request Form"
+REQUEST_FIELDS = (
+	"custom_quotation_source", "custom_buyer_order_request_ref", "custom_request_contact_person", "custom_source_display",
+)
 #: recomputed on every save (quotation_payments.recompute)
 DERIVED_FIELDS = (
 	"custom_total_received", "custom_total_pending", "custom_payment_status", "custom_so_eligibility",
@@ -427,8 +432,16 @@ def before_validate(doc, method=None):
 			doc.set(f, None)
 		doc.custom_force_complete_applied = 0
 		doc.set(RECEIPTS, [])
+		if not doc.flags.from_order_portal and doc.meta.has_field("custom_quotation_source"):
+			doc.custom_quotation_source = SOURCE_DIRECT
+			for f in REQUEST_FIELDS[1:]:
+				doc.set(f, None)
 	else:
 		before = doc.get_doc_before_save()
+		if before and not doc.flags.from_order_portal and doc.meta.has_field("custom_quotation_source"):
+			for f in REQUEST_FIELDS:
+				if cstr(doc.get(f)) != cstr(before.get(f)):
+					frappe.throw(_("{0} is set by the Buyer Order Request Form and cannot be changed.").format(_(doc.meta.get_label(f))), title=_("Not Permitted"))
 		if before and not acting and before.docstatus == 0:
 			meta = frappe.get_meta(DOCTYPE)
 			for f in SYSTEM_FIELDS:
@@ -436,6 +449,16 @@ def before_validate(doc, method=None):
 					frappe.throw(_(M_STATUS_SYSTEM), title=_("Not Permitted"))
 			if doc.get(RECEIPTS) or before.get(RECEIPTS):
 				frappe.throw(_(M_NO_DRAFT_PAYMENT), title=_("Not Permitted"))
+			if (
+				before.get("custom_quotation_source") == SOURCE_PORTAL
+				and cstr(before.get("party_name")) != cstr(doc.get("party_name"))
+			):
+				frappe.throw(
+					_("This Quotation is the order request {0} of its Buyer, so its Customer cannot be changed.").format(
+						before.get("custom_buyer_order_request_ref")
+					),
+					title=_("Not Permitted"),
+				)
 			if before.get("opportunity") and cstr(before.get("party_name")) != cstr(doc.get("party_name")):
 				# A-28: the Customer of a converted Quotation is its Opportunity's
 				frappe.throw(
@@ -502,8 +525,14 @@ def _one_active_per_opportunity(doc, before):
 
 
 def after_insert(doc, method=None):
-	"""Quotation Created: creator, time, source (the Opportunity ID or Standalone)."""
-	source = _("Opportunity {0}").format(doc.opportunity) if doc.get("opportunity") else _("Standalone")
+	"""Quotation Created: creator, time, source (the Buyer Order Request, the Opportunity ID or
+	Standalone)."""
+	if doc.get("custom_buyer_order_request_ref"):
+		source = _("Buyer Order Request {0}").format(doc.custom_buyer_order_request_ref)
+	elif doc.get("opportunity"):
+		source = _("Opportunity {0}").format(doc.opportunity)
+	else:
+		source = _("Standalone")
 	audit.log(DOCTYPE, doc.name, "Quotation Created", _("Quotation"), "", f"{doc.get('customer_name') or doc.party_name} ({source})")
 
 
@@ -645,6 +674,9 @@ def start_negotiation(name):
 	current = status_of(doc)
 	if current != DRAFT:
 		frappe.throw(_("Only a Draft Quotation can move to Negotiation. This one is {0}.").format(_(current)), title=_("Not Permitted"))
+	reason = buyer_not_ready(doc, _("moved to Negotiation"))
+	if reason:
+		frappe.throw(reason, title=_("Buyer Not Ready"))
 	doc.set(STATUS, NEGOTIATION)
 	save(doc, "negotiation")
 	audit.status_change(DOCTYPE, doc.name, "Negotiation Started", DRAFT, NEGOTIATION)
@@ -655,7 +687,6 @@ def finalize_errors(doc):
 	"""What Finalize Quotation needs (7, S5-R153): the header, every row, the Payment Term and
 	its configuration, a buyer that may still trade (A-30)."""
 	from alpinos import item_mrp as IM
-	from alpinos.offline_sales.catalog_gate import readiness
 	from alpinos.offline_sales.quotation_payments import schedule_errors
 	from alpinos.sales_order_offline_buyer import get_customer_family_sites
 
@@ -705,11 +736,19 @@ def finalize_errors(doc):
 		errors.append(_("Enter the Credit Days for a Credit Quotation."))
 	elif term == "Partial":
 		errors.extend(schedule_errors(doc))
-	buyer = buyer_of(doc)
-	reason = readiness(buyer, _("Quotation")) if buyer else None
+	reason = buyer_not_ready(doc, _("finalized"))
 	if reason:
 		errors.append(reason)
 	return errors
+
+
+def buyer_not_ready(doc, action):
+	"""Why this Quotation's buyer cannot go further yet (approval / Buyer Catalog / status), or
+	None. A Draft may be saved before (the Opportunity is skipped, 20 Nov 2026)."""
+	from alpinos.offline_sales.catalog_gate import readiness
+
+	buyer = buyer_of(doc)
+	return readiness(buyer, _("Quotation"), action=action) if buyer else None
 
 
 @frappe.whitelist(methods=["POST"])
@@ -923,6 +962,8 @@ def form_actions(name):
 		"is_manager": int(manager),
 		"is_officer": int(is_sales_officer_only()),
 		"eligibility_note": P.eligibility_note(doc),
+		# a Draft saved before the buyer was ready: why Start Negotiation / Finalize wait
+		"buyer_not_ready": buyer_not_ready(doc, _("moved forward")) if status in EDITABLE and doc.docstatus == 0 else None,
 		"summary": {
 			"grand_total": flt(doc.grand_total, 2),
 			"total_received": flt(doc.get("custom_total_received"), 2),

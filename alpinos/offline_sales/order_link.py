@@ -3,8 +3,10 @@
 Every Approved Buyer Master can get a tokenized URL (/order-request?token=...) that its
 buyer opens without logging in. The buyer sees only their own details, permitted addresses
 and active Finished Goods with read-only prices, enters quantities and submits. Each new
-submission gets a BOR-2627-##### reference and creates one Draft Opportunity (Source = Buyer
+submission gets a BOR-2627-##### reference and creates one Draft Quotation (Source = Buyer
 Order Request Form); there is no separate Buyer Order Request record (doc L1209-1210).
+The document routes it to a Draft Opportunity; the Opportunity is skipped since 20 Nov 2026
+(Hetvi), so everything the document says of that Opportunity applies to the Quotation.
 
 Link section on Buyer Master (doc 2.3): Generate / Copy / Open / Regenerate / Deactivate /
 Activate. Statuses Not Generated, Active, Inactive, Expired. The doc defines no expiry rule,
@@ -175,7 +177,7 @@ def resolve(token):
 
 
 class _AsSystem:
-	"""Guest calls read pricing / addresses and write the Opportunity as the system. Company
+	"""Guest calls read pricing / addresses and write the Quotation as the system. Company
 	scoping still applies through the buyer's own company (_company)."""
 
 	def __enter__(self):
@@ -251,14 +253,17 @@ def page_context(token):
 		}
 
 
+DOCTYPE = "Quotation"
+
+
 def _editable_requests(buyer):
-	"""This buyer's portal requests, newest first; editable while the Opportunity is a Draft."""
-	if not frappe.db.has_column("Opportunity", "custom_buyer_order_request_ref"):
+	"""This buyer's portal requests, newest first; editable while the Quotation is a Draft."""
+	if not frappe.db.has_column(DOCTYPE, "custom_buyer_order_request_ref"):
 		return []
 	rows = frappe.get_all(
-		"Opportunity",
-		filters={"party_name": buyer.name, "custom_opportunity_source": SOURCE_PORTAL},
-		fields=["custom_buyer_order_request_ref as bor", "custom_opportunity_status as status", "creation", "name"],
+		DOCTYPE,
+		filters={"quotation_to": "Buyer Master", "party_name": buyer.name, "custom_quotation_source": SOURCE_PORTAL},
+		fields=["custom_buyer_order_request_ref as bor", "custom_quotation_status", "docstatus", "creation", "name"],
 		order_by="creation desc",
 		limit_page_length=20,
 	)
@@ -268,25 +273,24 @@ def _editable_requests(buyer):
 	]
 
 
-def _editable(opp):
-	if (opp.get("status") or opp.get("custom_opportunity_status")) != "Pending (Draft)":
-		return False
-	if frappe.db.has_column("Opportunity", "custom_linked_quotation"):
-		return not frappe.db.get_value("Opportunity", opp.get("name"), "custom_linked_quotation")
-	return True
+def _editable(quotation):
+	"""Doc Section 2, 6.2: while the request is still a Draft (Hetvi, 20 Nov 2026: "While Draft")."""
+	# the Quotation Status, never ERPNext's own status field (which stays "Draft")
+	return quotation.get("custom_quotation_status") == "Draft" and cint(quotation.get("docstatus")) == 0
 
 
-def _total(opportunity):
-	return flt(sum(r.amount for r in _opportunity_rows(opportunity)), 2)
+def _total(quotation):
+	return flt(sum(r.amount for r in _quotation_rows(quotation)), 2)
 
 
-def _opportunity_rows(opportunity):
+def _quotation_rows(quotation):
+	"""Rows as the page showed them: Item Amount = Quantity x Selling Price (the Quotation's own
+	line amount is net of the GST that the Selling Price includes)."""
 	return [
-		frappe._dict(item_code=r.item_code, qty=flt(r.qty), amount=flt(r.get("custom_line_amount") or r.get("amount")))
+		frappe._dict(item_code=r.item_code, qty=flt(r.qty), amount=flt(flt(r.qty) * flt(r.custom_selling_price), 2))
 		for r in frappe.get_all(
-			"Opportunity Item", filters={"parent": opportunity, "parenttype": "Opportunity"},
-			fields=["item_code", "qty", "amount"] + (["custom_line_amount"] if frappe.db.has_column("Opportunity Item", "custom_line_amount") else []),
-			order_by="idx",
+			"Quotation Item", filters={"parent": quotation, "parenttype": DOCTYPE},
+			fields=["item_code", "qty", "custom_selling_price"], order_by="idx",
 		)
 	]
 
@@ -429,24 +433,63 @@ def _header(buyer, data):
 	}
 
 
-def _apply(opp, buyer, header, rows):
-	opp.update({
+def _apply(qtn, buyer, header, rows):
+	"""Doc 5.1, carried forward onto the Draft Quotation: addresses, site, the buyer's remarks
+	(Quotation Remarks), the contact person, "Buyer Portal - name", and the rows (SKU, quantity,
+	the MRP the page priced; the Quotation prices them as the page did, from the Buyer Catalog)."""
+	from frappe.contacts.doctype.address.address import get_address_display
+
+	qtn.update({
 		"custom_site_name": header["site"],
-		"custom_billing_address": header["billing_address"],
-		"customer_address": header["shipping_address"],
-		"custom_common_remark": header["remarks"],
+		"customer_address": header["billing_address"],
+		"address_display": get_address_display(header["billing_address"]),
+		"shipping_address_name": header["shipping_address"],
+		"shipping_address": get_address_display(header["shipping_address"]),
+		"custom_quotation_remarks": header["remarks"],
 		"custom_request_contact_person": header["contact_person"],
 		"custom_source_display": "Buyer Portal – {0}".format(header["contact_person"]) if header["contact_person"] else "Buyer Portal",
 	})
-	opp.set("items", [])
+	qtn.set("items", [])
 	for r in rows:
-		opp.append("items", {"item_code": r["item_code"], "item_name": r["item_name"], "qty": r["qty"]})
+		qtn.append("items", {"item_code": r["item_code"], "item_name": r["item_name"], "qty": r["qty"]})
+	_fill_item_details(qtn, buyer)
+	# the Buyer Catalog values the page showed (the same lookup as the Sales Order); the form puts
+	# them on a new row the same way before it saves (ERPNext's item details would leave 0.00)
+	for row, r in zip(qtn.items, rows):
+		row.update({
+			"custom_mrp": r["mrp"], "custom_flat_discount": r["flat_discount"], "custom_selling_price": r["selling_price"],
+			"custom_offer": 0, "custom_additional_discount": 0,
+		})
+
+
+def _fill_item_details(qtn, buyer):
+	"""ERPNext's item details (UOM, conversion, price list) for the rows. ERPNext reads a selling
+	party, so it is shown the buyer's Customer for the call (as Convert to Quotation did)."""
+	qtn.quotation_to, qtn.party_name = "Customer", buyer.customer
+	try:
+		qtn.run_method("set_missing_values")
+	finally:
+		qtn.quotation_to, qtn.party_name = "Buyer Master", buyer.name
+	qtn.customer_name = buyer.customer_business_name or buyer.customer
+	qtn.custom_resolved_customer = buyer.customer
+
+
+def _row_text(qtn):
+	return "; ".join(f"{r.item_code} x {cint(r.qty)}" for r in qtn.items)
+
+
+def _request_values(qtn):
+	return {
+		"Billing Address": qtn.get("customer_address"), "Shipping Address": qtn.get("shipping_address_name"),
+		"Contact Person": qtn.get("custom_request_contact_person"), "Quotation Remarks": qtn.get("custom_quotation_remarks"),
+		"Items": _row_text(qtn),
+	}
 
 
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=20, seconds=_GUEST_WINDOW)
 def submit_request(token, data):
-	"""New request: a new BOR reference and one Draft Opportunity (doc 4.1-4.3)."""
+	"""New request: a new BOR reference and one Draft Quotation (doc 4.1-4.3, 5.1)."""
 	buyer = _guest(token)
 	data = frappe.parse_json(data) if isinstance(data, str) else (data or {})
 	with _AsSystem():
@@ -455,40 +498,47 @@ def submit_request(token, data):
 		from frappe.model.naming import make_autoname
 
 		bor = make_autoname(BOR_SERIES)
-		opp = frappe.new_doc("Opportunity")
-		opp.update({
-			"opportunity_from": "Buyer Master",
+		qtn = frappe.new_doc(DOCTYPE)
+		qtn.update({
+			"quotation_to": "Buyer Master",
 			"party_name": buyer.name,
 			"company": _company(buyer),
 			"transaction_date": nowdate(),
-			"custom_order_type": buyer.customer_type,
-			"custom_opportunity_source": SOURCE_PORTAL,
+			"order_type": buyer.customer_type,
+			"ignore_pricing_rule": 1,
+			"custom_quotation_source": SOURCE_PORTAL,
 			"custom_buyer_order_request_ref": bor,
 		})
-		_apply(opp, buyer, header, rows)
-		opp.flags.ignore_permissions = True
-		opp.flags.from_order_portal = True
-		opp.insert()
+		_apply(qtn, buyer, header, rows)
+		qtn.flags.ignore_permissions = True
+		qtn.flags.from_order_portal = True
+		qtn.insert()
 		frappe.db.set_value("Buyer Master", buyer.name, "order_link_last_used_on", now_datetime(), update_modified=False)
-		audit.log("Opportunity", opp.name, "Opportunity Created", "Buyer Order Request Ref", None, bor,
-			reason=opp.custom_source_display)
+		audit.log(DOCTYPE, qtn.name, "Quotation Created", "Buyer Order Request Ref", None, bor, reason=qtn.custom_source_display)
 		frappe.enqueue(
 			"alpinos.offline_sales.order_link.after_submit", queue="short", enqueue_after_commit=True,
-			opportunity=opp.name,
+			quotation=qtn.name,
 		)
-		return {"bor": bor, "total": _total(opp.name), "requests": _editable_requests(buyer)}
+		return {"bor": bor, "total": _total(qtn.name), "requests": _editable_requests(buyer)}
 
 
-def _own_draft(buyer, bor):
+def _own_request(buyer, bor):
+	"""This buyer's Quotation for `bor` (any status), or the inactive-link refusal."""
 	name = frappe.db.get_value(
-		"Opportunity", {"party_name": buyer.name, "custom_buyer_order_request_ref": bor, "custom_opportunity_source": SOURCE_PORTAL}, "name"
+		DOCTYPE,
+		{"quotation_to": "Buyer Master", "party_name": buyer.name, "custom_buyer_order_request_ref": bor, "custom_quotation_source": SOURCE_PORTAL},
+		"name",
 	)
 	if not name:
 		frappe.throw(_(MSG_LINK_INACTIVE), frappe.PermissionError)
-	opp = frappe.get_doc("Opportunity", name)
-	if not _editable({"name": name, "status": opp.get("custom_opportunity_status")}):
+	return frappe.get_doc(DOCTYPE, name)
+
+
+def _own_draft(buyer, bor):
+	qtn = _own_request(buyer, bor)
+	if not _editable(qtn.as_dict()):
 		frappe.throw(_("This order request is already being processed by our Sales Team and can no longer be changed."))
-	return opp
+	return qtn
 
 
 @frappe.whitelist(allow_guest=True)
@@ -497,55 +547,52 @@ def get_request(token, bor):
 	"""A submitted request, for the buyer to edit while it is still a Draft."""
 	buyer = _guest(token)
 	with _AsSystem():
-		opp = _own_draft(buyer, bor)
+		qtn = _own_draft(buyer, bor)
 		return {
 			"bor": bor,
-			"billing_address": opp.get("custom_billing_address"),
-			"shipping_address": opp.get("customer_address"),
-			"contact_person": opp.get("custom_request_contact_person") or "",
-			"remarks": opp.get("custom_common_remark") or "",
-			"rows": [{"item_code": r.item_code, "qty": cint(r.qty)} for r in opp.items],
+			"billing_address": qtn.get("customer_address"),
+			"shipping_address": qtn.get("shipping_address_name"),
+			"contact_person": qtn.get("custom_request_contact_person") or "",
+			"remarks": qtn.get("custom_quotation_remarks") or "",
+			"rows": [{"item_code": r.item_code, "qty": cint(r.qty)} for r in qtn.items],
 		}
 
 
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=20, seconds=_GUEST_WINDOW)
 def update_request(token, bor, data):
-	"""Edit while the Opportunity is Pending (Draft): same BOR, same Opportunity (doc 6)."""
+	"""Edit while the Quotation is a Draft: same BOR, same Quotation, every change in the
+	Activity / Audit Trail (doc 6.2)."""
 	buyer = _guest(token)
 	data = frappe.parse_json(data) if isinstance(data, str) else (data or {})
 	with _AsSystem():
-		opp = _own_draft(buyer, bor)
-		before = {
-			"Billing Address": opp.get("custom_billing_address"), "Shipping Address": opp.get("customer_address"),
-			"Contact Person": opp.get("custom_request_contact_person"), "Common Remark": opp.get("custom_common_remark"),
-			"Items": "; ".join(f"{r.item_code} x {cint(r.qty)}" for r in opp.items),
-		}
+		qtn = _own_draft(buyer, bor)
+		before = _request_values(qtn)
 		rows = _priced_rows(buyer, data.get("rows"))
 		header = _header(buyer, data)
-		_apply(opp, buyer, header, rows)
-		opp.flags.ignore_permissions = True
-		opp.flags.from_order_portal = True
-		opp.save()
-		after = {
-			"Billing Address": opp.get("custom_billing_address"), "Shipping Address": opp.get("customer_address"),
-			"Contact Person": opp.get("custom_request_contact_person"), "Common Remark": opp.get("custom_common_remark"),
-			"Items": "; ".join(f"{r.item_code} x {cint(r.qty)}" for r in opp.items),
-		}
+		_apply(qtn, buyer, header, rows)
+		qtn.flags.ignore_permissions = True
+		qtn.flags.from_order_portal = True
+		qtn.save()
+		after = _request_values(qtn)
 		for label, old in before.items():
 			if (old or "") != (after[label] or ""):
-				audit.log("Opportunity", opp.name, "Opportunity Updated", label, old, after[label], reason=opp.custom_source_display)
+				audit.log(DOCTYPE, qtn.name, "Buyer Request Updated", label, old, after[label], reason=qtn.custom_source_display)
 		frappe.db.set_value("Buyer Master", buyer.name, "order_link_last_used_on", now_datetime(), update_modified=False)
-		return {"bor": bor, "total": _total(opp.name), "requests": _editable_requests(buyer)}
+		return {"bor": bor, "total": _total(qtn.name), "requests": _editable_requests(buyer)}
 
 
 # ------------------------------------------------------------------------------ PDF + notifications
 
 ACK_PRINT_FORMAT = "Buyer Order Request Acknowledgement"
+#: requests made before 20 Nov 2026 are Opportunities and keep their own acknowledgement
+LEGACY_ACK_DOCTYPE = "Opportunity"
 
 
-def ack_pdf(opportunity):
-	return frappe.get_print("Opportunity", opportunity, ACK_PRINT_FORMAT, as_pdf=True)
+def ack_pdf(quotation, doctype=DOCTYPE):
+	from alpinos.offline_sales.order_ack_print import print_format_for
+
+	return frappe.get_print(doctype, quotation, print_format_for(doctype), as_pdf=True)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -554,13 +601,18 @@ def download_ack(token, bor):
 	"""The acknowledgement PDF of one of this buyer's own requests."""
 	buyer = _guest(token)
 	with _AsSystem():
-		name = frappe.db.get_value(
-			"Opportunity", {"party_name": buyer.name, "custom_buyer_order_request_ref": bor, "custom_opportunity_source": SOURCE_PORTAL}, "name"
+		doctype, name = DOCTYPE, frappe.db.get_value(
+			DOCTYPE, {"quotation_to": "Buyer Master", "party_name": buyer.name, "custom_buyer_order_request_ref": bor,
+				"custom_quotation_source": SOURCE_PORTAL}, "name"
 		)
+		if not name and frappe.db.has_column(LEGACY_ACK_DOCTYPE, "custom_buyer_order_request_ref"):
+			doctype, name = LEGACY_ACK_DOCTYPE, frappe.db.get_value(
+				LEGACY_ACK_DOCTYPE, {"party_name": buyer.name, "custom_buyer_order_request_ref": bor, "custom_opportunity_source": SOURCE_PORTAL}, "name"
+			)
 		if not name:
 			frappe.throw(_(MSG_LINK_INACTIVE), frappe.PermissionError)
 		frappe.local.response.filename = f"{bor}.pdf"
-		frappe.local.response.filecontent = ack_pdf(name)
+		frappe.local.response.filecontent = ack_pdf(name, doctype)
 		frappe.local.response.type = "pdf"
 
 
@@ -578,30 +630,31 @@ def recipients(buyer):
 	return sorted(set(frappe.get_all("Employee", filters={"name": ("in", list(employees)), "user_id": ("is", "set")}, pluck="user_id")))
 
 
-def after_submit(opportunity):
-	"""After the request is saved: internal in-app + email (doc 5) and the buyer's email with
-	the acknowledgement PDF (doc 5.1). Never raises: the request itself is already saved."""
+def after_submit(quotation):
+	"""After the request is saved: internal in-app + email (doc 7.1, linking to the Quotation)
+	and the buyer's email with the acknowledgement PDF (doc 5.2, 7.2). Never raises: the request
+	itself is already saved."""
 	try:
-		opp = frappe.get_doc("Opportunity", opportunity)
-		buyer = frappe.get_doc("Buyer Master", opp.party_name)
-		bor = opp.custom_buyer_order_request_ref
-		units = cint(sum(flt(r.qty) for r in opp.items))
-		total = frappe.utils.fmt_money(_total(opp.name), currency="INR")
+		qtn = frappe.get_doc(DOCTYPE, quotation)
+		buyer = frappe.get_doc("Buyer Master", qtn.party_name)
+		bor = qtn.custom_buyer_order_request_ref
+		units = cint(sum(flt(r.qty) for r in qtn.items))
+		total = frappe.utils.fmt_money(_total(qtn.name), currency="INR")
 		subject = (
 			f"New Buyer Order Request {bor} submitted by {buyer.customer_business_name or buyer.customer} "
-			f"({units} units, Total: {total}). Click to review Opportunity."
+			f"({units} units, Total: {total}). Click to review Quotation."
 		)
 		from alpinos.production.notify import notify
 
-		notify([], subject, doctype="Opportunity", name=opp.name, email=True, users=recipients(buyer.name))
+		notify([], subject, doctype=DOCTYPE, name=qtn.name, email=True, users=recipients(buyer.name))
 		if buyer.get("email"):
 			frappe.sendmail(
 				recipients=[buyer.email],
 				subject=_("Order request {0} received").format(bor),
 				message=_("Your order request {0} has been received. Attached is your acknowledgement PDF.").format(bor),
-				attachments=[{"fname": f"{bor}.pdf", "fcontent": ack_pdf(opp.name)}],
-				reference_doctype="Opportunity",
-				reference_name=opp.name,
+				attachments=[{"fname": f"{bor}.pdf", "fcontent": ack_pdf(qtn.name)}],
+				reference_doctype=DOCTYPE,
+				reference_name=qtn.name,
 			)
 	except Exception:
-		frappe.log_error(title=f"Buyer Order Request notifications failed for {opportunity}")
+		frappe.log_error(title=f"Buyer Order Request notifications failed for {quotation}")

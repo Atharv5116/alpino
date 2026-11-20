@@ -225,22 +225,6 @@
    "indent": 0,
    "is_default_module": 0,
    "keep_closed": 0,
-   "label": "Opportunity",
-   "link_to": "Opportunity",
-   "link_type": "DocType",
-   "open_in_new_tab": 0,
-   "show_arrow": 0,
-   "type": "Link",
-   "icon": null
-  },
-  {
-   "added": 0,
-   "child": 1,
-   "collapsible": 1,
-   "hidden": 0,
-   "indent": 0,
-   "is_default_module": 0,
-   "keep_closed": 0,
    "label": "Quotation",
    "link_to": "Quotation",
    "link_type": "DocType",
@@ -400,7 +384,7 @@
    "url": "/desk/delivery-note/view/report"
   }
  ],
- "modified": "2026-11-14 13:00:00.000000",
+ "modified": "2026-11-20 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Alpino Sales & Dispatch",

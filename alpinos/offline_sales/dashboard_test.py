@@ -91,8 +91,9 @@ def _run():
 
 	def _roles():
 		sm, so = _keys(F.sm), _keys(F.so)
-		_assert({"K1", "K2", "K3", "K4", "K11"} <= set(sm), sorted(sm))
-		_assert(not {"K1", "K2", "K10"} & set(so) and {"K3", "K4", "K11"} <= set(so), sorted(so))
+		# no Opportunity cards (K3, K4) since the Opportunity is skipped (20 Nov 2026)
+		_assert({"K1", "K2", "K11"} <= set(sm) and not {"K3", "K4"} & set(sm), sorted(sm))
+		_assert(not {"K1", "K2", "K10", "K3", "K4"} & set(so) and {"K11"} <= set(so), sorted(so))
 		if have_q:
 			_assert({"K5", "K6", "K7", "K8", "K9", "K10"} <= set(sm) and {"K5", "K6", "K7", "K8", "K9"} <= set(so), (sorted(sm), sorted(so)))
 		err = ""
@@ -109,9 +110,10 @@ def _run():
 		pending = as_(F.sm, lambda: len(frappe.get_list("Buyer Master", filters={"buyer_status": "Pending Approval", "channel": ("!=", "E-com")},
 			pluck="name", limit_page_length=0)))
 		_assert(sm["K1"]["count"] == pending, (sm["K1"]["count"], pending))
-		drafts = as_(F.sm, lambda: len(frappe.get_list("Opportunity", filters={"custom_opportunity_status": "Pending (Draft)"}, pluck="name",
-			limit_page_length=0)))
-		_assert(sm["K3"]["count"] == drafts, (sm["K3"]["count"], drafts))
+		if have_q:
+			drafts = as_(F.sm, lambda: len(frappe.get_list("Quotation", filters={"custom_quotation_status": "Draft"}, pluck="name",
+				limit_page_length=0)))
+			_assert(sm["K5"]["count"] == drafts, (sm["K5"]["count"], drafts))
 		_assert(sm["K1"]["link"] == {"doctype": "Buyer Master", "filters": {"buyer_status": "Pending Approval"}}, sm["K1"]["link"])
 
 	check("S8: card counts equal what the user's own filtered list shows; a card opens that list", _counts_match_lists)

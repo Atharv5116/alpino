@@ -69,6 +69,9 @@ def run():
 	frappe.set_user("Administrator")
 	real_commit = frappe.db.commit
 	frappe.db.commit = lambda *a, **k: None
+	# these checks create Sales Orders on the entry page directly; the "Sales Order only from a
+	# Quotation" switch (so_handoff_test covers it) is off for the run, which is rolled back
+	frappe.db.set_single_value("Offline Sales Settings", "quotation_required_for_sales_order", 0)
 	try:
 		_run()
 	finally:
@@ -624,17 +627,28 @@ def _gate():
 	def _quotation():
 		from alpinos.offline_sales.catalog_gate import quotation_validate
 
+		from alpinos.offline_sales.catalog_gate import readiness
+
+		# the Opportunity is skipped (20 Nov 2026): a Draft Quotation may wait for the approval and
+		# the catalogue; Start Negotiation / Finalize may not; On Hold / Inactive / Cancelled refuse
 		b = new_buyer(F.so1.user).name
 		q = frappe.new_doc("Quotation")
 		q.quotation_to = "Buyer Master"
 		q.party_name = b
-		_assert("Buyer Approval & Buyer Catalog creation is pending" in refused(lambda: quotation_validate(q)), "Quotation allowed")
+		_assert(not refused(lambda: quotation_validate(q)), "Draft Quotation for a Pending buyer refused")
 		_assert(q.custom_buyer_master == b, "custom_buyer_master not filled")
+		_assert("Buyer Approval & Buyer Catalog creation is pending" in (readiness(b, "Quotation", action="finalized") or ""), "Finalize not held")
+		set_status(b, "Approved", "Pending")
+		_assert(not refused(lambda: quotation_validate(q)), "Draft Quotation for a catalogue-pending buyer refused")
+		_assert("mandatory Buyer Catalog setup is pending" in (readiness(b, "Quotation", action="finalized") or ""), "Finalize not held for the catalogue")
+		set_status(b, "On Hold")
+		_assert("On Hold" in refused(lambda: quotation_validate(q)), "Quotation for an On Hold buyer allowed")
 		set_status(b, "Approved", "Completed")
 		_assert(not refused(lambda: quotation_validate(q)), "ready buyer's Quotation refused")
+		_assert(not readiness(b, "Quotation", action="finalized"), "ready buyer held")
 		_assert(q.custom_secondary_poc == F.sa1.emp, "Secondary POC not carried to the Quotation")
 
-	check("4.4 / 6.1 a Quotation needs an Approved buyer with its catalogue", _quotation)
+	check("4.4 / 6.1 a Draft Quotation may wait for approval and catalogue; Finalize may not; On Hold refused", _quotation)
 
 
 def _catalog():
@@ -904,8 +918,9 @@ def _real_flows():
 			"custom_payment_mode": "Debit",  # Advance / Partial need a proof attachment
 			"custom_expected_payment_date": add_days(today(), 5),
 			"items": [{"item_code": ref.item_code, "qty": 1, "rate": ref.mrp}]}
+		set_status(p.name, "On Hold")
 		err = refused(lambda: frappe.get_doc(dict(q)).insert(ignore_permissions=True))
-		_assert("Buyer Approval & Buyer Catalog creation is pending" in err, f"Quotation for a Pending buyer: {err}")
+		_assert("On Hold" in err, f"Quotation for an On Hold buyer: {err}")
 		set_status(p.name, "Approved", "Completed")
 		doc = frappe.get_doc(dict(q))
 		err = refused(lambda: doc.insert(ignore_permissions=True))
@@ -915,7 +930,7 @@ def _real_flows():
 			_assert(saved.custom_buyer_master == p.name and saved.custom_secondary_poc == F.sa1.emp, str(saved))
 			F.flow_quotation, F.flow_quotation_buyer = doc.name, p.name
 
-	check("6.1 real Quotation save: refused for a Pending buyer, carries Buyer + Secondary POC when ready", _quotation_real)
+	check("6.1 real Quotation save: refused for an On Hold buyer, carries Buyer + Secondary POC when ready", _quotation_real)
 
 	def _quotation_follows_spoc():
 		_assert(F.get("flow_quotation"), "no Quotation from the step before")

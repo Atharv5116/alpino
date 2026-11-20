@@ -2,7 +2,8 @@
 
 Opportunity: Opportunity ID, Source, Buyer Order Request Ref., Status (badge), Customer, Customer
 Type, Site Name, Total Amount, Linked Quotation; filters on each but Total Amount; newest first.
-Quotation: Quotation ID, Opportunity ID, Customer, Quotation Status (badge), Payment Term, Payment
+Quotation: Quotation ID, Source, Buyer Order Request Ref (in place of the Opportunity ID: the
+Opportunity is skipped since 20 Nov 2026), Customer, Quotation Status (badge), Payment Term, Payment
 Status (badge, a separate column: never merged with the Quotation Status), Grand Total, Sales Order
 ID; Force Complete Applied is a filter, never a status. Badges: public/js/opportunity_list.js and
 public/js/quotation_list.js. Applied by after_migrate through Property Setters (fields that do not
@@ -30,20 +31,22 @@ OPPORTUNITY = {
 
 
 QUOTATION = {
-	# Quotation ID, Opportunity ID, Customer, Quotation Status (badge), Payment Term, Payment Status
-	# (badge), Grand Total, Sales Order ID; Force Complete Applied as a filter
+	# Quotation ID, Customer, Quotation Status (badge), Payment Term, Payment Status (badge), Grand
+	# Total, Sales Order ID; Force Complete Applied as a filter. The Opportunity is skipped (20 Nov
+	# 2026), so the Opportunity ID column gives way to what the Opportunity list showed of a
+	# buyer's request: Source and Buyer Order Request Ref.
 	"list": [
-		"opportunity", "customer_name", "custom_payment_term", "custom_payment_status", "grand_total",
-		"custom_linked_sales_order",
+		"custom_quotation_source", "custom_buyer_order_request_ref", "customer_name", "custom_payment_term",
+		"custom_payment_status", "grand_total", "custom_linked_sales_order",
 	],
-	"not_list": ["status", "transaction_date", "quotation_to", "party_name", "title"],
+	"not_list": ["status", "transaction_date", "quotation_to", "party_name", "title", "opportunity"],
 	"filters": [
-		"opportunity", "party_name", "custom_quotation_status", "custom_payment_term", "custom_payment_status",
-		"custom_linked_sales_order", "custom_force_complete_applied",
+		"custom_quotation_source", "custom_buyer_order_request_ref", "party_name", "custom_quotation_status",
+		"custom_payment_term", "custom_payment_status", "custom_linked_sales_order", "custom_force_complete_applied",
 	],
-	"not_filters": ["status"],
-	"labels": {"opportunity": "Opportunity ID", "customer_name": "Customer", "custom_linked_sales_order": "Sales Order ID"},
-	"search_fields": "customer_name,party_name,opportunity,custom_linked_sales_order",
+	"not_filters": ["status", "opportunity"],
+	"labels": {"customer_name": "Customer", "custom_linked_sales_order": "Sales Order ID"},
+	"search_fields": "customer_name,party_name,custom_buyer_order_request_ref,custom_linked_sales_order",
 	"id_first": True,
 }
 

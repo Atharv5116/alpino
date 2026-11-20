@@ -8,8 +8,10 @@ The 6.1 grid, without the Opportunity columns (the Opportunity module is not par
     Approved + Buyer Catalog Completed   allowed        allowed
     On Hold / Inactive / Cancelled       BLOCKED        BLOCKED
 
-A Sales Order is checked when it is created and when it is submitted, a Quotation when it is
-created. Old buyers carry Approved / Completed (the migration), and a blank status counts the
+A Sales Order is checked when it is created and when it is submitted. A Quotation: since the
+Opportunity is skipped (20 Nov 2026) a Draft may be saved for a buyer still Pending Approval or
+with the Buyer Catalog Pending (On Hold / Inactive / Cancelled are refused); Start Negotiation
+and Finalize Quotation need the approval and the Buyer Catalog. Old buyers carry Approved / Completed (the migration), and a blank status counts the
 same, so nothing selling today stops. E-com buyers and E-com orders are never checked.
 
 The Buyer Catalog is the Buyer Items record of the buyer's Customer, plus the SKU margins on
@@ -40,8 +42,12 @@ SO_BUYER_FIELD = "custom_offline_buyer_master"
 QUOTATION_BUYER_FIELD = "custom_buyer_master"
 
 
-def readiness(buyer, purpose):
-	"""None when `buyer` may be used for a new `purpose` transaction, else the reason why not."""
+def readiness(buyer, purpose, action=None, draft=False):
+	"""None when `buyer` may be used for a new `purpose` transaction, else the reason why not.
+
+	`action` replaces "created" in the approval / catalogue message ("finalized", ...). `draft`:
+	only the statuses that stop all sales (On Hold, Inactive, Cancelled) count; a Draft Quotation
+	may wait for the approval and the Buyer Catalog (the Opportunity is skipped, 20 Nov 2026)."""
 	if not buyer:
 		return None
 	row = frappe.db.get_value(
@@ -56,10 +62,13 @@ def readiness(buyer, purpose):
 		return _("This Buyer is currently Inactive and cannot be used for new sales transactions until a Sales Manager or Sales Admin reactivates it.")
 	if status == CANCELLED:
 		return _("This Buyer is Cancelled and cannot be used for new sales transactions. Create a new Buyer Master if business with this customer starts again.")
+	if draft:
+		return None
+	verb = action or _("created")
 	if status == PENDING:
-		return _("{0} cannot be created because linked Buyer Approval & Buyer Catalog creation is pending.").format(purpose)
+		return _("{0} cannot be {1} because linked Buyer Approval & Buyer Catalog creation is pending.").format(purpose, verb)
 	if catalog_of(row.buyer_catalog_status) != CATALOG_COMPLETED:
-		return _("{0} cannot be created because mandatory Buyer Catalog setup is pending.").format(purpose)
+		return _("{0} cannot be {1} because mandatory Buyer Catalog setup is pending.").format(purpose, verb)
 	return None
 
 
@@ -115,7 +124,12 @@ def quotation_validate(doc, method=None):
 	if meta.has_field("custom_secondary_poc"):
 		doc.set("custom_secondary_poc", frappe.db.get_value("Buyer Master", buyer, "secondary_poc") if buyer else None)
 	if doc.is_new() and not doc.flags.ignore_buyer_readiness:
-		assert_buyer_ready(quotation_buyer(doc), _("Quotation"))
+		# a Draft may wait for the buyer's approval and Buyer Catalog; Start Negotiation and
+		# Finalize Quotation check those (alpinos.offline_sales.quotation)
+		reason = readiness(quotation_buyer(doc), _("Quotation"), draft=True)
+		if reason:
+			name = frappe.db.get_value("Buyer Master", quotation_buyer(doc), "customer_business_name") or quotation_buyer(doc)
+			frappe.throw(f"{frappe.bold(name)}: {reason}", title=_("Buyer Not Ready"))
 
 
 # ----------------------------------------------------------------------------- Buyer Catalog
