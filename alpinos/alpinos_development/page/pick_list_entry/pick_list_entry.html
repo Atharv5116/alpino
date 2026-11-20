@@ -121,10 +121,17 @@
 		min-width: 72px;
 		width: 72px;
 	}
+	/* The Box input must show the whole value, two or three digits and decimals (18.5):
+	   at 58px it showed only the first digit on smaller screens. */
 	.sku-table th.col-box,
 	.sku-table td.col-box {
-		min-width: 58px;
-		width: 58px;
+		min-width: 88px;
+		width: 88px;
+	}
+	.sku-table input.box-input {
+		min-width: 70px;
+		padding-left: 6px;
+		padding-right: 4px;
 	}
 	/* Changes(HP) #55: the FSN sits under the SKU code, quieter than it. */
 	.sku-table .sku-fsn {
