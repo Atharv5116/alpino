@@ -116,10 +116,16 @@
 		min-width: 210px;
 		width: 22%;
 	}
+	/* Picked Qty is an input like Box: four digits (1296) were cut off at 72px */
 	.sku-table th.col-qty,
 	.sku-table td.col-qty {
-		min-width: 72px;
-		width: 72px;
+		min-width: 88px;
+		width: 88px;
+	}
+	.sku-table input.qty-input {
+		min-width: 70px;
+		padding-left: 6px;
+		padding-right: 4px;
 	}
 	/* The Box input must show the whole value, two or three digits and decimals (18.5):
 	   at 58px it showed only the first digit on smaller screens. */
