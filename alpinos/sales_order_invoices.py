@@ -12,8 +12,13 @@ custom_invoice_no stays exactly as it is, and an order with one invoice and no t
 still reads correctly through the fallback below. Nothing has to be migrated for the list
 to keep working.
 
-Part numbers follow the same ordering #63 uses for the Accounts Format Report -- the
-submitted Pick Lists oldest dispatch first -- so Part 1 means the same thing in both places.
+Nothing writes the table yet: the Invoice Mapping upload stamps part 1's invoice on the order
+(and its Pick List) and a later part's, SOR-.../2, /3, on that part's Pick List (Changes(HP)
+#125). So the popup also lists the invoices on the order's Pick Lists, each number once.
+
+Part numbers follow the Accounts Format Report: a Partial PO order's SOR-.../2, /3
+references, else the submitted Pick Lists oldest dispatch first (#63), so Part 2 means the
+same thing in both places.
 """
 
 import frappe
@@ -24,7 +29,17 @@ INVOICE_TABLE = "custom_invoices"
 
 
 def _parts_for(sales_order):
-	"""{pick list: part number}, oldest dispatch first. Matches #63's ordering."""
+	"""{pick list: part number}.
+
+	A Partial PO order is numbered as the Accounts Format Report references it (SOR-.../2, /3,
+	Changes(HP) #125: the order the Pick Lists were made), so Part 2 here is the part the
+	accounts team uploaded SOR-.../2 for. Any other order, oldest dispatch first as #63.
+	"""
+	from alpinos.partial_po_ref import part_numbers
+
+	numbers = part_numbers(sales_order)
+	if numbers:
+		return numbers
 	rows = frappe.db.sql(
 		"""
 		SELECT name FROM `tabPick List`
@@ -36,13 +51,65 @@ def _parts_for(sales_order):
 	return {r[0]: i for i, r in enumerate(rows, start=1)}
 
 
+def _part_invoices(sales_orders):
+	"""{sales order: {pick list: invoice no}} for the invoices recorded on the orders' parts.
+
+	The Invoice Mapping upload puts a later part's invoice (SOR-.../2, /3) on that part's Pick
+	List, and part 1's on both the order and its Pick List (Changes(HP) #125). A part whose
+	Pick List has none may carry it on the Delivery Note raised from it: the same rule as the
+	Accounts Format Report's Invoice No per part (#63).
+	"""
+	if not sales_orders:
+		return {}
+	pls = frappe.db.sql(
+		"""
+		SELECT name, custom_sales_order_id AS so, custom_invoice_no AS inv
+		FROM `tabPick List`
+		WHERE custom_sales_order_id IN %(names)s AND docstatus = 1
+		""",
+		{"names": tuple(sales_orders)}, as_dict=True,
+	)
+	blank = [p.name for p in pls if not (p.inv or "").strip()]
+	from_dn = {}
+	if blank:
+		for r in frappe.db.sql(
+			"""
+			SELECT dni.against_pick_list AS pl, dn.custom_invoice_no AS inv
+			FROM `tabDelivery Note` dn
+			INNER JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
+			WHERE dni.against_pick_list IN %(pls)s AND dn.docstatus < 2
+				AND IFNULL(dn.custom_invoice_no, '') <> ''
+			ORDER BY dn.modified DESC
+			""",
+			{"pls": tuple(blank)}, as_dict=True,
+		):
+			from_dn.setdefault(r.pl, r.inv.strip())
+	out = {}
+	for p in pls:
+		inv = (p.inv or "").strip() or from_dn.get(p.name, "")
+		if inv:
+			out.setdefault(p.so, {})[p.name] = inv
+	return out
+
+
+def _attached_pdf(sales_order, invoice_no):
+	"""The PDF the invoice sync attached to the order for a later part (named <invoice no>.pdf)."""
+	ext = frappe.db.get_single_value("Invoice Sync Settings", "pdf_extension") or ".pdf"
+	return frappe.db.get_value(
+		"File",
+		{"attached_to_doctype": "Sales Order", "attached_to_name": sales_order, "file_name": f"{invoice_no}{ext}"},
+		"file_url",
+	) or ""
+
+
 @frappe.whitelist()
 def get_sales_order_invoices(sales_order):
 	"""Every invoice linked to this Sales Order, with its part number and download link.
 
-	Returns the table rows when there are any, and otherwise falls back to the single
-	invoice the order has always carried -- so this reads correctly for the whole history
-	without a migration.
+	Reads the table rows, then the invoices recorded on the order's Pick Lists (where the
+	Invoice Mapping upload puts SOR-.../2, /3), then the single invoice the order has always
+	carried, each number once -- so this reads correctly for the whole history without a
+	migration.
 	"""
 	so = frappe.db.get_value(
 		"Sales Order", sales_order,
@@ -75,17 +142,42 @@ def get_sales_order_invoices(sales_order):
 			"invoice_pdf": r.invoice_pdf or "",
 		})
 
-	if not invoices and (so.custom_invoice_no or "").strip():
-		# The order's single invoice, shown the same way so one popup serves both shapes.
+	seen = {i["invoice_no"] for i in invoices}
+	own = (so.custom_invoice_no or "").strip()
+	on_parts = _part_invoices([sales_order]).get(sales_order, {})
+	for pl, inv in sorted(on_parts.items(), key=lambda kv: parts.get(kv[0], 0)):
+		if inv in seen:
+			continue
+		seen.add(inv)
+		part = parts.get(pl, 0) if len(parts) > 1 else 0
 		invoices.append({
-			"invoice_no": so.custom_invoice_no.strip(),
-			"part_no": 1 if len(parts) > 1 else 0,
-			"part_label": _("Part 1") if len(parts) > 1 else "",
+			"invoice_no": inv,
+			"part_no": part,
+			"part_label": _("Part {0}").format(part) if part else "",
 			"invoice_date": "",
-			"invoice_amount": flt(so.custom_total_invoice_value),
+			"invoice_amount": 0,
+			"pick_list": pl,
+			"invoice_pdf": (so.custom_invoice_pdf if inv == own else _attached_pdf(sales_order, inv)) or "",
+		})
+
+	if own and own not in seen:
+		# The order's own invoice, shown the same way so one popup serves both shapes.
+		first = len(parts) > 1 and all(i["part_no"] != 1 for i in invoices)
+		invoices.append({
+			"invoice_no": own,
+			"part_no": 1 if first else 0,
+			"part_label": _("Part 1") if first else "",
+			"invoice_date": "",
+			"invoice_amount": 0,
 			"pick_list": "",
 			"invoice_pdf": so.custom_invoice_pdf or "",
 		})
+
+	if len(invoices) == 1 and not invoices[0]["invoice_amount"] and invoices[0]["invoice_no"] == own:
+		# The order's Total Invoice Value is the whole order's; it is that invoice's amount only
+		# when the order has one invoice. Against one of several it would read as that part's.
+		invoices[0]["invoice_amount"] = flt(so.custom_total_invoice_value)
+	invoices.sort(key=lambda i: i["part_no"])
 
 	return {
 		"sales_order": sales_order,
@@ -171,23 +263,25 @@ def invoice_counts(sales_orders):
 	if not names:
 		return {}
 
-	counts = {}
+	# The same numbers the popup lists, each once: the table rows, the invoices on the orders'
+	# Pick Lists (SOR-.../2, /3 from the Invoice Mapping upload) and each order's own invoice.
+	numbers = {}
 	for r in frappe.db.sql(
 		"""
-		SELECT parent, COUNT(*) AS n FROM `tabSales Order Invoice`
+		SELECT parent, invoice_no FROM `tabSales Order Invoice`
 		WHERE parenttype = 'Sales Order' AND parent IN %(names)s
-		GROUP BY parent
 		""",
 		{"names": tuple(names)}, as_dict=True,
 	):
-		counts[r.parent] = cint(r.n)
-	# An order with no table rows still has its single invoice, if it carries one.
+		numbers.setdefault(r.parent, set()).add((r.invoice_no or "").strip())
+	for so, by_part in _part_invoices(names).items():
+		numbers.setdefault(so, set()).update(by_part.values())
 	for r in frappe.db.sql(
 		"""
-		SELECT name FROM `tabSales Order`
+		SELECT name, custom_invoice_no FROM `tabSales Order`
 		WHERE name IN %(names)s AND IFNULL(custom_invoice_no, '') <> ''
 		""",
 		{"names": tuple(names)}, as_dict=True,
 	):
-		counts.setdefault(r.name, 1)
-	return counts
+		numbers.setdefault(r.name, set()).add(r.custom_invoice_no.strip())
+	return {so: len(nos - {""}) for so, nos in numbers.items() if nos - {""}}
