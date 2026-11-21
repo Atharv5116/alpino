@@ -44,6 +44,7 @@ def run():
 	try:
 		_run()
 		_from_the_upload()
+		_si_button()
 	finally:
 		frappe.db.commit = real_commit
 		frappe.db.rollback()
@@ -271,3 +272,83 @@ def _from_the_upload():
 		_assert(got == [("12500", "Part 1"), ("12501", "Part 2")], got)
 
 	check("#51 a part's invoice on its Delivery Note is listed, as the Accounts Format Report reads it", _from_a_delivery_note)
+
+
+def _si_button():
+	"""The SI button of the Sales Order lists (Drashti, 21 Nov: "only one invoice downloads"):
+	the list says how many invoices an order has, and each one downloads its own PDF."""
+	import os
+
+	from frappe.utils.file_manager import save_file
+
+	from alpinos import sales_order_api as A
+	from alpinos import sales_order_invoices as I
+
+	tag = "ISI" + frappe.generate_hash(length=4).upper()
+	wh = frappe.db.get_value("Warehouse", {"is_group": 0}, ["name", "company"], as_dict=True)
+	company = wh.company if wh else frappe.defaults.get_global_default("company")
+	so = _insert("Sales Order", name=f"SOR-{tag}", docstatus=1, company=company, customer="Cust",
+		transaction_date=today(), custom_partial_order_allowed=1, custom_invoice_no=f"{tag}1")
+	_insert("Pick List", name=f"PLS-{tag}-1", docstatus=1, company=company, custom_sales_order_id=so,
+		purpose="Delivery", creation="2026-11-20 10:00:00", custom_invoice_no=f"{tag}1")
+	_insert("Pick List", name=f"PLS-{tag}-2", docstatus=1, company=company, custom_sales_order_id=so,
+		purpose="Delivery", creation="2026-11-20 11:00:00", custom_invoice_no=f"{tag}2")
+	def _pdf(title):
+		from io import BytesIO
+
+		from pypdf import PdfWriter
+
+		w = PdfWriter()
+		w.add_blank_page(width=72, height=72)
+		w.add_metadata({"/Title": title})
+		out = BytesIO()
+		w.write(out)
+		return out.getvalue()
+
+	pdf1, pdf2 = _pdf(f"{tag} part one"), _pdf(f"{tag} part two")
+	files = []
+	try:
+		one = save_file(f"{tag}1.pdf", pdf1, "Sales Order", so, is_private=1)
+		two = save_file(f"{tag}2.pdf", pdf2, "Sales Order", so, is_private=1)
+		files = [one, two]
+		frappe.db.set_value("Sales Order", so, "custom_invoice_pdf", one.file_url, update_modified=False)
+
+		def _download(invoice_no=None):
+			"""(file name, which part's PDF it is) -- the PDFs carry their part in the title."""
+			frappe.local.response = frappe._dict()
+			A.download_single_invoice(so, invoice_no)
+			body = frappe.local.response.filecontent
+			part = "one" if b"part one" in body else "two" if b"part two" in body else "?"
+			return frappe.local.response.filename, part
+
+		def _each_downloads_its_own():
+			_assert(_download() == (f"{so} - {tag}1.pdf", "one"), _download())
+			_assert(_download(f"{tag}2") == (f"{so} - {tag}2.pdf", "two"), _download(f"{tag}2"))
+			_assert(_download(f"{tag}1") == (f"{so} - {tag}1.pdf", "one"), _download(f"{tag}1"))
+
+		check("#51 SI: each invoice of the order downloads its own PDF", _each_downloads_its_own)
+
+		def _foreign_number_refused():
+			try:
+				_download("NOT-THIS-ORDER")
+			except frappe.ValidationError as e:
+				_assert("is not linked to" in str(e), str(e))
+				return
+			raise AssertionError("an invoice of no part of this order was downloaded")
+
+		check("#51 SI: a number that is not this order's is refused", _foreign_number_refused)
+
+		def _list_row_count():
+			rows = A.get_sales_order_entry_list(search=so, show_all=1, page_length=5)["data"]
+			row = next((r for r in rows if r.get("name") == so), None)
+			_assert(row, f"{so} not in the list")
+			_assert(row["invoice_count"] == 2 and row["has_invoice_pdf"] == 1, (row.get("invoice_count"), row.get("has_invoice_pdf")))
+
+		check("#51 SI: the order list row says 2 invoices, so the button reads SI (2)", _list_row_count)
+	finally:
+		import glob
+
+		folder = frappe.get_site_path("private", "files")
+		for path in {frappe.get_site_path(f.file_url.lstrip("/")) for f in files} | set(glob.glob(os.path.join(folder, f"{tag}*"))):
+			if os.path.exists(path):
+				os.remove(path)

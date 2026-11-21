@@ -66,6 +66,8 @@ app_include_js = [
 	_asset("js/offline_sales.js"),
 	# Changes(HP) #105: bulk Reject / Cancel on the Sales Order lists (System Manager).
 	_asset("js/so_bulk_actions.js"),
+	# Changes(HP) #51: the SI button of the Sales Order lists lists every part's invoice.
+	_asset("js/order_invoices.js"),
 	# Changes(HP) #111: page numbers / first / last / go to page on the list pages.
 	_asset("js/alpinos_pager.js"),
 	# Changes(HP) #64: "Name (Buyer ID)" on the Pick List / Delivery Note / Sales Order screens.
