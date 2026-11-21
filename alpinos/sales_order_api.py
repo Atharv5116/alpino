@@ -1207,10 +1207,13 @@ def sales_invoices_availability(names):
 
 
 @frappe.whitelist()
-def download_single_invoice(name):
+def download_single_invoice(name, invoice_no=None):
 	"""Download one Sales Order's fetched invoice PDF (the per-row SI button), and record
 	the download for this user so it drops off their Pending Invoice Downloads list.
-	Never blocks, so it can be reused."""
+	Never blocks, so it can be reused.
+
+	invoice_no picks one of the order's invoices when it has one per part (Changes(HP) #51:
+	SOR-.../2's invoice sits on its Pick List, its PDF attached to the order)."""
 	from frappe.utils.file_manager import get_file
 
 	if not name or not frappe.db.exists("Sales Order", name):
@@ -1221,12 +1224,22 @@ def download_single_invoice(name):
 		"Sales Order", name, ["custom_invoice_pdf", "custom_invoice_no"], as_dict=True
 	) or {}
 	file_url = (row.get("custom_invoice_pdf") or "").strip()
+	invoice_no = (invoice_no or "").strip()
+	if invoice_no and invoice_no != (row.get("custom_invoice_no") or "").strip():
+		from alpinos.sales_order_invoices import get_sales_order_invoices
+
+		match = next((i for i in get_sales_order_invoices(name)["invoices"] if i["invoice_no"] == invoice_no), None)
+		if not match:
+			frappe.throw(_("Invoice {0} is not linked to {1}.").format(invoice_no, name))
+		file_url = (match.get("invoice_pdf") or "").strip()
+		if not file_url:
+			frappe.throw(_("Invoice {0} has no PDF yet.").format(invoice_no))
 	if not file_url:
 		frappe.throw(_("This Sales Order has no invoice PDF to download."))
 	content = get_file(file_url)[1]
 	if isinstance(content, str):
 		content = content.encode("utf-8")
-	base = _invoice_file_base(name, row.get("custom_invoice_no"))
+	base = _invoice_file_base(name, invoice_no or row.get("custom_invoice_no"))
 	from alpinos.alpinos_development.doctype.alpino_invoice_download.alpino_invoice_download import (
 		log as log_invoice_download,
 	)
@@ -2375,6 +2388,10 @@ def _attach_so_list_row_extras(rows):
 		fields=["name", "custom_invoice_no", "custom_invoice_pdf", "custom_invoice_downloaded"],
 	):
 		inv_meta[r.name] = r
+	# Changes(HP) #51: invoices per order, counting each part's (SOR-.../2, /3) -> "SI (2)"
+	from alpinos.sales_order_invoices import invoice_counts
+
+	inv_counts = invoice_counts(names) if names else {}
 
 	# ASN details live on Post Dispatch (one per dispatch); collect per SO for the list
 	asn_map = {}
@@ -2405,6 +2422,7 @@ def _attach_so_list_row_extras(rows):
 		meta = inv_meta.get(r.name) or {}
 		r["invoice_no"] = (meta.get("custom_invoice_no") or "")
 		r["has_invoice_pdf"] = 1 if (meta.get("custom_invoice_pdf") or "").strip() else 0
+		r["invoice_count"] = inv_counts.get(r.name, 0)
 		r["invoice_downloaded"] = 1 if meta.get("custom_invoice_downloaded") else 0
 		r["asn_details"] = asn_map.get(r.name) or []
 

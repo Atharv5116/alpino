@@ -294,17 +294,9 @@ var EcomSalesOrderListPage = class {
 			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
-		// downloads the already-fetched invoice PDF (no resync); marks it downloaded so bulk export skips it
-		this.wrapper.on('click', '.eso-list-si-btn', (e) => {
-			e.stopPropagation();
-			const so = String($(e.currentTarget).data('so') || '');
-			if (!so) return;
-			const w = window.open(
-				'/api/method/alpinos.sales_order_api.download_single_invoice?name=' + encodeURIComponent(so),
-				'_blank'
-			);
-			if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoice.'));
-		});
+		// downloads the already-fetched invoice PDF (no resync); marks it downloaded so bulk export skips it.
+		// An order with an invoice per part (Changes(HP) #51) opens the list of its invoices instead.
+		this.wrapper.on('click', '.eso-list-si-btn', (e) => alpinos.order_invoice_click(e));
 		// touch fallback: title= tooltips are unreachable on touch
 		this.wrapper.on('click', '.eso-asn', (e) => {
 			e.stopPropagation();
@@ -477,9 +469,9 @@ var EcomSalesOrderListPage = class {
 				if (d.pick_list && frappe.model.can_read('Pick List')) btns.push(mkList('PL', 'pick_list_list', __('Pick Lists for {0}', [d.name])));
 				if (d.delivery_note && frappe.model.can_read('Delivery Note')) btns.push(mkList('DN', 'delivery_note_entry_list', __('Delivery Notes for {0}', [d.name])));
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
-				if (d.has_invoice_pdf) {
-					btns.push(`<button type="button" class="btn btn-xs btn-default eso-list-si-btn" data-so="${esc(d.name)}" title="${esc(__('Download invoice PDF {0}', [d.invoice_no || '']))}">SI</button>`);
-				}
+				// Changes(HP) #51: "SI (2)" when the order has an invoice per part; it opens the list
+				const si = alpinos.order_invoice_button(d, 'eso-list-si-btn');
+				if (si) btns.push(si);
 				return btns.join(' ') || '—';
 			},
 			asn: (d) => {

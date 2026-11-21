@@ -44,6 +44,8 @@ app_include_js = [
 	"/assets/alpinos/js/alpinos_page_controls.js",
 	# Changes(HP) #105: bulk Reject / Cancel on the Sales Order lists (System Manager).
 	"/assets/alpinos/js/so_bulk_actions.js",
+	# Changes(HP) #51: the SI button of the Sales Order lists lists every part's invoice.
+	"/assets/alpinos/js/order_invoices.js",
 	# Changes(HP) #106: the Order Fulfilment Report's Accounts View.
 	"/assets/alpinos/js/ofr_accounts_view.js",
 	"/assets/alpinos/js/sales_order_hub_desk_v3.js",

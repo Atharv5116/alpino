@@ -599,17 +599,9 @@ var SalesOrderEntryListPage = class {
 			if (so) frappe.route_options = { sales_order: String(so) };
 			if (Array.isArray(route)) frappe.set_route(...route);
 		});
-		// downloads the already-fetched invoice PDF (no resync); marks the order downloaded so bulk export skips it
-		this.wrapper.on('click.solist', '.so-list-si-btn', (e) => {
-			e.stopPropagation();
-			const so = String($(e.currentTarget).data('so') || '');
-			if (!so) return;
-			const w = window.open(
-				'/api/method/alpinos.sales_order_api.download_single_invoice?name=' + encodeURIComponent(so),
-				'_blank'
-			);
-			if (!w) frappe.msgprint(__('Please allow pop-ups to download the invoice.'));
-		});
+		// downloads the already-fetched invoice PDF (no resync); marks the order downloaded so bulk export skips it.
+		// An order with an invoice per part (Changes(HP) #51) opens the list of its invoices instead.
+		this.wrapper.on('click.solist', '.so-list-si-btn', (e) => alpinos.order_invoice_click(e));
 		this.wrapper.on('change.solist', '.so-list-select-all', (e) => {
 			const checked = $(e.target).prop('checked');
 			this.wrapper.find('.so-list-row-select').prop('checked', checked);
@@ -844,10 +836,9 @@ var SalesOrderEntryListPage = class {
 				if (d.sales_invoice && frappe.model.can_read('Sales Invoice')) {
 					btns.push(mk('INV', ['Form', 'Sales Invoice', d.sales_invoice], d.sales_invoice));
 				}
-				if (d.has_invoice_pdf) {
-					btns.push(`<button type="button" class="btn btn-xs btn-default so-list-si-btn"
-						data-so="${esc(d.name)}" title="${esc(__('Download invoice PDF {0}', [d.invoice_no || '']))}">SI</button>`);
-				}
+				// Changes(HP) #51: "SI (2)" when the order has an invoice per part; it opens the list
+				const si = alpinos.order_invoice_button(d, 'so-list-si-btn');
+				if (si) btns.push(si);
 				return btns.join(' ') || '—';
 			},
 		};
