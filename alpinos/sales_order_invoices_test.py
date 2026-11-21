@@ -211,12 +211,33 @@ def _from_the_upload():
 
 	def _each_part_has_its_pdf():
 		frappe.db.set_value("Sales Order", so, "custom_invoice_pdf", "/private/files/12306.pdf", update_modified=False)
-		_insert("File", name=f"FU{tag}", file_name="12307.pdf", file_url=f"/private/files/12307{tag}.pdf",
-			attached_to_doctype="Sales Order", attached_to_name=so, is_private=1)
+		# As on live: "12307.pdf" was taken, so Frappe saved it as 12307 + the hash's last 6 + .pdf
+		h = frappe.generate_hash(length=32)
+		_insert("File", name=f"FU{tag}", file_name=f"12307{h[-6:]}.pdf", file_url=f"/private/files/12307{h[-6:]}.pdf",
+			content_hash=h, attached_to_doctype="Sales Order", attached_to_name=so, is_private=1)
+		# a different invoice whose number starts the same is not taken for it
+		_insert("File", name=f"FV{tag}", file_name="123070.pdf", file_url="/private/files/123070.pdf",
+			content_hash=frappe.generate_hash(length=32), attached_to_doctype="Sales Order", attached_to_name=so, is_private=1)
+		frappe.db.set_value("File", f"FV{tag}", "creation", "2030-01-01 00:00:00", update_modified=False)
 		pdf = {i["invoice_no"]: i["invoice_pdf"] for i in I.get_sales_order_invoices(so)["invoices"]}
-		_assert(pdf == {"12306": "/private/files/12306.pdf", "12307": f"/private/files/12307{tag}.pdf"}, pdf)
+		_assert(pdf == {"12306": "/private/files/12306.pdf", "12307": f"/private/files/12307{h[-6:]}.pdf"}, pdf)
 
 	check("#51 each invoice downloads its own PDF (part 2's is the one the sync attached)", _each_part_has_its_pdf)
+
+	def _reupload_does_not_fetch_again():
+		fetched = []
+		saved = (S._drive_enabled, S._drive_service, S._fetch_invoice_pdf)
+		S._drive_enabled, S._drive_service = (lambda s: True), (lambda s: object())
+		S._fetch_invoice_pdf = lambda *a, **k: (fetched.append(a[4]) or ("/x.pdf", None))
+		try:
+			S._run_invoice_sync({f"{so}/2": "12307"})
+		finally:
+			S._drive_enabled, S._drive_service, S._fetch_invoice_pdf = saved
+		_assert(not fetched, f"the PDF was fetched again: {fetched}")
+		reason = frappe.db.get_value("Invoice Sync Log", {"order_id": so, "invoice_no": "12307"}, "reason", order_by="creation desc")
+		_assert("already present" in (reason or ""), reason)
+
+	check("#125 uploading SOR-.../2 again finds its PDF and does not attach a second copy", _reupload_does_not_fetch_again)
 
 	def _whole_order_value_not_put_on_one_part():
 		amounts = [i["invoice_amount"] for i in I.get_sales_order_invoices(so)["invoices"]]
