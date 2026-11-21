@@ -92,14 +92,23 @@ def _part_invoices(sales_orders):
 	return out
 
 
-def _attached_pdf(sales_order, invoice_no):
-	"""The PDF the invoice sync attached to the order for a later part (named <invoice no>.pdf)."""
+def attached_invoice_pdf(sales_order, invoice_no):
+	"""The PDF the invoice sync attached to the order for this invoice, or "".
+
+	The sync saves it as <invoice no>.pdf; Frappe adds the last 6 characters of the content
+	hash when that name is already taken (live: 1230756169c.pdf for invoice 12307).
+	"""
 	ext = frappe.db.get_single_value("Invoice Sync Settings", "pdf_extension") or ".pdf"
-	return frappe.db.get_value(
-		"File",
-		{"attached_to_doctype": "Sales Order", "attached_to_name": sales_order, "file_name": f"{invoice_no}{ext}"},
-		"file_url",
-	) or ""
+	row = frappe.db.sql(
+		"""
+		SELECT file_url FROM `tabFile`
+		WHERE attached_to_doctype = 'Sales Order' AND attached_to_name = %(so)s
+			AND (file_name = %(plain)s OR file_name = CONCAT(%(inv)s, RIGHT(content_hash, 6), %(ext)s))
+		ORDER BY creation DESC LIMIT 1
+		""",
+		{"so": sales_order, "plain": f"{invoice_no}{ext}", "inv": invoice_no, "ext": ext},
+	)
+	return (row[0][0] or "") if row else ""
 
 
 @frappe.whitelist()
@@ -157,7 +166,7 @@ def get_sales_order_invoices(sales_order):
 			"invoice_date": "",
 			"invoice_amount": 0,
 			"pick_list": pl,
-			"invoice_pdf": (so.custom_invoice_pdf if inv == own else _attached_pdf(sales_order, inv)) or "",
+			"invoice_pdf": (so.custom_invoice_pdf if inv == own else attached_invoice_pdf(sales_order, inv)) or "",
 		})
 
 	if own and own not in seen:

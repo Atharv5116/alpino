@@ -257,7 +257,9 @@ def _run_invoice_sync(mapping):
 				log_invoice_sync(so_id, invoice_no, "Failed", f"{ref} (Pick List {pick_list}): Invoice Drive sync not configured")
 				frappe.db.commit()
 				continue
-			if frappe.db.exists("File", {"attached_to_doctype": "Sales Order", "attached_to_name": so_id, "file_name": f"{invoice_no}{ext}"}):
+			from alpinos.sales_order_invoices import attached_invoice_pdf
+
+			if attached_invoice_pdf(so_id, invoice_no):
 				log_invoice_sync(so_id, invoice_no, "Success", f"{ref} (Pick List {pick_list}): Invoice PDF already present")
 				frappe.db.commit()
 				continue
