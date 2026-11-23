@@ -1738,7 +1738,21 @@ _PO_HTML_RAW = r"""
   {%- set words = (doc.in_words or "").replace("INR ", "").replace(",", "").replace(" And ", " ").replace(" only.", "").replace(" only", "").strip() -%}
   <div style="margin:-5px 0 9px;">Total Amount in Words: {{ words }} Indian Rupees Only</div>
 
-  <!-- ===== instructions (fixed text, as on the format the business supplied) ===== -->
+  <!-- ===== terms: the Company master Default Buying Terms; without one, the fixed
+       instructions the business supplied. Self-contained (no app Jinja method), so the
+       block can also be pasted into the Print Format on a site running older code. ===== -->
+  {% set _tc_name = frappe.db.get_value("Company", doc.company, "default_buying_terms") if doc.company else None %}
+  {% set _tc = frappe.db.get_value("Terms and Conditions", _tc_name, ["terms", "disabled"], as_dict=True) if _tc_name else None %}
+  {% if _tc and not _tc.disabled and (_tc.terms or "").strip() %}
+  <style>
+    .piw .po-terms p { margin: 0 0 2px; }
+    .piw .po-terms ol, .piw .po-terms ul { margin: 0; padding-left: 16px; }
+  </style>
+  <table class="avoid">
+    <tr><td class="sec">{{ _tc_name | upper }}</td></tr>
+    <tr><td class="po-terms">{{ frappe.render_template(_tc.terms, {"doc": doc}) | safe }}</td></tr>
+  </table>
+  {% else %}
   <table class="avoid">
     <tr><td class="sec">ENTERPRISE AUDIT &amp; STANDARD DELIVERY INSTRUCTIONS</td></tr>
     <tr><td>1. Inspection &amp; QA Release: Acceptance of materials is contingent upon receiving QA lab release. Unloading does not constitute final commercial acceptance. Materials failing COA specifications will be quarantined at supplier risk.</td></tr>
@@ -1746,6 +1760,7 @@ _PO_HTML_RAW = r"""
     <tr><td>3. Invoice Matching: The PO Number ({{ doc.name }}) and line item numbers must be explicitly stated on your tax invoice to avoid settlement delays in SAP automated clearing.</td></tr>
     <tr><td>4. Late Delivery / LD Clause: Liquidated damages equal to 0.5% per week of delay up to a maximum of 5% of order value will apply unless prior written waiver is granted.</td></tr>
   </table>
+  {% endif %}
 
   <!-- ===== signatures ===== -->
   <table class="avoid">
