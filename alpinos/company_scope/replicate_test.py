@@ -168,6 +168,7 @@ def _run():
 		row = frappe.db.sql(
 			"""SELECT ip.item_code, ip.uom, ip.price_list_rate FROM `tabItem Price` ip
 			   JOIN `tabItem Default` d ON d.parent = ip.item_code AND d.parenttype = 'Item' AND d.company = %s
+			   JOIN `tabItem` i ON i.name = ip.item_code AND i.disabled = 0 AND IFNULL(i.has_variants, 0) = 0
 			   WHERE ip.price_list = %s AND IFNULL(d.default_warehouse, '') != '' LIMIT 1""",
 			(TARGET, f"Standard Selling - {abbr}"), as_dict=True)
 		_assert(row, "no priced item with a default warehouse to try")

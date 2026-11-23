@@ -182,7 +182,7 @@ def _production_settings(ctx):
 	ps.append("company_warehouses", row)
 	ps.flags.ignore_permissions = True
 	ps.save()
-	ctx.report["production_settings"] = {k: v for k, v in row.items() if k != "company"}
+	ctx.report["production_settings"] = {k: v for k, v in row.items() if k not in ("company", "doctype")}
 
 
 # ── 4. Company defaults ──────────────────────────────────────────────────────
