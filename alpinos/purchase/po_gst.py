@@ -212,8 +212,51 @@ def _input_gst_accounts(company):
 
 
 def _is_inter_state(doc):
+	"""IGST or CGST + SGST? India Compliance's own answer when it has one.
+
+	India Compliance refuses CGST/SGST on an inter-state supply ("Row #1: Cannot charge
+	CGST/SGST for inter-state supplies"), judging by its Place of Supply and the supplier's
+	GSTIN. This used to compare the Supplier's and the Company's Tax IDs instead, and the two
+	disagreed for a company whose Tax ID is blank or differs from its address GSTIN -- an
+	order to a Mumbai supplier got CGST/SGST and then could not be saved. Asking India
+	Compliance makes them agree by construction; the Tax ID comparison is only the fallback
+	when it is not installed or has no Place of Supply yet.
+	"""
+	if doc.get("place_of_supply"):
+		try:
+			from india_compliance.gst_india.overrides.transaction import is_inter_state_supply
+
+			return bool(is_inter_state_supply(doc))
+		except Exception:
+			# Not installed, or a GSTIN it needs is missing: fall back to the Tax IDs.
+			pass
 	supplier_gstin, company_gstin = G._resolve_gstins(doc)
 	return G.gst_tax_category(supplier_gstin, company_gstin) == G.TAX_CATEGORY_OUT_STATE
+
+
+def drop_mismatched_gst_rows(doc, method=None):
+	"""before_validate: take off the module's GST rows when they are the wrong kind.
+
+	India Compliance validates the tax rows BEFORE this module rebuilds them (its validate
+	hook runs first), so an order saved with CGST/SGST that is really inter-state -- or IGST
+	that is really intra-state -- was refused on every later save and could never be
+	corrected. Removing them here lets apply_item_gst build the right ones on this save.
+	Only the module's own GST rows go, and only when one of them is the wrong kind.
+	"""
+	if doc.docstatus == 2 or not doc.get("taxes") or not doc.get("company"):
+		return
+	accounts = _accounts(doc.company)
+	if not all(h in accounts for h in _HEADS):
+		return
+	inter = _is_inter_state(doc)
+	wrong = {accounts["CGST"], accounts["SGST"]} if inter else {accounts["IGST"]}
+	if not any(t.account_head in wrong for t in doc.get("taxes")):
+		return
+	ours = set(accounts.values()) | _input_gst_accounts(doc.company)
+	kept = [t for t in doc.get("taxes") if t.account_head not in ours]
+	doc.set("taxes", kept)
+	for i, t in enumerate(doc.get("taxes"), 1):
+		t.idx = i
 
 
 TEMPLATE_PREFIX = "GST "

@@ -616,6 +616,9 @@ doc_events = {
 			# PO Type is multi-valued now. before_validate, so the reqd check and every
 			# rule below sees the one canonical shape whatever the caller sent.
 			"alpinos.purchase.purchase_order_fields.normalize_inward_type",
+			# GST rows of the wrong kind (CGST/SGST on an inter-state order, or the reverse)
+			# go before India Compliance's validate sees them; apply_item_gst rebuilds them.
+			"alpinos.purchase.po_gst.drop_mismatched_gst_rows",
 		],
 		"validate": [
 			"alpinos.purchase.purchase_order_fields.normalize_estimated_arrival",
