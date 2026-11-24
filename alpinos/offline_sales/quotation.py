@@ -334,6 +334,8 @@ def engine(doc, customer):
 	# the old Quotation breakdown (hidden; earlier print formats read it)
 	sub = over = extra = 0.0
 	for row in doc.get("items") or []:
+		# Changes(HP) #126: the Line Amount is shown GST inclusive (the net Amount + the line's GST)
+		row.custom_amount_incl_gst = flt(flt(row.get("amount")) + flt(row.get("custom_item_tax")), 2)
 		qty, mrp, sp = flt(row.get("qty")), flt(row.get("custom_mrp")), flt(row.get("custom_selling_price"))
 		sub += mrp * qty
 		over += max(mrp - sp, 0) * qty
@@ -373,6 +375,47 @@ def line_values(party_name, item_code, qty=0, mrp=None, site_name=None, quotatio
 		"mrp_options": p.mrp_options,
 		"needs_mrp": p.needs_mrp,
 	}
+
+
+#: what preview_totals hands back: the header totals and, per line, the amounts the save stores
+PREVIEW_FIELDS = (
+	"total", "net_total", "total_taxes_and_charges", "additional_discount_percentage", "apply_discount_on",
+	"discount_amount", "custom_cash_discount_amount", "grand_total", "rounding_adjustment", "rounded_total",
+	"in_words", "custom_gst_total", "custom_total_payable",
+)
+PREVIEW_ITEM_FIELDS = ("rate", "net_rate", "amount", "net_amount", "custom_item_tax", "custom_amount_incl_gst")
+
+
+@frappe.whitelist()
+def preview_totals(doc):
+	"""Changes(HP) #126: the totals the save will store, for the form while it is edited (Cash
+	Discount %, quantities, prices). The unsaved Quotation is priced by price(), as validate does;
+	nothing is written. Without it the form kept ERPNext's own totals, which leave the Cash Discount
+	out until the Quotation was saved."""
+	doc = frappe.parse_json(doc) if isinstance(doc, str) else doc
+	if not isinstance(doc, dict) or doc.get("doctype") != DOCTYPE:
+		frappe.throw(_("Not a Quotation."))
+	name = doc.get("name")
+	saved = name and not cstr(name).startswith("new-") and frappe.db.exists(DOCTYPE, name)
+	if saved:
+		frappe.has_permission(DOCTYPE, "write", name, throw=True)
+	elif not frappe.has_permission(DOCTYPE, "create"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	q = frappe.get_doc(doc)
+	if q.docstatus != 0 or status_of(q) not in EDITABLE:
+		return None
+	before = frappe.get_doc(DOCTYPE, name) if saved else None
+	try:
+		price(q, before)
+	except Exception:
+		# what the save would refuse (a Sales Officer's price change, a missing tax template):
+		# the save says it; a preview in the background stays quiet
+		frappe.clear_messages()
+		return None
+	out = {f: q.get(f) for f in PREVIEW_FIELDS}
+	out["taxes"] = [{"idx": t.idx, "tax_amount": flt(t.tax_amount), "total": flt(t.total)} for t in q.get("taxes") or []]
+	out["items"] = [{"idx": r.idx, **{f: r.get(f) for f in PREVIEW_ITEM_FIELDS}} for r in q.get("items") or []]
+	return out
 
 
 # ----------------------------------------------------------------------------- defaults

@@ -891,18 +891,52 @@ def address_query(doctype, txt, searchfield, start, page_len, filters):
 	if not names:
 		return []
 	txt = cstr(txt).lower().strip("%")
-	rows = frappe.get_all(
-		"Address", filters={"name": ("in", names)}, fields=["name", "address_line1", "city", "custom_site_name"]
-	)
+	rows = frappe.get_all("Address", filters={"name": ("in", names)}, fields=_address_fields())
 	order = {n: i for i, n in enumerate(names)}
 	rows.sort(key=lambda r: order.get(r.name, 0))
 	out = []
 	for r in rows:
-		text = ", ".join(v for v in (r.custom_site_name, r.address_line1, r.city) if v)
+		# Changes(HP) #126: the whole address under each option, not only its name
+		text = full_address_line(r)
 		if txt and txt not in (r.name + " " + text).lower():
 			continue
 		out.append((r.name, text))
 	return out[cint(start) : cint(start) + cint(page_len or 20)]
+
+
+ADDRESS_TEXT_FIELDS = ["name", "custom_site_name", "address_line1", "address_line2", "city", "state", "pincode", "country", "gstin"]
+
+
+def _address_fields():
+	"""ADDRESS_TEXT_FIELDS the site has (gstin comes with India Compliance)."""
+	meta = frappe.get_meta("Address")
+	return [f for f in ADDRESS_TEXT_FIELDS if f == "name" or meta.has_field(f)]
+
+
+def full_address_line(r):
+	"""One line: Site, Address Line 1, Line 2, City, State - PIN, GSTIN."""
+	place = " - ".join(v for v in (cstr(r.get("state")).strip(), cstr(r.get("pincode")).strip()) if v)
+	parts = [r.get("custom_site_name"), r.get("address_line1"), r.get("address_line2"), r.get("city"), place]
+	text = ", ".join(cstr(v).strip() for v in parts if cstr(v).strip())
+	if cstr(r.get("gstin")).strip():
+		text += f" | GSTIN {cstr(r.get('gstin')).strip()}"
+	return text
+
+
+@frappe.whitelist()
+def address_text(party_name, address):
+	"""The full address of a Billing / Shipping Address picked for a Buyer, shown under the field
+	(Changes(HP) #126). Same rule as address_query: read access to the Buyer, one of its addresses."""
+	from alpinos.sales_order_offline_buyer import site_address_options
+
+	if not party_name or not address or not frappe.has_permission("Buyer Master", "read", party_name):
+		return ""
+	customer = frappe.db.get_value("Buyer Master", party_name, "customer")
+	_billing, _shipping, every = site_address_options(customer, None)
+	if address not in every:
+		return ""
+	row = frappe.db.get_value("Address", address, _address_fields(), as_dict=True)
+	return full_address_line(row) if row else ""
 
 
 @frappe.whitelist()

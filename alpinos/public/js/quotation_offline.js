@@ -53,6 +53,73 @@
 		frappe.model.set_value(cdt, cdn, "discount_percentage", 0);
 		frappe.model.set_value(cdt, cdn, "price_list_rate", net);
 		frappe.model.set_value(cdt, cdn, "rate", net);
+		// Changes(HP) #126: the Line Amount is GST inclusive (Selling Price is); the preview then
+		// brings the exact figure the save stores
+		frappe.model.set_value(cdt, cdn, "custom_amount_incl_gst", flt(line * flt(row.qty), 2));
+		schedule_preview(frm);
+	}
+
+	// Changes(HP) #126: the totals as the save will store them, while the Quotation is edited.
+	// ERPNext's own form maths leaves the Cash Discount out until a save (it showed 0.00 and the
+	// full Grand Total), and its net amounts differ from the Selling Price based ones by paise.
+	const PREVIEW_HEAD = [
+		"total", "net_total", "total_taxes_and_charges", "discount_amount", "custom_cash_discount_amount",
+		"grand_total", "rounding_adjustment", "rounded_total", "in_words",
+	];
+	const PREVIEW_LINE = ["amount", "custom_item_tax", "custom_amount_incl_gst"];
+
+	function schedule_preview(frm) {
+		if (!editable(frm) || !frm.doc.party_name || !(frm.doc.items || []).some((r) => r.item_code)) return;
+		clearTimeout(frm.__preview_timer);
+		frm.__preview_timer = setTimeout(() => run_preview(frm), 400);
+	}
+
+	function run_preview(frm) {
+		const seq = (frm.__preview_seq = (frm.__preview_seq || 0) + 1);
+		frappe
+			.xcall(API + "preview_totals", { doc: frm.doc })
+			.then((r) => {
+				if (!r || seq !== frm.__preview_seq || !editable(frm)) return;
+				const { taxes, items, ...head } = r;
+				Object.assign(frm.doc, head);
+				const grid = frm.fields_dict.items && frm.fields_dict.items.grid;
+				(items || []).forEach((v) => {
+					const row = (frm.doc.items || []).find((x) => x.idx === v.idx);
+					if (!row) return;
+					Object.keys(v).forEach((k) => k !== "idx" && (row[k] = v[k]));
+					const grid_row = grid && grid.grid_rows_by_docname && grid.grid_rows_by_docname[row.name];
+					if (grid_row) PREVIEW_LINE.forEach((f) => grid_row.refresh_field(f));
+				});
+				if ((taxes || []).length === (frm.doc.taxes || []).length) {
+					taxes.forEach((v) => {
+						const t = frm.doc.taxes.find((x) => x.idx === v.idx);
+						if (t) Object.assign(t, { tax_amount: v.tax_amount, tax_amount_after_discount_amount: v.tax_amount, total: v.total });
+					});
+					frm.refresh_field("taxes");
+				}
+				PREVIEW_HEAD.forEach((f) => frm.fields_dict[f] && frm.refresh_field(f));
+			})
+			.catch(() => {});
+	}
+
+	// Changes(HP) #126: the full address of the Billing / Shipping Address picked, under the field
+	function show_full_address(frm, field) {
+		const ctl = frm.fields_dict[field];
+		if (!ctl) return;
+		const address = frm.doc[field];
+		if (!address || !is_obm(frm) || !frm.doc.party_name) {
+			frm.set_df_property(field, "description", "");
+			return;
+		}
+		frappe.xcall(OPP + "address_text", { party_name: frm.doc.party_name, address }).then((text) => {
+			if (frm.doc[field] !== address) return;
+			frm.set_df_property(field, "description", text ? `<span class="alpinos-full-address">${esc(text)}</span>` : "");
+		});
+	}
+
+	function show_addresses(frm) {
+		show_full_address(frm, "customer_address");
+		show_full_address(frm, "shipping_address_name");
 	}
 
 	function price_row(frm, cdt, cdn, fresh) {
@@ -562,6 +629,7 @@
 			};
 			setTimeout(tidy, 0);
 			frappe.after_ajax(() => setTimeout(tidy, 150));
+			show_addresses(frm);
 			const trail = frm.get_field("custom_activity_html");
 			if (trail && !frm.is_new() && window.alpinos_offline) {
 				alpinos_offline.render_trail(trail.$wrapper, "Quotation", frm.doc.name);
@@ -577,6 +645,23 @@
 
 		custom_site_name(frm) {
 			if (editable(frm) && frm.doc.party_name) apply_site_addresses(frm);
+		},
+
+		// Changes(HP) #126: the Cash Discount shows in the totals as soon as it is entered
+		custom_cash_discount(frm) {
+			schedule_preview(frm);
+		},
+
+		customer_address(frm) {
+			show_full_address(frm, "customer_address");
+		},
+
+		shipping_address_name(frm) {
+			show_full_address(frm, "shipping_address_name");
+		},
+
+		items_remove(frm) {
+			schedule_preview(frm);
 		},
 
 		party_name(frm) {

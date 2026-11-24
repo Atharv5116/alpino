@@ -97,7 +97,7 @@ HTML = r"""
 		<thead><tr>
 			<th style="width:4%;">#</th><th>SKU - SKU Name</th><th class="num">Qty</th><th class="num">MRP</th>
 			<th class="num">Selling Price</th><th class="num">Flat %</th><th class="num">Offer %</th><th class="num">Addl. %</th>
-			<th class="num">Amount</th>
+			<th class="num">Amount incl. GST</th>
 		</tr></thead>
 		<tbody>
 		{%- set ns = namespace(total=0) -%}

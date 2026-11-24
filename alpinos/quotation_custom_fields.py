@@ -728,10 +728,21 @@ def setup_quotation_custom_fields():
 				insert_after="custom_item_tax_percent",
 				read_only=1,
 			),
+			# Changes(HP) #126: the line as the buyer pays it, GST included (Net Amount + its Tax);
+			# the grid's Line Amount column. ERPNext's Amount stays the net value the taxes are on.
+			dict(
+				fieldname="custom_amount_incl_gst",
+				label="Line Amount incl. GST",
+				fieldtype="Currency",
+				options="currency",
+				insert_after="custom_item_tax",
+				read_only=1,
+			),
 		],
 	}
 
 	create_custom_fields(custom_fields, update=True)
+	_backfill_amount_incl_gst()
 	_ensure_quotation_partial_payment_fields_not_always_mandatory()
 	_fix_quotation_table_layout()
 	frappe.clear_cache(doctype="Quotation")
@@ -1074,14 +1085,27 @@ _LABELS = {
 	("Quotation", "net_total"): "Net Total",
 	("Quotation", "total_taxes_and_charges"): "Taxes & Charges",
 	("Quotation", "grand_total"): "Grand Total",
-	("Quotation Item", "amount"): "Line Amount",
+	("Quotation Item", "amount"): "Net Amount (Excl. GST)",
 	("Quotation", "custom_scheme_item_table"): "Scheme Items",
 }
 
 #: 6.1: SKU Code, SKU Name, Quantity, Box, MRP, Selling Price, Flat / Offer / Additional Discount %,
-#: Line Amount. Ten columns of one unit each fit the grid.
+#: Line Amount. Ten columns of one unit each fit the grid. The Line Amount is GST inclusive
+#: (Changes(HP) #126); ERPNext's net Amount was the column before and is taken out of it.
 _GRID = ["item_code", "item_name", "qty", "custom_boxes", "custom_mrp", "custom_selling_price",
-	"custom_flat_discount", "custom_offer", "custom_additional_discount", "amount"]
+	"custom_flat_discount", "custom_offer", "custom_additional_discount", "custom_amount_incl_gst"]
+_OFF_GRID = ["amount"]
+
+
+def _backfill_amount_incl_gst():
+	"""Quotation lines saved before the field: Net Amount + Tax, as quotation.engine stores it. A new
+	Currency column starts at 0, so 0 with an amount behind it is the unfilled case."""
+	if not frappe.db.has_column("Quotation Item", "custom_amount_incl_gst"):
+		return
+	frappe.db.sql(
+		"""UPDATE `tabQuotation Item` SET custom_amount_incl_gst = ROUND(IFNULL(amount, 0) + IFNULL(custom_item_tax, 0), 2)
+		   WHERE IFNULL(custom_amount_incl_gst, 0) = 0 AND IFNULL(amount, 0) + IFNULL(custom_item_tax, 0) != 0"""
+	)
 
 
 def _setup_offline_visibility():
@@ -1107,6 +1131,9 @@ def _setup_offline_visibility():
 		if item_meta.get_field(fieldname):
 			ps("Quotation Item", fieldname, "in_list_view", "1", "Check")
 			ps("Quotation Item", fieldname, "columns", "1", "Int")
+	for fieldname in _OFF_GRID:
+		if item_meta.get_field(fieldname):
+			ps("Quotation Item", fieldname, "in_list_view", "0", "Check")
 	# committed here: a later after_migrate step that rolls back must not take these with it
 	frappe.db.commit()
 	frappe.clear_cache(doctype="Quotation")

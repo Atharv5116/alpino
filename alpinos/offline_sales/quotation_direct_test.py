@@ -136,8 +136,10 @@ def _layout():
 	def _grid():
 		cols = [d.fieldname for d in frappe.get_meta("Quotation Item").fields if d.in_list_view and not d.hidden]
 		_assert(cols == ["item_code", "item_name", "qty", "custom_boxes", "custom_mrp", "custom_selling_price", "custom_flat_discount",
-			"custom_offer", "custom_additional_discount", "amount"], cols)
-		_assert(frappe.get_meta("Quotation Item").get_label("amount") == "Line Amount", "Line Amount")
+			"custom_offer", "custom_additional_discount", "custom_amount_incl_gst"], cols)
+		# Changes(HP) #126: the Line Amount column is GST inclusive; the net Amount is labelled as such
+		_assert(frappe.get_meta("Quotation Item").get_label("custom_amount_incl_gst") == "Line Amount incl. GST", "Line Amount")
+		_assert(frappe.get_meta("Quotation Item").get_label("amount") == "Net Amount (Excl. GST)", "Net Amount")
 
 	check("Layout: Order Items columns as 6.1 (Additional Discount % and Line Amount included)", _grid)
 
