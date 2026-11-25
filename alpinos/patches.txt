@@ -45,3 +45,4 @@ alpinos.patches.v2_0.offline_sales_build1
 alpinos.patches.v2_0.afr_pick_list_submitted_on
 alpinos.patches.v2_0.opportunity_workflow
 alpinos.patches.v2_0.quotation_payment_v2
+alpinos.patches.v2_0.my_leave_number_cards
