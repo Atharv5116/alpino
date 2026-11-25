@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 import frappe
@@ -246,28 +245,30 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 		next_month = getdate(f"{year}-{month + 1:02d}-01")
 	end_date = add_days(next_month, -1)
 
-	attendance = _get_attendance_map(employee, start_date, end_date)
-	attendance_shifts = _get_attendance_shift_map(employee, start_date, end_date)
+	details = _get_attendance_details(employee, start_date, end_date)
 	attendance_times = _get_attendance_times_map(employee, start_date, end_date)
 	checkins = _get_checkins_map(employee, start_date, end_date)
 	holidays = set(_get_holidays(employee, start_date, end_date))
-	wfh_dates = _get_wfh_dates(employee, start_date, end_date)
-
-	# Optional: late/early vs shift (requires hrms)
-	try:
-		from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
-		_has_shift = True
-	except Exception:
-		_has_shift = False
+	leave_days = _get_leave_days(employee, start_date, end_date)
+	wfh_days = _get_wfh_days(employee, start_date, end_date)
+	outside_geo = _get_outside_geo_map(employee, start_date, end_date)
 
 	result = {}
 	threshold_cache = {}
+	shift_cache = {}
 	current = start_date
 	while current <= end_date:
 		date_str = current.strftime("%Y-%m-%d")
-		status = attendance.get(current)
+		att = details.get(current)
+		status = (att or {}).get("status")
+		lv = leave_days.get(current)
+		wf = wfh_days.get(current)
+		leave_type = (att or {}).get("leave_type") or None
 		if not status and current in holidays:
 			status = "Holiday"
+		if not status and lv and not lv["half"]:
+			# an approved full-day leave not marked yet (a day ahead, or today): show it
+			status, leave_type = "On Leave", lv["leave_type"]
 
 		# Both times read the PUNCH first and fall back to the Attendance record, so the
 		# pair always comes from the same source. The out-time used to read Attendance
@@ -285,56 +286,55 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 
 		worked_minutes = None
 		late_coming = 0
+		late_minutes = None
 		early_leaving = 0
 		required_minutes = None
+		in_min = _clock_minutes(check_in_str)
+		out_min = _clock_minutes(check_out_str)
+		in_sec, out_sec = _clock_seconds(check_in_str), _clock_seconds(check_out_str)
+		if in_sec is not None and out_sec is not None and out_sec > in_sec:
+			worked_minutes = int((out_sec - in_sec) / 60)
 
-		if check_in_str and check_out_str:
-			try:
-				# Strip microseconds if present (e.g. "09:30:00.123456")
-				ci_norm = str(check_in_str).strip().split(".")[0]
-				co_norm = str(check_out_str).strip().split(".")[0]
-				t_in = datetime.strptime(ci_norm, "%H:%M:%S").time()
-				t_out = datetime.strptime(co_norm, "%H:%M:%S").time()
-				dt_in = datetime.combine(current, t_in)
-				dt_out = datetime.combine(current, t_out)
-				if dt_out > dt_in:
-					worked_minutes = int((dt_out - dt_in).total_seconds() / 60)
-			except Exception:
-				pass
+		# Every time on the day is read against THAT day's shift: the one its Attendance was
+		# marked under, else the employee's assigned / default shift at the punch.
+		shift = None
+		if check_in_str or (att or {}).get("status") == "Half Day" or (lv and lv["half"]) or (wf and wf["half"]):
+			shift = _day_shift(employee, current, (att or {}).get("shift"), shift_cache)
+		if shift and in_min is not None:
+			late_minutes = max(_from_shift_start(in_min, shift), 0)
+			# Late follows the Shift Type: only when HR switched late-entry marking on, and
+			# only past that shift's own grace period.
+			late_coming = 1 if shift["late_on"] and late_minutes > shift["grace"] else 0
+		if shift and out_min is not None and in_min is not None and worked_minutes is not None:
+			if _from_shift_start(out_min, shift) < shift["span"]:
+				early_leaving = 1
+		if worked_minutes is not None:
+			required_minutes = _full_day_minutes(shift["name"] if shift else None, current, threshold_cache)
 
-			day_shift = attendance_shifts.get(current)
-			if _has_shift and worked_minutes is not None:
-				try:
-					# any time on that day to resolve shift
-					ts = get_datetime(f"{date_str} 12:00:00")
-					shift = get_employee_shift(employee, ts, True)
-					if not day_shift and shift and shift.get("shift_type"):
-						day_shift = shift["shift_type"].name
-					if shift and shift.get("start_datetime") and shift.get("end_datetime"):
-						s_start = shift["start_datetime"]
-						s_end = shift["end_datetime"]
-						shift_start = datetime.combine(current, s_start.time())
-						shift_end = datetime.combine(current, s_end.time())
-						if dt_in > shift_start:
-							late_coming = 1
-						if dt_out < shift_end:
-							early_leaving = 1
-				except Exception:
-					pass
-
-			if worked_minutes is not None:
-				required_minutes = _full_day_minutes(day_shift, current, threshold_cache)
+		halves = _day_halves(att, lv, wf, in_min, out_min, shift)
+		geo = outside_geo.get(current) if not wf else None
 
 		result[date_str] = {
 			"status": status,
 			"check_in": check_in_str,
 			"check_out": check_out_str,
 			"holiday": 1 if current in holidays else 0,
-			"wfh": 1 if current in wfh_dates else 0,
+			"wfh": 1 if wf else 0,
+			"wfh_half": 1 if wf and wf["half"] else 0,
+			"leave_type": leave_type or (lv["leave_type"] if lv else None),
+			"halves": halves,
 			"worked_minutes": worked_minutes,
 			"required_minutes": required_minutes,
 			"late_coming": late_coming,
+			"late_minutes": late_minutes,
 			"early_leaving": early_leaving,
+			"shift": shift["name"] if shift else None,
+			"shift_start": shift["start_label"] if shift else None,
+			"shift_end": shift["end_label"] if shift else None,
+			"late_grace": shift["grace"] if shift else None,
+			"late_marking": 1 if shift and shift["late_on"] else 0,
+			"out_of_geo": 1 if geo else 0,
+			"geo_reason": (geo or {}).get("reason") if geo else None,
 		}
 		current = add_days(current, 1)
 
@@ -345,7 +345,178 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 	}
 
 
-def _get_attendance_map(employee, from_date, to_date):
+# ---------------------------------------------------------------------------------------
+# Half days, shift-wise times and outside geo-fence punches for the calendar
+# ---------------------------------------------------------------------------------------
+
+HALF_LABEL = {"present": "Present", "absent": "Absent", "wfh": "WFH", "open": "Working"}
+
+
+def _clock_seconds(value):
+	"""'HH:MM[:SS[.ffffff]]' (or a datetime / time) to seconds after midnight."""
+	if value in (None, ""):
+		return None
+	if hasattr(value, "hour"):
+		return value.hour * 3600 + value.minute * 60 + value.second
+	s = str(value).strip()
+	if "T" in s:
+		s = s.split("T")[-1]
+	if " " in s:
+		s = s.split(" ")[-1]
+	parts = s.split(".")[0].split(":")
+	try:
+		return int(parts[0]) * 3600 + int(parts[1]) * 60 + (int(parts[2]) if len(parts) > 2 else 0)
+	except (ValueError, IndexError):
+		return None
+
+
+def _clock_minutes(value):
+	sec = _clock_seconds(value)
+	return None if sec is None else sec // 60
+
+
+def _td_minutes(value):
+	if value is None:
+		return None
+	if hasattr(value, "total_seconds"):
+		return int(value.total_seconds() // 60) % 1440
+	return _clock_minutes(value)
+
+
+def _shift_row(name, cache):
+	key = ("shift", name)
+	if key not in cache:
+		row = frappe.db.get_value(
+			"Shift Type", name,
+			["name", "start_time", "end_time", "enable_late_entry_marking", "late_entry_grace_period"],
+			as_dict=True,
+		)
+		if row:
+			start, end = _td_minutes(row.start_time), _td_minutes(row.end_time)
+			if start is None or end is None:
+				row = None
+			else:
+				span = (end - start) % 1440 or 1440   # an overnight shift wraps past midnight
+				row = {
+					"name": row.name,
+					"start": start,
+					"span": span,
+					"start_label": f"{start // 60:02d}:{start % 60:02d}",
+					"end_label": f"{end // 60:02d}:{end % 60:02d}",
+					"late_on": bool(row.enable_late_entry_marking),
+					"grace": int(row.late_entry_grace_period or 0),
+				}
+		cache[key] = row
+	return cache[key]
+
+
+def _day_shift(employee, day, attendance_shift, cache):
+	name = attendance_shift
+	if not name:
+		try:
+			from hrms.hr.doctype.shift_assignment.shift_assignment import get_employee_shift
+
+			found = get_employee_shift(employee, get_datetime(f"{day} 12:00:00"), True)
+			if found and found.get("shift_type"):
+				name = found["shift_type"].name
+		except Exception:
+			name = None
+	return _shift_row(name, cache) if name else None
+
+
+def _from_shift_start(minute, shift):
+	"""Minutes from the shift's start to `minute`, read on the shift's own clock (so a punch
+	just after midnight on a night shift is not 20 hours early)."""
+	d = minute - shift["start"]
+	if d < -720:
+		d += 1440
+	elif d > 1080 and shift["span"] < 1080:
+		d -= 1440
+	return d
+
+
+def _period(value):
+	v = (value or "").strip().lower()
+	if v.startswith("first"):
+		return "first"
+	if v.startswith("second"):
+		return "second"
+	return None
+
+
+def _worked_half(in_min, out_min, shift):
+	""""first" / "second": the half of the shift the punches cover more of; None without a
+	punch or a shift. With no OUT yet, the day is read as half a shift from the IN."""
+	if in_min is None or not shift:
+		return None
+	half = shift["span"] / 2
+	a = _from_shift_start(in_min, shift)
+	b = _from_shift_start(out_min, shift) if out_min is not None else a + half
+	if b <= a:
+		b = a + half
+	first = max(0, min(b, half) - max(a, 0))
+	second = max(0, min(b, shift["span"]) - max(a, half))
+	return "first" if first >= second else "second"
+
+
+def _day_halves(att, lv, wf, in_min, out_min, shift):
+	"""[first half, second half] for a half day, each {"kind", "label"}; None for a whole day.
+
+	A half-day Leave or WFH is placed on the half its application names (First / Second
+	Half). Older applications that name none are placed by the punches against the day's
+	shift: the half the employee was in for is the worked half, so the leave / WFH is the
+	other. A Half Day marked for short hours (no leave) is read the same way: the half the
+	employee was not there for is the Absent one.
+	"""
+	att = att or {}
+	status = att.get("status")
+	marked_half = status == "Half Day"
+
+	leave_half = None
+	if marked_half and att.get("leave_type"):
+		leave_half = {"kind": "leave", "label": f"Leave ({att['leave_type']})",
+			"period": _period((lv or {}).get("period"))}
+	elif lv and lv["half"] and status in (None, "", "Half Day", "Present", "Work From Home"):
+		leave_half = {"kind": "leave", "label": f"Leave ({lv['leave_type']})", "period": _period(lv.get("period"))}
+
+	wfh_half = None
+	if wf and wf["half"] and status not in ("On Leave", "Absent"):
+		wfh_half = {"kind": "wfh", "label": HALF_LABEL["wfh"], "period": _period(wf.get("period"))}
+
+	if not (leave_half or wfh_half or marked_half):
+		return None
+
+	worked = _worked_half(in_min, out_min, shift)
+
+	if leave_half and wfh_half:
+		special, other = leave_half, dict(wfh_half)
+	elif leave_half or wfh_half:
+		special = leave_half or wfh_half
+		if marked_half and (att.get("half_day_status") or "") == "Absent":
+			other = {"kind": "absent"}
+		elif status or in_min is not None:
+			other = {"kind": "present"}
+		else:
+			other = {"kind": "open"}       # not marked yet: the other half is still to be worked
+	else:
+		# Half Day for short hours: one half worked, the other Absent
+		if (att.get("half_day_status") or "") == "Present":
+			return None
+		special, other = {"kind": "absent", "label": "Absent", "period": None}, {"kind": "present"}
+		special["period"] = "first" if worked == "second" else "second"
+
+	period = special.get("period")
+	if not period and other.get("period"):
+		period = "second" if other["period"] == "first" else "first"
+	if not period:
+		# the leave / WFH half is the one the punches do not cover; first when there are none
+		period = "first" if worked != "first" else "second"
+	special_out = {"kind": special["kind"], "label": special["label"]}
+	other_out = {"kind": other["kind"], "label": other.get("label") or HALF_LABEL[other["kind"]]}
+	return [special_out, other_out] if period == "first" else [other_out, special_out]
+
+
+def _get_attendance_details(employee, from_date, to_date):
 	records = frappe.get_all(
 		"Attendance",
 		filters={
@@ -353,23 +524,109 @@ def _get_attendance_map(employee, from_date, to_date):
 			"attendance_date": ["between", [from_date, to_date]],
 			"docstatus": 1,
 		},
-		fields=["attendance_date", "status"],
+		fields=["attendance_date", "status", "leave_type", "leave_application", "half_day_status", "shift"],
 	)
-	return {getdate(d["attendance_date"]): d["status"] for d in records}
+	return {getdate(d.attendance_date): d for d in records}
 
 
-def _get_attendance_shift_map(employee, from_date, to_date):
-	"""The shift each submitted Attendance was marked under, for the days that have one."""
-	records = frappe.get_all(
-		"Attendance",
+def _get_leave_days(employee, from_date, to_date):
+	"""Approved leave per date: {date: {leave_type, half, period}}."""
+	has_period = frappe.db.has_column("Leave Application", "custom_half_day_period")
+	fields = ["name", "leave_type", "from_date", "to_date", "half_day", "half_day_date"]
+	if has_period:
+		fields.append("custom_half_day_period")
+	apps = frappe.get_all(
+		"Leave Application",
 		filters={
 			"employee": employee,
-			"attendance_date": ["between", [from_date, to_date]],
 			"docstatus": 1,
+			"status": "Approved",
+			"from_date": ["<=", to_date],
+			"to_date": [">=", from_date],
 		},
-		fields=["attendance_date", "shift"],
+		fields=fields,
+		order_by="from_date asc",
 	)
-	return {getdate(d["attendance_date"]): d["shift"] for d in records if d.get("shift")}
+	out = {}
+	for a in apps:
+		day = max(getdate(a.from_date), getdate(from_date))
+		last = min(getdate(a.to_date), getdate(to_date))
+		half_on = getdate(a.half_day_date) if a.half_day and a.half_day_date else (
+			getdate(a.from_date) if a.half_day and a.from_date == a.to_date else None
+		)
+		while day <= last:
+			out[day] = {
+				"name": a.name,
+				"leave_type": a.leave_type,
+				"half": day == half_on,
+				"period": a.get("custom_half_day_period") if day == half_on else None,
+			}
+			day = add_days(day, 1)
+	return out
+
+
+def _get_wfh_days(employee, from_date, to_date):
+	"""Approved Work From Home per date, across the request's whole range: {date: {half, period}}.
+
+	A half-day request is half on its first date (the requests carry one half-day flag and no
+	separate half-day date)."""
+	if not frappe.db.exists("DocType", "Work From Home Request"):
+		return {}
+	meta = frappe.get_meta("Work From Home Request")
+	fields = ["date"] + [f for f in ("to_date", "half_day", "custom_half_day_period") if meta.has_field(f)]
+	rows = frappe.get_all(
+		"Work From Home Request",
+		filters={
+			"employee": employee,
+			"status": ["in", ["Approved", "Live"]],
+			"date": ["<=", to_date],
+		},
+		fields=fields,
+	)
+	out = {}
+	for r in rows:
+		first = getdate(r.date)
+		last = getdate(r.get("to_date") or r.date)
+		if last < getdate(from_date):
+			continue
+		day = max(first, getdate(from_date))
+		while day <= min(last, getdate(to_date)):
+			half = bool(r.get("half_day")) and day == first
+			if day not in out or not half:
+				out[day] = {"half": half, "period": r.get("custom_half_day_period") if half else None}
+			day = add_days(day, 1)
+	return out
+
+
+def _get_outside_geo_map(employee, from_date, to_date):
+	"""Punches flagged outside the shift location's geo-fence (the flag HR's
+	"Outside Geo-Location Check-ins" list reads): {date: {"reason", "log_type"}}."""
+	if not frappe.db.has_column("Employee Checkin", "custom_outside_location"):
+		return {}
+	fields = ["time", "log_type"] + [
+		f for f in ("custom_outside_reason", "custom_checkin_type")
+		if frappe.db.has_column("Employee Checkin", f)
+	]
+	rows = frappe.get_all(
+		"Employee Checkin",
+		filters={
+			"employee": employee,
+			"custom_outside_location": 1,
+			"time": ["between", [from_date, add_days(to_date, 1)]],
+		},
+		fields=fields,
+		order_by="time asc",
+	)
+	out = {}
+	for r in rows:
+		day = getdate(r.time)
+		if day > getdate(to_date) or day in out:
+			continue
+		out[day] = {
+			"reason": r.get("custom_outside_reason") or r.get("custom_checkin_type") or "",
+			"log_type": r.log_type,
+		}
+	return out
 
 
 def _full_day_minutes(shift_name, day, cache):
@@ -470,23 +727,6 @@ def _get_holidays(employee, from_date, to_date):
 		filters={"parent": holiday_list, "holiday_date": ["between", [from_date, to_date]]},
 		pluck="holiday_date",
 	)
-
-
-def _get_wfh_dates(employee, from_date, to_date):
-	"""Dates the employee has an applied/approved Work From Home Request for. Used to flag a
-	day as WFH on the calendar even when its attendance status is Present (check-ins from home)."""
-	if not frappe.db.exists("DocType", "Work From Home Request"):
-		return set()
-	rows = frappe.get_all(
-		"Work From Home Request",
-		filters={
-			"employee": employee,
-			"date": ["between", [from_date, to_date]],
-			"status": ["in", ["Approved", "Live"]],
-		},
-		pluck="date",
-	)
-	return {getdate(d) for d in rows}
 
 
 @frappe.whitelist()

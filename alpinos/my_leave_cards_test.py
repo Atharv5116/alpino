@@ -64,11 +64,16 @@ def _run():
 	cards = frappe.get_all(
 		"Number Card", filters={"type": "Report", "report_name": M.REPORT}, fields=["name", "report_field"]
 	)
-	changed = M.convert_cards()
+	M.convert_cards()
+	# every personal leave card on the site, whether converted now or by an earlier migrate
+	changed = [
+		(c.name, frappe.parse_json(c.filters_json).get("leave_type"))
+		for c in frappe.get_all("Number Card", filters={"type": "Custom", "method": M.METHOD}, fields=["name", "filters_json"])
+	]
 
 	def _converted():
-		_assert(cards, "no company-wide leave cards on this site to convert")
-		_assert(len(changed) == len(cards), (cards, changed))
+		_assert(changed, "no leave balance cards on this site")
+		_assert(all(frappe.db.get_value("Number Card", c.name, "type") == "Custom" for c in cards), "a card was left as a company total")
 		for name, leave_type in changed:
 			c = frappe.get_doc("Number Card", name)
 			_assert(c.type == "Custom" and c.method == M.METHOD, (name, c.type, c.method))

@@ -6,11 +6,13 @@ const nextBtn = root.querySelector("#cal-next-month");
 
 let current = new Date();
 
-// grace period in minutes after shift start before showing "Late"
-var GRACE_PERIOD_MINUTES = 15;
+// Late is decided on the server against THAT day's Shift Type (its start time, its late-entry
+// switch and its grace period): the fixed 10:00 that used to sit here called every Cafe and
+// Warehouse shift late. The server also sends the minutes after the shift's start.
 
-var SHIFT_START = "10:00";
-var SHIFT_END = "18:30";
+// Half days: each half takes its own colour and the cell fades from the first into the second.
+var HALF_TINT = { present: "#d1fae5", wfh: "#dbeafe", absent: "#fee2e2", leave: "#ede9fe", open: "#f3f4f6" };
+var HALF_INK  = { present: "#047857", wfh: "#1d4ed8", absent: "#b91c1c", leave: "#6d28d9", open: "#6b7280" };
 
 // required working hours per day, in minutes
 var MIN_HOURS_WEEKDAY  = 480;  // 8h  — Mon–Fri
@@ -107,12 +109,27 @@ function isShortHours(item, dateKey) {
 }
 
 function isLate(item) {
-  var checkInMins = timeStringToMinutes(item.check_in);
-  if (checkInMins === null) return !!item.late_coming;
-  var parts       = SHIFT_START.split(":");
-  var shiftMins   = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-  var graceCutoff = shiftMins + GRACE_PERIOD_MINUTES;
-  return checkInMins > graceCutoff;
+  return !!item.late_coming;
+}
+
+function lateLabel(item) {
+  return item.late_minutes ? "Late " + formatWorked(item.late_minutes) : "Late";
+}
+
+function shiftText(item) {
+  if (!item.shift) return "";
+  return "Shift " + item.shift + (item.shift_start ? " (" + item.shift_start + " to " + item.shift_end + ")" : "");
+}
+
+function halfLine(which, half) {
+  var line = document.createElement("div");
+  line.setAttribute("style", "font-size:9px;line-height:1.3;color:#374151;white-space:normal;overflow-wrap:anywhere;max-width:100%;");
+  var tag = document.createElement("b");
+  tag.setAttribute("style", "font-weight:600;color:" + (HALF_INK[half.kind] || "#374151") + ";");
+  tag.textContent = which + " \u00bd ";
+  line.appendChild(tag);
+  line.appendChild(document.createTextNode(half.label || ""));
+  return line;
 }
 
 function isEarlyLeaving(item, dateKey) {
@@ -170,6 +187,12 @@ function getDayStyle(status, isToday, item, dateKey) {
   } else if (status === "Holiday") {
     bg          = "#f1f5f9";
     borderColor = "#cbd5e1";
+  }
+
+  if (item.halves && item.halves.length === 2) {
+    bg = "linear-gradient(105deg," + (HALF_TINT[item.halves[0].kind] || "#f9fafb") + " 0%," + (HALF_TINT[item.halves[0].kind] || "#f9fafb")
+      + " 38%," + (HALF_TINT[item.halves[1].kind] || "#f9fafb") + " 62%," + (HALF_TINT[item.halves[1].kind] || "#f9fafb") + " 100%)";
+    borderColor = "#d1d5db";
   }
 
   var border = isToday ? "2px solid #3b82f6" : "1px solid " + borderColor;
@@ -295,12 +318,18 @@ function renderCalendar(days, year, month) {
 
     var iconEl = document.createElement("span");
     iconEl.setAttribute("style", "font-size:13px;line-height:1;flex-shrink:0;");
-    iconEl.innerHTML = getStatusIcon(status, item, key);
+    iconEl.innerHTML = (item.halves && status !== "Half Day") ? getStatusIcon("Half Day", item, key) : getStatusIcon(status, item, key);
     rightWrap.appendChild(iconEl);
 
     head.appendChild(dayEl);
     head.appendChild(rightWrap);
     cell.appendChild(head);
+
+    // a half day names both halves, first then second
+    if (item.halves && item.halves.length === 2) {
+      cell.appendChild(halfLine("1st", item.halves[0]));
+      cell.appendChild(halfLine("2nd", item.halves[1]));
+    }
 
     // badge row — only show when something is wrong
     if (!isAllGood(status, item, key)) {
@@ -308,11 +337,11 @@ function renderCalendar(days, year, month) {
       var badgeRow = document.createElement("div");
       badgeRow.setAttribute("style", "display:flex;flex-wrap:wrap;gap:2px;margin-top:1px;");
 
-      var canShowTimeBadge = (status === "Present" || status === "Work From Home" || (status === "Absent" && item.check_in && item.check_in !== ""));
+      var canShowTimeBadge = (status === "Present" || status === "Work From Home" || status === "Half Day" || (status === "Absent" && item.check_in && item.check_in !== ""));
       if (canShowTimeBadge && item.check_in && isLate(item)) {
         var bl = document.createElement("span");
         bl.setAttribute("style", "font-size:9px;padding:1px 4px;border-radius:4px;font-weight:500;line-height:1.4;display:inline-flex;align-items:center;gap:2px;background:#fef3c7;color:#92400e;white-space:nowrap;");
-        bl.innerHTML = "&#128340; Late";
+        bl.innerHTML = "&#128340; " + lateLabel(item);
         badgeRow.appendChild(bl);
       }
 
@@ -326,7 +355,7 @@ function renderCalendar(days, year, month) {
       if (item.out_of_geo) {
         var bgBadge = document.createElement("span");
         bgBadge.setAttribute("style", "font-size:9px;padding:1px 4px;border-radius:4px;font-weight:500;line-height:1.4;display:inline-flex;align-items:center;gap:2px;background:#fce7f3;color:#9d174d;white-space:nowrap;");
-        bgBadge.innerHTML = "&#128205; Geo";
+        bgBadge.innerHTML = "&#128205; Outside geo";
         badgeRow.appendChild(bgBadge);
       }
 
@@ -344,10 +373,16 @@ function renderCalendar(days, year, month) {
 
     var worked    = formatWorked(item.worked_minutes);
     var tipExtras = "";
-    if (item.wfh)                             tipExtras += " Work From Home";
-    if (isLate(item) && item.check_in)        tipExtras += " Late";
-    if (isEarlyLeaving(item, key) && item.check_out) tipExtras += " Early Out";
-    if (item.out_of_geo)                        tipExtras += " Out of Geo";
+    if (item.halves && item.halves.length === 2) {
+      tipExtras += " First half: " + item.halves[0].label + ", Second half: " + item.halves[1].label + ".";
+    } else if (item.leave_type && status === "On Leave") {
+      tipExtras += " " + item.leave_type + " leave.";
+    }
+    if (item.wfh && !item.wfh_half)           tipExtras += " Work From Home.";
+    if (isLate(item) && item.check_in)        tipExtras += " " + lateLabel(item) + " after shift start.";
+    if (isEarlyLeaving(item, key) && item.check_out) tipExtras += " Early Out.";
+    if (item.out_of_geo)                      tipExtras += " Punch outside the geo-fence" + (item.geo_reason ? " (" + item.geo_reason + ")" : "") + ".";
+    if (item.shift)                           tipExtras += " " + shiftText(item) + ".";
 
     cell.setAttribute(
       "title",
