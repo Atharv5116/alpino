@@ -608,12 +608,19 @@ function loadDays() {
 function renderDays(days, y, m) {
   const total = new Date(y, m, 0).getDate();
   const c = { present: 0, leave: 0, wfh: 0, absent: 0, remaining: 0, unmarked: 0 };
-  let workedSum = 0, workedN = 0, need = null, late15 = 0, late30 = 0, working = 0;
+  let workedSum = 0, workedN = 0, late15 = 0, late30 = 0, working = 0;
+  const needs = {};
   for (let d = 1; d <= total; d++) {
     const key = keyOf(y, m, d), it = days[key] || {};
     if (it.holiday && (!it.status || it.status === "Holiday")) continue;
     working++;
-    if (key > todayKey) { c.remaining++; continue; }
+    if (key > todayKey) {
+      // approved leave ahead is leave, not a day still to work
+      if (it.status === "On Leave") c.leave++;
+      else if (it.halves && it.halves.length === 2) it.halves.forEach((h) => { c[h.kind === "leave" ? "leave" : "remaining"] += 0.5; });
+      else c.remaining++;
+      continue;
+    }
     if (it.halves && it.halves.length === 2) {
       it.halves.forEach((h) => { c[h.kind === "open" ? "remaining" : h.kind] += 0.5; });
     } else if (it.status === "Present") c[it.wfh && !it.wfh_half ? "wfh" : "present"]++;
@@ -623,11 +630,19 @@ function renderDays(days, y, m) {
     else if (it.status === "Half Day") { c.present += 0.5; c.absent += 0.5; }
     else if (key === todayKey) c[it.check_in ? "present" : "remaining"]++;
     else c.unmarked++;
-    if (key < todayKey && it.worked_minutes) { workedSum += it.worked_minutes; workedN++; }
-    if (it.required_minutes) need = it.required_minutes;
+    // Avg Work / Day: full weekdays only. Saturdays have their own shorter hours and a half day
+    // is half a day, so mixing them in would pull the average below what a full day needs.
+    const weekday = new Date(key + "T00:00:00").getDay() !== 6;
+    const fullDay = !(it.halves && it.halves.length === 2) && (it.status === "Present" || it.status === "Work From Home");
+    if (key < todayKey && weekday && fullDay && it.worked_minutes) {
+      workedSum += it.worked_minutes; workedN++;
+      if (it.required_minutes) needs[it.required_minutes] = (needs[it.required_minutes] || 0) + 1;
+    }
     if (it.late_coming) { if ((it.late_minutes || 0) < 30) late15++; else late30++; }
   }
-  const parts = [["Present", c.present, "#2e9e5b"], ["Leave Taken", c.leave, "#0e95c9"], ["Work From Home", c.wfh, "#9a52d6"], ["Absent", c.absent, "#cc2929"], ["Remaining", c.remaining, "#d9d9d9"]];
+  // the weekday requirement most of the month's full days were measured against
+  const need = Object.keys(needs).sort((a, b) => needs[b] - needs[a])[0];
+  const parts = [["Present", c.present, "#2e9e5b"], ["Leave", c.leave, "#0e95c9"], ["Work From Home", c.wfh, "#9a52d6"], ["Absent", c.absent, "#cc2929"], ["Remaining", c.remaining, "#d9d9d9"]];
   if (c.unmarked) parts.push(["Not marked", c.unmarked, "#b0b0b0"]);
   q("#mw-days-sub").textContent = MONTHS[m - 1] + " " + y + ", by each day's shift";
   q("#mw-total").textContent = working;
@@ -651,7 +666,7 @@ function renderDays(days, y, m) {
     keys.appendChild(k);
   });
   q("#mw-avg").textContent = workedN ? hm(workedSum / workedN) : "0h";
-  q("#mw-avg-sub").textContent = need ? "Shift needs " + hm(need) : " ";
+  q("#mw-avg-sub").textContent = need ? "Full weekdays, shift needs " + hm(+need) : "Full weekdays only";
   q("#mw-late15").innerHTML = late15 + "<small>" + (late15 === 1 ? "day" : "days") + "</small>";
   q("#mw-late30").innerHTML = late30 + "<small>" + (late30 === 1 ? "day" : "days") + "</small>";
 }

@@ -143,3 +143,29 @@ def _run():
 				_assert(hr in names, f"{hr} dropped from Home")
 
 	check("HR's own Home blocks stay below it", _hr_blocks_stay)
+
+	def _regularized_only_corrections():
+		from frappe.utils import getdate
+
+		od = frappe.db.sql(
+			"""SELECT p.employee, p.from_date FROM `tabAttendance Request` p
+			   WHERE p.docstatus = 1 AND p.reason = 'On Duty' AND NOT EXISTS (
+			     SELECT 1 FROM `tabAttendance Request Detail` d JOIN `tabAttendance Request` p2 ON p2.name = d.parent
+			     WHERE p2.employee = p.employee AND d.attendance_date = p.from_date AND p2.docstatus = 1
+			       AND p2.reason != 'On Duty' AND (d.edit_check_in = 1 OR d.edit_check_out = 1))
+			   LIMIT 1"""
+		)
+		if od:
+			emp, day = od[0]
+			_assert(getdate(day) not in W._get_regularized_days(emp, day, day), f"On Duty {emp} {day} shown as regularized")
+		ed = frappe.db.sql(
+			"""SELECT p.employee, d.attendance_date FROM `tabAttendance Request Detail` d
+			   JOIN `tabAttendance Request` p ON p.name = d.parent
+			   WHERE p.docstatus = 1 AND p.reason != 'On Duty' AND IFNULL(p.workflow_state, '') IN ('', 'Approved')
+			     AND (d.edit_check_in = 1 OR d.edit_check_out = 1) LIMIT 1"""
+		)
+		_assert(ed, "no approved correction on this site")
+		emp, day = ed[0]
+		_assert(getdate(day) in W._get_regularized_days(emp, day, day), f"approved correction {emp} {day} not shown")
+
+	check("Regularized = approved check-in/out corrections only, never On Duty", _regularized_only_corrections)

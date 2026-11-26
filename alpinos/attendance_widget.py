@@ -550,19 +550,21 @@ def _get_holiday_info(employee, from_date, to_date):
 
 
 def _get_regularized_days(employee, from_date, to_date):
-	"""Dates an approved (submitted) Attendance Request corrected."""
-	rows = frappe.get_all(
-		"Attendance Request",
-		filters={"employee": employee, "docstatus": 1, "from_date": ["<=", to_date], "to_date": [">=", from_date]},
-		fields=["from_date", "to_date"],
+	"""Dates whose check-in or check-out an approved correction request edited.
+
+	Only the dates of rows with Edit Check-in / Edit Check-out ticked, on requests that are
+	approved (submitted, and Approved where the workflow is on), and never On Duty -- the same
+	edits the monthly limit of 4 counts. An On Duty or plain WFH request is not a correction."""
+	state = "AND IFNULL(p.workflow_state, '') IN ('', 'Approved')" if frappe.db.has_column("Attendance Request", "workflow_state") else ""
+	rows = frappe.db.sql(
+		f"""SELECT DISTINCT d.attendance_date FROM `tabAttendance Request Detail` d
+		    JOIN `tabAttendance Request` p ON p.name = d.parent AND d.parenttype = 'Attendance Request'
+		    WHERE p.employee = %s AND p.docstatus = 1 AND IFNULL(p.reason, '') != 'On Duty' {state}
+		      AND (d.edit_check_in = 1 OR d.edit_check_out = 1)
+		      AND d.attendance_date BETWEEN %s AND %s""",
+		(employee, from_date, to_date),
 	)
-	out = set()
-	for r in rows:
-		day = max(getdate(r.from_date), getdate(from_date))
-		while day <= min(getdate(r.to_date), getdate(to_date)):
-			out.add(day)
-			day = add_days(day, 1)
-	return out
+	return {getdate(r[0]) for r in rows}
 
 
 def _get_attendance_details(employee, from_date, to_date):
