@@ -248,7 +248,9 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 	details = _get_attendance_details(employee, start_date, end_date)
 	attendance_times = _get_attendance_times_map(employee, start_date, end_date)
 	checkins = _get_checkins_map(employee, start_date, end_date)
-	holidays = set(_get_holidays(employee, start_date, end_date))
+	holiday_info = _get_holiday_info(employee, start_date, end_date)
+	holidays = set(holiday_info)
+	regularized = _get_regularized_days(employee, start_date, end_date)
 	leave_days = _get_leave_days(employee, start_date, end_date)
 	wfh_days = _get_wfh_days(employee, start_date, end_date)
 	outside_geo = _get_outside_geo_map(employee, start_date, end_date)
@@ -300,18 +302,15 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 		shift = None
 		if check_in_str or (att or {}).get("status") == "Half Day" or (lv and lv["half"]) or (wf and wf["half"]):
 			shift = _day_shift(employee, current, (att or {}).get("shift"), shift_cache)
+		halves = _day_halves(att, lv, wf, in_min, out_min, shift)
 		if shift and in_min is not None:
-			late_minutes = max(_from_shift_start(in_min, shift), 0)
-			# Late follows the Shift Type: only when HR switched late-entry marking on, and
-			# only past that shift's own grace period.
-			late_coming = 1 if shift["late_on"] and late_minutes > shift["grace"] else 0
+			late_minutes, late_coming = _lateness(in_min, shift, halves)
 		if shift and out_min is not None and in_min is not None and worked_minutes is not None:
 			if _from_shift_start(out_min, shift) < shift["span"]:
 				early_leaving = 1
 		if worked_minutes is not None:
 			required_minutes = _full_day_minutes(shift["name"] if shift else None, current, threshold_cache)
 
-		halves = _day_halves(att, lv, wf, in_min, out_min, shift)
 		geo = outside_geo.get(current) if not wf else None
 
 		result[date_str] = {
@@ -319,6 +318,9 @@ def get_monthly_attendance(year: Optional[int] = None, month: Optional[int] = No
 			"check_in": check_in_str,
 			"check_out": check_out_str,
 			"holiday": 1 if current in holidays else 0,
+			"holiday_name": (holiday_info.get(current) or {}).get("description"),
+			"weekly_off": 1 if (holiday_info.get(current) or {}).get("weekly_off") else 0,
+			"regularized": 1 if current in regularized else 0,
 			"wfh": 1 if wf else 0,
 			"wfh_half": 1 if wf and wf["half"] else 0,
 			"leave_type": leave_type or (lv["leave_type"] if lv else None),
@@ -435,6 +437,20 @@ def _from_shift_start(minute, shift):
 	return d
 
 
+def _lateness(in_min, shift, halves=None):
+	"""(minutes late, 1/0 late) for the day's first punch.
+
+	Counted from the shift's start, or from the middle of the shift when the first half was
+	leave, WFH or absent (the employee was due in the office only for the second half).
+	Late follows the Shift Type: only when HR switched late-entry marking on, and only past
+	that shift's own grace period."""
+	due = 0
+	if halves and halves[0]["kind"] in ("leave", "wfh", "absent"):
+		due = shift["span"] / 2
+	minutes = int(max(_from_shift_start(in_min, shift) - due, 0))
+	return minutes, (1 if shift["late_on"] and minutes > shift["grace"] else 0)
+
+
 def _period(value):
 	v = (value or "").strip().lower()
 	if v.startswith("first"):
@@ -514,6 +530,39 @@ def _day_halves(att, lv, wf, in_min, out_min, shift):
 	special_out = {"kind": special["kind"], "label": special["label"]}
 	other_out = {"kind": other["kind"], "label": other.get("label") or HALF_LABEL[other["kind"]]}
 	return [special_out, other_out] if period == "first" else [other_out, special_out]
+
+
+def _get_holiday_info(employee, from_date, to_date):
+	"""{date: {description, weekly_off}} from the employee's holiday list."""
+	holiday_list = get_holiday_list_for_employee(employee, raise_exception=False)
+	if not holiday_list:
+		return {}
+	rows = frappe.get_all(
+		"Holiday",
+		filters={"parent": holiday_list, "holiday_date": ["between", [from_date, to_date]]},
+		fields=["holiday_date", "description", "weekly_off"],
+	)
+	out = {}
+	for r in rows:
+		text = frappe.utils.strip_html(r.description or "").strip()
+		out[getdate(r.holiday_date)] = {"description": text, "weekly_off": r.weekly_off}
+	return out
+
+
+def _get_regularized_days(employee, from_date, to_date):
+	"""Dates an approved (submitted) Attendance Request corrected."""
+	rows = frappe.get_all(
+		"Attendance Request",
+		filters={"employee": employee, "docstatus": 1, "from_date": ["<=", to_date], "to_date": [">=", from_date]},
+		fields=["from_date", "to_date"],
+	)
+	out = set()
+	for r in rows:
+		day = max(getdate(r.from_date), getdate(from_date))
+		while day <= min(getdate(r.to_date), getdate(to_date)):
+			out.add(day)
+			day = add_days(day, 1)
+	return out
 
 
 def _get_attendance_details(employee, from_date, to_date):
@@ -715,18 +764,6 @@ def _get_checkins_map(employee, from_date, to_date):
 			result[log_date]["check_out"] = log_time
 
 	return result
-
-
-def _get_holidays(employee, from_date, to_date):
-	holiday_list = get_holiday_list_for_employee(employee, raise_exception=False)
-	if not holiday_list:
-		return []
-
-	return frappe.get_all(
-		"Holiday",
-		filters={"parent": holiday_list, "holiday_date": ["between", [from_date, to_date]]},
-		pluck="holiday_date",
-	)
 
 
 @frappe.whitelist()

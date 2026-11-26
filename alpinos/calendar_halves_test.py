@@ -133,7 +133,7 @@ def _run():
 			hv = day.get("halves")
 			_assert(hv, f"{x.employee} {x.attendance_date}: not split")
 			i = 0 if x.p == "First Half" else 1
-			_assert(hv[i]["kind"] == "leave" and hv[1 - i]["kind"] in ("present", "absent"), (x, hv))
+			_assert(hv[i]["kind"] == "leave" and hv[1 - i]["kind"] in ("present", "absent", "wfh"), (x, hv))
 
 	check("Real half-day leaves show on the named half with the other half's status", _real_named)
 

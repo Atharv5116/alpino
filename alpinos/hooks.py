@@ -295,6 +295,9 @@ after_migrate = [
 	"alpinos.patches.create_approvals_widget.execute",
 	"alpinos.approval_access.setup_approvals_access",
 	"alpinos.patches.create_outside_geo_widget.execute",
+	# after every Home widget above: My Workday goes first and takes the place of the
+	# check-in, calendar and birthdays blocks those patches keep adding
+	"alpinos.my_workday.place_on_home",
 	"alpinos.data_import_shortcuts.ensure_allow_import",
 	"alpinos.sales_order_custom_fields.setup_sales_order_custom_fields",
 	"alpinos.ecom_sales_order_custom_fields.setup_ecom_sales_order_fields",

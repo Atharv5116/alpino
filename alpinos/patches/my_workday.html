@@ -1,0 +1,87 @@
+<div class="mw">
+  <div class="mw-grid">
+
+    <!-- today's attendance -->
+    <section class="mw-card">
+      <div class="mw-h"><h3>Today's Attendance</h3><span class="mw-pill dot" id="mw-state">Loading</span><span class="mw-pill mw-right" id="mw-shift" style="display:none"></span></div>
+      <div class="mw-timer"><span>Working Time Today</span><b class="num" id="mw-timer">00:00:00</b></div>
+      <div class="mw-punches">
+        <div class="mw-punch"><span class="ic in"><svg class="i" viewBox="0 0 24 24"><path d="M14 4h5v16h-5"/><path d="M4 12h10M10 8l4 4-4 4"/></svg></span><div style="min-width:0"><span>Check In Time</span><b class="num none" id="mw-in">Not yet</b><small id="mw-in-sub"></small></div></div>
+        <div class="mw-punch"><span class="ic out"><svg class="i" viewBox="0 0 24 24"><path d="M10 4H5v16h5"/><path d="M10 12h10M16 8l4 4-4 4"/></svg></span><div style="min-width:0"><span>Check Out Time</span><b class="num none" id="mw-out">Not yet</b><small id="mw-out-sub"></small></div></div>
+      </div>
+      <div class="mw-acts">
+        <button class="mw-btn go" id="mw-btn-in"><svg class="i" viewBox="0 0 24 24"><path d="M14 4h5v16h-5"/><path d="M4 12h10M10 8l4 4-4 4"/></svg>Check In</button>
+        <button class="mw-btn" id="mw-btn-out" disabled><svg class="i" viewBox="0 0 24 24"><path d="M10 4H5v16h5"/><path d="M10 12h10M16 8l4 4-4 4"/></svg>Check Out</button>
+      </div>
+      <div class="mw-net"><span id="mw-where"></span><span class="mw-pill dot" id="mw-geo" style="display:none"></span></div>
+    </section>
+
+    <!-- days this month -->
+    <section class="mw-card">
+      <div class="mw-h"><h3>Days This Month</h3><span class="mw-sub" id="mw-days-sub"></span></div>
+      <div class="mw-dtop">
+        <div class="mw-donut">
+          <svg viewBox="0 0 120 120" id="mw-donut" role="img"></svg>
+          <div class="mw-ctr"><b class="num" id="mw-total">0</b><span>working days</span></div>
+        </div>
+        <div class="mw-keys num" id="mw-keys"></div>
+      </div>
+      <div class="mw-tiles num">
+        <div class="mw-nc"><div class="t">Avg Work / Day</div><div class="v" id="mw-avg">0h</div><div class="s" id="mw-avg-sub">&nbsp;</div></div>
+        <div class="mw-nc warn"><div class="t">Late by 15m</div><div class="v" id="mw-late15">0</div><div class="s">Late, under 30 min</div></div>
+        <div class="mw-nc warn"><div class="t">Late by 30m</div><div class="v" id="mw-late30">0</div><div class="s">Late, 30 min or more</div></div>
+      </div>
+    </section>
+
+    <!-- calendar -->
+    <section class="mw-card mw-full">
+      <div class="mw-h"><h3>My Attendance Calendar</h3><span class="mw-sub">Times, hours and late marks follow each day's shift</span>
+        <span class="mw-right mw-monthnav"><button id="mw-prev" title="Previous month"><svg class="i" viewBox="0 0 24 24"><path d="m14 7-5 5 5 5"/></svg></button><span id="mw-month">Loading</span><button id="mw-next" title="Next month"><svg class="i" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></svg></button></span>
+      </div>
+      <div class="mw-legend">
+        <span class="mw-pill green dot">Present</span><span class="mw-pill orange dot">Exception / Shortage</span><span class="mw-pill red dot">Absent</span><span class="mw-pill blue dot">Leave</span><span class="mw-pill purple dot">WFH</span><span class="mw-pill cyan dot">Regularized</span><span class="mw-pill dot">Off / Holiday</span>
+        <span class="sw"><i style="background:linear-gradient(105deg,#d3e8fb 0 38%,#d6efdd 62% 100%)"></i>Half day split</span>
+        <span class="sw"><em class="lt">Late 17m</em>from shift start</span>
+        <span class="sw"><svg class="i" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>Outside geo-fence</span>
+      </div>
+      <div class="mw-calgrid num" id="mw-cal"></div>
+      <div class="mw-selbar" id="mw-sel" style="display:none"></div>
+    </section>
+
+    <!-- regularization -->
+    <section class="mw-card">
+      <div class="mw-h"><h3>Attendance Regularization</h3><span class="mw-pill mw-right">Monthly Cap</span></div>
+      <div class="mw-sub" id="mw-reg-sub" style="margin:-6px 0 8px"></div>
+      <div class="mw-big num" id="mw-reg-big">&nbsp;</div>
+      <div class="mw-segs" id="mw-reg-segs"><i></i><i></i><i></i><i></i></div>
+      <div class="mw-sub" id="mw-reg-used" style="margin-bottom:10px"></div>
+      <button class="mw-btn" id="mw-reg-new" style="width:100%;justify-content:space-between;margin-top:auto">New Request<svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </section>
+
+    <!-- leave balances -->
+    <section class="mw-card">
+      <div class="mw-h"><h3>Leave Balances</h3></div>
+      <div id="mw-leaves"></div>
+      <a class="mw-link" id="mw-leave-link">Leave History &amp; Balance Sheet<svg class="i" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></svg></a>
+    </section>
+
+    <!-- moments -->
+    <section class="mw-card">
+      <div class="mw-h"><h3>Moments at Alpino</h3><span class="mw-sub">Birthdays and work anniversaries this month</span><span class="mw-pill mw-right" id="mw-mom-count"></span></div>
+      <div class="mw-two">
+        <div><div class="mw-sh">Birthdays <span class="mw-pill orange" id="mw-bd-count"></span></div><div class="mw-list" id="mw-bd"></div></div>
+        <div><div class="mw-sh">Anniversaries <span class="mw-pill yellow" id="mw-an-count"></span></div><div class="mw-list" id="mw-an"></div></div>
+      </div>
+    </section>
+
+    <!-- team pulse -->
+    <section class="mw-card">
+      <div class="mw-h"><h3>Team Pulse</h3><span class="mw-sub">Colleagues on leave or working from home today</span><span class="mw-right"><span class="mw-pill blue" id="mw-pl-lv"></span> <span class="mw-pill purple" id="mw-pl-wf"></span></span></div>
+      <div class="mw-two">
+        <div><div class="mw-sh">On Leave</div><div class="mw-list" id="mw-onleave"></div></div>
+        <div><div class="mw-sh">WFH</div><div class="mw-list" id="mw-onwfh"></div></div>
+      </div>
+    </section>
+
+  </div>
+</div>

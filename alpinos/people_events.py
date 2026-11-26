@@ -50,7 +50,7 @@ def get_upcoming_birthdays_and_anniversaries(days=None):
 		"Employee",
 		# The people of the companies the user works in now.
 		filters=restrict_company({"status": "Active"}),
-		fields=["name", "employee_name", "date_of_birth", "date_of_joining", "company"],
+		fields=["name", "employee_name", "date_of_birth", "date_of_joining", "company", "designation"],
 		# ERPNext 16 changed Employee's default sort to creation; keep v15's order for ties
 		order_by="modified desc",
 	)
@@ -64,6 +64,8 @@ def get_upcoming_birthdays_and_anniversaries(days=None):
 			bday = _date_in_year(getdate(dob), today.year)
 			if month_start <= bday <= month_end:
 				birthdays.append({
+					"employee": emp.get("name"),
+					"designation": emp.get("designation"),
 					"employee_name": emp.get("employee_name"),
 					"date": bday.strftime("%Y-%m-%d"),
 					"day": _format_day_label(bday),
@@ -77,6 +79,8 @@ def get_upcoming_birthdays_and_anniversaries(days=None):
 			# Somebody who joined this month has no anniversary yet.
 			if doj.year < today.year and month_start <= anniv <= month_end:
 				anniversaries.append({
+					"employee": emp.get("name"),
+					"designation": emp.get("designation"),
 					"employee_name": emp.get("employee_name"),
 					"date": anniv.strftime("%Y-%m-%d"),
 					"years": today.year - doj.year,
