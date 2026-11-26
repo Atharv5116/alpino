@@ -1,0 +1,97 @@
+<style>
+.spc { padding: 4px 0 24px; }
+.spc .spc-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.spc .spc-toolbar .form-control { width: auto; min-width: 180px; }
+.spc .spc-toolbar .spc-grow { flex: 1 1 240px; max-width: 360px; }
+.spc .spc-count { font-size: 12px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+.spc .spc-table-wrap { border: 1px solid var(--border-color); border-radius: 8px; overflow: auto; background: var(--fg-color); }
+.spc .spc-items-wrap { max-height: calc(100vh - 260px); }
+.spc .spc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.spc .spc-table th { position: sticky; top: 0; z-index: 1; background: var(--subtle-fg, var(--bg-color)); color: var(--text-muted);
+	font-size: 12px; font-weight: 600; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+.spc .spc-table td { padding: 7px 10px; border-bottom: 1px solid var(--border-color); vertical-align: middle; color: var(--text-color); }
+.spc .spc-table tbody tr:last-child td { border-bottom: 0; }
+.spc .spc-table .num { text-align: right; }
+.spc .spc-table .chk { width: 36px; text-align: center; }
+.spc .spc-sup-body tr { cursor: pointer; }
+.spc .spc-sup-body tr:hover td, .spc .spc-item-body tr:hover td { background: var(--bg-color); }
+.spc .spc-item-body tr.on td { background: var(--bg-green, rgba(34, 197, 94, 0.08)); }
+.spc .spc-item-body tr.off-list td { opacity: 0.7; }
+.spc .spc-code { font-weight: 600; }
+.spc .spc-muted { color: var(--text-muted); }
+.spc .spc-pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 500; }
+.spc .spc-pill.ok { background: var(--bg-green, #dcfce7); color: var(--text-on-green, #166534); }
+.spc .spc-pill.none { background: var(--bg-orange, #ffedd5); color: var(--text-on-orange, #9a3412); }
+.spc .spc-info { width: 100%; min-width: 220px; height: 28px; padding: 2px 8px; font-size: 12px; }
+.spc .spc-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.spc .spc-title .spc-sup-name { font-size: 15px; font-weight: 600; color: var(--text-color); }
+.spc .spc-title .spc-sup-id { font-size: 12px; color: var(--text-muted); }
+.spc .spc-flag { display: none; font-size: 11px; padding: 1px 8px; border-radius: 10px; }
+.spc .spc-dirty { background: var(--bg-yellow, #fef9c3); color: var(--text-on-yellow, #854d0e); }
+.spc .spc-readonly { background: var(--bg-gray, #f3f4f6); color: var(--text-muted); }
+.spc .spc-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); }
+@media (max-width: 640px) {
+	.spc .spc-toolbar .form-control, .spc .spc-toolbar .spc-grow { flex: 1 1 100%; max-width: none; min-width: 0; }
+	.spc .spc-count { margin-left: 0; }
+	.spc .spc-hide-sm { display: none; }
+}
+</style>
+<div class="spc">
+	<div class="spc-list">
+		<div class="spc-toolbar">
+			<input type="text" class="form-control input-sm spc-grow spc-sup-search" placeholder="Search supplier">
+			<select class="form-control input-sm spc-sup-filter">
+				<option value="">All suppliers</option>
+				<option value="set">Catalog set up</option>
+				<option value="none">No catalog yet</option>
+			</select>
+			<span class="spc-count spc-sup-count"></span>
+		</div>
+		<div class="spc-table-wrap">
+			<table class="spc-table">
+				<thead><tr>
+					<th>Supplier</th>
+					<th class="spc-hide-sm">Supplier Group</th>
+					<th class="num">Items in Catalog</th>
+					<th class="spc-hide-sm">Last Updated</th>
+				</tr></thead>
+				<tbody class="spc-sup-body"></tbody>
+			</table>
+		</div>
+	</div>
+
+	<div class="spc-detail" style="display:none;">
+		<div class="spc-head">
+			<button class="btn btn-xs btn-default spc-back">&larr; Suppliers</button>
+			<div class="spc-title">
+				<div class="spc-sup-name"></div>
+				<div class="spc-sup-id"></div>
+			</div>
+			<span class="spc-flag spc-dirty">Unsaved changes</span>
+			<span class="spc-flag spc-readonly">View only</span>
+		</div>
+		<div class="spc-toolbar">
+			<input type="text" class="form-control input-sm spc-grow spc-item-search" placeholder="Search item code or name">
+			<select class="form-control input-sm spc-group"><option value="">All item groups</option></select>
+			<select class="form-control input-sm spc-show">
+				<option value="">All items</option>
+				<option value="in">In this catalog</option>
+				<option value="out">Not in this catalog</option>
+			</select>
+			<span class="spc-count spc-item-count"></span>
+		</div>
+		<div class="spc-table-wrap spc-items-wrap">
+			<table class="spc-table">
+				<thead><tr>
+					<th class="chk"><input type="checkbox" class="spc-all" title="Tick or clear every item shown"></th>
+					<th>Item Code</th>
+					<th>Item Name</th>
+					<th class="spc-hide-sm">Item Group</th>
+					<th class="spc-hide-sm">UOM</th>
+					<th>Additional Information</th>
+				</tr></thead>
+				<tbody class="spc-item-body"></tbody>
+			</table>
+		</div>
+	</div>
+</div>

@@ -27,6 +27,7 @@ SHORTCUTS = (
 	("New Inward", "Page", "purchase_inward_entry", ""),
 	("New Purchase Order", "Page", "purchase_order_entry", ""),
 	("Purchase Orders", "Page", "purchase_order_list", ""),
+	("Supplier Catalog", "Page", "supplier_catalog", ""),
 	("GRN", "Page", "purchase_grn_list", ""),
 	("Purchase Invoices", "Page", "purchase_invoice_list", ""),
 	("Quarantine Stock", "Page", "purchase_quarantine_list", ""),

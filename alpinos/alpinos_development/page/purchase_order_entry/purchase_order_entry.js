@@ -385,6 +385,7 @@ var PurchaseOrderEntry = class {
 	 */
 	fetch_supplier(supplier) {
 		supplier = supplier || this._val('supplier');
+		this.refresh_catalog_hint(supplier);
 		if (!supplier) return;
 		const me = this;
 		frappe.call({
@@ -397,6 +398,36 @@ var PurchaseOrderEntry = class {
 				me._set('contact_mobile', d.contact_mobile);
 				me._set('address_display', d.address_display);
 				me._set('shipping_address_display', d.shipping_address_display);
+			},
+		});
+	}
+
+	/** Under the item lines: where the item list comes from (the vendor's Supplier Catalog). */
+	refresh_catalog_hint(supplier) {
+		const $hint = this.wrapper.find('.po-catalog-hint');
+		if (!$hint.length) return;
+		const token = (this._hint_token = (this._hint_token || 0) + 1);
+		if (!supplier) {
+			$hint.removeClass('po-catalog-hint--warn').html(__('Select the Vendor first. The item list shows the items in that vendor\'s Supplier Catalog.'));
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.purchase.supplier_catalog.catalog_summary',
+			args: { supplier },
+			callback: (r) => {
+				if (token !== this._hint_token) return;
+				const d = (r && r.message) || {};
+				const who = frappe.utils.escape_html(d.supplier_name || supplier);
+				const link = `<a href="/app/supplier_catalog?supplier=${encodeURIComponent(supplier)}">${__('Supplier Catalog')}</a>`;
+				if (cint(d.count)) {
+					$hint.removeClass('po-catalog-hint--warn').html(
+						__('Items come from the {0} of {1} ({2} items).', [link, `<b>${who}</b>`, cint(d.count)])
+					);
+				} else {
+					$hint.addClass('po-catalog-hint--warn').html(
+						__('{0} has no items in its {1} yet, so no item can be picked. Add the items this vendor supplies there first.', [`<b>${who}</b>`, link])
+					);
+				}
 			},
 		});
 	}
@@ -565,9 +596,16 @@ var PurchaseOrderEntry = class {
 				// an item with no type at all is still allowed on any order (the server
 				// rule says so too), and `in` would drop those rows because in SQL they
 				// are NULL.
+				//
+				// Supplier Catalog: only the chosen vendor's catalog items are offered; no vendor
+				// or a vendor without a catalog offers none (the hint under the table says why).
 				get_query: () => ({
 					query: 'alpinos.purchase.inward_api.po_type_item_query',
-					filters: { po_types: (me._val('custom_inward_type') || []).join(','), company: me._company() },
+					filters: {
+						po_types: (me._val('custom_inward_type') || []).join(','),
+						company: me._company(),
+						supplier: me._val('supplier') || '',
+					},
 				}),
 			},
 				row.item_code, (val) => {
@@ -857,6 +895,7 @@ var PurchaseOrderEntry = class {
 		this._set('owner', frappe.session.user);
 		this.page.set_title(__('Purchase Order Entry'));
 		this.apply_state();
+		this.refresh_catalog_hint('');
 	}
 
 	load(name) {
@@ -893,6 +932,7 @@ var PurchaseOrderEntry = class {
 				me.redraw_items();
 				me.render_approval_log();
 				me.apply_state();
+				me.refresh_catalog_hint(doc.supplier);
 				me.page.set_title(doc.name);
 			},
 		});

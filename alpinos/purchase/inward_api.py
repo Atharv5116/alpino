@@ -1027,6 +1027,17 @@ def po_type_item_query(doctype, txt, searchfield, start, page_len, filters):
 	page_len = cint(page_len) or 20
 	start = cint(start) or 0
 
+	# Supplier Catalog: the order's supplier offers only its catalog items, and a supplier
+	# with no catalog (or no supplier chosen yet) offers none. Only when the screen sends the
+	# supplier key, so any other caller of this query is unchanged.
+	catalog = ""
+	if "supplier" in filters:
+		if not filters.get("supplier"):
+			return []
+		from alpinos.purchase.supplier_catalog import catalog_condition
+
+		catalog = catalog_condition(filters.get("supplier"))
+
 	rows = frappe.db.sql(
 		"""
 		select name, item_name
@@ -1035,12 +1046,12 @@ def po_type_item_query(doctype, txt, searchfield, start, page_len, filters):
 		  and ifnull(custom_is_bundle, 0) = 0
 		  -- Item Templates (WB, SP, MN) are not stock: only their variants can be bought.
 		  and ifnull(has_variants, 0) = 0
-		  and (name like %(txt)s or ifnull(item_name, '') like %(txt)s){tagged}
+		  and (name like %(txt)s or ifnull(item_name, '') like %(txt)s){tagged}{catalog}
 		order by
 			case when name like %(head)s then 0 else 1 end,
 			name
 		limit %(limit)s
-		""".format(tagged=tagged_condition("Item")),
+		""".format(tagged=tagged_condition("Item"), catalog=catalog),
 		{
 			"txt": "%%%s%%" % (txt or ""),
 			"head": "%s%%" % (txt or ""),

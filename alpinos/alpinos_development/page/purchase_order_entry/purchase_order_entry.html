@@ -95,6 +95,8 @@
    the open list to the screen under its input (position fixed) and it floats over
    the card exactly as it did before the grid scrolled. */
 .purchase-order-entry .items-table { overflow-x: auto; overflow-y: hidden; }
+.purchase-order-entry .po-catalog-hint { margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.purchase-order-entry .po-catalog-hint--warn { color: var(--orange-600, #c2410c); }
 /* Content stays inside its own column (fixed layout would otherwise let a long value
    run over the next cell). The Link dropdowns are position:fixed, so this never clips them. */
 .purchase-order-entry .items-table td { position: relative; overflow: hidden; }
@@ -243,6 +245,7 @@
 				<i class="fa fa-plus"></i> Add Row
 			</button>
 		</div>
+		<div class="po-catalog-hint"></div>
 	</div>
 
 	<!-- ==================== BRD 2.3.2 PO summary ============================= -->
