@@ -197,6 +197,26 @@ def _custom_fields():
 				depends_on="eval:doc.custom_include_logistics=='Yes'",
 				mandatory_depends_on="eval:doc.custom_include_logistics=='Yes'",
 			),
+			# Purchase notes 26 Nov 2026 (point 8): how much of the freight is already paid,
+			# set while creating the invoice. Paid leaves nothing pending; Partial asks for the
+			# amount paid; Pending keeps the full freight (less any payment recorded later).
+			dict(
+				fieldname="custom_logistics_payment_status",
+				label="Logistic Payment Status",
+				fieldtype="Select",
+				options="Pending\nPartial\nPaid",
+				default="Pending",
+				insert_after="custom_transport_attachment",
+				depends_on="eval:doc.custom_include_logistics=='Yes'",
+			),
+			dict(
+				fieldname="custom_logistics_paid_amount",
+				label="Logistic Amount Paid",
+				fieldtype="Currency",
+				insert_after="custom_logistics_payment_status",
+				depends_on="eval:doc.custom_include_logistics=='Yes' && doc.custom_logistics_payment_status=='Partial'",
+				mandatory_depends_on="eval:doc.custom_include_logistics=='Yes' && doc.custom_logistics_payment_status=='Partial'",
+			),
 			dict(
 				fieldname="custom_transport_attachment",
 				label="Transport Bill Attachment",

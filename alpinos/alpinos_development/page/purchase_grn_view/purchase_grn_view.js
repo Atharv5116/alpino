@@ -193,6 +193,30 @@ var GRNView = class {
 		ed('.field-receiving-remarks', {
 			fieldname: 'custom_receiving_remarks', label: 'Receiving Remarks', fieldtype: 'Small Text',
 		});
+		// Purchase notes 26 Nov 2026 (point 9): the supplier's invoice. Required to submit the
+		// GRN, taken over by the Purchase Invoice. Saved as soon as it is attached.
+		const me = this;
+		let invoice_ready = false;
+		const invoice_ctl = this._ctl('.field-supplier-invoice', {
+			fieldname: 'custom_grn_attachment', label: 'Supplier Invoice', fieldtype: 'Attach',
+			read_only: cint(this.ctx.can_attach_invoice) ? 0 : 1,
+			description: cint(doc.docstatus) === 0 ? __('Required to submit the GRN.') : '',
+			change: () => {
+				if (!invoice_ready || !invoice_ctl) return;
+				const url = invoice_ctl.get_value() || '';
+				if (url === (doc.custom_grn_attachment || '')) return;
+				frappe.call({
+					method: 'alpinos.purchase.grn_edit.set_supplier_invoice',
+					args: { purchase_receipt: me.docname, file_url: url },
+					callback(r) {
+						if (r.exc) return;
+						doc.custom_grn_attachment = url;
+						me._toast(url ? __('Supplier invoice attached') : __('Supplier invoice removed'), 'green');
+					},
+				});
+			},
+		}, doc.custom_grn_attachment);
+		setTimeout(() => { invoice_ready = true; }, 400);
 		this._ctl('.field-edit-reason', {
 			fieldname: 'edit_reason', label: 'Reason for these changes', fieldtype: 'Small Text',
 			description: 'Optional. Saved in the Draft Edit Log against every change in this save.',
@@ -631,19 +655,65 @@ var GRNView = class {
 		);
 	}
 
+	/**
+	 * Purchase notes 26 Nov 2026 (points 9 and 10): before the invoice, a pop-up of the
+	 * checkpoints, green when met and red when not: GRN submitted, supplier invoice attached,
+	 * and a Debit Note when QC rejected any quantity. The invoice is created only when all are
+	 * green; purchase_invoice.create_from_grn refuses otherwise.
+	 */
 	create_invoice() {
 		const me = this;
-		frappe.confirm(__('Create the Purchase Invoice for {0}?', [me.docname]), () =>
-			frappe.call({
-				method: 'alpinos.purchase.invoice_list_api.create_invoice',
-				args: { source_type: 'grn', source: me.docname },
-				freeze: true,
-				freeze_message: __('Creating the Purchase Invoice...'),
-				callback(r) {
-					if (r.exc || !r.message) return;
-					frappe.set_route('purchase_invoice_entry', r.message.name);
-				},
-			})
-		);
+		const esc = frappe.utils.escape_html;
+		frappe.call({
+			method: 'alpinos.purchase.purchase_invoice.get_invoice_checkpoints',
+			args: { purchase_receipt: me.docname },
+			callback(r) {
+				if (r.exc) return;
+				const d = r.message || {};
+				const rows = (d.points || []).map((p) => `
+					<div class="grn-cp ${p.ok ? 'grn-cp-ok' : 'grn-cp-bad'}">
+						<span class="grn-cp-icon" aria-hidden="true">${p.ok ? '&#10003;' : '&#10005;'}</span>
+						<div>
+							<div class="grn-cp-label">${esc(p.label)}<span class="sr-only"> (${p.ok ? __('done') : __('not done')})</span></div>
+							${!p.ok && p.detail ? `<div class="grn-cp-detail">${esc(p.detail)}</div>` : ''}
+						</div>
+					</div>`).join('');
+				const dlg = new frappe.ui.Dialog({
+					title: __('Before the Purchase Invoice'),
+					fields: [{ fieldtype: 'HTML', fieldname: 'points' }],
+					primary_action_label: d.ok ? __('Create Invoice') : __('Close'),
+					primary_action() {
+						dlg.hide();
+						if (!d.ok) return;
+						frappe.call({
+							method: 'alpinos.purchase.invoice_list_api.create_invoice',
+							args: { source_type: 'grn', source: me.docname },
+							freeze: true,
+							freeze_message: __('Creating the Purchase Invoice...'),
+							callback(r2) {
+								if (r2.exc || !r2.message) return;
+								frappe.set_route('purchase_invoice_entry', r2.message.name);
+							},
+						});
+					},
+				});
+				dlg.fields_dict.points.$wrapper.html(`
+					<style>
+						.grn-cps { display: flex; flex-direction: column; gap: 8px; }
+						.grn-cp { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px;
+							border-radius: 8px; border: 1px solid var(--border-color); }
+						.grn-cp-icon { flex: 0 0 22px; height: 22px; border-radius: 50%; display: inline-flex;
+							align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; }
+						.grn-cp-ok .grn-cp-icon { background: var(--green-500, #16a34a); }
+						.grn-cp-bad .grn-cp-icon { background: var(--red-500, #dc2626); }
+						.grn-cp-bad { border-color: var(--red-200, #fecaca); }
+						.grn-cp-label { font-weight: 500; color: var(--text-color); }
+						.grn-cp-detail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+					</style>
+					<div class="grn-cps">${rows}</div>
+					${d.ok ? '' : `<p style="margin:12px 0 0; font-size:12px; color: var(--text-muted);">${__('Fix the red points, then use Create Invoice again.')}</p>`}`);
+				dlg.show();
+			},
+		});
 	}
 };

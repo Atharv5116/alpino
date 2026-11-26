@@ -54,12 +54,17 @@ _TOL = 1e-6
 
 # BRD 4.7 / VAL-QC-02. The "…_done" flag is the QC user's assertion that a section is
 # finished; sample testing is only applicable where a sample id has to be minted.
+#
+# Purchase notes 26 Nov 2026 (points 6 and 7): the order is Vehicle, Packing / Box, Material,
+# Sample Testing; Vehicle Inspection is optional (OPTIONAL_INSPECTIONS: a tick is still
+# checked against its rows), Material is mandatory, Sample Testing is mandatory for FG and RM.
 MANDATORY_INSPECTIONS = (
 	("vehicle_inspection_done", "Vehicle Inspection", None),
-	("material_inspection_done", "Material Inspection", None),
 	("packaging_inspection_done", "Packaging / Box Inspection", None),
-	("sample_testing_done", "Sample Testing", C.BATCH_FROM_INVOICE_TYPES),
+	("material_inspection_done", "Material Inspection", None),
+	("sample_testing_done", "Sample Testing", C.SAMPLE_REQUIRED_TYPES),
 )
+OPTIONAL_INSPECTIONS = ("vehicle_inspection_done",)
 
 # The table each "…_done" tick vouches for. A tick over an empty or half-filled table
 # asserted an inspection nobody recorded, so _validate_completed_sections refuses it.
@@ -625,8 +630,23 @@ class PurchaseQC(Document):
 				)
 			line = lines.get(row.qc_item)
 			if line:
-				line.sample_qty = flt(line.sample_qty) + flt(row.sample_qty)
+				# Purchase notes 26 Nov 2026 (point 7): a sample drawn in another unit counts
+				# on the line in the line's received unit.
 				row.uom = row.uom or line.uom
+				if row.uom == line.uom:
+					row.conversion_factor = 1
+				elif flt(row.get("conversion_factor")) <= 0:
+					from alpinos.purchase.qc_sample_uom import get_sample_conversion
+
+					row.conversion_factor = get_sample_conversion(row.item_code, row.uom, line.uom)
+					if flt(row.conversion_factor) <= 0:
+						frappe.throw(
+							_("Row {0} ({1}): no conversion from {2} to {3} is set up. Enter the Conversion Factor.").format(
+								row.idx, row.item_code, row.uom, line.uom
+							)
+						)
+				row.qty_in_line_uom = flt(flt(row.sample_qty) * flt(row.conversion_factor or 1), 6)
+				line.sample_qty = flt(line.sample_qty) + flt(row.qty_in_line_uom)
 
 		for row in self.get("control_sample") or []:
 			if not cint(row.control_sample_taken):
@@ -966,6 +986,8 @@ class PurchaseQC(Document):
 
 	def _applicable_inspections(self):
 		for field, label, types in MANDATORY_INSPECTIONS:
+			if field in OPTIONAL_INSPECTIONS:
+				continue
 			# A checklist applies when it names ANY of this document's types.
 			if types and not C.any_inward_type(self.inward_type, types):
 				continue
@@ -985,7 +1007,7 @@ class PurchaseQC(Document):
 				title=_("VAL-QC-02"),
 			)
 
-		if C.any_inward_type(self.inward_type, C.BATCH_FROM_INVOICE_TYPES) and not self.get("sample_testing"):
+		if C.any_inward_type(self.inward_type, C.SAMPLE_REQUIRED_TYPES) and not self.get("sample_testing"):
 			frappe.throw(
 				_("Please record at least one Sample Testing row for an {0} inward.").format(
 					self.inward_type

@@ -105,9 +105,18 @@ def _payable_supplier(doc):
 
 
 def _payable_logistics(doc):
+	"""The freight still to be paid through the ERP. Purchase notes 26 Nov 2026 (point 8):
+	a bill marked Paid owes nothing, so it never shows in Pending Payment; Partial owes the
+	freight less the amount typed as paid; Pending owes the whole freight."""
 	if not wants_logistics(doc):
 		return 0.0
-	return flt(doc.get("custom_freight_amount"))
+	freight = flt(doc.get("custom_freight_amount"))
+	status = doc.get("custom_logistics_payment_status") or "Pending"
+	if status == "Paid":
+		return 0.0
+	if status == "Partial":
+		return max(freight - flt(doc.get("custom_logistics_paid_amount")), 0.0)
+	return freight
 
 
 def _active_rows(doc):
@@ -299,6 +308,26 @@ def _validate_submit_requirements(doc):
 		):
 			frappe.throw(
 				_("Please complete all mandatory Logistics details."), title=_("VAL-UNF-03")
+			)
+		status = doc.get("custom_logistics_payment_status") or "Pending"
+		if status == "Partial":
+			paid, freight = flt(doc.get("custom_logistics_paid_amount")), flt(doc.get("custom_freight_amount"))
+			if paid <= 0 or paid >= freight:
+				frappe.throw(
+					_("For a Partial logistic payment, enter the amount paid: more than 0 and less than the Freight Amount ({0}).").format(
+						frappe.format_value(freight, {"fieldtype": "Currency"})
+					),
+					title=_("Logistic Payment Status"),
+				)
+		elif flt(doc.get("custom_logistics_paid_amount")):
+			doc.custom_logistics_paid_amount = 0
+		if doc.get("custom_logistics_vendor") and not cint(
+			frappe.db.get_value("Supplier", doc.custom_logistics_vendor, "is_transporter")
+		):
+			frappe.msgprint(
+				_("{0} is not marked as a transporter on its Supplier record.").format(doc.custom_logistics_vendor),
+				indicator="orange",
+				alert=True,
 			)
 
 
@@ -743,6 +772,15 @@ def create_from_grn(purchase_receipt):
 			title=_("BR-UNF-02"),
 		)
 
+	failed = [p for p in invoice_checkpoints(grn) if not p["ok"]]
+	if failed:
+		frappe.throw(
+			_("The Purchase Invoice cannot be created yet:")
+			+ "<br><br>&bull; "
+			+ "<br>&bull; ".join(f"{p['label']}: {p['detail']}" for p in failed),
+			title=_("Invoice Checkpoints"),
+		)
+
 	invoice = make_purchase_invoice(grn.name)
 	_link_chain(
 		invoice,
@@ -750,12 +788,69 @@ def create_from_grn(purchase_receipt):
 		grn=grn.name,
 		invoice_type=C.UNF_TYPE_NORMAL,
 	)
+	# Purchase notes 26 Nov 2026 (point 9): the supplier invoice attached on the GRN.
+	if grn.get("custom_grn_attachment") and not invoice.get("custom_invoice_attachment"):
+		invoice.custom_invoice_attachment = grn.custom_grn_attachment
 	_fill_gst_from_inward(invoice)
 	_fill_bill_from_inward(invoice)
 	bill_approved_quantity(invoice)
 	invoice.flags.ignore_permissions = True
 	invoice.insert(ignore_permissions=True)
 	return invoice
+
+
+def invoice_checkpoints(grn):
+	"""Purchase notes 26 Nov 2026 (points 9 and 10): what must hold before the Purchase
+	Invoice is created from a GRN, each as {key, label, ok, detail}. The GRN screen shows
+	them in the Create Invoice pop-up (green / red) and create_from_grn refuses on any red."""
+	from alpinos.purchase.grn import existing_debit_note
+
+	points = [
+		{
+			"key": "grn_submitted",
+			"label": _("GRN finally submitted"),
+			"ok": cint(grn.docstatus) == 1,
+			"detail": "" if cint(grn.docstatus) == 1 else _("Submit the GRN first."),
+		}
+	]
+	attached = (grn.get("custom_grn_attachment") or "").strip()
+	points.append(
+		{
+			"key": "supplier_invoice",
+			"label": _("Supplier Invoice attached on the GRN"),
+			"ok": bool(attached),
+			"detail": "" if attached else _("Attach it in the Supplier Invoice field of this GRN."),
+		}
+	)
+	rejected = sum(flt(row.get("rejected_qty")) for row in grn.get("items") or [])
+	if rejected > 0:
+		note = existing_debit_note(grn.name) if grn.name else None
+		points.append(
+			{
+				"key": "debit_note",
+				"label": _("Debit Note for the quantity rejected by QC ({0})").format(frappe.format(rejected, {"fieldtype": "Float"})),
+				"ok": bool(note),
+				"detail": note or _("Create it with Generate Debit Note on this GRN."),
+			}
+		)
+	else:
+		points.append(
+			{
+				"key": "debit_note",
+				"label": _("No quantity rejected by QC, so no Debit Note is needed"),
+				"ok": True,
+				"detail": "",
+			}
+		)
+	return points
+
+
+@frappe.whitelist()
+def get_invoice_checkpoints(purchase_receipt):
+	grn = frappe.get_doc(GRN, purchase_receipt)
+	grn.check_permission("read")
+	points = invoice_checkpoints(grn)
+	return {"points": points, "ok": all(p["ok"] for p in points)}
 
 
 def inward_bill(inward):
@@ -1263,6 +1358,8 @@ DRAFT_FIELDS = (
 	"custom_logistics_vendor",
 	"custom_transport_invoice_no",
 	"custom_freight_amount",
+	"custom_logistics_payment_status",
+	"custom_logistics_paid_amount",
 	"custom_transport_attachment",
 )
 

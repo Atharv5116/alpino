@@ -1762,6 +1762,16 @@ _PO_HTML_RAW = r"""
   </table>
   {% endif %}
 
+  <!-- ===== the supplier's own instructions / T&C (Supplier master table), under the
+       company's terms. Purchase notes 26 Nov 2026, point 3. ===== -->
+  {% set _sup_tc = frappe.get_all("Supplier Instruction", filters={"parenttype": "Supplier", "parent": doc.supplier, "parentfield": "custom_supplier_instructions"}, fields=["instruction"], order_by="idx asc") if doc.supplier else [] %}
+  {% if _sup_tc %}
+  <table class="avoid">
+    <tr><td class="sec">SUPPLIER INSTRUCTIONS / TERMS &amp; CONDITIONS</td></tr>
+    {% for _t in _sup_tc %}<tr><td>{{ loop.index }}. {{ (_t.instruction or "") | e }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+
   <!-- ===== signatures ===== -->
   <table class="avoid">
     <colgroup><col style="width:33.3%"><col style="width:33.3%"><col style="width:33.4%"></colgroup>

@@ -36,6 +36,9 @@ INWARD_TYPE_LABELS = {
 
 # Types that mint an internal batch from Invoice No + Inward Date (BR-QC-11).
 BATCH_FROM_INVOICE_TYPES = (INWARD_RM, INWARD_PM)
+# Purchase notes 26 Nov 2026 (point 7): QC cannot be completed without Sample Testing for
+# FG and RM; it is optional for PM.
+SAMPLE_REQUIRED_TYPES = (INWARD_RM, INWARD_FG)
 # Types that mint an internal batch from Batch No + Manufacturing Date (BR-QC-12).
 BATCH_FROM_MFG_TYPES = (INWARD_FG,)
 # Types that mint an RMID/PMID sample id when QC draws a sample (BR-QC-14).

@@ -43,10 +43,11 @@ var PQC_CONDITION = ['Good', 'Damaged'];
 // BR-QC-05: the four parallel inspections, as [section key, done fieldname, short
 // title, full label]. Declared with var, not const: desk pages are re-evaluated on
 // navigation and a re-declared const blanks the page.
+// Purchase notes 26 Nov 2026 (point 7): Vehicle, Packing / Box, Material, Sample Testing.
 var PQC_SECTIONS = [
 	['vehicle', 'vehicle_inspection_done', 'Vehicle', 'Vehicle Inspection'],
-	['material', 'material_inspection_done', 'Material', 'Material Inspection'],
 	['packaging', 'packaging_inspection_done', 'Packaging', 'Packaging / Box Inspection'],
+	['material', 'material_inspection_done', 'Material', 'Material Inspection'],
 	['sample', 'sample_testing_done', 'Sample Testing', 'Sample Testing'],
 ];
 
@@ -640,7 +641,8 @@ var PurchaseQCEntry = class {
 		} else if (key === 'sample') {
 			$tr = $(`<tr data-idx="${idx}"><td class="text-muted">${idx + 1}</td>
 				<td class="c-item"></td><td class="c-line"></td><td class="c-sbatch"></td>
-				<td class="c-ibatch"></td><td class="c-qty"></td><td class="c-id"></td><td class="c-fg"></td>
+				<td class="c-ibatch"></td><td class="c-qty"></td><td class="c-suom"></td><td class="c-conv"></td>
+				<td class="c-lineqty pqc-num"></td><td class="c-id"></td><td class="c-fg"></td>
 				<td class="c-rem"></td>${del}</tr>`);
 			$body.append($tr);
 			this._mk_item_cell($tr, key, idx, data);
@@ -658,7 +660,28 @@ var PurchaseQCEntry = class {
 				{ fieldtype: 'Data', fieldname: 'internal_batch_no' }, data.internal_batch_no,
 				function (val) { data.internal_batch_no = (val || '').trim(); me._push_internal_batch(data); });
 			this._mk_cell($tr, '.c-qty', key, idx, { fieldtype: 'Float', fieldname: 'sample_qty' },
-				data.sample_qty, function (val) { data.sample_qty = flt(val); me.recalc_sample_rollup(); });
+				data.sample_qty, function (val) { data.sample_qty = flt(val); me._show_line_qty($tr, data); me.recalc_sample_rollup(); });
+			// Purchase notes 26 Nov 2026 (point 7): the sample can be drawn in another unit
+			// (grams of a kg item); the conversion turns it into the received unit, which is
+			// what the decision line and the stock count.
+			const line_uom = this._sample_line_uom(data);
+			if (!data.uom) data.uom = line_uom;
+			if (!flt(data.conversion_factor)) data.conversion_factor = 1;
+			this._mk_cell($tr, '.c-suom', key, idx, { fieldtype: 'Link', fieldname: 'uom', options: 'UOM' },
+				data.uom, function (val) {
+					data.uom = val;
+					me._fetch_sample_conversion(data, () => {
+						const conv = me.fields[`${key}_conversion_factor_${idx}`];
+						if (conv) conv.set_value(data.conversion_factor);
+						me._show_line_qty($tr, data);
+						me.recalc_sample_rollup();
+					});
+				});
+			this._mk_cell($tr, '.c-conv', key, idx, { fieldtype: 'Float', fieldname: 'conversion_factor', precision: 6 },
+				data.conversion_factor, function (val) {
+					data.conversion_factor = flt(val) || 1; me._show_line_qty($tr, data); me.recalc_sample_rollup();
+				});
+			this._show_line_qty($tr, data);
 			// One sticker per sample row; works before the QC is saved.
 			$(`<button class="btn btn-xs btn-light btn-print-row-sticker" data-alpinos-keep="1">
 				<i class="fa fa-print"></i> ${__('Print')}</button>`)
@@ -797,6 +820,41 @@ var PurchaseQCEntry = class {
 		this.render_decision();
 	}
 
+	/** The received unit of the decision line a sample row belongs to. */
+	_sample_line_uom(data) {
+		const decision = this.tables.decision || [];
+		const line = decision[cint(data.qc_item_idx) - 1] || decision.find((r) => r.item_code === data.item_code);
+		return (line && line.uom) || '';
+	}
+
+	/** "<qty> <received UOM>" for a sample row. */
+	_show_line_qty($tr, data) {
+		const qty = flt(data.sample_qty) * (flt(data.conversion_factor) || 1);
+		$tr.find('.c-lineqty').text(
+			data.sample_qty ? `${format_number(qty, null, 3)} ${this._sample_line_uom(data)}` : ''
+		);
+	}
+
+	/** Conversion from the sample's UOM to the line's received UOM (item table, then the UOM master). */
+	_fetch_sample_conversion(data, done) {
+		const line_uom = this._sample_line_uom(data);
+		if (!data.uom || !line_uom || data.uom === line_uom) {
+			data.conversion_factor = 1;
+			done && done();
+			return;
+		}
+		frappe.call({
+			method: 'alpinos.purchase.qc_sample_uom.get_sample_conversion',
+			args: { item_code: data.item_code, sample_uom: data.uom, line_uom },
+			callback: (r) => {
+				const f = flt(r.message);
+				if (f) data.conversion_factor = f;
+				else frappe.show_alert({ message: __('No conversion from {0} to {1} is set up. Type the Conversion.', [data.uom, line_uom]), indicator: 'orange' });
+				done && done();
+			},
+		});
+	}
+
 	/**
 	 * Mirror purchase_qc._roll_up_sample_qty on the client.
 	 *
@@ -829,7 +887,7 @@ var PurchaseQCEntry = class {
 
 		(this.tables.sample || []).forEach((r) => {
 			const line = target(r);
-			if (line) line.sample_qty = flt(line.sample_qty) + flt(r.sample_qty);
+			if (line) line.sample_qty = flt(line.sample_qty) + flt(r.sample_qty) * (flt(r.conversion_factor) || 1);
 		});
 		(this.tables.control || []).forEach((r) => {
 			if (!cint(r.control_sample_taken)) return;

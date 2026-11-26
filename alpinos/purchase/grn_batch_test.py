@@ -134,6 +134,7 @@ def run():
 
 	# The final submit now goes through and the stock lands in those batches.
 	pr = frappe.get_doc("Purchase Receipt", pr_name)
+	pr.custom_grn_attachment = "/files/test-supplier-invoice.pdf"  # purchase notes, point 9
 	try:
 		pr.submit()
 		submitted = True

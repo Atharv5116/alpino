@@ -13,6 +13,8 @@
   "internal_batch_no",
   "sample_qty",
   "uom",
+  "conversion_factor",
+  "qty_in_line_uom",
   "sample_id",
   "sample_sticker",
   "stock_entry",
@@ -74,9 +76,9 @@
   {
    "fieldname": "uom",
    "fieldtype": "Link",
-   "label": "UOM",
+   "label": "Sample UOM",
    "options": "UOM",
-   "read_only": 1
+   "description": "The unit the sample is drawn in. Defaults to the received unit of the line."
   },
   {
    "columns": 2,
@@ -125,12 +127,28 @@
    "fieldtype": "Int",
    "label": "Received Line #",
    "non_negative": 1
+  },
+  {
+   "fieldname": "conversion_factor",
+   "fieldtype": "Float",
+   "label": "Conversion Factor",
+   "default": "1",
+   "precision": "6",
+   "description": "How many of the line's received unit one Sample UOM is (e.g. 0.001 for Gram on a Kg line)."
+  },
+  {
+   "fieldname": "qty_in_line_uom",
+   "fieldtype": "Float",
+   "label": "Qty in Received UOM",
+   "read_only": 1,
+   "precision": "3",
+   "description": "Sample Quantity x Conversion Factor. This is what the decision line and the stock count."
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-04 12:00:00.000000",
+ "modified": "2026-11-26 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase QC Sample",

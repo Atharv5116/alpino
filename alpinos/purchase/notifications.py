@@ -72,6 +72,8 @@ def submit_for_qc(purchase_inward):
 		{
 			"received_by": inward.received_by or frappe.session.user,
 			"receiving_datetime": inward.receiving_datetime or now,
+			# Optional for Store (purchase notes, point 4): a blank arrival is the hand-over time.
+			"actual_arrival_datetime": inward.actual_arrival_datetime or now,
 		},
 		update_modified=False,
 	)

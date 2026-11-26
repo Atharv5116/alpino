@@ -587,6 +587,7 @@ def run():
 	# --- Admin final submit (BR-GRN-06 / VAL-GRN-04) ----------------------
 	def _submit_grn():
 		pr = frappe.get_doc("Purchase Receipt", pr_name[0])
+		pr.custom_grn_attachment = "/files/test-supplier-invoice.pdf"  # purchase notes, point 9
 		pr.submit()
 		_assert(pr.docstatus == 1, "GRN did not submit")
 

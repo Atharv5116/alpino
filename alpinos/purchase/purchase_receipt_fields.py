@@ -189,11 +189,15 @@ def _custom_fields():
 				depends_on="eval:doc.custom_purchase_quarantine",
 				description="QC quarantined items on this GRN: they are received into the Quarantine warehouse and move to their warehouse when released.",
 			),
+			# Purchase notes 26 Nov 2026 (point 9): the supplier's invoice, attached on the GRN.
+			# The GRN cannot be submitted without it and the Purchase Invoice takes it over.
 			dict(
 				fieldname="custom_grn_attachment",
-				label="GRN Attachment",
+				label="Supplier Invoice",
 				fieldtype="Attach",
 				insert_after="custom_purchase_quarantine",
+				allow_on_submit=1,
+				description="The supplier's invoice. Required to submit the GRN; the Purchase Invoice takes it over.",
 			),
 			dict(
 				fieldname="custom_receiving_remarks",
@@ -642,6 +646,10 @@ def validate_grn_completeness(doc, method=None):
 
 	if not (doc.get("items") or []):
 		missing.append(_("No item rows"))
+
+	# Purchase notes 26 Nov 2026 (point 9): no GRN without the supplier's invoice attached.
+	if not (doc.get("custom_grn_attachment") or "").strip():
+		missing.append(_("Header: Supplier Invoice (attach the supplier's invoice)"))
 
 	# BRD 5.2.2 item rows. Batch / manufacturing / expiry are conditional on the item
 	# actually being batch-tracked or shelf-life bearing, so they are only demanded there.

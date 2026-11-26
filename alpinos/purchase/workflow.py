@@ -21,9 +21,10 @@ from alpinos.purchase import constants as C
 
 
 def _guard_receiving_complete(doc):
-	"""Store may hand over to QC only once the receipt is actually recorded."""
-	if not doc.get("actual_arrival_datetime"):
-		return _("Please enter the Actual Arrival Date & Time before submitting for QC.")
+	"""Store may hand over to QC only once the receipt is actually recorded.
+
+	Purchase notes 26 Nov 2026 (point 4): the Actual Arrival Date & Time is optional; a
+	blank one is filled with the Submit for QC time (notifications.submit_for_qc)."""
 	if not any(flt(l.received_qty) for l in doc.get("items") or []):
 		return _("Please enter the Received Quantity for at least one item.")
 	return receiving_incomplete_reason(doc)
@@ -37,8 +38,8 @@ def receiving_incomplete_reason(doc):
 	(the guard above), and stays complete on any save after that
 	(PurchaseInward._validate_receiving_details).
 	"""
-	if not doc.get("actual_arrival_datetime"):
-		return _("Please enter the Actual Arrival Date & Time.")
+	# Actual Arrival, Actual Vehicle No. and Actual Driver Contact are optional (purchase
+	# notes 26 Nov 2026, point 4): the arrival is stamped at Submit for QC when left blank.
 	fg = C.has_inward_type(doc.get("inward_type"), C.INWARD_FG)
 	for line in doc.get("items") or []:
 		if flt(line.received_qty) <= 0:
@@ -56,11 +57,6 @@ def receiving_incomplete_reason(doc):
 			return _(
 				"Row {0} ({1}): Manufacturing Date is required - the Expiry Date is derived from it."
 			).format(line.idx, line.item_code)
-	if cint(doc.get("vehicle_details_verified")) and not (
-		(doc.get("actual_vehicle_no") or "").strip()
-		or (doc.get("actual_driver_contact_no") or "").strip()
-	):
-		return _("Please enter the correct vehicle and driver details.")
 	return _split_incomplete_reason(doc, fg)
 
 

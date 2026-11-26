@@ -851,7 +851,7 @@ var PurchaseInwardEntry = class {
 			fieldname: 'actual_arrival_datetime', label: 'Actual Arrival Date & Time',
 			fieldtype: 'Datetime',
 			hide_timezone: 1,
-			description: 'Today or earlier. A receipt cannot be witnessed in the future.',
+			description: 'Optional. Today or earlier; left blank, it is set to the Submit for QC time.',
 		});
 		// An arrival is an OBSERVATION, so it cannot be in the future. The calendar greys
 		// out later days and a typed one is refused here; the server enforces the same
@@ -866,9 +866,9 @@ var PurchaseInwardEntry = class {
 		this._ctl('.field-vehicle-verified', {
 			fieldname: 'vehicle_details_verified', label: 'Vehicle Details Verified',
 			fieldtype: 'Check',
-			// VAL-PI-05: ticking it means the fetched details were WRONG, so the corrected
-			// ones become mandatory. Left unticked, the PO's details are accepted as-is.
-			description: 'Tick only if the actual vehicle/driver differ from the PO.',
+			// Purchase notes 26 Nov 2026 (point 4): the actual vehicle and driver details are
+			// optional, ticked or not.
+			description: 'Tick if the actual vehicle/driver differ from the PO. The actual details are optional.',
 		});
 		this._ctl('.field-allow-excess', {
 			fieldname: 'allow_excess_qty', label: 'Allow Excess Quantity',

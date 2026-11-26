@@ -330,6 +330,8 @@ after_migrate = [
 	# doctype that must already carry its custom fields), roles before warehouses
 	# (which name the excess-override role in Stock Settings).
 	"alpinos.purchase.purchase_order_fields.setup_purchase_order_fields",
+	# Purchase notes 26 Nov 2026 (point 3): vendor-wise instructions on the Supplier.
+	"alpinos.purchase.supplier_terms.setup_supplier_terms_fields",
 	"alpinos.purchase.purchase_order_approval.setup_purchase_order_approval",
 	# After the approval setup: Force Close anchors its section on custom_approval_status
 	# and adds Force Closed to that field's options.

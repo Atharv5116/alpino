@@ -158,7 +158,23 @@ def get_grn_context(purchase_receipt):
 		# A cancelled (or never raised) debit note can be raised again for the rejected
 		# quantity; grn.generate_debit_note re-checks the authority and the quantity.
 		"can_generate_debit_note": docstatus == 1 and rejected and not live_note and may_submit,
+		# Purchase notes 26 Nov 2026 (point 9): the supplier's invoice, attachable until the
+		# GRN is cancelled (a GRN submitted before this rule can still get it for its invoice).
+		"can_attach_invoice": docstatus != 2 and (may_edit or may_submit),
 	}
+
+
+@frappe.whitelist()
+def set_supplier_invoice(purchase_receipt, file_url=None):
+	"""Attach (or replace) the supplier's invoice on a GRN from the GRN screen."""
+	pr = _load_grn(purchase_receipt)
+	assert_company(pr, ptype="read")
+	if cint(pr.docstatus) == 2:
+		frappe.throw(_("This GRN is cancelled."))
+	if not (_has_role(EDIT_ROLES, pr.company) or _has_role(C.GRN_FINAL_SUBMIT_ROLES, pr.company)):
+		frappe.throw(_("You are not allowed to attach the supplier invoice on this GRN."), frappe.PermissionError)
+	pr.db_set("custom_grn_attachment", (file_url or "").strip() or None, update_modified=False)
+	return {"custom_grn_attachment": pr.custom_grn_attachment}
 
 
 # ------------------------------------------------------------------ save / submit

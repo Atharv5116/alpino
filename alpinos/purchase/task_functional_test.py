@@ -103,6 +103,13 @@ def probe(task, label, fn, expect=None, as_user=None, diff=None):
 		return None
 
 
+
+def _submit_grn_doc(name):
+	"""Purchase notes 26 Nov 2026 (point 9): a GRN is submitted with the supplier's invoice
+	attached, so the fixture attaches one first."""
+	frappe.db.set_value("Purchase Receipt", name, "custom_grn_attachment", "/files/test-supplier-invoice.pdf")
+	frappe.get_doc("Purchase Receipt", name).submit()
+
 def _test_supplier():
 	"""This suite's own supplier -- the one test_cleanup.purge() removes documents for."""
 	from alpinos.purchase.test_cleanup import TEST_SUPPLIER
@@ -620,13 +627,17 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 	probe(16, "VAL-PI-09 Submit for QC without Target Location is refused", t_no_location, expect="Target Location")
 
 	def t_no_arrival():
+		# Purchase notes 26 Nov 2026 (point 4): optional, stamped with the hand-over time.
 		receive(pi_a, 50, arrival=False)
 		d = frappe.get_doc("Purchase Inward", pi_a.name)
 		d.actual_arrival_datetime = None
 		d.flags.ignore_permissions = True
 		d.save()
 		notif.submit_for_qc(pi_a.name)
-	probe(16, "VAL-PI-12 Submit for QC without Actual Arrival is refused", t_no_arrival, expect="Arrival")
+		if not frappe.db.get_value("Purchase Inward", pi_a.name, "actual_arrival_datetime"):
+			raise AssertionError("arrival not stamped at Submit for QC")
+		frappe.throw("ARRIVAL STAMPED")  # roll the hand-over back for the probes below
+	probe(16, "Submit for QC without Actual Arrival stamps the hand-over time", t_no_arrival, expect="ARRIVAL STAMPED")
 
 	def t_no_received():
 		receive(pi_a, 0)
@@ -645,8 +656,9 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 		d.flags.ignore_permissions = True
 		d.save()
 		notif.submit_for_qc(pi_a.name)
-	probe(16, "VAL-PI-05 Verified ticked without corrected details is refused", t_verified_no_details,
-	      expect="correct vehicle and driver details")
+		frappe.throw("VERIFIED WITHOUT DETAILS ACCEPTED")  # roll back for the probes below
+	probe(16, "Verified ticked without corrected details is accepted (details optional)", t_verified_no_details,
+	      expect="VERIFIED WITHOUT DETAILS ACCEPTED")
 
 	def t_tolerance():
 		frappe.db.set_single_value("Purchase Inward Settings", "block_over_receipt", 1)
@@ -861,13 +873,13 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 			probe(48, "invoice before the GRN is finally submitted is refused",
 			      lambda: INV.create_from_grn(pr_r), expect="finally submitted", as_user=P)
 			probe(48, "Purchase team cannot final-submit the GRN",
-			      lambda: frappe.get_doc("Purchase Receipt", pr_r).submit(), expect="submit a GRN", as_user=P)
+			      lambda: _submit_grn_doc(pr_r), expect="submit a GRN", as_user=P)
 			probe(30, "GRN list filter by Purchase Inward", lambda: _assert_in(_grn_list(purchase_inward=pi_r.name), pr_r), as_user=P)
 			for kw in ({"grn_status": "Draft"}, {"supplier": T["supplier"]}, {"has_rejection": 1},
 			           {"from_date": today(), "to_date": today()}):
 				probe(30, f"GRN list filter {list(kw)[0]}", lambda kw=kw: _grn_list(**kw), as_user=P)
 
-			ok = probe(48, "Admin final-submits the GRN", lambda: frappe.get_doc("Purchase Receipt", pr_r).submit(), as_user=AD)
+			ok = probe(48, "Admin final-submits the GRN", lambda: _submit_grn_doc(pr_r), as_user=AD)
 			frappe.db.commit()
 			if ok is not None or frappe.db.get_value("Purchase Receipt", pr_r, "docstatus") == 1:
 				g = frappe.get_doc("Purchase Receipt", pr_r)
@@ -925,7 +937,7 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 	# ---------------------------------------------------------------- 33 no rejection -> no debit note
 	def t_no_debit_note():
 		_po, _pi, _qc, pr = chain(C.INWARD_RM, qty=20, rejected=0, sample=1)
-		frappe.get_doc("Purchase Receipt", pr).submit()
+		_submit_grn_doc(pr)
 		assert not frappe.db.get_value("Purchase Receipt", pr, "custom_debit_note"), "debit note raised with no rejection"
 	probe(33, "VAL-GRN-09 no rejection means no debit note", t_no_debit_note)
 
@@ -991,7 +1003,7 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 		_po, _pi, qc, pr = chain(C.INWARD_RM, qty=20, rejected=0, sample=1,
 		                         control={"control_sample_qty": 1, "batch_no": uniq("CTRL"),
 		                                  "storage_location": storage})
-		frappe.get_doc("Purchase Receipt", pr).submit()
+		_submit_grn_doc(pr)
 		row = frappe.get_doc("Purchase QC", qc).control_sample[0]
 		# Recorded with its storage location and retention; no stock leaves the warehouse.
 		assert not row.stock_entry, f"control sample moved stock: {row.stock_entry}"
@@ -1045,6 +1057,7 @@ def _run_all(qc_mod, G, IA, notif, INV, Q):
 		check(41, "the GRN receives the quarantined item into the Quarantine warehouse, the other into its own",
 		      len(lines) == 2 and lines[1].warehouse == store and lines[1].custom_quarantine_status == "Quarantined"
 		      and lines[0].warehouse != store, str(lines))
+		frappe.db.set_value("Purchase Receipt", grn, "custom_grn_attachment", "/files/test-supplier-invoice.pdf")
 		probe(41, "Admin submits the GRN", lambda: GE.submit_grn(grn), as_user=AD)
 		probe(41, "Store releases the quarantined item", lambda: Q.release_items(qdoc, [held[0].name], "Cleared"), as_user=SM)
 		entry = frappe.db.get_value("Purchase Quarantine Item", held[0].name, "release_stock_entry")

@@ -32,12 +32,12 @@
   "vehicle_section",
   "vehicle_inspection_done",
   "vehicle_inspection",
-  "material_section",
-  "material_inspection_done",
-  "material_inspection",
   "packaging_section",
   "packaging_inspection_done",
   "packaging_inspection",
+  "material_section",
+  "material_inspection_done",
+  "material_inspection",
   "sample_section",
   "sample_testing_done",
   "sample_testing",
@@ -277,23 +277,6 @@
    "options": "Purchase QC Vehicle Inspection"
   },
   {
-   "fieldname": "material_section",
-   "fieldtype": "Section Break",
-   "label": "Material Inspection"
-  },
-  {
-   "default": "0",
-   "fieldname": "material_inspection_done",
-   "fieldtype": "Check",
-   "label": "Material Inspection Complete"
-  },
-  {
-   "fieldname": "material_inspection",
-   "fieldtype": "Table",
-   "label": "Material Inspection",
-   "options": "Purchase QC Material Inspection"
-  },
-  {
    "fieldname": "packaging_section",
    "fieldtype": "Section Break",
    "label": "Packaging / Box Inspection"
@@ -309,6 +292,23 @@
    "fieldtype": "Table",
    "label": "Packaging Inspection",
    "options": "Purchase QC Packaging Inspection"
+  },
+  {
+   "fieldname": "material_section",
+   "fieldtype": "Section Break",
+   "label": "Material Inspection"
+  },
+  {
+   "default": "0",
+   "fieldname": "material_inspection_done",
+   "fieldtype": "Check",
+   "label": "Material Inspection Complete"
+  },
+  {
+   "fieldname": "material_inspection",
+   "fieldtype": "Table",
+   "label": "Material Inspection",
+   "options": "Purchase QC Material Inspection"
   },
   {
    "fieldname": "sample_section",
@@ -584,7 +584,7 @@
  "is_submittable": 1,
  "istable": 0,
  "links": [],
- "modified": "2026-09-15 12:00:00.000000",
+ "modified": "2026-11-26 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alpinos Development",
  "name": "Purchase QC",

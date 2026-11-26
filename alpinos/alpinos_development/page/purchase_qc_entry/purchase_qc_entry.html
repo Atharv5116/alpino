@@ -194,10 +194,10 @@
 
 	<div class="pqc-body">
 	<p class="text-muted" style="font-size:12px; margin-bottom:12px;">
-		BRD 4 — Vehicle, Material, Packaging and Sample Testing run <strong>in parallel</strong>;
-		there is no mandatory order. Tick each section as it is completed, then record the
-		decision. The final submission is allowed only once every applicable inspection is
-		marked complete (BR-QC-06).
+		Inspect in this order: Vehicle, Packing / Box, Material, Sample Testing. Tick each
+		section as it is completed, then record the decision. Vehicle Inspection is optional;
+		Material Inspection is mandatory, and Sample Testing is mandatory for FG and RM. The
+		final submission is allowed only once every mandatory inspection is marked complete.
 	</p>
 
 	<!-- ==================== BRD 4.1.1 inward info (read only) ================= -->
@@ -246,33 +246,6 @@
 		</button>
 	</div>
 
-	<!-- ==================== BRD 4.1.3 material inspection ===================== -->
-	<div class="eso-card pqc-section" data-section="material">
-		<h6 class="eso-card-title">
-			Material Inspection
-			<span class="pqc-done field-material-done"></span>
-		</h6>
-		<div class="alp-scroll alp-scroll--xwide" data-empty="No material lines inspected yet. Use Add Row for each item you check.">
-			<table class="table table-bordered material-table pqc-table">
-				<thead><tr>
-					<th style="width:28px;">#</th>
-					<th style="min-width:210px;">Item</th>
-					<th style="width:130px; min-width:130px;">Condition</th>
-					<th style="width:70px;">Damage</th>
-					<th style="width:90px;">Damaged Qty</th>
-					<th style="min-width:150px;">Damage Reason</th>
-					<th style="width:200px; min-width:200px;">Images</th>
-					<th style="min-width:130px;">Inspector Remarks</th>
-					<th style="width:30px;"></th>
-				</tr></thead>
-				<tbody></tbody>
-			</table>
-		</div>
-		<button class="btn btn-sm btn-light btn-add" data-table="material" style="margin-top:8px;">
-			<i class="fa fa-plus"></i> Add Row
-		</button>
-	</div>
-
 	<!-- ==================== BRD 4.1.4 packaging inspection ==================== -->
 	<div class="eso-card pqc-section" data-section="packaging">
 		<h6 class="eso-card-title">
@@ -300,6 +273,33 @@
 		</button>
 	</div>
 
+	<!-- ==================== BRD 4.1.3 material inspection ===================== -->
+	<div class="eso-card pqc-section" data-section="material">
+		<h6 class="eso-card-title">
+			Material Inspection
+			<span class="pqc-done field-material-done"></span>
+		</h6>
+		<div class="alp-scroll alp-scroll--xwide" data-empty="No material lines inspected yet. Use Add Row for each item you check.">
+			<table class="table table-bordered material-table pqc-table">
+				<thead><tr>
+					<th style="width:28px;">#</th>
+					<th style="min-width:210px;">Item</th>
+					<th style="width:130px; min-width:130px;">Condition</th>
+					<th style="width:70px;">Damage</th>
+					<th style="width:90px;">Damaged Qty</th>
+					<th style="min-width:150px;">Damage Reason</th>
+					<th style="width:200px; min-width:200px;">Images</th>
+					<th style="min-width:130px;">Inspector Remarks</th>
+					<th style="width:30px;"></th>
+				</tr></thead>
+				<tbody></tbody>
+			</table>
+		</div>
+		<button class="btn btn-sm btn-light btn-add" data-table="material" style="margin-top:8px;">
+			<i class="fa fa-plus"></i> Add Row
+		</button>
+	</div>
+
 	<!-- ==================== BRD 4.1.5 sample testing ========================== -->
 	<div class="eso-card pqc-section" data-section="sample">
 		<h6 class="eso-card-title">
@@ -315,6 +315,9 @@
 					<th style="min-width:120px;">Supplier Batch</th>
 					<th style="min-width:150px;">Internal Batch</th>
 					<th style="width:90px;">Sample Qty</th>
+					<th style="width:110px; min-width:110px;">Sample UOM</th>
+					<th style="width:100px;" title="How many of the received unit one sample unit is">Conversion</th>
+					<th style="width:100px;">In Received UOM</th>
 					<th style="min-width:130px;">RMID / PMID</th>
 					<th style="min-width:110px;">FG Sticker</th>
 					<th style="min-width:120px;">Remarks</th>

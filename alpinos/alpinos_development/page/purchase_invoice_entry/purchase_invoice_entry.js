@@ -240,9 +240,12 @@ var PurchaseInvoiceEntry = class {
 				me.recalc_totals();
 			},
 		});
+		// Purchase notes 26 Nov 2026 (point 8): only logistic vendors, i.e. Suppliers ticked
+		// "Is Transporter", are offered.
 		ed('.field-logistics-vendor', {
 			fieldname: 'custom_logistics_vendor', label: 'Logistics Vendor', fieldtype: 'Link',
 			options: 'Supplier', reqd: 1,
+			get_query: () => ({ filters: { is_transporter: 1, disabled: 0 } }),
 		});
 		ed('.field-transport-invoice-no', {
 			fieldname: 'custom_transport_invoice_no', label: 'Transport Invoice No.', fieldtype: 'Data', reqd: 1,
@@ -258,6 +261,22 @@ var PurchaseInvoiceEntry = class {
 		ed('.field-transport-attachment', {
 			fieldname: 'custom_transport_attachment', label: 'Transport Attachment', fieldtype: 'Attach', reqd: 1,
 		});
+		// Paid: nothing pending. Partial: the amount already paid. Pending: the whole freight.
+		ed('.field-logistics-payment-status', {
+			fieldname: 'custom_logistics_payment_status', label: 'Logistic Payment Status', fieldtype: 'Select',
+			options: ['Pending', 'Partial', 'Paid'],
+			change: () => {
+				me.toggle_logistics();
+				me.recalc_totals();
+			},
+		}, doc.custom_logistics_payment_status || 'Pending');
+		const paid = ed('.field-logistics-paid-amount', {
+			fieldname: 'custom_logistics_paid_amount', label: 'Logistic Amount Paid', fieldtype: 'Currency', reqd: 1,
+			change: () => me.recalc_totals(),
+		});
+		if (paid && paid.$input) {
+			paid.$input.on('input', frappe.utils.debounce(() => me.recalc_totals(), 150));
+		}
 		this.toggle_logistics();
 
 		// ---- 6.2.4 payments
@@ -286,9 +305,14 @@ var PurchaseInvoiceEntry = class {
 
 		if (this.docname && cint(doc.docstatus) === 0) {
 			supplier_payable = flt(this._live_total);
-			logistics_payable = this._val('custom_include_logistics') === 'Yes'
-				? flt(this._val('custom_freight_amount'))
-				: 0;
+			// Same rule as purchase_invoice._payable_logistics.
+			const status = this._val('custom_logistics_payment_status') || 'Pending';
+			const freight = flt(this._val('custom_freight_amount'));
+			logistics_payable = this._val('custom_include_logistics') !== 'Yes' || status === 'Paid'
+				? 0
+				: status === 'Partial'
+					? Math.max(freight - flt(this._val('custom_logistics_paid_amount')), 0)
+					: freight;
 			supplier_pending = supplier_payable;
 			logistics_pending = logistics_payable;
 			total_paid = 0;
@@ -475,6 +499,7 @@ var PurchaseInvoiceEntry = class {
 	toggle_logistics() {
 		const on = this._val('custom_include_logistics') === 'Yes';
 		this.wrapper.find('.pinv-logistics-fields').toggle(on);
+		this.wrapper.find('.field-logistics-paid-amount').toggle(on && this._val('custom_logistics_payment_status') === 'Partial');
 	}
 
 	render_payments() {
@@ -603,6 +628,7 @@ var PurchaseInvoiceEntry = class {
 			'bill_no', 'bill_date', 'custom_invoice_attachment', 'custom_invoice_remarks',
 			'custom_include_logistics', 'custom_logistics_vendor', 'custom_transport_invoice_no',
 			'custom_freight_amount', 'custom_transport_attachment',
+			'custom_logistics_payment_status', 'custom_logistics_paid_amount',
 		].forEach((f) => {
 			data[f] = this._val(f);
 		});

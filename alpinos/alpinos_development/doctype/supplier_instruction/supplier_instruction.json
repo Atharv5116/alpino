@@ -1,0 +1,29 @@
+{
+ "actions": [],
+ "creation": "2026-11-26 21:30:00.000000",
+ "modified": "2026-11-26 21:30:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "istable": 1,
+ "module": "Alpinos Development",
+ "name": "Supplier Instruction",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "field_order": [
+  "instruction"
+ ],
+ "fields": [
+  {
+   "fieldname": "instruction",
+   "fieldtype": "Small Text",
+   "label": "Instruction / Term",
+   "reqd": 1,
+   "in_list_view": 1
+  }
+ ],
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
