@@ -1094,6 +1094,11 @@ doc_events = {
 		# A punch on an already auto-marked day re-opens and recomputes that day's
 		# Attendance, so late or out-of-order punches still fold in.
 		"after_insert": "alpinos.attendance_healer.heal_on_checkin"
+	},
+	# UAT only: "UAT – " before every email subject, from the site's email_subject_prefix
+	# config (Live has none).
+	"Email Queue": {
+		"before_insert": "alpinos.email_subject_prefix.add_subject_prefix"
 	}
 }
 
